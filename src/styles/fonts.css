@@ -1,0 +1,6 @@
+/* Inter (headers/body) and Fraunces (display fallback for "IvyOra Text
+ * Medium") are now self-hosted via next/font/google in app/layout.tsx —
+ * no render-blocking external @import here. next/font exposes them as the
+ * CSS variables --font-inter / --font-fraunces, consumed in theme.css.
+ *
+ * Swap in a self-hosted IvyOra @font-face here when the license is in place. */

@@ -1,0 +1,161 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* ─── Type ─────────────────────────────────────────────────────────── */
+  /* --font-inter / --font-fraunces are injected by next/font in app/layout.tsx. */
+  --font-display: "IvyOra Text Medium", var(--font-fraunces), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-header: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --tracking-display: -0.02em;
+  --tracking-header: -0.04em;
+  --tracking-body: -0.01em;
+
+  --weight-header: 700;
+  --weight-body: 400;
+  --weight-medium: 500;
+
+  /* ─── Palette ──────────────────────────────────────────────────────── */
+  --color-faded: #2A2A2A;
+  --color-bone: #E5E0D5;
+  --color-poster: #D0312D;
+  --color-signal: #E5A923;
+  --color-workwear: #C8B49A;
+  --color-shop: #B7CBDD;
+  --color-verdigris: #3B5D4F;
+
+  /* ─── Semantic ─────────────────────────────────────────────────────── */
+  --color-background: var(--color-bone);
+  --color-surface: #F3EFE6;
+  --color-text: var(--color-faded);
+  --color-muted: #706B63;
+
+  --color-primary: var(--color-poster);
+  --color-secondary: var(--color-signal);
+  --color-accent: var(--color-verdigris);
+
+  /* ─── Layout ───────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 2rem;
+  --space-xl: 4rem;
+
+  /* ─── Back-compat aliases ──────────────────────────────────────────────
+   * Existing components reference --background / --foreground / --primary /
+   * --muted-foreground / --border / --font-serif via Tailwind utilities and
+   * direct `var()` lookups. Aliasing here means none of them have to change
+   * and the whole tree re-skins automatically.
+   */
+  --font-size: 16px;
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-normal: var(--weight-body);
+
+  --background: var(--color-background);
+  --foreground: var(--color-text);
+
+  --card: var(--color-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-text);
+
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-bone);
+  --secondary: var(--color-secondary);
+  --secondary-foreground: var(--color-faded);
+  --muted: var(--color-surface);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-accent);
+  --accent-foreground: var(--color-bone);
+
+  --destructive: #B00020;
+  --destructive-foreground: #ffffff;
+
+  --border: rgba(42, 42, 42, 0.14);
+  --input: transparent;
+  --input-background: rgba(42, 42, 42, 0.04);
+  --switch-background: rgba(42, 42, 42, 0.2);
+
+  --ring: var(--color-primary);
+  --radius: 0rem;
+}
+
+/* ─── Tailwind v4 theme bindings ─────────────────────────────────────────
+ * Both the new palette names (bone, poster, signal, …) and the back-compat
+ * semantic names (background, foreground, primary, …) are exposed so
+ * `bg-poster`, `text-bone`, `bg-background`, `text-foreground` all work.
+ */
+@theme inline {
+  /* Semantic (back-compat) — same names the existing components use */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+
+  /* New palette tokens — usable as Tailwind utilities */
+  --color-faded: #2A2A2A;
+  --color-bone: #E5E0D5;
+  --color-poster: #D0312D;
+  --color-signal: #E5A923;
+  --color-workwear: #C8B49A;
+  --color-shop: #B7CBDD;
+  --color-verdigris: #3B5D4F;
+  --color-surface: #F3EFE6;
+
+  /* Layout */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* Type — expose all three families to Tailwind utilities */
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-display);
+  --font-display: var(--font-display);
+  --font-header: var(--font-header);
+  --font-body: var(--font-body);
+}
+
+/* ─── Suggested usage ───────────────────────────────────────────────────
+ * Apply the design-system rules at the element level so anywhere we use
+ * a raw `<h1>`/`<h2>` it gets the header treatment, and the .display class
+ * unlocks the IvyOra serif display moment.
+ */
+.display {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-display);
+  font-weight: var(--weight-medium);
+}
+
+h1, h2, h3, h4, .header {
+  font-family: var(--font-header);
+  font-weight: var(--weight-header);
+  letter-spacing: var(--tracking-header);
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: var(--weight-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text);
+  background: var(--color-background);
+}

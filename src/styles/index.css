@@ -1,0 +1,94 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  scrollbar-width: none;
+  /* Native smooth scroll for in-page anchor jumps and CSS-driven scroll. */
+  scroll-behavior: smooth;
+  /* Proximity (not mandatory) so the hero's 600vh parallax is fully
+     untouched — mandatory was reaching into the last viewport of hero
+     trying to pull the user into Store and fighting Framer's spring.
+     Proximity only snaps when the user is genuinely close to a snap
+     point (Store / Work / About), so hero stays free-scroll all the
+     way through the fade-out. */
+  scroll-snap-type: y proximity;
+}
+
+/* Respect users who explicitly opt out of motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+    scroll-snap-type: none;
+  }
+}
+
+/* Snap-frame
+ *
+ * Each post-hero section is a full-viewport panel — section background
+ * fills the entire viewport (so the section color paints *behind* the
+ * couch, instead of leaving a white slab below the content). The
+ * `padding-bottom` reserves the couch's height inside the box, which —
+ * because Tailwind preflight sets box-sizing: border-box — keeps the
+ * content area exactly the same as before (viewport minus couch) while
+ * the painted background extends down behind the icons.
+ *
+ * Uses --bottom-menu-h that BottomMenu publishes on :root so the
+ * reserved gutter tracks the couch's real rendered size as it scales
+ * with viewport width. svh keeps mobile Safari's collapsing toolbar
+ * from jiggling the frame. */
+.snap-frame {
+  height: 100vh;
+  padding-bottom: var(--bottom-menu-h, 190px);
+}
+@supports (height: 100svh) {
+  .snap-frame {
+    height: 100svh;
+  }
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
+/* Couch menu icons
+ *
+ * The bottom-menu SVG (imports/Group5-1/Group5.tsx) renders four icon
+ * groups with stable Figma IDs (Vector, Vector_2, Vector_3, Vector_4 —
+ * one per nav item). BottomMenu sets `--icon-{0..3}-fill` on the
+ * `.bottom-menu-art` wrapper based on the active section: the active
+ * icon paints poster-red, the rest stay bone-white. We target the
+ * actual SVG <path>s (CSS selector beats the inline `fill` presentation
+ * attribute) so the icon shapes themselves recolor.
+ *
+ * A soft drop-shadow on each group lifts the icons off the couch
+ * photograph so they read clearly no matter what's behind them. */
+.bottom-menu-art [id="Vector"],
+.bottom-menu-art [id="Vector_2"],
+.bottom-menu-art [id="Vector_3"],
+.bottom-menu-art [id="Vector_4"] {
+  filter: drop-shadow(0 1px 2.5px rgba(0, 0, 0, 0.55));
+}
+.bottom-menu-art [id="Vector"] path,
+.bottom-menu-art [id="Vector_2"] path,
+.bottom-menu-art [id="Vector_3"] path,
+.bottom-menu-art [id="Vector_4"] path {
+  transition: fill 0.28s ease-out;
+}
+
+/* Couch depth — soft drop-shadow traced from the sofa silhouette (the
+ * couch PNG is transparent around the sofa) so the whole menu reads as
+ * floating above the page content behind it. Applied to the couch image
+ * layer only, so it's independent of the per-icon shadows above. */
+.bottom-menu-art [data-name="image 10"] {
+  filter: drop-shadow(0 4px 22px rgba(0, 0, 0, 0.55));
+}
+.bottom-menu-art [id="Vector"] path   { fill: var(--icon-0-fill, #fff); }
+.bottom-menu-art [id="Vector_2"] path { fill: var(--icon-1-fill, #fff); }
+.bottom-menu-art [id="Vector_3"] path { fill: var(--icon-2-fill, #fff); }
+.bottom-menu-art [id="Vector_4"] path { fill: var(--icon-3-fill, #fff); }
