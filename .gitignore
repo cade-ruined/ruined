@@ -13,6 +13,7 @@
 
 # next.js
 /.next/
+/.next-stale-*/
 /out/
 
 # production
@@ -38,4 +39,10 @@ next-env.d.ts
 
 # local backups (e.g. original media before optimization)
 /.backups
+/.seq-backup-*/
 .vercel
+
+# Render masters belong in external/local archival storage, never in a deploy.
+/sequence-masters/
+/public/sequences/**/*.tif
+/public/sequences/**/*.tiff

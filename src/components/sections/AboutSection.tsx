@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import SectionHeader from "./SectionHeader";
+import SiblingNav from "@/components/SiblingNav";
 
 const CREDITS: { label: string; value: string }[] = [
   { label: "Est.", value: "RU / MMXXVI" },
@@ -121,9 +122,10 @@ export default function AboutSection() {
           whileInView={{ opacity: 0.55 }}
           viewport={{ once: true, amount: 0.4 }}
           transition={{ duration: 1.0, ease: "easeOut" }}
-          className="mt-3 flex items-center justify-between font-mono text-[0.65rem] tracking-[0.4em] uppercase text-[var(--muted-foreground)]"
+          className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-[0.65rem] tracking-[0.4em] uppercase text-[var(--muted-foreground)]"
         >
           <span>RU / MMXXVI</span>
+          <SiblingNav />
           <span>— end —</span>
         </motion.div>
       </div>

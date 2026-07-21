@@ -1,88 +1,130 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { motion, useScroll, useSpring, useTransform } from "motion/react";
-// Re-encoded from the original 8.5MB PNG to AVIF (~300KB) + WebP (~460KB)
-// fallback (see scripts/optimize-images.mjs). Native resolution is kept so
-// the parallax push-in stays sharp; only the byte weight changed.
-import warehouseAvif from "@/imports/web-main-bg.avif";
-import warehouseWebp from "@/imports/web-main-bg.webp";
-import SheetVideo from "./SheetVideo";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  motion,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+  useTransform,
+  type MotionValue,
+} from "motion/react";
+import { PRODUCT_TONES, type Product } from "@/data/products";
+import { PROJECTS, type Project } from "@/data/projects";
+import { SLEEVE, ACCENT } from "@/components/sections/RecordCarousel";
+import RoomSequenceCanvas from "@/components/sequence/RoomSequenceCanvas";
+import { SEQUENCE_ROOMS, type SequenceManifest } from "@/data/sequences";
+import { scrollState } from "@/utils/scrollState";
 
-// Hero background as a <picture> so modern browsers pull AVIF and the rest
-// fall back to WebP — the 8.5MB source PNG is never shipped. fetchPriority
-// high + eager because this is the LCP element.
-function WarehouseImage() {
-  return (
-    <picture>
-      <source srcSet={warehouseAvif.src} type="image/avif" />
-      <source srcSet={warehouseWebp.src} type="image/webp" />
-      <img
-        src={warehouseWebp.src}
-        alt=""
-        draggable={false}
-        fetchPriority="high"
-        decoding="async"
-        className="block w-full h-full select-none"
-      />
-    </picture>
-  );
-}
+// ─── The journey ────────────────────────────────────────────────────────
+// One continuous walk. The homepage is a scroll-scrubbed frame sequence: each
+// room ships a pre-rendered dolly move (public/sequences/<room>/), and scrolling
+// simply advances the concatenated frames on a canvas — no crossfades, no CSS
+// portal masks. The transitions between rooms are already baked into the frames
+// (each room's dolly ends facing the next). The editorial UI (room shelves,
+// wordmark, "After The Fear") floats on top, keyed to where each room sits in
+// the timeline.
 
-const IMG_W = 6688;
-const IMG_H = 3764;
-const IMG_ASPECT = IMG_W / IMG_H;
-
-// Keyframes describing the cinematic journey across the warehouse.
-// Pos 1 (wide) → Pos 2 (sheet 1) → Pos 3 (sheet 2, raised to clear couch)
-// → fade down into black.
-//
-// The landmark beats (the old "holds" at 0.18→0.42 and 0.58→0.82) no
-// longer FREEZE the camera — instead each one carries a slow, continuous
-// push-in (a gentle dolly), so something is always moving under the
-// scroll. The pan anchors (SX/SY) stay put across each beat to keep the
-// sheet framed, while SC keeps creeping forward. Fast arrival → slow
-// lingering push → fast travel → slow push → fade-and-pan-down reads as
-// a deliberate, premium cadence rather than start/stop jitter.
-const STOPS = [0, 0.18, 0.42, 0.58, 0.82, 1] as const;
-const SX = [0.75, 0.49, 0.49, 0.67, 0.67, 0.67] as const; // horizontal pan
-const SY = [0, 0.01, 0.04, 0.3, 0.33, 1.2] as const; // vertical pan (slight drift in holds)
-const SC = [1, 1.7, 1.82, 2.0, 2.12, 2.16] as const; // scale (slow push through holds + fade)
-const OP = [1, 1, 1, 1, 1, 0] as const; // opacity
-
-// Desktop journey (landscape). The mobile model pans by exploiting the
-// horizontal overflow of a tall image inside a portrait viewport — but
-// on a ~16:9 desktop the warehouse photo (≈16:9) basically fills the
-// screen, so there's no overflow to pan and the tour collapses. Instead
-// the desktop branch uses a scale-aware FOCAL-POINT model: at each stop
-// we center a target point of the image (DFX/DFY, as 0..1 fractions of
-// the photo) at a given zoom (DDS). Same cinematic beats as mobile —
-// wide establishing → Sheet 1 ("Yesterday", x≈0.49) → Sheet 2 (the video
-// banner, x≈0.627) → fade-and-drift-down — with slow push-ins through
-// the holds so the camera is never frozen.
-// Seven beats: wide → Sheet 1 (+ hold) → Sheet 2 (+ hold) → fade to
-// black → a long BLACK HOLD (0.63 → 1.0, ~37% of the journey) dedicated
-// to the "After The Fear" line, so that beat reads slowly and tactilely
-// instead of flashing by. The black-hold focal/zoom are frozen since the
-// (now-invisible) photo no longer matters.
-const DSTOPS = [0, 0.11, 0.3, 0.43, 0.55, 0.63, 1] as const;
-const DFX = [0.5, 0.49, 0.49, 0.627, 0.627, 0.627, 0.627] as const; // focal x
-const DFY = [0.5, 0.32, 0.33, 0.33, 0.35, 0.62, 0.62] as const; // focal y
-const DDS = [1.0, 1.85, 1.95, 2.1, 2.2, 2.3, 2.3] as const; // zoom
-const DOP = [1, 1, 1, 1, 1, 0, 0] as const; // opacity (fade 0.55→0.63, then black)
-
-// Scroll-linked spring. The old config (72 / 26 / 1.0) had a low natural
-// frequency (~8.5 rad/s), so the image visibly trailed the scroll wheel —
-// the "floaty / laggy" feel. This roughly doubles the natural frequency
-// (~17 rad/s) so the camera tracks the scroll closely, and stays
-// over-damped (ratio ~1.6) so there's zero overshoot or bounce — the
-// responsive-but-smooth cadence used by Lenis/Locomotive-style sites.
+// Scroll-linked spring — smooths discrete wheel/trackpad ticks into fluid
+// motion. Tuned near critical damping (ratio ≈ 1) so it responds immediately
+// without the laggy "wind-up then catch-up" of over-damped values, and without
+// any overshoot/bounce.
 const SCROLL_SPRING = {
   stiffness: 150,
-  damping: 28,
-  mass: 0.5,
-  restDelta: 0.0005,
+  damping: 16,
+  mass: 0.4,
+  restDelta: 0.0002,
 } as const;
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+// The room walk, Fireside arrival, and closing title each get their own phase.
+// This guarantees Lounge reaches its final frame before the video appears, and
+// gives the loop time to establish before "After The Fear" begins.
+const SEQUENCE_END = 0.78;
+const FEAR_START = 0.88;
+const FIRESIDE_SRC = "/sequences/fireside/Fire and Stream Looping 4K.mp4";
+const ROOM_HOLD = 0.055;
+
+// A room's slice of the whole-journey timeline (0..1), derived from its frame
+// count, plus where its overlay should peak.
+type Band = {
+  start: number;
+  playEnd: number;
+  end: number;
+  mid: number;
+  count: number;
+  frameStart: number;
+  frameEnd: number;
+};
+
+function buildSequenceBands(manifest: SequenceManifest): Record<string, Band> {
+  const map: Record<string, Band> = {};
+  const activeRooms = manifest.rooms.filter((room) => room.count > 0);
+  const totalHoldSpan = activeRooms.reduce(
+    (total, room) => total + (room.id === "lounge" ? 0 : ROOM_HOLD),
+    0
+  );
+  const playableSpan = Math.max(0, SEQUENCE_END - totalHoldSpan);
+  const frameDenominator = Math.max(1, manifest.total - 1);
+  let timelineCursor = 0;
+  let frameCursor = 0;
+
+  for (const room of manifest.rooms) {
+    if (!room.count) {
+      map[room.id] = {
+        start: timelineCursor,
+        playEnd: timelineCursor,
+        end: timelineCursor,
+        mid: timelineCursor,
+        count: 0,
+        frameStart: frameCursor / frameDenominator,
+        frameEnd: frameCursor / frameDenominator,
+      };
+      continue;
+    }
+
+    const start = timelineCursor;
+    const playDuration = playableSpan * (room.count / manifest.total);
+    const playEnd = start + playDuration;
+    // Lounge already resolves into the Fireside composition. Holding its final
+    // still creates a visible hitch before the matching loop begins, so it hands
+    // off immediately while the other room arrivals retain their pause.
+    const holdDuration = room.id === "lounge" ? 0 : ROOM_HOLD;
+    const end = playEnd + holdDuration;
+    const frameStart = frameCursor / frameDenominator;
+    const frameEnd = (frameCursor + room.count - 1) / frameDenominator;
+    map[room.id] = {
+      start,
+      playEnd,
+      end,
+      mid: (start + playEnd) / 2,
+      count: room.count,
+      frameStart,
+      frameEnd,
+    };
+    timelineCursor = end;
+    frameCursor += room.count;
+  }
+
+  return map;
+}
+
+function sequenceFrameProgress(value: number, manifest: SequenceManifest, bands: Record<string, Band>) {
+  for (const room of manifest.rooms) {
+    const band = bands[room.id];
+    if (!band || !band.count) continue;
+    if (value <= band.playEnd) {
+      const local = clamp01((value - band.start) / Math.max(0.0001, band.playEnd - band.start));
+      return band.frameStart + (band.frameEnd - band.frameStart) * local;
+    }
+    if (value <= band.end) return band.frameEnd;
+  }
+  return 1;
+}
 
 function HardButton({
   href,
@@ -107,8 +149,6 @@ function HardButton({
       whileHover={{ x: -2, y: -2, rotate: 0 }}
       whileTap={{ x: 3, y: 3, rotate: 0 }}
       transition={{ type: "spring", stiffness: 360, damping: 22 }}
-      // pointer-events are gated by the SheetCTA wrapper (per-stamp), so a
-      // faded/hidden stamp can't be tapped as a ghost target.
       className="relative flex items-center justify-between gap-2 px-4 py-3 font-mono text-[0.55rem] tracking-[0.18em] uppercase no-underline select-none whitespace-nowrap"
       style={{
         rotate: rotation,
@@ -118,9 +158,6 @@ function HardButton({
         boxShadow: "5px 5px 0 0 var(--color-faded)",
       }}
     >
-      {/* Hard grain — a printed-ink dot pattern over the swatch so the
-          button reads like a label stuck on a warehouse wall instead of
-          a glossy web button. */}
       <span
         aria-hidden
         className="absolute inset-0 pointer-events-none opacity-25"
@@ -139,165 +176,282 @@ function HardButton({
   );
 }
 
-function SheetCTA({
+// Client-side navigation into a full room page (/store, /work, /about). The
+// shelf cards and each room's "Enter" button use this so a click opens the full
+// browsing experience, while the couch icons (handled in BottomMenu) scrub the
+// camera to the room's hold inside the dive.
+function useGoToRoute() {
+  const router = useRouter();
+  return (href: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    router.push(href);
+  };
+}
+
+// A curated "preview shelf" that fades in — and only becomes interactive —
+// while its room sits FRAMED in the dive (the "arrival" beat). It never
+// overlaps the fast/blurred motion, so the user only ever clicks a settled,
+// still target. The assets are real, data-driven components (not baked into
+// the photo), so they deep-link into the actual Store / Work sections and
+// degrade gracefully.
+function RoomOverlay({
   progress,
-  holdStart,
-  holdEnd,
-  liftVh = 10,
+  band,
+  kicker,
+  enterLabel,
+  enterHref,
+  enterVariant,
+  children,
 }: {
-  progress: ReturnType<typeof useSpring>;
-  /** Scroll progress at which this sheet's "hold" beat begins (STOPS[i]). */
-  holdStart: number;
-  /** Scroll progress at which the hold ends (STOPS[i+1]). */
-  holdEnd: number;
-  /** How far (in vh) to lift the stamps above the couch menu. Lower = the
-   *  stamps sit closer to the menu. Defaults to 10vh (the mobile spot);
-   *  desktop sheets pass smaller values to drop them down the banner. */
-  liftVh?: number;
+  progress: MotionValue<number>;
+  band: Band;
+  kicker: string;
+  enterLabel: string;
+  enterHref: string;
+  enterVariant: "filled" | "outline";
+  children: React.ReactNode;
 }) {
-  // Staggered, scroll-driven reveal: the two stamps no longer pop in
-  // together. As the user scrolls onto the sheet, "See details" slides
-  // up first; "Latest projects" follows a beat later — so something is
-  // always entering the frame during the beat instead of one simultaneous
-  // flash. Both clear out together as the camera pushes on to the next
-  // sheet. Windows are expressed relative to the hold so the same shape
-  // works for every sheet; only the anchors move.
-  const span = holdEnd - holdStart;
-
-  // First stamp: arrives as the sheet settles into frame.
-  const b1FadeIn = holdStart - 0.03;
-  const b1In = holdStart + span * 0.16;
-  // Second stamp: a deliberate beat later, mid-hold.
-  const b2FadeIn = holdStart + span * 0.32;
-  const b2In = holdStart + span * 0.52;
-  // Both exit together as the camera departs for the next beat.
-  const settledOut = holdEnd - 0.03;
-  const fadeOut = holdEnd + 0.04;
-
-  const b1Opacity = useTransform(
+  const goToRoute = useGoToRoute();
+  // The band represents travel toward the room shown at its final frame. Reveal
+  // during that final approach, remain settled throughout the arrival hold,
+  // then clear quickly as travel toward the next destination begins.
+  const playSpan = band.playEnd - band.start;
+  const revealStart = band.start + playSpan * 0.78;
+  const revealEnd = band.start + playSpan * 0.94;
+  const clearEnd = Math.min(1, band.end + 0.022);
+  const opacity = useTransform(
     progress,
-    [b1FadeIn, b1In, settledOut, fadeOut],
+    [revealStart, revealEnd, band.end, clearEnd],
     [0, 1, 1, 0]
   );
-  const b1Y = useTransform(progress, [b1FadeIn, b1In], [26, 0]);
-  const b2Opacity = useTransform(
-    progress,
-    [b2FadeIn, b2In, settledOut, fadeOut],
-    [0, 1, 1, 0]
-  );
-  const b2Y = useTransform(progress, [b2FadeIn, b2In], [26, 0]);
-
-  // Disable interaction per-stamp once it's faded so a tap on empty space
-  // mid-parallax can't hit a ghost target. The HardButton no longer forces
-  // pointer-events itself, so these wrappers fully gate it.
-  const b1Pointer = useTransform(b1Opacity, (o) => (o > 0.5 ? "auto" : "none"));
-  const b2Pointer = useTransform(b2Opacity, (o) => (o > 0.5 ? "auto" : "none"));
-
-  const goTo =
-    (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
-      const el = document.getElementById(id);
-      if (el) {
-        e.preventDefault();
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    };
+  const y = useTransform(opacity, (o) => (1 - o) * 26);
+  const pointer = useTransform(opacity, (o) => (o > 0.6 ? "auto" : "none"));
 
   return (
-    <div
-      className="pointer-events-none fixed inset-x-0 z-30 flex justify-center px-6"
+    <motion.div
       style={{
-        // Sit at the bottom of the sheet with breathing room: clear the
-        // couch menu (its actual rendered height + a 1.5rem gutter) and
-        // lift another `liftVh` so the stamps land in the lower portion
-        // of the sheet rather than glued to the menu. Fallback (190px)
-        // covers SSR / pre-hydration before BottomMenu sets the var.
-        bottom: `calc(env(safe-area-inset-bottom, 0px) + var(--bottom-menu-h, 190px) + 1.5rem + ${liftVh}vh)`,
+        opacity,
+        bottom:
+          "calc(env(safe-area-inset-bottom, 0px) + var(--bottom-menu-h, 190px) + 1rem)",
       }}
+      className="pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-3 px-4"
     >
-      <div className="flex flex-col items-stretch gap-2.5 w-full max-w-[11.25rem]">
-        <motion.div style={{ opacity: b1Opacity, y: b1Y, pointerEvents: b1Pointer }}>
-          <HardButton
-            href="#store"
-            label="See details"
-            variant="filled"
-            rotation={-1.1}
-            onClick={goTo("store")}
+      {/* legibility scrim so labels read over the room photo */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 bottom-0 -z-10 h-[42vh]"
+        style={{
+          background:
+            "linear-gradient(to top, rgba(8,6,5,0.8) 0%, rgba(8,6,5,0.35) 45%, transparent 100%)",
+        }}
+      />
+      <motion.div
+        style={{ y, pointerEvents: pointer }}
+        className="flex flex-col items-center gap-3"
+      >
+        <span className="font-mono text-[0.55rem] tracking-[0.42em] uppercase text-[var(--color-bone)]/70">
+          {kicker}
+        </span>
+        <div className="flex items-end justify-center gap-2.5 sm:gap-3.5">
+          {children}
+        </div>
+        <HardButton
+          href={enterHref}
+          label={enterLabel}
+          variant={enterVariant}
+          rotation={-0.8}
+          onClick={goToRoute(enterHref)}
+        />
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ProductCard({ product }: { product: Product }) {
+  const goToRoute = useGoToRoute();
+  return (
+    <motion.a
+      href="/store"
+      onClick={goToRoute("/store")}
+      whileHover={{ y: -5 }}
+      transition={{ type: "spring", stiffness: 360, damping: 24 }}
+      className="group block no-underline select-none w-[clamp(64px,17vw,118px)]"
+    >
+      <div
+        className="relative aspect-[3/4] w-full overflow-hidden"
+        style={{
+          background: PRODUCT_TONES[product.tone],
+          border: "1px solid rgba(229,224,213,0.18)",
+          boxShadow: "4px 5px 0 0 rgba(8,6,5,0.55)",
+        }}
+      >
+        {product.image && (
+          <Image
+            src={product.image.url}
+            alt=""
+            fill
+            sizes="(min-width: 640px) 118px, 17vw"
+            className="object-cover"
           />
-        </motion.div>
-        <motion.div style={{ opacity: b2Opacity, y: b2Y, pointerEvents: b2Pointer }}>
-          <HardButton
-            href="#work"
-            label="Latest projects"
-            variant="outline"
-            rotation={0.7}
-            onClick={goTo("work")}
-          />
-        </motion.div>
+        )}
+        <span
+          aria-hidden
+          className="absolute left-1.5 top-1.5 font-mono text-[0.5rem] tracking-[0.12em] text-[var(--color-bone)]/55"
+        >
+          {product.code}
+        </span>
       </div>
-    </div>
+      <div className="mt-1.5 flex items-baseline justify-between gap-1">
+        <span className="font-mono text-[0.5rem] tracking-[0.08em] uppercase text-[var(--color-bone)]/85 truncate">
+          {product.name}
+        </span>
+        <span className="font-mono text-[0.5rem] text-[var(--color-bone)]/55 whitespace-nowrap">
+          {product.price}
+        </span>
+      </div>
+    </motion.a>
+  );
+}
+
+function RecordCard({ project }: { project: Project }) {
+  const goToRoute = useGoToRoute();
+  return (
+    <motion.a
+      href="/work"
+      onClick={goToRoute("/work")}
+      whileHover={{ y: -5 }}
+      transition={{ type: "spring", stiffness: 360, damping: 24 }}
+      className="group block no-underline select-none w-[clamp(72px,19vw,132px)]"
+    >
+      <div
+        className="relative aspect-square w-full overflow-hidden"
+        style={{
+          background: SLEEVE[project.tone],
+          border: "1px solid rgba(229,224,213,0.16)",
+          boxShadow: "4px 5px 0 0 rgba(8,6,5,0.55)",
+        }}
+      >
+        <span
+          aria-hidden
+          className="absolute left-0 top-0 h-full w-[3px]"
+          style={{ background: ACCENT[project.tone] }}
+        />
+        <span className="absolute left-2.5 top-2 font-mono text-[0.5rem] tracking-[0.12em] text-[var(--color-bone)]/55">
+          {project.no}
+        </span>
+        <span className="absolute bottom-2 left-2.5 right-2 display text-[0.72rem] leading-[0.95] uppercase text-[var(--color-bone)]/90">
+          {project.title}
+        </span>
+      </div>
+      <span className="mt-1.5 block font-mono text-[0.5rem] tracking-[0.1em] uppercase text-[var(--color-bone)]/55">
+        {project.medium}
+      </span>
+    </motion.a>
+  );
+}
+
+// Placeholder artworks for the lounge / "about" beat — high-colour, abstract,
+// conceptual, deliberately vivid to contrast the warm industrial building.
+// Stand-ins to be swapped for the original art later (drop a real image `src`
+// onto each).
+type ArtPiece = { id: string; title: string; medium: string; art: string };
+const ABOUT_ART: ArtPiece[] = [
+  {
+    id: "art-1",
+    title: "Combustion",
+    medium: "Acrylic on canvas",
+    art: "radial-gradient(120% 120% at 30% 20%, #ffd54a 0%, #f5511e 38%, #c2185b 66%, #2a0a3a 100%)",
+  },
+  {
+    id: "art-2",
+    title: "Signal / Noise",
+    medium: "Pigment · resin",
+    art: "radial-gradient(130% 130% at 70% 30%, #34e0d8 0%, #1f6feb 42%, #7b2ff7 72%, #0a0820 100%)",
+  },
+  {
+    id: "art-3",
+    title: "Verdigris Bloom",
+    medium: "Mixed media",
+    art: "radial-gradient(120% 120% at 40% 80%, #b6f24a 0%, #2dbd6e 40%, #1f6feb 70%, #19103a 100%)",
+  },
+];
+
+function ArtCard({ piece }: { piece: ArtPiece }) {
+  const goToRoute = useGoToRoute();
+  return (
+    <motion.a
+      href="/about"
+      onClick={goToRoute("/about")}
+      whileHover={{ y: -5 }}
+      transition={{ type: "spring", stiffness: 360, damping: 24 }}
+      className="group block no-underline select-none w-[clamp(76px,20vw,142px)]"
+    >
+      <div
+        className="relative aspect-[4/5] w-full overflow-hidden"
+        style={{
+          background: piece.art,
+          border: "1px solid rgba(229,224,213,0.28)",
+          boxShadow: "4px 5px 0 0 rgba(8,6,5,0.55)",
+        }}
+      >
+        {/* thin inner frame so the plate reads as a hung canvas */}
+        <span
+          aria-hidden
+          className="absolute inset-[6px] border border-[rgba(8,6,5,0.22)]"
+        />
+      </div>
+      <div className="mt-1.5">
+        <span className="block font-mono text-[0.5rem] tracking-[0.08em] uppercase text-[var(--color-bone)]/85 truncate">
+          {piece.title}
+        </span>
+        <span className="block font-mono text-[0.5rem] tracking-[0.1em] uppercase text-[var(--color-bone)]/50">
+          {piece.medium}
+        </span>
+      </div>
+    </motion.a>
   );
 }
 
 function AfterTheFear({
   progress,
-  start = 0.84,
+  start = 0.6,
   end = 1.0,
 }: {
   progress: ReturnType<typeof useSpring>;
-  /** Scroll progress where the line begins to appear. */
   start?: number;
-  /** Scroll progress where the last word locks lit. */
   end?: number;
 }) {
-  // Every beat is expressed as a fraction of the [start, end] window, so
-  // the whole sequence can be stretched over more (or less) scroll
-  // without retuning the internal cadence. Defaults (0.84 → 1.0)
-  // reproduce the original mobile timing exactly; the desktop branch
-  // passes a much wider window so the line reads slowly and tactilely.
   const span = end - start;
   const at = (f: number) => start + f * span;
 
-  // The line holds back until the warehouse photo is well into its
-  // fade-out, so the words rise into an already-darkening frame instead
-  // of landing on a still-vivid one. All three words share a single
-  // appear window — they fade up together as one breath.
-  const appearOpacity = useTransform(progress, [at(0), at(0.375)], [0, 1]);
-  const appearY = useTransform(progress, [at(0), at(0.375)], [18, 0]);
+  // Words fade in early, then the amber spotlight walks down them one at a
+  // time. Onsets are spaced ~0.24 of the span apart (was ~0.125) with a long
+  // hold on each, so the sequence reads slowly instead of flashing past.
+  const appearOpacity = useTransform(progress, [at(0), at(0.25)], [0, 1]);
+  const appearY = useTransform(progress, [at(0), at(0.25)], [18, 0]);
 
-  // Once the line is present, continued scrolling sweeps a single
-  // hazard-yellow spotlight down the column — After, then The, then
-  // Fear. Only ONE word is lit at a time, and the change is a HARD CUT
-  // (no fade): each word holds bone, snaps to hazard across its window,
-  // then snaps back to bone the instant the next word ignites. CUT is
-  // the tiny progress epsilon used for the snap — small enough that the
-  // spring sweeps through it almost instantly, reading as an on/off
-  // switch rather than a crossfade. Fear is the closing beat, so it
-  // snaps lit and holds to the end.
   const BONE = "rgba(229,224,213,1)";
   const HAZARD = "rgba(245,197,24,1)";
   const CUT = 0.001;
-  // Lit windows are disjoint and meet at a shared bone instant (prev
-  // word's snap-back edge == next word's snap-up edge), so two words
-  // are never lit simultaneously.
   const aColor = useTransform(
     progress,
-    [at(0.4375) - CUT, at(0.4375), at(0.55), at(0.55) + CUT],
+    [at(0.32) - CUT, at(0.32), at(0.52), at(0.52) + CUT],
     [BONE, HAZARD, HAZARD, BONE]
   );
   const tColor = useTransform(
     progress,
-    [at(0.5625) - CUT, at(0.5625), at(0.675), at(0.675) + CUT],
+    [at(0.56) - CUT, at(0.56), at(0.76), at(0.76) + CUT],
     [BONE, HAZARD, HAZARD, BONE]
   );
-  const fColor = useTransform(
-    progress,
-    [at(0.6875) - CUT, at(0.6875)],
-    [BONE, HAZARD]
-  );
+  const fColor = useTransform(progress, [at(0.8) - CUT, at(0.8)], [BONE, HAZARD]);
+
+  // Footer credit fades up once the words have landed and the spotlight is
+  // walking through them.
+  const footerOpacity = useTransform(progress, [at(0.62), at(0.9)], [0, 1]);
+  const footerY = useTransform(progress, [at(0.62), at(0.9)], [10, 0]);
 
   return (
     <div
-      aria-hidden
       className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 sm:gap-2 pointer-events-none select-none px-6"
     >
       <motion.span
@@ -318,12 +472,103 @@ function AfterTheFear({
       >
         Fear
       </motion.span>
+
+      {/* technical streetwear colophon — pinned to the bottom, clear of the couch */}
+      <motion.div
+        style={{
+          opacity: footerOpacity,
+          y: footerY,
+          bottom:
+            "calc(env(safe-area-inset-bottom, 0px) + var(--bottom-menu-h, 190px) + 1rem)",
+        }}
+        className="pointer-events-auto absolute inset-x-0 px-5 sm:px-8 text-[var(--color-bone)]"
+      >
+        {/* registration rule */}
+        <div className="mb-2 flex items-center gap-3 text-[var(--color-bone)]/40">
+          <span className="font-mono text-[0.6rem] leading-none">⊕</span>
+          <span className="h-px flex-1 bg-[var(--color-bone)]/20" />
+          <span className="font-mono text-[0.5rem] tracking-[0.34em] uppercase text-[var(--color-bone)]/55">
+            RU // AW26
+          </span>
+          <span className="h-px flex-1 bg-[var(--color-bone)]/20" />
+          <span className="font-mono text-[0.6rem] leading-none">⊕</span>
+        </div>
+
+        {/* technical credit */}
+        <div className="grid grid-cols-2 items-end gap-2 font-mono text-[0.46rem] sm:text-[0.55rem] tracking-[0.16em] sm:tracking-[0.22em] uppercase text-[var(--color-bone)]/55">
+          <div className="space-y-0.5 text-left">
+            <div className="text-[var(--color-bone)]/80">© 2026</div>
+            <div>The Ruined Project</div>
+            <div className="text-[var(--color-bone)]/35">All rights reserved</div>
+          </div>
+
+          <div className="space-y-0.5 text-right">
+            <div>40.4633° N</div>
+            <div>111.7780° W</div>
+            <div className="text-[var(--color-bone)]/35">Created without permission</div>
+          </div>
+        </div>
+        <nav aria-label="Closing links" className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--color-bone)]/75">
+          <Link className="hover:text-white" href="/store">Store</Link>
+          <Link className="hover:text-white" href="/work">Work</Link>
+          <Link className="hover:text-white" href="/about">About</Link>
+          <Link className="hover:text-white" href="/contact">Contact</Link>
+          <a className="text-[var(--color-signal)] hover:text-white" href="#top">Walk again ↺</a>
+        </nav>
+      </motion.div>
     </div>
   );
 }
 
+function FiresideLoop({
+  progress,
+  start,
+}: {
+  progress: MotionValue<number>;
+  start: number;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const opacity = useTransform(progress, [start, start + 0.025], [0, 1]);
+
+  useEffect(() => {
+    let playing = false;
+    const syncPlayback = (value: number) => {
+      const video = videoRef.current;
+      if (value >= start - 0.08) setShouldLoad(true);
+      if (!video) return;
+      const shouldPlay = value >= start;
+      if (shouldPlay === playing) return;
+      playing = shouldPlay;
+      if (shouldPlay) {
+        video.currentTime = 0;
+        void video.play().catch(() => {});
+      } else {
+        video.pause();
+        video.currentTime = 0;
+      }
+    };
+
+    syncPlayback(progress.get());
+    return progress.on("change", syncPlayback);
+  }, [progress, shouldLoad, start]);
+
+  return (
+    <motion.video
+      ref={videoRef}
+      src={shouldLoad ? FIRESIDE_SRC : undefined}
+      muted
+      loop
+      playsInline
+      preload="none"
+      aria-hidden
+      style={{ opacity }}
+      className="absolute inset-0 h-full w-full object-cover"
+    />
+  );
+}
+
 function ScrollHint({ progress }: { progress: ReturnType<typeof useSpring> }) {
-  // Hint fades out very early in the journey.
   const opacity = useTransform(progress, [0, 0.06], [1, 0]);
   return (
     <motion.div
@@ -337,9 +582,6 @@ function ScrollHint({ progress }: { progress: ReturnType<typeof useSpring> }) {
       <span
         className="text-[0.65rem] tracking-[0.4em] uppercase text-[var(--color-bone)]/75"
         style={{
-          // Sit just above the couch menu using its actual measured height
-          // (published as --bottom-menu-h by BottomMenu). Fallback matches
-          // the menu's nominal size at full scale.
           position: "fixed",
           left: "50%",
           transform: "translateX(-50%)",
@@ -358,29 +600,26 @@ function ScrollHint({ progress }: { progress: ReturnType<typeof useSpring> }) {
   );
 }
 
-export default function ImmersiveParallax() {
+export default function ImmersiveParallax({
+  products,
+}: {
+  products: Product[];
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [isDesktop, setIsDesktop] = useState(false);
-  const [dims, setDims] = useState({ w: 0, h: 0 });
-  const [ready, setReady] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
     const updateMq = () => setIsDesktop(mq.matches);
-    const updateDims = () =>
-      setDims({ w: window.innerWidth, h: window.innerHeight });
     updateMq();
-    updateDims();
-    setReady(true);
     mq.addEventListener("change", updateMq);
-    window.addEventListener("resize", updateDims);
 
-    // Always default the homepage to Position 1 (RUINED on the pillar):
-    // disable browser scroll restoration so reloads don't drop the user
-    // partway through the parallax journey, and force scroll to the very
-    // top on mount. Hash deep-links (e.g. /#store) are still honored so
-    // BottomMenu navigation and shared links keep working.
+    // Always default the homepage to the opening scene: disable browser scroll
+    // restoration so reloads don't drop the user partway through the dive, and
+    // force scroll to the very top on mount. Hash deep-links (e.g. /#store) are
+    // still honored so BottomMenu navigation and shared links keep working.
     const hadRestoration =
       "scrollRestoration" in window.history
         ? window.history.scrollRestoration
@@ -389,14 +628,10 @@ export default function ImmersiveParallax() {
       window.history.scrollRestoration = "manual";
     }
     if (!window.location.hash) {
-      // Run on a microtask so any framework-level scroll restoration that
-      // fires synchronously after mount loses the race to our reset.
       window.scrollTo(0, 0);
       requestAnimationFrame(() => window.scrollTo(0, 0));
     }
 
-    // bfcache (Safari/Chrome back-forward): React effects don't re-run
-    // when a page is restored from bfcache, so also reset on pageshow.
     const onPageShow = (e: PageTransitionEvent) => {
       if (e.persisted && !window.location.hash) {
         window.scrollTo(0, 0);
@@ -406,7 +641,6 @@ export default function ImmersiveParallax() {
 
     return () => {
       mq.removeEventListener("change", updateMq);
-      window.removeEventListener("resize", updateDims);
       window.removeEventListener("pageshow", onPageShow);
       if (hadRestoration && "scrollRestoration" in window.history) {
         window.history.scrollRestoration = hadRestoration;
@@ -418,168 +652,199 @@ export default function ImmersiveParallax() {
     target: containerRef,
     offset: ["start start", "end end"],
   });
-
   const p = useSpring(scrollYProgress, SCROLL_SPRING);
 
-  const wrapperW = dims.h * IMG_ASPECT;
-  const wrapperH = dims.h;
-  const overflowX = Math.max(0, wrapperW - dims.w);
+  // The rendered sequence: fetch the manifest once, flatten every room's frames
+  // into one journey, and publish scroll progress to the shared singleton the
+  // canvas reads. A poster (the first room's still) shows until the first frame
+  // decodes.
+  const [manifest, setManifest] = useState<SequenceManifest | null>(null);
+  const [ready, setReady] = useState(false);
+  const onReady = useCallback(() => setReady(true), []);
 
-  const scale = useTransform(p, [...STOPS], [...SC]);
-  const opacity = useTransform(p, [...STOPS], [...OP]);
-  const tx = useTransform(
-    p,
-    [...STOPS],
-    SX.map((v) => -v * overflowX)
-  );
-  const ty = useTransform(
-    p,
-    [...STOPS],
-    SY.map((v) => -v * dims.h)
-  );
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/sequences/manifest.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: SequenceManifest | null) => {
+        if (!cancelled && m) setManifest(m);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // Desktop focal-point journey (see DSTOPS notes above). The image layer
-  // is sized to COVER the viewport at zoom 1, then scaled about its
-  // top-left while translated so the focal point (DFX/DFY) lands at
-  // viewport center. We precompute the screen-space translate at each
-  // stop and let useTransform interpolate it linearly (same independent
-  // scale/translate interpolation the mobile path uses), which keeps the
-  // photo fully covering the frame throughout the tuned journey.
-  const fillByWidth = dims.h > 0 && dims.w / dims.h > IMG_ASPECT;
-  const coverW = fillByWidth ? dims.w : dims.h * IMG_ASPECT;
-  const coverH = fillByWidth ? dims.w / IMG_ASPECT : dims.h;
-
-  const dScale = useTransform(p, [...DSTOPS], [...DDS]);
-  const dOpacity = useTransform(p, [...DSTOPS], [...DOP]);
-  const dTx = useTransform(
-    p,
-    [...DSTOPS],
-    DDS.map((s, i) => dims.w / 2 - s * DFX[i] * coverW)
-  );
-  const dTy = useTransform(
-    p,
-    [...DSTOPS],
-    DDS.map((s, i) => dims.h / 2 - s * DFY[i] * coverH)
+  const bands = useMemo(
+    () => (manifest ? buildSequenceBands(manifest) : {}),
+    [manifest]
   );
 
-  // Avoid SSR flash with sized-to-zero wrappers, but keep the #top anchor
-  // present even before hydration so deep-links and the Home tab work
-  // immediately on first paint.
-  //
-  // NOTE: the hero deliberately omits `snap-start`. Snapping the hero would
-  // fight the 600vh mobile parallax (each scroll tick would try to pull
-  // back to scrollY=0) and the desktop breathing loop. Snap kicks in once
-  // the user crosses into Store / Work / About, which DO carry snap-start.
-  if (!ready) {
-    return (
-      <section
-        id="top"
-        aria-label="Hero"
-        className="relative h-screen w-full bg-black"
-      />
-    );
-  }
+  useEffect(() => {
+    const publish = (value: number) => {
+      scrollState.progress = manifest
+        ? sequenceFrameProgress(value, manifest, bands)
+        : clamp01(value / SEQUENCE_END);
+    };
+    publish(p.get());
+    const unsub = p.on("change", (v) => {
+      publish(v);
+    });
+    return () => unsub();
+  }, [bands, manifest, p]);
 
-  if (isDesktop) {
-    return (
-      <section id="top" aria-label="Hero" className="relative bg-black">
-        {/* 540vh scroll track. Trimmed from 680vh so the seven-beat tour
-            doesn't feel like a slog — the dark "After The Fear" tail (last
-            ~40% of the journey) still gets ~2 screens of scroll, but the
-            sheet tour reaches the user in a far more standard amount of
-            scrolling. */}
-        <div ref={containerRef} className="relative h-[540vh]">
-          <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
-            <motion.div
-              className="absolute top-0 left-0 will-change-transform"
-              style={{
-                width: coverW,
-                height: coverH,
-                x: dTx,
-                y: dTy,
-                scale: dScale,
-                opacity: dOpacity,
-                // Focal math is derived against a top-left origin, so the
-                // translate/scale composition lands the focal point at
-                // viewport center.
-                transformOrigin: "0% 0%",
-              }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1.2, ease: "easeOut" }}
-            >
-              <WarehouseImage />
-              {/* Masked sheet video — mask is photo-aspect and the layer
-                  is sized to cover (also photo-aspect), so it tracks the
-                  focal journey and lands on Sheet 2 just like mobile. */}
-              <SheetVideo src="/sheet-2.mp4" poster="/sheet-2-poster.jpg" />
-            </motion.div>
+  const frames = useMemo(
+    () => (manifest ? manifest.rooms.flatMap((r) => r.files) : []),
+    [manifest]
+  );
 
-            {/* "After / The / Fear" rises as the photo fades down, then
-                the spotlight sweeps word-by-word across the long black
-                tail. The wide [0.6, 1.0] window (vs mobile's [0.84, 1.0])
-                spread over the 680vh track makes each beat slow + tactile. */}
-            <AfterTheFear progress={p} start={0.6} end={1.0} />
-          </div>
-        </div>
-        <ScrollHint progress={p} />
-        {/* CTA stamps reveal one at a time on each sheet hold, matching
-            the mobile cadence (anchors come from the desktop stops).
-            Position 3 (Sheet 2) is framed lower on desktop, so its stamps
-            drop nearly to the couch (liftVh 0) to sit in the lower banner. */}
-        <SheetCTA progress={p} holdStart={DSTOPS[1]} holdEnd={DSTOPS[2]} />
-        <SheetCTA
-          progress={p}
-          holdStart={DSTOPS[3]}
-          holdEnd={DSTOPS[4]}
-          liftVh={0}
-        />
-      </section>
-    );
-  }
+  // Folder names describe where each move starts; the final frame is the next
+  // destination. Panels and deep links therefore attach to these arrival holds:
+  // Lobby → Store, Store → Records, Records → Lounge.
+  const storeArrivalB = bands["lobby"];
+  const worksArrivalB = bands["store"];
+  const aboutArrivalB = bands["records"];
+  // The closing title begins only after every sequence frame has played. It
+  // therefore never overlaps the record-store journey (or a future last room).
+  const fearStart = FEAR_START;
+
+  // Track length is tuned to the frame count so the scrub speed feels
+  // deliberate but not sluggish. The synthetic push sequence is ~1/3 the frames
+  // of the old video walk, so the track is shortened to match.
+  const trackVH = prefersReducedMotion ? 100 : isDesktop ? 500 : 445;
+  const trackH = `${trackVH}vh`;
+  const range = trackVH - 100;
+
+  const poster = SEQUENCE_ROOMS[0].sceneSrc;
+
+  // Scrub waypoints for the couch icons (BottomMenu reads ids store/work/about).
+  const waypoints: { id: string; band?: Band }[] = [
+    { id: "store", band: storeArrivalB },
+    { id: "work", band: worksArrivalB },
+    { id: "about", band: aboutArrivalB },
+  ];
 
   return (
     <section id="top" aria-label="Hero" className="relative bg-black">
-      {/* 420vh: 5 distinct beats at a brisk, standard cadence (was 600vh,
-          which dragged on phones). Combined with the snappier scroll
-          spring, each beat now arrives without the long laggy trail. */}
-      <div ref={containerRef} className="relative h-[420vh]">
+      <h1 className="sr-only">Ruined — objects, garments, spaces, and projects after the fear</h1>
+      <div ref={containerRef} className="relative" style={{ height: trackH }}>
         <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
           <motion.div
-            className="absolute inset-0 will-change-transform"
-            style={{ y: ty, scale, opacity, transformOrigin: "50% 0%" }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="absolute inset-0"
+            // Keep the server-rendered poster visible. Starting this wrapper at
+            // opacity 0 makes the entire hero permanently black whenever the
+            // client bundle is slow, cached incorrectly, or fails to hydrate.
+            initial={false}
           >
-            <motion.div
-              className="absolute top-0 left-0 will-change-transform"
-              style={{ x: tx, width: wrapperW, height: wrapperH }}
-            >
-              <WarehouseImage />
-              {/* The second sheet's video lives in the warehouse layer
-                  itself — mask is warehouse-aspect so it pans, scales,
-                  and fades along with the photograph as one scene. */}
-              <SheetVideo src="/sheet-2.mp4" poster="/sheet-2-poster.jpg" />
-            </motion.div>
+            {/* Poster (first room's still) — shown until the first frame decodes,
+                and as the universal fallback if no sequence has been built yet. */}
+            <picture className="block h-full w-full">
+              <source srcSet={poster.replace(/\.jpg$/i, ".avif")} type="image/avif" />
+              <source srcSet={poster.replace(/\.jpg$/i, ".webp")} type="image/webp" />
+              <img
+                src={poster}
+                alt=""
+                draggable={false}
+                fetchPriority="high"
+                decoding="async"
+                className={`absolute inset-0 h-full w-full object-cover select-none transition-opacity duration-700 ${
+                  ready ? "opacity-0" : "opacity-100"
+                }`}
+              />
+            </picture>
+
+            {!prefersReducedMotion && frames.length > 0 && (
+              <RoomSequenceCanvas frames={frames} onReady={onReady} />
+            )}
+
+            {!prefersReducedMotion && <FiresideLoop progress={p} start={SEQUENCE_END} />}
+
+            {prefersReducedMotion && (
+              <nav
+                aria-label="Explore Ruined"
+                className="absolute inset-x-6 bottom-32 z-20 grid grid-cols-3 gap-2 text-center font-mono text-[0.65rem] uppercase tracking-[0.2em] text-[var(--color-bone)] sm:left-1/2 sm:right-auto sm:w-[34rem] sm:-translate-x-1/2"
+              >
+                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/store">Store</Link>
+                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/work">Work</Link>
+                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/about">About</Link>
+              </nav>
+            )}
           </motion.div>
 
-          {/* "After / The / Fear" rises into the black as the warehouse
-              photograph fades out, so the late-fade beat is never just
-              an empty dark slab — there's always something animating
-              under the user's scroll. Lives inside the sticky child so
-              it tracks the parallax automatically and disappears when
-              hero scrolls past viewport. */}
-          <AfterTheFear progress={p} />
+          {/* "After / The / Fear" rises over the final room's tail and the
+              spotlight sweeps the word-by-word finish. */}
+          {!prefersReducedMotion && <AfterTheFear progress={p} start={fearStart} end={1.0} />}
         </div>
+
+        {/* Invisible scrub waypoints. Each spans its room's band, so a couch
+            icon's anchor jump (BottomMenu → scrollIntoView #id) lands the walk in
+            that room and the active-icon tracker lights while it's on screen.
+            Rendered always (with default positions) so BottomMenu's observer
+            binds them on mount; positions refine once the manifest loads. */}
+        {waypoints.map(({ id, band }) => (
+          <span
+            key={id}
+            id={id}
+            aria-hidden
+            className="pointer-events-none absolute left-0 w-px"
+            style={{
+              // Deep links land on the held arrival frame with its panel fully
+              // visible, rather than at the start of the preceding camera move.
+              top: `${(band ? band.playEnd : 0.99) * range}vh`,
+              height: `${(band ? Math.max(band.end - band.playEnd, 0.01) : 0.01) * range}vh`,
+            }}
+          />
+        ))}
       </div>
+
       <ScrollHint progress={p} />
-      {/* Same stamps appear on both held sheets in the parallax — Position
-          2 (the "yesterday" sheet) and Position 3 (the second sheet). Both
-          render in the same lower-sheet spot; only one is visible at a
-          time because each is tied to its own scroll-hold range. */}
-      <SheetCTA progress={p} holdStart={STOPS[1]} holdEnd={STOPS[2]} />
-      <SheetCTA progress={p} holdStart={STOPS[3]} holdEnd={STOPS[4]} />
+
+      {/* As each room passes through frame, a curated shelf of REAL, data-driven
+          assets fades in and becomes clickable — apparel in the store, project
+          "records" in the hub — deep-linking into the actual sections. Each is
+          shown only once its room's sequence exists. */}
+      {!prefersReducedMotion && storeArrivalB && storeArrivalB.count > 0 && (
+        <RoomOverlay
+          progress={p}
+          band={storeArrivalB}
+          kicker="——  the store · select pieces  ——"
+          enterLabel="Enter the store"
+          enterHref="/store"
+          enterVariant="filled"
+        >
+          {products.slice(0, 4).map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </RoomOverlay>
+      )}
+      {!prefersReducedMotion && worksArrivalB && worksArrivalB.count > 0 && (
+        <RoomOverlay
+          progress={p}
+          band={worksArrivalB}
+          kicker="——  project hub · recent records  ——"
+          enterLabel="Open the project hub"
+          enterHref="/work"
+          enterVariant="outline"
+        >
+          {PROJECTS.slice(0, 4).map((project) => (
+            <RecordCard key={project.no} project={project} />
+          ))}
+        </RoomOverlay>
+      )}
+      {!prefersReducedMotion && aboutArrivalB && aboutArrivalB.count > 0 && (
+        <RoomOverlay
+          progress={p}
+          band={aboutArrivalB}
+          kicker="——  about · selected works  ——"
+          enterLabel="About the studio"
+          enterHref="/about"
+          enterVariant="outline"
+        >
+          {ABOUT_ART.map((piece) => (
+            <ArtCard key={piece.id} piece={piece} />
+          ))}
+        </RoomOverlay>
+      )}
     </section>
   );
 }

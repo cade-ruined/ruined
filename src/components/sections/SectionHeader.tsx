@@ -56,7 +56,7 @@ export default function SectionHeader({
       className="mb-12 sm:mb-16"
     >
       <div
-        className={`flex items-center justify-between gap-6 font-mono text-[0.7rem] sm:text-xs tracking-[0.4em] uppercase ${muted}`}
+        className={`ui-heading flex items-center justify-between gap-6 text-[0.7rem] sm:text-xs tracking-[0.22em] uppercase ${muted}`}
       >
         <span className={accent}>
           <span aria-hidden>「&nbsp;</span>
@@ -81,7 +81,7 @@ export default function SectionHeader({
 
       {kicker && (
         <p
-          className={`mt-6 max-w-xl font-mono text-[0.7rem] sm:text-xs tracking-[0.32em] uppercase ${muted}`}
+          className={`mt-6 max-w-xl text-[0.7rem] font-medium sm:text-xs tracking-[0.16em] uppercase ${muted}`}
         >
           {kicker}
         </p>

@@ -1,6 +1,82 @@
-/* Inter (headers/body) and Fraunces (display fallback for "IvyOra Text
- * Medium") are now self-hosted via next/font/google in app/layout.tsx —
- * no render-blocking external @import here. next/font exposes them as the
- * CSS variables --font-inter / --font-fraunces, consumed in theme.css.
- *
- * Swap in a self-hosted IvyOra @font-face here when the license is in place. */
+/* Licensed IvyOra Text files are bundled locally. Inter is bundled separately
+ * through @fontsource-variable/inter in app/layout.tsx. */
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-Thin.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-ThinItalic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 100;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-Light.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-LightItalic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-RegularItalic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-Medium.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-MediumItalic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IvyOra Text";
+  src: url("/fonts/IvyOraText-BoldItalic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+}

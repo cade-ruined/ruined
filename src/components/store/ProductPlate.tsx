@@ -2,14 +2,20 @@
 
 import { motion, useScroll, useTransform, useReducedMotion } from "motion/react";
 import { useRef } from "react";
-import type { Product } from "@/components/sections/ProductStack";
+import Image from "next/image";
+import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
+import { checkout } from "@/lib/store-actions";
 
 type Props = {
   product: Product;
   index: number; // 0-based — drives the plate number and alternating layout
   total: number; // total plates in the gallery (for "Nº 01 / 04" style stamps)
 };
+
+// Shared CTA styling for the Acquire/Enquire affordances.
+const ctaClass =
+  "group inline-flex items-center gap-2 font-mono text-[0.65rem] sm:text-[0.7rem] tracking-[0.4em] uppercase text-[var(--color-faded)] hover:text-[var(--color-poster)] transition-colors duration-300";
 
 /**
  * A single product "plate" in the full-store gallery — modeled on museum
@@ -43,6 +49,8 @@ export default function ProductPlate({ product, index, total }: Props) {
   const flipped = index % 2 === 1;
   const plateNumber = String(index + 1).padStart(3, "0");
   const totalNumber = String(total).padStart(2, "0");
+  const enquiryEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "studio@ruined.studio";
+  const enquiryHref = `mailto:${enquiryEmail}?subject=${encodeURIComponent(`Enquiry · ${product.name}`)}`;
 
   return (
     <motion.article
@@ -87,6 +95,24 @@ export default function ProductPlate({ product, index, total }: Props) {
                   y: artY,
                 }}
               />
+
+              {/* Real product photography (Shopify featuredImage) drifts on the
+                  same slow parallax as the tone backdrop; the gradient shows
+                  through while it loads and on products without a photo. */}
+              {product.image && (
+                <motion.div
+                  className="absolute inset-x-0 -top-[10%] -bottom-[10%] h-[120%] w-full object-cover"
+                  style={{ y: artY }}
+                >
+                  <Image
+                    src={product.image.url}
+                    alt={product.image.alt}
+                    fill
+                    sizes="(min-width: 768px) 58vw, 100vw"
+                    className="object-cover"
+                  />
+                </motion.div>
+              )}
 
               {/* Faint pinstripes baked into the art so it doesn't read
                   as a flat gradient — same texture vocabulary as Store
@@ -147,22 +173,42 @@ export default function ProductPlate({ product, index, total }: Props) {
             <SpecRow label="Care" value={product.care} />
           </dl>
 
-          {/* Price + acquire row */}
+          {/* Price + acquire row. When the product is a live Shopify variant,
+              the CTA posts to the checkout server action (real cart → Shopify
+              hosted checkout); otherwise it degrades to the Enquire affordance.
+              A sold-out variant shows a disabled state. */}
           <div className="mt-8 sm:mt-10 flex items-center justify-between gap-4 pt-5 border-t border-[var(--border)]">
             <span className="display text-2xl sm:text-3xl text-[var(--color-faded)] tabular-nums">
               {product.price}
             </span>
-            <button
-              type="button"
-              className="group inline-flex items-center gap-2 font-mono text-[0.65rem] sm:text-[0.7rem] tracking-[0.4em] uppercase text-[var(--color-faded)] hover:text-[var(--color-poster)] transition-colors duration-300"
-            >
-              <span>Enquire</span>
-              <span
-                aria-hidden
-                className="inline-block h-px w-8 sm:w-10 bg-current group-hover:w-12 sm:group-hover:w-14 transition-[width] duration-300"
-              />
-              <span aria-hidden>→</span>
-            </button>
+            {product.variantId ? (
+              product.available === false ? (
+                <span className="font-mono text-[0.65rem] sm:text-[0.7rem] tracking-[0.4em] uppercase text-[var(--muted-foreground)]">
+                  Sold out
+                </span>
+              ) : (
+                <form action={checkout}>
+                  <input type="hidden" name="variantId" value={product.variantId} />
+                  <button type="submit" className={ctaClass}>
+                    <span>Acquire</span>
+                    <span
+                      aria-hidden
+                      className="inline-block h-px w-8 sm:w-10 bg-current group-hover:w-12 sm:group-hover:w-14 transition-[width] duration-300"
+                    />
+                    <span aria-hidden>→</span>
+                  </button>
+                </form>
+              )
+            ) : (
+              <a href={enquiryHref} className={ctaClass}>
+                <span>Enquire</span>
+                <span
+                  aria-hidden
+                  className="inline-block h-px w-8 sm:w-10 bg-current group-hover:w-12 sm:group-hover:w-14 transition-[width] duration-300"
+                />
+                <span aria-hidden>→</span>
+              </a>
+            )}
           </div>
         </div>
       </div>

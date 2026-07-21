@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { motion } from "motion/react";
-import { PRODUCTS } from "@/data/products";
+import Image from "next/image";
+import type { Product } from "@/data/products";
 import ProductPlate from "./ProductPlate";
+import SiblingNav from "@/components/SiblingNav";
 
 /**
  * Full-store catalogue at /store — an editorial gallery of every product
@@ -15,8 +17,8 @@ import ProductPlate from "./ProductPlate";
  * preview → full archive reads as one continuous experience, just with
  * deeper inventory and a calmer, browseable pace.
  */
-export default function StoreGallery() {
-  const total = PRODUCTS.length;
+export default function StoreGallery({ products }: { products: Product[] }) {
+  const total = products.length;
 
   return (
     <main className="relative min-h-screen bg-black text-[var(--color-bone)]">
@@ -42,6 +44,24 @@ export default function StoreGallery() {
       <div className="relative max-w-6xl mx-auto">
         <Header total={total} />
 
+        <section aria-label="Quick catalogue" className="border-t border-white/15 bg-black px-6 py-10 text-[var(--color-bone)] sm:px-10 sm:py-14">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div><p className="font-mono text-[0.58rem] uppercase tracking-[0.32em] text-[var(--color-poster)]">Quick index</p><h2 className="display mt-2 text-3xl">The complete drop.</h2></div>
+            <span className="font-mono text-[0.55rem] uppercase tracking-[0.25em] text-white/40">Select to inspect</span>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-white/15 md:grid-cols-4">
+            {products.map((product, index) => (
+              <Link key={product.id} href={`/store/${product.id}`} className="group bg-black p-3 transition-colors hover:bg-white/[0.06] sm:p-4">
+                <div className="relative aspect-[4/5] overflow-hidden" style={{ background: `var(--color-${product.tone === "warm" ? "signal" : product.tone === "shadow" ? "faded" : "verdigris"})` }}>
+                  {product.image && <Image src={product.image.url} alt={product.image.alt} fill sizes="(min-width: 768px) 25vw, 50vw" className="object-cover transition-transform duration-700 group-hover:scale-[1.03]" />}
+                  <span className="absolute left-2 top-2 font-mono text-[0.5rem] tracking-[0.2em] text-white/70">{String(index + 1).padStart(2, "0")}</span>
+                </div>
+                <div className="mt-3 flex items-start justify-between gap-2"><div><h3 className="text-sm tracking-normal">{product.name}</h3><p className="mt-1 font-mono text-[0.5rem] uppercase tracking-[0.18em] text-white/45">{product.available === false ? "Sold out" : product.variantId ? "Available" : "Enquire"}</p></div><span className="display text-lg">{product.price}</span></div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
         <section
           aria-label="Drop catalogue"
           className="text-[var(--color-faded)]"
@@ -54,7 +74,7 @@ export default function StoreGallery() {
             color: "var(--color-faded)",
           }}
         >
-          {PRODUCTS.map((product, i) => (
+          {products.map((product, i) => (
             <ProductPlate
               key={product.id}
               product={product}
@@ -79,7 +99,7 @@ function Header({ total }: { total: number }) {
           href="/#store"
           className="hover:text-[var(--color-bone)] transition-colors duration-200"
         >
-          ← Ruined
+          ← Back
         </Link>
         <span>
           Store{" "}
@@ -161,12 +181,7 @@ function Footer({ total }: { total: number }) {
           <span aria-hidden>←</span>
           <span>Return home</span>
         </Link>
-        <Link
-          href="/#about"
-          className="hover:text-[var(--color-bone)] transition-colors duration-200"
-        >
-          About
-        </Link>
+        <SiblingNav />
       </div>
 
       {/* Bottom padding so the last row clears the couch menu */}

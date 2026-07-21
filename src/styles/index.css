@@ -9,6 +9,11 @@ body {
 }
 
 html {
+  /* The former couch menu reserved a large bottom gutter throughout the app.
+     The persistent navigation now lives in the header, so legacy component
+     calculations resolve to zero while those layouts are progressively
+     simplified. */
+  --bottom-menu-h: 0px;
   scrollbar-width: none;
   /* Native smooth scroll for in-page anchor jumps and CSS-driven scroll. */
   scroll-behavior: smooth;
@@ -53,6 +58,30 @@ html {
   }
 }
 html::-webkit-scrollbar {
+  display: none;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-poster, #d0312d) !important;
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Hide the scrollbar on horizontal crate-dig rows while keeping them
+   scroll/swipeable (the /work record crate). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 

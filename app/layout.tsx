@@ -1,29 +1,53 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Fraunces } from "next/font/google";
 import "@/styles/index.css";
-import BottomMenu from "@/components/BottomMenu";
+import SiteHeader from "@/components/SiteHeader";
+import WebVitals from "@/components/WebVitals";
+import SiteFooter from "@/components/SiteFooter";
+import "@fontsource-variable/inter";
 
-// Self-hosted via next/font (no render-blocking external CSS request, with
-// font-display: swap and automatic preload). Exposed as CSS variables that
-// theme.css feeds into --font-body / --font-header / --font-display.
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-inter",
-  display: "swap",
-});
+// Absolute base for OG/canonical URLs. Vercel injects the production URL at
+// build time; falls back to the brand domain locally / on first deploy.
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : process.env.NEXT_PUBLIC_SITE_URL ?? "https://ruined.studio";
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
-  variable: "--font-fraunces",
-  display: "swap",
-});
+const SITE_NAME = "Ruined";
+const SITE_DESC =
+  "Ruined — a studio for artifacts and projects. Drop 01 / SS MMXXVI. Walk the warehouse: store, work, and studio, after the fear.";
 
 export const metadata: Metadata = {
-  title: "Immersive Parallax App",
-  description: "Immersive parallax experience.",
+  metadataBase: new URL(siteUrl),
+  // Deep pages set their own title; "%s — Ruined" wraps them. Home uses the
+  // default below.
+  title: {
+    default: "Ruined — After the Fear",
+    template: "%s — Ruined",
+  },
+  description: SITE_DESC,
+  applicationName: SITE_NAME,
+  keywords: [
+    "Ruined studio", "Utah design studio", "independent fashion label",
+    "limited edition clothing", "furniture and object design", "creative direction",
+    "interior design", "experimental retail", "artifacts", "After the Fear", "SS26",
+  ],
+  alternates: { canonical: "/" },
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon.png", type: "image/png" }],
+    apple: "/apple-icon.png",
+    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#d0312d" }],
+  },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    title: "Ruined — After the Fear",
+    description: SITE_DESC,
+    url: siteUrl,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Ruined — After the Fear",
+    description: SITE_DESC,
+  },
 };
 
 export const viewport: Viewport = {
@@ -36,11 +60,26 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const organizationSchema = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: SITE_NAME,
+    url: siteUrl,
+    email: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "studio@ruined.studio",
+    description: SITE_DESC,
+  };
+
   return (
-    <html lang="en" className={`${inter.variable} ${fraunces.variable}`}>
+    <html lang="en" data-scroll-behavior="smooth">
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema).replace(/</g, "\\u003c") }}
+        />
+        <SiteHeader />
         {children}
-        <BottomMenu />
+        <SiteFooter />
+        <WebVitals />
       </body>
     </html>
   );

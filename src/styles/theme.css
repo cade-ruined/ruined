@@ -2,12 +2,14 @@
 
 :root {
   /* ─── Type ─────────────────────────────────────────────────────────── */
-  /* --font-inter / --font-fraunces are injected by next/font in app/layout.tsx. */
-  --font-display: "IvyOra Text Medium", var(--font-fraunces), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-header: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  /* Deliberately local/system stacks: builds and first paint never depend on a
+   * third-party font host. Licensed brand faces can be added in fonts.css. */
+  --font-display: "IvyOra Text", "Iowan Old Style", "Baskerville", Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-header: "Inter Variable", Inter, "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter Variable", Inter, "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
 
-  --tracking-display: -0.02em;
+  --tracking-display: -0.045em;
+  --tracking-emphasis: -0.015em;
   --tracking-header: -0.04em;
   --tracking-body: -0.01em;
 
@@ -135,21 +137,42 @@
   --font-body: var(--font-body);
 }
 
-/* ─── Suggested usage ───────────────────────────────────────────────────
- * Apply the design-system rules at the element level so anywhere we use
- * a raw `<h1>`/`<h2>` it gets the header treatment, and the .display class
- * unlocks the IvyOra serif display moment.
+/* ─── Typography hierarchy ──────────────────────────────────────────────
+ * Inter carries navigation, headings, display titles, and body copy. IvyOra
+ * is intentionally reserved for italic/emphasized editorial moments so the
+ * contrast feels deliberate rather than becoming a second competing system.
  */
 .display {
-  font-family: var(--font-display);
+  font-family: var(--font-header);
   letter-spacing: var(--tracking-display);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-header);
 }
 
 h1, h2, h3, h4, .header {
+  font-family: var(--font-header) !important;
+  font-weight: var(--weight-header) !important;
+  letter-spacing: var(--tracking-header);
+}
+
+.ui-heading {
   font-family: var(--font-header);
   font-weight: var(--weight-header);
-  letter-spacing: var(--tracking-header);
+}
+
+em,
+i,
+.emphasis,
+.italic {
+  font-family: var(--font-display) !important;
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-emphasis);
+  font-style: italic;
+}
+
+strong,
+b {
+  font-family: var(--font-header);
+  font-weight: var(--weight-header);
 }
 
 body {

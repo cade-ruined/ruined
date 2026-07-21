@@ -1,0 +1,8 @@
+.next-stale-*/
+.seq-backup-*/
+.backups/
+sequence-masters/
+sequence-sources/
+scripts/scene-originals/
+public/sequences/**/*.tif
+public/sequences/**/*.tiff

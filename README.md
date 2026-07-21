@@ -1,18 +1,16 @@
-# Immersive Parallax App
+# Ruined — After the Fear
 
-This is a code bundle for Immersive Parallax App, converted to **Next.js (App Router)**. The original design is available at https://www.figma.com/design/QI4gsiO0Jqo5EG2JE2Bn27/Immersive-Parallax-App.
+Ruined is an immersive studio, project archive, and headless storefront built
+with Next.js App Router. Its homepage is a scroll-controlled walk through four
+pre-rendered rooms; each destination also has a calmer standalone page for
+browsing.
 
 ## Running the code
 
-Install dependencies:
+Install dependencies and start the local site:
 
 ```bash
 npm install
-```
-
-Start the dev server:
-
-```bash
 npm run dev
 ```
 
@@ -23,9 +21,68 @@ npm run build
 npm start
 ```
 
-## Project layout
+## Routes
 
-- `app/` – Next.js App Router (root layout + page).
-- `src/components/` – React components, including the shadcn/ui set and the `ImmersiveParallax` client component.
-- `src/imports/` – Generated Figma assets (SVGs, images).
-- `src/styles/` – Global styles, Tailwind v4 entry, theme variables, fonts.
+- `/` — production homepage and scroll-scrubbed room journey.
+- `/store` — full artifact catalogue with optional Shopify checkout.
+- `/work` — project archive.
+- `/about` — studio profile.
+- `/dive` — experimental real-time WebGL room engine; retained for development.
+- `/sequence` — experimental long-form frame-sequence player; retained for development.
+
+The homepage is the canonical immersive experience. The two experimental routes
+are intentionally isolated so they can evolve without destabilizing it.
+
+## Architecture
+
+- `app/` — routes, page metadata, and the Shopify revalidation endpoint.
+- `src/components/ImmersiveParallax.tsx` — homepage journey and room overlays.
+- `src/components/sequence/RoomSequenceCanvas.tsx` — bounded frame decoder and canvas renderer.
+- `src/components/store/` — editorial product gallery and checkout controls.
+- `src/data/` — local catalogue, projects, and room definitions.
+- `src/lib/shopify.ts` — server-only Storefront API integration with local fallback.
+- `public/sequences/` — generated room frames and their manifest.
+- `scripts/` — scene, brand, and sequence asset tooling.
+
+## Room sequences
+
+Room sources are defined in `src/data/sequences.ts`. After changing frames in
+`public/sequences/<room>/`, rebuild the manifest:
+
+```bash
+npm run sequences
+```
+
+The browser decodes frames on demand and keeps a bounded cache, rather than
+holding the complete journey in memory.
+
+## Shopify
+
+Copy `.env.example` to `.env.local` and provide Storefront API credentials.
+Without them, both the homepage and store use the repository-owned fallback
+catalogue. Shopify product changes can trigger `POST /api/revalidate`. The
+handler verifies Shopify's `X-Shopify-Hmac-Sha256` signature using
+`SHOPIFY_WEBHOOK_SECRET` and deduplicates recent webhook IDs.
+
+## Asset and font policy
+
+Fallback imagery is stored under `public/`; the default experience has no
+placeholder-image network dependency. Typography uses system stacks so builds
+are network-independent. Add licensed brand fonts locally in
+`src/styles/fonts.css` when final font files are available.
+
+TIFF render masters must stay outside `public/`. Put local masters in the
+gitignored `sequence-masters/<room>/` tree, convert them with
+`scripts/convert-sequence.mjs --source=... --keep`, and deploy only the resulting
+WebP frames.
+
+## Production checks
+
+Run the full local gate before deploying:
+
+```bash
+npm run check
+```
+
+This runs ESLint, TypeScript, sequence/asset regression tests, and a production
+Next.js build. Configure `NEXT_PUBLIC_ANALYTICS_ENDPOINT` to receive Web Vitals.
