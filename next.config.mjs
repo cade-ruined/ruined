@@ -33,7 +33,19 @@ const nextConfig = {
     ],
   },
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      {
+        source: "/sequences/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value:
+              "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=604800",
+          },
+        ],
+      },
+      { source: "/(.*)", headers: securityHeaders },
+    ];
   },
 };
 

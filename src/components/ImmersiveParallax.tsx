@@ -606,15 +606,22 @@ export default function ImmersiveParallax({
   products: Product[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snappingRef = useRef(false);
 
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isTouch, setIsTouch] = useState(false);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
+    const pointerMq = window.matchMedia("(pointer: coarse)");
     const updateMq = () => setIsDesktop(mq.matches);
+    const updatePointer = () => setIsTouch(pointerMq.matches);
     updateMq();
+    updatePointer();
     mq.addEventListener("change", updateMq);
+    pointerMq.addEventListener("change", updatePointer);
 
     // Always default the homepage to the opening scene: disable browser scroll
     // restoration so reloads don't drop the user partway through the dive, and
@@ -641,6 +648,7 @@ export default function ImmersiveParallax({
 
     return () => {
       mq.removeEventListener("change", updateMq);
+      pointerMq.removeEventListener("change", updatePointer);
       window.removeEventListener("pageshow", onPageShow);
       if (hadRestoration && "scrollRestoration" in window.history) {
         window.history.scrollRestoration = hadRestoration;
@@ -664,7 +672,7 @@ export default function ImmersiveParallax({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/sequences/manifest.json", { cache: "no-store" })
+    fetch("/sequences/manifest.json", { cache: "force-cache" })
       .then((r) => (r.ok ? r.json() : null))
       .then((m: SequenceManifest | null) => {
         if (!cancelled && m) setManifest(m);
@@ -704,6 +712,89 @@ export default function ImmersiveParallax({
   const storeArrivalB = bands["lobby"];
   const worksArrivalB = bands["store"];
   const aboutArrivalB = bands["records"];
+
+  // Touch-only soft snap. Native momentum remains untouched while the gesture
+  // is moving; once scrolling settles, nearby arrival holds gently center. The
+  // threshold is roughly 15% of a room band, so a partial exploratory swipe is
+  // never forced forward. Lounge is deliberately omitted for the seamless
+  // still-to-video Fireside handoff.
+  useEffect(() => {
+    if (
+      !isTouch ||
+      prefersReducedMotion ||
+      !storeArrivalB ||
+      !worksArrivalB ||
+      !aboutArrivalB
+    ) return;
+
+    const targets = [storeArrivalB, worksArrivalB, aboutArrivalB].map(
+      (band) => band.playEnd + (band.end - band.playEnd) * 0.5
+    );
+    const SNAP_THRESHOLD = 0.032;
+
+    const settle = () => {
+      snapTimerRef.current = null;
+      if (snappingRef.current) return;
+
+      const value = scrollYProgress.get();
+      let target = targets[0];
+      let distance = Math.abs(value - target);
+      for (const candidate of targets.slice(1)) {
+        const candidateDistance = Math.abs(value - candidate);
+        if (candidateDistance < distance) {
+          target = candidate;
+          distance = candidateDistance;
+        }
+      }
+
+      if (distance > SNAP_THRESHOLD || distance < 0.0015) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const scrollRange = Math.max(1, container.offsetHeight - window.innerHeight);
+      const containerTop = container.getBoundingClientRect().top + window.scrollY;
+
+      snappingRef.current = true;
+      window.scrollTo({
+        top: containerTop + target * scrollRange,
+        behavior: "smooth",
+      });
+      snapTimerRef.current = setTimeout(() => {
+        snappingRef.current = false;
+        snapTimerRef.current = null;
+      }, 520);
+    };
+
+    const queueSettle = () => {
+      if (snappingRef.current) return;
+      if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
+      // Fires only after touch momentum has stopped producing scroll events.
+      snapTimerRef.current = setTimeout(settle, 180);
+    };
+
+    const cancelPendingSnap = () => {
+      if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
+      snapTimerRef.current = null;
+      snappingRef.current = false;
+    };
+
+    window.addEventListener("scroll", queueSettle, { passive: true });
+    window.addEventListener("touchstart", cancelPendingSnap, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", queueSettle);
+      window.removeEventListener("touchstart", cancelPendingSnap);
+      if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
+      snapTimerRef.current = null;
+      snappingRef.current = false;
+    };
+  }, [
+    aboutArrivalB,
+    isTouch,
+    prefersReducedMotion,
+    scrollYProgress,
+    storeArrivalB,
+    worksArrivalB,
+  ]);
+
   // The closing title begins only after every sequence frame has played. It
   // therefore never overlaps the record-store journey (or a future last room).
   const fearStart = FEAR_START;
@@ -711,7 +802,10 @@ export default function ImmersiveParallax({
   // Track length is tuned to the frame count so the scrub speed feels
   // deliberate but not sluggish. The synthetic push sequence is ~1/3 the frames
   // of the old video walk, so the track is shortened to match.
-  const trackVH = prefersReducedMotion ? 100 : isDesktop ? 500 : 445;
+  // A finger swipe carries substantially more momentum than a wheel tick. Give
+  // touch layouts a longer physical runway so one gesture advances a cinematic
+  // beat rather than skipping most of a room.
+  const trackVH = prefersReducedMotion ? 100 : isTouch || !isDesktop ? 620 : 500;
   const trackH = `${trackVH}vh`;
   const range = trackVH - 100;
 

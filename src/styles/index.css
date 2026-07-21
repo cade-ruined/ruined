@@ -26,6 +26,15 @@ html {
   scroll-snap-type: y proximity;
 }
 
+/* Touch momentum is already doing the navigation work on phones. Scroll snap
+   can seize the tail of a swipe and make the scrub feel sticky or jumpy. */
+@media (pointer: coarse) {
+  html {
+    scroll-snap-type: none;
+    overscroll-behavior-y: none;
+  }
+}
+
 /* Respect users who explicitly opt out of motion. */
 @media (prefers-reduced-motion: reduce) {
   html {
