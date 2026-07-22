@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.1",
   "scripts": {
+    "predev": "npm run sequences",
     "dev": "next dev",
+    "prebuild": "npm run sequences",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",

@@ -1,60 +1,43 @@
-# Room frame sequences
+# Approved room frame sequences
 
-Only web-ready sequence files belong here. Keep TIFF/PNG render masters outside
-`public/`, ideally in the gitignored `sequence-masters/<room>/` directory or in
-external archival storage. Scrolling through a room plays its optimized frames
-like a dolly shot.
-
-## Where to put frames
+Only the four canonical, web-ready sequences belong here:
 
 ```
 public/sequences/
-  lobby/     ← ruined-hero-1  (the arrival hall)
-  store/     ← ruined-hero-store-4
-  records/   ← ruined-hero-records  (the "work" hub)
-  lounge/    ← ruined-hero-lounge   (the "about" room)
+  lobby/
+  store/
+  records/
+  lounge/
 ```
 
-One folder per room (the four folders above already exist). The room order and
-labels live in `src/data/sequences.ts` — edit there to add/rename/reorder rooms.
+Each room must contain exactly 192 files named `frame-0001.webp` through
+`frame-0192.webp`. The manifest builder rejects missing numbers, extra images,
+other image formats, and noncanonical names. Keep TIFF, PNG, BMP, and JPEG
+render masters outside `public/`, such as in the gitignored
+`sequence-masters/<room>/` directory or external archival storage.
 
-## Naming
+## Replace a room sequence
 
-Name the frames so they sort in playback order. Zero-padded numbers are safest:
-
-```
-lobby/0001.jpg
-lobby/0002.jpg
-...
-```
-
-Any of `.jpg`, `.png`, `.webp`, `.avif` work. Keep every frame in a room the
-**same dimensions** (ideally the same aspect ratio across all rooms). The build
-step sorts frames naturally, so `frame-1.jpg … frame-120.jpg` also works.
-
-Tip for weight: 1280×720–1600×900, quality ~80. ~120 frames per room ≈ 8–12 MB.
-
-## Convert render masters
+Give the converter a directory containing exactly 192 raw frames. Source names
+may vary; they are naturally sorted before conversion.
 
 ```bash
-node scripts/convert-sequence.mjs lobby 1600 900 80 --keep \
+node scripts/convert-sequence.mjs lobby 1600 900 80 \
   --source=sequence-masters/lobby
 ```
 
-This writes optimized WebPs into `public/sequences/lobby/` without moving or
-deleting the masters. Repeat for each room.
+The converter writes all 192 WebPs into a clean staging directory and then
+replaces the room directory in one swap. That prevents higher-numbered frames
+from an older render surviving at the end of a new sequence. Source masters are
+kept by default; pass `--delete-source` only when you intentionally want them
+removed after a successful replacement.
 
-## After converting
+Then validate the canonical sets and regenerate their content version:
 
-Run:
-
-```
+```bash
 npm run sequences
 ```
 
-This scans every room folder and writes `public/sequences/manifest.json`
-(frame counts + file lists) that the site reads back. Re-run it whenever you
-add, remove, or replace frames.
-
-Never place TIFF masters in `public/`: Next serves everything in that directory
-as a deployable asset.
+This command verifies all four rooms, writes `public/sequences/manifest.json`,
+and updates the cache version used by every frame URL. It also runs
+automatically before the development server and production build.

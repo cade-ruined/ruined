@@ -28,6 +28,9 @@ const nextConfig = {
     // Prefer modern formats for any next/image usage; the hero <picture>
     // already serves AVIF/WebP directly.
     formats: ["image/avif", "image/webp"],
+    // Sequence stills carry a content-version query. Explicitly allow local
+    // image URLs with queries while retaining the existing all-local policy.
+    localPatterns: [{ pathname: "/**" }],
     remotePatterns: [
       { protocol: "https", hostname: "cdn.shopify.com", pathname: "/**" },
     ],
@@ -35,15 +38,19 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/sequences/:path*",
+        source: "/sequences/manifest.json",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      ...["lobby", "store", "records", "lounge"].map((room) => ({
+        source: `/sequences/${room}/:path*`,
         headers: [
           {
             key: "Cache-Control",
             value:
-              "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=604800",
+              "public, max-age=31536000, s-maxage=31536000, immutable",
           },
         ],
-      },
+      })),
       { source: "/(.*)", headers: securityHeaders },
     ];
   },

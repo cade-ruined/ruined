@@ -65,12 +65,12 @@ export default function SiteHeader() {
     syncSection();
     window.addEventListener("scroll", scheduleSync, { passive: true });
     window.addEventListener("resize", scheduleSync);
-    const manifestSettle = window.setTimeout(scheduleSync, 600);
+    window.addEventListener("ruined:home-anchors-ready", scheduleSync);
     return () => {
       cancelAnimationFrame(raf);
-      clearTimeout(manifestSettle);
       window.removeEventListener("scroll", scheduleSync);
       window.removeEventListener("resize", scheduleSync);
+      window.removeEventListener("ruined:home-anchors-ready", scheduleSync);
     };
   }, [isHome]);
 
@@ -81,7 +81,7 @@ export default function SiteHeader() {
       <header className="pointer-events-none fixed inset-x-0 top-0 z-[60] px-3 pt-3 sm:px-5 sm:pt-4">
         <nav
           aria-label="Primary"
-          className="pointer-events-auto relative z-10 flex h-14 w-fit items-center border border-white/15 bg-black/75 px-3 text-[var(--color-bone)] shadow-[0_8px_32px_rgba(0,0,0,0.28)] backdrop-blur-md sm:h-16 sm:px-4 md:mx-auto md:w-full md:max-w-5xl md:justify-between"
+          className="pointer-events-auto relative z-10 flex h-14 w-fit items-center border border-white/15 bg-black/90 px-3 text-[var(--color-bone)] shadow-[0_8px_32px_rgba(0,0,0,0.28)] sm:h-16 sm:px-4 md:mx-auto md:w-full md:max-w-5xl md:justify-between md:bg-black/75 md:backdrop-blur-md"
         >
           <Link
             href="/"
@@ -131,7 +131,7 @@ export default function SiteHeader() {
 
         <nav
           aria-label="Quick jump"
-          className="pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] right-3 z-20 flex flex-col border border-white/15 bg-black/70 p-1 text-[var(--color-bone)] shadow-[0_10px_32px_rgba(0,0,0,0.4)] backdrop-blur-md md:hidden"
+          className="pointer-events-auto fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] z-20 grid grid-cols-5 border border-white/15 bg-black/92 p-1 text-[var(--color-bone)] shadow-[0_10px_32px_rgba(0,0,0,0.4)] backdrop-blur-md md:hidden"
         >
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, currentHash, item.hash);
@@ -142,18 +142,19 @@ export default function SiteHeader() {
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
                 onClick={() => setCurrentHash(item.hash)}
-                className={`group relative flex h-12 w-12 items-center justify-center border-b border-white/10 transition-colors last:border-b-0 ${
+                className={`group relative flex min-w-0 flex-col items-center justify-center gap-0.5 border-r border-white/10 px-0.5 py-1.5 transition-colors last:border-r-0 ${
                   active
                     ? "bg-white/5 text-[var(--color-primary)]"
                     : "text-white/75 active:bg-white/10 active:text-white"
                 }`}
               >
-                <HeaderGlyph index={item.index} />
                 <span
-                  className={`ui-heading pointer-events-none absolute right-full mr-2 whitespace-nowrap border border-white/10 bg-black/80 px-2 py-1 text-[0.52rem] uppercase tracking-[0.12em] transition-opacity ${
-                    active ? "opacity-100" : "opacity-0 group-focus-visible:opacity-100"
-                  }`}
+                  aria-hidden
+                  className="flex h-7 items-center justify-center"
                 >
+                  <HeaderGlyph index={item.index} />
+                </span>
+                <span className="ui-heading truncate text-[0.42rem] uppercase tracking-[0.08em] text-current">
                   {item.label}
                 </span>
                 {active && (

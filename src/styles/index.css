@@ -30,8 +30,8 @@ html {
    can seize the tail of a swipe and make the scrub feel sticky or jumpy. */
 @media (pointer: coarse) {
   html {
+    scroll-behavior: auto;
     scroll-snap-type: none;
-    overscroll-behavior-y: none;
   }
 }
 

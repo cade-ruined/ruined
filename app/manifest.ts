@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { SEQUENCE_OPENING_FRAME } from "@/data/sequences";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -11,8 +12,12 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#080605",
     icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }],
     screenshots: [
-      { src: "/ruined-hero-1.jpg", sizes: "1536x1024", type: "image/jpeg", form_factor: "wide" },
-      { src: "/ruined-hero-1-portrait.jpg", sizes: "1024x1536", type: "image/jpeg", form_factor: "narrow" },
+      {
+        src: SEQUENCE_OPENING_FRAME,
+        sizes: "1600x900",
+        type: "image/webp",
+        form_factor: "wide",
+      },
     ],
   };
 }

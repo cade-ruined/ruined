@@ -10,10 +10,8 @@ import { scrollState } from "@/utils/scrollState";
 // the shared scrollState singleton (set by the homepage's scroll spring).
 export default function RoomSequenceCanvas({
   frames,
-  onReady,
 }: {
   frames: string[];
-  onReady?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -22,6 +20,11 @@ export default function RoomSequenceCanvas({
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const n = frames.length;
+    // Nearest-frame fallback may bridge small decode gaps, but it must never
+    // cross a room boundary and flash a different scene at the seam.
+    const frameGroups = frames.map((frame) =>
+      frame.split("?", 1)[0].split("/").slice(0, -1).join("/")
+    );
 
     const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
     const cache = new Map<number, ImageBitmap>();
@@ -41,9 +44,10 @@ export default function RoomSequenceCanvas({
     let current = 0;
     let previousTarget = 0;
     let lastDrawn: ImageBitmap | null = null;
+    let lastDrawnGroup: string | null = null;
     let raf = 0;
     let disposed = false;
-    let ready = false;
+    let hasPaintedExactTarget = false;
 
     const evict = (center: number) => {
       if (cache.size <= CAP) return;
@@ -79,10 +83,6 @@ export default function RoomSequenceCanvas({
         cache.set(i, bmp);
         failures.delete(i);
         evict(current);
-        if (!ready) {
-          ready = true;
-          onReady?.();
-        }
       } catch {
         const count = (failures.get(i)?.count ?? 0) + 1;
         failures.set(i, { count, retryAt: Date.now() + 500 * 2 ** (count - 1) });
@@ -140,9 +140,14 @@ export default function RoomSequenceCanvas({
     // decoded neighbour (so fast scrubbing never blanks the canvas).
     const nearest = (i: number): ImageBitmap | undefined => {
       if (cache.has(i)) return cache.get(i);
+      const group = frameGroups[i];
       for (let d = 1; d < n; d++) {
-        if (cache.has(i - d)) return cache.get(i - d);
-        if (cache.has(i + d)) return cache.get(i + d);
+        if (frameGroups[i - d] === group && cache.has(i - d)) {
+          return cache.get(i - d);
+        }
+        if (frameGroups[i + d] === group && cache.has(i + d)) {
+          return cache.get(i + d);
+        }
         if (d > CAP + AHEAD) break;
       }
       return undefined;
@@ -153,9 +158,10 @@ export default function RoomSequenceCanvas({
       canvas.width = Math.round(window.innerWidth * dpr);
       canvas.height = Math.round(window.innerHeight * dpr);
       lastDrawn = null;
+      lastDrawnGroup = null;
     };
 
-    const draw = (bmp: ImageBitmap) => {
+    const draw = (bmp: ImageBitmap, group: string) => {
       const cw = canvas.width;
       const ch = canvas.height;
       const s = Math.max(cw / bmp.width, ch / bmp.height);
@@ -164,6 +170,16 @@ export default function RoomSequenceCanvas({
       ctx.clearRect(0, 0, cw, ch);
       ctx.drawImage(bmp, (cw - w) / 2, (ch - h) / 2, w, h);
       lastDrawn = bmp;
+      lastDrawnGroup = group;
+    };
+
+    const blankForGroup = (group: string) => {
+      // A transparent clear would expose the lobby poster underneath. Paint an
+      // opaque neutral frame so a previous room can never linger at a seam.
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      lastDrawn = null;
+      lastDrawnGroup = group;
     };
 
     const loop = () => {
@@ -175,8 +191,21 @@ export default function RoomSequenceCanvas({
       schedule(target, true);
       for (let k = 1; k <= AHEAD; k++) schedule(target + direction * k);
       for (let k = 1; k <= BEHIND; k++) schedule(target - direction * k);
-      const bmp = nearest(target);
-      if (bmp && bmp !== lastDrawn) draw(bmp);
+      // Keep the sequence-derived opening frame underneath the transparent
+      // canvas until the exact requested target is available. A neighbouring
+      // decode must never win the opening race and create a visible frame jump.
+      const bmp = hasPaintedExactTarget ? nearest(target) : cache.get(target);
+      const targetGroup = frameGroups[target];
+      if (bmp && bmp !== lastDrawn) {
+        draw(bmp, targetGroup);
+        hasPaintedExactTarget = true;
+      } else if (
+        hasPaintedExactTarget &&
+        !bmp &&
+        lastDrawnGroup !== targetGroup
+      ) {
+        blankForGroup(targetGroup);
+      }
       previousTarget = target;
       raf = requestAnimationFrame(loop);
     };
@@ -196,7 +225,7 @@ export default function RoomSequenceCanvas({
       queued.clear();
       failures.clear();
     };
-  }, [frames, onReady]);
+  }, [frames]);
 
   return (
     <canvas

@@ -28,10 +28,9 @@ npm start
 - `/work` — project archive.
 - `/about` — studio profile.
 - `/dive` — experimental real-time WebGL room engine; retained for development.
-- `/sequence` — experimental long-form frame-sequence player; retained for development.
 
-The homepage is the canonical immersive experience. The two experimental routes
-are intentionally isolated so they can evolve without destabilizing it.
+The homepage is the canonical immersive experience. The experimental WebGL
+route is intentionally isolated so it can evolve without destabilizing it.
 
 ## Architecture
 
@@ -53,8 +52,11 @@ Room sources are defined in `src/data/sequences.ts`. After changing frames in
 npm run sequences
 ```
 
-The browser decodes frames on demand and keeps a bounded cache, rather than
-holding the complete journey in memory.
+The manifest builder accepts only a complete, contiguous set of 192
+`frame-####.webp` files per room. It also generates a content version that is
+appended to frame URLs, so a replaced sequence can never reuse stale browser or
+CDN bytes. The browser decodes frames on demand and keeps a bounded cache,
+rather than holding the complete journey in memory.
 
 ## Shopify
 
@@ -73,8 +75,9 @@ are network-independent. Add licensed brand fonts locally in
 
 TIFF render masters must stay outside `public/`. Put local masters in the
 gitignored `sequence-masters/<room>/` tree, convert them with
-`scripts/convert-sequence.mjs --source=... --keep`, and deploy only the resulting
-WebP frames.
+`scripts/convert-sequence.mjs --source=...`, and deploy only the resulting WebP
+frames. The converter keeps source masters unless `--delete-source` is supplied
+explicitly.
 
 ## Production checks
 
