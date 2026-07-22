@@ -155,37 +155,87 @@ test("fireside loop is present and reasonably sized", async () => {
   const stat = await fs.stat(file);
   assert.ok(stat.size > 0);
   assert.ok(stat.size < 25 * 1024 * 1024, "fireside video exceeds 25 MB");
+
+  const mobileFile = path.join(
+    sequenceRoot,
+    "fireside",
+    "fire-stream-loop-mobile.mp4"
+  );
+  const mobileStat = await fs.stat(mobileFile);
+  assert.ok(mobileStat.size > 0);
+  assert.ok(
+    mobileStat.size < 5 * 1024 * 1024,
+    "mobile fireside video exceeds 5 MB"
+  );
 });
 
-test("mobile feed uses only versioned canonical arrival frames", async () => {
-  const journey = await fs.readFile(
-    path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
-    "utf8"
-  );
-
-  assert.doesNotMatch(journey, /-portrait\.(?:avif|jpe?g|webp)/);
-  assert.match(journey, /versionSequenceAsset/);
-  for (const frame of [
-    "/sequences/lobby/frame-0001.webp",
-    "/sequences/lobby/frame-0192.webp",
-    "/sequences/store/frame-0192.webp",
-    "/sequences/records/frame-0192.webp",
-    "/sequences/lounge/frame-0192.webp",
-  ]) {
-    assert.match(journey, new RegExp(frame.replaceAll("/", "\\/")));
-  }
-  await assert.rejects(
-    fs.access(
+test("mobile stage combines canonical arrivals with in-place walk frames", async () => {
+  const [journey, walk, mobileData, header] = await Promise.all([
+    fs.readFile(
+      path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
       path.join(
         root,
         "src",
         "components",
         "sequence",
-        "MobileSequenceCanvas.tsx"
-      )
+        "MobileWalkTransition.tsx"
+      ),
+      "utf8"
     ),
-    undefined,
-    "mobile feed must not reintroduce a scroll-scrub canvas"
+    fs.readFile(
+      path.join(root, "src", "data", "mobileJourney.ts"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "SiteHeader.tsx"),
+      "utf8"
+    ),
+  ]);
+
+  assert.doesNotMatch(journey, /-portrait\.(?:avif|jpe?g|webp)/);
+  assert.match(journey, /MOBILE_ARRIVAL_FRAME_PATHS/);
+  for (const frame of [
+    "/sequences/lobby/frame-0001.webp",
+    "/sequences/store/frame-0001.webp",
+    "/sequences/records/frame-0001.webp",
+    "/sequences/lounge/frame-0001.webp",
+    "/sequences/lounge/frame-0192.webp",
+  ]) {
+    assert.match(mobileData, new RegExp(frame.replaceAll("/", "\\/")));
+  }
+  assert.match(journey, /MobileWalkTransition/);
+  assert.match(walk, /TRANSITION_FRAME_STRIDE = 16/);
+  assert.match(walk, /MOBILE_WALK_TRANSITIONS/);
+  assert.match(walk, /index === TRANSITION_FRAME_NUMBERS\.length - 1/);
+  assert.match(walk, /data-walking/);
+  assert.match(walk, /MobileWalkTransitionHandle/);
+  assert.doesNotMatch(walk, /IntersectionObserver|window\.scrollY/);
+  assert.match(journey, /data-mobile-stage/);
+  assert.match(journey, /data-active-scene/);
+  assert.match(journey, /touch-action: pan-x pinch-zoom/);
+  assert.match(journey, /ruined-mobile-stage-active/);
+  assert.match(journey, /onPointerDown/);
+  assert.match(journey, /fire-stream-loop-mobile\.mp4/);
+  assert.match(journey, /setSettledIndex\(index\)/);
+  assert.match(journey, /settledIndex === activeIndex/);
+  assert.match(journey, /muted[\s\S]*loop[\s\S]*playsInline/);
+  assert.match(journey, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(journey, /scroll-snap|data-mobile-snap-scene/);
+  assert.match(header, /ruined:home-scene-request/);
+  assert.match(header, /ruined:home-scene-change/);
+  for (const room of ["lobby", "store", "records", "lounge"]) {
+    assert.match(mobileData, new RegExp(`"${room}"`));
+  }
+  assert.match(
+    mobileData,
+    /startFrame: MOBILE_ARRIVAL_FRAME_PATHS\[index\]/
+  );
+  assert.match(
+    mobileData,
+    /endFrame: MOBILE_ARRIVAL_FRAME_PATHS\[index \+ 1\]/
   );
 });
 

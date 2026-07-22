@@ -1,12 +1,31 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
 import Image from "next/image";
 import Link from "next/link";
+import MobileWalkTransition, {
+  type MobileWalkTransitionHandle,
+} from "@/components/sequence/MobileWalkTransition";
+import {
+  MOBILE_ARRIVAL_FRAME_PATHS,
+  MOBILE_SCENE_IDS,
+  mobileSceneIndexFromHash,
+  type MobileSceneId,
+} from "@/data/mobileJourney";
 import { versionSequenceAsset } from "@/data/sequences";
 
 type MobileScene = {
-  id: "top" | "store" | "work" | "about";
+  id: Exclude<MobileSceneId, "events">;
   href: "#store" | `/${"store" | "work" | "about"}`;
   image: string;
   eyebrow: string;
@@ -19,7 +38,7 @@ const MOBILE_SCENES = [
   {
     id: "top",
     href: "#store",
-    image: versionSequenceAsset("/sequences/lobby/frame-0001.webp"),
+    image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[0]),
     eyebrow: "The Ruined Project",
     title: "Enter Ruined",
     description: "Objects, garments, spaces, and projects after the fear.",
@@ -28,7 +47,7 @@ const MOBILE_SCENES = [
   {
     id: "store",
     href: "/store",
-    image: versionSequenceAsset("/sequences/lobby/frame-0192.webp"),
+    image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[1]),
     eyebrow: "01 / Artifacts",
     title: "The Store",
     description: "Objects and garments made to gather a history.",
@@ -37,7 +56,7 @@ const MOBILE_SCENES = [
   {
     id: "work",
     href: "/work",
-    image: versionSequenceAsset("/sequences/store/frame-0192.webp"),
+    image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[2]),
     eyebrow: "02 / Project Hub",
     title: "The Work",
     description: "Objects, spaces, and material records from the studio.",
@@ -46,7 +65,7 @@ const MOBILE_SCENES = [
   {
     id: "about",
     href: "/about",
-    image: versionSequenceAsset("/sequences/records/frame-0192.webp"),
+    image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[3]),
     eyebrow: "03 / Studio No. 17",
     title: "What Remains",
     description: "A practice shaped by use, wear, place, and what survives.",
@@ -54,12 +73,45 @@ const MOBILE_SCENES = [
   },
 ] as const satisfies readonly MobileScene[];
 
+const MOBILE_STAGE_QUERY = "(max-width: 767px), (any-pointer: coarse)";
+const SWIPE_DISTANCE_PX = 52;
+const MOBILE_FIRESIDE_SRC = versionSequenceAsset(
+  "/sequences/fireside/fire-stream-loop-mobile.mp4"
+);
+const MOBILE_FIRESIDE_POSTER = versionSequenceAsset(
+  MOBILE_ARRIVAL_FRAME_PATHS[4]
+);
+const MOBILE_SCENE_LABELS = [
+  "Home",
+  "Store",
+  "Work",
+  "About",
+  "Events",
+] as const;
+
+type GestureStart = {
+  pointerId: number;
+  x: number;
+  y: number;
+};
+
 function MobileRoomScene({
   scene,
   priority,
+  active,
+  index,
+  enhanced,
+  onSceneRequest,
 }: {
   scene: MobileScene;
   priority: boolean;
+  active: boolean;
+  index: number;
+  enhanced: boolean;
+  onSceneRequest: (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    index: number
+  ) => void;
 }) {
   const headingId = `mobile-${scene.id}-heading`;
 
@@ -67,10 +119,16 @@ function MobileRoomScene({
     <article
       id={scene.id}
       data-scene-id={scene.id}
-      data-mobile-snap-scene
       aria-labelledby={headingId}
+      aria-describedby={`${headingId}-position`}
+      aria-roledescription="slide"
+      aria-hidden={enhanced && !active ? true : undefined}
+      hidden={enhanced && !active}
       className="ruined-mobile-scene"
     >
+      <span id={`${headingId}-position`} className="sr-only">
+        Slide {index + 1} of {MOBILE_SCENE_IDS.length}
+      </span>
       <div className="ruined-mobile-scene__visual">
         <div className="ruined-mobile-scene__media">
           <Image
@@ -93,7 +151,15 @@ function MobileRoomScene({
           <p className="ruined-mobile-scene__description">
             {scene.description}
           </p>
-          <Link className="ruined-mobile-scene__link" href={scene.href}>
+          <Link
+            className="ruined-mobile-scene__link"
+            href={scene.href}
+            onClick={
+              scene.href.startsWith("#")
+                ? (event) => onSceneRequest(event, 1)
+                : undefined
+            }
+          >
             <span>{scene.cta}</span>
             <span aria-hidden="true">→</span>
           </Link>
@@ -103,50 +169,409 @@ function MobileRoomScene({
   );
 }
 
-/**
- * Native one-viewport snap points provide a feed-like interaction: every card
- * owns one approved sequence frame and slides as a complete viewport. There is
- * no canvas, frame scrubbing, scroll spring, zoom, or smoothing layer.
- */
-export default function MobileImmersiveJourney() {
-  const journeyRef = useRef<HTMLElement>(null);
+function MobileFiresideVideo({
+  prepare,
+  play,
+}: {
+  prepare: boolean;
+  play: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const shouldLoad = prepare && !reduceMotion;
+  const shouldPlay = play && shouldLoad;
 
   useEffect(() => {
-    document.documentElement.classList.add("ruined-mobile-snap-active");
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncPreference = () => setReduceMotion(media.matches);
+    syncPreference();
+    media.addEventListener("change", syncPreference);
+    return () => media.removeEventListener("change", syncPreference);
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setVisible(false);
+    if (!shouldPlay) {
+      video.pause();
+      if (video.readyState > HTMLMediaElement.HAVE_NOTHING) {
+        video.currentTime = 0;
+      }
+      return;
+    }
+
+    const startPlayback = () => {
+      video.currentTime = 0;
+      void video.play().catch(() => setVisible(false));
+    };
+
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      startPlayback();
+      return;
+    }
+
+    video.addEventListener("loadeddata", startPlayback, { once: true });
+    return () => video.removeEventListener("loadeddata", startPlayback);
+  }, [shouldPlay]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={shouldLoad ? MOBILE_FIRESIDE_SRC : undefined}
+      poster={MOBILE_FIRESIDE_POSTER}
+      muted
+      loop
+      playsInline
+      preload={shouldLoad ? "auto" : "none"}
+      aria-hidden="true"
+      onPlaying={() => setVisible(true)}
+      className={`ruined-mobile-closing__video${
+        visible && shouldPlay ? " is-visible" : ""
+      }`}
+    />
+  );
+}
+
+export default function MobileImmersiveJourney() {
+  const journeyRef = useRef<HTMLElement>(null);
+  const walkRef = useRef<MobileWalkTransitionHandle>(null);
+  const activeIndexRef = useRef(0);
+  const stageEnabledRef = useRef(false);
+  const mountedRef = useRef(true);
+  const transitioningRef = useRef(false);
+  const pendingIndexRef = useRef<number | null>(null);
+  const wheelCooldownUntilRef = useRef(0);
+  const gestureRef = useRef<GestureStart | null>(null);
+  const navigateRef = useRef<(index: number) => void>(() => undefined);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [settledIndex, setSettledIndex] = useState(0);
+  const [stageEnabled, setStageEnabled] = useState(false);
+  const [announcement, setAnnouncement] = useState("Home");
+
+  const setScene = useCallback((index: number) => {
+    activeIndexRef.current = index;
+    setActiveIndex(index);
+  }, []);
+
+  const commitScene = useCallback((index: number) => {
+    const id = MOBILE_SCENE_IDS[index];
+    const hash = `#${id}`;
+    if (window.location.hash !== hash) {
+      const url = new URL(window.location.href);
+      url.hash = hash;
+      window.history.replaceState(window.history.state, "", url);
+    }
+    setSettledIndex(index);
+    setAnnouncement(`Now viewing ${MOBILE_SCENE_LABELS[index]}`);
+    window.dispatchEvent(
+      new CustomEvent("ruined:home-scene-change", {
+        detail: { id, hash, index },
+      })
+    );
+  }, []);
+
+  const navigateTo = useCallback(
+    async (requestedIndex: number) => {
+      const targetIndex = Math.max(
+        0,
+        Math.min(MOBILE_SCENE_IDS.length - 1, requestedIndex)
+      );
+
+      if (transitioningRef.current) {
+        pendingIndexRef.current = targetIndex;
+        return;
+      }
+
+      const fromIndex = activeIndexRef.current;
+      if (targetIndex === fromIndex) {
+        commitScene(targetIndex);
+        return;
+      }
+
+      transitioningRef.current = true;
+      const transition = walkRef.current;
+      if (transition) {
+        await transition.play(fromIndex, targetIndex, () => {
+          setScene(targetIndex);
+        });
+      } else {
+        setScene(targetIndex);
+      }
+      if (!mountedRef.current || !stageEnabledRef.current) {
+        transitioningRef.current = false;
+        pendingIndexRef.current = null;
+        return;
+      }
+      commitScene(targetIndex);
+      transitioningRef.current = false;
+      wheelCooldownUntilRef.current = window.performance.now() + 400;
+
+      const pendingIndex = pendingIndexRef.current;
+      pendingIndexRef.current = null;
+      if (pendingIndex !== null && pendingIndex !== targetIndex) {
+        window.setTimeout(() => navigateRef.current(pendingIndex), 0);
+      }
+    },
+    [commitScene, setScene]
+  );
+
+  navigateRef.current = (index) => {
+    void navigateTo(index);
+  };
+
+  useLayoutEffect(() => {
+    const initialIndex = mobileSceneIndexFromHash(window.location.hash);
+    setScene(initialIndex);
+    setSettledIndex(initialIndex);
+    walkRef.current?.prepare(initialIndex);
+  }, [setScene]);
+
+  useLayoutEffect(() => {
+    const media = window.matchMedia(MOBILE_STAGE_QUERY);
+    const syncStage = () => {
+      const enabled = media.matches;
+      stageEnabledRef.current = enabled;
+      setStageEnabled(enabled);
+      document.documentElement.classList.toggle(
+        "ruined-mobile-stage-active",
+        enabled
+      );
+      document.body.classList.toggle("ruined-mobile-stage-active", enabled);
+      if (enabled) window.scrollTo({ top: 0, behavior: "auto" });
+    };
+    syncStage();
+    media.addEventListener("change", syncStage);
     return () => {
-      document.documentElement.classList.remove("ruined-mobile-snap-active");
+      stageEnabledRef.current = false;
+      media.removeEventListener("change", syncStage);
+      document.documentElement.classList.remove("ruined-mobile-stage-active");
+      document.body.classList.remove("ruined-mobile-stage-active");
     };
   }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (stageEnabled) walkRef.current?.prepare(activeIndex);
+  }, [activeIndex, stageEnabled]);
+
+  useEffect(() => {
+    if (!stageEnabled) return;
+    const syncFromLocation = () => {
+      navigateRef.current(mobileSceneIndexFromHash(window.location.hash));
+    };
+    const requestScene = (event: Event) => {
+      const request = event as CustomEvent<{ hash?: string; index?: number }>;
+      const requestedIndex =
+        typeof request.detail?.index === "number"
+          ? request.detail.index
+          : mobileSceneIndexFromHash(request.detail?.hash ?? "");
+      event.preventDefault();
+      navigateRef.current(requestedIndex);
+    };
+
+    window.addEventListener("hashchange", syncFromLocation);
+    window.addEventListener("popstate", syncFromLocation);
+    window.addEventListener("ruined:home-scene-request", requestScene);
+    commitScene(activeIndexRef.current);
+    return () => {
+      window.removeEventListener("hashchange", syncFromLocation);
+      window.removeEventListener("popstate", syncFromLocation);
+      window.removeEventListener("ruined:home-scene-request", requestScene);
+    };
+  }, [commitScene, stageEnabled]);
+
+  const requestOffset = useCallback((offset: -1 | 1) => {
+    if (!stageEnabledRef.current) return;
+    const nextIndex = activeIndexRef.current + offset;
+    if (nextIndex < 0 || nextIndex >= MOBILE_SCENE_IDS.length) return;
+    navigateRef.current(nextIndex);
+  }, []);
+
+  const handleSceneLink = useCallback(
+    (event: ReactMouseEvent<HTMLAnchorElement>, index: number) => {
+      if (
+        !stageEnabledRef.current ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      navigateRef.current(index);
+    },
+    []
+  );
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const target = event.target as Element;
+      const internalScroller = target.closest<HTMLElement>(
+        "[data-mobile-internal-scroll]"
+      );
+      if (
+        !stageEnabledRef.current ||
+        transitioningRef.current ||
+        !event.isPrimary ||
+        (event.pointerType === "mouse" && event.button !== 0) ||
+        target.closest(
+          "a, button, input, select, textarea, [role='button']"
+        ) ||
+        (internalScroller &&
+          internalScroller.scrollHeight > internalScroller.clientHeight)
+      ) {
+        return;
+      }
+      gestureRef.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    []
+  );
+
+  const handlePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const start = gestureRef.current;
+      gestureRef.current = null;
+      if (!start || start.pointerId !== event.pointerId) return;
+      const verticalDistance = start.y - event.clientY;
+      const horizontalDistance = Math.abs(start.x - event.clientX);
+      if (
+        Math.abs(verticalDistance) < SWIPE_DISTANCE_PX ||
+        Math.abs(verticalDistance) <= horizontalDistance * 1.2
+      ) {
+        return;
+      }
+      requestOffset(verticalDistance > 0 ? 1 : -1);
+    },
+    [requestOffset]
+  );
+
+  const handleWheel = useCallback(
+    (event: ReactWheelEvent<HTMLElement>) => {
+      if (
+        !stageEnabledRef.current ||
+        Math.abs(event.deltaY) < 32 ||
+        Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+      ) {
+        return;
+      }
+      const internalScroller = (event.target as Element).closest<HTMLElement>(
+        "[data-mobile-internal-scroll]"
+      );
+      if (
+        internalScroller &&
+        internalScroller.scrollHeight > internalScroller.clientHeight
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (
+        transitioningRef.current ||
+        window.performance.now() < wheelCooldownUntilRef.current
+      ) {
+        return;
+      }
+      requestOffset(event.deltaY > 0 ? 1 : -1);
+    },
+    [requestOffset]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (event.target !== event.currentTarget) return;
+      if (["ArrowDown", "PageDown"].includes(event.key)) {
+        event.preventDefault();
+        requestOffset(1);
+      } else if (["ArrowUp", "PageUp"].includes(event.key)) {
+        event.preventDefault();
+        requestOffset(-1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        navigateRef.current(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        navigateRef.current(MOBILE_SCENE_IDS.length - 1);
+      }
+    },
+    [requestOffset]
+  );
+
+  const activeSceneId = MOBILE_SCENE_IDS[activeIndex];
 
   return (
     <section
       ref={journeyRef}
       data-journey="mobile"
+      data-mobile-stage={stageEnabled ? "" : undefined}
+      data-stage-enabled={stageEnabled ? "" : undefined}
+      data-active-scene={activeSceneId}
       aria-labelledby="mobile-journey-heading"
+      aria-roledescription="carousel"
       className="ruined-mobile-journey"
+      tabIndex={0}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={() => {
+        gestureRef.current = null;
+      }}
+      onWheel={handleWheel}
+      onKeyDown={handleKeyDown}
     >
       <h1 id="mobile-journey-heading" className="sr-only">
         Ruined — objects, garments, spaces, and projects after the fear
       </h1>
+
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+
+      {stageEnabled && (
+        <MobileWalkTransition ref={walkRef} journeyRef={journeyRef} />
+      )}
 
       {MOBILE_SCENES.map((scene, index) => (
         <MobileRoomScene
           key={scene.id}
           scene={scene}
           priority={index === 0}
+          active={activeIndex === index}
+          index={index}
+          enhanced={stageEnabled}
+          onSceneRequest={handleSceneLink}
         />
       ))}
 
       <section
         id="events"
         data-scene-id="events"
-        data-mobile-snap-scene
         aria-labelledby="mobile-fear-heading"
+        aria-describedby="mobile-events-position"
+        aria-roledescription="slide"
+        aria-hidden={stageEnabled && activeIndex !== 4 ? true : undefined}
+        hidden={stageEnabled && activeIndex !== 4}
         className="ruined-mobile-closing"
       >
+        <span id="mobile-events-position" className="sr-only">
+          Slide 5 of {MOBILE_SCENE_IDS.length}
+        </span>
         <div className="ruined-mobile-closing__media" aria-hidden="true">
           <Image
-            src={versionSequenceAsset("/sequences/lounge/frame-0192.webp")}
+            src={MOBILE_FIRESIDE_POSTER}
             alt=""
             fill
             sizes="100vw"
@@ -154,8 +579,17 @@ export default function MobileImmersiveJourney() {
             draggable={false}
             className="ruined-mobile-scene__image"
           />
+          <MobileFiresideVideo
+            prepare={stageEnabled && activeIndex === 4}
+            play={
+              stageEnabled && activeIndex === 4 && settledIndex === activeIndex
+            }
+          />
         </div>
-        <div className="ruined-mobile-closing__inner">
+        <div
+          className="ruined-mobile-closing__inner"
+          data-mobile-internal-scroll
+        >
           <p className="ruined-mobile-closing__registration">RU // AW26</p>
           <h2 id="mobile-fear-heading" className="ruined-mobile-closing__title">
             <span>After</span>
@@ -185,21 +619,25 @@ export default function MobileImmersiveJourney() {
               <Link href="/work">Work</Link>
               <Link href="/events">Events</Link>
               <Link href="/about">About</Link>
-              <a href="#top">Walk again ↺</a>
+              <a href="#top" onClick={(event) => handleSceneLink(event, 0)}>
+                Walk again ↺
+              </a>
             </nav>
           </div>
         </div>
       </section>
 
       <style>{`
-        @media (max-width: 767px) and (prefers-reduced-motion: no-preference),
-          (any-pointer: coarse) and (prefers-reduced-motion: no-preference) {
-          html.ruined-mobile-snap-active {
-            scroll-behavior: auto;
-            scroll-snap-type: y mandatory;
-            scroll-padding-block: 0;
-            overscroll-behavior-y: contain;
-          }
+        html.ruined-mobile-stage-active,
+        html.ruined-mobile-stage-active body {
+          width: 100%;
+          height: 100%;
+          overflow: hidden !important;
+          overscroll-behavior: none;
+        }
+
+        html.ruined-mobile-stage-active body > footer {
+          display: none;
         }
 
         .ruined-mobile-journey {
@@ -210,6 +648,32 @@ export default function MobileImmersiveJourney() {
           background: #080605;
           color: var(--color-bone, #e5e0d5);
           touch-action: pan-y;
+        }
+
+        .ruined-mobile-journey[data-stage-enabled] {
+          width: 100%;
+          height: 100vh;
+          min-height: 100vh;
+          overflow: hidden;
+          touch-action: pan-x pinch-zoom;
+          overscroll-behavior: none;
+        }
+
+        .ruined-mobile-journey[data-stage-enabled]:focus-visible {
+          outline: 2px solid var(--color-signal, #e5a923);
+          outline-offset: -2px;
+        }
+
+        .ruined-mobile-walk {
+          position: absolute;
+          inset: 0;
+          z-index: 3;
+          width: 100%;
+          height: 100vh;
+          background: #080605;
+          opacity: 0;
+          pointer-events: none;
+          contain: strict;
         }
 
         .ruined-mobile-scene__media,
@@ -227,16 +691,58 @@ export default function MobileImmersiveJourney() {
           user-select: none;
         }
 
+        .ruined-mobile-closing__video {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center;
+          opacity: 0;
+          transition: opacity 200ms ease-out;
+          pointer-events: none;
+        }
+
+        .ruined-mobile-closing__video.is-visible {
+          opacity: 1;
+        }
+
+        .ruined-mobile-journey[data-walking] .ruined-mobile-scene__media,
+        .ruined-mobile-journey[data-walking] .ruined-mobile-closing__media,
+        .ruined-mobile-journey[data-walking] .ruined-mobile-scene__scrim {
+          opacity: 0;
+        }
+
+        .ruined-mobile-journey[data-walking] .ruined-mobile-closing {
+          background: transparent;
+        }
+
+        .ruined-mobile-journey[data-walking] .ruined-mobile-scene__copy,
+        .ruined-mobile-journey[data-walking] .ruined-mobile-closing__inner {
+          opacity: 0;
+          pointer-events: none;
+        }
+
         .ruined-mobile-scene,
         .ruined-mobile-closing {
           position: relative;
           z-index: 1;
+          width: 100%;
           height: 100vh;
           min-height: 100vh;
           margin: 0;
-          scroll-snap-align: start;
-          scroll-snap-stop: always;
-          scroll-margin-block: 0;
+        }
+
+        .ruined-mobile-journey[data-stage-enabled] .ruined-mobile-scene,
+        .ruined-mobile-journey[data-stage-enabled] .ruined-mobile-closing {
+          position: absolute;
+          inset: 0;
+        }
+
+        .ruined-mobile-scene[hidden],
+        .ruined-mobile-closing[hidden] {
+          display: none !important;
         }
 
         .ruined-mobile-scene__visual {
@@ -441,6 +947,8 @@ export default function MobileImmersiveJourney() {
         }
 
         @supports (height: 100svh) {
+          .ruined-mobile-journey[data-stage-enabled],
+          .ruined-mobile-walk,
           .ruined-mobile-scene,
           .ruined-mobile-closing {
             height: 100svh;
@@ -449,6 +957,8 @@ export default function MobileImmersiveJourney() {
         }
 
         @supports (height: 100dvh) {
+          .ruined-mobile-journey[data-stage-enabled],
+          .ruined-mobile-walk,
           .ruined-mobile-scene,
           .ruined-mobile-closing {
             height: 100dvh;
@@ -457,11 +967,26 @@ export default function MobileImmersiveJourney() {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .ruined-mobile-scene,
-          .ruined-mobile-closing {
-            scroll-snap-stop: normal;
+          .ruined-mobile-walk {
+            display: none;
           }
 
+          .ruined-mobile-closing__video {
+            display: none;
+          }
+        }
+
+        @media (max-height: 650px) {
+          .ruined-mobile-journey[data-stage-enabled][data-active-scene="events"],
+          .ruined-mobile-closing__inner {
+            touch-action: pan-y pinch-zoom;
+          }
+
+          .ruined-mobile-closing__inner {
+            justify-content: flex-start;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+          }
         }
       `}</style>
     </section>

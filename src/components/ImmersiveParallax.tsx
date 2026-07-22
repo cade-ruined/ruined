@@ -140,6 +140,7 @@ export default function ImmersiveParallax({
   const showDesktop = desktopEligible && desktopJourney !== null;
 
   useLayoutEffect(() => {
+    if (!showDesktop && document.querySelector("[data-mobile-stage]")) return;
     const hash = window.location.hash;
     const targetId = HOME_HASHES.has(hash) ? hash.slice(1) : "top";
     const target = document.getElementById(targetId);

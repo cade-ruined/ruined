@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -31,12 +31,18 @@ export default function SiteHeader() {
 
   useEffect(() => {
     const syncHash = () => setCurrentHash(window.location.hash || "#top");
+    const syncMobileScene = (event: Event) => {
+      const sceneEvent = event as CustomEvent<{ hash?: string }>;
+      setCurrentHash(sceneEvent.detail?.hash ?? window.location.hash ?? "#top");
+    };
     syncHash();
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
+    window.addEventListener("ruined:home-scene-change", syncMobileScene);
     return () => {
       window.removeEventListener("hashchange", syncHash);
       window.removeEventListener("popstate", syncHash);
+      window.removeEventListener("ruined:home-scene-change", syncMobileScene);
     };
   }, [pathname]);
 
@@ -49,6 +55,13 @@ export default function SiteHeader() {
     let raf = 0;
     const syncSection = () => {
       raf = 0;
+      const mobileStage = document.querySelector<HTMLElement>(
+        "[data-mobile-stage]"
+      );
+      if (mobileStage?.dataset.activeScene) {
+        setCurrentHash(`#${mobileStage.dataset.activeScene}`);
+        return;
+      }
       const probe = window.scrollY + window.innerHeight * 0.5;
       let active = "#top";
       for (const item of NAV_ITEMS.slice(1)) {
@@ -66,13 +79,43 @@ export default function SiteHeader() {
     window.addEventListener("scroll", scheduleSync, { passive: true });
     window.addEventListener("resize", scheduleSync);
     window.addEventListener("ruined:home-anchors-ready", scheduleSync);
+    window.addEventListener("ruined:home-scene-change", scheduleSync);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", scheduleSync);
       window.removeEventListener("resize", scheduleSync);
       window.removeEventListener("ruined:home-anchors-ready", scheduleSync);
+      window.removeEventListener("ruined:home-scene-change", scheduleSync);
     };
   }, [isHome]);
+
+  const handleHomeSceneClick = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    hash: string,
+    index: number
+  ) => {
+    if (
+      !isHome ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      setCurrentHash(hash);
+      return;
+    }
+
+    const request = new CustomEvent("ruined:home-scene-request", {
+      cancelable: true,
+      detail: { hash, index },
+    });
+    if (!window.dispatchEvent(request)) {
+      event.preventDefault();
+      return;
+    }
+    setCurrentHash(hash);
+  };
 
   if (isLanding) return null;
 
@@ -86,6 +129,7 @@ export default function SiteHeader() {
           <Link
             href="/"
             aria-label="Ruined — home"
+            onClick={(event) => handleHomeSceneClick(event, "#top", 0)}
             className="shrink-0 px-1 opacity-90 transition-opacity hover:opacity-100"
           >
             <Image
@@ -108,7 +152,9 @@ export default function SiteHeader() {
                   href={item.href}
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
-                  onClick={() => setCurrentHash(item.hash)}
+                  onClick={(event) =>
+                    handleHomeSceneClick(event, item.hash, item.index)
+                  }
                   className={`ui-heading group relative flex min-w-[5.75rem] items-center justify-center gap-2 px-3 text-[0.58rem] uppercase tracking-[0.14em] transition-colors ${
                     active
                       ? "text-[var(--color-primary)]"
@@ -141,7 +187,9 @@ export default function SiteHeader() {
                 href={item.href}
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
-                onClick={() => setCurrentHash(item.hash)}
+                onClick={(event) =>
+                  handleHomeSceneClick(event, item.hash, item.index)
+                }
                 className={`group relative flex min-w-0 flex-col items-center justify-center gap-0.5 border-r border-white/10 px-0.5 py-1.5 transition-colors last:border-r-0 ${
                   active
                     ? "bg-white/5 text-[var(--color-primary)]"
