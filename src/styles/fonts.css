@@ -2,6 +2,14 @@
  * through @fontsource-variable/inter in app/layout.tsx. */
 
 @font-face {
+  font-family: "CadeHandy";
+  src: url("/fonts/CadeHandy.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "IvyOra Text";
   src: url("/fonts/IvyOraText-Thin.ttf") format("truetype");
   font-style: normal;

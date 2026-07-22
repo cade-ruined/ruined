@@ -7,6 +7,7 @@
   --font-display: "IvyOra Text", "Iowan Old Style", "Baskerville", Georgia, Cambria, "Times New Roman", Times, serif;
   --font-header: "Inter Variable", Inter, "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
   --font-body: "Inter Variable", Inter, "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-handwritten: "CadeHandy", "Bradley Hand", "Segoe Print", cursive;
 
   --tracking-display: -0.045em;
   --tracking-emphasis: -0.015em;
