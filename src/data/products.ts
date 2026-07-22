@@ -45,7 +45,7 @@ export const PRODUCTS: Product[] = [
     origin: "Made in EU",
     care: "Re-wax annually",
     tone: "warm",
-    image: { url: "/art/loft.jpg", alt: "Field Coat campaign study" },
+    image: { url: "/catalog/field-coat-placeholder.png", alt: "Charcoal waxed-cotton Field Coat in the Ruined studio" },
   },
   {
     id: "ru-002",
@@ -59,7 +59,7 @@ export const PRODUCTS: Product[] = [
     origin: "Woven in Japan",
     care: "Cold wash · hang dry",
     tone: "shadow",
-    image: { url: "/art/store.jpg", alt: "Selvedge Trouser campaign study" },
+    image: { url: "/catalog/selvedge-trouser-placeholder.png", alt: "Near-black selvedge trousers on a steel bench" },
   },
   {
     id: "ru-003",
@@ -73,7 +73,7 @@ export const PRODUCTS: Product[] = [
     origin: "Knit in Portugal",
     care: "Cold wash · lay flat",
     tone: "atelier",
-    image: { url: "/art/records.jpg", alt: "Cinder Hooded campaign study" },
+    image: { url: "/catalog/cinder-hoodie-placeholder.png", alt: "Cinder-washed heavyweight hoodie on concrete" },
   },
   {
     id: "ru-004",
@@ -87,7 +87,63 @@ export const PRODUCTS: Product[] = [
     origin: "Made in EU",
     care: "Cold wash · hang dry",
     tone: "warm",
-    image: { url: "/art/lounge.jpg", alt: "Workwear Vest campaign study" },
+    image: { url: "/catalog/workwear-vest-placeholder.png", alt: "Black canvas Workwear Vest on a steel rail" },
+  },
+  {
+    id: "ru-005",
+    code: "RU—005",
+    name: "Raw Edge Overshirt",
+    subtitle: "For the threshold",
+    price: "£ 310",
+    description:
+      "Washed heavyweight twill with exposed seam allowances and blackened snap closures. Cut square for use as a shirt or light outer layer.",
+    material: "Cotton twill · 12oz",
+    origin: "Made in EU",
+    care: "Cold wash · hang dry",
+    tone: "atelier",
+    image: { url: "/catalog/raw-edge-overshirt-placeholder.png", alt: "Washed-bone Raw Edge Overshirt in the Ruined studio" },
+  },
+  {
+    id: "ru-006",
+    code: "RU—006",
+    name: "Utility Tote",
+    subtitle: "For carrying the work",
+    price: "£ 165",
+    description:
+      "Oversized waxed-canvas carryall with reinforced handles, external tool pockets, and aged brass rivets. Built to mark with use.",
+    material: "Waxed canvas · brass",
+    origin: "Made in UK",
+    care: "Spot clean · re-wax",
+    tone: "shadow",
+    image: { url: "/catalog/utility-tote-placeholder.png", alt: "Black waxed-canvas Utility Tote on concrete" },
+  },
+  {
+    id: "ru-007",
+    code: "RU—007",
+    name: "Signal Cap",
+    subtitle: "For outside",
+    price: "£ 95",
+    description:
+      "Washed six-panel cap with an extended adjustment strap and blackened hardware. Unstructured, low profile, and hand-finished.",
+    material: "Cotton drill · steel",
+    origin: "Made in Portugal",
+    care: "Hand wash",
+    tone: "warm",
+    image: { url: "/catalog/signal-cap-placeholder.png", alt: "Washed charcoal Signal Cap on blackened steel" },
+  },
+  {
+    id: "ru-008",
+    code: "RU—008",
+    name: "Ash Knit",
+    subtitle: "For the last room",
+    price: "£ 260",
+    description:
+      "Dense rib-knit crewneck with visible hand-mended interruptions throughout the body and sleeves. Each repair pattern is different.",
+    material: "Merino wool · cotton repair yarn",
+    origin: "Knit in Scotland",
+    care: "Hand wash · dry flat",
+    tone: "atelier",
+    image: { url: "/catalog/ash-knit-placeholder.png", alt: "Ash-grey repaired rib-knit crewneck in the Ruined studio" },
   },
 ];
 
@@ -111,6 +167,10 @@ export const TONE_BY_HANDLE: Record<string, ProductTone> = {
   "selvedge-trouser": "shadow",
   "cinder-hooded": "atelier",
   "workwear-vest": "warm",
+  "raw-edge-overshirt": "atelier",
+  "utility-tote": "shadow",
+  "signal-cap": "warm",
+  "ash-knit": "atelier",
 };
 
 export const TONE_CYCLE: ProductTone[] = ["warm", "shadow", "atelier"];

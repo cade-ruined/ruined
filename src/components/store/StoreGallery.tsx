@@ -1,196 +1,147 @@
-"use client";
-
-import Link from "next/link";
-import { motion } from "motion/react";
 import Image from "next/image";
+import Link from "next/link";
 import type { Product } from "@/data/products";
-import ProductPlate from "./ProductPlate";
-import SiblingNav from "@/components/SiblingNav";
+import { PRODUCT_TONES } from "@/data/products";
+import DropCountdown from "./DropCountdown";
 
-/**
- * Full-store catalogue at /store — an editorial gallery of every product
- * in the current drop, presented like a museum/exhibition catalogue
- * (numbered plates, wall-text metadata, generous negative space).
- *
- * The page is built around the same color register as the home Store
- * preview (bg-black with poster-red accents) so the transition from
- * preview → full archive reads as one continuous experience, just with
- * deeper inventory and a calmer, browseable pace.
- */
-export default function StoreGallery({ products }: { products: Product[] }) {
-  const total = products.length;
+export default function StoreGallery({
+  products,
+  dropEnd,
+}: {
+  products: Product[];
+  dropEnd?: string;
+}) {
+  const featured = products[0];
 
   return (
-    <main className="relative min-h-screen bg-black text-[var(--color-bone)]">
-      {/* Ambient overlays — same vocabulary as the home Store section */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 opacity-[0.05]"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(229,224,213,0.5) 1px, transparent 1px)",
-          backgroundSize: "3px 3px",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 opacity-[0.12]"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 80% 15%, rgba(208,49,45,0.55) 0%, rgba(208,49,45,0) 60%)",
-        }}
-      />
-
-      <div className="relative max-w-6xl mx-auto">
-        <Header total={total} />
-
-        <section aria-label="Quick catalogue" className="border-t border-white/15 bg-black px-6 py-10 text-[var(--color-bone)] sm:px-10 sm:py-14">
-          <div className="mb-6 flex items-end justify-between gap-4">
-            <div><p className="font-mono text-[0.58rem] uppercase tracking-[0.32em] text-[var(--color-poster)]">Quick index</p><h2 className="display mt-2 text-3xl">The complete drop.</h2></div>
-            <span className="font-mono text-[0.55rem] uppercase tracking-[0.25em] text-white/40">Select to inspect</span>
+    <main className="min-h-screen bg-black text-[var(--color-bone)]">
+      <header className="border-b border-white/15 px-5 pb-12 pt-14 sm:px-10 sm:pb-16 sm:pt-20">
+        <div className="mx-auto max-w-[96rem]">
+          <div className="flex flex-wrap items-center justify-between gap-4 font-mono text-[0.56rem] uppercase tracking-[0.28em] text-white/45">
+            <Link href="/#store" className="transition-colors hover:text-white">← Return to the walk</Link>
+            <span>Drop 01 · SS / MMXXVI</span>
           </div>
-          <div className="grid grid-cols-2 gap-px bg-white/15 md:grid-cols-4">
+          <div className="mt-12 grid gap-8 md:grid-cols-12 md:items-end">
+            <h1 className="display text-[clamp(4rem,12vw,10rem)] leading-[0.78] md:col-span-8">
+              The <span className="italic text-[var(--color-poster)]">catalog.</span>
+            </h1>
+            <div className="md:col-span-4">
+              <p className="max-w-md text-sm leading-relaxed text-white/60 sm:text-base">
+                Eight artifacts for weather, work, and the rooms between. Every
+                piece is numbered, materially documented, and released in a
+                finite run.
+              </p>
+              <div className="mt-6 border-t border-white/15 pt-4"><DropCountdown endsAt={dropEnd} /></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {featured && <FeaturedProduct product={featured} />}
+
+      <section aria-labelledby="catalogue-heading" className="bg-[var(--color-bone)] px-3 py-10 text-[var(--color-faded)] sm:px-6 sm:py-16">
+        <div className="mx-auto max-w-[96rem]">
+          <div className="flex items-end justify-between gap-5 border-b border-black/20 px-1 pb-5 sm:pb-7">
+            <div>
+              <p className="font-mono text-[0.52rem] uppercase tracking-[0.3em] text-[var(--color-poster)]">Drop 01 / complete</p>
+              <h2 id="catalogue-heading" className="display mt-2 text-3xl sm:text-5xl">All pieces</h2>
+            </div>
+            <div className="text-right font-mono text-[0.5rem] uppercase tracking-[0.2em] text-black/40">
+              <p>{String(products.length).padStart(2, "0")} objects</p>
+              <p className="mt-1">View · 02 / 04 columns</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 border-l border-t border-black/15 lg:grid-cols-4">
             {products.map((product, index) => (
-              <Link key={product.id} href={`/store/${product.id}`} className="group bg-black p-3 transition-colors hover:bg-white/[0.06] sm:p-4">
-                <div className="relative aspect-[4/5] overflow-hidden" style={{ background: `var(--color-${product.tone === "warm" ? "signal" : product.tone === "shadow" ? "faded" : "verdigris"})` }}>
-                  {product.image && <Image src={product.image.url} alt={product.image.alt} fill sizes="(min-width: 768px) 25vw, 50vw" className="object-cover transition-transform duration-700 group-hover:scale-[1.03]" />}
-                  <span className="absolute left-2 top-2 font-mono text-[0.5rem] tracking-[0.2em] text-white/70">{String(index + 1).padStart(2, "0")}</span>
-                </div>
-                <div className="mt-3 flex items-start justify-between gap-2"><div><h3 className="text-sm tracking-normal">{product.name}</h3><p className="mt-1 font-mono text-[0.5rem] uppercase tracking-[0.18em] text-white/45">{product.available === false ? "Sold out" : product.variantId ? "Available" : "Enquire"}</p></div><span className="display text-lg">{product.price}</span></div>
-              </Link>
+              <ProductCard key={product.id} product={product} index={index} />
             ))}
           </div>
-        </section>
 
-        <section
-          aria-label="Drop catalogue"
-          className="text-[var(--color-faded)]"
-          // The plates surface bg flips to bone here — same register as
-          // the Work/About sections of the home, so the catalogue feels
-          // like an editorial broadsheet pulled out from the dark Store
-          // teaser, not a continuation of the same black slab.
-          style={{
-            background: "var(--color-surface)",
-            color: "var(--color-faded)",
-          }}
-        >
-          {products.map((product, i) => (
-            <ProductPlate
-              key={product.id}
-              product={product}
-              index={i}
-              total={total}
-            />
-          ))}
-        </section>
+          <div className="grid gap-4 border border-t-0 border-black/15 px-5 py-6 font-mono text-[0.48rem] uppercase tracking-[0.18em] text-black/45 sm:grid-cols-3 sm:px-7">
+            <p>Numbered <span className="text-black">and dated</span></p>
+            <p className="sm:text-center">Produced <span className="text-black">in small runs</span></p>
+            <p className="sm:text-right">Dispatch <span className="text-black">from Studio No. 17</span></p>
+          </div>
+        </div>
+      </section>
 
-        <Footer total={total} />
-      </div>
+      <section className="px-5 py-20 sm:px-10 sm:py-28">
+        <div className="mx-auto grid max-w-[96rem] gap-10 border-t border-white/15 pt-8 md:grid-cols-12">
+          <div className="md:col-span-7">
+            <p className="font-mono text-[0.54rem] uppercase tracking-[0.3em] text-white/40">The release rule</p>
+            <p className="display mt-5 max-w-4xl text-[clamp(2.6rem,6vw,6rem)] leading-[0.9]">
+              Made to become more <span className="italic text-[var(--color-poster)]">itself</span> with use.
+            </p>
+          </div>
+          <div className="md:col-span-4 md:col-start-9">
+            <p className="text-sm leading-relaxed text-white/55 sm:text-base">
+              Select a piece for dimensions, material, origin, care, and current
+              availability. Natural variation and the marks of production are
+              part of every numbered release.
+            </p>
+            <Link href="/shipping-returns" className="ui-heading mt-7 inline-flex border border-white/40 px-5 py-3 text-[0.58rem] uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-black">
+              Shipping + returns →
+            </Link>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
 
-function Header({ total }: { total: number }) {
+function FeaturedProduct({ product }: { product: Product }) {
+  const availability = product.available === false ? "Sold out" : product.variantId ? "Available" : "By enquiry";
   return (
-    <header className="relative px-6 sm:px-10 pt-16 sm:pt-24 pb-12 sm:pb-16 text-[var(--color-bone)]">
-      {/* Breadcrumb / location stamp */}
-      <div className="flex items-baseline justify-between font-mono text-[0.62rem] sm:text-[0.7rem] tracking-[0.4em] uppercase text-[var(--color-bone)]/55">
-        <Link
-          href="/#store"
-          className="hover:text-[var(--color-bone)] transition-colors duration-200"
-        >
-          ← Back
-        </Link>
-        <span>
-          Store{" "}
-          <span className="text-[var(--color-bone)]/30 mx-2">·</span>{" "}
-          Drop 01 / SS26
-        </span>
-      </div>
-
-      <motion.h1
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-        className="display text-[clamp(3rem,11vw,9rem)] leading-[0.92] mt-12 sm:mt-16 text-[var(--color-bone)]"
-      >
-        ART<span className="italic text-[var(--color-poster)]">I</span>FACTS
-      </motion.h1>
-
-      <div className="mt-8 sm:mt-12 grid grid-cols-12 gap-x-6 sm:gap-x-10 gap-y-6">
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, ease: "easeOut", delay: 0.25 }}
-          className="col-span-12 md:col-span-7 text-base sm:text-lg leading-relaxed text-[var(--color-bone)]/85 max-w-prose"
-        >
-          The first drop. Four pieces, hand-finished, made in small numbers —
-          each one numbered, dated, and meant to age with you. Browse the full
-          archive below; tap{" "}
-          <span className="font-mono text-[0.85em] tracking-[0.18em] uppercase text-[var(--color-poster)]">
-            Enquire
-          </span>{" "}
-          on any plate to begin.
-        </motion.p>
-
-        <motion.dl
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, ease: "easeOut", delay: 0.35 }}
-          className="col-span-12 md:col-span-4 md:col-start-9 md:pl-6 md:border-l md:border-[var(--color-bone)]/15 space-y-3 font-mono text-[0.65rem] sm:text-[0.7rem] tracking-[0.32em] uppercase"
-        >
-          <DropMeta label="Drop" value="01" />
-          <DropMeta label="Season" value="SS / MMXXVI" />
-          <DropMeta label="Pieces" value={String(total).padStart(2, "0")} />
-          <DropMeta label="Pace" value="Without warning" />
-        </motion.dl>
-      </div>
-
-      <motion.div
-        initial={{ scaleX: 0 }}
-        animate={{ scaleX: 1 }}
-        transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1], delay: 0.5 }}
-        className="origin-left h-px bg-[var(--color-bone)]/15 mt-12 sm:mt-16"
-      />
-    </header>
+    <section className="px-3 py-3 sm:px-6 sm:py-6">
+      <Link href={`/store/${product.id}`} className="group mx-auto grid max-w-[96rem] overflow-hidden border border-white/15 bg-[#11100e] md:grid-cols-12">
+        <div className="relative aspect-[4/5] md:col-span-7">
+          {product.image && <Image src={product.image.url} alt={product.image.alt} fill priority sizes="(min-width: 768px) 58vw, 100vw" className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.012]" />}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
+          <span className="absolute left-4 top-4 border border-white/30 bg-black/35 px-3 py-2 font-mono text-[0.5rem] uppercase tracking-[0.24em] backdrop-blur-sm sm:left-6 sm:top-6">
+            Featured object · {product.code}
+          </span>
+        </div>
+        <article className="flex min-h-[30rem] flex-col justify-between border-t border-white/15 p-6 md:col-span-5 md:border-l md:border-t-0 md:p-10 lg:p-14">
+          <div className="flex items-center justify-between font-mono text-[0.52rem] uppercase tracking-[0.24em] text-white/45">
+            <span>Plate 001</span><span className="text-[var(--color-poster)]">{availability}</span>
+          </div>
+          <div>
+            <p className="font-mono text-[0.54rem] uppercase tracking-[0.28em] text-[var(--color-poster)]">{product.subtitle}</p>
+            <h2 className="display mt-4 text-[clamp(3rem,7vw,6.8rem)] leading-[0.84]">{product.name}</h2>
+            <p className="mt-6 max-w-lg text-sm leading-relaxed text-white/60 sm:text-base">{product.description}</p>
+          </div>
+          <div className="mt-10 flex items-end justify-between border-t border-white/20 pt-5">
+            <span className="ui-heading text-2xl tabular-nums sm:text-4xl">{product.price}</span>
+            <span className="ui-heading text-[0.58rem] uppercase tracking-[0.22em]">Inspect object ↗</span>
+          </div>
+        </article>
+      </Link>
+    </section>
   );
 }
 
-function DropMeta({ label, value }: { label: string; value: string }) {
+function ProductCard({ product, index }: { product: Product; index: number }) {
+  const availability = product.available === false ? "Sold out" : product.variantId ? "Available" : "Enquire";
   return (
-    <div className="grid grid-cols-3 gap-2">
-      <dt className="col-span-1 text-[var(--color-bone)]/50">{label}</dt>
-      <dd className="col-span-2 text-[var(--color-bone)]">{value}</dd>
-    </div>
-  );
-}
-
-function Footer({ total }: { total: number }) {
-  return (
-    <footer className="relative bg-black px-6 sm:px-10 py-16 sm:py-24 text-[var(--color-bone)]/55 font-mono text-[0.65rem] tracking-[0.4em] uppercase">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <span>—— end of drop 01 ——</span>
-        <span>{String(total).padStart(2, "0")} pieces</span>
+    <Link href={`/store/${product.id}`} className="group border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3">
+      <div className="relative aspect-[4/5] overflow-hidden" style={{ background: PRODUCT_TONES[product.tone] }}>
+        {product.image && <Image src={product.image.url} alt={product.image.alt} fill sizes="(min-width: 1024px) 25vw, 50vw" className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018]" />}
+        <div className="absolute inset-x-2 top-2 flex justify-between font-mono text-[0.44rem] uppercase tracking-[0.16em] text-white/65 sm:inset-x-3 sm:top-3">
+          <span>{String(index + 1).padStart(2, "0")}</span><span>{product.code}</span>
+        </div>
+        <span className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center border border-white/40 bg-black/30 text-white transition-colors group-hover:bg-[var(--color-poster)] sm:bottom-3 sm:right-3">↗</span>
       </div>
-
-      <div className="mt-8 sm:mt-12 flex items-center justify-between flex-wrap gap-4 pt-6 border-t border-[var(--color-bone)]/15">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 hover:text-[var(--color-bone)] transition-colors duration-200"
-        >
-          <span aria-hidden>←</span>
-          <span>Return home</span>
-        </Link>
-        <SiblingNav />
+      <div className="px-1 pb-3 pt-3 sm:pt-4">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="ui-heading text-sm leading-tight sm:text-lg">{product.name}</h3>
+          <span className="ui-heading text-sm tabular-nums sm:text-lg">{product.price}</span>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[0.44rem] uppercase tracking-[0.14em] text-black/42 sm:text-[0.5rem]">
+          <span className="truncate">{product.subtitle || product.material}</span>
+          <span className={availability === "Sold out" ? "text-black/35" : "text-[var(--color-poster)]"}>{availability}</span>
+        </div>
       </div>
-
-      {/* Bottom padding so the last row clears the couch menu */}
-      <div
-        aria-hidden
-        style={{
-          height: "calc(var(--bottom-menu-h, 190px) + env(safe-area-inset-bottom, 0px))",
-        }}
-      />
-    </footer>
+    </Link>
   );
 }

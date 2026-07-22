@@ -56,8 +56,10 @@ test("production route boundaries and metadata files exist", async () => {
     "app/global-error.tsx",
     "app/loading.tsx",
     "app/not-found.tsx",
+    "app/events/page.tsx",
     "app/robots.ts",
     "app/sitemap.ts",
+    "src/data/events.ts",
   ]) {
     await fs.access(path.join(root, file));
   }

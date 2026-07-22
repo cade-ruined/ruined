@@ -12,9 +12,9 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import { PRODUCT_TONES, type Product } from "@/data/products";
-import { PROJECTS, type Project } from "@/data/projects";
-import { SLEEVE, ACCENT } from "@/components/sections/RecordCarousel";
+import type { Product } from "@/data/products";
+import { PROJECTS, projectSlug, type Project } from "@/data/projects";
+import { EVENTS, type StudioEvent } from "@/data/events";
 import RoomSequenceCanvas from "@/components/sequence/RoomSequenceCanvas";
 import { SEQUENCE_ROOMS, type SequenceManifest } from "@/data/sequences";
 import { scrollState } from "@/utils/scrollState";
@@ -59,6 +59,18 @@ type Band = {
   count: number;
   frameStart: number;
   frameEnd: number;
+};
+
+// Events begin with the first moving fire frame and remain available through
+// the fireside beat, then clear before the closing title arrives.
+const FIRESIDE_EVENT_BAND: Band = {
+  start: SEQUENCE_END - 0.025,
+  playEnd: SEQUENCE_END,
+  end: FEAR_START - 0.03,
+  mid: (SEQUENCE_END + FEAR_START - 0.03) / 2,
+  count: 1,
+  frameStart: 1,
+  frameEnd: 1,
 };
 
 function buildSequenceBands(manifest: SequenceManifest): Record<string, Band> {
@@ -176,7 +188,7 @@ function HardButton({
   );
 }
 
-// Client-side navigation into a full room page (/store, /work, /about). The
+// Client-side navigation into a full room page (/store, /work, /events). The
 // shelf cards and each room's "Enter" button use this so a click opens the full
 // browsing experience, while the couch icons (handled in BottomMenu) scrub the
 // camera to the room's hold inside the dive.
@@ -201,6 +213,7 @@ function RoomOverlay({
   enterLabel,
   enterHref,
   enterVariant,
+  wide = false,
   children,
 }: {
   progress: MotionValue<number>;
@@ -209,6 +222,7 @@ function RoomOverlay({
   enterLabel: string;
   enterHref: string;
   enterVariant: "filled" | "outline";
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   const goToRoute = useGoToRoute();
@@ -234,7 +248,7 @@ function RoomOverlay({
         bottom:
           "calc(env(safe-area-inset-bottom, 0px) + var(--bottom-menu-h, 190px) + 1rem)",
       }}
-      className="pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-3 px-4"
+      className="pointer-events-none fixed left-3 right-[4.75rem] z-20 flex flex-col items-stretch gap-3 sm:inset-x-0 sm:items-center sm:px-4"
     >
       {/* legibility scrim so labels read over the room photo */}
       <div
@@ -247,14 +261,12 @@ function RoomOverlay({
       />
       <motion.div
         style={{ y, pointerEvents: pointer }}
-        className="flex flex-col items-center gap-3"
+        className={`flex w-full flex-col items-stretch gap-3 sm:items-center ${wide ? "sm:max-w-5xl" : "sm:max-w-3xl"}`}
       >
-        <span className="font-mono text-[0.55rem] tracking-[0.42em] uppercase text-[var(--color-bone)]/70">
+        <span className="self-center text-center font-mono text-[0.55rem] uppercase tracking-[0.42em] text-[var(--color-bone)]/70">
           {kicker}
         </span>
-        <div className="flex items-end justify-center gap-2.5 sm:gap-3.5">
-          {children}
-        </div>
+        <div className="w-full">{children}</div>
         <HardButton
           href={enterHref}
           label={enterLabel}
@@ -267,148 +279,122 @@ function RoomOverlay({
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
-  const goToRoute = useGoToRoute();
+function JourneyStoreIndex({ products }: { products: Product[] }) {
+  const featuredProducts = products.slice(0, 3);
+  if (!featuredProducts.length) return null;
+
   return (
-    <motion.a
-      href="/store"
-      onClick={goToRoute("/store")}
-      whileHover={{ y: -5 }}
-      transition={{ type: "spring", stiffness: 360, damping: 24 }}
-      className="group block no-underline select-none w-[clamp(64px,17vw,118px)]"
-    >
-      <div
-        className="relative aspect-[3/4] w-full overflow-hidden"
-        style={{
-          background: PRODUCT_TONES[product.tone],
-          border: "1px solid rgba(229,224,213,0.18)",
-          boxShadow: "4px 5px 0 0 rgba(8,6,5,0.55)",
-        }}
-      >
-        {product.image && (
-          <Image
-            src={product.image.url}
-            alt=""
-            fill
-            sizes="(min-width: 640px) 118px, 17vw"
-            className="object-cover"
-          />
-        )}
-        <span
-          aria-hidden
-          className="absolute left-1.5 top-1.5 font-mono text-[0.5rem] tracking-[0.12em] text-[var(--color-bone)]/55"
+    <div className="grid grid-cols-3 gap-px border border-white/20 bg-white/20 shadow-[7px_8px_0_rgba(0,0,0,0.5)]">
+      {featuredProducts.map((product, index) => (
+        <Link
+          key={product.id}
+          href={`/store/${product.id}`}
+          className="group relative aspect-[4/5] overflow-hidden bg-black/85 text-[var(--color-bone)]"
         >
-          {product.code}
-        </span>
-      </div>
-      <div className="mt-1.5 flex items-baseline justify-between gap-1">
-        <span className="font-mono text-[0.5rem] tracking-[0.08em] uppercase text-[var(--color-bone)]/85 truncate">
-          {product.name}
-        </span>
-        <span className="font-mono text-[0.5rem] text-[var(--color-bone)]/55 whitespace-nowrap">
-          {product.price}
-        </span>
-      </div>
-    </motion.a>
+          {product.image && (
+            <Image
+              src={product.image.url}
+              alt={product.image.alt}
+              fill
+              sizes="(min-width: 640px) 22rem, 28vw"
+              className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+            />
+          )}
+          <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+            {index === 0 ? "Featured · " : ""}{product.code}
+          </span>
+          <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
+            <strong className="block text-[0.62rem] leading-tight text-white sm:text-lg">{product.name}</strong>
+            <span className="mt-1 flex items-center justify-between font-mono text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+              <span>{product.price}</span><span className="transition-transform group-hover:translate-x-1">↗</span>
+            </span>
+          </span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
-function RecordCard({ project }: { project: Project }) {
-  const goToRoute = useGoToRoute();
+function JourneyWorkIndex({ projects }: { projects: Project[] }) {
+  const featuredProjects = projects.slice(0, 3);
+  if (!featuredProjects.length) return null;
+
   return (
-    <motion.a
-      href="/work"
-      onClick={goToRoute("/work")}
-      whileHover={{ y: -5 }}
-      transition={{ type: "spring", stiffness: 360, damping: 24 }}
-      className="group block no-underline select-none w-[clamp(72px,19vw,132px)]"
-    >
-      <div
-        className="relative aspect-square w-full overflow-hidden"
-        style={{
-          background: SLEEVE[project.tone],
-          border: "1px solid rgba(229,224,213,0.16)",
-          boxShadow: "4px 5px 0 0 rgba(8,6,5,0.55)",
-        }}
-      >
-        <span
-          aria-hidden
-          className="absolute left-0 top-0 h-full w-[3px]"
-          style={{ background: ACCENT[project.tone] }}
-        />
-        <span className="absolute left-2.5 top-2 font-mono text-[0.5rem] tracking-[0.12em] text-[var(--color-bone)]/55">
-          {project.no}
-        </span>
-        <span className="absolute bottom-2 left-2.5 right-2 display text-[0.72rem] leading-[0.95] uppercase text-[var(--color-bone)]/90">
-          {project.title}
-        </span>
-      </div>
-      <span className="mt-1.5 block font-mono text-[0.5rem] tracking-[0.1em] uppercase text-[var(--color-bone)]/55">
-        {project.medium}
-      </span>
-    </motion.a>
+    <div className="grid grid-cols-3 gap-px border border-white/20 bg-white/20 shadow-[7px_8px_0_rgba(0,0,0,0.5)]">
+      {featuredProjects.map((project, index) => (
+        <Link
+          key={project.no}
+          href={`/work/${projectSlug(project)}`}
+          className="group relative aspect-[4/5] overflow-hidden bg-[#17130f] text-[var(--color-bone)]"
+        >
+          {project.image && (
+            <Image
+              src={project.image}
+              alt={project.title}
+              fill
+              sizes="(min-width: 640px) 22rem, 28vw"
+              className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+            />
+          )}
+          <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+            {index === 0 ? "Featured · " : ""}RU / {project.no}
+          </span>
+          <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
+            <strong className="block text-[0.62rem] leading-tight text-white sm:text-lg">{project.title}</strong>
+            <span className="mt-1 flex items-center justify-between font-mono text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+              <span>{project.medium} · {project.year}</span><span className="transition-transform group-hover:translate-x-1">↗</span>
+            </span>
+          </span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
-// Placeholder artworks for the lounge / "about" beat — high-colour, abstract,
-// conceptual, deliberately vivid to contrast the warm industrial building.
-// Stand-ins to be swapped for the original art later (drop a real image `src`
-// onto each).
-type ArtPiece = { id: string; title: string; medium: string; art: string };
-const ABOUT_ART: ArtPiece[] = [
-  {
-    id: "art-1",
-    title: "Combustion",
-    medium: "Acrylic on canvas",
-    art: "radial-gradient(120% 120% at 30% 20%, #ffd54a 0%, #f5511e 38%, #c2185b 66%, #2a0a3a 100%)",
-  },
-  {
-    id: "art-2",
-    title: "Signal / Noise",
-    medium: "Pigment · resin",
-    art: "radial-gradient(130% 130% at 70% 30%, #34e0d8 0%, #1f6feb 42%, #7b2ff7 72%, #0a0820 100%)",
-  },
-  {
-    id: "art-3",
-    title: "Verdigris Bloom",
-    medium: "Mixed media",
-    art: "radial-gradient(120% 120% at 40% 80%, #b6f24a 0%, #2dbd6e 40%, #1f6feb 70%, #19103a 100%)",
-  },
-];
-
-function ArtCard({ piece }: { piece: ArtPiece }) {
-  const goToRoute = useGoToRoute();
+function JourneyAboutIndex() {
   return (
-    <motion.a
-      href="/about"
-      onClick={goToRoute("/about")}
-      whileHover={{ y: -5 }}
-      transition={{ type: "spring", stiffness: 360, damping: 24 }}
-      className="group block no-underline select-none w-[clamp(76px,20vw,142px)]"
-    >
-      <div
-        className="relative aspect-[4/5] w-full overflow-hidden"
-        style={{
-          background: piece.art,
-          border: "1px solid rgba(229,224,213,0.28)",
-          boxShadow: "4px 5px 0 0 rgba(8,6,5,0.55)",
-        }}
-      >
-        {/* thin inner frame so the plate reads as a hung canvas */}
-        <span
-          aria-hidden
-          className="absolute inset-[6px] border border-[rgba(8,6,5,0.22)]"
-        />
-      </div>
-      <div className="mt-1.5">
-        <span className="block font-mono text-[0.5rem] tracking-[0.08em] uppercase text-[var(--color-bone)]/85 truncate">
-          {piece.title}
+    <div className="grid min-h-32 grid-cols-[1.15fr_0.85fr] gap-px border border-white/20 bg-white/20 shadow-[5px_6px_0_rgba(0,0,0,0.45)] sm:min-h-40 sm:grid-cols-[1.4fr_1fr_1fr]">
+      <Link href="/about" className="group relative row-span-2 overflow-hidden bg-black/85">
+        <Image src="/ruined-hero-lounge.jpg" alt="The lounge at Studio No. 17" fill sizes="(min-width: 640px) 20rem, 55vw" className="object-cover transition-transform duration-700 group-hover:scale-[1.02]" />
+        <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/10" />
+        <span className="absolute left-2 top-2 font-mono text-[0.46rem] uppercase tracking-[0.18em] text-white/60 sm:left-3 sm:top-3">Studio No. 17</span>
+        <span className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3">
+          <strong className="block text-sm leading-none text-white sm:text-lg">What remains, remains.</strong>
+          <span className="mt-1 block font-mono text-[0.46rem] uppercase tracking-[0.12em] text-white/55">Practice / Utah / MMXXVI</span>
         </span>
-        <span className="block font-mono text-[0.5rem] tracking-[0.1em] uppercase text-[var(--color-bone)]/50">
-          {piece.medium}
-        </span>
-      </div>
-    </motion.a>
+      </Link>
+      <Link href="/about" className="group relative overflow-hidden bg-black/85">
+        <Image src="/art/shelf.jpg" alt="" fill sizes="16rem" className="object-cover opacity-75 transition-transform duration-700 group-hover:scale-[1.02]" />
+        <span className="absolute inset-0 bg-black/25" />
+        <span className="absolute bottom-2 left-2 right-2 text-[0.68rem] font-bold text-white sm:text-sm">Objects / Garments</span>
+      </Link>
+      <Link href="/about" className="group relative overflow-hidden bg-black/85">
+        <Image src="/art/loft.jpg" alt="" fill sizes="16rem" className="object-cover opacity-75 transition-transform duration-700 group-hover:scale-[1.02]" />
+        <span className="absolute inset-0 bg-black/25" />
+        <span className="absolute bottom-2 left-2 right-2 text-[0.68rem] font-bold text-white sm:text-sm">Spaces / Direction</span>
+      </Link>
+      <Link href="/about" className="hidden items-center justify-between bg-[var(--color-signal)] px-3 font-mono text-[0.48rem] uppercase tracking-[0.16em] text-black sm:col-span-2 sm:flex"><span>About the studio</span><span>→</span></Link>
+    </div>
+  );
+}
+
+function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
+  return (
+    <div className="border border-white/20 bg-black/82 shadow-[5px_6px_0_rgba(0,0,0,0.45)] backdrop-blur-sm">
+      {events.slice(0, 3).map((event, index) => (
+        <Link key={event.id} href="/events" className="group grid grid-cols-[2.4rem_1fr_auto] items-center gap-2 border-b border-white/15 px-2.5 py-2 text-[var(--color-bone)] last:border-b-0 sm:grid-cols-[3.5rem_1fr_10rem_auto] sm:px-4 sm:py-3">
+          <span className="font-mono text-[0.44rem] tracking-[0.16em] text-white/35">0{index + 1}</span>
+          <span>
+            <strong className="block text-[0.68rem] leading-tight sm:text-sm">{event.title}</strong>
+            <span className="mt-0.5 block font-mono text-[0.42rem] uppercase tracking-[0.12em] text-white/45 sm:hidden">{event.date}</span>
+          </span>
+          <span className="hidden font-mono text-[0.46rem] uppercase tracking-[0.14em] text-white/45 sm:block">{event.date}</span>
+          <span className="font-mono text-[0.48rem] text-[var(--color-poster)] transition-transform group-hover:translate-x-1">↗</span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -511,6 +497,7 @@ function AfterTheFear({
         <nav aria-label="Closing links" className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--color-bone)]/75">
           <Link className="hover:text-white" href="/store">Store</Link>
           <Link className="hover:text-white" href="/work">Work</Link>
+          <Link className="hover:text-white" href="/events">Events</Link>
           <Link className="hover:text-white" href="/about">About</Link>
           <Link className="hover:text-white" href="/contact">Contact</Link>
           <a className="text-[var(--color-signal)] hover:text-white" href="#top">Walk again ↺</a>
@@ -708,16 +695,17 @@ export default function ImmersiveParallax({
 
   // Folder names describe where each move starts; the final frame is the next
   // destination. Panels and deep links therefore attach to these arrival holds:
-  // Lobby → Store, Store → Records, Records → Lounge.
+  // Lobby → Store, Store → Records, Records → Lounge, Lounge → Fireside.
   const storeArrivalB = bands["lobby"];
   const worksArrivalB = bands["store"];
   const aboutArrivalB = bands["records"];
+  const eventsArrivalB = FIRESIDE_EVENT_BAND;
 
   // Touch-only soft snap. Native momentum remains untouched while the gesture
   // is moving; once scrolling settles, nearby arrival holds gently center. The
   // threshold is roughly 15% of a room band, so a partial exploratory swipe is
-  // never forced forward. Lounge is deliberately omitted for the seamless
-  // still-to-video Fireside handoff.
+  // never forced forward. The Fireside / Events target lands exactly on the
+  // video handoff so its programme receives the same readable settling beat.
   useEffect(() => {
     if (
       !isTouch ||
@@ -727,9 +715,12 @@ export default function ImmersiveParallax({
       !aboutArrivalB
     ) return;
 
-    const targets = [storeArrivalB, worksArrivalB, aboutArrivalB].map(
-      (band) => band.playEnd + (band.end - band.playEnd) * 0.5
-    );
+    const targets = [
+      ...[storeArrivalB, worksArrivalB, aboutArrivalB].map(
+        (band) => band.playEnd + (band.end - band.playEnd) * 0.5
+      ),
+      eventsArrivalB.playEnd,
+    ];
     const SNAP_THRESHOLD = 0.032;
 
     const settle = () => {
@@ -788,6 +779,7 @@ export default function ImmersiveParallax({
     };
   }, [
     aboutArrivalB,
+    eventsArrivalB.playEnd,
     isTouch,
     prefersReducedMotion,
     scrollYProgress,
@@ -811,11 +803,12 @@ export default function ImmersiveParallax({
 
   const poster = SEQUENCE_ROOMS[0].sceneSrc;
 
-  // Scrub waypoints for the couch icons (BottomMenu reads ids store/work/about).
+  // Scrub waypoints for the header icons.
   const waypoints: { id: string; band?: Band }[] = [
     { id: "store", band: storeArrivalB },
     { id: "work", band: worksArrivalB },
     { id: "about", band: aboutArrivalB },
+    { id: "events", band: eventsArrivalB },
   ];
 
   return (
@@ -856,11 +849,12 @@ export default function ImmersiveParallax({
             {prefersReducedMotion && (
               <nav
                 aria-label="Explore Ruined"
-                className="absolute inset-x-6 bottom-32 z-20 grid grid-cols-3 gap-2 text-center font-mono text-[0.65rem] uppercase tracking-[0.2em] text-[var(--color-bone)] sm:left-1/2 sm:right-auto sm:w-[34rem] sm:-translate-x-1/2"
+                className="absolute inset-x-6 bottom-32 z-20 grid grid-cols-2 gap-2 text-center font-mono text-[0.6rem] uppercase tracking-[0.18em] text-[var(--color-bone)] sm:left-1/2 sm:right-auto sm:w-[40rem] sm:-translate-x-1/2 sm:grid-cols-4"
               >
                 <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/store">Store</Link>
                 <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/work">Work</Link>
                 <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/about">About</Link>
+                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/events">Events</Link>
               </nav>
             )}
           </motion.div>
@@ -905,10 +899,9 @@ export default function ImmersiveParallax({
           enterLabel="Enter the store"
           enterHref="/store"
           enterVariant="filled"
+          wide
         >
-          {products.slice(0, 4).map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
+          <JourneyStoreIndex products={products} />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && worksArrivalB && worksArrivalB.count > 0 && (
@@ -919,24 +912,33 @@ export default function ImmersiveParallax({
           enterLabel="Open the project hub"
           enterHref="/work"
           enterVariant="outline"
+          wide
         >
-          {PROJECTS.slice(0, 4).map((project) => (
-            <RecordCard key={project.no} project={project} />
-          ))}
+          <JourneyWorkIndex projects={PROJECTS} />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && aboutArrivalB && aboutArrivalB.count > 0 && (
         <RoomOverlay
           progress={p}
           band={aboutArrivalB}
-          kicker="——  about · selected works  ——"
+          kicker="——  studio · what survives  ——"
           enterLabel="About the studio"
           enterHref="/about"
           enterVariant="outline"
         >
-          {ABOUT_ART.map((piece) => (
-            <ArtCard key={piece.id} piece={piece} />
-          ))}
+          <JourneyAboutIndex />
+        </RoomOverlay>
+      )}
+      {!prefersReducedMotion && eventsArrivalB && eventsArrivalB.count > 0 && (
+        <RoomOverlay
+          progress={p}
+          band={eventsArrivalB}
+          kicker="——  studio programme · upcoming  ——"
+          enterLabel="View all events"
+          enterHref="/events"
+          enterVariant="outline"
+        >
+          <JourneyEventsIndex events={EVENTS} />
         </RoomOverlay>
       )}
     </section>

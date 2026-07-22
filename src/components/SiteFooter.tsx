@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 export default function SiteFooter() {
   const pathname = usePathname();
-  if (pathname.startsWith("/dive") || pathname.startsWith("/sequence")) return null;
+  if (pathname.startsWith("/dive") || pathname.startsWith("/sequence") || pathname.startsWith("/lp")) return null;
 
   return (
     <footer className="relative z-30 border-t border-black/15 bg-[var(--color-bone)] px-6 pt-12 text-[var(--color-faded)] sm:px-10 sm:pt-16" style={{ paddingBottom: "calc(var(--bottom-menu-h, 190px) + env(safe-area-inset-bottom, 0px) + 2rem)" }}>
@@ -14,7 +14,7 @@ export default function SiteFooter() {
           <p className="display text-3xl">Ruined</p>
           <p className="mt-2 max-w-xs text-xs leading-relaxed opacity-60">Objects, garments, spaces, and project records from Studio No. 17.</p>
         </div>
-        <FooterColumn title="Index" links={[["Store", "/store"], ["Work", "/work"], ["About", "/about"], ["Contact", "/contact"]]} />
+        <FooterColumn title="Index" links={[["Store", "/store"], ["Work", "/work"], ["Events", "/events"], ["About", "/about"], ["Contact", "/contact"]]} />
         <FooterColumn title="Service" links={[["Shipping + Returns", "/shipping-returns"], ["Terms", "/terms"], ["Privacy", "/privacy"]]} />
         <div>
           <p className="font-mono text-[0.58rem] uppercase tracking-[0.3em] opacity-45">Studio</p>

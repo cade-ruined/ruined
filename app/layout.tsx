@@ -13,7 +13,7 @@ const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
 
 const SITE_NAME = "Ruined";
 const SITE_DESC =
-  "Ruined — a studio for artifacts and projects. Drop 01 / SS MMXXVI. Walk the warehouse: store, work, and studio, after the fear.";
+  "Ruined — a studio for artifacts and projects. Drop 01 / SS MMXXVI. Walk the warehouse: store, work, studio, and fireside events, after the fear.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   keywords: [
     "Ruined studio", "Utah design studio", "independent fashion label",
     "limited edition clothing", "furniture and object design", "creative direction",
-    "interior design", "experimental retail", "artifacts", "After the Fear", "SS26",
+    "interior design", "experimental retail", "design events", "artifacts", "After the Fear", "SS26",
   ],
   alternates: { canonical: "/" },
   icons: {

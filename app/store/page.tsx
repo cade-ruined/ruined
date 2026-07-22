@@ -15,6 +15,7 @@ export const revalidate = 3600;
 
 export default async function StorePage() {
   const products = await getProducts();
+  const dropEnd = process.env.NEXT_PUBLIC_DROP_END;
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ruined.studio";
   const productSchema = {
     "@context": "https://schema.org",
@@ -48,7 +49,7 @@ export default async function StorePage() {
           __html: JSON.stringify(productSchema).replace(/</g, "\\u003c"),
         }}
       />
-      <StoreGallery products={products} />
+      <StoreGallery products={products} dropEnd={dropEnd} />
     </>
   );
 }

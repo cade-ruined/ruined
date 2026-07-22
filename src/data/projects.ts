@@ -22,9 +22,17 @@ export const projectSlug = (project: Project) => SLUG_BY_NO[project.no];
 //   1.jpg, 2.jpg, 3.jpg…   → the detail carousel (falls back to placeholders)
 // See public/work/README.md. Missing files degrade gracefully, so you can
 // wire a project now and add its photography later.
-const AVAILABLE_COVERS = new Set(["ash-oak"]);
-const cover = (slug: string): string | undefined =>
-  AVAILABLE_COVERS.has(slug) ? `/work/${slug}/cover.jpg` : undefined;
+const COVER_BY_SLUG: Record<string, string> = {
+  "ash-oak": "/work/ash-oak/cover.jpg",
+  "tarpaulin-no-3": "/art/store.jpg",
+  "concrete-hours": "/art/loft.jpg",
+  "salt-print-series": "/art/lounge.jpg",
+  "objet-trouve": "/art/shelf.jpg",
+  "warehouse-17": "/ruined-hero-1.jpg",
+  "loom-no-7": "/art/records.jpg",
+  "ru-pilot": "/ruined-hero-store-4.webp",
+};
+const cover = (slug: string): string | undefined => COVER_BY_SLUG[slug];
 // Add paths here only after the corresponding files exist. This prevents every
 // project detail from issuing predictable 404 requests for placeholder slots.
 const gallery = (): string[] => [];
