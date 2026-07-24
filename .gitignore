@@ -35,7 +35,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
 # local backups (e.g. original media before optimization)
 /.backups
