@@ -17,6 +17,8 @@ import {
 const DESKTOP_EXPERIENCE_QUERY =
   "(min-width: 768px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
 const TOUCH_CAPABLE_QUERY = "(any-pointer: coarse)";
+const DESKTOP_JOURNEY_RETRY_BASE_MS = 400;
+const DESKTOP_JOURNEY_RETRY_MAX_MS = 4_000;
 const HOME_HASHES = new Set(["#top", "#store", "#work", "#about", "#events"]);
 
 type DesktopJourneyProps = {
@@ -89,12 +91,14 @@ export default function ImmersiveParallax({
   );
   const [desktopJourney, setDesktopJourney] =
     useState<ReadyDesktopJourney | null>(null);
+  const [desktopLoadAttempt, setDesktopLoadAttempt] = useState(0);
 
   useEffect(() => {
     if (!desktopEligible || desktopJourney) return;
 
     const controller = new AbortController();
     let active = true;
+    let retryTimer: number | undefined;
 
     void Promise.all([
       import("@/components/DesktopImmersiveParallax").then(
@@ -118,24 +122,40 @@ export default function ImmersiveParallax({
         }),
     ])
       .then(([Component, manifest]) => {
-        if (active) setDesktopJourney({ Component, manifest });
+        if (active) {
+          setDesktopLoadAttempt(0);
+          setDesktopJourney({ Component, manifest });
+        }
       })
       .catch((error: unknown) => {
         if (
           active &&
           !(error instanceof DOMException && error.name === "AbortError")
         ) {
-          // The sequence-derived opening frame remains visible when the
-          // optional desktop enhancement cannot load.
-          console.warn("Desktop journey unavailable", error);
+          if (desktopLoadAttempt === 0) {
+            console.warn(
+              "Desktop journey temporarily unavailable; retrying",
+              error
+            );
+          }
+          const retryDelay = Math.min(
+            DESKTOP_JOURNEY_RETRY_BASE_MS * 2 ** desktopLoadAttempt,
+            DESKTOP_JOURNEY_RETRY_MAX_MS
+          );
+          retryTimer = window.setTimeout(() => {
+            if (active) {
+              setDesktopLoadAttempt((attempt) => attempt + 1);
+            }
+          }, retryDelay);
         }
       });
 
     return () => {
       active = false;
       controller.abort();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [desktopEligible, desktopJourney]);
+  }, [desktopEligible, desktopJourney, desktopLoadAttempt]);
 
   const showDesktop = desktopEligible && desktopJourney !== null;
 

@@ -12,7 +12,7 @@ export default async function Page() {
   return (
     <ImmersiveParallax
       products={products}
-      fallback={<MobileImmersiveJourney />}
+      fallback={<MobileImmersiveJourney products={products} />}
     />
   );
 }

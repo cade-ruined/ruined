@@ -170,7 +170,7 @@ test("fireside loop is present and reasonably sized", async () => {
 });
 
 test("mobile stage combines canonical arrivals with in-place walk frames", async () => {
-  const [journey, walk, mobileData, header] = await Promise.all([
+  const [journey, walk, mobileData, header, indexes, homePage] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
       "utf8"
@@ -193,6 +193,11 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
       path.join(root, "src", "components", "SiteHeader.tsx"),
       "utf8"
     ),
+    fs.readFile(
+      path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
+      "utf8"
+    ),
+    fs.readFile(path.join(root, "app", "page.tsx"), "utf8"),
   ]);
 
   assert.doesNotMatch(journey, /-portrait\.(?:avif|jpe?g|webp)/);
@@ -219,6 +224,16 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(journey, /ruined-mobile-stage-active/);
   assert.match(journey, /onPointerDown/);
   assert.match(journey, /fire-stream-loop-mobile\.mp4/);
+  assert.match(journey, /JourneyStoreIndex/);
+  assert.match(journey, /JourneyWorkIndex/);
+  assert.match(journey, /JourneyAboutIndex/);
+  assert.match(journey, /JourneyEventsIndex/);
+  assert.match(journey, /roomSelections/);
+  assert.match(homePage, /MobileImmersiveJourney products=\{products\}/);
+  assert.match(indexes, /products\.slice\(0, 3\)/);
+  assert.match(indexes, /projects\.slice\(0, 3\)/);
+  assert.match(indexes, /events\.slice\(0, 3\)/);
+  assert.match(indexes, /href=\{`\/events#\$\{event\.id\}`\}/);
   assert.match(journey, /setSettledIndex\(index\)/);
   assert.match(journey, /settledIndex === activeIndex/);
   assert.match(journey, /muted[\s\S]*loop[\s\S]*playsInline/);
@@ -237,6 +252,21 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
     mobileData,
     /endFrame: MOBILE_ARRIVAL_FRAME_PATHS\[index \+ 1\]/
   );
+});
+
+test("desktop journey retries a transient sequence bootstrap failure", async () => {
+  const immersive = await fs.readFile(
+    path.join(root, "src", "components", "ImmersiveParallax.tsx"),
+    "utf8"
+  );
+
+  assert.match(immersive, /DESKTOP_JOURNEY_RETRY_BASE_MS/);
+  assert.match(immersive, /DESKTOP_JOURNEY_RETRY_MAX_MS/);
+  assert.match(
+    immersive,
+    /setDesktopLoadAttempt\(\(attempt\) => attempt \+ 1\)/
+  );
+  assert.match(immersive, /window\.clearTimeout\(retryTimer\)/);
 });
 
 test("production route boundaries and metadata files exist", async () => {

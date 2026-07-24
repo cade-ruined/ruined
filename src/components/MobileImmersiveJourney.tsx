@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import Image from "next/image";
@@ -17,11 +18,20 @@ import MobileWalkTransition, {
   type MobileWalkTransitionHandle,
 } from "@/components/sequence/MobileWalkTransition";
 import {
+  JourneyAboutIndex,
+  JourneyEventsIndex,
+  JourneyStoreIndex,
+  JourneyWorkIndex,
+} from "@/components/sequence/JourneyIndexes";
+import { EVENTS } from "@/data/events";
+import {
   MOBILE_ARRIVAL_FRAME_PATHS,
   MOBILE_SCENE_IDS,
   mobileSceneIndexFromHash,
   type MobileSceneId,
 } from "@/data/mobileJourney";
+import type { Product } from "@/data/products";
+import { PROJECTS } from "@/data/projects";
 import { versionSequenceAsset } from "@/data/sequences";
 
 type MobileScene = {
@@ -101,6 +111,7 @@ function MobileRoomScene({
   active,
   index,
   enhanced,
+  selection,
   onSceneRequest,
 }: {
   scene: MobileScene;
@@ -108,6 +119,7 @@ function MobileRoomScene({
   active: boolean;
   index: number;
   enhanced: boolean;
+  selection?: ReactNode;
   onSceneRequest: (
     event: ReactMouseEvent<HTMLAnchorElement>,
     index: number
@@ -151,6 +163,15 @@ function MobileRoomScene({
           <p className="ruined-mobile-scene__description">
             {scene.description}
           </p>
+          {selection && (
+            <div
+              className="ruined-mobile-scene__selection"
+              role="group"
+              aria-label={`${scene.title} selections`}
+            >
+              {selection}
+            </div>
+          )}
           <Link
             className="ruined-mobile-scene__link"
             href={scene.href}
@@ -235,7 +256,11 @@ function MobileFiresideVideo({
   );
 }
 
-export default function MobileImmersiveJourney() {
+export default function MobileImmersiveJourney({
+  products,
+}: {
+  products: Product[];
+}) {
   const journeyRef = useRef<HTMLElement>(null);
   const walkRef = useRef<MobileWalkTransitionHandle>(null);
   const activeIndexRef = useRef(0);
@@ -512,6 +537,12 @@ export default function MobileImmersiveJourney() {
   );
 
   const activeSceneId = MOBILE_SCENE_IDS[activeIndex];
+  const roomSelections: readonly ReactNode[] = [
+    null,
+    <JourneyStoreIndex key="store-selections" products={products} />,
+    <JourneyWorkIndex key="work-selections" projects={PROJECTS} />,
+    <JourneyAboutIndex key="about-selections" />,
+  ];
 
   return (
     <section
@@ -552,6 +583,7 @@ export default function MobileImmersiveJourney() {
           active={activeIndex === index}
           index={index}
           enhanced={stageEnabled}
+          selection={roomSelections[index]}
           onSceneRequest={handleSceneLink}
         />
       ))}
@@ -597,6 +629,14 @@ export default function MobileImmersiveJourney() {
             <span className="ruined-mobile-closing__fear">Fear</span>
           </h2>
 
+          <div
+            className="ruined-mobile-closing__selection"
+            role="group"
+            aria-label="Event selections"
+          >
+            <JourneyEventsIndex events={EVENTS} />
+          </div>
+
           <div className="ruined-mobile-closing__footer">
             <div className="ruined-mobile-closing__rule" aria-hidden="true">
               <span>⊕</span>
@@ -611,18 +651,6 @@ export default function MobileImmersiveJourney() {
               <span>View the studio programme</span>
               <span aria-hidden="true">→</span>
             </Link>
-            <nav
-              aria-label="Explore after the journey"
-              className="ruined-mobile-closing__nav"
-            >
-              <Link href="/store">Store</Link>
-              <Link href="/work">Work</Link>
-              <Link href="/events">Events</Link>
-              <Link href="/about">About</Link>
-              <a href="#top" onClick={(event) => handleSceneLink(event, 0)}>
-                Walk again ↺
-              </a>
-            </nav>
           </div>
         </div>
       </section>
@@ -809,6 +837,19 @@ export default function MobileImmersiveJourney() {
           color: color-mix(in srgb, var(--color-bone, #e5e0d5) 76%, transparent);
         }
 
+        .ruined-mobile-scene__selection,
+        .ruined-mobile-closing__selection {
+          width: 100%;
+        }
+
+        .ruined-mobile-scene__selection {
+          margin: 0 0 1rem;
+        }
+
+        .ruined-mobile-closing__selection {
+          margin-top: 1.25rem;
+        }
+
         .ruined-mobile-scene__link,
         .ruined-mobile-closing__events-link {
           display: inline-flex;
@@ -921,31 +962,6 @@ export default function MobileImmersiveJourney() {
           background: rgba(229, 224, 213, 0.04);
         }
 
-        .ruined-mobile-closing__nav {
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          gap: 0.9rem 1.25rem;
-          margin-top: 1.25rem;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 0.54rem;
-          line-height: 1.4;
-          letter-spacing: 0.16em;
-          text-transform: uppercase;
-        }
-
-        .ruined-mobile-closing__nav a {
-          min-height: 2.75rem;
-          display: inline-flex;
-          align-items: center;
-          color: color-mix(in srgb, var(--color-bone, #e5e0d5) 74%, transparent);
-          text-decoration: none;
-        }
-
-        .ruined-mobile-closing__nav a:last-child {
-          color: var(--color-signal, #e5a923);
-        }
-
         @supports (height: 100svh) {
           .ruined-mobile-journey[data-stage-enabled],
           .ruined-mobile-walk,
@@ -976,7 +992,25 @@ export default function MobileImmersiveJourney() {
           }
         }
 
-        @media (max-height: 650px) {
+        @media (max-height: 820px) {
+          .ruined-mobile-scene__description {
+            display: none;
+          }
+
+          .ruined-mobile-scene__selection {
+            margin-bottom: 0.7rem;
+          }
+
+          .ruined-mobile-closing__selection {
+            margin-top: 0.75rem;
+          }
+
+          .ruined-mobile-closing__footer {
+            padding-top: 1.5rem;
+          }
+        }
+
+        @media (max-height: 760px) {
           .ruined-mobile-journey[data-stage-enabled][data-active-scene="events"],
           .ruined-mobile-closing__inner {
             touch-action: pan-y pinch-zoom;
