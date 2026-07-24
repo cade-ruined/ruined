@@ -60,7 +60,7 @@ const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 // gives the loop time to establish before "After The Fear" begins.
 const SEQUENCE_END = 0.78;
 const FEAR_START = 0.88;
-const FIRESIDE_SRC = "/sequences/fireside/Fire and Stream Looping 4K.mp4";
+const FIRESIDE_SRC = "/sequences/fireside/fire-stream-loop-mobile.mp4";
 const ROOM_HOLD = 0.055;
 
 // A room's slice of the whole-journey timeline (0..1), derived from its frame

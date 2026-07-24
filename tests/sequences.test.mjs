@@ -269,6 +269,31 @@ test("desktop journey retries a transient sequence bootstrap failure", async () 
   assert.match(immersive, /window\.clearTimeout\(retryTimer\)/);
 });
 
+test("desktop sequence bounds decode, cache, and canvas pressure", async () => {
+  const [canvas, desktop] = await Promise.all([
+    fs.readFile(
+      path.join(root, "src", "components", "sequence", "RoomSequenceCanvas.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
+      "utf8"
+    ),
+  ]);
+
+  assert.match(canvas, /const CAP = coarsePointer \? 32 : 48/);
+  assert.match(canvas, /const AHEAD = coarsePointer \? 20 : 24/);
+  assert.match(canvas, /const MAX_INFLIGHT = coarsePointer \? 3 : 4/);
+  assert.match(canvas, /desynchronized: true/);
+  assert.match(canvas, /new Map<number, AbortController>/);
+  assert.match(canvas, /controller\.abort\(\)/);
+  assert.match(canvas, /const targetChanged = target !== previousTarget/);
+  assert.match(canvas, /Math\.min\(1, window\.devicePixelRatio \|\| 1\)/);
+  assert.doesNotMatch(canvas, /ctx\.clearRect/);
+  assert.match(desktop, /fire-stream-loop-mobile\.mp4/);
+  assert.doesNotMatch(desktop, /Fire and Stream Looping 4K\.mp4/);
+});
+
 test("production route boundaries and metadata files exist", async () => {
   for (const file of [
     "app/error.tsx",

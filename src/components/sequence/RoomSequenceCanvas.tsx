@@ -18,7 +18,7 @@ export default function RoomSequenceCanvas({
   useEffect(() => {
     if (!frames.length) return;
     const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
+    const ctx = canvas.getContext("2d", { desynchronized: true })!;
     const n = frames.length;
     // Nearest-frame fallback may bridge small decode gaps, but it must never
     // cross a room boundary and flash a different scene at the seam.
@@ -28,21 +28,23 @@ export default function RoomSequenceCanvas({
 
     const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
     const cache = new Map<number, ImageBitmap>();
-    const inflight = new Set<number>();
+    const inflight = new Map<number, AbortController>();
     const queued = new Set<number>();
     let queue: number[] = [];
     const failures = new Map<number, { count: number; retryAt: number }>();
-    // Touch gestures cover more frames per input event, so phones receive a
-    // deeper directional buffer while retaining a smaller decoded-memory cap.
-    const CAP = coarsePointer ? 56 : 96;
-    const AHEAD = coarsePointer ? 48 : 36;
-    const BEHIND = coarsePointer ? 14 : 12;
+    // Each decoded 1600 × 900 frame costs roughly 5.5 MiB. Keep the working set
+    // tight enough to avoid memory-pressure pauses while still covering a
+    // normal wheel/trackpad burst in both directions.
+    const CAP = coarsePointer ? 32 : 48;
+    const AHEAD = coarsePointer ? 20 : 24;
+    const BEHIND = 8;
     // Unbounded parallel fetches work locally but create head-of-line blocking
     // on a real CDN. Keep the urgent target ahead of speculative neighbours.
-    const MAX_INFLIGHT = coarsePointer ? 4 : 8;
+    const MAX_INFLIGHT = coarsePointer ? 3 : 4;
 
     let current = 0;
-    let previousTarget = 0;
+    let previousTarget = -1;
+    let direction = 1;
     let lastDrawn: ImageBitmap | null = null;
     let lastDrawnGroup: string | null = null;
     let raf = 0;
@@ -62,7 +64,7 @@ export default function RoomSequenceCanvas({
       }
     };
 
-    const decode = async (i: number) => {
+    const decode = async (i: number, controller: AbortController) => {
       const failed = failures.get(i);
       if (
         disposed ||
@@ -72,22 +74,31 @@ export default function RoomSequenceCanvas({
         (failed && (failed.count >= 3 || Date.now() < failed.retryAt))
       ) return;
       try {
-        const res = await fetch(frames[i], { cache: "force-cache" });
+        const res = await fetch(frames[i], {
+          cache: "force-cache",
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error(`Frame ${i} returned ${res.status}`);
         const blob = await res.blob();
         const bmp = await createImageBitmap(blob);
-        if (disposed) {
+        if (disposed || controller.signal.aborted) {
           bmp.close?.();
           return;
         }
         cache.set(i, bmp);
         failures.delete(i);
         evict(current);
-      } catch {
+      } catch (error: unknown) {
+        if (
+          controller.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
+          return;
+        }
         const count = (failures.get(i)?.count ?? 0) + 1;
         failures.set(i, { count, retryAt: Date.now() + 500 * 2 ** (count - 1) });
       } finally {
-        inflight.delete(i);
+        if (inflight.get(i) === controller) inflight.delete(i);
         pump();
       }
     };
@@ -99,8 +110,9 @@ export default function RoomSequenceCanvas({
         if (i === undefined) break;
         queued.delete(i);
         if (cache.has(i) || inflight.has(i)) continue;
-        inflight.add(i);
-        void decode(i);
+        const controller = new AbortController();
+        inflight.set(i, controller);
+        void decode(i, controller);
       }
     }
 
@@ -114,6 +126,17 @@ export default function RoomSequenceCanvas({
         inflight.has(i) ||
         (failed && (failed.count >= 3 || Date.now() < failed.retryAt))
       ) return;
+      if (urgent && inflight.size >= MAX_INFLIGHT) {
+        const staleIndex = [...inflight.keys()]
+          .filter((candidate) => candidate !== i)
+          .sort(
+            (a, b) => Math.abs(b - i) - Math.abs(a - i)
+          )[0];
+        if (staleIndex !== undefined) {
+          inflight.get(staleIndex)?.abort();
+          inflight.delete(staleIndex);
+        }
+      }
       if (queued.has(i)) {
         if (urgent) {
           queue = queue.filter((candidate) => candidate !== i);
@@ -127,12 +150,18 @@ export default function RoomSequenceCanvas({
       pump();
     }
 
-    const discardStaleQueue = (center: number) => {
-      const keepDistance = AHEAD * 2;
+    const discardStaleWork = (center: number) => {
+      const keepDistance = AHEAD + BEHIND;
       queue = queue.filter((i) => {
         const keep = Math.abs(i - center) <= keepDistance;
         if (!keep) queued.delete(i);
         return keep;
+      });
+      inflight.forEach((controller, i) => {
+        if (Math.abs(i - center) > keepDistance) {
+          controller.abort();
+          inflight.delete(i);
+        }
       });
     };
 
@@ -154,9 +183,12 @@ export default function RoomSequenceCanvas({
     };
 
     const resize = () => {
-      const dpr = Math.min(coarsePointer ? 1.5 : 2, window.devicePixelRatio || 1);
+      // Source frames are 1600 × 900, so a Retina-scale backing store adds
+      // interpolation and fill cost without revealing additional source detail.
+      const dpr = Math.min(1, window.devicePixelRatio || 1);
       canvas.width = Math.round(window.innerWidth * dpr);
       canvas.height = Math.round(window.innerHeight * dpr);
+      ctx.globalCompositeOperation = "copy";
       lastDrawn = null;
       lastDrawnGroup = null;
     };
@@ -167,7 +199,6 @@ export default function RoomSequenceCanvas({
       const s = Math.max(cw / bmp.width, ch / bmp.height);
       const w = bmp.width * s;
       const h = bmp.height * s;
-      ctx.clearRect(0, 0, cw, ch);
       ctx.drawImage(bmp, (cw - w) / 2, (ch - h) / 2, w, h);
       lastDrawn = bmp;
       lastDrawnGroup = group;
@@ -185,12 +216,17 @@ export default function RoomSequenceCanvas({
     const loop = () => {
       const p = Math.min(1, Math.max(0, scrollState.progress));
       const target = Math.round(p * (n - 1));
-      const direction = target < previousTarget ? -1 : 1;
-      if (target !== previousTarget) discardStaleQueue(target);
+      const targetChanged = target !== previousTarget;
+      if (targetChanged) {
+        direction = target < previousTarget ? -1 : 1;
+        discardStaleWork(target);
+      }
       current = target;
       schedule(target, true);
-      for (let k = 1; k <= AHEAD; k++) schedule(target + direction * k);
-      for (let k = 1; k <= BEHIND; k++) schedule(target - direction * k);
+      if (targetChanged) {
+        for (let k = 1; k <= AHEAD; k++) schedule(target + direction * k);
+        for (let k = 1; k <= BEHIND; k++) schedule(target - direction * k);
+      }
       // Keep the sequence-derived opening frame underneath the transparent
       // canvas until the exact requested target is available. A neighbouring
       // decode must never win the opening race and create a visible frame jump.
@@ -212,13 +248,14 @@ export default function RoomSequenceCanvas({
 
     resize();
     window.addEventListener("resize", resize);
-    for (let k = 0; k < AHEAD; k++) schedule(k, k === 0); // warm the opening
     loop();
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      inflight.forEach((controller) => controller.abort());
+      inflight.clear();
       cache.forEach((b) => b.close?.());
       cache.clear();
       queue = [];
