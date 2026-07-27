@@ -4,6 +4,7 @@ import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CalendarGlyph } from "@/components/nav/CalendarGlyph";
 import { CouchGlyph } from "@/components/nav/CouchGlyph";
 
 const NAV_ITEMS = [
@@ -226,5 +227,5 @@ export default function SiteHeader() {
 
 function HeaderGlyph({ index }: { index: number }) {
   if (index < 4) return <CouchGlyph index={index} className="h-6 w-7 shrink-0" />;
-  return <span aria-hidden className="flex h-6 w-7 shrink-0 items-center justify-center text-[1.15rem] leading-none">✦</span>;
+  return <CalendarGlyph className="h-6 w-7 shrink-0" />;
 }
