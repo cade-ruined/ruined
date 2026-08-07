@@ -33,7 +33,9 @@ export default function RoomSequenceCanvas({
     const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
     const cache = new Map<number, ImageBitmap>();
     const inflight = new Map<number, AbortController>();
+    const urgentInflight = new Set<number>();
     const queued = new Set<number>();
+    const urgentQueued = new Set<number>();
     let queue: number[] = [];
     const failures = new Map<number, { count: number; retryAt: number }>();
     // Each decoded 1600 × 900 frame costs roughly 5.5 MiB. Keep the working set
@@ -43,8 +45,10 @@ export default function RoomSequenceCanvas({
     const AHEAD = coarsePointer ? 20 : 24;
     const BEHIND = 8;
     // Unbounded parallel fetches work locally but create head-of-line blocking
-    // on a real CDN. Keep the urgent target ahead of speculative neighbours.
+    // on a real CDN. Reserve one lane for the exact requested frame instead
+    // of cancelling useful prefetches every time the scroll target advances.
     const MAX_INFLIGHT = coarsePointer ? 3 : 4;
+    const MAX_SPECULATIVE_INFLIGHT = MAX_INFLIGHT - 1;
 
     let current = 0;
     let previousTarget = -1;
@@ -102,7 +106,10 @@ export default function RoomSequenceCanvas({
         const count = (failures.get(i)?.count ?? 0) + 1;
         failures.set(i, { count, retryAt: Date.now() + 500 * 2 ** (count - 1) });
       } finally {
-        if (inflight.get(i) === controller) inflight.delete(i);
+        if (inflight.get(i) === controller) {
+          inflight.delete(i);
+          urgentInflight.delete(i);
+        }
         pump();
       }
     };
@@ -110,12 +117,22 @@ export default function RoomSequenceCanvas({
     function pump() {
       if (disposed) return;
       while (inflight.size < MAX_INFLIGHT && queue.length) {
-        const i = queue.shift();
+        const urgentQueueIndex = queue.findIndex((i) => urgentQueued.has(i));
+        if (
+          urgentQueueIndex < 0 &&
+          inflight.size - urgentInflight.size >= MAX_SPECULATIVE_INFLIGHT
+        ) {
+          break;
+        }
+        const queueIndex = urgentQueueIndex >= 0 ? urgentQueueIndex : 0;
+        const [i] = queue.splice(queueIndex, 1);
         if (i === undefined) break;
+        const urgent = urgentQueued.delete(i);
         queued.delete(i);
         if (cache.has(i) || inflight.has(i)) continue;
         const controller = new AbortController();
         inflight.set(i, controller);
+        if (urgent) urgentInflight.add(i);
         void decode(i, controller);
       }
     }
@@ -125,31 +142,38 @@ export default function RoomSequenceCanvas({
       if (
         disposed ||
         i < 0 ||
-        i >= n ||
+        i >= n
+      ) return;
+      if (urgent) {
+        // Urgency belongs only to the latest scroll target. Older exact-frame
+        // requests remain useful prefetches, but must not crowd ahead of it.
+        urgentQueued.clear();
+        urgentInflight.clear();
+      }
+      if (
         cache.has(i) ||
-        inflight.has(i) ||
         (failed && (failed.count >= 3 || Date.now() < failed.retryAt))
       ) return;
-      if (urgent && inflight.size >= MAX_INFLIGHT) {
-        const staleIndex = [...inflight.keys()]
-          .filter((candidate) => candidate !== i)
-          .sort(
-            (a, b) => Math.abs(b - i) - Math.abs(a - i)
-          )[0];
-        if (staleIndex !== undefined) {
-          inflight.get(staleIndex)?.abort();
-          inflight.delete(staleIndex);
-        }
+      if (inflight.has(i)) {
+        // A prefetched frame that becomes the exact target is already doing the
+        // right work. Promote it so it no longer consumes speculative capacity.
+        if (urgent) urgentInflight.add(i);
+        return;
       }
       if (queued.has(i)) {
         if (urgent) {
+          urgentQueued.add(i);
           queue = queue.filter((candidate) => candidate !== i);
           queue.unshift(i);
         }
       } else {
         queued.add(i);
-        if (urgent) queue.unshift(i);
-        else queue.push(i);
+        if (urgent) {
+          urgentQueued.add(i);
+          queue.unshift(i);
+        } else {
+          queue.push(i);
+        }
       }
       pump();
     }
@@ -158,13 +182,17 @@ export default function RoomSequenceCanvas({
       const keepDistance = AHEAD + BEHIND;
       queue = queue.filter((i) => {
         const keep = Math.abs(i - center) <= keepDistance;
-        if (!keep) queued.delete(i);
+        if (!keep) {
+          queued.delete(i);
+          urgentQueued.delete(i);
+        }
         return keep;
       });
       inflight.forEach((controller, i) => {
         if (Math.abs(i - center) > keepDistance) {
           controller.abort();
           inflight.delete(i);
+          urgentInflight.delete(i);
         }
       });
     };
@@ -264,10 +292,12 @@ export default function RoomSequenceCanvas({
       window.removeEventListener("resize", resize);
       inflight.forEach((controller) => controller.abort());
       inflight.clear();
+      urgentInflight.clear();
       cache.forEach((b) => b.close?.());
       cache.clear();
       queue = [];
       queued.clear();
+      urgentQueued.clear();
       failures.clear();
     };
   }, [frames]);

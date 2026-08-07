@@ -21,6 +21,16 @@ export function sequenceFramePath(roomId: string, frameNumber: number) {
   return `/sequences/${roomId}/frame-${String(frameNumber).padStart(4, "0")}.webp`;
 }
 
+// Mobile walk transitions use smaller copies of their intermediate frames.
+// The original source number stays in the filename so the mobile and desktop
+// exports can always be traced back to the same render.
+export function mobileSequenceFramePath(
+  roomId: string,
+  frameNumber: number
+) {
+  return `/sequences/mobile/${roomId}/frame-${String(frameNumber).padStart(4, "0")}.webp`;
+}
+
 export function sequenceFrameCount(roomId: string) {
   const room = SEQUENCE_ROOMS.find((candidate) => candidate.id === roomId);
   if (!room) throw new Error(`Unknown sequence room: ${roomId}`);
@@ -49,4 +59,13 @@ export type SequenceManifest = {
   version: string;
   rooms: { id: string; count: number; files: string[] }[];
   total: number;
+  mobile: {
+    sampleCount: number;
+    width: number;
+    height: number;
+    quality: number;
+    maxTotalBytes: number;
+    maxFrameBytes: number;
+    files: string[];
+  };
 };

@@ -9,6 +9,7 @@ public/sequences/
   store/
   records/
   lounge/
+  mobile/<room>/
   fireside/fire-stream-loop-mobile.mp4
   manifest.json
 ```
@@ -16,7 +17,8 @@ public/sequences/
 Each room must contain the number of frames approved in
 `src/data/sequence-config.json`, named contiguously from `frame-0001.webp`.
 The manifest builder rejects missing numbers, extra images, other image
-formats, and noncanonical names. Keep TIFF, PNG, BMP, and JPEG render masters
+formats, noncanonical names, and assets that exceed the configured desktop or
+mobile delivery budgets. Keep TIFF, PNG, BMP, and JPEG render masters
 outside all of `public/`, such as in the gitignored
 `sequence-masters/<room>/` directory or external archival storage.
 
@@ -27,7 +29,7 @@ for that room. Source names may vary; they are naturally sorted before
 conversion.
 
 ```bash
-node scripts/convert-sequence.mjs lobby 1600 900 80 \
+node scripts/convert-sequence.mjs lobby 1600 900 68 \
   --source=sequence-masters/lobby
 ```
 
@@ -43,6 +45,7 @@ Then validate the canonical sets and regenerate their content version:
 npm run sequences
 ```
 
-This command verifies all four rooms, writes `public/sequences/manifest.json`,
-and updates the cache version used by every frame URL. It also runs
-automatically before the development server and production build.
+This command rebuilds the 828×466 mobile intermediate frames at q72, verifies
+both tiers, writes `public/sequences/manifest.json`, and updates the cache
+version used by every frame URL. It also runs automatically before the
+development server and production build.

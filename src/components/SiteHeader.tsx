@@ -32,6 +32,7 @@ function isActive(pathname: string, currentHash: string, itemHash: string) {
 export default function SiteHeader() {
   const pathname = usePathname();
   const isLanding = pathname.startsWith("/lp");
+  const isFoundations = pathname === "/foundations";
   const isHome = pathname === "/";
   const [currentHash, setCurrentHash] = useState("#top");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -162,7 +163,7 @@ export default function SiteHeader() {
     NAV_ITEMS.find((item) => isActive(pathname, currentHash, item.hash)) ??
     NAV_ITEMS[0];
 
-  if (isLanding) return null;
+  if (isLanding || isFoundations) return null;
 
   return (
     <>

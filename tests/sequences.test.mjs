@@ -17,6 +17,18 @@ const sequenceConfig = JSON.parse(
     "utf8"
   )
 );
+const mobileSequenceConfig = JSON.parse(
+  await fs.readFile(
+    path.join(root, "src", "data", "mobile-sequence-config.json"),
+    "utf8"
+  )
+);
+
+function sampleFrameNumbers(frameCount, sampleCount) {
+  return Array.from({ length: sampleCount }, (_, index) =>
+    Math.ceil((index * (frameCount - 1)) / (sampleCount - 1)) + 1
+  );
+}
 
 test("sequence manifest is complete, ordered, and deployable", async () => {
   const manifest = JSON.parse(
@@ -39,6 +51,8 @@ test("sequence manifest is complete, ordered, and deployable", async () => {
   assert.ok(manifest.total > 0);
 
   const versionHash = createHash("sha256");
+  let desktopBytes = 0;
+  let largestDesktopFrame = 0;
   for (const room of manifest.rooms) {
     const approvedRoom = sequenceConfig.rooms.find(
       (candidate) => candidate.id === room.id
@@ -56,11 +70,61 @@ test("sequence manifest is complete, ordered, and deployable", async () => {
         `/sequences/${room.id}/frame-${String(index + 1).padStart(4, "0")}.webp`
       );
       const bytes = await fs.readFile(path.join(root, "public", file.slice(1)));
+      desktopBytes += bytes.length;
+      largestDesktopFrame = Math.max(largestDesktopFrame, bytes.length);
+      const metadata = await sharp(bytes).metadata();
+      assert.equal(metadata.format, "webp");
+      assert.equal(metadata.width, sequenceConfig.desktop.width);
+      assert.equal(metadata.height, sequenceConfig.desktop.height);
       versionHash.update(file);
       versionHash.update("\0");
       versionHash.update(bytes);
     }
   }
+  assert.ok(
+    desktopBytes <= sequenceConfig.desktop.maxTotalBytes,
+    `desktop sequence exceeds ${sequenceConfig.desktop.maxTotalBytes} bytes`
+  );
+  assert.ok(
+    largestDesktopFrame <= sequenceConfig.desktop.maxFrameBytes,
+    `desktop frame exceeds ${sequenceConfig.desktop.maxFrameBytes} bytes`
+  );
+
+  const expectedMobileFiles = sequenceConfig.rooms.flatMap((room) =>
+    sampleFrameNumbers(room.frameCount, mobileSequenceConfig.sampleCount)
+      .slice(1, -1)
+      .map(
+        (frame) =>
+          `/sequences/mobile/${room.id}/frame-${String(frame).padStart(4, "0")}.webp`
+      )
+  );
+  assert.deepEqual(manifest.mobile, {
+    ...mobileSequenceConfig,
+    files: expectedMobileFiles,
+  });
+  let mobileBytes = 0;
+  let largestMobileFrame = 0;
+  for (const file of expectedMobileFiles) {
+    const absolutePath = path.join(root, "public", file.slice(1));
+    const bytes = await fs.readFile(absolutePath);
+    mobileBytes += bytes.length;
+    largestMobileFrame = Math.max(largestMobileFrame, bytes.length);
+    const metadata = await sharp(bytes).metadata();
+    assert.equal(metadata.format, "webp");
+    assert.equal(metadata.width, mobileSequenceConfig.width);
+    assert.equal(metadata.height, mobileSequenceConfig.height);
+    versionHash.update(file);
+    versionHash.update("\0");
+    versionHash.update(bytes);
+  }
+  assert.ok(
+    mobileBytes <= mobileSequenceConfig.maxTotalBytes,
+    `mobile sequence exceeds ${mobileSequenceConfig.maxTotalBytes} bytes`
+  );
+  assert.ok(
+    largestMobileFrame <= mobileSequenceConfig.maxFrameBytes,
+    `mobile frame exceeds ${mobileSequenceConfig.maxFrameBytes} bytes`
+  );
 
   assert.equal(manifest.version, versionHash.digest("hex").slice(0, 12));
   const generatedVersion = await fs.readFile(
@@ -273,11 +337,37 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(mobileData, /room\.id/);
   assert.match(mobileData, /frameCount: room\.frameCount/);
   assert.match(journey, /MobileWalkTransition/);
-  assert.match(walk, /TRANSITION_SAMPLE_COUNT = 13/);
+  assert.match(
+    mobileData,
+    /MOBILE_TRANSITION_SAMPLE_COUNT = mobileSequenceConfig\.sampleCount/
+  );
+  assert.match(
+    mobileData,
+    /MOBILE_TRANSITION_FRAME_WIDTH = mobileSequenceConfig\.width/
+  );
+  assert.match(
+    mobileData,
+    /MOBILE_TRANSITION_FRAME_HEIGHT = mobileSequenceConfig\.height/
+  );
+  assert.match(walk, /MOBILE_TRANSITION_SAMPLE_COUNT/);
+  assert.match(walk, /resizeWidth: MOBILE_TRANSITION_FRAME_WIDTH/);
+  assert.match(walk, /resizeHeight: MOBILE_TRANSITION_FRAME_HEIGHT/);
   assert.match(walk, /sampleFrameNumbers\(frameCount\)/);
   assert.match(walk, /segmentBounds\.length/);
   assert.match(walk, /MOBILE_WALK_TRANSITIONS/);
+  assert.match(walk, /mobileSequenceFramePath\(room, frame\)/);
+  assert.match(walk, /fallbackSrc: versionSequenceAsset/);
   assert.match(walk, /index === frameNumbers\.length - 1/);
+  assert.match(walk, /const ready = await waitForFrames\(frameIndices\)/);
+  assert.match(walk, /TRANSITION_GATE_TIMEOUT_MS = 1500/);
+  assert.match(walk, /LOADING_INDICATOR_DELAY_MS = 120/);
+  assert.match(walk, /FRAME_RETRY_MAX_MS = 8000/);
+  assert.match(walk, /frameIndices\.some\(\(index\) => !cache\.has\(index\)\)/);
+  assert.doesNotMatch(walk, /const nearest/);
+  assert.match(walk, /resolveAllWaiters\(false\)/);
+  assert.match(walk, /inflight\.forEach\(\(controller\) => controller\.abort\(\)\)/);
+  assert.match(walk, /Preparing walk/);
+  assert.match(walk, /MAX_DECODED_PIXELS = 20_000_000/);
   assert.match(walk, /data-walking/);
   assert.match(walk, /MobileWalkTransitionHandle/);
   assert.doesNotMatch(walk, /IntersectionObserver|window\.scrollY/);
@@ -302,6 +392,11 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(indexes, /const product = products\[0\]/);
   assert.match(indexes, /const project = projects\[0\]/);
   assert.match(indexes, /const event = events\[0\]/);
+  const lobbyIndex = indexes.slice(
+    indexes.indexOf("export function JourneyLobbyIndex"),
+    indexes.indexOf("export function JourneyStoreIndex")
+  );
+  assert.match(lobbyIndex, /fetchPriority="low"/);
   assert.match(indexes, /products\.slice\(0, 3\)/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /events\.slice\(0, 3\)/);
@@ -365,12 +460,30 @@ test("desktop sequence bounds decode, cache, and canvas pressure", async () => {
   assert.match(canvas, /const CAP = coarsePointer \? 32 : 48/);
   assert.match(canvas, /const AHEAD = coarsePointer \? 20 : 24/);
   assert.match(canvas, /const MAX_INFLIGHT = coarsePointer \? 3 : 4/);
+  assert.match(
+    canvas,
+    /const MAX_SPECULATIVE_INFLIGHT = MAX_INFLIGHT - 1/
+  );
   assert.match(canvas, /desynchronized: true/);
   assert.match(canvas, /new Map<number, AbortController>/);
+  assert.match(canvas, /const urgentInflight = new Set<number>\(\)/);
+  assert.match(canvas, /const urgentQueued = new Set<number>\(\)/);
+  assert.match(
+    canvas,
+    /inflight\.size - urgentInflight\.size >= MAX_SPECULATIVE_INFLIGHT/
+  );
+  assert.match(canvas, /urgentQueued\.clear\(\)/);
+  assert.match(canvas, /urgentInflight\.clear\(\)/);
   assert.match(canvas, /controller\.abort\(\)/);
   assert.match(canvas, /const targetChanged = target !== previousTarget/);
   assert.match(canvas, /Math\.min\(1, window\.devicePixelRatio \|\| 1\)/);
   assert.doesNotMatch(canvas, /ctx\.clearRect/);
+
+  const schedule = canvas.slice(
+    canvas.indexOf("function schedule"),
+    canvas.indexOf("const discardStaleWork")
+  );
+  assert.doesNotMatch(schedule, /\.abort\(/);
   assert.match(desktop, /fire-stream-loop-mobile\.mp4/);
   assert.doesNotMatch(desktop, /Fire and Stream Looping 4K\.mp4/);
   assert.match(desktop, /manifest\.total \/ BASE_SEQUENCE_FRAME_COUNT/);
@@ -462,6 +575,9 @@ test("production route boundaries and metadata files exist", async () => {
     "app/loading.tsx",
     "app/not-found.tsx",
     "app/events/page.tsx",
+    "app/foundations/page.tsx",
+    "src/components/foundations/PresentationShell.tsx",
+    "src/data/foundations.ts",
     "app/robots.ts",
     "app/sitemap.ts",
     "src/data/events.ts",

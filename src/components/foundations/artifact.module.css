@@ -1,0 +1,889 @@
+.artifact {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(229, 224, 213, 0.22);
+  border-radius: 0;
+  appearance: none;
+  overflow: hidden;
+  background: #0b0b0b;
+  color: var(--color-bone, #e5e0d5);
+  text-align: left;
+  cursor: pointer;
+  isolation: isolate;
+  transform-style: preserve-3d;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.artifact:focus-visible {
+  outline-offset: -4px !important;
+}
+
+.artboard,
+.farLayer,
+.objectLayer,
+.noteLayer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-style: preserve-3d;
+}
+
+.artboard {
+  overflow: hidden;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.035), transparent 32%),
+    radial-gradient(circle at 68% 24%, rgba(255, 255, 255, 0.075), transparent 32%),
+    #11100f;
+}
+
+.artboard::before {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: 0.075;
+  background-image:
+    radial-gradient(rgba(245, 243, 238, 0.8) 0.55px, transparent 0.65px),
+    radial-gradient(rgba(0, 0, 0, 0.9) 0.55px, transparent 0.65px);
+  background-position: 0 0, 2px 2px;
+  background-size: 4px 4px;
+  mix-blend-mode: soft-light;
+}
+
+.artboard::after {
+  position: absolute;
+  z-index: 11;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(229, 224, 213, 0.14), transparent 1px) 18px 18px / 18px 1px no-repeat,
+    linear-gradient(rgba(229, 224, 213, 0.14), transparent 1px) 18px 18px / 1px 18px no-repeat,
+    linear-gradient(270deg, rgba(229, 224, 213, 0.14), transparent 1px) calc(100% - 18px) calc(100% - 18px) / 18px 1px no-repeat,
+    linear-gradient(0deg, rgba(229, 224, 213, 0.14), transparent 1px) calc(100% - 18px) calc(100% - 18px) / 1px 18px no-repeat;
+}
+
+.farLayer {
+  z-index: 1;
+  will-change: transform;
+}
+
+.objectLayer {
+  z-index: 3;
+  will-change: transform;
+}
+
+.noteLayer {
+  z-index: 5;
+  will-change: transform;
+}
+
+.materialField {
+  position: absolute;
+  inset: 7% 5% 12%;
+  display: block;
+  border: 1px solid rgba(229, 224, 213, 0.08);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 17px, rgba(229, 224, 213, 0.025) 17px 18px),
+    linear-gradient(145deg, #171513, #0c0b0a);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.34);
+  transform: rotate(-0.6deg);
+}
+
+.registration {
+  position: absolute;
+  inset: 5%;
+  display: block;
+  pointer-events: none;
+}
+
+.registration > span {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-color: rgba(229, 224, 213, 0.22);
+  border-style: solid;
+}
+
+.registration > span:nth-child(1) {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+}
+
+.registration > span:nth-child(2) {
+  top: 0;
+  right: 0;
+  border-width: 1px 1px 0 0;
+}
+
+.registration > span:nth-child(3) {
+  right: 0;
+  bottom: 0;
+  border-width: 0 1px 1px 0;
+}
+
+.registration > span:nth-child(4) {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 1px 1px;
+}
+
+.founderLabel {
+  position: absolute;
+  z-index: 8;
+  top: 6%;
+  left: 5%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.62rem, 1.05vw, 0.78rem);
+  line-height: 1.3;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(229, 224, 213, 0.74);
+}
+
+.founderName {
+  margin-bottom: 0.22rem;
+  font-family: var(--font-header, Inter, sans-serif);
+  font-size: clamp(0.95rem, 2.2vw, 1.35rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-bone, #e5e0d5);
+}
+
+.inspectHint {
+  position: absolute;
+  z-index: 8;
+  right: 5%;
+  bottom: 4%;
+  left: 5%;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid rgba(229, 224, 213, 0.14);
+  padding-top: 0.52rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.6rem, 1vw, 0.74rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(229, 224, 213, 0.68);
+}
+
+.quoteCard {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 39%;
+  min-height: 35%;
+  padding: clamp(0.7rem, 2.2vw, 1.3rem);
+  background: #d9d1c3;
+  color: #1b1917;
+  box-shadow: 12px 16px 34px rgba(0, 0, 0, 0.33);
+  clip-path: polygon(0 2%, 100% 0, 98% 94%, 91% 96%, 84% 94%, 76% 98%, 67% 95%, 58% 99%, 49% 96%, 40% 99%, 31% 95%, 22% 98%, 12% 95%, 0 97%);
+  transition:
+    transform 500ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.quote {
+  display: block;
+  white-space: pre-line;
+  font-family: var(--font-handwritten, "Bradley Hand", cursive);
+  font-size: clamp(0.95rem, 2.4vw, 1.7rem);
+  line-height: 1.14;
+  letter-spacing: 0.01em;
+}
+
+.noteIndex {
+  display: block;
+  margin-top: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.56rem, 0.8vw, 0.68rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.annotation {
+  --annotation-angle: 0deg;
+  --annotation-scale: 1;
+  position: absolute;
+  display: block;
+  width: 25%;
+  height: 1px;
+  background: var(--artifact-accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--artifact-accent) 30%, transparent);
+  transform-origin: left center;
+  transform: rotate(var(--annotation-angle)) scaleX(var(--annotation-scale));
+  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.annotation::after {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  content: "";
+  border: 1px solid var(--artifact-accent);
+  transform: rotate(45deg);
+}
+
+.dateStamp {
+  position: absolute;
+  display: block;
+  border: 1px solid color-mix(in srgb, var(--artifact-accent) 65%, transparent);
+  padding: 0.36rem 0.52rem 0.31rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.55rem, 0.9vw, 0.7rem);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--artifact-accent);
+  opacity: 0.86;
+  transform: rotate(-3deg);
+}
+
+.artifact[data-engaged="true"] .quoteCard,
+.artifact:focus-visible .quoteCard {
+  box-shadow: 16px 22px 44px rgba(0, 0, 0, 0.42);
+}
+
+.artifact[data-engaged="true"] .annotation,
+.artifact:focus-visible .annotation {
+  --annotation-scale: 1.18;
+}
+
+.tyler {
+  --artifact-accent: #8f2828;
+}
+
+.tyler .quoteCard {
+  top: 42%;
+  right: 7%;
+  transform: rotate(2.2deg);
+}
+
+.tyler[data-engaged="true"] .quoteCard,
+.tyler:focus-visible .quoteCard {
+  transform: translate3d(0, -6px, 0) rotate(0.7deg);
+}
+
+.tyler .annotation {
+  --annotation-angle: -9deg;
+  top: 38%;
+  right: 14%;
+}
+
+.tyler .dateStamp {
+  right: 8%;
+  bottom: 8%;
+}
+
+.notebook {
+  position: absolute;
+  top: 17%;
+  left: 17%;
+  display: block;
+  width: 42%;
+  height: 60%;
+  border: 1px solid rgba(229, 224, 213, 0.15);
+  background:
+    linear-gradient(90deg, #14110f 0 8%, transparent 8%),
+    repeating-linear-gradient(0deg, transparent 0 13px, rgba(229, 224, 213, 0.055) 13px 14px),
+    #25211d;
+  box-shadow: 14px 18px 38px rgba(0, 0, 0, 0.46);
+  transform: rotate(-5deg);
+}
+
+.notebookSpine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8%;
+  width: 1px;
+  background: rgba(229, 224, 213, 0.13);
+}
+
+.notebookRule {
+  position: absolute;
+  top: 18%;
+  right: 10%;
+  left: 16%;
+  height: 1px;
+  background: #8f2828;
+  opacity: 0.5;
+}
+
+.notebookCode,
+.sketchbookCode {
+  position: absolute;
+  right: 8%;
+  bottom: 6%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.34rem, 0.82vw, 0.52rem);
+  letter-spacing: 0.18em;
+  color: rgba(229, 224, 213, 0.35);
+}
+
+.photograph,
+.wornPhoto {
+  position: absolute;
+  display: block;
+  padding: 2%;
+  background: #cbc5ba;
+  box-shadow: 10px 14px 28px rgba(0, 0, 0, 0.38);
+}
+
+.photograph {
+  top: 20%;
+  right: 10%;
+  width: 31%;
+  height: 42%;
+  transform: rotate(6deg);
+}
+
+.photoImage {
+  position: absolute;
+  inset: 7% 7% 20%;
+  display: block;
+  filter: grayscale(1);
+  background:
+    radial-gradient(ellipse at 56% 38%, #9d9b96 0 12%, transparent 13%),
+    linear-gradient(125deg, transparent 0 42%, #777671 43% 62%, transparent 63%),
+    linear-gradient(145deg, #dedbd4, #403f3c);
+}
+
+.photoCode {
+  position: absolute;
+  right: 6%;
+  bottom: 5%;
+  left: 6%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.32rem, 0.72vw, 0.48rem);
+  letter-spacing: 0.12em;
+  color: #312f2c;
+}
+
+.tornPaper {
+  position: absolute;
+  bottom: 13%;
+  left: 9%;
+  display: block;
+  width: 38%;
+  padding: 0.7rem 0.8rem 0.85rem;
+  background: #bdb5a8;
+  clip-path: polygon(0 0, 100% 4%, 96% 84%, 87% 90%, 76% 86%, 65% 94%, 50% 88%, 38% 96%, 24% 89%, 11% 97%, 2% 91%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.35rem, 0.9vw, 0.56rem);
+  letter-spacing: 0.13em;
+  color: #282521;
+  transform: rotate(3deg);
+}
+
+.mitch {
+  --artifact-accent: #b7cbdd;
+}
+
+.mitch .materialField {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(183, 203, 221, 0.025) 31px 32px),
+    linear-gradient(145deg, #151718, #0b0d0e);
+}
+
+.mitch .quoteCard {
+  top: 35%;
+  left: 8%;
+  width: 37%;
+  min-height: 48%;
+  background: #ded8cc;
+  transform: rotate(-2deg);
+}
+
+.mitch[data-engaged="true"] .quoteCard,
+.mitch:focus-visible .quoteCard {
+  transform: translate3d(0, -6px, 0) rotate(-0.8deg);
+}
+
+.mitch .annotation {
+  --annotation-angle: 6deg;
+  top: 32%;
+  left: 13%;
+}
+
+.mitch .dateStamp {
+  right: 8%;
+  bottom: 9%;
+  transform: rotate(2deg);
+}
+
+.foldedLetter {
+  position: absolute;
+  top: 16%;
+  right: 17%;
+  display: block;
+  width: 44%;
+  height: 57%;
+  border: 1px solid rgba(29, 34, 38, 0.22);
+  background:
+    linear-gradient(28deg, transparent 49.5%, rgba(42, 42, 42, 0.15) 50%, transparent 50.5%),
+    linear-gradient(-28deg, transparent 49.5%, rgba(42, 42, 42, 0.12) 50%, transparent 50.5%),
+    #cfc9bd;
+  box-shadow: 14px 19px 36px rgba(0, 0, 0, 0.4);
+  transform: rotate(4deg);
+}
+
+.foldLine {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(42, 42, 42, 0.14);
+}
+
+.letterCopy {
+  position: absolute;
+  right: 10%;
+  bottom: 10%;
+  left: 10%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.33rem, 0.85vw, 0.55rem);
+  line-height: 1.4;
+  letter-spacing: 0.12em;
+  color: rgba(28, 29, 29, 0.72);
+}
+
+.map {
+  position: absolute;
+  top: 22%;
+  right: 6%;
+  display: block;
+  width: 37%;
+  height: 43%;
+  background:
+    linear-gradient(31deg, transparent 45%, rgba(56, 75, 87, 0.28) 46% 47%, transparent 48%),
+    linear-gradient(112deg, transparent 56%, rgba(56, 75, 87, 0.2) 57% 58%, transparent 59%),
+    repeating-linear-gradient(0deg, rgba(39, 47, 52, 0.11) 0 1px, transparent 1px 17px),
+    #aaa99f;
+  clip-path: polygon(4% 0, 98% 5%, 94% 91%, 84% 96%, 70% 91%, 59% 98%, 44% 92%, 31% 97%, 17% 91%, 2% 96%);
+  box-shadow: 8px 12px 26px rgba(0, 0, 0, 0.36);
+  transform: rotate(8deg);
+}
+
+.mapRoute {
+  position: absolute;
+  top: 18%;
+  left: 13%;
+  width: 62%;
+  height: 47%;
+  border-right: 2px solid rgba(71, 103, 124, 0.65);
+  border-bottom: 2px solid rgba(71, 103, 124, 0.65);
+  transform: skew(-19deg) rotate(11deg);
+}
+
+.mapPoint {
+  position: absolute;
+  right: 7%;
+  bottom: 7%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.3rem, 0.72vw, 0.46rem);
+  letter-spacing: 0.1em;
+  color: #3f4e57;
+}
+
+.thread {
+  position: absolute;
+  right: 24%;
+  bottom: 15%;
+  width: 35%;
+  height: 19%;
+  border-top: 2px solid #8c6d55;
+  border-radius: 50%;
+  transform: rotate(-13deg);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.38));
+}
+
+.cade {
+  --artifact-accent: #f5f3ee;
+}
+
+.cade .materialField {
+  background:
+    linear-gradient(90deg, transparent 49.8%, rgba(245, 243, 238, 0.055) 50%, transparent 50.2%),
+    linear-gradient(#171717, #090909);
+}
+
+.cade .quoteCard {
+  right: 7%;
+  bottom: 13%;
+  width: 41%;
+  min-height: 30%;
+  background: #f0ede6;
+  transform: rotate(-1.5deg);
+}
+
+.cade[data-engaged="true"] .quoteCard,
+.cade:focus-visible .quoteCard {
+  transform: translate3d(0, -6px, 0) rotate(-0.3deg);
+}
+
+.cade .annotation {
+  --annotation-angle: -5deg;
+  top: 61%;
+  right: 13%;
+}
+
+.cade .dateStamp {
+  top: 8%;
+  right: 7%;
+  bottom: auto;
+}
+
+.sketchbook {
+  position: absolute;
+  top: 16%;
+  left: 13%;
+  display: block;
+  width: 48%;
+  height: 64%;
+  border: 1px solid rgba(245, 243, 238, 0.16);
+  background: #080808;
+  box-shadow: 16px 20px 42px rgba(0, 0, 0, 0.52);
+  transform: rotate(-4deg);
+}
+
+.logoSketch {
+  position: absolute;
+  top: 22%;
+  right: 15%;
+  bottom: 25%;
+  left: 15%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10%;
+  transform: rotate(3deg);
+}
+
+.logoSketch > span {
+  display: block;
+  border: 1px solid rgba(245, 243, 238, 0.42);
+  clip-path: polygon(0 4%, 100% 0, 84% 100%, 8% 86%);
+}
+
+.logoSketch > span:nth-child(2),
+.logoSketch > span:nth-child(3) {
+  transform: rotate(45deg) scale(0.72);
+}
+
+.typeSpecimen {
+  position: absolute;
+  top: 20%;
+  right: 7%;
+  display: flex;
+  width: 35%;
+  height: 40%;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  border-left: 1px solid rgba(42, 42, 42, 0.22);
+  padding-left: 6%;
+  background: #d9d1c3;
+  color: #171717;
+  box-shadow: 8px 13px 28px rgba(0, 0, 0, 0.38);
+  transform: rotate(3deg);
+}
+
+.typeSpecimen > span:nth-child(-n + 2) {
+  font-family: var(--font-header, Inter, sans-serif);
+  font-size: clamp(1.1rem, 4.8vw, 3.4rem);
+  font-weight: 700;
+  line-height: 0.74;
+  letter-spacing: -0.08em;
+}
+
+.typeSpecimen > span:last-child {
+  margin-top: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.27rem, 0.66vw, 0.44rem);
+  letter-spacing: 0.11em;
+}
+
+.ruler {
+  position: absolute;
+  right: 19%;
+  bottom: 10%;
+  width: 48%;
+  height: 5%;
+  border: 1px solid rgba(27, 28, 28, 0.44);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 8px, rgba(23, 24, 24, 0.55) 8px 9px),
+    linear-gradient(#a7aaa7, #646966);
+  box-shadow: 4px 7px 16px rgba(0, 0, 0, 0.4);
+  transform: rotate(-9deg);
+}
+
+.cutPaper {
+  position: absolute;
+  bottom: 16%;
+  left: 8%;
+  padding: 0.52rem 0.64rem;
+  background: #e1ddd4;
+  clip-path: polygon(3% 0, 100% 4%, 93% 100%, 0 89%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.3rem, 0.74vw, 0.48rem);
+  letter-spacing: 0.13em;
+  color: #1b1b1b;
+  transform: rotate(4deg);
+}
+
+.lib {
+  --artifact-accent: #c8b49a;
+}
+
+.lib .materialField {
+  background:
+    repeating-linear-gradient(45deg, rgba(78, 62, 47, 0.035) 0 1px, transparent 1px 5px),
+    linear-gradient(145deg, #211a15, #0e0c0a);
+}
+
+.lib .quoteCard {
+  top: 28%;
+  right: 8%;
+  width: 39%;
+  min-height: 38%;
+  background: #d8cbbb;
+  transform: rotate(2deg);
+}
+
+.lib[data-engaged="true"] .quoteCard,
+.lib:focus-visible .quoteCard {
+  transform: translate3d(0, -6px, 0) rotate(0.6deg);
+}
+
+.lib .annotation {
+  --annotation-angle: -7deg;
+  top: 25%;
+  right: 13%;
+}
+
+.lib .dateStamp {
+  right: 9%;
+  bottom: 8%;
+}
+
+.tanMaterial {
+  position: absolute;
+  top: 13%;
+  left: 10%;
+  width: 47%;
+  height: 66%;
+  background:
+    repeating-linear-gradient(38deg, rgba(66, 49, 37, 0.08) 0 1px, transparent 1px 4px),
+    #b19b80;
+  box-shadow: 13px 18px 36px rgba(0, 0, 0, 0.4);
+  clip-path: polygon(2% 3%, 95% 0, 100% 93%, 7% 100%);
+  transform: rotate(-4deg);
+}
+
+.boundLetter {
+  position: absolute;
+  top: 18%;
+  left: 18%;
+  width: 37%;
+  height: 55%;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 19px, rgba(42, 42, 42, 0.09) 19px 20px),
+    #d9d1c3;
+  box-shadow: 9px 13px 29px rgba(0, 0, 0, 0.36);
+  transform: rotate(-1.5deg);
+}
+
+.binding {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8%;
+  width: 3px;
+  background:
+    repeating-linear-gradient(0deg, #6d4d3c 0 7px, transparent 7px 13px);
+}
+
+.wornPhoto {
+  top: 16%;
+  right: 9%;
+  width: 30%;
+  height: 40%;
+  transform: rotate(5deg);
+}
+
+.flower {
+  position: absolute;
+  right: 35%;
+  bottom: 10%;
+  width: 19%;
+  height: 45%;
+  filter: drop-shadow(3px 5px 4px rgba(0, 0, 0, 0.28));
+  transform: rotate(16deg);
+}
+
+.flowerStem {
+  position: absolute;
+  right: 48%;
+  bottom: 0;
+  width: 2px;
+  height: 80%;
+  background: #64614a;
+  transform: rotate(-4deg);
+}
+
+.petalOne,
+.petalTwo,
+.petalThree {
+  position: absolute;
+  top: 4%;
+  left: 36%;
+  width: 28%;
+  height: 25%;
+  border-radius: 68% 22% 68% 28%;
+  background: #8d775e;
+  transform-origin: 50% 100%;
+}
+
+.petalOne {
+  transform: rotate(-48deg);
+}
+
+.petalTwo {
+  transform: rotate(9deg);
+}
+
+.petalThree {
+  transform: rotate(56deg);
+}
+
+.metalToken {
+  position: absolute;
+  bottom: 14%;
+  left: 12%;
+  display: grid;
+  width: 10%;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(15, 15, 15, 0.5);
+  background: linear-gradient(135deg, #b9b8b1, #565854 55%, #9e9f99);
+  clip-path: polygon(50% 0, 100% 34%, 82% 100%, 17% 92%, 0 30%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(0.3rem, 0.8vw, 0.5rem);
+  color: #171717;
+  transform: rotate(-12deg);
+}
+
+.mark {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  color: inherit;
+}
+
+.markPiece {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .artifact:hover .quoteCard {
+    box-shadow: 16px 22px 44px rgba(0, 0, 0, 0.42);
+  }
+
+  .tyler:hover .quoteCard {
+    transform: translate3d(0, -5px, 0) rotate(1deg);
+  }
+
+  .mitch:hover .quoteCard {
+    transform: translate3d(0, -5px, 0) rotate(-1deg);
+  }
+
+  .cade:hover .quoteCard {
+    transform: translate3d(0, -5px, 0) rotate(-0.5deg);
+  }
+
+  .lib:hover .quoteCard {
+    transform: translate3d(0, -5px, 0) rotate(0.8deg);
+  }
+
+  .artifact:hover .annotation {
+    --annotation-scale: 1.12;
+  }
+}
+
+@media (max-width: 640px) {
+  .artifact {
+    aspect-ratio: 5 / 4;
+  }
+
+  .founderLabel {
+    top: 5%;
+    font-size: 0.75rem;
+  }
+
+  .inspectHint {
+    bottom: 3%;
+    font-size: 0.75rem;
+  }
+
+  .quoteCard {
+    padding: 0.72rem;
+  }
+
+  .quote {
+    font-size: clamp(0.9rem, 3.7vw, 1.1rem);
+  }
+
+  .tyler .quoteCard {
+    top: 34%;
+    right: 5%;
+    width: 48%;
+  }
+
+  .mitch .quoteCard {
+    top: 18%;
+    left: 5%;
+    width: 52%;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 359px) {
+  .artifact {
+    aspect-ratio: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact,
+  .artifact *,
+  .markPiece {
+    transition-duration: 0.01ms !important;
+  }
+
+  .artifact {
+    transform: none !important;
+  }
+
+  .farLayer,
+  .objectLayer,
+  .noteLayer {
+    transform: none !important;
+  }
+}

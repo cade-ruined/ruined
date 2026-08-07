@@ -3,6 +3,11 @@ import {
   sequenceFrameCount,
   sequenceFramePath,
 } from "@/data/sequences";
+import mobileSequenceConfig from "@/data/mobile-sequence-config.json";
+
+export const MOBILE_TRANSITION_SAMPLE_COUNT = mobileSequenceConfig.sampleCount;
+export const MOBILE_TRANSITION_FRAME_WIDTH = mobileSequenceConfig.width;
+export const MOBILE_TRANSITION_FRAME_HEIGHT = mobileSequenceConfig.height;
 
 export const MOBILE_WALK_ROOMS = SEQUENCE_ROOMS;
 

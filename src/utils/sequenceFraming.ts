@@ -4,7 +4,8 @@ import {
   sequenceFrameCount,
 } from "@/data/sequences";
 
-const FRAME_PATH_PATTERN = /\/sequences\/([^/]+)\/frame-(\d+)\.webp/;
+const FRAME_PATH_PATTERN =
+  /\/sequences\/(?:mobile\/)?([^/]+)\/frame-(\d+)\.webp/;
 const MIN_FOCAL = 0.01;
 const MAX_FOCAL = 0.99;
 

@@ -52,11 +52,12 @@ Room sources are defined in `src/data/sequences.ts`. After changing frames in
 npm run sequences
 ```
 
-The manifest builder accepts only each room's complete, contiguous frame count
-from `src/data/sequence-config.json`, named `frame-####.webp`. It also generates
-a content version that is appended to frame URLs, so a replaced sequence can
-never reuse stale browser or CDN bytes. The browser decodes frames on demand
-and keeps a bounded cache rather than holding the complete journey in memory.
+The asset pipeline accepts only each room's complete, contiguous frame count
+from `src/data/sequence-config.json`, named `frame-####.webp`. It derives the
+small mobile transition set at the configured decode size, validates both asset
+tiers, and generates a shared content version so replaced bytes can never reuse
+stale browser or CDN cache entries. Desktop decodes frames on demand with a
+bounded cache; mobile buffers its complete 13-frame transition before playback.
 
 ## Shopify
 

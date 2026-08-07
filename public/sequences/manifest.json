@@ -1,5 +1,5 @@
 {
-  "version": "644771dd1cfd",
+  "version": "73c3e8fb3b0f",
   "rooms": [
     {
       "id": "lobby",
@@ -835,5 +835,59 @@
       ]
     }
   ],
-  "total": 809
+  "total": 809,
+  "mobile": {
+    "sampleCount": 13,
+    "width": 828,
+    "height": 466,
+    "quality": 72,
+    "maxTotalBytes": 1572864,
+    "maxFrameBytes": 65536,
+    "files": [
+      "/sequences/mobile/lobby/frame-0021.webp",
+      "/sequences/mobile/lobby/frame-0041.webp",
+      "/sequences/mobile/lobby/frame-0061.webp",
+      "/sequences/mobile/lobby/frame-0081.webp",
+      "/sequences/mobile/lobby/frame-0101.webp",
+      "/sequences/mobile/lobby/frame-0121.webp",
+      "/sequences/mobile/lobby/frame-0141.webp",
+      "/sequences/mobile/lobby/frame-0161.webp",
+      "/sequences/mobile/lobby/frame-0181.webp",
+      "/sequences/mobile/lobby/frame-0201.webp",
+      "/sequences/mobile/lobby/frame-0221.webp",
+      "/sequences/mobile/store/frame-0017.webp",
+      "/sequences/mobile/store/frame-0033.webp",
+      "/sequences/mobile/store/frame-0049.webp",
+      "/sequences/mobile/store/frame-0065.webp",
+      "/sequences/mobile/store/frame-0081.webp",
+      "/sequences/mobile/store/frame-0097.webp",
+      "/sequences/mobile/store/frame-0113.webp",
+      "/sequences/mobile/store/frame-0129.webp",
+      "/sequences/mobile/store/frame-0145.webp",
+      "/sequences/mobile/store/frame-0161.webp",
+      "/sequences/mobile/store/frame-0177.webp",
+      "/sequences/mobile/records/frame-0017.webp",
+      "/sequences/mobile/records/frame-0032.webp",
+      "/sequences/mobile/records/frame-0047.webp",
+      "/sequences/mobile/records/frame-0063.webp",
+      "/sequences/mobile/records/frame-0078.webp",
+      "/sequences/mobile/records/frame-0093.webp",
+      "/sequences/mobile/records/frame-0109.webp",
+      "/sequences/mobile/records/frame-0124.webp",
+      "/sequences/mobile/records/frame-0139.webp",
+      "/sequences/mobile/records/frame-0155.webp",
+      "/sequences/mobile/records/frame-0170.webp",
+      "/sequences/mobile/lounge/frame-0017.webp",
+      "/sequences/mobile/lounge/frame-0033.webp",
+      "/sequences/mobile/lounge/frame-0049.webp",
+      "/sequences/mobile/lounge/frame-0065.webp",
+      "/sequences/mobile/lounge/frame-0081.webp",
+      "/sequences/mobile/lounge/frame-0097.webp",
+      "/sequences/mobile/lounge/frame-0113.webp",
+      "/sequences/mobile/lounge/frame-0129.webp",
+      "/sequences/mobile/lounge/frame-0145.webp",
+      "/sequences/mobile/lounge/frame-0161.webp",
+      "/sequences/mobile/lounge/frame-0177.webp"
+    ]
+  }
 }

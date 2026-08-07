@@ -84,6 +84,7 @@ export function JourneyLobbyIndex({
               alt={selection.alt}
               fill
               sizes="(min-width: 640px) 18rem, 28vw"
+              fetchPriority="low"
               className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
             />
           )}

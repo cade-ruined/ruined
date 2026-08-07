@@ -41,7 +41,7 @@ const nextConfig = {
         source: "/sequences/manifest.json",
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
-      ...["lobby", "store", "records", "lounge"].map((room) => ({
+      ...["lobby", "store", "records", "lounge", "mobile"].map((room) => ({
         source: `/sequences/${room}/:path*`,
         headers: [
           {

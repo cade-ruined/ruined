@@ -4,7 +4,7 @@
 //
 // Usage: node scripts/convert-sequence.mjs <room> [width] [height] [quality]
 //        --source=<directory> [--delete-source]
-//   e.g. node scripts/convert-sequence.mjs lobby 1600 900 80 \
+//   e.g. node scripts/convert-sequence.mjs lobby 1600 900 68 \
 //          --source=sequence-masters/lobby
 import sharp from "sharp";
 import fs from "node:fs/promises";
@@ -26,13 +26,13 @@ const RAW = /\.(tiff?|png|bmp|jpe?g)$/i;
 const natural = (a, b) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 
+const sequenceConfig = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8"));
 const room = process.argv[2];
-const WIDTH = Number(process.argv[3] || 1600);
-const HEIGHT = Number(process.argv[4] || 900);
-const QUALITY = Number(process.argv[5] || 80);
+const WIDTH = Number(process.argv[3] || sequenceConfig.desktop?.width || 1600);
+const HEIGHT = Number(process.argv[4] || sequenceConfig.desktop?.height || 900);
+const QUALITY = Number(process.argv[5] || sequenceConfig.desktop?.quality || 68);
 const DELETE_SOURCE = process.argv.includes("--delete-source");
 const sourceArg = process.argv.find((arg) => arg.startsWith("--source="));
-const sequenceConfig = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8"));
 const roomConfig = sequenceConfig.rooms?.find((entry) => entry.id === room);
 
 const failUsage = (message) => {
@@ -132,7 +132,7 @@ async function main() {
       );
       await sharp(path.join(INPUT_DIR, name))
         .resize(WIDTH, HEIGHT, { fit: "cover" })
-        .webp({ quality: QUALITY })
+        .webp({ quality: QUALITY, effort: 6, smartSubsample: true })
         .toFile(output);
       if ((index + 1) % 20 === 0 || index + 1 === entries.length) {
         process.stdout.write(`\r  ${index + 1}/${entries.length}`);

@@ -5,7 +5,12 @@ import { usePathname } from "next/navigation";
 
 export default function SiteFooter() {
   const pathname = usePathname();
-  if (pathname.startsWith("/dive") || pathname.startsWith("/sequence") || pathname.startsWith("/lp")) return null;
+  if (
+    pathname.startsWith("/dive") ||
+    pathname.startsWith("/sequence") ||
+    pathname.startsWith("/lp") ||
+    pathname === "/foundations"
+  ) return null;
 
   return (
     <footer className="relative z-30 border-t border-black/15 bg-[var(--color-bone)] px-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] pt-12 text-[var(--color-faded)] sm:px-10 sm:pt-16 md:pb-8">

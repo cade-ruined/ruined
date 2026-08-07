@@ -1,4 +1,11 @@
 {
+  "desktop": {
+    "width": 1600,
+    "height": 900,
+    "quality": 68,
+    "maxTotalBytes": 62914560,
+    "maxFrameBytes": 184320
+  },
   "rooms": [
     { "id": "lobby", "label": "Lobby", "frameCount": 240 },
     { "id": "store", "label": "Store", "frameCount": 192 },
