@@ -7,19 +7,19 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import MobileWalkTransition, {
   type MobileWalkTransitionHandle,
 } from "@/components/sequence/MobileWalkTransition";
+import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
   JourneyAboutIndex,
   JourneyEventsIndex,
+  JourneyLobbyIndex,
   JourneyStoreIndex,
   JourneyWorkIndex,
 } from "@/components/sequence/JourneyIndexes";
@@ -33,31 +33,33 @@ import {
 import type { Product } from "@/data/products";
 import { PROJECTS } from "@/data/projects";
 import { versionSequenceAsset } from "@/data/sequences";
+import {
+  sequenceAssetFocalX,
+  sequenceFocalMediaStyle,
+} from "@/utils/sequenceFraming";
 
 type MobileScene = {
   id: Exclude<MobileSceneId, "events">;
-  href: "#store" | `/${"store" | "work" | "about"}`;
   image: string;
-  eyebrow: string;
-  title: string;
-  description: string;
-  cta: string;
+  heading: string;
+  href?: `/${"store" | "work" | "about"}`;
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  cta?: string;
 };
 
 const MOBILE_SCENES = [
   {
     id: "top",
-    href: "#store",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[0]),
-    eyebrow: "The Ruined Project",
-    title: "Enter Ruined",
-    description: "Objects, garments, spaces, and projects after the fear.",
-    cta: "Begin the walk",
+    heading: "Lobby",
   },
   {
     id: "store",
     href: "/store",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[1]),
+    heading: "The Store",
     eyebrow: "01 / Artifacts",
     title: "The Store",
     description: "Objects and garments made to gather a history.",
@@ -67,6 +69,7 @@ const MOBILE_SCENES = [
     id: "work",
     href: "/work",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[2]),
+    heading: "The Work",
     eyebrow: "02 / Project Hub",
     title: "The Work",
     description: "Objects, spaces, and material records from the studio.",
@@ -76,6 +79,7 @@ const MOBILE_SCENES = [
     id: "about",
     href: "/about",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[3]),
+    heading: "What Remains",
     eyebrow: "03 / Studio No. 17",
     title: "What Remains",
     description: "A practice shaped by use, wear, place, and what survives.",
@@ -112,7 +116,6 @@ function MobileRoomScene({
   index,
   enhanced,
   selection,
-  onSceneRequest,
 }: {
   scene: MobileScene;
   priority: boolean;
@@ -120,10 +123,6 @@ function MobileRoomScene({
   index: number;
   enhanced: boolean;
   selection?: ReactNode;
-  onSceneRequest: (
-    event: ReactMouseEvent<HTMLAnchorElement>,
-    index: number
-  ) => void;
 }) {
   const headingId = `mobile-${scene.id}-heading`;
 
@@ -143,47 +142,49 @@ function MobileRoomScene({
       </span>
       <div className="ruined-mobile-scene__visual">
         <div className="ruined-mobile-scene__media">
-          <Image
+          <SequenceFrameImage
             src={scene.image}
-            alt=""
-            fill
-            sizes="100vw"
             priority={priority}
-            unoptimized
-            draggable={false}
             className="ruined-mobile-scene__image"
           />
         </div>
         <div className="ruined-mobile-scene__scrim" aria-hidden="true" />
         <div className="ruined-mobile-scene__copy">
-          <p className="ruined-mobile-scene__eyebrow">{scene.eyebrow}</p>
-          <h2 id={headingId} className="ruined-mobile-scene__title">
-            {scene.title}
-          </h2>
-          <p className="ruined-mobile-scene__description">
-            {scene.description}
-          </p>
+          {scene.eyebrow && (
+            <p className="ruined-mobile-scene__eyebrow">{scene.eyebrow}</p>
+          )}
+          {scene.title ? (
+            <h2 id={headingId} className="ruined-mobile-scene__title">
+              {scene.title}
+            </h2>
+          ) : (
+            <h2 id={headingId} className="sr-only">
+              {scene.heading}
+            </h2>
+          )}
+          {scene.description && (
+            <p className="ruined-mobile-scene__description">
+              {scene.description}
+            </p>
+          )}
           {selection && (
             <div
               className="ruined-mobile-scene__selection"
               role="group"
-              aria-label={`${scene.title} selections`}
+              aria-label={`${scene.heading} selections`}
             >
               {selection}
             </div>
           )}
-          <Link
-            className="ruined-mobile-scene__link"
-            href={scene.href}
-            onClick={
-              scene.href.startsWith("#")
-                ? (event) => onSceneRequest(event, 1)
-                : undefined
-            }
-          >
-            <span>{scene.cta}</span>
-            <span aria-hidden="true">→</span>
-          </Link>
+          {scene.href && scene.cta && (
+            <Link
+              className="ruined-mobile-scene__link"
+              href={scene.href}
+            >
+              <span>{scene.cta}</span>
+              <span aria-hidden="true">→</span>
+            </Link>
+          )}
         </div>
       </div>
     </article>
@@ -249,6 +250,7 @@ function MobileFiresideVideo({
       preload={shouldLoad ? "auto" : "none"}
       aria-hidden="true"
       onPlaying={() => setVisible(true)}
+      style={sequenceFocalMediaStyle(sequenceAssetFocalX(MOBILE_FIRESIDE_SRC))}
       className={`ruined-mobile-closing__video${
         visible && shouldPlay ? " is-visible" : ""
       }`}
@@ -421,24 +423,6 @@ export default function MobileImmersiveJourney({
     navigateRef.current(nextIndex);
   }, []);
 
-  const handleSceneLink = useCallback(
-    (event: ReactMouseEvent<HTMLAnchorElement>, index: number) => {
-      if (
-        !stageEnabledRef.current ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-      event.preventDefault();
-      navigateRef.current(index);
-    },
-    []
-  );
-
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
       const target = event.target as Element;
@@ -538,7 +522,12 @@ export default function MobileImmersiveJourney({
 
   const activeSceneId = MOBILE_SCENE_IDS[activeIndex];
   const roomSelections: readonly ReactNode[] = [
-    null,
+    <JourneyLobbyIndex
+      key="lobby-selections"
+      products={products}
+      projects={PROJECTS}
+      events={EVENTS}
+    />,
     <JourneyStoreIndex key="store-selections" products={products} />,
     <JourneyWorkIndex key="work-selections" projects={PROJECTS} />,
     <JourneyAboutIndex key="about-selections" />,
@@ -584,7 +573,6 @@ export default function MobileImmersiveJourney({
           index={index}
           enhanced={stageEnabled}
           selection={roomSelections[index]}
-          onSceneRequest={handleSceneLink}
         />
       ))}
 
@@ -602,13 +590,8 @@ export default function MobileImmersiveJourney({
           Slide 5 of {MOBILE_SCENE_IDS.length}
         </span>
         <div className="ruined-mobile-closing__media" aria-hidden="true">
-          <Image
+          <SequenceFrameImage
             src={MOBILE_FIRESIDE_POSTER}
-            alt=""
-            fill
-            sizes="100vw"
-            unoptimized
-            draggable={false}
             className="ruined-mobile-scene__image"
           />
           <MobileFiresideVideo
@@ -714,19 +697,11 @@ export default function MobileImmersiveJourney({
         }
 
         .ruined-mobile-scene__image {
-          object-fit: cover;
-          object-position: center;
           user-select: none;
         }
 
         .ruined-mobile-closing__video {
-          position: absolute;
-          inset: 0;
           z-index: 1;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          object-position: center;
           opacity: 0;
           transition: opacity 200ms ease-out;
           pointer-events: none;

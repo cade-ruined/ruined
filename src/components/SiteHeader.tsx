@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -29,6 +34,8 @@ export default function SiteHeader() {
   const isLanding = pathname.startsWith("/lp");
   const isHome = pathname === "/";
   const [currentHash, setCurrentHash] = useState("#top");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const syncHash = () => setCurrentHash(window.location.hash || "#top");
@@ -90,6 +97,24 @@ export default function SiteHeader() {
     };
   }, [isHome]);
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [currentHash, pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMobileMenuOpen(false);
+      requestAnimationFrame(() => {
+        mobileMenuButtonRef.current?.focus({ preventScroll: true });
+      });
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
+
   const handleHomeSceneClick = (
     event: ReactMouseEvent<HTMLAnchorElement>,
     hash: string,
@@ -118,6 +143,25 @@ export default function SiteHeader() {
     setCurrentHash(hash);
   };
 
+  const handleMobileSceneClick = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    hash: string,
+    index: number
+  ) => {
+    const restoreFocus = event.detail === 0;
+    setMobileMenuOpen(false);
+    handleHomeSceneClick(event, hash, index);
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        mobileMenuButtonRef.current?.focus({ preventScroll: true });
+      });
+    }
+  };
+
+  const activeMobileItem =
+    NAV_ITEMS.find((item) => isActive(pathname, currentHash, item.hash)) ??
+    NAV_ITEMS[0];
+
   if (isLanding) return null;
 
   return (
@@ -125,7 +169,7 @@ export default function SiteHeader() {
       <header className="pointer-events-none fixed inset-x-0 top-0 z-[60] px-3 pt-3 sm:px-5 sm:pt-4">
         <nav
           aria-label="Primary"
-          className="pointer-events-auto relative z-10 flex h-14 w-fit items-center border border-white/15 bg-black/90 px-3 text-[var(--color-bone)] shadow-[0_8px_32px_rgba(0,0,0,0.28)] sm:h-16 sm:px-4 md:mx-auto md:w-full md:max-w-5xl md:justify-between md:bg-black/75 md:backdrop-blur-md"
+          className="ruined-header-shell pointer-events-auto relative z-10 flex h-14 w-fit items-center border border-white/15 bg-black/90 px-3 text-[var(--color-bone)] shadow-[0_8px_32px_rgba(0,0,0,0.28)] sm:h-16 sm:px-4 md:mx-auto md:w-full md:max-w-5xl md:justify-between md:bg-black/75 md:backdrop-blur-md"
         >
           <Link
             href="/"
@@ -144,7 +188,7 @@ export default function SiteHeader() {
             />
           </Link>
 
-          <div className="hidden h-full items-stretch md:flex">
+          <div className="ruined-header-desktop-nav hidden h-full items-stretch md:flex">
             {NAV_ITEMS.map((item) => {
               const active = isActive(pathname, currentHash, item.hash);
               return (
@@ -176,46 +220,94 @@ export default function SiteHeader() {
           </div>
         </nav>
 
-        <nav
-          aria-label="Quick jump"
-          className="pointer-events-auto fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] z-20 grid grid-cols-5 border border-white/15 bg-black/92 p-1 text-[var(--color-bone)] shadow-[0_10px_32px_rgba(0,0,0,0.4)] backdrop-blur-md md:hidden"
+        <div
+          className="ruined-header-mobile-fab pointer-events-auto fixed z-20 md:hidden"
+          style={{
+            right: "max(0.75rem, env(safe-area-inset-right, 0px))",
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
+          }}
         >
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(pathname, currentHash, item.hash);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                onClick={(event) =>
-                  handleHomeSceneClick(event, item.hash, item.index)
-                }
-                className={`group relative flex min-w-0 flex-col items-center justify-center gap-0.5 border-r border-white/10 px-0.5 py-1.5 transition-colors last:border-r-0 ${
-                  active
-                    ? "bg-white/5 text-[var(--color-primary)]"
-                    : "text-white/75 active:bg-white/10 active:text-white"
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className="flex h-7 items-center justify-center"
-                >
-                  <HeaderGlyph index={item.index} />
-                </span>
-                <span className="ui-heading truncate text-[0.42rem] uppercase tracking-[0.08em] text-current">
-                  {item.label}
-                </span>
-                {active && (
-                  <span
-                    aria-hidden
-                    className="absolute right-1 top-1 h-1 w-1 rounded-full bg-[var(--color-primary)] shadow-[0_0_8px_rgba(208,49,45,0.9)]"
-                  />
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+          {mobileMenuOpen && (
+            <div
+              aria-hidden="true"
+              className="fixed inset-0 z-0 cursor-default bg-black/10 backdrop-blur-[1px]"
+              onPointerDown={() => {
+                setMobileMenuOpen(false);
+                mobileMenuButtonRef.current?.focus({ preventScroll: true });
+              }}
+            />
+          )}
+          <nav
+            id="mobile-quick-jump"
+            aria-label="Quick jump"
+            hidden={!mobileMenuOpen}
+            className="absolute bottom-[calc(100%+0.625rem)] right-0 z-10 max-h-[min(26rem,calc(100svh-7rem))] w-[min(15rem,calc(100vw-1.5rem))] overflow-y-auto border border-white/15 bg-black/94 p-1 text-[var(--color-bone)] shadow-[0_16px_44px_rgba(0,0,0,0.55)] backdrop-blur-md"
+          >
+                {NAV_ITEMS.map((item) => {
+                  const active = isActive(pathname, currentHash, item.hash);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-label={item.label}
+                      aria-current={active ? "location" : undefined}
+                      onClick={(event) =>
+                        handleMobileSceneClick(event, item.hash, item.index)
+                      }
+                      className={`group relative flex min-h-12 items-center gap-3 border-b border-white/10 px-3 py-2 transition-colors last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)] ${
+                        active
+                          ? "bg-white/[0.06] text-[var(--color-primary)]"
+                          : "text-white/75 hover:bg-white/[0.04] hover:text-white active:bg-white/10"
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className="flex h-7 w-8 shrink-0 items-center justify-center"
+                      >
+                        <HeaderGlyph index={item.index} />
+                      </span>
+                      <span className="ui-heading text-[0.58rem] uppercase tracking-[0.16em] text-current">
+                        {item.label}
+                      </span>
+                      <span
+                        aria-hidden
+                        className={`ml-auto h-1.5 w-1.5 rounded-full ${
+                          active
+                            ? "bg-[var(--color-primary)] shadow-[0_0_8px_rgba(208,49,45,0.9)]"
+                            : "bg-white/15"
+                        }`}
+                      />
+                    </Link>
+                  );
+                })}
+          </nav>
+
+          <button
+            ref={mobileMenuButtonRef}
+            type="button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-quick-jump"
+            aria-label={
+              mobileMenuOpen
+                ? "Close navigation"
+                : `Open navigation — ${activeMobileItem.label} selected`
+            }
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-black/94 text-[var(--color-bone)] shadow-[0_10px_32px_rgba(0,0,0,0.5)] backdrop-blur-md transition-transform active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+          >
+            <span aria-hidden className={mobileMenuOpen ? "opacity-45" : ""}>
+              <HeaderGlyph index={activeMobileItem.index} />
+            </span>
+            <span
+              aria-hidden
+              className={`absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)] font-mono text-sm leading-none text-white shadow-[0_0_10px_rgba(208,49,45,0.65)] transition-transform ${
+                mobileMenuOpen ? "rotate-45" : "rotate-0"
+              }`}
+            >
+              +
+            </span>
+          </button>
+        </div>
       </header>
 
       {/* Inner pages begin below the persistent header. The immersive homepage

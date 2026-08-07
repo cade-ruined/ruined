@@ -13,9 +13,14 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
-const SEQUENCE_ROOT = path.join(REPO_ROOT, "public", "sequences");
-const CANONICAL_ROOMS = new Set(["lobby", "store", "records", "lounge"]);
-const EXPECTED_COUNT = 192;
+const PUBLIC_ROOT = path.join(REPO_ROOT, "public");
+const SEQUENCE_ROOT = path.join(PUBLIC_ROOT, "sequences");
+const CONFIG_FILE = path.join(
+  REPO_ROOT,
+  "src",
+  "data",
+  "sequence-config.json"
+);
 const PAD = 4;
 const RAW = /\.(tiff?|png|bmp|jpe?g)$/i;
 const natural = (a, b) =>
@@ -27,6 +32,8 @@ const HEIGHT = Number(process.argv[4] || 900);
 const QUALITY = Number(process.argv[5] || 80);
 const DELETE_SOURCE = process.argv.includes("--delete-source");
 const sourceArg = process.argv.find((arg) => arg.startsWith("--source="));
+const sequenceConfig = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8"));
+const roomConfig = sequenceConfig.rooms?.find((entry) => entry.id === room);
 
 const failUsage = (message) => {
   console.error(message);
@@ -36,8 +43,10 @@ const failUsage = (message) => {
   process.exit(1);
 };
 
-if (!room || !CANONICAL_ROOMS.has(room)) {
-  failUsage(`Room must be one of: ${[...CANONICAL_ROOMS].join(", ")}`);
+if (!room || !roomConfig) {
+  failUsage(
+    `Room must be one of: ${sequenceConfig.rooms.map((entry) => entry.id).join(", ")}`
+  );
 }
 if (!sourceArg || !sourceArg.slice("--source=".length)) {
   failUsage("A render-master directory is required via --source=.");
@@ -56,13 +65,13 @@ if (
 
 const DIR = path.join(SEQUENCE_ROOT, room);
 const INPUT_DIR = path.resolve(REPO_ROOT, sourceArg.slice("--source=".length));
-const sourceRelativeToPublic = path.relative(SEQUENCE_ROOT, INPUT_DIR);
+const sourceRelativeToPublic = path.relative(PUBLIC_ROOT, INPUT_DIR);
 if (
   sourceRelativeToPublic === "" ||
   (!sourceRelativeToPublic.startsWith("..") &&
     !path.isAbsolute(sourceRelativeToPublic))
 ) {
-  failUsage("Render masters must live outside public/sequences/.");
+  failUsage("Render masters must live outside public/.");
 }
 
 async function exists(file) {
@@ -100,9 +109,9 @@ async function main() {
     .filter((file) => RAW.test(file))
     .sort(natural);
 
-  if (entries.length !== EXPECTED_COUNT) {
+  if (entries.length !== roomConfig.frameCount) {
     throw new Error(
-      `${room} conversion requires exactly ${EXPECTED_COUNT} raw frames; found ${entries.length}. The current approved sequence was not changed.`
+      `${room} conversion requires exactly ${roomConfig.frameCount} raw frames; found ${entries.length}. The current approved sequence was not changed.`
     );
   }
 
@@ -116,8 +125,6 @@ async function main() {
     console.log(
       `Converting ${entries.length} ${room} frames -> ${WIDTH}x${HEIGHT} WebP q${QUALITY} ...`
     );
-    await fs.writeFile(path.join(staging, ".gitkeep"), "");
-
     for (const [index, name] of entries.entries()) {
       const output = path.join(
         staging,

@@ -52,11 +52,11 @@ Room sources are defined in `src/data/sequences.ts`. After changing frames in
 npm run sequences
 ```
 
-The manifest builder accepts only a complete, contiguous set of 192
-`frame-####.webp` files per room. It also generates a content version that is
-appended to frame URLs, so a replaced sequence can never reuse stale browser or
-CDN bytes. The browser decodes frames on demand and keeps a bounded cache,
-rather than holding the complete journey in memory.
+The manifest builder accepts only each room's complete, contiguous frame count
+from `src/data/sequence-config.json`, named `frame-####.webp`. It also generates
+a content version that is appended to frame URLs, so a replaced sequence can
+never reuse stale browser or CDN bytes. The browser decodes frames on demand
+and keeps a bounded cache rather than holding the complete journey in memory.
 
 ## Shopify
 

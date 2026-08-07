@@ -3,8 +3,7 @@
 //
 //   npm run sequences
 //
-// Room order + ids come from src/data/sequences.ts (kept in sync manually — a
-// tiny hardcoded list here avoids importing TS from a plain node script).
+// Room order and approved frame counts come from the shared sequence config.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -19,12 +18,14 @@ const VERSION_FILE = path.join(
   "data",
   "sequence-version.ts"
 );
+const CONFIG_FILE = path.join(
+  __dirname,
+  "..",
+  "src",
+  "data",
+  "sequence-config.json"
+);
 
-// Keep in sync with src/data/sequences.ts
-const ROOMS = ["lobby", "store", "records", "lounge"].map((id) => ({
-  id,
-  expectedCount: 192,
-}));
 const IMG = /\.(jpe?g|png|webp|avif)$/i;
 const FRAME = /^frame-(\d{4})\.webp$/;
 
@@ -32,7 +33,25 @@ const FRAME = /^frame-(\d{4})\.webp$/;
 const natural = (a, b) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 
-async function listFrames({ id, expectedCount }) {
+async function readRoomConfig() {
+  const config = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8"));
+  if (!Array.isArray(config.rooms) || config.rooms.length === 0) {
+    throw new Error("sequence-config.json must define at least one room");
+  }
+  return config.rooms.map((room) => {
+    if (
+      !room ||
+      typeof room.id !== "string" ||
+      !Number.isInteger(room.frameCount) ||
+      room.frameCount < 2
+    ) {
+      throw new Error("Every sequence room needs an id and frameCount >= 2");
+    }
+    return room;
+  });
+}
+
+async function listFrames({ id, frameCount }) {
   const directory = path.join(ROOT, id);
   const entries = await fs.readdir(directory, { withFileTypes: true });
   const imageNames = entries
@@ -44,9 +63,9 @@ async function listFrames({ id, expectedCount }) {
   }
 
   const names = imageNames.sort(natural);
-  if (names.length !== expectedCount) {
+  if (names.length !== frameCount) {
     throw new Error(
-      `${id} must contain exactly ${expectedCount} approved frames; found ${names.length}`
+      `${id} must contain exactly ${frameCount} approved frames; found ${names.length}`
     );
   }
   names.forEach((name, index) => {
@@ -76,9 +95,10 @@ async function contentVersion(rooms) {
 }
 
 async function main() {
+  const roomConfig = await readRoomConfig();
   const rooms = [];
   let total = 0;
-  for (const room of ROOMS) {
+  for (const room of roomConfig) {
     const files = await listFrames(room);
     rooms.push({ id: room.id, count: files.length, files });
     total += files.length;

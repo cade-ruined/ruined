@@ -11,17 +11,21 @@ import sharp from "sharp";
 const root = path.resolve(import.meta.dirname, "..");
 const sequenceRoot = path.join(root, "public", "sequences");
 const execFileAsync = promisify(execFile);
+const sequenceConfig = JSON.parse(
+  await fs.readFile(
+    path.join(root, "src", "data", "sequence-config.json"),
+    "utf8"
+  )
+);
 
 test("sequence manifest is complete, ordered, and deployable", async () => {
   const manifest = JSON.parse(
     await fs.readFile(path.join(sequenceRoot, "manifest.json"), "utf8")
   );
-  assert.deepEqual(manifest.rooms.map((room) => room.id), [
-    "lobby",
-    "store",
-    "records",
-    "lounge",
-  ]);
+  assert.deepEqual(
+    manifest.rooms.map((room) => room.id),
+    sequenceConfig.rooms.map((room) => room.id)
+  );
   assert.match(manifest.version, /^[a-f0-9]{12}$/);
   assert.equal(
     manifest.rooms[0]?.files[0],
@@ -36,7 +40,15 @@ test("sequence manifest is complete, ordered, and deployable", async () => {
 
   const versionHash = createHash("sha256");
   for (const room of manifest.rooms) {
-    assert.equal(room.count, 192, `${room.id} must keep its approved frame count`);
+    const approvedRoom = sequenceConfig.rooms.find(
+      (candidate) => candidate.id === room.id
+    );
+    assert.ok(approvedRoom, `${room.id} needs an approved sequence config`);
+    assert.equal(
+      room.count,
+      approvedRoom.frameCount,
+      `${room.id} must keep its approved frame count`
+    );
     assert.equal(room.count, room.files.length);
     for (const [index, file] of room.files.entries()) {
       assert.equal(
@@ -68,7 +80,25 @@ test("obsolete sequence generators and assets stay retired", async () => {
     "sequence-sources",
     "scripts/capture-frames.mjs",
     "scripts/gen-push-frames.mjs",
+    "src/components/CameraDive.tsx",
     "src/components/sequence/FrameSequence.tsx",
+    "public/dive-lobby.jpg",
+    "public/dive-store.jpg",
+    "public/dive-records.jpg",
+    "public/dive-lounge.jpg",
+    "public/ruined-hero-1.avif",
+    "public/ruined-hero-1.webp",
+    "public/ruined-hero-store-4.avif",
+    "public/ruined-hero-records.avif",
+    "public/ruined-hero-records.webp",
+    "public/ruined-hero-lounge.avif",
+    "public/ruined-hero-lounge.webp",
+    "public/new sequences",
+    "public/sequences/fireside/Fire and Stream Looping 4K.mp4",
+    "public/sequences/lobby/.gitkeep",
+    "public/sequences/store/.gitkeep",
+    "public/sequences/records/.gitkeep",
+    "public/sequences/lounge/.gitkeep",
     "public/ruined-hero-1-portrait.avif",
     "public/ruined-hero-1-portrait.jpg",
     "public/ruined-hero-1-portrait.webp",
@@ -130,12 +160,34 @@ test("converter rejects a partial render without changing approved frames", asyn
     assert.ok(error, "partial conversion should fail");
     assert.match(
       `${error.stdout ?? ""}${error.stderr ?? ""}`,
-      /requires exactly 192 raw frames; found 1/
+      /requires exactly 240 raw frames; found 1/
     );
     assert.deepEqual(await fs.readFile(approvedFrame), before);
   } finally {
     await fs.rm(source, { recursive: true, force: true });
   }
+});
+
+test("converter rejects render masters anywhere under public", async () => {
+  let error;
+  try {
+    await execFileAsync(process.execPath, [
+      path.join(root, "scripts", "convert-sequence.mjs"),
+      "lobby",
+      "1600",
+      "900",
+      "80",
+      "--source=public",
+    ]);
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error, "public render-master sources should fail");
+  assert.match(
+    `${error.stdout ?? ""}${error.stderr ?? ""}`,
+    /Render masters must live outside public\//
+  );
 });
 
 test("public sequences contain no render masters", async () => {
@@ -150,12 +202,7 @@ test("public sequences contain no render masters", async () => {
   }
 });
 
-test("fireside loop is present and reasonably sized", async () => {
-  const file = path.join(sequenceRoot, "fireside", "Fire and Stream Looping 4K.mp4");
-  const stat = await fs.stat(file);
-  assert.ok(stat.size > 0);
-  assert.ok(stat.size < 25 * 1024 * 1024, "fireside video exceeds 25 MB");
-
+test("only the optimized fireside loop is deployable", async () => {
   const mobileFile = path.join(
     sequenceRoot,
     "fireside",
@@ -170,7 +217,16 @@ test("fireside loop is present and reasonably sized", async () => {
 });
 
 test("mobile stage combines canonical arrivals with in-place walk frames", async () => {
-  const [journey, walk, mobileData, header, indexes, homePage] = await Promise.all([
+  const [
+    journey,
+    walk,
+    mobileData,
+    header,
+    indexes,
+    homePage,
+    desktop,
+    bootstrap,
+  ] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
       "utf8"
@@ -198,23 +254,30 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
       "utf8"
     ),
     fs.readFile(path.join(root, "app", "page.tsx"), "utf8"),
+    fs.readFile(
+      path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "ImmersiveParallax.tsx"),
+      "utf8"
+    ),
   ]);
 
   assert.doesNotMatch(journey, /-portrait\.(?:avif|jpe?g|webp)/);
   assert.match(journey, /MOBILE_ARRIVAL_FRAME_PATHS/);
-  for (const frame of [
-    "/sequences/lobby/frame-0001.webp",
-    "/sequences/store/frame-0001.webp",
-    "/sequences/records/frame-0001.webp",
-    "/sequences/lounge/frame-0001.webp",
-    "/sequences/lounge/frame-0192.webp",
-  ]) {
-    assert.match(mobileData, new RegExp(frame.replaceAll("/", "\\/")));
-  }
+  assert.match(mobileData, /sequenceFramePath\("lobby", 1\)/);
+  assert.match(mobileData, /sequenceFramePath\("store", 1\)/);
+  assert.match(mobileData, /sequenceFramePath\("records", 1\)/);
+  assert.match(mobileData, /sequenceFramePath\("lounge", 1\)/);
+  assert.match(mobileData, /room\.id/);
+  assert.match(mobileData, /frameCount: room\.frameCount/);
   assert.match(journey, /MobileWalkTransition/);
-  assert.match(walk, /TRANSITION_FRAME_STRIDE = 16/);
+  assert.match(walk, /TRANSITION_SAMPLE_COUNT = 13/);
+  assert.match(walk, /sampleFrameNumbers\(frameCount\)/);
+  assert.match(walk, /segmentBounds\.length/);
   assert.match(walk, /MOBILE_WALK_TRANSITIONS/);
-  assert.match(walk, /index === TRANSITION_FRAME_NUMBERS\.length - 1/);
+  assert.match(walk, /index === frameNumbers\.length - 1/);
   assert.match(walk, /data-walking/);
   assert.match(walk, /MobileWalkTransitionHandle/);
   assert.doesNotMatch(walk, /IntersectionObserver|window\.scrollY/);
@@ -228,8 +291,17 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(journey, /JourneyWorkIndex/);
   assert.match(journey, /JourneyAboutIndex/);
   assert.match(journey, /JourneyEventsIndex/);
+  assert.match(journey, /JourneyLobbyIndex/);
   assert.match(journey, /roomSelections/);
+  assert.doesNotMatch(journey, /Enter Ruined|Begin the walk/);
   assert.match(homePage, /MobileImmersiveJourney products=\{products\}/);
+  assert.match(desktop, /LobbyOpeningOverlay/);
+  assert.match(desktop, /<JourneyLobbyIndex/);
+  assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
+  assert.match(bootstrap, /<JourneyLobbyIndex/);
+  assert.match(indexes, /const product = products\[0\]/);
+  assert.match(indexes, /const project = projects\[0\]/);
+  assert.match(indexes, /const event = events\[0\]/);
   assert.match(indexes, /products\.slice\(0, 3\)/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /events\.slice\(0, 3\)/);
@@ -241,8 +313,17 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.doesNotMatch(journey, /scroll-snap|data-mobile-snap-scene/);
   assert.match(header, /ruined:home-scene-request/);
   assert.match(header, /ruined:home-scene-change/);
+  assert.match(header, /aria-expanded=\{mobileMenuOpen\}/);
+  assert.match(header, /aria-controls="mobile-quick-jump"/);
+  assert.match(header, /hidden=\{!mobileMenuOpen\}/);
+  assert.match(header, /event\.key !== "Escape"/);
+  assert.match(header, /aria-current=\{active \? "location" : undefined\}/);
+  assert.doesNotMatch(header, /grid-cols-5/);
   for (const room of ["lobby", "store", "records", "lounge"]) {
-    assert.match(mobileData, new RegExp(`"${room}"`));
+    assert.ok(
+      sequenceConfig.rooms.some((candidate) => candidate.id === room),
+      `${room} must remain in the shared sequence config`
+    );
   }
   assert.match(
     mobileData,
@@ -292,6 +373,86 @@ test("desktop sequence bounds decode, cache, and canvas pressure", async () => {
   assert.doesNotMatch(canvas, /ctx\.clearRect/);
   assert.match(desktop, /fire-stream-loop-mobile\.mp4/);
   assert.doesNotMatch(desktop, /Fire and Stream Looping 4K\.mp4/);
+  assert.match(desktop, /manifest\.total \/ BASE_SEQUENCE_FRAME_COUNT/);
+});
+
+test("homepage sequence framing shares one optical axis across renderers", async () => {
+  const [
+    data,
+    framing,
+    frameImage,
+    bootstrap,
+    desktop,
+    desktopCanvas,
+    mobile,
+    mobileCanvas,
+  ] = await Promise.all([
+    fs.readFile(path.join(root, "src", "data", "sequences.ts"), "utf8"),
+    fs.readFile(
+      path.join(root, "src", "utils", "sequenceFraming.ts"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(
+        root,
+        "src",
+        "components",
+        "sequence",
+        "SequenceFrameImage.tsx"
+      ),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "ImmersiveParallax.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "sequence", "RoomSequenceCanvas.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "sequence", "MobileWalkTransition.tsx"),
+      "utf8"
+    ),
+  ]);
+
+  assert.match(data, /SEQUENCE_LOBBY_FOCAL_X = 847\.5 \/ 1600/);
+  assert.match(framing, /destinationWidth \/ 2 - safeFocalX \* width/);
+  assert.match(framing, /roomId === "store"/);
+  assert.match(frameImage, /sequenceFocalMediaStyle\(sequenceAssetFocalX\(src\)\)/);
+  assert.match(bootstrap, /sequenceFocalBoxGeometry\(OPENING_FOCAL_X\)/);
+  assert.match(desktop, /<SequenceFrameImage src=\{openingFrame\} priority \/>/);
+  assert.match(desktopCanvas, /sequenceCoverRect\(/);
+  assert.match(mobile, /<SequenceFrameImage/);
+  assert.match(mobileCanvas, /sequenceCoverRect\(/);
+
+  const focalX = 847.5 / 1600;
+  for (const [width, height] of [
+    [430, 932],
+    [1280, 1920],
+    [1440, 900],
+  ]) {
+    const scale = Math.max(
+      width / (1600 * 2 * Math.min(focalX, 1 - focalX)),
+      height / 900
+    );
+    const renderedWidth = 1600 * scale;
+    const renderedHeight = 900 * scale;
+    const x = width / 2 - focalX * renderedWidth;
+    const y = (height - renderedHeight) / 2;
+
+    assert.ok(x <= 0 && x + renderedWidth >= width);
+    assert.ok(y <= 0 && y + renderedHeight >= height);
+    assert.ok(Math.abs(x + focalX * renderedWidth - width / 2) < 1e-9);
+  }
 });
 
 test("production route boundaries and metadata files exist", async () => {

@@ -9,33 +9,56 @@ import {
 } from "react";
 import { MOBILE_WALK_TRANSITIONS } from "@/data/mobileJourney";
 import { versionSequenceAsset } from "@/data/sequences";
+import {
+  sequenceAssetFocalX,
+  sequenceCoverRect,
+} from "@/utils/sequenceFraming";
 
-const SOURCE_FRAME_COUNT = 192;
-const TRANSITION_FRAME_STRIDE = 16;
+// Keep the same small mobile request budget for every room, even when the
+// source renders have different lengths. Endpoints are always included so the
+// transition and the next scene share an identical handoff frame.
+const TRANSITION_SAMPLE_COUNT = 13;
 const TRANSITION_DURATION_MS = 520;
 const ARRIVAL_HOLD_MS = 70;
 const FRAME_WAIT_TIMEOUT_MS = 4000;
 const MAX_FRAME_FAILURES = 2;
 const MAX_DECODED_PIXELS = 16_000_000;
-const TRANSITION_FRAME_NUMBERS = [
-  ...Array.from(
-    { length: Math.floor((SOURCE_FRAME_COUNT - 1) / TRANSITION_FRAME_STRIDE) + 1 },
-    (_, index) => index * TRANSITION_FRAME_STRIDE + 1
-  ),
-  SOURCE_FRAME_COUNT,
-];
-const FRAMES_PER_TRANSITION = TRANSITION_FRAME_NUMBERS.length;
-const TRANSITION_FRAMES = MOBILE_WALK_TRANSITIONS.flatMap(
-  ({ room, startFrame, endFrame }) =>
-    TRANSITION_FRAME_NUMBERS.map((frame, index) => {
+function sampleFrameNumbers(frameCount: number) {
+  return Array.from({ length: TRANSITION_SAMPLE_COUNT }, (_, index) =>
+    Math.ceil(
+      (index * (frameCount - 1)) / (TRANSITION_SAMPLE_COUNT - 1)
+    ) + 1
+  );
+}
+
+let transitionFrameOffset = 0;
+const TRANSITION_SEGMENTS = MOBILE_WALK_TRANSITIONS.map(
+  ({ room, frameCount, startFrame, endFrame }) => {
+    const frameNumbers = sampleFrameNumbers(frameCount);
+    const frames = frameNumbers.map((frame, index) => {
       const path =
         index === 0
           ? startFrame
-          : index === TRANSITION_FRAME_NUMBERS.length - 1
+          : index === frameNumbers.length - 1
             ? endFrame
             : `/sequences/${room}/frame-${String(frame).padStart(4, "0")}.webp`;
       return versionSequenceAsset(path);
-    })
+    });
+    const start = transitionFrameOffset;
+    transitionFrameOffset += frames.length;
+    return {
+      start,
+      end: transitionFrameOffset - 1,
+      length: frames.length,
+      frames,
+    };
+  }
+);
+const TRANSITION_FRAMES = TRANSITION_SEGMENTS.flatMap(
+  (segment) => segment.frames
+);
+const MAX_TRANSITION_FRAMES = Math.max(
+  ...TRANSITION_SEGMENTS.map((segment) => segment.length)
 );
 
 type DecodedFrame = ImageBitmap | HTMLImageElement;
@@ -118,7 +141,7 @@ const MobileWalkTransition = forwardRef<
     const failureCounts = new Map<number, number>();
     const waiters = new Map<number, Set<(ready: boolean) => void>>();
     const controller = new AbortController();
-    const CAP = FRAMES_PER_TRANSITION * 2;
+    const CAP = MAX_TRANSITION_FRAMES * 2;
     const MAX_INFLIGHT = 3;
 
     let queue: number[] = [];
@@ -132,27 +155,29 @@ const MobileWalkTransition = forwardRef<
     let pendingOnStart: (() => void) | null = null;
     let disposed = false;
 
-    const groupFor = (index: number) =>
-      Math.min(
-        MOBILE_WALK_TRANSITIONS.length - 1,
-        Math.floor(index / FRAMES_PER_TRANSITION)
+    const groupFor = (index: number) => {
+      const group = TRANSITION_SEGMENTS.findIndex(
+        (segment) => index >= segment.start && index <= segment.end
       );
+      return group < 0 ? TRANSITION_SEGMENTS.length - 1 : group;
+    };
 
     const draw = (frame: DecodedFrame, index: number) => {
-      const scale = Math.max(
-        canvas.width / frame.width,
-        canvas.height / frame.height
+      const rect = sequenceCoverRect(
+        frame.width,
+        frame.height,
+        canvas.width,
+        canvas.height,
+        sequenceAssetFocalX(TRANSITION_FRAMES[index])
       );
-      const width = frame.width * scale;
-      const height = frame.height * scale;
       context.fillStyle = "#080605";
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(
         frame,
-        (canvas.width - width) / 2,
-        (canvas.height - height) / 2,
-        width,
-        height
+        rect.x,
+        rect.y,
+        rect.width,
+        rect.height
       );
       lastDrawn = index;
       canvas.style.opacity = "1";
@@ -164,15 +189,14 @@ const MobileWalkTransition = forwardRef<
       if (exact) return [index, exact];
 
       const group = groupFor(index);
-      const start = group * FRAMES_PER_TRANSITION;
-      const end = start + FRAMES_PER_TRANSITION - 1;
-      for (let distance = 1; distance < FRAMES_PER_TRANSITION; distance += 1) {
+      const segment = TRANSITION_SEGMENTS[group];
+      for (let distance = 1; distance < segment.length; distance += 1) {
         const before = index - distance;
         const after = index + distance;
-        if (before >= start && cache.has(before)) {
+        if (before >= segment.start && cache.has(before)) {
           return [before, cache.get(before)!];
         }
-        if (after <= end && cache.has(after)) {
+        if (after <= segment.end && cache.has(after)) {
           return [after, cache.get(after)!];
         }
       }
@@ -193,13 +217,13 @@ const MobileWalkTransition = forwardRef<
         0
       );
       if (cache.size <= CAP && decodedPixels <= MAX_DECODED_PIXELS) return;
-      const segmentStart = activeSegment * FRAMES_PER_TRANSITION;
-      const segmentEnd = segmentStart + FRAMES_PER_TRANSITION - 1;
+      const activeBounds = TRANSITION_SEGMENTS[activeSegment];
       const candidates = [...cache.keys()]
         .filter(
           (index) =>
             activeSegment < 0 ||
-            (index !== segmentStart && index !== segmentEnd)
+            !activeBounds ||
+            (index !== activeBounds.start && index !== activeBounds.end)
         )
         .sort((a, b) => Math.abs(b - target) - Math.abs(a - target));
       while (cache.size > CAP || decodedPixels > MAX_DECODED_PIXELS) {
@@ -319,24 +343,24 @@ const MobileWalkTransition = forwardRef<
     };
 
     const warmTransition = (segment: number, reverse = false) => {
-      if (segment < 0 || segment >= MOBILE_WALK_TRANSITIONS.length) return;
-      const start = segment * FRAMES_PER_TRANSITION;
+      const bounds = TRANSITION_SEGMENTS[segment];
+      if (!bounds) return;
       const offsets = Array.from(
-        { length: FRAMES_PER_TRANSITION },
+        { length: bounds.length },
         (_, index) => index
       );
       if (reverse) offsets.reverse();
-      offsets.forEach((offset) => schedule(start + offset));
+      offsets.forEach((offset) => schedule(bounds.start + offset));
     };
 
     const prepare = (sceneIndex: number) => {
       if (reducedMotion.matches) return;
       target =
         sceneIndex === 0
-          ? 0
-          : (sceneIndex - 1) * FRAMES_PER_TRANSITION +
-            FRAMES_PER_TRANSITION -
-            1;
+          ? TRANSITION_SEGMENTS[0].start
+          : (TRANSITION_SEGMENTS[sceneIndex - 1]?.end ??
+            TRANSITION_SEGMENTS.at(-1)?.end ??
+            0);
       warmTransition(sceneIndex);
       warmTransition(sceneIndex - 1, true);
     };
@@ -400,11 +424,10 @@ const MobileWalkTransition = forwardRef<
 
       const forward = toIndex > fromIndex;
       const segment = Math.min(fromIndex, toIndex);
-      const frameStart = segment * FRAMES_PER_TRANSITION;
-      const startIndex =
-        frameStart + (forward ? 0 : FRAMES_PER_TRANSITION - 1);
-      const endIndex =
-        frameStart + (forward ? FRAMES_PER_TRANSITION - 1 : 0);
+      const segmentBounds = TRANSITION_SEGMENTS[segment];
+      const frameStart = segmentBounds.start;
+      const startIndex = forward ? segmentBounds.start : segmentBounds.end;
+      const endIndex = forward ? segmentBounds.end : segmentBounds.start;
 
       activeSegment = segment;
       target = startIndex;
@@ -450,14 +473,20 @@ const MobileWalkTransition = forwardRef<
             (now - startedAt) / TRANSITION_DURATION_MS
           );
           const position = Math.round(
-            progress * (FRAMES_PER_TRANSITION - 1)
+            progress * (segmentBounds.length - 1)
           );
           const offset = forward
             ? position
-            : FRAMES_PER_TRANSITION - 1 - position;
+            : segmentBounds.length - 1 - position;
           target = frameStart + offset;
           schedule(target, true);
-          schedule(target + (forward ? 1 : -1));
+          const adjacent = target + (forward ? 1 : -1);
+          if (
+            adjacent >= segmentBounds.start &&
+            adjacent <= segmentBounds.end
+          ) {
+            schedule(adjacent);
+          }
           renderTarget();
 
           if (progress < 1) {

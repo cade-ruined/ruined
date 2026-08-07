@@ -23,14 +23,20 @@ import { EVENTS } from "@/data/events";
 import {
   JourneyAboutIndex,
   JourneyEventsIndex,
+  JourneyLobbyIndex,
   JourneyStoreIndex,
   JourneyWorkIndex,
 } from "@/components/sequence/JourneyIndexes";
 import RoomSequenceCanvas from "@/components/sequence/RoomSequenceCanvas";
+import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
   versionSequenceAsset,
   type SequenceManifest,
 } from "@/data/sequences";
+import {
+  sequenceAssetFocalX,
+  sequenceFocalMediaStyle,
+} from "@/utils/sequenceFraming";
 import { scrollState } from "@/utils/scrollState";
 
 // ─── The journey ────────────────────────────────────────────────────────
@@ -62,6 +68,8 @@ const SEQUENCE_END = 0.78;
 const FEAR_START = 0.88;
 const FIRESIDE_SRC = "/sequences/fireside/fire-stream-loop-mobile.mp4";
 const ROOM_HOLD = 0.055;
+const BASE_SEQUENCE_FRAME_COUNT = 768;
+const BASE_SCROLL_RANGE_VH = 400;
 
 // A room's slice of the whole-journey timeline (0..1), derived from its frame
 // count, plus where its overlay should peak.
@@ -293,6 +301,66 @@ function RoomOverlay({
   );
 }
 
+// The lobby is already framed when the walk begins, so its index uses the
+// inverse of the arrival overlays: it is present at progress zero and clears
+// as soon as the first camera move is underway.
+function LobbyOpeningOverlay({
+  progress,
+  departureBand,
+  children,
+}: {
+  progress: MotionValue<number>;
+  departureBand: Band;
+  children: React.ReactNode;
+}) {
+  const playSpan = departureBand.playEnd - departureBand.start;
+  const clearStart = departureBand.start + playSpan * 0.08;
+  const clearEnd = departureBand.start + playSpan * 0.18;
+  const opacity = useTransform(
+    progress,
+    [departureBand.start, clearStart, clearEnd],
+    [1, 1, 0]
+  );
+  const y = useTransform(opacity, (value) => (1 - value) * 18);
+  const pointer = useTransform(opacity, (value) =>
+    value > 0.6 ? "auto" : "none"
+  );
+  const [withinOpening, setWithinOpening] = useState(
+    () => progress.get() <= clearEnd
+  );
+
+  useEffect(() => {
+    const sync = (value: number) => {
+      const next = value <= clearEnd;
+      setWithinOpening((current) => (current === next ? current : next));
+    };
+    sync(progress.get());
+    return progress.on("change", sync);
+  }, [clearEnd, progress]);
+
+  if (!withinOpening) return null;
+
+  return (
+    <motion.div
+      style={{
+        opacity,
+        bottom: "calc(env(safe-area-inset-bottom, 0px) + 3.5rem)",
+      }}
+      className="pointer-events-none fixed inset-x-3 z-20 flex justify-center px-0 sm:inset-x-0 sm:px-4"
+    >
+      <motion.div
+        style={{ y, pointerEvents: pointer }}
+        className="flex w-full max-w-4xl flex-col items-stretch gap-2"
+      >
+        <span className="self-center text-center font-mono text-[0.5rem] uppercase tracking-[0.36em] text-[var(--color-bone)]/70">
+          Lobby index · current selection
+        </span>
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function AfterTheFear({
   progress,
   start = 0.6,
@@ -444,8 +512,11 @@ function FiresideLoop({
       playsInline
       preload="none"
       aria-hidden
-      style={{ opacity }}
-      className="absolute inset-0 h-full w-full object-cover"
+      style={{
+        ...sequenceFocalMediaStyle(sequenceAssetFocalX(FIRESIDE_SRC)),
+        opacity,
+      }}
+      className="object-cover"
     />
   );
 }
@@ -557,6 +628,7 @@ export default function DesktopImmersiveParallax({
   // Folder names describe where each move starts; the final frame is the next
   // destination. Panels and deep links therefore attach to these arrival holds:
   // Lobby → Store, Store → Records, Records → Lounge, Lounge → Fireside.
+  const lobbyDepartureB = bands["lobby"];
   const storeArrivalB = bands["lobby"];
   const worksArrivalB = bands["store"];
   const aboutArrivalB = bands["records"];
@@ -566,10 +638,15 @@ export default function DesktopImmersiveParallax({
   // therefore never overlaps the record-store journey (or a future last room).
   const fearStart = FEAR_START;
 
-  // Track length is tuned to the frame count so the scrub speed feels
-  // deliberate but not sluggish. The synthetic push sequence is ~1/3 the frames
-  // of the old video walk, so the track is shortened to match.
-  const trackVH = prefersReducedMotion ? 100 : 500;
+  // Scale only the scrollable range (the viewport itself remains 100vh) so a
+  // render with more or fewer frames retains the approved per-frame scrub feel.
+  const trackVH = prefersReducedMotion
+    ? 100
+    : 100 +
+      Math.round(
+        BASE_SCROLL_RANGE_VH *
+          (manifest.total / BASE_SEQUENCE_FRAME_COUNT)
+      );
   const trackH = `${trackVH}vh`;
   const range = trackVH - 100;
 
@@ -599,17 +676,11 @@ export default function DesktopImmersiveParallax({
             // The desktop bootstrap, this underlay, and the canvas all use
             // manifest frames. Keeping frame 0 beneath the transparent canvas
             // makes the first decoded paint visually identical.
-            style={
-              openingFrame
-                ? {
-                    backgroundImage: `url("${openingFrame}")`,
-                    backgroundPosition: "center",
-                    backgroundRepeat: "no-repeat",
-                    backgroundSize: "cover",
-                  }
-                : undefined
-            }
           >
+            {openingFrame && (
+              <SequenceFrameImage src={openingFrame} priority />
+            )}
+
             {!prefersReducedMotion && frames.length > 0 && (
               <RoomSequenceCanvas frames={frames} />
             )}
@@ -654,6 +725,19 @@ export default function DesktopImmersiveParallax({
       </div>
 
       <ScrollHint progress={p} />
+
+      {/* The opening lobby starts with a compact cross-section of the real
+          Store, Work, and Events indexes. It clears before the camera travel
+          establishes, then each destination reveals its own deeper shelf. */}
+      {!prefersReducedMotion && lobbyDepartureB && lobbyDepartureB.count > 0 && (
+        <LobbyOpeningOverlay progress={p} departureBand={lobbyDepartureB}>
+          <JourneyLobbyIndex
+            products={products}
+            projects={PROJECTS}
+            events={EVENTS}
+          />
+        </LobbyOpeningOverlay>
+      )}
 
       {/* As each room passes through frame, a curated shelf of REAL, data-driven
           assets fades in and becomes clickable — apparel in the store, project

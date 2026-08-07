@@ -1,0 +1,8 @@
+{
+  "rooms": [
+    { "id": "lobby", "label": "Lobby", "frameCount": 240 },
+    { "id": "store", "label": "Store", "frameCount": 192 },
+    { "id": "records", "label": "Records", "frameCount": 185 },
+    { "id": "lounge", "label": "Lounge", "frameCount": 192 }
+  ]
+}

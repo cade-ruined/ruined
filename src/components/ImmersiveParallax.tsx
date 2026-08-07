@@ -9,10 +9,17 @@ import {
   type ReactNode,
 } from "react";
 import type { Product } from "@/data/products";
+import { PROJECTS } from "@/data/projects";
+import { EVENTS } from "@/data/events";
+import { JourneyLobbyIndex } from "@/components/sequence/JourneyIndexes";
 import {
   SEQUENCE_OPENING_FRAME,
   type SequenceManifest,
 } from "@/data/sequences";
+import {
+  sequenceAssetFocalX,
+  sequenceFocalBoxGeometry,
+} from "@/utils/sequenceFraming";
 
 const DESKTOP_EXPERIENCE_QUERY =
   "(min-width: 768px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
@@ -20,6 +27,8 @@ const TOUCH_CAPABLE_QUERY = "(any-pointer: coarse)";
 const DESKTOP_JOURNEY_RETRY_BASE_MS = 400;
 const DESKTOP_JOURNEY_RETRY_MAX_MS = 4_000;
 const HOME_HASHES = new Set(["#top", "#store", "#work", "#about", "#events"]);
+const OPENING_FOCAL_X = sequenceAssetFocalX(SEQUENCE_OPENING_FRAME);
+const OPENING_FOCAL_GEOMETRY = sequenceFocalBoxGeometry(OPENING_FOCAL_X);
 
 type DesktopJourneyProps = {
   products: Product[];
@@ -195,14 +204,38 @@ export default function ImmersiveParallax({
 
             .ruined-desktop-sequence-bootstrap {
               display: block;
+              position: relative;
+              overflow: hidden;
               width: 100%;
               min-height: 100vh;
               min-height: 100svh;
               background-color: #000;
+            }
+
+            .ruined-desktop-sequence-bootstrap::before {
+              content: "";
+              position: ${OPENING_FOCAL_GEOMETRY.position};
+              right: ${OPENING_FOCAL_GEOMETRY.right};
+              bottom: ${OPENING_FOCAL_GEOMETRY.bottom};
+              left: ${OPENING_FOCAL_GEOMETRY.left};
+              top: ${OPENING_FOCAL_GEOMETRY.top};
+              width: ${OPENING_FOCAL_GEOMETRY.width};
+              height: ${OPENING_FOCAL_GEOMETRY.height};
+              transform: ${OPENING_FOCAL_GEOMETRY.transform};
               background-image: url("${SEQUENCE_OPENING_FRAME}");
-              background-position: center;
+              background-position: ${OPENING_FOCAL_X * 100}% center;
               background-repeat: no-repeat;
               background-size: cover;
+            }
+
+            .ruined-desktop-sequence-bootstrap__index {
+              position: absolute;
+              right: 1rem;
+              bottom: calc(env(safe-area-inset-bottom, 0px) + 3.5rem);
+              left: 1rem;
+              z-index: 1;
+              width: min(calc(100% - 2rem), 56rem);
+              margin-inline: auto;
             }
           }
 
@@ -225,6 +258,16 @@ export default function ImmersiveParallax({
           <h1 className="sr-only">
             Ruined — objects, garments, spaces, and projects after the fear
           </h1>
+          <div className="ruined-desktop-sequence-bootstrap__index">
+            <p className="mb-2 text-center font-mono text-[0.5rem] uppercase tracking-[0.36em] text-[var(--color-bone)]/70">
+              Lobby index · current selection
+            </p>
+            <JourneyLobbyIndex
+              products={products}
+              projects={PROJECTS}
+              events={EVENTS}
+            />
+          </div>
         </section>
       </>
     );

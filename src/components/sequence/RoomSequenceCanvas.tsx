@@ -2,6 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import { scrollState } from "@/utils/scrollState";
+import {
+  sequenceAssetFocalX,
+  sequenceCoverRect,
+} from "@/utils/sequenceFraming";
 
 // Paints a scroll-scrubbed frame sequence onto a full-screen canvas. Frames are
 // decoded on demand into a bounded LRU of ImageBitmaps (with forward prefetch),
@@ -193,13 +197,17 @@ export default function RoomSequenceCanvas({
       lastDrawnGroup = null;
     };
 
-    const draw = (bmp: ImageBitmap, group: string) => {
+    const draw = (bmp: ImageBitmap, group: string, frameIndex: number) => {
       const cw = canvas.width;
       const ch = canvas.height;
-      const s = Math.max(cw / bmp.width, ch / bmp.height);
-      const w = bmp.width * s;
-      const h = bmp.height * s;
-      ctx.drawImage(bmp, (cw - w) / 2, (ch - h) / 2, w, h);
+      const rect = sequenceCoverRect(
+        bmp.width,
+        bmp.height,
+        cw,
+        ch,
+        sequenceAssetFocalX(frames[frameIndex])
+      );
+      ctx.drawImage(bmp, rect.x, rect.y, rect.width, rect.height);
       lastDrawn = bmp;
       lastDrawnGroup = group;
     };
@@ -233,7 +241,7 @@ export default function RoomSequenceCanvas({
       const bmp = hasPaintedExactTarget ? nearest(target) : cache.get(target);
       const targetGroup = frameGroups[target];
       if (bmp && bmp !== lastDrawn) {
-        draw(bmp, targetGroup);
+        draw(bmp, targetGroup, target);
         hasPaintedExactTarget = true;
       } else if (
         hasPaintedExactTarget &&

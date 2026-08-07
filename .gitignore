@@ -43,5 +43,6 @@ yarn-error.log*
 
 # Render masters belong in external/local archival storage, never in a deploy.
 /sequence-masters/
+/public/new sequences/
 /public/sequences/**/*.tif
 /public/sequences/**/*.tiff

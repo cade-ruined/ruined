@@ -1,9 +1,10 @@
-export const MOBILE_WALK_ROOMS = [
-  "lobby",
-  "store",
-  "records",
-  "lounge",
-] as const;
+import {
+  SEQUENCE_ROOMS,
+  sequenceFrameCount,
+  sequenceFramePath,
+} from "@/data/sequences";
+
+export const MOBILE_WALK_ROOMS = SEQUENCE_ROOMS;
 
 export const MOBILE_SCENE_IDS = [
   "top",
@@ -25,16 +26,17 @@ export function mobileSceneIndexFromHash(hash: string) {
 // before it ends on this same asset, so revealing the card cannot change the
 // image underneath the interface.
 export const MOBILE_ARRIVAL_FRAME_PATHS = [
-  "/sequences/lobby/frame-0001.webp",
-  "/sequences/store/frame-0001.webp",
-  "/sequences/records/frame-0001.webp",
-  "/sequences/lounge/frame-0001.webp",
-  "/sequences/lounge/frame-0192.webp",
+  sequenceFramePath("lobby", 1),
+  sequenceFramePath("store", 1),
+  sequenceFramePath("records", 1),
+  sequenceFramePath("lounge", 1),
+  sequenceFramePath("lounge", sequenceFrameCount("lounge")),
 ] as const;
 
 export const MOBILE_WALK_TRANSITIONS = MOBILE_WALK_ROOMS.map(
   (room, index) => ({
-    room,
+    room: room.id,
+    frameCount: room.frameCount,
     startFrame: MOBILE_ARRIVAL_FRAME_PATHS[index],
     endFrame: MOBILE_ARRIVAL_FRAME_PATHS[index + 1],
   })

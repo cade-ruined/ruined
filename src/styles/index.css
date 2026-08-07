@@ -35,6 +35,24 @@ html {
   }
 }
 
+/* The immersive mobile journey is also used by coarse-pointer devices wider
+   than the phone breakpoint. Keep its navigation in FAB form in landscape and
+   on touch tablets instead of mixing the swipe journey with desktop controls. */
+@media (any-pointer: coarse) {
+  .ruined-header-desktop-nav {
+    display: none !important;
+  }
+
+  .ruined-header-mobile-fab {
+    display: block !important;
+  }
+
+  .ruined-header-shell {
+    width: fit-content !important;
+    margin-inline: 0 !important;
+  }
+}
+
 /* Respect users who explicitly opt out of motion. */
 @media (prefers-reduced-motion: reduce) {
   html {

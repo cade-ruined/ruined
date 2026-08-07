@@ -1,9 +1,9 @@
 {
-  "version": "48d7f1bd3b6c",
+  "version": "644771dd1cfd",
   "rooms": [
     {
       "id": "lobby",
-      "count": 192,
+      "count": 240,
       "files": [
         "/sequences/lobby/frame-0001.webp",
         "/sequences/lobby/frame-0002.webp",
@@ -196,7 +196,55 @@
         "/sequences/lobby/frame-0189.webp",
         "/sequences/lobby/frame-0190.webp",
         "/sequences/lobby/frame-0191.webp",
-        "/sequences/lobby/frame-0192.webp"
+        "/sequences/lobby/frame-0192.webp",
+        "/sequences/lobby/frame-0193.webp",
+        "/sequences/lobby/frame-0194.webp",
+        "/sequences/lobby/frame-0195.webp",
+        "/sequences/lobby/frame-0196.webp",
+        "/sequences/lobby/frame-0197.webp",
+        "/sequences/lobby/frame-0198.webp",
+        "/sequences/lobby/frame-0199.webp",
+        "/sequences/lobby/frame-0200.webp",
+        "/sequences/lobby/frame-0201.webp",
+        "/sequences/lobby/frame-0202.webp",
+        "/sequences/lobby/frame-0203.webp",
+        "/sequences/lobby/frame-0204.webp",
+        "/sequences/lobby/frame-0205.webp",
+        "/sequences/lobby/frame-0206.webp",
+        "/sequences/lobby/frame-0207.webp",
+        "/sequences/lobby/frame-0208.webp",
+        "/sequences/lobby/frame-0209.webp",
+        "/sequences/lobby/frame-0210.webp",
+        "/sequences/lobby/frame-0211.webp",
+        "/sequences/lobby/frame-0212.webp",
+        "/sequences/lobby/frame-0213.webp",
+        "/sequences/lobby/frame-0214.webp",
+        "/sequences/lobby/frame-0215.webp",
+        "/sequences/lobby/frame-0216.webp",
+        "/sequences/lobby/frame-0217.webp",
+        "/sequences/lobby/frame-0218.webp",
+        "/sequences/lobby/frame-0219.webp",
+        "/sequences/lobby/frame-0220.webp",
+        "/sequences/lobby/frame-0221.webp",
+        "/sequences/lobby/frame-0222.webp",
+        "/sequences/lobby/frame-0223.webp",
+        "/sequences/lobby/frame-0224.webp",
+        "/sequences/lobby/frame-0225.webp",
+        "/sequences/lobby/frame-0226.webp",
+        "/sequences/lobby/frame-0227.webp",
+        "/sequences/lobby/frame-0228.webp",
+        "/sequences/lobby/frame-0229.webp",
+        "/sequences/lobby/frame-0230.webp",
+        "/sequences/lobby/frame-0231.webp",
+        "/sequences/lobby/frame-0232.webp",
+        "/sequences/lobby/frame-0233.webp",
+        "/sequences/lobby/frame-0234.webp",
+        "/sequences/lobby/frame-0235.webp",
+        "/sequences/lobby/frame-0236.webp",
+        "/sequences/lobby/frame-0237.webp",
+        "/sequences/lobby/frame-0238.webp",
+        "/sequences/lobby/frame-0239.webp",
+        "/sequences/lobby/frame-0240.webp"
       ]
     },
     {
@@ -399,7 +447,7 @@
     },
     {
       "id": "records",
-      "count": 192,
+      "count": 185,
       "files": [
         "/sequences/records/frame-0001.webp",
         "/sequences/records/frame-0002.webp",
@@ -585,14 +633,7 @@
         "/sequences/records/frame-0182.webp",
         "/sequences/records/frame-0183.webp",
         "/sequences/records/frame-0184.webp",
-        "/sequences/records/frame-0185.webp",
-        "/sequences/records/frame-0186.webp",
-        "/sequences/records/frame-0187.webp",
-        "/sequences/records/frame-0188.webp",
-        "/sequences/records/frame-0189.webp",
-        "/sequences/records/frame-0190.webp",
-        "/sequences/records/frame-0191.webp",
-        "/sequences/records/frame-0192.webp"
+        "/sequences/records/frame-0185.webp"
       ]
     },
     {
@@ -794,5 +835,5 @@
       ]
     }
   ],
-  "total": 768
+  "total": 809
 }

@@ -8,7 +8,7 @@ export default function SiteFooter() {
   if (pathname.startsWith("/dive") || pathname.startsWith("/sequence") || pathname.startsWith("/lp")) return null;
 
   return (
-    <footer className="relative z-30 border-t border-black/15 bg-[var(--color-bone)] px-6 pt-12 text-[var(--color-faded)] sm:px-10 sm:pt-16" style={{ paddingBottom: "calc(var(--bottom-menu-h, 190px) + env(safe-area-inset-bottom, 0px) + 2rem)" }}>
+    <footer className="relative z-30 border-t border-black/15 bg-[var(--color-bone)] px-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] pt-12 text-[var(--color-faded)] sm:px-10 sm:pt-16 md:pb-8">
       <div className="mx-auto grid max-w-6xl grid-cols-2 gap-10 sm:grid-cols-4">
         <div className="col-span-2 sm:col-span-1">
           <p className="display text-3xl">Ruined</p>
