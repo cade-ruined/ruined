@@ -3,6 +3,7 @@ import {
   sequenceFrameCount,
   sequenceFramePath,
 } from "@/data/sequences";
+import { EXPLORE_ROOM_IDS } from "@/data/navigation";
 import mobileSequenceConfig from "@/data/mobile-sequence-config.json";
 
 export const MOBILE_TRANSITION_SAMPLE_COUNT = mobileSequenceConfig.sampleCount;
@@ -11,13 +12,7 @@ export const MOBILE_TRANSITION_FRAME_HEIGHT = mobileSequenceConfig.height;
 
 export const MOBILE_WALK_ROOMS = SEQUENCE_ROOMS;
 
-export const MOBILE_SCENE_IDS = [
-  "top",
-  "store",
-  "work",
-  "about",
-  "events",
-] as const;
+export const MOBILE_SCENE_IDS = EXPLORE_ROOM_IDS;
 
 export type MobileSceneId = (typeof MOBILE_SCENE_IDS)[number];
 

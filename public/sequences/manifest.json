@@ -1,5 +1,5 @@
 {
-  "version": "73c3e8fb3b0f",
+  "version": "0085338fbdb5",
   "rooms": [
     {
       "id": "lobby",
@@ -838,11 +838,11 @@
   "total": 809,
   "mobile": {
     "sampleCount": 13,
-    "width": 828,
-    "height": 466,
-    "quality": 72,
-    "maxTotalBytes": 1572864,
-    "maxFrameBytes": 65536,
+    "width": 608,
+    "height": 1080,
+    "quality": 78,
+    "maxTotalBytes": 2097152,
+    "maxFrameBytes": 98304,
     "files": [
       "/sequences/mobile/lobby/frame-0021.webp",
       "/sequences/mobile/lobby/frame-0041.webp",

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { PROJECTS, projectSlug, type Project } from "@/data/projects";
+import { EXPLORE_ROOMS } from "@/data/navigation";
 
 const PROJECT_TONES = {
   warm: "linear-gradient(145deg,#3b2412,#6b4522 50%,#110b08)",
@@ -25,9 +26,7 @@ export default function WorkIndex() {
             </h1>
             <div className="md:col-span-4">
               <p className="max-w-md text-sm leading-relaxed text-black/60 sm:text-base">
-                Objects, spaces, garments, and systems filed by project rather
-                than discipline. Each record starts with a material and the
-                question of what it can become next.
+                {EXPLORE_ROOMS[2].description}
               </p>
               <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 border-t border-black/15 pt-4 font-mono text-[0.5rem] uppercase tracking-[0.2em] text-black/45">
                 <span>Objects</span>

@@ -2,12 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const ROOMS = [
-  { href: "/store", label: "Store" },
-  { href: "/work", label: "Work" },
-  { href: "/about", label: "About" },
-];
+import { GLOBAL_NAV_ITEMS } from "@/data/navigation";
 
 // Slim lateral nav for the deep pages, replacing the couch there. The current
 // page is marked (poster-red, non-link); the siblings are quiet links so you
@@ -20,7 +15,7 @@ export default function SiblingNav({ className = "" }: { className?: string }) {
       aria-label="Sections"
       className={`ui-heading flex items-center gap-3 text-[0.65rem] tracking-[0.18em] uppercase ${className}`}
     >
-      {ROOMS.map((r, i) => {
+      {GLOBAL_NAV_ITEMS.map((r, i) => {
         const active = pathname.startsWith(r.href);
         return (
           <span key={r.href} className="flex items-center gap-3">

@@ -11,19 +11,17 @@ import {
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import Link from "next/link";
 import MobileWalkTransition, {
   type MobileWalkTransitionHandle,
 } from "@/components/sequence/MobileWalkTransition";
 import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
-  JourneyAboutIndex,
   JourneyEventsIndex,
   JourneyLobbyIndex,
-  JourneyStoreIndex,
-  JourneyWorkIndex,
 } from "@/components/sequence/JourneyIndexes";
+import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import { EVENTS } from "@/data/events";
+import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
   MOBILE_ARRIVAL_FRAME_PATHS,
   MOBILE_SCENE_IDS,
@@ -31,7 +29,6 @@ import {
   type MobileSceneId,
 } from "@/data/mobileJourney";
 import type { Product } from "@/data/products";
-import { PROJECTS } from "@/data/projects";
 import { versionSequenceAsset } from "@/data/sequences";
 import {
   sequenceAssetFocalX,
@@ -42,52 +39,33 @@ type MobileScene = {
   id: Exclude<MobileSceneId, "events">;
   image: string;
   heading: string;
-  href?: `/${"store" | "work" | "about"}`;
-  eyebrow?: string;
-  title?: string;
-  description?: string;
-  cta?: string;
 };
 
 const MOBILE_SCENES = [
   {
     id: "top",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[0]),
-    heading: "Lobby",
+    heading: EXPLORE_ROOMS[0].label,
   },
   {
     id: "store",
-    href: "/store",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[1]),
-    heading: "The Store",
-    eyebrow: "01 / Artifacts",
-    title: "The Store",
-    description: "Objects and garments made to gather a history.",
-    cta: "Enter the store",
+    heading: EXPLORE_ROOMS[1].label,
   },
   {
     id: "work",
-    href: "/work",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[2]),
-    heading: "The Work",
-    eyebrow: "02 / Project Hub",
-    title: "The Work",
-    description: "Objects, spaces, and material records from the studio.",
-    cta: "Open the project hub",
+    heading: EXPLORE_ROOMS[2].label,
   },
   {
     id: "about",
-    href: "/about",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[3]),
-    heading: "What Remains",
-    eyebrow: "03 / Studio No. 17",
-    title: "What Remains",
-    description: "A practice shaped by use, wear, place, and what survives.",
-    cta: "About the studio",
+    heading: EXPLORE_ROOMS[3].label,
   },
 ] as const satisfies readonly MobileScene[];
 
-const MOBILE_STAGE_QUERY = "(max-width: 767px), (any-pointer: coarse)";
+const MOBILE_STAGE_QUERY =
+  "(max-width: 767px), ((max-width: 1024px) and (hover: none) and (pointer: coarse))";
 const SWIPE_DISTANCE_PX = 52;
 const MOBILE_FIRESIDE_SRC = versionSequenceAsset(
   "/sequences/fireside/fire-stream-loop-mobile.mp4"
@@ -95,13 +73,7 @@ const MOBILE_FIRESIDE_SRC = versionSequenceAsset(
 const MOBILE_FIRESIDE_POSTER = versionSequenceAsset(
   MOBILE_ARRIVAL_FRAME_PATHS[4]
 );
-const MOBILE_SCENE_LABELS = [
-  "Home",
-  "Store",
-  "Work",
-  "About",
-  "Events",
-] as const;
+const MOBILE_SCENE_LABELS = EXPLORE_ROOMS.map((room) => room.label);
 
 type GestureStart = {
   pointerId: number;
@@ -125,6 +97,7 @@ function MobileRoomScene({
   selection?: ReactNode;
 }) {
   const headingId = `mobile-${scene.id}-heading`;
+  const room = EXPLORE_ROOMS[index];
 
   return (
     <article
@@ -150,40 +123,15 @@ function MobileRoomScene({
         </div>
         <div className="ruined-mobile-scene__scrim" aria-hidden="true" />
         <div className="ruined-mobile-scene__copy">
-          {scene.eyebrow && (
-            <p className="ruined-mobile-scene__eyebrow">{scene.eyebrow}</p>
-          )}
-          {scene.title ? (
-            <h2 id={headingId} className="ruined-mobile-scene__title">
-              {scene.title}
-            </h2>
-          ) : (
-            <h2 id={headingId} className="sr-only">
-              {scene.heading}
-            </h2>
-          )}
-          {scene.description && (
-            <p className="ruined-mobile-scene__description">
-              {scene.description}
-            </p>
-          )}
           {selection && (
             <div
               className="ruined-mobile-scene__selection"
               role="group"
               aria-label={`${scene.heading} selections`}
             >
+              <h2 id={headingId} className="sr-only">{room.headline}</h2>
               {selection}
             </div>
-          )}
-          {scene.href && scene.cta && (
-            <Link
-              className="ruined-mobile-scene__link"
-              href={scene.href}
-            >
-              <span>{scene.cta}</span>
-              <span aria-hidden="true">→</span>
-            </Link>
           )}
         </div>
       </div>
@@ -276,7 +224,10 @@ export default function MobileImmersiveJourney({
   const [activeIndex, setActiveIndex] = useState(0);
   const [settledIndex, setSettledIndex] = useState(0);
   const [stageEnabled, setStageEnabled] = useState(false);
-  const [announcement, setAnnouncement] = useState("Home");
+  const [hasWalked, setHasWalked] = useState(false);
+  const [announcement, setAnnouncement] = useState<string>(
+    EXPLORE_ROOMS[0].label
+  );
 
   const setScene = useCallback((index: number) => {
     activeIndexRef.current = index;
@@ -318,6 +269,7 @@ export default function MobileImmersiveJourney({
         return;
       }
 
+      setHasWalked(true);
       transitioningRef.current = true;
       const transition = walkRef.current;
       if (transition) {
@@ -353,6 +305,7 @@ export default function MobileImmersiveJourney({
     const initialIndex = mobileSceneIndexFromHash(window.location.hash);
     setScene(initialIndex);
     setSettledIndex(initialIndex);
+    setHasWalked(initialIndex !== 0);
     walkRef.current?.prepare(initialIndex);
   }, [setScene]);
 
@@ -392,8 +345,12 @@ export default function MobileImmersiveJourney({
 
   useEffect(() => {
     if (!stageEnabled) return;
+    let locationFrame = 0;
     const syncFromLocation = () => {
-      navigateRef.current(mobileSceneIndexFromHash(window.location.hash));
+      cancelAnimationFrame(locationFrame);
+      locationFrame = requestAnimationFrame(() => {
+        navigateRef.current(mobileSceneIndexFromHash(window.location.hash));
+      });
     };
     const requestScene = (event: Event) => {
       const request = event as CustomEvent<{ hash?: string; index?: number }>;
@@ -410,6 +367,7 @@ export default function MobileImmersiveJourney({
     window.addEventListener("ruined:home-scene-request", requestScene);
     commitScene(activeIndexRef.current);
     return () => {
+      cancelAnimationFrame(locationFrame);
       window.removeEventListener("hashchange", syncFromLocation);
       window.removeEventListener("popstate", syncFromLocation);
       window.removeEventListener("ruined:home-scene-request", requestScene);
@@ -525,12 +483,12 @@ export default function MobileImmersiveJourney({
     <JourneyLobbyIndex
       key="lobby-selections"
       products={products}
-      projects={PROJECTS}
+      projects={[]}
       events={EVENTS}
     />,
-    <JourneyStoreIndex key="store-selections" products={products} />,
-    <JourneyWorkIndex key="work-selections" projects={PROJECTS} />,
-    <JourneyAboutIndex key="about-selections" />,
+    <JourneyComingSoon key="store-selections" section="store" />,
+    <JourneyComingSoon key="work-selections" section="artifacts" />,
+    <JourneyComingSoon key="about-selections" section="about" />,
   ];
 
   return (
@@ -562,6 +520,22 @@ export default function MobileImmersiveJourney({
 
       {stageEnabled && (
         <MobileWalkTransition ref={walkRef} journeyRef={journeyRef} />
+      )}
+
+      {stageEnabled && (
+        <div className="ruined-mobile-journey__orientation" aria-hidden="true">
+          {!hasWalked && activeIndex === 0 && (
+            <p className="ruined-mobile-journey__swipe-cue">
+              <span>Swipe to walk</span>
+              <span className="ruined-mobile-journey__swipe-arrow">&uarr;</span>
+            </p>
+          )}
+          <p className="ruined-mobile-journey__position">
+            <span>{String(activeIndex + 1).padStart(2, "0")} / 05</span>
+            <span className="ruined-mobile-journey__position-rule">&mdash;</span>
+            <span>{MOBILE_SCENE_LABELS[activeIndex]}</span>
+          </p>
+        </div>
       )}
 
       {MOBILE_SCENES.map((scene, index) => (
@@ -605,18 +579,14 @@ export default function MobileImmersiveJourney({
           className="ruined-mobile-closing__inner"
           data-mobile-internal-scroll
         >
-          <p className="ruined-mobile-closing__registration">RU // AW26</p>
-          <h2 id="mobile-fear-heading" className="ruined-mobile-closing__title">
-            <span>After</span>
-            <span>The</span>
-            <span className="ruined-mobile-closing__fear">Fear</span>
-          </h2>
-
           <div
             className="ruined-mobile-closing__selection"
             role="group"
-            aria-label="Event selections"
+            aria-label={`${EXPLORE_ROOMS[4].label} selections`}
           >
+              <h2 id="mobile-fear-heading" className="sr-only">
+                {EXPLORE_ROOMS[4].headline}
+              </h2>
             <JourneyEventsIndex events={EVENTS} />
           </div>
 
@@ -628,12 +598,8 @@ export default function MobileImmersiveJourney({
             </div>
             <div className="ruined-mobile-closing__credit">
               <span>© 2026 The Ruined Project</span>
-              <span>40.4633° N / 111.7780° W</span>
+              <span>40.4478° N / 111.7783° W</span>
             </div>
-            <Link className="ruined-mobile-closing__events-link" href="/events">
-              <span>View the studio programme</span>
-              <span aria-hidden="true">→</span>
-            </Link>
           </div>
         </div>
       </section>
@@ -673,6 +639,78 @@ export default function MobileImmersiveJourney({
         .ruined-mobile-journey[data-stage-enabled]:focus-visible {
           outline: 2px solid var(--color-signal, #e5a923);
           outline-offset: -2px;
+        }
+
+        .ruined-mobile-journey__orientation {
+          position: absolute;
+          right: 0;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 0.9rem);
+          left: 0;
+          z-index: 5;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.65rem;
+          pointer-events: none;
+          transition: opacity 160ms ease-out;
+        }
+
+        .ruined-mobile-journey__position,
+        .ruined-mobile-journey__swipe-cue {
+          margin: 0;
+          font-family: var(--font-header, Inter, sans-serif);
+          font-weight: var(--weight-header, 700);
+          line-height: 1;
+          letter-spacing: var(--tracking-body, -0.01em);
+          color: var(--color-bone, #e5e0d5);
+          text-shadow: 0 1px 10px rgb(0 0 0 / 0.72);
+        }
+
+        .ruined-mobile-journey__position {
+          display: flex;
+          min-height: 2.25rem;
+          align-items: center;
+          gap: 0.55rem;
+          border: 1px solid rgb(229 224 213 / 0.28);
+          padding: 0.72rem 0.9rem 0.68rem;
+          background: rgb(8 6 5 / 0.78);
+          font-size: 0.72rem;
+          box-shadow: 3px 3px 0 rgb(0 0 0 / 0.58);
+        }
+
+        .ruined-mobile-journey__position-rule {
+          color: var(--color-poster, #d0312d);
+        }
+
+        .ruined-mobile-journey__swipe-cue {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+          font-size: 0.72rem;
+          color: rgb(229 224 213 / 0.78);
+          animation: ruined-mobile-swipe-cue 1.6s ease-in-out 0.7s infinite;
+        }
+
+        .ruined-mobile-journey__swipe-arrow {
+          display: inline-block;
+          color: var(--color-poster, #d0312d);
+          font-size: 1rem;
+          line-height: 0.7;
+        }
+
+        .ruined-mobile-journey[data-walking] .ruined-mobile-journey__orientation {
+          opacity: 0;
+        }
+
+        @keyframes ruined-mobile-swipe-cue {
+          0%, 100% {
+            opacity: 0.5;
+            transform: translate3d(0, 3px, 0);
+          }
+          50% {
+            opacity: 1;
+            transform: translate3d(0, -3px, 0);
+          }
         }
 
         .ruined-mobile-walk {
@@ -779,39 +817,6 @@ export default function MobileImmersiveJourney({
             max(1.25rem, env(safe-area-inset-left, 0px));
         }
 
-        .ruined-mobile-scene__eyebrow,
-        .ruined-mobile-closing__registration {
-          margin: 0 0 0.65rem;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 0.56rem;
-          line-height: 1;
-          letter-spacing: 0.28em;
-          text-transform: uppercase;
-          color: color-mix(in srgb, var(--color-bone, #e5e0d5) 68%, transparent);
-        }
-
-        .ruined-mobile-scene__title {
-          max-width: 8ch;
-          margin: 0;
-          font-family: var(--font-header, Inter, sans-serif) !important;
-          font-size: clamp(2.5rem, 12vw, 4.5rem);
-          font-weight: var(--weight-header, 700) !important;
-          line-height: 0.86;
-          letter-spacing: -0.055em;
-          text-transform: uppercase;
-          text-wrap: balance;
-          color: var(--color-bone, #e5e0d5);
-          text-shadow: 0 2px 20px rgba(0, 0, 0, 0.35);
-        }
-
-        .ruined-mobile-scene__description {
-          max-width: 28rem;
-          margin: 0.9rem 0 1rem;
-          font-size: 0.82rem;
-          line-height: 1.5;
-          color: color-mix(in srgb, var(--color-bone, #e5e0d5) 76%, transparent);
-        }
-
         .ruined-mobile-scene__selection,
         .ruined-mobile-closing__selection {
           width: 100%;
@@ -822,7 +827,7 @@ export default function MobileImmersiveJourney({
         }
 
         .ruined-mobile-closing__selection {
-          margin-top: 1.25rem;
+          margin-top: 1.75rem;
         }
 
         .ruined-mobile-scene__link,
@@ -866,31 +871,6 @@ export default function MobileImmersiveJourney({
             max(1.25rem, env(safe-area-inset-right, 0px))
             calc(env(safe-area-inset-bottom, 0px) + 5.75rem)
             max(1.25rem, env(safe-area-inset-left, 0px));
-        }
-
-        .ruined-mobile-closing__registration {
-          margin-bottom: 1.25rem;
-          color: var(--color-signal, #e5a923);
-        }
-
-        .ruined-mobile-closing__title {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          margin: 0;
-          font-family: var(--font-header, Inter, sans-serif) !important;
-          font-size: clamp(3.5rem, 18vw, 6rem);
-          font-weight: var(--weight-header, 700) !important;
-          line-height: 0.79;
-          letter-spacing: -0.06em;
-          text-transform: uppercase;
-          color: var(--color-bone, #e5e0d5);
-        }
-
-        .ruined-mobile-closing__fear {
-          font-family: var(--font-display, Georgia, serif) !important;
-          font-style: italic;
-          color: var(--color-signal, #e5a923);
         }
 
         .ruined-mobile-closing__footer {
@@ -964,6 +944,12 @@ export default function MobileImmersiveJourney({
 
           .ruined-mobile-closing__video {
             display: none;
+          }
+
+          .ruined-mobile-journey__orientation,
+          .ruined-mobile-journey__swipe-cue {
+            transition: none;
+            animation: none;
           }
         }
 

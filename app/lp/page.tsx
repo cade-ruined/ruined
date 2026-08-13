@@ -65,7 +65,7 @@ export default function LandingPage() {
 
       <footer className={styles.footer}>
         <a href="#top" aria-label="Return to the top">
-          <Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={206} />
+          <Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} />
         </a>
         <p>After the Fear · Private programme 01</p>
         <div><a href="mailto:studio@ruined.studio">studio@ruined.studio</a><a href="/privacy">Privacy</a></div>

@@ -14,8 +14,8 @@ export default function SequenceFrameImage({
     <Image
       src={src}
       alt=""
-      width={1600}
-      height={900}
+      width={1920}
+      height={1080}
       sizes="107vw"
       priority={priority}
       unoptimized

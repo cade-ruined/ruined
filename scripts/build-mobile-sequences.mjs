@@ -24,6 +24,8 @@ const MOBILE_CONFIG_FILE = path.join(
   "mobile-sequence-config.json"
 );
 const PAD = 4;
+const CENTER_FOCAL_X = 0.5;
+const LOBBY_FOCAL_X = 847.5 / 1600;
 
 const sequenceConfig = JSON.parse(
   await fs.readFile(SEQUENCE_CONFIG_FILE, "utf8")
@@ -42,6 +44,31 @@ function sampleFrameNumbers(frameCount) {
 
 function frameName(frameNumber) {
   return `frame-${String(frameNumber).padStart(PAD, "0")}.webp`;
+}
+
+function frameFocalX(roomId, frameNumber, frameCount) {
+  if (roomId === "lobby") return LOBBY_FOCAL_X;
+  if (roomId === "store") {
+    const progress = Math.min(1, Math.max(0, (frameNumber - 1) / Math.max(1, frameCount - 1)));
+    return LOBBY_FOCAL_X + (CENTER_FOCAL_X - LOBBY_FOCAL_X) * progress;
+  }
+  return CENTER_FOCAL_X;
+}
+
+async function portraitCrop(input, room, frameNumber) {
+  const image = sharp(input);
+  const metadata = await image.metadata();
+  if (!metadata.width || !metadata.height) {
+    throw new Error(`Could not read dimensions for ${input}`);
+  }
+  const targetRatio = mobileConfig.width / mobileConfig.height;
+  const cropWidth = Math.min(metadata.width, Math.round(metadata.height * targetRatio));
+  const focalX = frameFocalX(room.id, frameNumber, room.frameCount);
+  const left = Math.min(
+    metadata.width - cropWidth,
+    Math.max(0, Math.round(metadata.width * focalX - cropWidth / 2))
+  );
+  return image.extract({ left, top: 0, width: cropWidth, height: metadata.height });
 }
 
 async function exists(file) {
@@ -104,8 +131,9 @@ async function main() {
         const name = frameName(frameNumber);
         const input = path.join(SEQUENCE_ROOT, room.id, name);
         const output = path.join(outputDirectory, name);
-        await sharp(input)
-          .resize(mobileConfig.width, mobileConfig.height, { fit: "fill" })
+        const portrait = await portraitCrop(input, room, frameNumber);
+        await portrait
+          .resize(mobileConfig.width, mobileConfig.height, { fit: "fill", kernel: "lanczos3" })
           .webp({
             quality: mobileConfig.quality,
             effort: 6,

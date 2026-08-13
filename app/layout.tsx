@@ -13,7 +13,7 @@ const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
 
 const SITE_NAME = "Ruined";
 const SITE_DESC =
-  "Ruined — a studio for artifacts and projects. Drop 01 / SS MMXXVI. Walk the warehouse: store, work, studio, and fireside events, after the fear.";
+  "Ruined — a studio for artifacts and projects. Drop 01 / SS MMXXVI. Walk the warehouse: store, work, studio, and community, after the fear.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -65,7 +65,7 @@ export default function RootLayout({
     "@type": "Organization",
     name: SITE_NAME,
     url: siteUrl,
-    email: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "studio@ruined.studio",
+    email: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "connect@theruinedproject.com",
     description: SITE_DESC,
   };
 

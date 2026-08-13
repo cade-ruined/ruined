@@ -1,5 +1,6 @@
 import ImmersiveParallax from "@/components/ImmersiveParallax";
 import MobileImmersiveJourney from "@/components/MobileImmersiveJourney";
+import LobbyPopupSequence from "@/components/LobbyPopupSequence";
 import { getProducts } from "@/lib/shopify";
 
 // The portrait journey is the resilient server-rendered homepage. Fine-pointer
@@ -10,9 +11,12 @@ export const revalidate = 3600;
 export default async function Page() {
   const products = await getProducts();
   return (
-    <ImmersiveParallax
-      products={products}
-      fallback={<MobileImmersiveJourney products={products} />}
-    />
+    <>
+      <ImmersiveParallax
+        products={products}
+        fallback={<MobileImmersiveJourney products={products} />}
+      />
+      <LobbyPopupSequence />
+    </>
   );
 }

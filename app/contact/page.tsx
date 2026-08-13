@@ -1,13 +1,4 @@
 import type { Metadata } from "next";
-import EditorialPage from "@/components/EditorialPage";
-
-export const metadata: Metadata = { title: "Contact", description: "Projects, objects, collaborations, press, and wholesale enquiries.", alternates: { canonical: "/contact" } };
-
-export default function ContactPage() {
-  return <EditorialPage eyebrow="Studio No. 17 · Contact" title="Start with what remains." intro="Ruined works across objects, garments, spaces, and visual direction. Tell us what you are making, salvaging, or trying to understand." sections={[
-    { title: "Projects + Collaborations", body: <p><a className="underline underline-offset-4" href="mailto:studio@ruined.studio?subject=Project%20enquiry">studio@ruined.studio</a><br/>Commissions, creative direction, interiors, objects, and installations.</p> },
-    { title: "Press + Wholesale", body: <p><a className="underline underline-offset-4" href="mailto:studio@ruined.studio?subject=Press%20or%20wholesale">studio@ruined.studio</a><br/>Image requests, interviews, stockists, and collection notes.</p> },
-    { title: "Location", body: <p>Utah, United States<br/>40.4633° N · 111.7780° W<br/>Visits by appointment.</p> },
-    { title: "Response", body: <p>Include a useful subject line, timeline, location, and budget range where applicable. The studio typically responds within three working days.</p> },
-  ]} />;
-}
+import ContactForm from "@/components/ContactForm";
+export const metadata:Metadata={title:"Contact",alternates:{canonical:"/contact"}};
+export default function ContactPage(){return <main className="min-h-screen bg-[var(--color-bone)] px-6 pb-24 pt-28 text-[var(--color-faded)] sm:px-10"><div className="mx-auto max-w-5xl"><p className="ui-heading text-sm text-[var(--color-poster)]">The Ruined Project</p><h1 className="display mt-3 text-[clamp(3.5rem,9vw,7rem)] leading-[.86]">Submit something.</h1><p className="mt-5 max-w-xl text-base opacity-65">395 S Main Street · Alpine, Utah 84004<br/>40.4478° N · 111.7783° W<br/>connect@theruinedproject.com</p><div className="mt-10"><ContactForm/></div></div></main>}

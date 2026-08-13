@@ -471,7 +471,7 @@ function renderMoment(props: RenderMomentProps) {
                 src="/ruined-wordmark.svg"
                 alt={moment.content.wordmark}
                 width={1000}
-                height={206}
+                height={300}
                 priority
                 draggable={false}
               />

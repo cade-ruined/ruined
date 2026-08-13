@@ -80,6 +80,11 @@ gitignored `sequence-masters/<room>/` tree, convert them with
 frames. The converter keeps source masters unless `--delete-source` is supplied
 explicitly.
 
+Production room frames retain the masters' native 1920×1080 resolution at WebP
+quality 78. The mobile builder makes focal-aware 608×1080 portrait transition
+crops so high-density phones do not enlarge the former low-resolution landscape
+tier.
+
 ## Production checks
 
 Run the full local gate before deploying:

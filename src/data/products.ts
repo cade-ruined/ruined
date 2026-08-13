@@ -11,6 +11,26 @@
 
 export type ProductTone = "warm" | "shadow" | "atelier";
 
+export type ProductOptionValue = {
+  name: string;
+  value: string;
+};
+
+export type ProductOption = {
+  name: string;
+  values: string[];
+};
+
+export type ProductVariant = {
+  id: string;
+  title: string;
+  available: boolean;
+  selectedOptions: ProductOptionValue[];
+  price: string;
+  priceAmount: string;
+  currencyCode: string;
+};
+
 export type Product = {
   id: string;
   code: string; // e.g. "RU—001"
@@ -25,12 +45,39 @@ export type Product = {
   // Product photography from Shopify (featuredImage). When absent (e.g. local
   // fallback), surfaces render the `tone` gradient art instead.
   image?: { url: string; alt: string };
-  // Commerce fields — only present on live Shopify products. When `variantId`
-  // is set, the plate's CTA creates a real Shopify cart + checkout; otherwise
-  // it falls back to the "Enquire" affordance.
+  // The complete option/variant model. Local fallback items use stable
+  // `local:` IDs so selection and the persistent bag can be tested without
+  // exposing a Storefront token or pretending checkout is live.
+  options: ProductOption[];
+  variants: ProductVariant[];
+  // Compatibility field for older catalogue surfaces. New purchase controls
+  // use `variants` and always require the shopper to choose an available one.
   variantId?: string;
   available?: boolean;
 };
+
+function localVariants(
+  productId: string,
+  values: string[],
+  amount: string,
+  currencyCode = "GBP"
+): ProductVariant[] {
+  return values.map((value) => ({
+    id: `local:${productId}:${value.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    title: value,
+    available: true,
+    selectedOptions: [{ name: "Size", value }],
+    price: `£ ${Number(amount).toLocaleString("en-GB")}`,
+    priceAmount: amount,
+    currencyCode,
+  }));
+}
+
+function sizeOption(values: string[]): ProductOption[] {
+  return [{ name: "Size", values }];
+}
+
+const LETTER_SIZES = ["XS", "S", "M", "L", "XL"];
 
 export const PRODUCTS: Product[] = [
   {
@@ -46,6 +93,9 @@ export const PRODUCTS: Product[] = [
     care: "Re-wax annually",
     tone: "warm",
     image: { url: "/catalog/field-coat-placeholder.png", alt: "Charcoal waxed-cotton Field Coat in the Ruined studio" },
+    options: sizeOption(LETTER_SIZES),
+    variants: localVariants("ru-001", LETTER_SIZES, "420"),
+    available: true,
   },
   {
     id: "ru-002",
@@ -60,6 +110,9 @@ export const PRODUCTS: Product[] = [
     care: "Cold wash · hang dry",
     tone: "shadow",
     image: { url: "/catalog/selvedge-trouser-placeholder.png", alt: "Near-black selvedge trousers on a steel bench" },
+    options: sizeOption(["28", "30", "32", "34", "36"]),
+    variants: localVariants("ru-002", ["28", "30", "32", "34", "36"], "285"),
+    available: true,
   },
   {
     id: "ru-003",
@@ -74,6 +127,9 @@ export const PRODUCTS: Product[] = [
     care: "Cold wash · lay flat",
     tone: "atelier",
     image: { url: "/catalog/cinder-hoodie-placeholder.png", alt: "Cinder-washed heavyweight hoodie on concrete" },
+    options: sizeOption([...LETTER_SIZES, "XXL"]),
+    variants: localVariants("ru-003", [...LETTER_SIZES, "XXL"], "240"),
+    available: true,
   },
   {
     id: "ru-004",
@@ -88,6 +144,9 @@ export const PRODUCTS: Product[] = [
     care: "Cold wash · hang dry",
     tone: "warm",
     image: { url: "/catalog/workwear-vest-placeholder.png", alt: "Black canvas Workwear Vest on a steel rail" },
+    options: sizeOption(["S", "M", "L", "XL"]),
+    variants: localVariants("ru-004", ["S", "M", "L", "XL"], "180"),
+    available: true,
   },
   {
     id: "ru-005",
@@ -102,6 +161,9 @@ export const PRODUCTS: Product[] = [
     care: "Cold wash · hang dry",
     tone: "atelier",
     image: { url: "/catalog/raw-edge-overshirt-placeholder.png", alt: "Washed-bone Raw Edge Overshirt in the Ruined studio" },
+    options: sizeOption(LETTER_SIZES),
+    variants: localVariants("ru-005", LETTER_SIZES, "310"),
+    available: true,
   },
   {
     id: "ru-006",
@@ -116,6 +178,9 @@ export const PRODUCTS: Product[] = [
     care: "Spot clean · re-wax",
     tone: "shadow",
     image: { url: "/catalog/utility-tote-placeholder.png", alt: "Black waxed-canvas Utility Tote on concrete" },
+    options: sizeOption(["One size"]),
+    variants: localVariants("ru-006", ["One size"], "165"),
+    available: true,
   },
   {
     id: "ru-007",
@@ -130,6 +195,9 @@ export const PRODUCTS: Product[] = [
     care: "Hand wash",
     tone: "warm",
     image: { url: "/catalog/signal-cap-placeholder.png", alt: "Washed charcoal Signal Cap on blackened steel" },
+    options: sizeOption(["One size"]),
+    variants: localVariants("ru-007", ["One size"], "95"),
+    available: true,
   },
   {
     id: "ru-008",
@@ -144,6 +212,9 @@ export const PRODUCTS: Product[] = [
     care: "Hand wash · dry flat",
     tone: "atelier",
     image: { url: "/catalog/ash-knit-placeholder.png", alt: "Ash-grey repaired rib-knit crewneck in the Ruined studio" },
+    options: sizeOption(LETTER_SIZES),
+    variants: localVariants("ru-008", LETTER_SIZES, "260"),
+    available: true,
   },
 ];
 

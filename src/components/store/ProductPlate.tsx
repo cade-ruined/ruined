@@ -5,7 +5,7 @@ import { useRef } from "react";
 import Image from "next/image";
 import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
-import { checkout } from "@/lib/store-actions";
+import Link from "next/link";
 
 type Props = {
   product: Product;
@@ -13,7 +13,7 @@ type Props = {
   total: number; // total plates in the gallery (for "Nº 01 / 04" style stamps)
 };
 
-// Shared CTA styling for the Acquire/Enquire affordances.
+// Shared CTA styling for the product-detail/enquiry affordances.
 const ctaClass =
   "group inline-flex items-center gap-2 font-mono text-[0.65rem] sm:text-[0.7rem] tracking-[0.4em] uppercase text-[var(--color-faded)] hover:text-[var(--color-poster)] transition-colors duration-300";
 
@@ -173,31 +173,27 @@ export default function ProductPlate({ product, index, total }: Props) {
             <SpecRow label="Care" value={product.care} />
           </dl>
 
-          {/* Price + acquire row. When the product is a live Shopify variant,
-              the CTA posts to the checkout server action (real cart → Shopify
-              hosted checkout); otherwise it degrades to the Enquire affordance.
-              A sold-out variant shows a disabled state. */}
+          {/* Variant selection belongs on the product page. Catalogue plates
+              always move into that deliberate selection step rather than
+              silently adding Shopify's first variant. */}
           <div className="mt-8 sm:mt-10 flex items-center justify-between gap-4 pt-5 border-t border-[var(--border)]">
             <span className="display text-2xl sm:text-3xl text-[var(--color-faded)] tabular-nums">
               {product.price}
             </span>
-            {product.variantId ? (
-              product.available === false ? (
+            {product.variants.length ? (
+              product.available === false || !product.variants.some((variant) => variant.available) ? (
                 <span className="font-mono text-[0.65rem] sm:text-[0.7rem] tracking-[0.4em] uppercase text-[var(--muted-foreground)]">
                   Sold out
                 </span>
               ) : (
-                <form action={checkout}>
-                  <input type="hidden" name="variantId" value={product.variantId} />
-                  <button type="submit" className={ctaClass}>
-                    <span>Acquire</span>
+                <Link href={`/store/${product.id}`} className={ctaClass}>
+                    <span>View piece</span>
                     <span
                       aria-hidden
                       className="inline-block h-px w-8 sm:w-10 bg-current group-hover:w-12 sm:group-hover:w-14 transition-[width] duration-300"
                     />
                     <span aria-hidden>→</span>
-                  </button>
-                </form>
+                </Link>
               )
             ) : (
               <a href={enquiryHref} className={ctaClass}>

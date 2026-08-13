@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { EXPLORE_ROOMS } from "@/data/navigation";
 
 const PRACTICE = [
   { no: "01", title: "Objects", body: "Furniture, editions, artifacts, and material studies.", image: "/art/shelf.jpg" },
@@ -27,8 +28,7 @@ export default function AboutIndex() {
               </h1>
             </div>
             <p className="max-w-md text-sm leading-relaxed text-white/65 md:col-span-3 sm:text-base">
-              Objects, garments, spaces, and visual systems beginning with what
-              has already been used, marked, or left unfinished.
+              {EXPLORE_ROOMS[3].description}
             </p>
           </div>
         </div>

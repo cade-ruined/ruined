@@ -5,7 +5,7 @@ import {
 } from "@/data/sequences";
 
 const FRAME_PATH_PATTERN =
-  /\/sequences\/(?:mobile\/)?([^/]+)\/frame-(\d+)\.webp/;
+  /\/sequences\/(mobile\/)?([^/]+)\/frame-(\d+)\.webp/;
 const MIN_FOCAL = 0.01;
 const MAX_FOCAL = 0.99;
 
@@ -38,7 +38,11 @@ export function sequenceFrameFocalX(roomId: string, frameNumber: number) {
 export function sequenceAssetFocalX(asset: string) {
   const match = asset.match(FRAME_PATH_PATTERN);
   if (!match) return SEQUENCE_CENTER_FOCAL_X;
-  return sequenceFrameFocalX(match[1], Number(match[2]));
+  // Mobile frames have already been cropped around the room focal point, so
+  // their new portrait canvas is centered. Desktop endpoints retain the
+  // source-space focal calculation for an identical visual handoff.
+  if (match[1]) return SEQUENCE_CENTER_FOCAL_X;
+  return sequenceFrameFocalX(match[2], Number(match[3]));
 }
 
 /**

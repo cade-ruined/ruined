@@ -10,7 +10,7 @@ export type RoomSequence = {
 };
 
 export const SEQUENCE_CENTER_FOCAL_X = 0.5;
-// Measured from the RUINED letterforms in the 1600px-wide lobby render.
+// Measured from the RUINED letterforms in the original 16:9 lobby render.
 export const SEQUENCE_LOBBY_FOCAL_X = 847.5 / 1600;
 
 export const SEQUENCE_ROOMS: RoomSequence[] = sequenceConfig.rooms.map(

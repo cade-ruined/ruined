@@ -12,6 +12,7 @@ import type { Product } from "@/data/products";
 import { PROJECTS } from "@/data/projects";
 import { EVENTS } from "@/data/events";
 import { JourneyLobbyIndex } from "@/components/sequence/JourneyIndexes";
+import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
   SEQUENCE_OPENING_FRAME,
   type SequenceManifest,
@@ -23,7 +24,6 @@ import {
 
 const DESKTOP_EXPERIENCE_QUERY =
   "(min-width: 768px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
-const TOUCH_CAPABLE_QUERY = "(any-pointer: coarse)";
 const DESKTOP_JOURNEY_RETRY_BASE_MS = 400;
 const DESKTOP_JOURNEY_RETRY_MAX_MS = 4_000;
 const HOME_HASHES = new Set(["#top", "#store", "#work", "#about", "#events"]);
@@ -41,10 +41,7 @@ type ReadyDesktopJourney = {
 };
 
 function desktopMediaQueries() {
-  return [
-    window.matchMedia(DESKTOP_EXPERIENCE_QUERY),
-    window.matchMedia(TOUCH_CAPABLE_QUERY),
-  ];
+  return [window.matchMedia(DESKTOP_EXPERIENCE_QUERY)];
 }
 
 function subscribeToDesktopExperience(onStoreChange: () => void) {
@@ -56,8 +53,8 @@ function subscribeToDesktopExperience(onStoreChange: () => void) {
 }
 
 function getDesktopExperienceSnapshot() {
-  const [desktop, touchCapable] = desktopMediaQueries();
-  return desktop.matches && !touchCapable.matches;
+  const [desktop] = desktopMediaQueries();
+  return desktop.matches;
 }
 
 function getServerDesktopExperienceSnapshot() {
@@ -238,16 +235,6 @@ export default function ImmersiveParallax({
               margin-inline: auto;
             }
           }
-
-          @media (any-pointer: coarse) {
-            .ruined-responsive-static-journey {
-              display: block;
-            }
-
-            .ruined-desktop-sequence-bootstrap {
-              display: none;
-            }
-          }
         `}</style>
         <div className="ruined-responsive-static-journey">{fallback}</div>
         <section
@@ -259,9 +246,7 @@ export default function ImmersiveParallax({
             Ruined — objects, garments, spaces, and projects after the fear
           </h1>
           <div className="ruined-desktop-sequence-bootstrap__index">
-            <p className="mb-2 text-center font-mono text-[0.5rem] uppercase tracking-[0.36em] text-[var(--color-bone)]/70">
-              Lobby index · current selection
-            </p>
+            <h2 className="sr-only">{EXPLORE_ROOMS[0].headline}</h2>
             <JourneyLobbyIndex
               products={products}
               projects={PROJECTS}

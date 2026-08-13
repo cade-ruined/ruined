@@ -532,7 +532,9 @@
 
 .footer div {
   display: flex;
-  gap: 1.5rem;
+  flex-wrap: wrap;
+  column-gap: 1.5rem;
+  row-gap: .35rem;
 }
 
 .footer small {

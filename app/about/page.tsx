@@ -1,13 +1,4 @@
 import type { Metadata } from "next";
-import AboutIndex from "@/components/about/AboutIndex";
-
-export const metadata: Metadata = {
-  title: "About · Studio No. 17",
-  description:
-    "Ruined is an independent multidisciplinary studio for limited objects, garments, spaces, and visual systems.",
-  alternates: { canonical: "/about" },
-};
-
-export default function AboutPage() {
-  return <AboutIndex />;
-}
+import ComingSoonGate from "@/components/ComingSoonGate";
+export const metadata: Metadata = { title: "About · Coming Soon", alternates: { canonical: "/about" } };
+export default function AboutPage() { return <ComingSoonGate title="About" image="/ruined-hero-1.jpg" source="about" signup={false} />; }

@@ -2,8 +2,10 @@
 
 import {
   useEffect,
+  useId,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import Image from "next/image";
@@ -11,116 +13,146 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CalendarGlyph } from "@/components/nav/CalendarGlyph";
 import { CouchGlyph } from "@/components/nav/CouchGlyph";
+import UniversalSearch from "@/components/search/UniversalSearch";
+import BagLink from "@/components/store/BagLink";
+import {
+  EXPLORE_ROOMS,
+  GLOBAL_MENU_ITEMS,
+  SITE_ROUTES,
+  activeGlobalNavigationId,
+  sectionLocatorForPathname,
+} from "@/data/navigation";
 
-const NAV_ITEMS = [
-  { label: "Home", href: "/#top", hash: "#top", index: 0 },
-  { label: "Store", href: "/#store", hash: "#store", index: 1 },
-  { label: "Work", href: "/#work", hash: "#work", index: 2 },
-  { label: "About", href: "/#about", hash: "#about", index: 3 },
-  { label: "Events", href: "/#events", hash: "#events", index: 4 },
-] as const;
-
-function isActive(pathname: string, currentHash: string, itemHash: string) {
-  if (pathname === "/") return currentHash === itemHash;
-  if (pathname.startsWith("/store")) return itemHash === "#store";
-  if (pathname.startsWith("/work")) return itemHash === "#work";
-  if (pathname.startsWith("/about")) return itemHash === "#about";
-  if (pathname.startsWith("/events")) return itemHash === "#events";
-  return false;
-}
+const MENU_ID = "site-navigation-menu";
 
 export default function SiteHeader() {
   const pathname = usePathname();
+  const menuTitleId = useId();
   const isLanding = pathname.startsWith("/lp");
   const isFoundations = pathname === "/foundations";
   const isHome = pathname === "/";
-  const [currentHash, setCurrentHash] = useState("#top");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const isBag = pathname === SITE_ROUTES.bag.href;
+  const usesDarkSurface =
+    pathname.startsWith(SITE_ROUTES.store.href) ||
+    isBag ||
+    pathname.startsWith(`${SITE_ROUTES.work.href}/`);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [headerSolid, setHeaderSolid] = useState(!isHome);
+  const [homeSceneIndex, setHomeSceneIndex] = useState(0);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLElement>(null);
+  const firstMenuItemRef = useRef<HTMLAnchorElement>(null);
+  const restoreMenuFocusRef = useRef(true);
+  const activeGlobalId = activeGlobalNavigationId(pathname);
+  const sectionLocator = sectionLocatorForPathname(pathname);
+  const visibleLocator = isHome
+    ? EXPLORE_ROOMS[homeSceneIndex]?.label
+    : sectionLocator;
 
   useEffect(() => {
-    const syncHash = () => setCurrentHash(window.location.hash || "#top");
-    const syncMobileScene = (event: Event) => {
-      const sceneEvent = event as CustomEvent<{ hash?: string }>;
-      setCurrentHash(sceneEvent.detail?.hash ?? window.location.hash ?? "#top");
-    };
-    syncHash();
-    window.addEventListener("hashchange", syncHash);
-    window.addEventListener("popstate", syncHash);
-    window.addEventListener("ruined:home-scene-change", syncMobileScene);
-    return () => {
-      window.removeEventListener("hashchange", syncHash);
-      window.removeEventListener("popstate", syncHash);
-      window.removeEventListener("ruined:home-scene-change", syncMobileScene);
-    };
+    restoreMenuFocusRef.current = false;
+    setMenuOpen(false);
+    setSearchOpen(false);
   }, [pathname]);
 
-  // Keep the highlighted icon synchronized with the scene currently crossing
-  // the middle of the viewport. The invisible journey anchors are repositioned
-  // after the frame manifest loads, so their live document positions are read
-  // on every scheduled update rather than cached on mount.
   useEffect(() => {
-    if (!isHome) return;
-    let raf = 0;
-    const syncSection = () => {
-      raf = 0;
-      const mobileStage = document.querySelector<HTMLElement>(
-        "[data-mobile-stage]"
-      );
-      if (mobileStage?.dataset.activeScene) {
-        setCurrentHash(`#${mobileStage.dataset.activeScene}`);
-        return;
-      }
-      const probe = window.scrollY + window.innerHeight * 0.5;
-      let active = "#top";
-      for (const item of NAV_ITEMS.slice(1)) {
-        const anchor = document.getElementById(item.hash.slice(1));
-        if (!anchor) continue;
-        const anchorY = anchor.getBoundingClientRect().top + window.scrollY;
-        if (probe >= anchorY) active = item.hash;
-      }
-      setCurrentHash(active);
+    if (!isHome) {
+      setHeaderSolid(true);
+      return;
+    }
+
+    let frame = 0;
+    const syncHeader = (hash = window.location.hash || "#top") => {
+      setHeaderSolid(window.scrollY > 24 || hash !== "#top");
+      const sceneIndex = EXPLORE_ROOMS.findIndex((room) => room.hash === hash);
+      if (sceneIndex >= 0) setHomeSceneIndex(sceneIndex);
     };
-    const scheduleSync = () => {
-      if (!raf) raf = requestAnimationFrame(syncSection);
+    const scheduleHeaderSync = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => syncHeader());
     };
-    syncSection();
-    window.addEventListener("scroll", scheduleSync, { passive: true });
-    window.addEventListener("resize", scheduleSync);
-    window.addEventListener("ruined:home-anchors-ready", scheduleSync);
-    window.addEventListener("ruined:home-scene-change", scheduleSync);
+    const syncScene = (event: Event) => {
+      const sceneEvent = event as CustomEvent<{ hash?: string; index?: number }>;
+      if (typeof sceneEvent.detail?.index === "number") {
+        setHomeSceneIndex(sceneEvent.detail.index);
+      }
+      syncHeader(sceneEvent.detail?.hash ?? window.location.hash ?? "#top");
+    };
+
+    syncHeader();
+    window.addEventListener("scroll", scheduleHeaderSync, { passive: true });
+    window.addEventListener("hashchange", scheduleHeaderSync);
+    window.addEventListener("ruined:home-scene-change", syncScene);
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", scheduleSync);
-      window.removeEventListener("resize", scheduleSync);
-      window.removeEventListener("ruined:home-anchors-ready", scheduleSync);
-      window.removeEventListener("ruined:home-scene-change", scheduleSync);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleHeaderSync);
+      window.removeEventListener("hashchange", scheduleHeaderSync);
+      window.removeEventListener("ruined:home-scene-change", syncScene);
     };
   }, [isHome]);
 
   useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [currentHash, pathname]);
-
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
+    if (!menuOpen) return;
+    const menuButton = menuButtonRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = requestAnimationFrame(() => {
+      firstMenuItemRef.current?.focus({ preventScroll: true });
+    });
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      setMobileMenuOpen(false);
-      requestAnimationFrame(() => {
-        mobileMenuButtonRef.current?.focus({ preventScroll: true });
-      });
+      restoreMenuFocusRef.current = true;
+      setMenuOpen(false);
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileMenuOpen]);
 
-  const handleHomeSceneClick = (
-    event: ReactMouseEvent<HTMLAnchorElement>,
-    hash: string,
-    index: number
-  ) => {
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      const shouldRestoreFocus = restoreMenuFocusRef.current;
+      restoreMenuFocusRef.current = true;
+      if (shouldRestoreFocus) {
+        requestAnimationFrame(() => {
+          menuButton?.focus({ preventScroll: true });
+        });
+      }
+    };
+  }, [menuOpen]);
+
+  const closeMenu = () => {
+    restoreMenuFocusRef.current = true;
+    setMenuOpen(false);
+  };
+  const closeMenuForNavigation = () => {
+    restoreMenuFocusRef.current = false;
+    setMenuOpen(false);
+  };
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab" || !menuPanelRef.current) return;
+    const focusable = Array.from(
+      menuPanelRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const handleWalkLink = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (isHome) closeMenu();
+    else closeMenuForNavigation();
     if (
       !isHome ||
       event.button !== 0 ||
@@ -129,196 +161,245 @@ export default function SiteHeader() {
       event.shiftKey ||
       event.altKey
     ) {
-      setCurrentHash(hash);
       return;
     }
 
     const request = new CustomEvent("ruined:home-scene-request", {
       cancelable: true,
-      detail: { hash, index },
+      detail: { hash: "#top", index: 0 },
     });
-    if (!window.dispatchEvent(request)) {
-      event.preventDefault();
-      return;
-    }
-    setCurrentHash(hash);
+    if (!window.dispatchEvent(request)) event.preventDefault();
   };
-
-  const handleMobileSceneClick = (
-    event: ReactMouseEvent<HTMLAnchorElement>,
-    hash: string,
-    index: number
-  ) => {
-    const restoreFocus = event.detail === 0;
-    setMobileMenuOpen(false);
-    handleHomeSceneClick(event, hash, index);
-    if (restoreFocus) {
-      requestAnimationFrame(() => {
-        mobileMenuButtonRef.current?.focus({ preventScroll: true });
-      });
-    }
-  };
-
-  const activeMobileItem =
-    NAV_ITEMS.find((item) => isActive(pathname, currentHash, item.hash)) ??
-    NAV_ITEMS[0];
 
   if (isLanding || isFoundations) return null;
 
+  const overlayOpen = menuOpen || searchOpen;
+
   return (
     <>
-      <header className="pointer-events-none fixed inset-x-0 top-0 z-[60] px-3 pt-3 sm:px-5 sm:pt-4">
+      <header className="pointer-events-none fixed inset-x-0 top-0 z-[70]">
         <nav
           aria-label="Primary"
-          className="ruined-header-shell pointer-events-auto relative z-10 flex h-14 w-fit items-center border border-white/15 bg-black/90 px-3 text-[var(--color-bone)] shadow-[0_8px_32px_rgba(0,0,0,0.28)] sm:h-16 sm:px-4 md:mx-auto md:w-full md:max-w-5xl md:justify-between md:bg-black/75 md:backdrop-blur-md"
+          data-home={isHome ? "true" : "false"}
+          data-solid={headerSolid || overlayOpen ? "true" : "false"}
+          className="ruined-global-header pointer-events-auto relative z-20 text-[var(--color-bone)]"
         >
-          <Link
-            href="/"
-            aria-label="Ruined — home"
-            onClick={(event) => handleHomeSceneClick(event, "#top", 0)}
-            className="shrink-0 px-1 opacity-90 transition-opacity hover:opacity-100"
-          >
-            <Image
-              src="/ruined-wordmark.svg"
-              alt="RUINED"
-              width={1000}
-              height={206}
-              priority
-              draggable={false}
-              className="h-5 w-auto select-none sm:h-6"
-            />
-          </Link>
+          <div className="ruined-header-rail">
+            <div className="ruined-header-left">
+              <button
+                ref={menuButtonRef}
+                type="button"
+                aria-expanded={menuOpen}
+                aria-controls={MENU_ID}
+                aria-label={menuOpen ? "Close menu" : "Open menu"}
+                className="ruined-header-control ruined-header-menu-trigger"
+                onClick={() => {
+                  setSearchOpen(false);
+                  restoreMenuFocusRef.current = true;
+                  setMenuOpen((open) => !open);
+                }}
+              >
+                <MenuGlyph open={menuOpen} />
+                <span className="ruined-header-control-label">
+                  {menuOpen ? "Close" : "Menu"}
+                </span>
+              </button>
+            </div>
 
-          <div className="ruined-header-desktop-nav hidden h-full items-stretch md:flex">
-            {NAV_ITEMS.map((item) => {
-              const active = isActive(pathname, currentHash, item.hash);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-label={item.label}
-                  aria-current={active ? "page" : undefined}
-                  onClick={(event) =>
-                    handleHomeSceneClick(event, item.hash, item.index)
+            <BrandHomeLink isHome={isHome} onHomeClick={handleWalkLink} />
+
+            <div className="ruined-header-utilities">
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={searchOpen}
+                aria-label="Search Ruined"
+                className="ruined-header-control ruined-header-search-trigger"
+                onClick={() => {
+                  if (menuOpen) {
+                    restoreMenuFocusRef.current = false;
+                    setMenuOpen(false);
+                    requestAnimationFrame(() => setSearchOpen(true));
+                  } else {
+                    setSearchOpen(true);
                   }
-                  className={`ui-heading group relative flex min-w-[5.75rem] items-center justify-center gap-2 px-3 text-[0.58rem] uppercase tracking-[0.14em] transition-colors ${
-                    active
-                      ? "text-[var(--color-primary)]"
-                      : "text-white/75 hover:text-white"
-                  }`}
-                >
-                  <HeaderGlyph index={item.index} />
-                  <span>{item.label}</span>
-                  <span
-                    aria-hidden
-                    className={`absolute inset-x-2 bottom-0 h-px transition-opacity ${
-                      active ? "bg-[var(--color-primary)] opacity-100" : "bg-white opacity-0 group-hover:opacity-40"
-                    }`}
-                  />
-                </Link>
-              );
-            })}
+                }}
+              >
+                <SearchGlyph />
+                <span className="ruined-header-control-label">Search</span>
+              </button>
+              <BagLink
+                variant="icon"
+                current={isBag}
+                className={`ruined-header-bag ${
+                  isBag ? "text-[var(--color-primary)]" : "text-white/90"
+                }`}
+              />
+            </div>
           </div>
+
+          {visibleLocator && (
+            <span
+              data-section-breadcrumb
+              aria-hidden="true"
+              className="ruined-section-locator"
+            >
+              {visibleLocator}
+            </span>
+          )}
         </nav>
 
-        <div
-          className="ruined-header-mobile-fab pointer-events-auto fixed z-20 md:hidden"
-          style={{
-            right: "max(0.75rem, env(safe-area-inset-right, 0px))",
-            bottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
-          }}
-        >
-          {mobileMenuOpen && (
-            <div
-              aria-hidden="true"
-              className="fixed inset-0 z-0 cursor-default bg-black/10 backdrop-blur-[1px]"
-              onPointerDown={() => {
-                setMobileMenuOpen(false);
-                mobileMenuButtonRef.current?.focus({ preventScroll: true });
-              }}
+        {menuOpen && (
+          <div className="ruined-site-menu-layer pointer-events-auto">
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Close menu"
+              className="ruined-site-menu-backdrop"
+              onClick={closeMenu}
             />
-          )}
-          <nav
-            id="mobile-quick-jump"
-            aria-label="Quick jump"
-            hidden={!mobileMenuOpen}
-            className="absolute bottom-[calc(100%+0.625rem)] right-0 z-10 max-h-[min(26rem,calc(100svh-7rem))] w-[min(15rem,calc(100vw-1.5rem))] overflow-y-auto border border-white/15 bg-black/94 p-1 text-[var(--color-bone)] shadow-[0_16px_44px_rgba(0,0,0,0.55)] backdrop-blur-md"
-          >
-                {NAV_ITEMS.map((item) => {
-                  const active = isActive(pathname, currentHash, item.hash);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-label={item.label}
-                      aria-current={active ? "location" : undefined}
-                      onClick={(event) =>
-                        handleMobileSceneClick(event, item.hash, item.index)
-                      }
-                      className={`group relative flex min-h-12 items-center gap-3 border-b border-white/10 px-3 py-2 transition-colors last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)] ${
-                        active
-                          ? "bg-white/[0.06] text-[var(--color-primary)]"
-                          : "text-white/75 hover:bg-white/[0.04] hover:text-white active:bg-white/10"
-                      }`}
-                    >
-                      <span
-                        aria-hidden
-                        className="flex h-7 w-8 shrink-0 items-center justify-center"
-                      >
-                        <HeaderGlyph index={item.index} />
-                      </span>
-                      <span className="ui-heading text-[0.58rem] uppercase tracking-[0.16em] text-current">
-                        {item.label}
-                      </span>
-                      <span
-                        aria-hidden
-                        className={`ml-auto h-1.5 w-1.5 rounded-full ${
-                          active
-                            ? "bg-[var(--color-primary)] shadow-[0_0_8px_rgba(208,49,45,0.9)]"
-                            : "bg-white/15"
-                        }`}
-                      />
-                    </Link>
-                  );
-                })}
-          </nav>
-
-          <button
-            ref={mobileMenuButtonRef}
-            type="button"
-            aria-expanded={mobileMenuOpen}
-            aria-controls="mobile-quick-jump"
-            aria-label={
-              mobileMenuOpen
-                ? "Close navigation"
-                : `Open navigation — ${activeMobileItem.label} selected`
-            }
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-black/94 text-[var(--color-bone)] shadow-[0_10px_32px_rgba(0,0,0,0.5)] backdrop-blur-md transition-transform active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-          >
-            <span aria-hidden className={mobileMenuOpen ? "opacity-45" : ""}>
-              <HeaderGlyph index={activeMobileItem.index} />
-            </span>
-            <span
-              aria-hidden
-              className={`absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)] font-mono text-sm leading-none text-white shadow-[0_0_10px_rgba(208,49,45,0.65)] transition-transform ${
-                mobileMenuOpen ? "rotate-45" : "rotate-0"
-              }`}
+            <aside
+              ref={menuPanelRef}
+              id={MENU_ID}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={menuTitleId}
+              className="ruined-site-menu-panel"
+              onKeyDown={handleMenuKeyDown}
             >
-              +
-            </span>
-          </button>
-        </div>
+              <h2 id={menuTitleId} className="sr-only">
+                Site navigation
+              </h2>
+              <div className="ruined-site-menu-heading" aria-hidden="true">
+                <span className="ruined-site-menu-kicker">THE INDEX</span>
+                <span>RUINED / MMXXVI</span>
+              </div>
+
+              <div className="ruined-site-menu-content">
+                <nav aria-label="Site destinations" className="ruined-site-menu-nav">
+                  {GLOBAL_MENU_ITEMS.map((item, index) => {
+                    const active =
+                      item.id === SITE_ROUTES.home.id
+                        ? isHome
+                        : activeGlobalId === item.id;
+                    return (
+                      <Link
+                        key={item.id}
+                        ref={index === 0 ? firstMenuItemRef : undefined}
+                        href={item.id === SITE_ROUTES.home.id ? "/#top" : item.href}
+                        aria-current={active ? "page" : undefined}
+                        onClick={
+                          item.id === SITE_ROUTES.home.id
+                            ? handleWalkLink
+                            : closeMenuForNavigation
+                        }
+                        className={active ? "is-active" : undefined}
+                      >
+                        <span className="ruined-site-menu-number" aria-hidden="true">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <span className="ruined-site-menu-icon" aria-hidden="true">
+                          <ExploreGlyph index={item.glyphIndex} />
+                        </span>
+                        <strong>{item.label}</strong>
+                        <span className="ruined-site-menu-arrow" aria-hidden="true">
+                          ↗
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+
+                <div className="ruined-site-menu-secondary">
+                  <Link href={SITE_ROUTES.contact.href} onClick={closeMenuForNavigation}>
+                    Contact
+                  </Link>
+                  <Link href={SITE_ROUTES.shippingReturns.href} onClick={closeMenuForNavigation}>
+                    Shipping + Returns
+                  </Link>
+                </div>
+              </div>
+
+              <div className="ruined-site-menu-footer" aria-hidden="true">
+                <span>The Ruined Project</span>
+                <span>Alpine / 40.4478° N</span>
+              </div>
+            </aside>
+          </div>
+        )}
       </header>
 
-      {/* Inner pages begin below the persistent header. The immersive homepage
-          intentionally runs behind it so the opening frame remains full-bleed. */}
-      {!isHome && <div aria-hidden className="h-[4.75rem] sm:h-[5.5rem]" />}
+      <UniversalSearch open={searchOpen} onOpenChange={setSearchOpen} />
+
+      {!isHome && (
+        <div
+          aria-hidden
+          className={`${
+            sectionLocator ? "h-[7.25rem] sm:h-[8rem]" : "h-16"
+          } ${usesDarkSurface ? "bg-black" : "bg-[var(--color-bone)]"}`}
+        />
+      )}
     </>
   );
 }
 
-function HeaderGlyph({ index }: { index: number }) {
-  if (index < 4) return <CouchGlyph index={index} className="h-6 w-7 shrink-0" />;
-  return <CalendarGlyph className="h-6 w-7 shrink-0" />;
+function BrandHomeLink({
+  isHome,
+  onHomeClick,
+}: {
+  isHome: boolean;
+  onHomeClick: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
+}) {
+  return (
+    <Link
+      href="/#top"
+      aria-label="Ruined — explore the walk"
+      onClick={isHome ? onHomeClick : undefined}
+      className="ruined-header-brand"
+    >
+      <Image
+        src="/ruined-wordmark.svg"
+        alt="RUINED"
+        width={1000}
+        height={300}
+        priority
+        draggable={false}
+        className="ruined-header-wordmark"
+      />
+    </Link>
+  );
+}
+
+function MenuGlyph({ open }: { open: boolean }) {
+  return (
+    <span aria-hidden="true" className={`ruined-menu-glyph ${open ? "is-open" : ""}`}>
+      <span />
+      <span />
+    </span>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="ruined-search-glyph"
+      fill="none"
+    >
+      <circle cx="10.5" cy="10.5" r="6.25" />
+      <path d="m15.25 15.25 4.5 4.5" />
+    </svg>
+  );
+}
+
+function ExploreGlyph({
+  index,
+  className = "h-7 w-8 shrink-0",
+}: {
+  index: number;
+  className?: string;
+}) {
+  if (index < 4) return <CouchGlyph index={index} className={className} />;
+  return <CalendarGlyph className={className} />;
 }

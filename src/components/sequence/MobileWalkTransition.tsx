@@ -8,8 +8,6 @@ import {
   type RefObject,
 } from "react";
 import {
-  MOBILE_TRANSITION_FRAME_HEIGHT,
-  MOBILE_TRANSITION_FRAME_WIDTH,
   MOBILE_TRANSITION_SAMPLE_COUNT,
   MOBILE_WALK_TRANSITIONS,
 } from "@/data/mobileJourney";
@@ -32,6 +30,13 @@ const TRANSITION_GATE_TIMEOUT_MS = 1500;
 const LOADING_INDICATOR_DELAY_MS = 120;
 const FRAME_RETRY_BASE_MS = 500;
 const FRAME_RETRY_MAX_MS = 8000;
+// A restrained directional trail keeps the walk feeling physical without
+// obscuring the room imagery. It peaks at the middle of the transition, then
+// resolves to the exact canonical arrival frame for a seamless handoff.
+const MOTION_SMEAR_TAPS = 4;
+const MOTION_SMEAR_DISTANCE_RATIO = 0.18;
+const MOTION_SMEAR_TAP_ALPHA = 0.11;
+const FILM_BURN_MAX_ALPHA = 0.32;
 // Keep one complete transition resident even in browsers that cannot resize
 // during createImageBitmap, while still bounding decoded memory near 80 MB.
 const MAX_DECODED_PIXELS = 20_000_000;
@@ -96,11 +101,10 @@ function releaseFrame(frame: DecodedFrame) {
 async function decodeFrame(blob: Blob): Promise<DecodedFrame> {
   if ("createImageBitmap" in window) {
     try {
-      return await createImageBitmap(blob, {
-        resizeWidth: MOBILE_TRANSITION_FRAME_WIDTH,
-        resizeHeight: MOBILE_TRANSITION_FRAME_HEIGHT,
-        resizeQuality: "medium",
-      });
+      // Intermediate frames are already portrait-sized, while canonical room
+      // endpoints retain their native landscape aspect ratio. Resizing both to
+      // one fixed box here stretches the endpoints during the handoff.
+      return await createImageBitmap(blob);
     } catch {
       return createImageBitmap(blob);
     }
@@ -172,6 +176,8 @@ const MobileWalkTransition = forwardRef<
     let pendingOnStart: (() => void) | null = null;
     let preparedSceneIndex = 0;
     let loadingIndicatorTimer = 0;
+    let motionSmearStrength = 0;
+    let motionSmearDirection = 1;
     let disposed = false;
 
     const setLoading = (loading: boolean) => {
@@ -192,7 +198,12 @@ const MobileWalkTransition = forwardRef<
       }, LOADING_INDICATOR_DELAY_MS);
     };
 
-    const draw = (frame: DecodedFrame, index: number) => {
+    const draw = (
+      frame: DecodedFrame,
+      index: number,
+      smearStrength = motionSmearStrength,
+      smearDirection = motionSmearDirection
+    ) => {
       const rect = sequenceCoverRect(
         frame.width,
         frame.height,
@@ -202,6 +213,8 @@ const MobileWalkTransition = forwardRef<
       );
       context.fillStyle = "#080605";
       context.fillRect(0, 0, canvas.width, canvas.height);
+      context.save();
+      context.globalAlpha = 1;
       context.drawImage(
         frame,
         rect.x,
@@ -209,9 +222,55 @@ const MobileWalkTransition = forwardRef<
         rect.width,
         rect.height
       );
+
+      if (smearStrength > 0.02) {
+        const distance =
+          canvas.width *
+          MOTION_SMEAR_DISTANCE_RATIO *
+          smearStrength *
+          smearDirection;
+        context.globalAlpha = MOTION_SMEAR_TAP_ALPHA * smearStrength;
+        for (let tap = MOTION_SMEAR_TAPS; tap >= 1; tap -= 1) {
+          const offset = distance * (tap / MOTION_SMEAR_TAPS);
+          context.drawImage(
+            frame,
+            rect.x - offset,
+            rect.y,
+            rect.width,
+            rect.height
+          );
+        }
+
+        // A brief warm edge flare makes the travel read as a deliberate film
+        // splice instead of an image waiting to resolve. It follows the walk
+        // direction, peaks between rooms, and disappears on the arrival frame.
+        context.globalCompositeOperation = "screen";
+        context.globalAlpha = FILM_BURN_MAX_ALPHA * smearStrength;
+        const burnEdge = smearDirection > 0 ? canvas.width : 0;
+        const burn = context.createRadialGradient(
+          burnEdge,
+          canvas.height * 0.48,
+          0,
+          burnEdge,
+          canvas.height * 0.48,
+          canvas.width * 0.78
+        );
+        burn.addColorStop(0, "rgba(255, 224, 128, 0.96)");
+        burn.addColorStop(0.18, "rgba(255, 104, 30, 0.78)");
+        burn.addColorStop(0.48, "rgba(190, 20, 28, 0.34)");
+        burn.addColorStop(1, "rgba(22, 5, 18, 0)");
+        context.fillStyle = burn;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        context.globalAlpha = 0.14 * smearStrength;
+        context.fillStyle = smearDirection > 0 ? "#00a9a1" : "#bb204f";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      context.restore();
       lastDrawn = index;
       canvas.style.opacity = "1";
       journey.toggleAttribute("data-walking", true);
+      journey.toggleAttribute("data-motion-smear", smearStrength > 0.02);
     };
 
     const renderTarget = () => {
@@ -458,8 +517,10 @@ const MobileWalkTransition = forwardRef<
     const hideCanvas = () => {
       activeSegment = -1;
       lastDrawn = -1;
+      motionSmearStrength = 0;
       canvas.style.opacity = "0";
       journey.removeAttribute("data-walking");
+      journey.removeAttribute("data-motion-smear");
       evict();
     };
 
@@ -522,6 +583,8 @@ const MobileWalkTransition = forwardRef<
       holdTimer = 0;
 
       const forward = toIndex > fromIndex;
+      motionSmearDirection = forward ? 1 : -1;
+      motionSmearStrength = 0;
       const segment = Math.min(fromIndex, toIndex);
       const segmentBounds = TRANSITION_SEGMENTS[segment];
       const frameStart = segmentBounds.start;
@@ -563,7 +626,7 @@ const MobileWalkTransition = forwardRef<
         return false;
       }
 
-      draw(startFrame, startIndex);
+      draw(startFrame, startIndex, 0, motionSmearDirection);
       pendingOnStart?.();
       pendingOnStart = null;
 
@@ -578,6 +641,7 @@ const MobileWalkTransition = forwardRef<
             1,
             (now - startedAt) / TRANSITION_DURATION_MS
           );
+          motionSmearStrength = Math.sin(progress * Math.PI) ** 0.65;
           const position = Math.round(
             progress * (segmentBounds.length - 1)
           );
@@ -593,7 +657,8 @@ const MobileWalkTransition = forwardRef<
           }
 
           const endpoint = cache.get(endIndex);
-          if (endpoint) draw(endpoint, endIndex);
+          motionSmearStrength = 0;
+          if (endpoint) draw(endpoint, endIndex, 0, motionSmearDirection);
           holdTimer = window.setTimeout(
             () => finishWalk(toIndex, token),
             ARRIVAL_HOLD_MS
@@ -661,7 +726,7 @@ const MobileWalkTransition = forwardRef<
         aria-live="polite"
         aria-atomic="true"
         hidden
-        className="pointer-events-none absolute left-1/2 z-[4] -translate-x-1/2 border border-white/20 bg-black/75 px-3 py-2 font-mono text-[0.5rem] uppercase tracking-[0.2em] text-white/70"
+        className="pointer-events-none absolute left-1/2 z-[4] -translate-x-1/2 border border-white/20 bg-black/75 px-3 py-2 font-sans text-xs text-white/70"
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 6rem)" }}
       >
         Preparing walk

@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   motion,
@@ -18,15 +17,17 @@ import {
   type MotionValue,
 } from "motion/react";
 import type { Product } from "@/data/products";
-import { PROJECTS } from "@/data/projects";
 import { EVENTS } from "@/data/events";
 import {
-  JourneyAboutIndex,
+  EXPLORE_ROOMS,
+  FOOTER_INDEX_ITEMS,
+  GLOBAL_NAV_ITEMS,
+} from "@/data/navigation";
+import {
   JourneyEventsIndex,
   JourneyLobbyIndex,
-  JourneyStoreIndex,
-  JourneyWorkIndex,
 } from "@/components/sequence/JourneyIndexes";
+import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import RoomSequenceCanvas from "@/components/sequence/RoomSequenceCanvas";
 import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
@@ -160,68 +161,6 @@ function sequenceFrameProgress(value: number, manifest: SequenceManifest, bands:
   return 1;
 }
 
-function HardButton({
-  href,
-  label,
-  variant,
-  rotation,
-  onClick,
-}: {
-  href: string;
-  label: string;
-  variant: "filled" | "outline";
-  rotation: number;
-  onClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-}) {
-  const isFilled = variant === "filled";
-
-  return (
-    <motion.a
-      href={href}
-      onClick={onClick}
-      initial={false}
-      whileHover={{ x: -2, y: -2, rotate: 0 }}
-      whileTap={{ x: 3, y: 3, rotate: 0 }}
-      transition={{ type: "spring", stiffness: 360, damping: 22 }}
-      className="relative flex items-center justify-between gap-2 px-4 py-3 font-mono text-[0.55rem] tracking-[0.18em] uppercase no-underline select-none whitespace-nowrap"
-      style={{
-        rotate: rotation,
-        background: isFilled ? "var(--color-poster)" : "var(--color-bone)",
-        color: isFilled ? "var(--color-bone)" : "var(--color-faded)",
-        border: "1.5px solid var(--color-faded)",
-        boxShadow: "5px 5px 0 0 var(--color-faded)",
-      }}
-    >
-      <span
-        aria-hidden
-        className="absolute inset-0 pointer-events-none opacity-25"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(20,15,12,0.7) 0.6px, transparent 0.6px)",
-          backgroundSize: "2.5px 2.5px",
-          mixBlendMode: "multiply",
-        }}
-      />
-      <span className="relative">{label}</span>
-      <span aria-hidden className="relative font-sans text-xs leading-none">
-        →
-      </span>
-    </motion.a>
-  );
-}
-
-// Client-side navigation into a full room page (/store, /work, /events). The
-// shelf cards and each room's "Enter" button use this so a click opens the full
-// browsing experience, while the couch icons (handled in BottomMenu) scrub the
-// camera to the room's hold inside the dive.
-function useGoToRoute() {
-  const router = useRouter();
-  return (href: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    router.push(href);
-  };
-}
-
 // A curated "preview shelf" that fades in — and only becomes interactive —
 // while its room sits FRAMED in the dive (the "arrival" beat). It never
 // overlaps the fast/blurred motion, so the user only ever clicks a settled,
@@ -231,23 +170,16 @@ function useGoToRoute() {
 function RoomOverlay({
   progress,
   band,
-  kicker,
-  enterLabel,
-  enterHref,
-  enterVariant,
+  room,
   wide = false,
   children,
 }: {
   progress: MotionValue<number>;
   band: Band;
-  kicker: string;
-  enterLabel: string;
-  enterHref: string;
-  enterVariant: "filled" | "outline";
+  room: (typeof EXPLORE_ROOMS)[number];
   wide?: boolean;
   children: React.ReactNode;
 }) {
-  const goToRoute = useGoToRoute();
   // The band represents travel toward the room shown at its final frame. Reveal
   // during that final approach, remain settled throughout the arrival hold,
   // then clear quickly as travel toward the next destination begins.
@@ -283,19 +215,12 @@ function RoomOverlay({
       />
       <motion.div
         style={{ y, pointerEvents: pointer }}
-        className={`flex w-full flex-col items-stretch gap-3 sm:items-center ${wide ? "sm:max-w-5xl" : "sm:max-w-3xl"}`}
+        className={`flex w-full flex-col items-stretch sm:items-center ${wide ? "sm:max-w-5xl" : "sm:max-w-3xl"}`}
       >
-        <span className="self-center text-center font-mono text-[0.55rem] uppercase tracking-[0.42em] text-[var(--color-bone)]/70">
-          {kicker}
-        </span>
-        <div className="w-full">{children}</div>
-        <HardButton
-          href={enterHref}
-          label={enterLabel}
-          variant={enterVariant}
-          rotation={-0.8}
-          onClick={goToRoute(enterHref)}
-        />
+        <div className="w-full">
+          <h2 className="sr-only">{room.headline}</h2>
+          {children}
+        </div>
       </motion.div>
     </motion.div>
   );
@@ -307,10 +232,12 @@ function RoomOverlay({
 function LobbyOpeningOverlay({
   progress,
   departureBand,
+  room,
   children,
 }: {
   progress: MotionValue<number>;
   departureBand: Band;
+  room: (typeof EXPLORE_ROOMS)[number];
   children: React.ReactNode;
 }) {
   const playSpan = departureBand.playEnd - departureBand.start;
@@ -350,11 +277,9 @@ function LobbyOpeningOverlay({
     >
       <motion.div
         style={{ y, pointerEvents: pointer }}
-        className="flex w-full max-w-4xl flex-col items-stretch gap-2"
+        className="flex w-full max-w-5xl flex-col items-stretch"
       >
-        <span className="self-center text-center font-mono text-[0.5rem] uppercase tracking-[0.36em] text-[var(--color-bone)]/70">
-          Lobby index · current selection
-        </span>
+        <h2 className="sr-only">{room.headline}</h2>
         {children}
       </motion.div>
     </motion.div>
@@ -452,17 +377,17 @@ function AfterTheFear({
           </div>
 
           <div className="space-y-0.5 text-right">
-            <div>40.4633° N</div>
+            <div>40.4478° N</div>
             <div>111.7780° W</div>
             <div className="text-[var(--color-bone)]/35">Created without permission</div>
           </div>
         </div>
         <nav aria-label="Closing links" className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--color-bone)]/75">
-          <Link className="hover:text-white" href="/store">Store</Link>
-          <Link className="hover:text-white" href="/work">Work</Link>
-          <Link className="hover:text-white" href="/events">Events</Link>
-          <Link className="hover:text-white" href="/about">About</Link>
-          <Link className="hover:text-white" href="/contact">Contact</Link>
+          {FOOTER_INDEX_ITEMS.map((item) => (
+            <Link key={item.id} className="hover:text-white" href={item.href}>
+              {item.label}
+            </Link>
+          ))}
           <a className="text-[var(--color-signal)] hover:text-white" href="#top">Walk again ↺</a>
         </nav>
       </motion.div>
@@ -479,7 +404,10 @@ function FiresideLoop({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
-  const opacity = useTransform(progress, [start, start + 0.025], [0, 1]);
+  // Finish the matched-frame crossfade at the Fireside waypoint itself. The
+  // old range began there, leaving a deep link parked on a playing but fully
+  // transparent video until the user scrolled again.
+  const opacity = useTransform(progress, [start - 0.018, start], [0, 1]);
 
   useEffect(() => {
     let playing = false;
@@ -510,13 +438,14 @@ function FiresideLoop({
       muted
       loop
       playsInline
-      preload="none"
+      preload={shouldLoad ? "auto" : "none"}
       aria-hidden
+      data-fireside-video
       style={{
         ...sequenceFocalMediaStyle(sequenceAssetFocalX(FIRESIDE_SRC)),
         opacity,
       }}
-      className="object-cover"
+      className="absolute inset-0 h-full w-full object-cover"
     />
   );
 }
@@ -553,6 +482,49 @@ function ScrollHint({ progress }: { progress: ReturnType<typeof useSpring> }) {
   );
 }
 
+type JourneyRoomStop = {
+  room: (typeof EXPLORE_ROOMS)[number];
+  at: number;
+};
+
+function roomIndexAtProgress(progress: number, stops: JourneyRoomStop[]) {
+  let activeIndex = 0;
+  for (let index = 1; index < stops.length; index += 1) {
+    if (progress >= stops[index].at) activeIndex = index;
+  }
+  return activeIndex;
+}
+
+function useDesktopJourneyScene({
+  progress,
+  stops,
+}: {
+  progress: MotionValue<number>;
+  stops: JourneyRoomStop[];
+}) {
+  useEffect(() => {
+    let activeIndex = -1;
+    const publish = (value: number) => {
+      const nextIndex = roomIndexAtProgress(value, stops);
+      if (nextIndex === activeIndex) return;
+      activeIndex = nextIndex;
+      const room = stops[nextIndex]?.room;
+      if (!room) return;
+      window.dispatchEvent(
+        new CustomEvent("ruined:home-scene-change", {
+          detail: {
+            id: room.id,
+            hash: room.hash,
+            index: room.sceneIndex,
+          },
+        })
+      );
+    };
+    publish(progress.get());
+    return progress.on("change", publish);
+  }, [progress, stops]);
+}
+
 export default function DesktopImmersiveParallax({
   products,
   manifest,
@@ -567,7 +539,7 @@ export default function DesktopImmersiveParallax({
     // Always default the homepage to the opening scene: disable browser scroll
     // restoration so reloads don't drop the user partway through the dive, and
     // force scroll to the very top on mount. Hash deep-links (e.g. /#store) are
-    // still honored so BottomMenu navigation and shared links keep working.
+    // still honored so shared "Return to the walk" links keep working.
     const hadRestoration =
       "scrollRestoration" in window.history
         ? window.history.scrollRestoration
@@ -633,6 +605,17 @@ export default function DesktopImmersiveParallax({
   const worksArrivalB = bands["store"];
   const aboutArrivalB = bands["records"];
   const eventsArrivalB = FIRESIDE_EVENT_BAND;
+  const journeyRoomStops = useMemo<JourneyRoomStop[]>(
+    () => [
+      { room: EXPLORE_ROOMS[0], at: 0 },
+      { room: EXPLORE_ROOMS[1], at: bands.lobby?.playEnd ?? 0.2 },
+      { room: EXPLORE_ROOMS[2], at: bands.store?.playEnd ?? 0.4 },
+      { room: EXPLORE_ROOMS[3], at: bands.records?.playEnd ?? 0.6 },
+      { room: EXPLORE_ROOMS[4], at: FIRESIDE_EVENT_BAND.playEnd },
+    ],
+    [bands]
+  );
+  useDesktopJourneyScene({ progress: p, stops: journeyRoomStops });
 
   // The closing title begins only after every sequence frame has played. It
   // therefore never overlaps the record-store journey (or a future last room).
@@ -652,7 +635,7 @@ export default function DesktopImmersiveParallax({
 
   const openingFrame = frames[0];
 
-  // Scrub waypoints for the header icons.
+  // Scrub waypoints for contextual "Return to the walk" links.
   const waypoints: { id: string; band?: Band }[] = [
     { id: "store", band: storeArrivalB },
     { id: "work", band: worksArrivalB },
@@ -690,12 +673,17 @@ export default function DesktopImmersiveParallax({
             {prefersReducedMotion && (
               <nav
                 aria-label="Explore Ruined"
-                className="absolute inset-x-6 bottom-32 z-20 grid grid-cols-2 gap-2 text-center font-mono text-[0.6rem] uppercase tracking-[0.18em] text-[var(--color-bone)] sm:left-1/2 sm:right-auto sm:w-[40rem] sm:-translate-x-1/2 sm:grid-cols-4"
+                className="absolute inset-x-6 bottom-32 z-20 grid grid-cols-2 gap-2 text-center font-[var(--font-header)] text-[0.72rem] font-bold tracking-[-0.01em] text-[var(--color-bone)] sm:left-1/2 sm:right-auto sm:w-[40rem] sm:-translate-x-1/2 sm:grid-cols-4"
               >
-                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/store">Store</Link>
-                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/work">Work</Link>
-                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/about">About</Link>
-                <Link className="border border-white/50 bg-black/60 px-3 py-3" href="/events">Events</Link>
+                {GLOBAL_NAV_ITEMS.map((item) => (
+                  <Link
+                    key={item.id}
+                    className="border border-white/50 bg-black/60 px-3 py-3"
+                    href={item.href}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
               </nav>
             )}
           </motion.div>
@@ -706,8 +694,8 @@ export default function DesktopImmersiveParallax({
         </div>
 
         {/* Invisible scrub waypoints. Each spans its room's manifest-derived
-            band, so a header anchor jump lands the walk in that room and the
-            active-icon tracker lights while it is on screen. */}
+            band so contextual "Return to the walk" links can still land in
+            the correct room without becoming global navigation. */}
         {waypoints.map(({ id, band }) => (
           <span
             key={id}
@@ -730,10 +718,14 @@ export default function DesktopImmersiveParallax({
           Store, Work, and Events indexes. It clears before the camera travel
           establishes, then each destination reveals its own deeper shelf. */}
       {!prefersReducedMotion && lobbyDepartureB && lobbyDepartureB.count > 0 && (
-        <LobbyOpeningOverlay progress={p} departureBand={lobbyDepartureB}>
+        <LobbyOpeningOverlay
+          progress={p}
+          departureBand={lobbyDepartureB}
+          room={EXPLORE_ROOMS[0]}
+        >
           <JourneyLobbyIndex
             products={products}
-            projects={PROJECTS}
+            projects={[]}
             events={EVENTS}
           />
         </LobbyOpeningOverlay>
@@ -747,48 +739,38 @@ export default function DesktopImmersiveParallax({
         <RoomOverlay
           progress={p}
           band={storeArrivalB}
-          kicker="——  the store · select pieces  ——"
-          enterLabel="Enter the store"
-          enterHref="/store"
-          enterVariant="filled"
+          room={EXPLORE_ROOMS[1]}
           wide
         >
-          <JourneyStoreIndex products={products} />
+          <JourneyComingSoon section="store" />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && worksArrivalB && worksArrivalB.count > 0 && (
         <RoomOverlay
           progress={p}
           band={worksArrivalB}
-          kicker="——  project hub · recent records  ——"
-          enterLabel="Open the project hub"
-          enterHref="/work"
-          enterVariant="outline"
+          room={EXPLORE_ROOMS[2]}
           wide
         >
-          <JourneyWorkIndex projects={PROJECTS} />
+          <JourneyComingSoon section="artifacts" />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && aboutArrivalB && aboutArrivalB.count > 0 && (
         <RoomOverlay
           progress={p}
           band={aboutArrivalB}
-          kicker="——  studio · what survives  ——"
-          enterLabel="About the studio"
-          enterHref="/about"
-          enterVariant="outline"
+          room={EXPLORE_ROOMS[3]}
+          wide
         >
-          <JourneyAboutIndex />
+          <JourneyComingSoon section="about" />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && eventsArrivalB && eventsArrivalB.count > 0 && (
         <RoomOverlay
           progress={p}
           band={eventsArrivalB}
-          kicker="——  studio programme · upcoming  ——"
-          enterLabel="View all events"
-          enterHref="/events"
-          enterVariant="outline"
+          room={EXPLORE_ROOMS[4]}
+          wide
         >
           <JourneyEventsIndex events={EVENTS} />
         </RoomOverlay>

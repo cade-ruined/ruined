@@ -1,10 +1,11 @@
 import "server-only";
 import { createStorefrontApiClient } from "@shopify/storefront-api-client";
 import {
-  PRODUCTS,
   TONE_BY_HANDLE,
   TONE_CYCLE,
   type Product,
+  type ProductOption,
+  type ProductVariant,
   type ProductTone,
 } from "@/data/products";
 
@@ -45,7 +46,16 @@ const PRODUCTS_QUERY = `#graphql
         description
         featuredImage { url altText }
         priceRange { minVariantPrice { amount currencyCode } }
-        variants(first: 1) { nodes { id availableForSale } }
+        options { name values }
+        variants(first: 100) {
+          nodes {
+            id
+            title
+            availableForSale
+            selectedOptions { name value }
+            price { amount currencyCode }
+          }
+        }
         metafields(identifiers: [
           { namespace: "custom", key: "code" }
           { namespace: "custom", key: "subtitle" }
@@ -58,6 +68,15 @@ const PRODUCTS_QUERY = `#graphql
     }
   }
 `;
+const POLICIES_QUERY = `#graphql query Policies { shop { shippingPolicy { title body } termsOfService { title body } } }`;
+export type ShopifyPolicy = { title: string; body: string };
+export async function getShopPolicies(): Promise<{ shipping: ShopifyPolicy | null; terms: ShopifyPolicy | null }> {
+  if (!client) return { shipping: null, terms: null };
+  try {
+    const { data, errors } = await client.request<{ shop: { shippingPolicy: ShopifyPolicy | null; termsOfService: ShopifyPolicy | null } }>(POLICIES_QUERY);
+    return errors ? { shipping: null, terms: null } : { shipping: data?.shop.shippingPolicy ?? null, terms: data?.shop.termsOfService ?? null };
+  } catch { return { shipping: null, terms: null }; }
+}
 
 const CART_CREATE = `#graphql
   mutation CartCreate($lines: [CartLineInput!]!) {
@@ -77,7 +96,16 @@ type SFProductNode = {
   description: string;
   featuredImage: { url: string; altText: string | null } | null;
   priceRange: { minVariantPrice: SFMoney };
-  variants: { nodes: { id: string; availableForSale: boolean }[] };
+  options: { name: string; values: string[] }[];
+  variants: {
+    nodes: {
+      id: string;
+      title: string;
+      availableForSale: boolean;
+      selectedOptions: { name: string; value: string }[];
+      price: SFMoney;
+    }[];
+  };
   metafields: SFMetafield[];
 };
 type SFProductsResponse = { products: { nodes: SFProductNode[] } };
@@ -116,7 +144,22 @@ function resolveTone(metaTone: string | undefined, handle: string, index: number
 
 function mapProduct(node: SFProductNode, index: number): Product {
   const meta = toMetaMap(node.metafields);
-  const variant = node.variants.nodes[0];
+  const variants: ProductVariant[] = node.variants.nodes.map((variant) => ({
+    id: variant.id,
+    title: variant.title,
+    available: variant.availableForSale,
+    selectedOptions: variant.selectedOptions,
+    price: formatPrice(variant.price),
+    priceAmount: variant.price.amount,
+    currencyCode: variant.price.currencyCode,
+  }));
+  const options: ProductOption[] = (node.options ?? [])
+    .filter(
+      (option) =>
+        !(option.name === "Title" && option.values.length === 1 && option.values[0] === "Default Title")
+    )
+    .map((option) => ({ name: option.name, values: option.values }));
+  const defaultVariant = variants.find((variant) => variant.available) ?? variants[0];
   return {
     id: node.handle,
     code: meta.code ?? `RU—${String(index + 1).padStart(3, "0")}`,
@@ -131,8 +174,10 @@ function mapProduct(node: SFProductNode, index: number): Product {
     image: node.featuredImage
       ? { url: node.featuredImage.url, alt: node.featuredImage.altText ?? node.title }
       : undefined,
-    variantId: variant?.id,
-    available: variant?.availableForSale ?? false,
+    options,
+    variants,
+    variantId: defaultVariant?.id,
+    available: variants.some((variant) => variant.available),
   };
 }
 
@@ -144,18 +189,18 @@ function mapProduct(node: SFProductNode, index: number): Product {
  * handlers — pair with `export const revalidate = N` (ISR) on the page.
  */
 export async function getProducts(): Promise<Product[]> {
-  if (!client) return PRODUCTS;
+  if (!client) return [];
   try {
     const { data, errors } = await client.request<SFProductsResponse>(
       PRODUCTS_QUERY,
       { variables: { first: 50 } }
     );
     const nodes = data?.products?.nodes;
-    if (errors || !nodes?.length) return PRODUCTS;
+    if (errors || !nodes?.length) return [];
     return nodes.map(mapProduct);
   } catch {
     // Network/credential issues should never blank the store.
-    return PRODUCTS;
+    return [];
   }
 }
 
@@ -164,15 +209,24 @@ export async function getProducts(): Promise<Product[]> {
  * URL (Shopify owns payments/PCI/tax). Returns null if unconfigured or on error
  * so callers can degrade to an enquiry flow.
  */
+export type CheckoutLine = {
+  variantId: string;
+  quantity: number;
+};
+
 export async function createCheckoutUrl(
-  variantId: string,
+  input: string | CheckoutLine[],
   quantity = 1
 ): Promise<string | null> {
   if (!client) return null;
+  const lines = typeof input === "string"
+    ? [{ merchandiseId: input, quantity }]
+    : input.map((line) => ({ merchandiseId: line.variantId, quantity: line.quantity }));
+  if (!lines.length) return null;
   try {
     const { data, errors } = await client.request<SFCartCreateResponse>(
       CART_CREATE,
-      { variables: { lines: [{ merchandiseId: variantId, quantity }] } }
+      { variables: { lines } }
     );
     if (errors) return null;
     return data?.cartCreate?.cart?.checkoutUrl ?? null;

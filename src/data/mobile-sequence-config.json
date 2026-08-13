@@ -1,8 +1,8 @@
 {
   "sampleCount": 13,
-  "width": 828,
-  "height": 466,
-  "quality": 72,
-  "maxTotalBytes": 1572864,
-  "maxFrameBytes": 65536
+  "width": 608,
+  "height": 1080,
+  "quality": 78,
+  "maxTotalBytes": 2097152,
+  "maxFrameBytes": 98304
 }

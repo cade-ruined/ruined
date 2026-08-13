@@ -17,7 +17,7 @@ export default function ParallaxHero() {
 
       <nav className={styles.nav} aria-label="Landing page navigation">
         <a href="#top" aria-label="After the Fear — home">
-          <Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={206} priority />
+          <Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority />
         </a>
         <div className={styles.navMeta} aria-hidden>
           Private programme&nbsp;&nbsp;/&nbsp;&nbsp;01

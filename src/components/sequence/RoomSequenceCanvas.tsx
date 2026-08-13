@@ -38,7 +38,7 @@ export default function RoomSequenceCanvas({
     const urgentQueued = new Set<number>();
     let queue: number[] = [];
     const failures = new Map<number, { count: number; retryAt: number }>();
-    // Each decoded 1600 × 900 frame costs roughly 5.5 MiB. Keep the working set
+    // Each decoded 1920 × 1080 frame costs roughly 7.9 MiB. Keep the working set
     // tight enough to avoid memory-pressure pauses while still covering a
     // normal wheel/trackpad burst in both directions.
     const CAP = coarsePointer ? 32 : 48;
@@ -215,7 +215,7 @@ export default function RoomSequenceCanvas({
     };
 
     const resize = () => {
-      // Source frames are 1600 × 900, so a Retina-scale backing store adds
+      // Source frames are 1920 × 1080, so a Retina-scale backing store adds
       // interpolation and fill cost without revealing additional source detail.
       const dpr = Math.min(1, window.devicePixelRatio || 1);
       canvas.width = Math.round(window.innerWidth * dpr);

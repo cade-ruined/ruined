@@ -350,8 +350,9 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
     /MOBILE_TRANSITION_FRAME_HEIGHT = mobileSequenceConfig\.height/
   );
   assert.match(walk, /MOBILE_TRANSITION_SAMPLE_COUNT/);
-  assert.match(walk, /resizeWidth: MOBILE_TRANSITION_FRAME_WIDTH/);
-  assert.match(walk, /resizeHeight: MOBILE_TRANSITION_FRAME_HEIGHT/);
+  assert.match(walk, /return await createImageBitmap\(blob\)/);
+  assert.doesNotMatch(walk, /resizeWidth:\s*MOBILE_TRANSITION_FRAME_WIDTH/);
+  assert.doesNotMatch(walk, /resizeHeight:\s*MOBILE_TRANSITION_FRAME_HEIGHT/);
   assert.match(walk, /sampleFrameNumbers\(frameCount\)/);
   assert.match(walk, /segmentBounds\.length/);
   assert.match(walk, /MOBILE_WALK_TRANSITIONS/);
@@ -377,9 +378,9 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(journey, /ruined-mobile-stage-active/);
   assert.match(journey, /onPointerDown/);
   assert.match(journey, /fire-stream-loop-mobile\.mp4/);
-  assert.match(journey, /JourneyStoreIndex/);
-  assert.match(journey, /JourneyWorkIndex/);
-  assert.match(journey, /JourneyAboutIndex/);
+  assert.match(journey, /<JourneyComingSoon key="store-selections" section="store"/);
+  assert.match(journey, /<JourneyComingSoon key="work-selections" section="artifacts"/);
+  assert.match(journey, /<JourneyComingSoon key="about-selections" section="about"/);
   assert.match(journey, /JourneyEventsIndex/);
   assert.match(journey, /JourneyLobbyIndex/);
   assert.match(journey, /roomSelections/);
@@ -387,6 +388,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(homePage, /MobileImmersiveJourney products=\{products\}/);
   assert.match(desktop, /LobbyOpeningOverlay/);
   assert.match(desktop, /<JourneyLobbyIndex/);
+  assert.doesNotMatch(desktop, /kicker=/);
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
   assert.match(indexes, /const product = products\[0\]/);
@@ -400,20 +402,39 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(indexes, /products\.slice\(0, 3\)/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /events\.slice\(0, 3\)/);
-  assert.match(indexes, /href=\{`\/events#\$\{event\.id\}`\}/);
+  assert.match(indexes, /href=\{`\/community#\$\{event\.id\}`\}/);
   assert.match(journey, /setSettledIndex\(index\)/);
   assert.match(journey, /settledIndex === activeIndex/);
+  assert.match(journey, /locationFrame = requestAnimationFrame/);
+  assert.match(journey, /cancelAnimationFrame\(locationFrame\)/);
   assert.match(journey, /muted[\s\S]*loop[\s\S]*playsInline/);
   assert.match(journey, /prefers-reduced-motion: reduce/);
   assert.doesNotMatch(journey, /scroll-snap|data-mobile-snap-scene/);
   assert.match(header, /ruined:home-scene-request/);
   assert.match(header, /ruined:home-scene-change/);
-  assert.match(header, /aria-expanded=\{mobileMenuOpen\}/);
-  assert.match(header, /aria-controls="mobile-quick-jump"/);
-  assert.match(header, /hidden=\{!mobileMenuOpen\}/);
+  assert.match(header, /aria-expanded=\{menuOpen\}/);
+  assert.match(header, /aria-controls=\{MENU_ID\}/);
+  assert.match(header, /role="dialog"/);
+  assert.match(header, /aria-modal="true"/);
   assert.match(header, /event\.key !== "Escape"/);
-  assert.match(header, /aria-current=\{active \? "location" : undefined\}/);
-  assert.doesNotMatch(header, /grid-cols-5/);
+  assert.match(header, /GLOBAL_MENU_ITEMS\.map/);
+  assert.match(header, /ExploreGlyph index=\{item\.glyphIndex\}/);
+  assert.doesNotMatch(header, /MOBILE_DIRECT_ITEMS|ruined-mobile-nav-fab/);
+  assert.match(desktop, /useDesktopJourneyScene/);
+  assert.doesNotMatch(desktop, /data-journey-room-rail/);
+  assert.match(indexes, /data-journey-section-hero=\{room\.id\}/);
+  assert.match(indexes, /room\.headline/);
+  assert.match(indexes, /room\.description/);
+  assert.match(header, /sectionLocatorForPathname/);
+  assert.match(header, /data-section-breadcrumb/);
+  assert.match(
+    journey,
+    /<h2 id=\{headingId\} className="sr-only">\{room\.headline\}<\/h2>/
+  );
+  assert.doesNotMatch(journey, /<JourneySectionHero/);
+  assert.doesNotMatch(journey, /01 \/ Artifacts|02 \/ Project Hub|03 \/ Studio No\. 17/);
+  assert.doesNotMatch(journey, /RU \/\/ AW26/);
+  assert.doesNotMatch(desktop, /Lobby index · current selection/);
   for (const room of ["lobby", "store", "records", "lounge"]) {
     assert.ok(
       sequenceConfig.rooms.some((candidate) => candidate.id === room),
@@ -540,6 +561,7 @@ test("homepage sequence framing shares one optical axis across renderers", async
   assert.match(data, /SEQUENCE_LOBBY_FOCAL_X = 847\.5 \/ 1600/);
   assert.match(framing, /destinationWidth \/ 2 - safeFocalX \* width/);
   assert.match(framing, /roomId === "store"/);
+  assert.match(framing, /if \(match\[1\]\) return SEQUENCE_CENTER_FOCAL_X/);
   assert.match(frameImage, /sequenceFocalMediaStyle\(sequenceAssetFocalX\(src\)\)/);
   assert.match(bootstrap, /sequenceFocalBoxGeometry\(OPENING_FOCAL_X\)/);
   assert.match(desktop, /<SequenceFrameImage src=\{openingFrame\} priority \/>/);
@@ -568,6 +590,263 @@ test("homepage sequence framing shares one optical axis across renderers", async
   }
 });
 
+test("the showroom resolves into a direct catalogue and conventional global utilities", async () => {
+  const [
+    header,
+    desktop,
+    mobile,
+    indexes,
+    gallery,
+    purchase,
+    bagStore,
+    bagLink,
+    bagGlyph,
+    searchDialog,
+    searchStyles,
+    searchData,
+    searchRoute,
+    checkout,
+    shopify,
+    products,
+    styles,
+    navigation,
+    footer,
+    bootstrap,
+  ] = await Promise.all([
+    fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
+    fs.readFile(
+      path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "store", "StoreGallery.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "store", "ProductPurchase.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "store", "bag-store.ts"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "store", "BagLink.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "nav", "BagGlyph.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "search", "UniversalSearch.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "search", "UniversalSearch.module.css"),
+      "utf8"
+    ),
+    fs.readFile(path.join(root, "src", "data", "search.ts"), "utf8"),
+    fs.readFile(path.join(root, "app", "api", "search", "route.ts"), "utf8"),
+    fs.readFile(
+      path.join(root, "app", "api", "store", "checkout", "route.ts"),
+      "utf8"
+    ),
+    fs.readFile(path.join(root, "src", "lib", "shopify.ts"), "utf8"),
+    fs.readFile(path.join(root, "src", "data", "products.ts"), "utf8"),
+    fs.readFile(path.join(root, "src", "styles", "index.css"), "utf8"),
+    fs.readFile(path.join(root, "src", "data", "navigation.ts"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "SiteFooter.tsx"), "utf8"),
+    fs.readFile(
+      path.join(root, "src", "components", "ImmersiveParallax.tsx"),
+      "utf8"
+    ),
+  ]);
+
+  assert.match(header, /GLOBAL_MENU_ITEMS\.map/);
+  assert.match(header, /ruined-header-rail/);
+  assert.match(header, /ruined-header-menu-trigger/);
+  assert.match(header, /ruined-header-search-trigger/);
+  assert.match(header, /<UniversalSearch open=\{searchOpen\} onOpenChange=\{setSearchOpen\} \/>/);
+  assert.match(header, /variant="icon"/);
+  assert.match(header, /role="dialog"/);
+  assert.match(header, /aria-modal="true"/);
+  assert.match(header, /aria-haspopup="dialog"/);
+  assert.match(header, /item\.id === SITE_ROUTES\.home\.id \? "\/#top" : item\.href/);
+  assert.doesNotMatch(
+    header,
+    /MOBILE_DIRECT_ITEMS|ruined-mobile-nav|feConvolveMatrix|navigationOpen|font-mono|monospace/
+  );
+  assert.match(header, /<BagLink/);
+  assert.match(header, /pathname === SITE_ROUTES\.bag\.href/);
+  assert.match(header, /ExploreGlyph index=\{item\.glyphIndex\}/);
+  assert.match(bagLink, /data-bag-link=\{variant\}/);
+  assert.match(bagLink, /data-bag-count/);
+  assert.match(bagLink, /SITE_ROUTES\.bag\.href/);
+  assert.match(bagLink, /<BagGlyph className="ruined-bag-glyph h-10 w-9"/);
+  assert.doesNotMatch(bagLink, /CouchGlyph/);
+  assert.match(bagGlyph, /<CouchGlyph index=\{1\} className=\{className\} \/>/);
+  assert.doesNotMatch(bagLink, /font-mono/);
+  assert.doesNotMatch(bagLink, /padStart|Bag\{.*·/s);
+  assert.match(styles, /\.ruined-header-rail/);
+  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+  assert.match(styles, /\.ruined-site-menu-panel/);
+  assert.match(styles, /\.ruined-site-menu-nav strong/);
+  assert.match(
+    styles,
+    /\.ruined-site-menu-nav strong \{[^}]*font-family: var\(--font-header\);/s
+  );
+  assert.match(styles, /\.ruined-bag-glyph/);
+  assert.match(styles, /drop-shadow\(3px 3px 0 rgb\(0 0 0 \/ 0\.62\)\)/);
+  assert.doesNotMatch(
+    styles,
+    /ruined-mobile-nav|data-navigation-open|ruined-mobile-motion-blur|filter:\s*url\(/
+  );
+  const navigationStyles = styles.slice(
+    styles.indexOf(".ruined-global-header"),
+    styles.indexOf("/* Snap-frame")
+  );
+  assert.doesNotMatch(navigationStyles, /\bblur\(/);
+  assert.match(searchDialog, /role="dialog"/);
+  assert.match(searchDialog, /aria-modal="true"/);
+  assert.match(searchDialog, /type="search"/);
+  assert.match(searchDialog, /SEARCH_GROUPS\.map/);
+  assert.match(searchDialog, /fetch\(`\/api\/search\?q=/);
+  assert.match(searchDialog, /aria-live="polite"/);
+  assert.doesNotMatch(searchDialog, /font-mono|monospace/);
+  assert.match(searchStyles, /@media \(max-width: 640px\)/);
+  assert.match(searchStyles, /min-height: 100dvh/);
+  assert.match(searchData, /productDocuments/);
+  assert.match(searchData, /PROJECT_DOCUMENTS/);
+  assert.match(searchData, /EVENT_DOCUMENTS/);
+  assert.match(searchData, /const PAGES/);
+  assert.match(searchRoute, /getProducts\(\)/);
+  assert.match(searchRoute, /searchSite\(products, query\)/);
+  assert.match(navigation, /export const GLOBAL_NAV_ITEMS/);
+  assert.match(navigation, /export const GLOBAL_MENU_ITEMS/);
+  assert.match(navigation, /SITE_ROUTES\.store/);
+  assert.match(navigation, /SITE_ROUTES\.work/);
+  assert.match(navigation, /SITE_ROUTES\.about/);
+  assert.match(navigation, /SITE_ROUTES\.events/);
+  assert.match(navigation, /store: \{[^}]*glyphIndex: 1/);
+  assert.match(navigation, /events: \{[^}]*glyphIndex: 4/);
+  assert.doesNotMatch(
+    navigation.slice(
+      navigation.indexOf("export const GLOBAL_NAV_ITEMS"),
+      navigation.indexOf("export const GLOBAL_MENU_ITEMS")
+    ),
+    /SITE_ROUTES\.home/
+  );
+  assert.match(navigation, /label: "Lobby"/);
+  assert.match(navigation, /label: "Store"/);
+  assert.match(navigation, /label: "Artifacts"/);
+  assert.match(navigation, /label: "About"/);
+  assert.match(navigation, /label: "Community"/);
+  assert.match(navigation, /label: "Explore the Walk"/);
+  assert.match(navigation, /store: \{ id: "store", label: "Store"/);
+  assert.match(navigation, /href: "\/#top"/);
+  assert.match(footer, /FOOTER_INDEX_ITEMS/);
+  assert.match(footer, /SERVICE_NAV_ITEMS/);
+  assert.match(footer, /pathname === "\/"/);
+  assert.doesNotMatch(`${styles}\n${bootstrap}`, /any-pointer: coarse/);
+  assert.doesNotMatch(desktop, /<JourneySectionHero/);
+  assert.match(indexes, /const JOURNEY_GRID_CLASS/);
+  assert.match(indexes, /const JOURNEY_CARD_CLASS/);
+  assert.doesNotMatch(indexes, /sm:aspect-\[16\/9\]/);
+  assert.match(desktop, /\[start - 0\.018, start\]/);
+  assert.match(desktop, /preload=\{shouldLoad \? "auto" : "none"\}/);
+  assert.doesNotMatch(mobile, /cta: "View all pieces"/);
+  assert.doesNotMatch(mobile, /cta: "View all work"/);
+  assert.doesNotMatch(mobile, /cta: "Read about Ruined"/);
+  assert.match(indexes, />See all events<\/span>/);
+  assert.doesNotMatch(`${desktop}\n${mobile}`, /Enter the store/i);
+  assert.doesNotMatch(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
+  assert.doesNotMatch(indexes, /href=\{`\/work\/\$\{projectSlug\(project\)\}`\}/);
+  assert.match(gallery, /featured=\{index === 0\}/);
+  assert.match(gallery, /featured \? "col-span-2"/);
+  assert.doesNotMatch(gallery, /FeaturedProduct|View · 02 \/ 04 columns/);
+  assert.match(purchase, /Select \{option\.name\}/);
+  assert.match(purchase, /Added to bag/);
+  assert.doesNotMatch(purchase, /Acquire via Shopify/i);
+  assert.match(bagStore, /ruined:bag:v1/);
+  assert.match(checkout, /createCheckoutUrl\(lines\)/);
+  assert.match(shopify, /variants\(first: 100\)/);
+  assert.match(products, /variants: localVariants/);
+});
+
+test("the handwritten system uses CadeHandy2 with the original face retained", async () => {
+  const [fontFaces, theme, header, landingStyles] = await Promise.all([
+    fs.readFile(path.join(root, "src", "styles", "fonts.css"), "utf8"),
+    fs.readFile(path.join(root, "src", "styles", "theme.css"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
+    fs.readFile(path.join(root, "app", "lp", "lp.module.css"), "utf8"),
+  ]);
+
+  await fs.access(path.join(root, "public", "fonts", "CadeHandy2.otf"));
+  await fs.access(path.join(root, "public", "fonts", "CadeHandy.otf"));
+  assert.match(fontFaces, /font-family: "CadeHandy2"/);
+  assert.match(fontFaces, /url\("\/fonts\/CadeHandy2\.otf"\)/);
+  assert.match(
+    theme,
+    /--font-handwritten: "CadeHandy2", "CadeHandy", "Bradley Hand"/
+  );
+  assert.match(header, /ruined-section-locator/);
+  assert.match(landingStyles, /\.footer div \{[\s\S]*?flex-wrap: wrap;/);
+});
+
+test("the padded final wordmark is deployed across branded surfaces", async () => {
+  const [
+    wordmark,
+    header,
+    footer,
+    landingPage,
+    landingHero,
+    foundations,
+    foundationStyles,
+    siteStyles,
+  ] = await Promise.all([
+      fs.readFile(path.join(root, "public", "ruined-wordmark.svg"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "SiteFooter.tsx"), "utf8"),
+      fs.readFile(path.join(root, "app", "lp", "page.tsx"), "utf8"),
+      fs.readFile(path.join(root, "app", "lp", "parallax-hero.tsx"), "utf8"),
+      fs.readFile(
+        path.join(root, "src", "components", "foundations", "PresentationShell.tsx"),
+        "utf8"
+      ),
+      fs.readFile(
+        path.join(root, "src", "components", "foundations", "foundations.module.css"),
+        "utf8"
+      ),
+      fs.readFile(path.join(root, "src", "styles", "index.css"), "utf8"),
+    ]);
+
+  assert.match(wordmark, /width="1000" height="300" viewBox="0 0 1000 300"/);
+  assert.match(wordmark, /M122\.263,162\.484/);
+  for (const surface of [header, footer, landingPage, landingHero, foundations]) {
+    assert.match(surface, /src="\/ruined-wordmark\.svg"/);
+    assert.match(surface, /height=\{300\}/);
+    assert.doesNotMatch(surface, /height=\{206\}/);
+  }
+  assert.match(header, /ruined-header-wordmark/);
+  assert.match(
+    siteStyles,
+    /\.ruined-header-wordmark \{[^}]*filter: brightness\(0\) invert\(1\);/s
+  );
+  assert.match(
+    foundationStyles,
+    /\.entryWordmark img \{[^}]*filter: brightness\(0\) invert\(1\);/s
+  );
+});
+
 test("production route boundaries and metadata files exist", async () => {
   for (const file of [
     "app/error.tsx",
@@ -575,6 +854,8 @@ test("production route boundaries and metadata files exist", async () => {
     "app/loading.tsx",
     "app/not-found.tsx",
     "app/events/page.tsx",
+    "app/bag/page.tsx",
+    "app/api/store/checkout/route.ts",
     "app/foundations/page.tsx",
     "src/components/foundations/PresentationShell.tsx",
     "src/data/foundations.ts",
