@@ -87,17 +87,13 @@ test("dormant Store and Artifacts routes stay out of search", async () => {
   }
 });
 
-test("the future programme page stays dormant until explicitly enabled", async () => {
-  const [landingPage, env] = await Promise.all([
-    read("app/lp/page.tsx"),
-    read(".env.example"),
-  ]);
+test("the future programme implementation stays dormant but retained", async () => {
+  const futureLandingPage = await read("app/lp/future-page.tsx");
 
-  assert.match(env, /ENABLE_AFTER_THE_FEAR_LP=false/);
-  assert.match(landingPage, /process\.env\.ENABLE_AFTER_THE_FEAR_LP === "true"/);
-  assert.match(landingPage, /robots: AFTER_THE_FEAR_LP_ENABLED/);
-  assert.match(landingPage, /index: false, follow: false/);
-  assert.match(landingPage, /if \(!AFTER_THE_FEAR_LP_ENABLED\) notFound\(\)/);
+  await assert.rejects(fs.access(path.join(root, "app/lp/page.tsx")));
+  assert.match(futureLandingPage, /Dormant for launch/);
+  assert.match(futureLandingPage, /Rename this file to `page\.tsx`/);
+  assert.match(futureLandingPage, /After the Fear/);
 });
 
 test("Community uses collection metadata until events have leaf URLs", async () => {

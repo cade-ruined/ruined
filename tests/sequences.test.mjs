@@ -902,7 +902,7 @@ test("the padded final wordmark is deployed across branded surfaces", async () =
       fs.readFile(path.join(root, "public", "ruined-wordmark.svg"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "SiteFooter.tsx"), "utf8"),
-      fs.readFile(path.join(root, "app", "lp", "page.tsx"), "utf8"),
+      fs.readFile(path.join(root, "app", "lp", "future-page.tsx"), "utf8"),
       fs.readFile(path.join(root, "app", "lp", "parallax-hero.tsx"), "utf8"),
       fs.readFile(
         path.join(root, "src", "components", "foundations", "PresentationShell.tsx"),
