@@ -71,6 +71,12 @@ const FIRESIDE_SRC = "/sequences/fireside/fire-stream-loop-mobile.mp4";
 const ROOM_HOLD = 0.055;
 const BASE_SEQUENCE_FRAME_COUNT = 768;
 const BASE_SCROLL_RANGE_VH = 400;
+const DESKTOP_WHEEL_TRIGGER_PX = 40;
+const DESKTOP_WHEEL_GESTURE_RESET_MS = 150;
+const DESKTOP_WHEEL_MOMENTUM_QUIET_MS = 220;
+const DESKTOP_WHEEL_ANIMATION_MS = 900;
+const DESKTOP_WHEEL_SPRING_SETTLE_MS = 180;
+const DESKTOP_WHEEL_STOP_EPSILON = 0.008;
 
 // A room's slice of the whole-journey timeline (0..1), derived from its frame
 // count, plus where its overlay should peak.
@@ -627,6 +633,234 @@ export default function DesktopImmersiveParallax({
     [bands]
   );
   useDesktopJourneyScene({ progress: p, stops: journeyRoomStops });
+
+  const desktopWheelStops = useMemo(() => {
+    const candidates = [
+      0,
+      storeArrivalB?.count ? storeArrivalB.playEnd : undefined,
+      worksArrivalB?.count ? worksArrivalB.playEnd : undefined,
+      aboutArrivalB?.count ? aboutArrivalB.playEnd : undefined,
+      eventsArrivalB?.count ? eventsArrivalB.playEnd : undefined,
+      1,
+    ].filter((stop): stop is number => typeof stop === "number");
+
+    return candidates.filter(
+      (stop, index) =>
+        index === 0 || Math.abs(stop - candidates[index - 1]) > 0.0001
+    );
+  }, [aboutArrivalB, eventsArrivalB, storeArrivalB, worksArrivalB]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || prefersReducedMotion) return;
+
+    let accumulatedDelta = 0;
+    let accumulatedDirection = 0;
+    let lastInputAt = 0;
+    let lastWheelAt = 0;
+    let animationFrame = 0;
+    let unlockTimer = 0;
+    let navigationLocked = false;
+    let animationComplete = true;
+    let settleAfter = 0;
+    let previousInlineScrollBehavior: string | null = null;
+
+    const restoreScrollBehavior = () => {
+      if (previousInlineScrollBehavior === null) return;
+      document.documentElement.style.scrollBehavior =
+        previousInlineScrollBehavior;
+      previousInlineScrollBehavior = null;
+    };
+
+    const resetGesture = () => {
+      accumulatedDelta = 0;
+      accumulatedDirection = 0;
+      lastInputAt = 0;
+    };
+
+    const releaseNavigation = () => {
+      navigationLocked = false;
+      animationComplete = true;
+      settleAfter = 0;
+      resetGesture();
+    };
+
+    const scheduleUnlock = () => {
+      window.clearTimeout(unlockTimer);
+      if (!animationComplete) return;
+      const now = window.performance.now();
+      const quietRemaining = Math.max(
+        0,
+        DESKTOP_WHEEL_MOMENTUM_QUIET_MS - (now - lastWheelAt)
+      );
+      const settleRemaining = Math.max(0, settleAfter - now);
+      unlockTimer = window.setTimeout(
+        releaseNavigation,
+        Math.max(quietRemaining, settleRemaining)
+      );
+    };
+
+    const cancelNavigation = () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      window.clearTimeout(unlockTimer);
+      restoreScrollBehavior();
+      releaseNavigation();
+    };
+
+    const targetStopIndex = (progress: number, direction: number) => {
+      const settledIndex = desktopWheelStops.findIndex(
+        (stop) => Math.abs(stop - progress) <= DESKTOP_WHEEL_STOP_EPSILON
+      );
+      if (settledIndex >= 0) {
+        const adjacent = settledIndex + direction;
+        return adjacent >= 0 && adjacent < desktopWheelStops.length
+          ? adjacent
+          : -1;
+      }
+
+      if (direction > 0) {
+        return desktopWheelStops.findIndex((stop) => stop > progress);
+      }
+
+      for (let index = desktopWheelStops.length - 1; index >= 0; index -= 1) {
+        if (desktopWheelStops[index] < progress) return index;
+      }
+      return -1;
+    };
+
+    const beginNavigation = (targetProgress: number) => {
+      const containerRect = container.getBoundingClientRect();
+      const containerTop = window.scrollY + containerRect.top;
+      const scrollRange = Math.max(0, container.scrollHeight - window.innerHeight);
+      if (!scrollRange) return;
+
+      const startY = window.scrollY;
+      const targetY = Math.max(
+        containerTop,
+        Math.min(
+          containerTop + scrollRange,
+          containerTop + targetProgress * scrollRange
+        )
+      );
+      const distance = targetY - startY;
+      if (Math.abs(distance) < 1) return;
+
+      navigationLocked = true;
+      animationComplete = false;
+      settleAfter = Number.POSITIVE_INFINITY;
+      resetGesture();
+
+      const root = document.documentElement;
+      previousInlineScrollBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = "auto";
+      const startedAt = window.performance.now();
+
+      const animate = (now: number) => {
+        const progress = Math.min(
+          1,
+          (now - startedAt) / DESKTOP_WHEEL_ANIMATION_MS
+        );
+        const eased =
+          progress < 0.5
+            ? 4 * progress * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        window.scrollTo(0, startY + distance * eased);
+
+        if (progress < 1) {
+          animationFrame = window.requestAnimationFrame(animate);
+          return;
+        }
+
+        animationFrame = 0;
+        window.scrollTo(0, targetY);
+        restoreScrollBehavior();
+        animationComplete = true;
+        settleAfter =
+          window.performance.now() + DESKTOP_WHEEL_SPRING_SETTLE_MS;
+        scheduleUnlock();
+      };
+
+      animationFrame = window.requestAnimationFrame(animate);
+    };
+
+    const normalizeWheelDelta = (event: WheelEvent) => {
+      if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+        return event.deltaY * 16;
+      }
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+        return event.deltaY * window.innerHeight;
+      }
+      return event.deltaY;
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          "input, textarea, select, [contenteditable='true'], [data-desktop-native-scroll]"
+        )
+      ) {
+        return;
+      }
+
+      const delta = normalizeWheelDelta(event);
+      if (!delta) return;
+      const direction = delta > 0 ? 1 : -1;
+      const now = window.performance.now();
+
+      if (navigationLocked) {
+        event.preventDefault();
+        lastWheelAt = now;
+        // A momentum tail belongs to the gesture that started this move. Keep
+        // consuming it until both the animation and the input stream settle so
+        // one trackpad flick can never skip a room.
+        scheduleUnlock();
+        return;
+      }
+
+      const nextStop = targetStopIndex(scrollYProgress.get(), direction);
+      if (nextStop < 0) return;
+
+      event.preventDefault();
+      if (
+        now - lastInputAt > DESKTOP_WHEEL_GESTURE_RESET_MS ||
+        direction !== accumulatedDirection
+      ) {
+        accumulatedDelta = 0;
+      }
+      accumulatedDirection = direction;
+      accumulatedDelta += delta;
+      lastInputAt = now;
+      lastWheelAt = now;
+
+      if (Math.abs(accumulatedDelta) < DESKTOP_WHEEL_TRIGGER_PX) return;
+      beginNavigation(desktopWheelStops[nextStop]);
+    };
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("hashchange", cancelNavigation);
+    window.addEventListener("popstate", cancelNavigation);
+    window.addEventListener("ruined:home-scene-request", cancelNavigation);
+
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("hashchange", cancelNavigation);
+      window.removeEventListener("popstate", cancelNavigation);
+      window.removeEventListener("ruined:home-scene-request", cancelNavigation);
+      cancelNavigation();
+    };
+  }, [desktopWheelStops, prefersReducedMotion, scrollYProgress]);
 
   // The closing title begins only after every sequence frame has played. It
   // therefore never overlaps the record-store journey (or a future last room).

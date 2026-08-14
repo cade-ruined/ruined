@@ -161,31 +161,153 @@ function MobileFiresideVideo({
   }, []);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+    const video: HTMLVideoElement = videoElement;
 
-    setVisible(false);
-    if (!shouldPlay) {
+    let retryTimer = 0;
+    let retryCount = 0;
+    let frameCallback: number | null = null;
+    let frameFallback = 0;
+
+    const cancelFrameReveal = () => {
+      if (
+        frameCallback !== null &&
+        "cancelVideoFrameCallback" in video
+      ) {
+        video.cancelVideoFrameCallback(frameCallback);
+      }
+      frameCallback = null;
+      window.cancelAnimationFrame(frameFallback);
+      frameFallback = 0;
+    };
+
+    const hideVideo = () => {
+      cancelFrameReveal();
+      setVisible(false);
+    };
+
+    const revealDecodedFrame = () => {
+      cancelFrameReveal();
+      const reveal = () => {
+        if (
+          shouldPlay &&
+          !video.paused &&
+          video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        ) {
+          setVisible(true);
+        }
+      };
+
+      if ("requestVideoFrameCallback" in video) {
+        frameCallback = video.requestVideoFrameCallback(() => reveal());
+      } else {
+        frameFallback = window.requestAnimationFrame(() => {
+          frameFallback = window.requestAnimationFrame(reveal);
+        });
+      }
+    };
+
+    function attemptPlayback() {
+      if (
+        !shouldPlay ||
+        document.visibilityState === "hidden" ||
+        video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+      ) {
+        return;
+      }
+
+      video.defaultMuted = true;
+      video.muted = true;
+      if (!video.paused && !video.ended) {
+        revealDecodedFrame();
+        return;
+      }
+
+      void video.play().catch(() => {
+        hideVideo();
+        scheduleRetry();
+      });
+    }
+
+    function scheduleRetry(reload = false) {
+      window.clearTimeout(retryTimer);
+      if (
+        !shouldPlay ||
+        document.visibilityState === "hidden" ||
+        retryCount >= 4
+      ) {
+        return;
+      }
+      const delay = Math.min(1000, 160 * 2 ** retryCount);
+      retryCount += 1;
+      retryTimer = window.setTimeout(() => {
+        if (reload && video.error) video.load();
+        attemptPlayback();
+      }, delay);
+    }
+
+    const handleReady = () => attemptPlayback();
+    const handlePlaying = () => {
+      retryCount = 0;
+      revealDecodedFrame();
+    };
+    const handleInterrupted = () => {
+      hideVideo();
+      scheduleRetry();
+    };
+    const handleError = () => {
+      hideVideo();
+      scheduleRetry(true);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hideVideo();
+        return;
+      }
+      attemptPlayback();
+    };
+
+    video.addEventListener("loadeddata", handleReady);
+    video.addEventListener("canplay", handleReady);
+    video.addEventListener("playing", handlePlaying);
+    video.addEventListener("waiting", handleInterrupted);
+    video.addEventListener("stalled", handleInterrupted);
+    video.addEventListener("pause", handleInterrupted);
+    video.addEventListener("error", handleError);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pageshow", attemptPlayback);
+    window.addEventListener("focus", attemptPlayback);
+
+    hideVideo();
+    if (!shouldLoad) {
+      video.pause();
+    } else if (!shouldPlay) {
       video.pause();
       if (video.readyState > HTMLMediaElement.HAVE_NOTHING) {
         video.currentTime = 0;
+      } else {
+        video.load();
       }
-      return;
+    } else {
+      attemptPlayback();
     }
 
-    const startPlayback = () => {
-      video.currentTime = 0;
-      void video.play().catch(() => setVisible(false));
+    return () => {
+      window.clearTimeout(retryTimer);
+      cancelFrameReveal();
+      video.removeEventListener("loadeddata", handleReady);
+      video.removeEventListener("canplay", handleReady);
+      video.removeEventListener("playing", handlePlaying);
+      video.removeEventListener("waiting", handleInterrupted);
+      video.removeEventListener("stalled", handleInterrupted);
+      video.removeEventListener("pause", handleInterrupted);
+      video.removeEventListener("error", handleError);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pageshow", attemptPlayback);
+      window.removeEventListener("focus", attemptPlayback);
     };
-
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      startPlayback();
-      return;
-    }
-
-    video.addEventListener("loadeddata", startPlayback, { once: true });
-    return () => video.removeEventListener("loadeddata", startPlayback);
-  }, [shouldPlay]);
+  }, [shouldLoad, shouldPlay]);
 
   return (
     <video
@@ -197,7 +319,6 @@ function MobileFiresideVideo({
       playsInline
       preload={shouldLoad ? "auto" : "none"}
       aria-hidden="true"
-      onPlaying={() => setVisible(true)}
       style={sequenceFocalMediaStyle(sequenceAssetFocalX(MOBILE_FIRESIDE_SRC))}
       className={`ruined-mobile-closing__video${
         visible && shouldPlay ? " is-visible" : ""
@@ -566,7 +687,7 @@ export default function MobileImmersiveJourney() {
             className="ruined-mobile-scene__image"
           />
           <MobileFiresideVideo
-            prepare={stageEnabled && activeIndex === 4}
+            prepare={stageEnabled && activeIndex >= 3}
             play={
               stageEnabled && activeIndex === 4 && settledIndex === activeIndex
             }

@@ -280,6 +280,29 @@ test("only the optimized fireside loop is deployable", async () => {
   );
 });
 
+test("mobile popup frames keep the note animation portrait and lightweight", async () => {
+  const popupRoot = path.join(sequenceRoot, "popup", "mobile");
+  const files = (await fs.readdir(popupRoot)).sort();
+  assert.equal(files.length, 47);
+  assert.ok(files.includes("open-frame-lossless.webp"));
+  assert.ok(files.includes("frame-0001.webp"));
+  assert.ok(files.includes("frame-0129.webp"));
+
+  let totalBytes = 0;
+  for (const file of files) {
+    const absolute = path.join(popupRoot, file);
+    const [stat, metadata] = await Promise.all([
+      fs.stat(absolute),
+      sharp(absolute).metadata(),
+    ]);
+    totalBytes += stat.size;
+    assert.equal(metadata.format, "webp");
+    assert.equal(metadata.width, 608);
+    assert.equal(metadata.height, 1080);
+  }
+  assert.ok(totalBytes < 2 * 1024 * 1024, "mobile popup frames exceed 2 MB");
+});
+
 test("mobile stage combines canonical arrivals with in-place walk frames", async () => {
   const [
     journey,
@@ -977,21 +1000,73 @@ test("the botanical mark owns the favicon and fine-pointer cursor", async () => 
   }
 });
 
-test("the Lobby note never blocks its three destination cards", async () => {
-  const popup = await fs.readFile(
-    path.join(root, "src", "components", "LobbyPopupSequence.tsx"),
+test("the Lobby note owns one opening gesture and the full paper enters", async () => {
+  const [popup, packageJson] = await Promise.all([
+    fs.readFile(
+      path.join(root, "src", "components", "LobbyPopupSequence.tsx"),
+      "utf8"
+    ),
+    fs.readFile(path.join(root, "package.json"), "utf8"),
+  ]);
+
+  assert.match(popup, /type PopupPhase = "dismissed" \| "ready" \| "opening" \| "locked" \| "closing"/);
+  assert.match(popup, /MOBILE_POPUP_QUERY/);
+  assert.match(popup, /sequences\/popup\$\{mobile \? "\/mobile" : ""\}/);
+  assert.doesNotMatch(popup, /touchGestureRef|addEventListener\("touch(?:start|move|end|cancel)"/);
+  assert.match(popup, /window\.addEventListener\("pointerdown", pointerDown, true\)/);
+  assert.match(popup, /window\.addEventListener\("pointermove", pointerMove, true\)/);
+  assert.match(popup, /not prevent the default[\s\S]*event\.stopImmediatePropagation\(\);/i);
+  assert.match(popup, /verticalDistance < 28/);
+  assert.match(popup, /window\.addEventListener\("click", suppressSwipeClick, true\)/);
+  assert.match(popup, /phaseRef\.current === "closing"/);
+  assert.match(popup, /cancelAnimationFrame\(animationFrameRef\.current\)/);
+  assert.match(popup, /imagesRef\.current\.clear\(\)/);
+  assert.match(popup, /for \(let index = 1; index <= OPEN_FRAME; index \+= 1\)/);
+  assert.match(popup, /for \(let index = CLOSE_START_FRAME; index < FRAME_COUNT; index \+= 1\)/);
+  assert.match(popup, /aria-label="Come in"[\s\S]*fixed left-\[49\.8%\][\s\S]*<NextImage/);
+  assert.match(popup, /aria-hidden="true"[\s\S]*pointer-events-none absolute left-\[54%\]/);
+  assert.doesNotMatch(popup, /fixed inset-0 z-\[30\]/);
+  assert.match(popup, /window\.addEventListener\("ruined:home-scene-request", requestScene\)/);
+  assert.match(packageJson, /build-popup-mobile\.mjs/);
+});
+
+test("desktop wheel gestures settle on one room waypoint", async () => {
+  const desktop = await fs.readFile(
+    path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
     "utf8"
   );
 
-  assert.doesNotMatch(popup, /interactionRef|aria-label=\{open \? "Come in"/);
-  assert.doesNotMatch(popup, /fixed inset-0 z-\[30\]/);
-  assert.match(popup, /window\.addEventListener\("wheel", wheel, \{ passive: false, capture: true \}\)/);
-  assert.match(popup, /window\.addEventListener\("touchmove", touchMove, \{ passive: false, capture: true \}\)/);
-  assert.match(popup, /window\.addEventListener\("pointermove", pointerMove, true\)/);
-  assert.match(popup, /window\.addEventListener\("click", suppressSwipeClick, true\)/);
-  assert.match(popup, /window\.addEventListener\("ruined:home-scene-request", requestScene\)/);
-  assert.match(popup, /aria-label="Come in"/);
-  assert.match(popup, /pointer-events-auto absolute/);
+  assert.match(desktop, /DESKTOP_WHEEL_TRIGGER_PX = 40/);
+  assert.match(desktop, /DESKTOP_WHEEL_ANIMATION_MS = 900/);
+  assert.match(desktop, /const desktopWheelStops = useMemo/);
+  assert.match(desktop, /storeArrivalB\?\.count \? storeArrivalB\.playEnd/);
+  assert.match(desktop, /eventsArrivalB\?\.count \? eventsArrivalB\.playEnd/);
+  assert.match(desktop, /const targetStopIndex = \(progress: number, direction: number\)/);
+  assert.match(desktop, /navigationLocked = true/);
+  assert.match(desktop, /event\.preventDefault\(\);[\s\S]*accumulatedDelta \+= delta/);
+  assert.match(desktop, /window\.addEventListener\("wheel", onWheel, \{ passive: false \}\)/);
+  assert.match(desktop, /window\.addEventListener\("hashchange", cancelNavigation\)/);
+});
+
+test("mobile fire waits for buffered motion and recovers from interruption", async () => {
+  const [journey, config] = await Promise.all([
+    fs.readFile(
+      path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
+      "utf8"
+    ),
+    fs.readFile(path.join(root, "next.config.mjs"), "utf8"),
+  ]);
+
+  assert.match(journey, /HAVE_FUTURE_DATA/);
+  assert.match(journey, /requestVideoFrameCallback/);
+  for (const event of ["canplay", "playing", "waiting", "stalled", "pause", "error"]) {
+    assert.match(journey, new RegExp(`addEventListener\\("${event}"`));
+  }
+  assert.match(journey, /document\.addEventListener\("visibilitychange", handleVisibility\)/);
+  assert.match(journey, /window\.addEventListener\("pageshow", attemptPlayback\)/);
+  assert.match(journey, /prepare=\{stageEnabled && activeIndex >= 3\}/);
+  assert.match(config, /"fireside"/);
+  assert.match(config, /"popup"/);
 });
 
 test("production route boundaries and metadata files exist", async () => {
