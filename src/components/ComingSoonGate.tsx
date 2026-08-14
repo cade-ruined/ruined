@@ -2,16 +2,27 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useId, useState } from "react";
 
 export default function ComingSoonGate({ title, image, source, signup = true }: { title: string; image: string; source: "store" | "artifacts" | "about"; signup?: boolean }) {
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const emailId = useId();
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setState("sending");
-    const body = Object.fromEntries(new FormData(event.currentTarget));
-    const response = await fetch("/api/hubspot-signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, source }) });
-    setState(response.ok ? "sent" : "error");
-    if (response.ok) event.currentTarget.reset();
+    event.preventDefault();
+    const form = event.currentTarget;
+    setState("sending");
+    try {
+      const body = Object.fromEntries(new FormData(form));
+      const response = await fetch("/api/hubspot-signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, source }) });
+      if (!response.ok) {
+        setState("error");
+        return;
+      }
+      form.reset();
+      setState("sent");
+    } catch {
+      setState("error");
+    }
   }
   return <main className="relative min-h-screen overflow-hidden bg-black text-white">
     <Image src={image} alt="" fill priority sizes="100vw" className="object-cover opacity-70" />
@@ -20,12 +31,13 @@ export default function ComingSoonGate({ title, image, source, signup = true }: 
       <Link href={`/#${source === "artifacts" ? "work" : source}`} className="ui-heading mb-auto w-fit text-xs text-white/70">← Return to the walk</Link>
       <p className="ui-heading text-sm text-[var(--color-poster)]">Coming soon</p>
       <h1 className="display mt-2 text-[clamp(4rem,12vw,10rem)] leading-[0.8]">{title}</h1>
-      {signup && <form onSubmit={submit} className="mt-8 flex max-w-xl gap-2" aria-label={`${title} email signup`}>
-        <input name="email" type="email" required autoComplete="email" placeholder="Email address" className="min-w-0 flex-1 border border-white/45 bg-black/50 px-4 py-3 font-sans text-base text-white outline-none placeholder:text-white/45 focus:border-white" />
-        <button disabled={state === "sending"} className="ui-heading border border-white bg-white px-5 py-3 text-xs text-black">{state === "sending" ? "Joining…" : "Notify me"}</button>
+      {signup && <form onSubmit={submit} className="mt-8 flex max-w-xl gap-2" aria-label={`${title} email signup`} aria-busy={state === "sending"}>
+        <label htmlFor={emailId} className="sr-only">Email address</label>
+        <input id={emailId} name="email" type="email" required autoComplete="email" inputMode="email" placeholder="Email address" className="min-w-0 flex-1 border border-white/45 bg-black/50 px-4 py-3 font-sans text-base text-white outline-none placeholder:text-white/45 focus:border-white" />
+        <button type="submit" disabled={state === "sending"} className="ui-heading border border-white bg-white px-5 py-3 text-xs text-black disabled:cursor-wait disabled:opacity-60">{state === "sending" ? "Joining…" : "Notify me"}</button>
       </form>}
-      {state === "sent" && <p className="mt-3 text-sm">You’re on the list.</p>}
-      {state === "error" && <p className="mt-3 text-sm text-[var(--color-poster)]">Signup is not connected yet.</p>}
+      {state === "sent" && <p role="status" aria-live="polite" className="mt-3 text-sm">You’re on the list.</p>}
+      {state === "error" && <p role="alert" aria-live="assertive" className="mt-3 text-sm text-[var(--color-poster)]">Signup is not connected yet.</p>}
     </div>
   </main>;
 }

@@ -49,7 +49,7 @@ export default function ProductPlate({ product, index, total }: Props) {
   const flipped = index % 2 === 1;
   const plateNumber = String(index + 1).padStart(3, "0");
   const totalNumber = String(total).padStart(2, "0");
-  const enquiryEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "studio@ruined.studio";
+  const enquiryEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "connect@theruinedproject.com";
   const enquiryHref = `mailto:${enquiryEmail}?subject=${encodeURIComponent(`Enquiry · ${product.name}`)}`;
 
   return (

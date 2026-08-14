@@ -75,7 +75,7 @@ export default function LeadForm() {
           {status === "sending" ? "Sending…" : "Request invitation"}<span aria-hidden>↗</span>
         </button>
         {status === "error" && (
-          <p className={styles.heroFormError} role="alert">Could not send. Try again or email <a href="mailto:studio@ruined.studio">the studio</a>.</p>
+          <p className={styles.heroFormError} role="alert">Could not send. Try again or email <a href="mailto:connect@theruinedproject.com">the studio</a>.</p>
         )}
       </div>
 

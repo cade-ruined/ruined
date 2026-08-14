@@ -39,7 +39,7 @@ route is intentionally isolated so it can evolve without destabilizing it.
 - `src/components/sequence/RoomSequenceCanvas.tsx` — bounded frame decoder and canvas renderer.
 - `src/components/store/` — editorial product gallery and checkout controls.
 - `src/data/` — local catalogue, projects, and room definitions.
-- `src/lib/shopify.ts` — server-only Storefront API integration with local fallback.
+- `src/lib/shopify.ts` — server-only Storefront API integration with an empty-state fallback.
 - `public/sequences/` — generated room frames and their manifest.
 - `scripts/` — scene, brand, and sequence asset tooling.
 
@@ -62,8 +62,8 @@ bounded cache; mobile buffers its complete 13-frame transition before playback.
 ## Shopify
 
 Copy `.env.example` to `.env.local` and provide Storefront API credentials.
-Without them, both the homepage and store use the repository-owned fallback
-catalogue. Shopify product changes can trigger `POST /api/revalidate`. The
+Without them, Shopify-backed store routes return the repository-owned empty
+state. Shopify product changes can trigger `POST /api/revalidate`. The
 handler verifies Shopify's `X-Shopify-Hmac-Sha256` signature using
 `SHOPIFY_WEBHOOK_SECRET` and deduplicates recent webhook IDs.
 

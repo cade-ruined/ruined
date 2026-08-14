@@ -24,14 +24,7 @@ export const GLOBAL_NAV_ITEMS = [
 
 export const GLOBAL_MENU_ITEMS = [SITE_ROUTES.home, ...GLOBAL_NAV_ITEMS] as const;
 
-export const FOOTER_INDEX_ITEMS = [
-  ...GLOBAL_NAV_ITEMS,
-  SITE_ROUTES.contact,
-] as const;
-
 export const SERVICE_NAV_ITEMS = [
-  SITE_ROUTES.shippingReturns,
-  SITE_ROUTES.terms,
   SITE_ROUTES.privacy,
 ] as const;
 
@@ -103,6 +96,20 @@ export const EXPLORE_ROOMS = [
   },
 ] as const;
 
+// The primary menu currently returns visitors to the immersive walk. Keep this
+// separate from SITE_ROUTES so the standalone pages can come back without
+// rebuilding the navigation system.
+export const WALK_MENU_ITEMS = EXPLORE_ROOMS;
+
+// Launch-facing section links stay inside the immersive walk while the
+// conventional routes remain available for a later, populated release.
+export const WALK_SECTION_ITEMS = EXPLORE_ROOMS.slice(1);
+
+export const FOOTER_INDEX_ITEMS = [
+  ...WALK_SECTION_ITEMS,
+  SITE_ROUTES.contact,
+] as const;
+
 export type GlobalNavId = (typeof GLOBAL_NAV_ITEMS)[number]["id"];
 export type ExploreHash = (typeof EXPLORE_ROOMS)[number]["hash"];
 export type ExploreRoom = (typeof EXPLORE_ROOMS)[number];
@@ -110,7 +117,7 @@ export type ExploreRoom = (typeof EXPLORE_ROOMS)[number];
 const SECTION_LOCATORS: Record<GlobalNavId | "bag", string> = {
   store: "THE STORE",
   work: "ARTIFACTS",
-  about: "WHAT REMAINS",
+  about: "ABOUT",
   events: "COMMUNITY",
   bag: "THE BAG",
 };

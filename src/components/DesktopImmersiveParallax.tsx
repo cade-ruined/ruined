@@ -16,18 +16,18 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import type { Product } from "@/data/products";
 import { EVENTS } from "@/data/events";
 import {
   EXPLORE_ROOMS,
   FOOTER_INDEX_ITEMS,
-  GLOBAL_NAV_ITEMS,
+  WALK_SECTION_ITEMS,
 } from "@/data/navigation";
 import {
   JourneyEventsIndex,
   JourneyLobbyIndex,
 } from "@/components/sequence/JourneyIndexes";
 import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
+import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
 import RoomSequenceCanvas from "@/components/sequence/RoomSequenceCanvas";
 import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
@@ -495,6 +495,15 @@ function roomIndexAtProgress(progress: number, stops: JourneyRoomStop[]) {
   return activeIndex;
 }
 
+// Activate wayfinding at the same moment its destination card finishes
+// revealing. A deep-link scroll is spring-smoothed and can settle fractionally
+// before playEnd; keying labels to that exact endpoint left them one room behind
+// an already-visible destination.
+function roomLabelArrival(band: Band | undefined, fallback: number) {
+  if (!band) return fallback;
+  return band.start + (band.playEnd - band.start) * 0.94;
+}
+
 function useDesktopJourneyScene({
   progress,
   stops,
@@ -504,10 +513,13 @@ function useDesktopJourneyScene({
 }) {
   useEffect(() => {
     let activeIndex = -1;
+    let wasAtLobby = false;
     const publish = (value: number) => {
       const nextIndex = roomIndexAtProgress(value, stops);
-      if (nextIndex === activeIndex) return;
+      const atLobby = nextIndex === 0 && value <= 0.002;
+      if (nextIndex === activeIndex && atLobby === wasAtLobby) return;
       activeIndex = nextIndex;
+      wasAtLobby = atLobby;
       const room = stops[nextIndex]?.room;
       if (!room) return;
       window.dispatchEvent(
@@ -516,6 +528,7 @@ function useDesktopJourneyScene({
             id: room.id,
             hash: room.hash,
             index: room.sceneIndex,
+            atLobby,
           },
         })
       );
@@ -526,10 +539,8 @@ function useDesktopJourneyScene({
 }
 
 export default function DesktopImmersiveParallax({
-  products,
   manifest,
 }: {
-  products: Product[];
   manifest: SequenceManifest;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -608,10 +619,10 @@ export default function DesktopImmersiveParallax({
   const journeyRoomStops = useMemo<JourneyRoomStop[]>(
     () => [
       { room: EXPLORE_ROOMS[0], at: 0 },
-      { room: EXPLORE_ROOMS[1], at: bands.lobby?.playEnd ?? 0.2 },
-      { room: EXPLORE_ROOMS[2], at: bands.store?.playEnd ?? 0.4 },
-      { room: EXPLORE_ROOMS[3], at: bands.records?.playEnd ?? 0.6 },
-      { room: EXPLORE_ROOMS[4], at: FIRESIDE_EVENT_BAND.playEnd },
+      { room: EXPLORE_ROOMS[1], at: roomLabelArrival(bands.lobby, 0.2) },
+      { room: EXPLORE_ROOMS[2], at: roomLabelArrival(bands.store, 0.4) },
+      { room: EXPLORE_ROOMS[3], at: roomLabelArrival(bands.records, 0.6) },
+      { room: EXPLORE_ROOMS[4], at: roomLabelArrival(FIRESIDE_EVENT_BAND, 0.78) },
     ],
     [bands]
   );
@@ -675,7 +686,7 @@ export default function DesktopImmersiveParallax({
                 aria-label="Explore Ruined"
                 className="absolute inset-x-6 bottom-32 z-20 grid grid-cols-2 gap-2 text-center font-[var(--font-header)] text-[0.72rem] font-bold tracking-[-0.01em] text-[var(--color-bone)] sm:left-1/2 sm:right-auto sm:w-[40rem] sm:-translate-x-1/2 sm:grid-cols-4"
               >
-                {GLOBAL_NAV_ITEMS.map((item) => (
+                {WALK_SECTION_ITEMS.map((item) => (
                   <Link
                     key={item.id}
                     className="border border-white/50 bg-black/60 px-3 py-3"
@@ -724,8 +735,6 @@ export default function DesktopImmersiveParallax({
           room={EXPLORE_ROOMS[0]}
         >
           <JourneyLobbyIndex
-            products={products}
-            projects={[]}
             events={EVENTS}
           />
         </LobbyOpeningOverlay>
@@ -762,7 +771,7 @@ export default function DesktopImmersiveParallax({
           room={EXPLORE_ROOMS[3]}
           wide
         >
-          <JourneyComingSoon section="about" />
+          <JourneyAboutStatement headingId="desktop-journey-about-heading" />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && eventsArrivalB && eventsArrivalB.count > 0 && (

@@ -1,37 +1,58 @@
 import type { Metadata } from "next";
 import EventsIndex from "@/components/events/EventsIndex";
-import { EVENTS } from "@/data/events";
+import { SITE_URL } from "@/lib/site";
+
+const description =
+  "Community gatherings from The Ruined Project in Alpine, Utah, including the monthly BYOB series.";
 
 export const metadata: Metadata = {
-  title: "Community · Studio Gatherings",
-  description:
-    "Gatherings from The Ruined Project.",
+  title: "Community Gatherings",
+  description,
   alternates: { canonical: "/community" },
+  openGraph: {
+    type: "website",
+    title: "Community Gatherings — Ruined",
+    description,
+    url: "/community",
+    images: [
+      {
+        url: "/opengraph-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "The Ruined Project",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Community Gatherings — Ruined",
+    description,
+    images: ["/twitter-image.jpg"],
+  },
 };
 
 export default function CommunityPage() {
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ruined.studio";
-  const eventSchema = EVENTS.filter((event) => event.status === "Upcoming").map((event) => ({
+  const communitySchema = {
     "@context": "https://schema.org",
-    "@type": "Event",
-    name: event.title,
-    startDate: event.dateTime,
-    eventStatus: "https://schema.org/EventScheduled",
-    eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
-    description: event.summary,
-    ...(event.image ? { image: `${base}${event.image}` } : {}),
-    location: {
-      "@type": "Place",
-      name: event.location,
-      address: event.location,
+    "@type": "CollectionPage",
+    name: "Community Gatherings — Ruined",
+    description,
+    url: `${SITE_URL}/community`,
+    isPartOf: {
+      "@type": "WebSite",
+      name: "Ruined",
+      url: SITE_URL,
     },
-    organizer: { "@type": "Organization", name: "Ruined", url: base },
-    url: `${base}/community#${event.id}`,
-  }));
+  };
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(eventSchema).replace(/</g, "\\u003c") }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(communitySchema).replace(/</g, "\\u003c"),
+        }}
+      />
       <EventsIndex />
     </>
   );

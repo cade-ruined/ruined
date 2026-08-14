@@ -14,13 +14,21 @@ const framePath = (index: number) => index === OPEN_FRAME
 
 export default function LobbyPopupSequence() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const interactionRef = useRef<HTMLButtonElement>(null);
   const frameRef = useRef(0);
   const imagesRef = useRef(new Map<number, HTMLImageElement>());
-  const touchYRef = useRef<number | null>(null);
-  const touchStartYRef = useRef<number | null>(null);
+  const pointerGestureRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    opened: boolean;
+  } | null>(null);
+  const touchGestureRef = useRef<{
+    x: number;
+    y: number;
+    opened: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
   const openingRef = useRef(false);
-  const completedRef = useRef(false);
   const leftLobbyRef = useRef(false);
   const [visible, setVisible] = useState(false);
   const [open, setOpen] = useState(false);
@@ -108,7 +116,6 @@ export default function LobbyPopupSequence() {
         requestAnimationFrame(animate);
         return;
       }
-      completedRef.current = true;
       setVisible(false);
     };
     requestAnimationFrame(animate);
@@ -126,8 +133,9 @@ export default function LobbyPopupSequence() {
   useEffect(() => {
     const reopen = () => {
       frameRef.current = 0;
-      touchYRef.current = null;
-      touchStartYRef.current = null;
+      pointerGestureRef.current = null;
+      touchGestureRef.current = null;
+      suppressClickRef.current = false;
       openingRef.current = false;
       setOpen(false);
       setClosing(false);
@@ -138,27 +146,41 @@ export default function LobbyPopupSequence() {
       });
     };
     const syncScene = (event: Event) => {
-      const scene = event as CustomEvent<{ index?: number }>;
+      const scene = event as CustomEvent<{ index?: number; atLobby?: boolean }>;
       const index = scene.detail?.index;
       if (typeof index !== "number") return;
-      if (index > 0) {
+      const atLobby = scene.detail?.atLobby ?? index === 0;
+      if (!atLobby) {
         leftLobbyRef.current = true;
+        setVisible(false);
         return;
       }
-      if (index === 0 && completedRef.current && leftLobbyRef.current) {
+      if (atLobby && leftLobbyRef.current) {
         leftLobbyRef.current = false;
         reopen();
       }
     };
+    const requestScene = (event: Event) => {
+      const request = event as CustomEvent<{ hash?: string; index?: number }>;
+      const leavesLobby =
+        (typeof request.detail?.index === "number" && request.detail.index > 0) ||
+        (request.detail?.hash != null && request.detail.hash !== "#top");
+      if (!leavesLobby) return;
+      leftLobbyRef.current = true;
+      setVisible(false);
+    };
     window.addEventListener("ruined:home-scene-change", syncScene);
-    return () => window.removeEventListener("ruined:home-scene-change", syncScene);
+    window.addEventListener("ruined:home-scene-request", requestScene);
+    return () => {
+      window.removeEventListener("ruined:home-scene-change", syncScene);
+      window.removeEventListener("ruined:home-scene-request", requestScene);
+    };
   }, [draw, loadFrame]);
 
   useEffect(() => {
     if (!visible) return;
     const canvas = canvasRef.current;
-    const interaction = interactionRef.current;
-    if (!canvas || !interaction) return;
+    if (!canvas) return;
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.round(window.innerWidth * dpr);
@@ -170,41 +192,110 @@ export default function LobbyPopupSequence() {
       event.stopPropagation();
       advance(Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX);
     };
+    let clickResetTimer = 0;
+    const armClickSuppression = () => {
+      suppressClickRef.current = true;
+      window.clearTimeout(clickResetTimer);
+      clickResetTimer = window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 500);
+    };
     const touchStart = (event: TouchEvent) => {
-      const y = event.touches[0]?.clientY ?? null;
-      touchYRef.current = y;
-      touchStartYRef.current = y;
+      if (event.touches.length !== 1) {
+        touchGestureRef.current = null;
+        return;
+      }
+      const touch = event.touches[0];
+      touchGestureRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        opened: false,
+      };
     };
     const touchMove = (event: TouchEvent) => {
-      if (touchYRef.current == null || touchStartYRef.current == null || !event.touches[0]) return;
+      const gesture = touchGestureRef.current;
+      const touch = event.touches[0];
+      if (!gesture || !touch) return;
+      const verticalDistance = Math.abs(gesture.y - touch.clientY);
+      const horizontalDistance = Math.abs(gesture.x - touch.clientX);
+      if (!gesture.opened && (verticalDistance < 28 || verticalDistance <= horizontalDistance * 1.1)) return;
+      gesture.opened = true;
+      armClickSuppression();
       event.preventDefault();
-      event.stopPropagation();
-      const nextY = event.touches[0].clientY;
-      if (Math.abs(touchStartYRef.current - nextY) >= 28) openFromSwipe();
-      touchYRef.current = nextY;
+      event.stopImmediatePropagation();
+      openFromSwipe();
+    };
+    const touchEnd = (event: TouchEvent) => {
+      const gesture = touchGestureRef.current;
+      touchGestureRef.current = null;
+      if (!gesture?.opened) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
     };
     const pointerDown = (event: PointerEvent) => {
-      touchStartYRef.current = event.clientY;
+      if (
+        event.pointerType === "touch" ||
+        !event.isPrimary ||
+        (event.pointerType === "mouse" && event.button !== 0)
+      ) return;
+      pointerGestureRef.current = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        opened: false,
+      };
     };
     const pointerMove = (event: PointerEvent) => {
-      if (touchStartYRef.current == null || event.buttons === 0) return;
+      const gesture = pointerGestureRef.current;
+      if (!gesture || gesture.id !== event.pointerId) return;
+      const verticalDistance = Math.abs(gesture.y - event.clientY);
+      const horizontalDistance = Math.abs(gesture.x - event.clientX);
+      if (!gesture.opened && (verticalDistance < 28 || verticalDistance <= horizontalDistance * 1.1)) return;
+      gesture.opened = true;
+      armClickSuppression();
       event.preventDefault();
-      if (Math.abs(touchStartYRef.current - event.clientY) >= 28) openFromSwipe();
+      event.stopImmediatePropagation();
+      openFromSwipe();
+    };
+    const pointerEnd = (event: PointerEvent) => {
+      const gesture = pointerGestureRef.current;
+      if (!gesture || gesture.id !== event.pointerId) return;
+      pointerGestureRef.current = null;
+      if (!gesture.opened) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const suppressSwipeClick = (event: MouseEvent) => {
+      if (!suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
     };
     resize();
     window.addEventListener("resize", resize);
-    interaction.addEventListener("wheel", wheel, { passive: false });
-    interaction.addEventListener("touchstart", touchStart, { passive: true });
-    interaction.addEventListener("touchmove", touchMove, { passive: false });
-    interaction.addEventListener("pointerdown", pointerDown);
-    interaction.addEventListener("pointermove", pointerMove);
+    window.addEventListener("wheel", wheel, { passive: false, capture: true });
+    window.addEventListener("touchstart", touchStart, { passive: true, capture: true });
+    window.addEventListener("touchmove", touchMove, { passive: false, capture: true });
+    window.addEventListener("touchend", touchEnd, { passive: false, capture: true });
+    window.addEventListener("touchcancel", touchEnd, { passive: false, capture: true });
+    window.addEventListener("pointerdown", pointerDown, true);
+    window.addEventListener("pointermove", pointerMove, true);
+    window.addEventListener("pointerup", pointerEnd, true);
+    window.addEventListener("pointercancel", pointerEnd, true);
+    window.addEventListener("click", suppressSwipeClick, true);
     return () => {
       window.removeEventListener("resize", resize);
-      interaction.removeEventListener("wheel", wheel);
-      interaction.removeEventListener("touchstart", touchStart);
-      interaction.removeEventListener("touchmove", touchMove);
-      interaction.removeEventListener("pointerdown", pointerDown);
-      interaction.removeEventListener("pointermove", pointerMove);
+      window.removeEventListener("wheel", wheel, true);
+      window.removeEventListener("touchstart", touchStart, true);
+      window.removeEventListener("touchmove", touchMove, true);
+      window.removeEventListener("touchend", touchEnd, true);
+      window.removeEventListener("touchcancel", touchEnd, true);
+      window.removeEventListener("pointerdown", pointerDown, true);
+      window.removeEventListener("pointermove", pointerMove, true);
+      window.removeEventListener("pointerup", pointerEnd, true);
+      window.removeEventListener("pointercancel", pointerEnd, true);
+      window.removeEventListener("click", suppressSwipeClick, true);
+      window.clearTimeout(clickResetTimer);
     };
   }, [advance, draw, openFromSwipe, visible]);
 
@@ -222,21 +313,18 @@ export default function LobbyPopupSequence() {
             sizes="50vh"
             className="object-contain"
           />
-          <span
-            aria-hidden="true"
-            className={`absolute left-[54%] top-[75%] h-[9%] w-[45%] -translate-x-1/2 -translate-y-1/2 -rotate-2 rounded-[50%] border-2 border-[var(--color-poster)] shadow-[0_0_18px_rgba(214,47,43,0.28)] transition-opacity duration-150 ${closing ? "opacity-0" : "animate-[pulse_1.8s_ease-in-out_infinite] opacity-100"}`}
-          >
-            <span className="absolute inset-[-5px] rotate-3 rounded-[48%] border border-[var(--color-poster)]/55" />
-          </span>
+          {!closing && (
+            <button
+              type="button"
+              aria-label="Come in"
+              onClick={enterLobby}
+              className="pointer-events-auto absolute left-[54%] top-[75%] h-[6.5%] w-[32%] -translate-x-1/2 -translate-y-1/2 -rotate-2 cursor-pointer rounded-[50%] border-2 border-[var(--color-poster)] bg-transparent shadow-[0_0_18px_rgba(214,47,43,0.28)] animate-[pulse_1.8s_ease-in-out_infinite]"
+            >
+              <span aria-hidden="true" className="absolute inset-[-5px] rotate-3 rounded-[48%] border border-[var(--color-poster)]/55" />
+            </button>
+          )}
         </span>
       )}
-      <button
-        ref={interactionRef}
-        type="button"
-        aria-label={open ? "Come in" : "Scroll to open the note"}
-        onClick={enterLobby}
-        className={`fixed inset-0 z-[30] touch-none bg-transparent ${open && !closing ? "cursor-pointer" : "cursor-default"}`}
-      />
     </>
   );
 }

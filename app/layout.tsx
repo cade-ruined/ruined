@@ -3,50 +3,57 @@ import "@/styles/index.css";
 import SiteHeader from "@/components/SiteHeader";
 import WebVitals from "@/components/WebVitals";
 import SiteFooter from "@/components/SiteFooter";
+import BrandCursor from "@/components/BrandCursor";
+import { SITE_URL } from "@/lib/site";
 import "@fontsource-variable/inter";
-
-// Absolute base for OG/canonical URLs. Vercel injects the production URL at
-// build time; falls back to the brand domain locally / on first deploy.
-const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
-  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-  : process.env.NEXT_PUBLIC_SITE_URL ?? "https://ruined.studio";
 
 const SITE_NAME = "Ruined";
 const SITE_DESC =
-  "Ruined — a studio for artifacts and projects. Drop 01 / SS MMXXVI. Walk the warehouse: store, work, studio, and community, after the fear.";
+  "Ruined refines potential into identity through clothing, brands, products, and experiences. Based in Alpine, Utah.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL(SITE_URL),
   // Deep pages set their own title; "%s — Ruined" wraps them. Home uses the
   // default below.
   title: {
-    default: "Ruined — After the Fear",
+    default: "Ruined — A Creative Company in Alpine, Utah",
     template: "%s — Ruined",
   },
   description: SITE_DESC,
   applicationName: SITE_NAME,
-  keywords: [
-    "Ruined studio", "Utah design studio", "independent fashion label",
-    "limited edition clothing", "furniture and object design", "creative direction",
-    "interior design", "experimental retail", "design events", "artifacts", "After the Fear", "SS26",
-  ],
   alternates: { canonical: "/" },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon.png", type: "image/png" }],
-    apple: "/apple-icon.png",
-    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#d0312d" }],
+    icon: [
+      { url: "/favicon-ruined-mark-v2.svg", type: "image/svg+xml" },
+      { url: "/favicon-ruined-mark-v2.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: {
+      url: "/apple-touch-icon-ruined-mark-v2.png",
+      type: "image/png",
+      sizes: "180x180",
+    },
+    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#080605" }],
   },
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
-    title: "Ruined — After the Fear",
+    title: "Ruined — A Creative Company in Alpine, Utah",
     description: SITE_DESC,
-    url: siteUrl,
+    url: SITE_URL,
+    images: [
+      {
+        url: "/opengraph-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "The Ruined Project",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ruined — After the Fear",
+    title: "Ruined — A Creative Company in Alpine, Utah",
     description: SITE_DESC,
+    images: ["/twitter-image.jpg"],
   },
 };
 
@@ -64,20 +71,35 @@ export default function RootLayout({
     "@context": "https://schema.org",
     "@type": "Organization",
     name: SITE_NAME,
-    url: siteUrl,
+    url: SITE_URL,
     email: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "connect@theruinedproject.com",
     description: SITE_DESC,
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: "395 S Main Street",
+      addressLocality: "Alpine",
+      addressRegion: "UT",
+      postalCode: "84004",
+      addressCountry: "US",
+    },
+    sameAs: ["https://www.instagram.com/theruinedproject"],
   };
 
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <body>
+        <a href="#main-content" className="ruined-skip-link">
+          Skip to content
+        </a>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema).replace(/</g, "\\u003c") }}
         />
+        <BrandCursor />
         <SiteHeader />
-        {children}
+        <div id="main-content" tabIndex={-1}>
+          {children}
+        </div>
         <SiteFooter />
         <WebVitals />
       </body>

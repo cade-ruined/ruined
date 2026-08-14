@@ -26,6 +26,145 @@ html {
   scroll-snap-type: y proximity;
 }
 
+.ruined-skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 2147483647;
+  transform: translateY(-200%);
+  border: 1px solid var(--color-bone);
+  background: #080605;
+  color: var(--color-bone);
+  padding: 0.75rem 1rem;
+  font-family: var(--font-header);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.ruined-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* The botanical mark replaces the system arrow only where a precise mouse is
+   present. Its stem is the click point; text-entry and disabled controls keep
+   their native cursors so the interaction language remains legible. */
+.ruined-brand-cursor {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html.ruined-brand-cursor-active,
+  html.ruined-brand-cursor-active body,
+  html.ruined-brand-cursor-active body * {
+    cursor: none !important;
+  }
+
+  html.ruined-brand-cursor-active :where(
+    input:not([type="button"]):not([type="submit"]):not([type="reset"]),
+    textarea,
+    select,
+    [contenteditable="true"]
+  ) {
+    cursor: text !important;
+  }
+
+  html.ruined-brand-cursor-active :where(
+    .cursor-grab,
+    .cursor-grabbing
+  ) {
+    cursor: grab !important;
+  }
+
+  html.ruined-brand-cursor-active .cursor-grabbing {
+    cursor: grabbing !important;
+  }
+
+  html.ruined-brand-cursor-active .cursor-wait {
+    cursor: wait !important;
+  }
+
+  html.ruined-brand-cursor-active :where(
+    [disabled],
+    [aria-disabled="true"]
+  ) {
+    cursor: not-allowed !important;
+  }
+
+  html.ruined-brand-cursor-active [data-cursor-native] {
+    cursor: auto !important;
+  }
+
+  .ruined-brand-cursor {
+    --cursor-x: -100px;
+    --cursor-y: -100px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 2147483647;
+    display: block;
+    width: 1.35rem;
+    height: 1.9rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate3d(var(--cursor-x), var(--cursor-y), 0) translate(-50%, -88%);
+    transition: opacity 70ms linear;
+    will-change: transform;
+  }
+
+  .ruined-brand-cursor[data-visible="true"] {
+    opacity: 1;
+  }
+
+  .ruined-brand-cursor[data-native] {
+    opacity: 0;
+  }
+
+  .ruined-brand-cursor__mark {
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    -webkit-mask: url("/ruined-mark.svg") center / contain no-repeat;
+    mask: url("/ruined-mark.svg") center / contain no-repeat;
+    transform-origin: 50% 88%;
+    transition: transform 90ms ease, opacity 90ms linear;
+  }
+
+  .ruined-brand-cursor__mark--base {
+    z-index: 2;
+    color: var(--color-bone);
+    filter: drop-shadow(0 0 1.2px rgb(0 0 0 / 0.95)) drop-shadow(0 1px 0 rgb(0 0 0 / 0.85));
+  }
+
+  .ruined-brand-cursor__mark--teal,
+  .ruined-brand-cursor__mark--magenta {
+    z-index: 1;
+    opacity: 0;
+    mix-blend-mode: screen;
+  }
+
+  .ruined-brand-cursor__mark--teal {
+    color: #00a9a1;
+  }
+
+  .ruined-brand-cursor__mark--magenta {
+    color: #bb204f;
+  }
+
+  .ruined-brand-cursor[data-interactive] .ruined-brand-cursor__mark--teal {
+    opacity: 0.62;
+    transform: translate3d(-2px, 1px, 0);
+  }
+
+  .ruined-brand-cursor[data-interactive] .ruined-brand-cursor__mark--magenta {
+    opacity: 0.62;
+    transform: translate3d(2px, -1px, 0);
+  }
+
+  .ruined-brand-cursor[data-pressed] .ruined-brand-cursor__mark--base {
+    transform: scale(0.88);
+  }
+}
+
 /* Touch momentum is already doing the navigation work on phones. Scroll snap
    can seize the tail of a swipe and make the scrub feel sticky or jumpy. */
 @media (pointer: coarse) {
@@ -502,6 +641,7 @@ html::-webkit-scrollbar {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
 }
 
 /* Hide the scrollbar on horizontal crate-dig rows while keeping them

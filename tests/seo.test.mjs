@@ -1,0 +1,111 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const root = path.resolve(import.meta.dirname, "..");
+
+async function read(file) {
+  return fs.readFile(path.join(root, file), "utf8");
+}
+
+test("production metadata uses the brand domain and restrained positioning", async () => {
+  const [site, layout, env] = await Promise.all([
+    read("src/lib/site.ts"),
+    read("app/layout.tsx"),
+    read(".env.example"),
+  ]);
+
+  assert.match(site, /https:\/\/www\.theruinedproject\.com/);
+  assert.match(site, /SITE_URL = PRODUCTION_SITE_URL/);
+  assert.doesNotMatch(site, /VERCEL_PROJECT_PRODUCTION_URL|NEXT_PUBLIC_SITE_URL/);
+  assert.match(env, /NEXT_PUBLIC_SITE_URL=https:\/\/www\.theruinedproject\.com/);
+  assert.match(layout, /A Creative Company in Alpine, Utah/);
+  assert.match(layout, /Ruined refines potential into identity/);
+  assert.doesNotMatch(layout, /keywords:/);
+  assert.match(layout, /"@type": "PostalAddress"/);
+  assert.match(layout, /https:\/\/www\.instagram\.com\/theruinedproject/);
+});
+
+test("sitemap includes only meaningful public launch pages", async () => {
+  const sitemap = await read("app/sitemap.ts");
+
+  for (const route of [
+    "/about",
+    "/community",
+    "/contact",
+    "/privacy",
+  ]) {
+    assert.match(sitemap, new RegExp(`path: "${route}"`));
+  }
+
+  for (const route of ["/store", "/work", "/foundations"]) {
+    assert.doesNotMatch(sitemap, new RegExp(`path: "${route}"`));
+  }
+
+  assert.doesNotMatch(sitemap, /lastModified/);
+  assert.doesNotMatch(sitemap, /PRODUCTS|PROJECTS/);
+  assert.match(sitemap, /getShopPolicies/);
+  assert.match(sitemap, /terms[\s\S]*path: "\/terms"/);
+  assert.match(sitemap, /shipping[\s\S]*path: "\/shipping-returns"/);
+});
+
+test("global accessibility and empty legal routes are launch-safe", async () => {
+  const [layout, shipping, terms] = await Promise.all([
+    read("app/layout.tsx"),
+    read("app/shipping-returns/page.tsx"),
+    read("app/terms/page.tsx"),
+  ]);
+
+  assert.match(layout, /href="#main-content"/);
+  assert.match(layout, /id="main-content" tabIndex=\{-1\}/);
+  assert.match(shipping, /robots: shipping \? undefined : \{ index: false, follow: true \}/);
+  assert.match(terms, /robots: terms \? undefined : \{ index: false, follow: true \}/);
+});
+
+test("About is crawlable content and internal Foundations is noindex", async () => {
+  const [about, foundations] = await Promise.all([
+    read("app/about/page.tsx"),
+    read("app/foundations/page.tsx"),
+  ]);
+
+  assert.match(about, /title: "About"/);
+  assert.match(about, /Ruined exists to refine potential into identity/);
+  assert.match(about, /This site is still being built/);
+  assert.doesNotMatch(about, /ComingSoonGate/);
+  assert.match(foundations, /robots: \{ index: false, follow: false \}/);
+});
+
+test("dormant Store and Artifacts routes stay out of search", async () => {
+  const [storeLayout, workLayout] = await Promise.all([
+    read("app/store/layout.tsx"),
+    read("app/work/layout.tsx"),
+  ]);
+
+  for (const layout of [storeLayout, workLayout]) {
+    assert.match(layout, /robots: \{ index: false, follow: true \}/);
+  }
+});
+
+test("the future programme page stays dormant until explicitly enabled", async () => {
+  const [landingPage, env] = await Promise.all([
+    read("app/lp/page.tsx"),
+    read(".env.example"),
+  ]);
+
+  assert.match(env, /ENABLE_AFTER_THE_FEAR_LP=false/);
+  assert.match(landingPage, /process\.env\.ENABLE_AFTER_THE_FEAR_LP === "true"/);
+  assert.match(landingPage, /robots: AFTER_THE_FEAR_LP_ENABLED/);
+  assert.match(landingPage, /index: false, follow: false/);
+  assert.match(landingPage, /if \(!AFTER_THE_FEAR_LP_ENABLED\) notFound\(\)/);
+});
+
+test("Community uses collection metadata until events have leaf URLs", async () => {
+  const community = await read("app/community/page.tsx");
+
+  assert.match(community, /"@type": "CollectionPage"/);
+  assert.match(community, /openGraph:/);
+  assert.match(community, /twitter:/);
+  assert.doesNotMatch(community, /"@type": "Event"/);
+  assert.doesNotMatch(community, /\/community#/);
+});

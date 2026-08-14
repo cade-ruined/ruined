@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { notFound } from "next/navigation";
 import ParallaxHero from "./parallax-hero";
 import styles from "./lp.module.css";
+
+const AFTER_THE_FEAR_LP_ENABLED =
+  process.env.ENABLE_AFTER_THE_FEAR_LP === "true";
 
 export const metadata: Metadata = {
   title: "After the Fear — A Private Six-Week Working Group",
   description:
     "A private six-week working group for founders and creative leaders ready to make a consequential decision and build the next 90 days around it.",
   alternates: { canonical: "/lp" },
+  robots: AFTER_THE_FEAR_LP_ENABLED
+    ? { index: true, follow: true }
+    : { index: false, follow: false },
   openGraph: {
     title: "After the Fear — A Private Six-Week Working Group",
     description:
@@ -24,6 +31,8 @@ const programmeFacts = [
 ] as const;
 
 export default function LandingPage() {
+  if (!AFTER_THE_FEAR_LP_ENABLED) notFound();
+
   return (
     <main className={styles.page}>
       <ParallaxHero />
@@ -68,7 +77,7 @@ export default function LandingPage() {
           <Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} />
         </a>
         <p>After the Fear · Private programme 01</p>
-        <div><a href="mailto:studio@ruined.studio">studio@ruined.studio</a><a href="/privacy">Privacy</a></div>
+        <div><a href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a><a href="/privacy">Privacy</a></div>
         <small>© 2026 The Ruined Project</small>
       </footer>
     </main>

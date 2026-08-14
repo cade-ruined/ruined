@@ -19,7 +19,7 @@ import styles from "./UniversalSearch.module.css";
 const GROUP_LABELS: Record<SearchGroup, string> = {
   pieces: "Pieces",
   projects: "Projects",
-  events: "Events",
+  events: "Community",
   pages: "Pages",
 };
 
@@ -206,7 +206,7 @@ export default function UniversalSearch({
           {failed ? (
             <div className={styles.empty}>
               <p>Search is temporarily unavailable.</p>
-              <Link href="/store" onClick={closeForNavigation}>Browse the shop instead →</Link>
+              <Link href="/#store" onClick={closeForNavigation}>Browse the shop instead →</Link>
             </div>
           ) : !response && loading ? (
             <div className={styles.loading} aria-hidden="true">

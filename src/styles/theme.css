@@ -139,25 +139,30 @@
 }
 
 /* ─── Typography hierarchy ──────────────────────────────────────────────
- * Inter carries navigation, headings, display titles, and body copy. IvyOra
- * is intentionally reserved for italic/emphasized editorial moments so the
- * contrast feels deliberate rather than becoming a second competing system.
+ * IvyOra Text Medium carries editorial and content headings. Inter remains
+ * the supporting system for navigation, labels, metadata, and body copy.
  */
 .display {
-  font-family: var(--font-header);
-  letter-spacing: var(--tracking-display);
-  font-weight: var(--weight-header);
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-emphasis);
+  font-weight: var(--weight-medium);
 }
 
 h1, h2, h3, h4, .header {
-  font-family: var(--font-header) !important;
-  font-weight: var(--weight-header) !important;
-  letter-spacing: var(--tracking-header);
+  font-family: var(--font-display) !important;
+  font-weight: var(--weight-medium) !important;
+  letter-spacing: var(--tracking-emphasis);
 }
 
 .ui-heading {
-  font-family: var(--font-header);
-  font-weight: var(--weight-header);
+  font-family: var(--font-header) !important;
+  font-weight: var(--weight-header) !important;
+}
+
+.journey-card-title {
+  font-family: var(--font-display) !important;
+  font-weight: var(--weight-medium) !important;
+  letter-spacing: var(--tracking-emphasis);
 }
 
 em,

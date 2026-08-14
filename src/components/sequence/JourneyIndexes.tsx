@@ -1,5 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Product } from "@/data/products";
 import type { Project } from "@/data/projects";
 import type { StudioEvent } from "@/data/events";
@@ -9,6 +12,30 @@ const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
 const JOURNEY_CARD_CLASS =
   "group relative aspect-[4/5] overflow-hidden bg-black/85 text-[var(--color-bone)] ring-1 ring-inset ring-white/15";
+
+function requestWalkRoom(
+  event: ReactMouseEvent<HTMLAnchorElement>,
+  hash: string
+) {
+  if (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return;
+  }
+
+  const room = EXPLORE_ROOMS.find((candidate) => candidate.hash === hash);
+  if (!room) return;
+
+  const request = new CustomEvent("ruined:home-scene-request", {
+    cancelable: true,
+    detail: { hash: room.hash, index: room.sceneIndex },
+  });
+  if (!window.dispatchEvent(request)) event.preventDefault();
+}
 
 export function JourneySectionHero({
   room,
@@ -73,56 +100,49 @@ export function JourneySectionHero({
 type LobbySelection = {
   key: string;
   href?: string;
-  realm: "Store" | "Work" | "Events";
+  external?: boolean;
+  realm: "About" | "Social" | "Community";
   title: string;
   meta: string;
   image?: string;
+  video?: string;
+  poster?: string;
   alt: string;
 };
 
 export function JourneyLobbyIndex({
-  products,
-  projects,
   events,
 }: {
-  products: Product[];
-  projects: Project[];
   events: StudioEvent[];
 }) {
-  const product = products[0];
-  const project = projects[0];
   const event = events[0];
   const selections: LobbySelection[] = [
-    ...(product
-      ? [
-          {
-            key: `store-${product.id}`,
-            realm: "Store" as const,
-            title: product.name,
-            meta: `${product.code} · ${product.price}`,
-            image: product.image?.url,
-            alt: product.image?.alt ?? product.name,
-          },
-        ]
-      : []),
-    ...(project
-      ? [
-          {
-            key: `work-${project.no}`,
-            realm: "Work" as const,
-            title: project.title,
-            meta: `RU / ${project.no} · ${project.year}`,
-            image: project.image,
-            alt: project.title,
-          },
-        ]
-      : []),
+    {
+      key: "what-is-this",
+      href: "#about",
+      realm: "About",
+      title: "What is this?",
+      meta: "About Ruined",
+      image: "/media/what-is-this.webp",
+      alt: "The Ruined Project collage",
+    },
+    {
+      key: "meet-the-cast",
+      href: "https://www.instagram.com/theruinedproject/",
+      external: true,
+      realm: "Social",
+      title: "Meet the Cast",
+      meta: "Watch on Instagram",
+      video: "/media/meet-the-cast.mp4",
+      poster: "/media/meet-the-cast-poster.jpg",
+      alt: "Meet the Cast from The Ruined Project",
+    },
     ...(event
       ? [
           {
             key: `events-${event.id}`,
             href: `/community#${event.id}`,
-            realm: "Events" as const,
+            realm: "Community" as const,
             title: event.title,
             meta: event.date,
             image: event.image,
@@ -138,6 +158,19 @@ export function JourneyLobbyIndex({
     <div className={JOURNEY_GRID_CLASS}>
       {selections.map((selection) => {
         const content = <>
+          {selection.video && (
+            <video
+              src={selection.video}
+              poster={selection.poster}
+              aria-label={selection.alt}
+              muted
+              loop
+              autoPlay
+              playsInline
+              preload="metadata"
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+            />
+          )}
           {selection.image && (
             <Image
               src={selection.image}
@@ -149,21 +182,38 @@ export function JourneyLobbyIndex({
             />
           )}
           <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/5 to-black/35" />
-          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.16em] text-[var(--color-poster)] sm:left-3 sm:top-3 sm:text-[0.5rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 bg-black/90 px-1.5 py-1 font-sans text-[0.4rem] font-medium uppercase tracking-[0.16em] text-[var(--color-signal)] sm:left-3 sm:top-3 sm:text-[0.5rem] sm:tracking-[0.2em]">
             {selection.realm}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3">
-            <strong className="block text-[0.62rem] leading-tight text-white sm:text-base">
+            <strong className="journey-card-title block text-[0.78rem] leading-[0.95] text-white sm:text-xl">
               {selection.title}
             </strong>
-            <span className="mt-1 flex items-end justify-between gap-1 font-mono text-[0.38rem] uppercase leading-tight tracking-[0.08em] text-white/60 sm:text-[0.48rem] sm:tracking-[0.12em]">
+            <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[0.38rem] uppercase leading-tight tracking-[0.08em] text-white/60 sm:text-[0.48rem] sm:tracking-[0.12em]">
               <span>{selection.meta}</span>
               {selection.href && <span className="shrink-0 text-white/80 transition-transform group-hover:translate-x-1">↗</span>}
             </span>
           </span>
         </>;
-        return selection.href ? (
-          <Link key={selection.key} href={selection.href} className={JOURNEY_CARD_CLASS}>{content}</Link>
+        return selection.href?.startsWith("#") ? (
+          <a
+            key={selection.key}
+            href={selection.href}
+            onClick={(event) => requestWalkRoom(event, selection.href!)}
+            className={JOURNEY_CARD_CLASS}
+          >
+            {content}
+          </a>
+        ) : selection.href ? (
+          <Link
+            key={selection.key}
+            href={selection.href}
+            target={selection.external ? "_blank" : undefined}
+            rel={selection.external ? "noreferrer" : undefined}
+            className={JOURNEY_CARD_CLASS}
+          >
+            {content}
+          </Link>
         ) : (
           <div key={selection.key} className={JOURNEY_CARD_CLASS}>{content}</div>
         );
@@ -193,15 +243,15 @@ export function JourneyStoreIndex({ products }: { products: Product[] }) {
             />
           )}
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
             {index === 0 ? "Featured · " : ""}
             {product.code}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="block text-[0.62rem] leading-tight text-white sm:text-lg">
+            <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
               {product.name}
             </strong>
-            <span className="mt-1 flex items-center justify-between font-mono text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+            <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
               <span>{product.price}</span>
             </span>
           </span>
@@ -232,15 +282,15 @@ export function JourneyWorkIndex({ projects }: { projects: Project[] }) {
             />
           )}
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
             {index === 0 ? "Featured · " : ""}
             RU / {project.no}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="block text-[0.62rem] leading-tight text-white sm:text-lg">
+            <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
               {project.title}
             </strong>
-            <span className="mt-1 flex items-center justify-between font-mono text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+            <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
               <span>
                 {project.medium} · {project.year}
               </span>
@@ -289,14 +339,14 @@ export function JourneyAboutIndex() {
             className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
           />
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
             {selection.label}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="block text-[0.62rem] leading-tight text-white sm:text-lg">
+            <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
               {selection.title}
             </strong>
-            <span className="mt-1 flex items-center justify-between font-mono text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+            <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
               <span>{selection.meta}</span>
             </span>
           </span>
@@ -310,34 +360,45 @@ export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
   return (
     <div>
     <div className={JOURNEY_GRID_CLASS}>
-      {events.slice(0, 3).map((event, index) => (
-        <Link
-          key={event.id}
-          href={`/community#${event.id}`}
-          className={JOURNEY_CARD_CLASS}
-        >
-          {event.image && <Image
-            src={event.image}
-            alt={event.title}
-            fill
-            sizes="(min-width: 640px) 22rem, 28vw"
-            className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
-          />}
-          <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-mono text-[0.4rem] uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
-            {index === 0 ? "Featured · " : ""}0{index + 1}
-          </span>
-          <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="block text-[0.62rem] leading-tight text-white sm:text-lg">
-              {event.title}
-            </strong>
-            <span className="mt-1 flex items-center justify-between font-mono text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
-              <span>{event.date}</span>
-              <span className="transition-transform group-hover:translate-x-1">↗</span>
+      {events.slice(0, 3).map((event, index) => {
+        const isAugustLaunchEvent = event.dateTime.startsWith("2026-08-14");
+
+        return (
+          <Link
+            key={event.id}
+            href={`/community#${event.id}`}
+            className={JOURNEY_CARD_CLASS}
+            data-event-dimmed={isAugustLaunchEvent ? undefined : "true"}
+          >
+            {event.image && <Image
+              src={event.image}
+              alt={event.title}
+              fill
+              sizes="(min-width: 640px) 22rem, 28vw"
+              className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+            />}
+            <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+            {!isAugustLaunchEvent && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 bg-black/55 transition-colors duration-300 group-hover:bg-black/45 group-focus-visible:bg-black/45"
+              />
+            )}
+            <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+              {index === 0 ? "Featured · " : ""}0{index + 1}
             </span>
-          </span>
-        </Link>
-      ))}
+            <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
+              <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
+                {event.title}
+              </strong>
+              <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+                <span>{event.date}</span>
+                <span className="transition-transform group-hover:translate-x-1">↗</span>
+              </span>
+            </span>
+          </Link>
+        );
+      })}
     </div>
     <Link href="/community" className="ui-heading mt-3 flex items-center justify-between border border-white/25 bg-black/80 px-4 py-3 text-xs text-white">
       <span>See all events</span><span aria-hidden="true">→</span>

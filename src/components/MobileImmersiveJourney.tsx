@@ -20,6 +20,7 @@ import {
   JourneyLobbyIndex,
 } from "@/components/sequence/JourneyIndexes";
 import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
+import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
 import { EVENTS } from "@/data/events";
 import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
@@ -28,7 +29,6 @@ import {
   mobileSceneIndexFromHash,
   type MobileSceneId,
 } from "@/data/mobileJourney";
-import type { Product } from "@/data/products";
 import { versionSequenceAsset } from "@/data/sequences";
 import {
   sequenceAssetFocalX,
@@ -206,11 +206,7 @@ function MobileFiresideVideo({
   );
 }
 
-export default function MobileImmersiveJourney({
-  products,
-}: {
-  products: Product[];
-}) {
+export default function MobileImmersiveJourney() {
   const journeyRef = useRef<HTMLElement>(null);
   const walkRef = useRef<MobileWalkTransitionHandle>(null);
   const activeIndexRef = useRef(0);
@@ -246,7 +242,7 @@ export default function MobileImmersiveJourney({
     setAnnouncement(`Now viewing ${MOBILE_SCENE_LABELS[index]}`);
     window.dispatchEvent(
       new CustomEvent("ruined:home-scene-change", {
-        detail: { id, hash, index },
+        detail: { id, hash, index, atLobby: index === 0 },
       })
     );
   }, []);
@@ -482,13 +478,14 @@ export default function MobileImmersiveJourney({
   const roomSelections: readonly ReactNode[] = [
     <JourneyLobbyIndex
       key="lobby-selections"
-      products={products}
-      projects={[]}
       events={EVENTS}
     />,
     <JourneyComingSoon key="store-selections" section="store" />,
     <JourneyComingSoon key="work-selections" section="artifacts" />,
-    <JourneyComingSoon key="about-selections" section="about" />,
+    <JourneyAboutStatement
+      key="about-statement"
+      headingId="mobile-journey-about-statement-heading"
+    />,
   ];
 
   return (

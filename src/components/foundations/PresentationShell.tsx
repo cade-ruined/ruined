@@ -942,6 +942,7 @@ function ResponsibilityMoment({
         </div>
         <input
           className={styles.responsibilityRange}
+          data-cursor-native
           type="range"
           min="0"
           max="100"

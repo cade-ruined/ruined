@@ -27,6 +27,11 @@ test("the immersive walk uses one direct five-stop vocabulary", async () => {
   assert.match(mobile, /Swipe to walk/);
   assert.match(mobile, /setHasWalked\(true\)/);
   assert.match(desktop, /useDesktopJourneyScene/);
+  assert.match(desktop, /function roomLabelArrival/);
+  assert.match(desktop, /roomLabelArrival\(bands\.lobby, 0\.2\)/);
+  assert.match(desktop, /roomLabelArrival\(bands\.store, 0\.4\)/);
+  assert.match(desktop, /roomLabelArrival\(bands\.records, 0\.6\)/);
+  assert.match(desktop, /const atLobby = nextIndex === 0 && value <= 0\.002/);
   assert.doesNotMatch(desktop, /data-journey-room-rail/);
   assert.doesNotMatch(desktop, /<JourneySectionHero/);
   assert.match(desktop, /<h2 className="sr-only">\{room\.headline\}<\/h2>/);

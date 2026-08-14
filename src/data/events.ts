@@ -24,7 +24,7 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 12 }, (_, index) => {
     time: "8:00 AM",
     location: "Tibble Fork Reservoir · Up on the hill",
     admission: "",
-    summary: "",
+    summary: "Bring Your Own (Bell or bodyweight).",
     image: "/events/byob-key-art.png",
     status: "Upcoming",
   };

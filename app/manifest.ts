@@ -10,7 +10,13 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#080605",
     theme_color: "#080605",
-    icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }],
+    icons: [
+      {
+        src: "/favicon-ruined-mark-v2.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+    ],
     screenshots: [
       {
         src: SEQUENCE_OPENING_FRAME,

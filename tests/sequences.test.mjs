@@ -290,6 +290,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
     homePage,
     desktop,
     bootstrap,
+    eventsIndex,
   ] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "MobileImmersiveJourney.tsx"),
@@ -324,6 +325,10 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
     ),
     fs.readFile(
       path.join(root, "src", "components", "ImmersiveParallax.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
+      path.join(root, "src", "components", "events", "EventsIndex.tsx"),
       "utf8"
     ),
   ]);
@@ -380,29 +385,51 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(journey, /fire-stream-loop-mobile\.mp4/);
   assert.match(journey, /<JourneyComingSoon key="store-selections" section="store"/);
   assert.match(journey, /<JourneyComingSoon key="work-selections" section="artifacts"/);
-  assert.match(journey, /<JourneyComingSoon key="about-selections" section="about"/);
+  assert.match(journey, /<JourneyAboutStatement[\s\S]*key="about-statement"[\s\S]*headingId="mobile-journey-about-statement-heading"/);
   assert.match(journey, /JourneyEventsIndex/);
   assert.match(journey, /JourneyLobbyIndex/);
+  assert.match(journey, /atLobby: index === 0/);
   assert.match(journey, /roomSelections/);
   assert.doesNotMatch(journey, /Enter Ruined|Begin the walk/);
-  assert.match(homePage, /MobileImmersiveJourney products=\{products\}/);
+  assert.match(homePage, /<MobileImmersiveJourney \/>/);
   assert.match(desktop, /LobbyOpeningOverlay/);
   assert.match(desktop, /<JourneyLobbyIndex/);
+  assert.match(desktop, /<JourneyAboutStatement headingId="desktop-journey-about-heading"/);
   assert.doesNotMatch(desktop, /kicker=/);
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
-  assert.match(indexes, /const product = products\[0\]/);
-  assert.match(indexes, /const project = projects\[0\]/);
   assert.match(indexes, /const event = events\[0\]/);
   const lobbyIndex = indexes.slice(
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
   );
   assert.match(lobbyIndex, /fetchPriority="low"/);
+  assert.match(lobbyIndex, /key: "what-is-this"/);
+  assert.match(lobbyIndex, /href: "#about"/);
+  assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
+  assert.match(lobbyIndex, /onClick=\{\(event\) => requestWalkRoom\(event, selection\.href!\)\}/);
+  assert.match(indexes, /new CustomEvent\("ruined:home-scene-request"/);
+  assert.match(indexes, /if \(!window\.dispatchEvent\(request\)\) event\.preventDefault\(\)/);
+  assert.match(lobbyIndex, /image: "\/media\/what-is-this\.webp"/);
+  assert.match(lobbyIndex, /key: "meet-the-cast"/);
+  assert.match(lobbyIndex, /video: "\/media\/meet-the-cast\.mp4"/);
+  assert.match(lobbyIndex, /href: "https:\/\/www\.instagram\.com\/theruinedproject\/"/);
+  assert.match(lobbyIndex, /muted[\s\S]*loop[\s\S]*autoPlay[\s\S]*playsInline/);
+  assert.match(lobbyIndex, /target=\{selection\.external \? "_blank" : undefined\}/);
+  assert.match(lobbyIndex, /className="journey-card-title/);
   assert.match(indexes, /products\.slice\(0, 3\)/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /events\.slice\(0, 3\)/);
   assert.match(indexes, /href=\{`\/community#\$\{event\.id\}`\}/);
+  assert.match(indexes, /event\.dateTime\.startsWith\("2026-08-14"\)/);
+  assert.match(indexes, /data-event-dimmed=\{isAugustLaunchEvent \? undefined : "true"\}/);
+  assert.match(indexes, /!isAugustLaunchEvent && \(/);
+  assert.match(indexes, /group-hover:bg-black\/45 group-focus-visible:bg-black\/45/);
+  assert.match(eventsIndex, /window\.location\.hash\.slice\(1\)/);
+  assert.match(eventsIndex, /setSelectedId\(event\.id\)/);
+  assert.match(eventsIndex, /setMonthCursor\(new Date\(year, month - 1, 1\)\)/);
+  assert.match(eventsIndex, /aria-pressed=\{event \? active : undefined\}/);
+  assert.match(eventsIndex, /aria-live="polite"/);
   assert.match(journey, /setSettledIndex\(index\)/);
   assert.match(journey, /settledIndex === activeIndex/);
   assert.match(journey, /locationFrame = requestAnimationFrame/);
@@ -417,10 +444,13 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(header, /role="dialog"/);
   assert.match(header, /aria-modal="true"/);
   assert.match(header, /event\.key !== "Escape"/);
-  assert.match(header, /GLOBAL_MENU_ITEMS\.map/);
+  assert.match(header, /WALK_MENU_ITEMS\.map/);
   assert.match(header, /ExploreGlyph index=\{item\.glyphIndex\}/);
   assert.doesNotMatch(header, /MOBILE_DIRECT_ITEMS|ruined-mobile-nav-fab/);
   assert.match(desktop, /useDesktopJourneyScene/);
+  assert.match(desktop, /roomLabelArrival\(bands\.lobby, 0\.2\)/);
+  assert.match(desktop, /roomLabelArrival\(bands\.store, 0\.4\)/);
+  assert.match(desktop, /roomLabelArrival\(bands\.records, 0\.6\)/);
   assert.doesNotMatch(desktop, /data-journey-room-rail/);
   assert.match(indexes, /data-journey-section-hero=\{room\.id\}/);
   assert.match(indexes, /room\.headline/);
@@ -671,7 +701,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
     ),
   ]);
 
-  assert.match(header, /GLOBAL_MENU_ITEMS\.map/);
+  assert.match(header, /WALK_MENU_ITEMS\.map/);
   assert.match(header, /ruined-header-rail/);
   assert.match(header, /ruined-header-menu-trigger/);
   assert.match(header, /ruined-header-search-trigger/);
@@ -680,7 +710,8 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(header, /role="dialog"/);
   assert.match(header, /aria-modal="true"/);
   assert.match(header, /aria-haspopup="dialog"/);
-  assert.match(header, /item\.id === SITE_ROUTES\.home\.id \? "\/#top" : item\.href/);
+  assert.match(header, /href=\{item\.href\}/);
+  assert.match(header, /handleWalkLink\(event, item\)/);
   assert.doesNotMatch(
     header,
     /MOBILE_DIRECT_ITEMS|ruined-mobile-nav|feConvolveMatrix|navigationOpen|font-mono|monospace/
@@ -732,6 +763,8 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(searchRoute, /searchSite\(products, query\)/);
   assert.match(navigation, /export const GLOBAL_NAV_ITEMS/);
   assert.match(navigation, /export const GLOBAL_MENU_ITEMS/);
+  assert.match(navigation, /export const WALK_MENU_ITEMS = EXPLORE_ROOMS/);
+  assert.match(navigation, /export const WALK_SECTION_ITEMS = EXPLORE_ROOMS\.slice\(1\)/);
   assert.match(navigation, /SITE_ROUTES\.store/);
   assert.match(navigation, /SITE_ROUTES\.work/);
   assert.match(navigation, /SITE_ROUTES\.about/);
@@ -756,6 +789,12 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(footer, /FOOTER_INDEX_ITEMS/);
   assert.match(footer, /SERVICE_NAV_ITEMS/);
   assert.match(footer, /pathname === "\/"/);
+  assert.match(desktop, /WALK_SECTION_ITEMS\.map/);
+  assert.doesNotMatch(desktop, /GLOBAL_NAV_ITEMS\.map/);
+  for (const href of ["/#store", "/#work", "/#about", "/#events"]) {
+    assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
+  }
+  assert.match(searchDialog, /href="\/#store"[\s\S]*Browse the shop instead/);
   assert.doesNotMatch(`${styles}\n${bootstrap}`, /any-pointer: coarse/);
   assert.doesNotMatch(desktop, /<JourneySectionHero/);
   assert.match(indexes, /const JOURNEY_GRID_CLASS/);
@@ -780,6 +819,53 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(checkout, /createCheckoutUrl\(lines\)/);
   assert.match(shopify, /variants\(first: 100\)/);
   assert.match(products, /variants: localVariants/);
+});
+
+test("launch navigation keeps dormant section routes out of visitor-facing links", async () => {
+  const [navigation, footer, desktop, search, searchData, siblingNav, header] = await Promise.all([
+    fs.readFile(path.join(root, "src", "data", "navigation.ts"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "SiteFooter.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "search", "UniversalSearch.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "data", "search.ts"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "SiblingNav.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
+  ]);
+
+  assert.match(navigation, /export const WALK_SECTION_ITEMS = EXPLORE_ROOMS\.slice\(1\)/);
+  assert.match(navigation, /FOOTER_INDEX_ITEMS = \[[\s\S]*\.\.\.WALK_SECTION_ITEMS,[\s\S]*SITE_ROUTES\.contact/);
+  assert.match(footer, /FOOTER_INDEX_ITEMS/);
+  assert.match(desktop, /WALK_SECTION_ITEMS\.map/);
+  assert.doesNotMatch(desktop, /GLOBAL_NAV_ITEMS\.map/);
+  assert.match(search, /href="\/#store"[\s\S]*Browse the shop instead/);
+  assert.match(siblingNav, /WALK_SECTION_ITEMS\.map/);
+  assert.match(siblingNav, /href=\{room\.href\}/);
+
+  for (const href of ["/#store", "/#work", "/#about", "/#events"]) {
+    assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
+  }
+  assert.match(searchData, /href: `\/community#\$\{event\.id\}`/);
+  assert.match(navigation, /SERVICE_NAV_ITEMS = \[[\s\S]*SITE_ROUTES\.privacy/);
+  assert.doesNotMatch(
+    navigation.slice(
+      navigation.indexOf("export const SERVICE_NAV_ITEMS"),
+      navigation.indexOf("export const EXPLORE_ROOM_IDS")
+    ),
+    /shippingReturns|SITE_ROUTES\.terms/
+  );
+  assert.doesNotMatch(searchData, /href: "\/(?:shipping-returns|terms)"/);
+  assert.doesNotMatch(header, />Shipping \+ Returns</);
+});
+
+test("BYOB explains what guests should bring", async () => {
+  const [events, eventsIndex] = await Promise.all([
+    fs.readFile(path.join(root, "src", "data", "events.ts"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "events", "EventsIndex.tsx"), "utf8"),
+  ]);
+
+  assert.match(events, /summary: "Bring Your Own \(Bell or bodyweight\)\."/);
+  assert.match(eventsIndex, /selected\?\.summary/);
+  assert.match(eventsIndex, /\{selected\.summary\}/);
 });
 
 test("the handwritten system uses CadeHandy2 with the original face retained", async () => {
@@ -845,6 +931,67 @@ test("the padded final wordmark is deployed across branded surfaces", async () =
     foundationStyles,
     /\.entryWordmark img \{[^}]*filter: brightness\(0\) invert\(1\);/s
   );
+});
+
+test("the botanical mark owns the favicon and fine-pointer cursor", async () => {
+  const [layout, cursor, siteStyles, icon, pinned, brandAssets] = await Promise.all([
+    fs.readFile(path.join(root, "app", "layout.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "components", "BrandCursor.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "styles", "index.css"), "utf8"),
+    fs.readFile(path.join(root, "public", "favicon-ruined-mark-v2.svg"), "utf8"),
+    fs.readFile(path.join(root, "public", "safari-pinned-tab.svg"), "utf8"),
+    fs.readFile(path.join(root, "scripts", "gen-brand-assets.mjs"), "utf8"),
+  ]);
+
+  assert.match(layout, /<BrandCursor \/>/);
+  assert.match(layout, /favicon-ruined-mark-v2\.svg/);
+  assert.match(layout, /mask-icon[\s\S]*color: "#080605"/);
+  assert.match(cursor, /\(hover: hover\) and \(pointer: fine\)/);
+  assert.match(cursor, /event\.pointerType !== "mouse"/);
+  assert.match(cursor, /data-interactive/);
+  assert.match(cursor, /data-cursor-native/);
+  assert.match(siteStyles, /#00a9a1/);
+  assert.match(siteStyles, /#bb204f/);
+  assert.match(
+    siteStyles,
+    /data-interactive[^}]*mark--teal \{[^}]*opacity: 0\.62;[^}]*translate3d\(-2px, 1px, 0\);/s
+  );
+  assert.match(
+    siteStyles,
+    /data-interactive[^}]*mark--magenta \{[^}]*opacity: 0\.62;[^}]*translate3d\(2px, -1px, 0\);/s
+  );
+  assert.doesNotMatch(siteStyles, /ruined-cursor-(?:teal|magenta)-glitch/);
+  assert.match(siteStyles, /prefers-reduced-motion: reduce/);
+  assert.match(icon, /<rect width="64" height="64" fill="#080605"/);
+  assert.match(icon, /M283\.824,342\.559/);
+  assert.match(pinned, /M283\.824,342\.559/);
+  assert.match(brandAssets, /--icons-only/);
+  for (const file of [
+    "public/favicon-ruined-mark-v2.png",
+    "public/apple-touch-icon-ruined-mark-v2.png",
+  ]) {
+    const metadata = await sharp(path.join(root, file)).metadata();
+    assert.equal(metadata.format, "png");
+    assert.equal(metadata.width, file.includes("apple") ? 180 : 512);
+    assert.equal(metadata.height, file.includes("apple") ? 180 : 512);
+  }
+});
+
+test("the Lobby note never blocks its three destination cards", async () => {
+  const popup = await fs.readFile(
+    path.join(root, "src", "components", "LobbyPopupSequence.tsx"),
+    "utf8"
+  );
+
+  assert.doesNotMatch(popup, /interactionRef|aria-label=\{open \? "Come in"/);
+  assert.doesNotMatch(popup, /fixed inset-0 z-\[30\]/);
+  assert.match(popup, /window\.addEventListener\("wheel", wheel, \{ passive: false, capture: true \}\)/);
+  assert.match(popup, /window\.addEventListener\("touchmove", touchMove, \{ passive: false, capture: true \}\)/);
+  assert.match(popup, /window\.addEventListener\("pointermove", pointerMove, true\)/);
+  assert.match(popup, /window\.addEventListener\("click", suppressSwipeClick, true\)/);
+  assert.match(popup, /window\.addEventListener\("ruined:home-scene-request", requestScene\)/);
+  assert.match(popup, /aria-label="Come in"/);
+  assert.match(popup, /pointer-events-auto absolute/);
 });
 
 test("production route boundaries and metadata files exist", async () => {

@@ -54,7 +54,7 @@ export default function AboutIndex() {
                 <Info label="Location" value="Utah · 40.4633° N" />
                 <Info label="Structure" value="Independent / project collaborators" />
                 <Info label="Availability" value="Selected commissions" />
-                <Info label="Contact" value="studio@ruined.studio" />
+                <Info label="Contact" value="connect@theruinedproject.com" />
               </dl>
             </div>
           </div>

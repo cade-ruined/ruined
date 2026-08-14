@@ -8,7 +8,7 @@ const CREDITS: { label: string; value: string }[] = [
   { label: "Est.", value: "RU / MMXXVI" },
   { label: "Studio", value: "No. 17" },
   { label: "Loc.", value: "— / —" },
-  { label: "Contact", value: "hello@ruined.studio" },
+  { label: "Contact", value: "connect@theruinedproject.com" },
 ];
 
 export default function AboutSection() {

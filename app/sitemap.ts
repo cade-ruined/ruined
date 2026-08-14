@@ -1,18 +1,30 @@
 import type { MetadataRoute } from "next";
-import { PRODUCTS } from "@/data/products";
-import { PROJECTS, projectSlug } from "@/data/projects";
+import { SITE_URL } from "@/lib/site";
+import { getShopPolicies } from "@/lib/shopify";
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ruined.studio";
-  const paths = [
-    "", "/store", ...PRODUCTS.map((product) => `/store/${product.id}`),
-    "/work", ...PROJECTS.map((project) => `/work/${projectSlug(project)}`),
-    "/community", "/about", "/foundations", "/contact", "/shipping-returns", "/terms", "/privacy",
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const { shipping, terms } = await getShopPolicies();
+  const routes: Array<{
+    path: string;
+    changeFrequency: NonNullable<MetadataRoute.Sitemap[number]["changeFrequency"]>;
+    priority: number;
+  }> = [
+    { path: "", changeFrequency: "weekly", priority: 1 },
+    { path: "/about", changeFrequency: "monthly", priority: 0.9 },
+    { path: "/community", changeFrequency: "weekly", priority: 0.9 },
+    { path: "/contact", changeFrequency: "yearly", priority: 0.6 },
+    { path: "/privacy", changeFrequency: "yearly", priority: 0.4 },
+    ...(terms
+      ? [{ path: "/terms", changeFrequency: "yearly", priority: 0.4 } as const]
+      : []),
+    ...(shipping
+      ? [{ path: "/shipping-returns", changeFrequency: "yearly", priority: 0.4 } as const]
+      : []),
   ];
-  return paths.map((path, index) => ({
-    url: `${base}${path}`,
-    lastModified: new Date(),
-    changeFrequency: index < 6 ? "weekly" : "monthly",
-    priority: index === 0 ? 1 : 0.8,
+
+  return routes.map(({ path, changeFrequency, priority }) => ({
+    url: `${SITE_URL}${path}`,
+    changeFrequency,
+    priority,
   }));
 }

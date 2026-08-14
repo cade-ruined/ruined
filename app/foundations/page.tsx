@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description:
     "Ruined Foundations — a shared beginning through Story, Philosophy, Culture, and Commitment.",
   alternates: { canonical: "/foundations" },
+  robots: { index: false, follow: false },
   openGraph: {
     title: "Ruined Foundations",
     description:

@@ -17,10 +17,11 @@ import UniversalSearch from "@/components/search/UniversalSearch";
 import BagLink from "@/components/store/BagLink";
 import {
   EXPLORE_ROOMS,
-  GLOBAL_MENU_ITEMS,
   SITE_ROUTES,
+  WALK_MENU_ITEMS,
   activeGlobalNavigationId,
   sectionLocatorForPathname,
+  type ExploreRoom,
 } from "@/data/navigation";
 
 const MENU_ID = "site-navigation-menu";
@@ -150,7 +151,10 @@ export default function SiteHeader() {
     }
   };
 
-  const handleWalkLink = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+  const handleWalkLink = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    room: ExploreRoom = EXPLORE_ROOMS[0]
+  ) => {
     if (isHome) closeMenu();
     else closeMenuForNavigation();
     if (
@@ -166,7 +170,7 @@ export default function SiteHeader() {
 
     const request = new CustomEvent("ruined:home-scene-request", {
       cancelable: true,
-      detail: { hash: "#top", index: 0 },
+      detail: { hash: room.hash, index: room.sceneIndex },
     });
     if (!window.dispatchEvent(request)) event.preventDefault();
   };
@@ -277,22 +281,17 @@ export default function SiteHeader() {
 
               <div className="ruined-site-menu-content">
                 <nav aria-label="Site destinations" className="ruined-site-menu-nav">
-                  {GLOBAL_MENU_ITEMS.map((item, index) => {
-                    const active =
-                      item.id === SITE_ROUTES.home.id
-                        ? isHome
-                        : activeGlobalId === item.id;
+                  {WALK_MENU_ITEMS.map((item, index) => {
+                    const active = isHome
+                      ? homeSceneIndex === item.sceneIndex
+                      : activeGlobalId === item.id;
                     return (
                       <Link
                         key={item.id}
                         ref={index === 0 ? firstMenuItemRef : undefined}
-                        href={item.id === SITE_ROUTES.home.id ? "/#top" : item.href}
+                        href={item.href}
                         aria-current={active ? "page" : undefined}
-                        onClick={
-                          item.id === SITE_ROUTES.home.id
-                            ? handleWalkLink
-                            : closeMenuForNavigation
-                        }
+                        onClick={(event) => handleWalkLink(event, item)}
                         className={active ? "is-active" : undefined}
                       >
                         <span className="ruined-site-menu-number" aria-hidden="true">
@@ -313,9 +312,6 @@ export default function SiteHeader() {
                 <div className="ruined-site-menu-secondary">
                   <Link href={SITE_ROUTES.contact.href} onClick={closeMenuForNavigation}>
                     Contact
-                  </Link>
-                  <Link href={SITE_ROUTES.shippingReturns.href} onClick={closeMenuForNavigation}>
-                    Shipping + Returns
                   </Link>
                 </div>
               </div>
