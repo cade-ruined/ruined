@@ -22,6 +22,8 @@ test("production metadata uses the brand domain and restrained positioning", asy
   assert.match(env, /NEXT_PUBLIC_SITE_URL=https:\/\/www\.theruinedproject\.com/);
   assert.match(layout, /A Creative Company in Alpine, Utah/);
   assert.match(layout, /Ruined refines potential into identity/);
+  assert.match(layout, /openGraph:[\s\S]*title: SITE_NAME/);
+  assert.match(layout, /twitter:[\s\S]*title: SITE_NAME/);
   assert.doesNotMatch(layout, /keywords:/);
   assert.match(layout, /"@type": "PostalAddress"/);
   assert.match(layout, /https:\/\/www\.instagram\.com\/theruinedproject/);

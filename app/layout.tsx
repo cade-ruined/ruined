@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
-    title: "Ruined — A Creative Company in Alpine, Utah",
+    title: SITE_NAME,
     description: SITE_DESC,
     url: SITE_URL,
     images: [
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ruined — A Creative Company in Alpine, Utah",
+    title: SITE_NAME,
     description: SITE_DESC,
     images: ["/twitter-image.jpg"],
   },
