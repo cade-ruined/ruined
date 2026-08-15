@@ -303,6 +303,40 @@ test("mobile popup frames keep the note animation portrait and lightweight", asy
   assert.ok(totalBytes < 2 * 1024 * 1024, "mobile popup frames exceed 2 MB");
 });
 
+test("responsive journey has no tablet or hybrid-input fallthrough", async () => {
+  const [contract, bootstrap, journey, popup, indexes, comingSoon] =
+    await Promise.all([
+      fs.readFile(path.join(root, "src", "utils", "immersiveExperience.ts"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "ImmersiveParallax.tsx"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "MobileImmersiveJourney.tsx"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "LobbyPopupSequence.tsx"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"), "utf8"),
+      fs.readFile(path.join(root, "src", "components", "sequence", "JourneyComingSoon.tsx"), "utf8"),
+    ]);
+
+  for (const pattern of [
+    /min-width: 1025px/,
+    /max-width: 1024px/,
+    /hover: none/,
+    /pointer: coarse/,
+    /max-width: 1366px/,
+    /any-pointer: coarse/,
+    /desktop\.matches && !stage\.matches/,
+  ]) assert.match(contract, pattern);
+  assert.match(bootstrap, /@media \$\{DESKTOP_EXPERIENCE_QUERY\}/);
+  assert.match(bootstrap, /@media \$\{MOBILE_STAGE_QUERY\}/);
+  assert.match(journey, /immersiveExperienceMediaQueries/);
+  assert.match(journey, /isMobileStageExperience/);
+  assert.match(popup, /mobileFramesRef\.current = isMobileStageExperience\(\)/);
+  assert.match(popup, /framePath\(bounded, mobileFramesRef\.current\)/);
+  assert.match(journey, /max-width: min\(42rem, 92dvh\)/);
+  assert.match(journey, /onPointerMove=\{handlePointerMove\}/);
+  assert.match(journey, /onClickCapture=\{handleClickCapture\}/);
+  assert.doesNotMatch(journey, /"a, button, input, select, textarea/);
+  assert.match(indexes, /text-\[clamp\(0\.78rem,2\.2vw,1\.25rem\)\]/);
+  assert.match(comingSoon, /text-\[clamp\(2\.25rem,6vw,3\.75rem\)\]/);
+});
+
 test("mobile stage combines canonical arrivals with in-place walk frames", async () => {
   const [
     journey,
@@ -426,7 +460,8 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
   );
-  assert.match(lobbyIndex, /fetchPriority="low"/);
+  assert.match(lobbyIndex, /priority=\{selection\.key === "what-is-this"\}/);
+  assert.match(lobbyIndex, /fetchPriority=\{selection\.key === "what-is-this" \? "high" : "low"\}/);
   assert.match(lobbyIndex, /key: "what-is-this"/);
   assert.match(lobbyIndex, /href: "#about"/);
   assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
@@ -818,7 +853,8 @@ test("the showroom resolves into a direct catalogue and conventional global util
     assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
   }
   assert.match(searchDialog, /href="\/#store"[\s\S]*Browse the shop instead/);
-  assert.doesNotMatch(`${styles}\n${bootstrap}`, /any-pointer: coarse/);
+  assert.doesNotMatch(styles, /any-pointer: coarse/);
+  assert.match(bootstrap, /MOBILE_STAGE_QUERY/);
   assert.doesNotMatch(desktop, /<JourneySectionHero/);
   assert.match(indexes, /const JOURNEY_GRID_CLASS/);
   assert.match(indexes, /const JOURNEY_CARD_CLASS/);
@@ -891,21 +927,26 @@ test("BYOB explains what guests should bring", async () => {
   assert.match(eventsIndex, /\{selected\.summary\}/);
 });
 
-test("the handwritten system uses CadeHandy2 with the original face retained", async () => {
-  const [fontFaces, theme, header, landingStyles] = await Promise.all([
+test("the handwritten system preloads CadeHandy2 with the original face retained", async () => {
+  const [fontFaces, theme, header, layout, landingStyles] = await Promise.all([
     fs.readFile(path.join(root, "src", "styles", "fonts.css"), "utf8"),
     fs.readFile(path.join(root, "src", "styles", "theme.css"), "utf8"),
     fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
+    fs.readFile(path.join(root, "app", "layout.tsx"), "utf8"),
     fs.readFile(path.join(root, "app", "lp", "lp.module.css"), "utf8"),
   ]);
 
   await fs.access(path.join(root, "public", "fonts", "CadeHandy2.otf"));
   await fs.access(path.join(root, "public", "fonts", "CadeHandy.otf"));
-  assert.match(fontFaces, /font-family: "CadeHandy2"/);
-  assert.match(fontFaces, /url\("\/fonts\/CadeHandy2\.otf"\)/);
+  assert.doesNotMatch(fontFaces, /font-family: "CadeHandy2"/);
+  assert.match(layout, /import localFont from "next\/font\/local"/);
+  assert.match(layout, /src: "\.\.\/public\/fonts\/CadeHandy2\.otf"/);
+  assert.match(layout, /variable: "--font-cadehandy2"/);
+  assert.match(layout, /preload: true/);
+  assert.match(layout, /className=\{cadeHandy2\.variable\}/);
   assert.match(
     theme,
-    /--font-handwritten: "CadeHandy2", "CadeHandy", "Bradley Hand"/
+    /--font-handwritten: var\(--font-cadehandy2\), "CadeHandy", "Bradley Hand"/
   );
   assert.match(header, /ruined-section-locator/);
   assert.match(landingStyles, /\.footer div \{[\s\S]*?flex-wrap: wrap;/);
@@ -1001,44 +1042,65 @@ test("the botanical mark owns the favicon and fine-pointer cursor", async () => 
 });
 
 test("the Lobby note owns one opening gesture and the full paper enters", async () => {
-  const [popup, packageJson] = await Promise.all([
+  const [popup, packageJson, popupBuild] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "LobbyPopupSequence.tsx"),
       "utf8"
     ),
     fs.readFile(path.join(root, "package.json"), "utf8"),
+    fs.readFile(path.join(root, "scripts", "build-popup-mobile.mjs"), "utf8"),
   ]);
 
   assert.match(popup, /type PopupPhase = "dismissed" \| "ready" \| "opening" \| "locked" \| "closing"/);
-  assert.match(popup, /MOBILE_POPUP_QUERY/);
+  assert.match(popup, /isMobileStageExperience/);
+  assert.match(popup, /mobileFramesRef/);
   assert.match(popup, /sequences\/popup\$\{mobile \? "\/mobile" : ""\}/);
   assert.doesNotMatch(popup, /touchGestureRef|addEventListener\("touch(?:start|move|end|cancel)"/);
   assert.match(popup, /window\.addEventListener\("pointerdown", pointerDown, true\)/);
   assert.match(popup, /window\.addEventListener\("pointermove", pointerMove, true\)/);
   assert.match(popup, /not prevent the default[\s\S]*event\.stopImmediatePropagation\(\);/i);
   assert.match(popup, /verticalDistance < 28/);
-  assert.match(popup, /window\.addEventListener\("click", suppressSwipeClick, true\)/);
+  assert.match(popup, /if \(gesture\.opened\) \{[\s\S]*event\.stopImmediatePropagation\(\);[\s\S]*return;/);
+  assert.match(popup, /phaseRef\.current !== "locked"\) openFromSwipe\(\)/);
+  assert.match(popup, /window\.addEventListener\("click", handleClick, true\)/);
+  assert.match(popup, /armClickSuppression\(500\)/);
+  assert.match(popup, /if \(phaseRef\.current === "opening"\)[\s\S]*event\.stopImmediatePropagation\(\);/);
+  assert.match(popup, /if \(phaseRef\.current === "locked"\)[\s\S]*enterLobby\(\);/);
   assert.match(popup, /phaseRef\.current === "closing"/);
   assert.match(popup, /cancelAnimationFrame\(animationFrameRef\.current\)/);
   assert.match(popup, /imagesRef\.current\.clear\(\)/);
   assert.match(popup, /for \(let index = 1; index <= OPEN_FRAME; index \+= 1\)/);
   assert.match(popup, /for \(let index = CLOSE_START_FRAME; index < FRAME_COUNT; index \+= 1\)/);
+  assert.match(popup, /NOTE_LOCK_SRC = "\/sequences\/popup\/note-lock\.webp\?v=1"/);
+  assert.match(popup, /lockImage\.decode\(\)\.then\(markReady, markReady\)/);
+  assert.match(popup, /phase === "locked" && lockImageReady \? "invisible" : "visible"/);
+  assert.match(popup, /phaseRef\.current === "locked"\) enterLobby\(\)/);
+  assert.match(popup, /window\.addEventListener\("hashchange", syncLocation\)/);
+  assert.match(popup, /window\.addEventListener\("pageshow", syncLocation\)/);
   assert.match(popup, /aria-label="Come in"[\s\S]*fixed left-\[49\.8%\][\s\S]*<NextImage/);
+  assert.match(popup, /src=\{NOTE_LOCK_SRC\}[\s\S]*unoptimized/);
   assert.match(popup, /aria-hidden="true"[\s\S]*pointer-events-none absolute left-\[54%\]/);
   assert.doesNotMatch(popup, /fixed inset-0 z-\[30\]/);
   assert.match(popup, /window\.addEventListener\("ruined:home-scene-request", requestScene\)/);
   assert.match(packageJson, /build-popup-mobile\.mjs/);
+  assert.match(popupBuild, /LOCK_SOURCE = path\.join\(POPUP_ROOT, "note-lock\.png"\)/);
+  assert.match(popupBuild, /LOCK_OUTPUT = path\.join\(POPUP_ROOT, "note-lock\.webp"\)/);
+  assert.match(popupBuild, /alphaQuality: 100/);
 });
 
 test("desktop wheel gestures settle on one room waypoint", async () => {
-  const desktop = await fs.readFile(
-    path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
-    "utf8"
-  );
+  const [desktop, header] = await Promise.all([
+    fs.readFile(
+      path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
+      "utf8"
+    ),
+    fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
+  ]);
 
   assert.match(desktop, /DESKTOP_WHEEL_TRIGGER_PX = 40/);
   assert.match(desktop, /DESKTOP_WHEEL_ANIMATION_MS = 900/);
   assert.match(desktop, /const desktopWheelStops = useMemo/);
+  assert.match(desktop, /useDesktopJourneyScene\(\{ progress: scrollYProgress, stops: journeyRoomStops \}\)/);
   assert.match(desktop, /storeArrivalB\?\.count \? storeArrivalB\.playEnd/);
   assert.match(desktop, /eventsArrivalB\?\.count \? eventsArrivalB\.playEnd/);
   assert.match(desktop, /const targetStopIndex = \(progress: number, direction: number\)/);
@@ -1046,6 +1108,8 @@ test("desktop wheel gestures settle on one room waypoint", async () => {
   assert.match(desktop, /event\.preventDefault\(\);[\s\S]*accumulatedDelta \+= delta/);
   assert.match(desktop, /window\.addEventListener\("wheel", onWheel, \{ passive: false \}\)/);
   assert.match(desktop, /window\.addEventListener\("hashchange", cancelNavigation\)/);
+  assert.match(header, /syncHeader\(undefined, false\)/);
+  assert.match(header, /window\.addEventListener\("scroll", scheduleHeaderSolidSync/);
 });
 
 test("mobile fire waits for buffered motion and recovers from interruption", async () => {

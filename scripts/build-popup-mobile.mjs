@@ -10,6 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
 const POPUP_ROOT = path.join(REPO_ROOT, "public", "sequences", "popup");
 const OUTPUT_ROOT = path.join(POPUP_ROOT, "mobile");
+const LOCK_SOURCE = path.join(POPUP_ROOT, "note-lock.png");
+const LOCK_OUTPUT = path.join(POPUP_ROOT, "note-lock.webp");
 const WIDTH = 608;
 const HEIGHT = 1080;
 const QUALITY = 84;
@@ -67,14 +69,45 @@ async function buildFrame(index) {
   return true;
 }
 
+async function buildLockImage() {
+  try {
+    const [sourceStat, outputStat, metadata] = await Promise.all([
+      fs.stat(LOCK_SOURCE),
+      fs.stat(LOCK_OUTPUT),
+      sharp(LOCK_OUTPUT).metadata(),
+    ]);
+    if (
+      outputStat.mtimeMs >= sourceStat.mtimeMs &&
+      metadata.width === 1122 &&
+      metadata.height === 1402 &&
+      metadata.format === "webp"
+    ) {
+      return false;
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  await sharp(LOCK_SOURCE)
+    .webp({
+      quality: 92,
+      alphaQuality: 100,
+      smartSubsample: true,
+      effort: 6,
+    })
+    .toFile(LOCK_OUTPUT);
+  return true;
+}
+
 async function main() {
   await fs.mkdir(OUTPUT_ROOT, { recursive: true });
   let built = 0;
   for (const index of usedFrames) {
     if (await buildFrame(index)) built += 1;
   }
+  const builtLock = await buildLockImage();
   console.log(
-    `Popup mobile frames ready: ${usedFrames.length} at ${WIDTH}x${HEIGHT} (${built} rebuilt).`
+    `Popup mobile frames ready: ${usedFrames.length} at ${WIDTH}x${HEIGHT} (${built} rebuilt); lock ${builtLock ? "rebuilt" : "ready"}.`
   );
 }
 

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
@@ -34,6 +35,10 @@ import {
   sequenceAssetFocalX,
   sequenceFocalMediaStyle,
 } from "@/utils/sequenceFraming";
+import {
+  immersiveExperienceMediaQueries,
+  isMobileStageExperience,
+} from "@/utils/immersiveExperience";
 
 type MobileScene = {
   id: Exclude<MobileSceneId, "events">;
@@ -64,9 +69,8 @@ const MOBILE_SCENES = [
   },
 ] as const satisfies readonly MobileScene[];
 
-const MOBILE_STAGE_QUERY =
-  "(max-width: 767px), ((max-width: 1024px) and (hover: none) and (pointer: coarse))";
 const SWIPE_DISTANCE_PX = 52;
+const SWIPE_INTENT_PX = 18;
 const MOBILE_FIRESIDE_SRC = versionSequenceAsset(
   "/sequences/fireside/fire-stream-loop-mobile.mp4"
 );
@@ -79,6 +83,7 @@ type GestureStart = {
   pointerId: number;
   x: number;
   y: number;
+  swiping: boolean;
 };
 
 function MobileRoomScene({
@@ -337,6 +342,8 @@ export default function MobileImmersiveJourney() {
   const pendingIndexRef = useRef<number | null>(null);
   const wheelCooldownUntilRef = useRef(0);
   const gestureRef = useRef<GestureStart | null>(null);
+  const suppressClickRef = useRef(false);
+  const suppressClickTimerRef = useRef(0);
   const navigateRef = useRef<(index: number) => void>(() => undefined);
   const [activeIndex, setActiveIndex] = useState(0);
   const [settledIndex, setSettledIndex] = useState(0);
@@ -427,9 +434,9 @@ export default function MobileImmersiveJourney() {
   }, [setScene]);
 
   useLayoutEffect(() => {
-    const media = window.matchMedia(MOBILE_STAGE_QUERY);
+    const media = immersiveExperienceMediaQueries();
     const syncStage = () => {
-      const enabled = media.matches;
+      const enabled = isMobileStageExperience();
       stageEnabledRef.current = enabled;
       setStageEnabled(enabled);
       document.documentElement.classList.toggle(
@@ -440,10 +447,10 @@ export default function MobileImmersiveJourney() {
       if (enabled) window.scrollTo({ top: 0, behavior: "auto" });
     };
     syncStage();
-    media.addEventListener("change", syncStage);
+    media.forEach((query) => query.addEventListener("change", syncStage));
     return () => {
       stageEnabledRef.current = false;
-      media.removeEventListener("change", syncStage);
+      media.forEach((query) => query.removeEventListener("change", syncStage));
       document.documentElement.classList.remove("ruined-mobile-stage-active");
       document.body.classList.remove("ruined-mobile-stage-active");
     };
@@ -510,7 +517,7 @@ export default function MobileImmersiveJourney() {
         !event.isPrimary ||
         (event.pointerType === "mouse" && event.button !== 0) ||
         target.closest(
-          "a, button, input, select, textarea, [role='button']"
+          "input, select, textarea, [contenteditable='true']"
         ) ||
         (internalScroller &&
           internalScroller.scrollHeight > internalScroller.clientHeight)
@@ -521,8 +528,36 @@ export default function MobileImmersiveJourney() {
         pointerId: event.pointerId,
         x: event.clientX,
         y: event.clientY,
+        swiping: false,
       };
-      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    []
+  );
+
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const start = gestureRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+      const verticalDistance = Math.abs(start.y - event.clientY);
+      const horizontalDistance = Math.abs(start.x - event.clientX);
+      if (
+        start.swiping ||
+        verticalDistance < SWIPE_INTENT_PX ||
+        verticalDistance <= horizontalDistance * 1.2
+      ) {
+        if (start.swiping) event.preventDefault();
+        return;
+      }
+
+      start.swiping = true;
+      event.preventDefault();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Older Safari builds can reject capture during an active touch. The
+        // stage still fills the viewport, so the bubbled pointerup remains a
+        // valid gesture endpoint.
+      }
     },
     []
   );
@@ -534,6 +569,14 @@ export default function MobileImmersiveJourney() {
       if (!start || start.pointerId !== event.pointerId) return;
       const verticalDistance = start.y - event.clientY;
       const horizontalDistance = Math.abs(start.x - event.clientX);
+      if (start.swiping) {
+        suppressClickRef.current = true;
+        window.clearTimeout(suppressClickTimerRef.current);
+        suppressClickTimerRef.current = window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 500);
+        event.preventDefault();
+      }
       if (
         Math.abs(verticalDistance) < SWIPE_DISTANCE_PX ||
         Math.abs(verticalDistance) <= horizontalDistance * 1.2
@@ -543,6 +586,22 @@ export default function MobileImmersiveJourney() {
       requestOffset(verticalDistance > 0 ? 1 : -1);
     },
     [requestOffset]
+  );
+
+  const handleClickCapture = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (!suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      window.clearTimeout(suppressClickTimerRef.current);
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    []
+  );
+
+  useEffect(
+    () => () => window.clearTimeout(suppressClickTimerRef.current),
+    []
   );
 
   const handleWheel = useCallback(
@@ -621,11 +680,13 @@ export default function MobileImmersiveJourney() {
       className="ruined-mobile-journey"
       tabIndex={0}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={() => {
         gestureRef.current = null;
       }}
       onWheel={handleWheel}
+      onClickCapture={handleClickCapture}
       onKeyDown={handleKeyDown}
     >
       <h1 id="mobile-journey-heading" className="sr-only">
@@ -938,10 +999,13 @@ export default function MobileImmersiveJourney() {
         .ruined-mobile-scene__selection,
         .ruined-mobile-closing__selection {
           width: 100%;
+          max-width: min(42rem, 92vh);
+          max-width: min(42rem, 92dvh);
+          margin-inline: auto;
         }
 
         .ruined-mobile-scene__selection {
-          margin: 0 0 1rem;
+          margin: 0 auto 1rem;
         }
 
         .ruined-mobile-closing__selection {

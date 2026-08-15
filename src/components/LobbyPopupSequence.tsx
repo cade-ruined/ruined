@@ -2,18 +2,15 @@
 
 import NextImage from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isMobileStageExperience } from "@/utils/immersiveExperience";
 
 const FRAME_COUNT = 129;
 const OPEN_FRAME = 31;
 // Frames 93–114 in the source are a baked hold. Start on source frame 115 so
 // the paper begins folding on the same instant the lock frame crossfades.
 const CLOSE_START_FRAME = 114;
-const MOBILE_POPUP_QUERY =
-  "(max-width: 767px), ((max-width: 1024px) and (hover: none) and (pointer: coarse))";
-const framePath = (index: number) => {
-  const mobile =
-    typeof window !== "undefined" &&
-    window.matchMedia(MOBILE_POPUP_QUERY).matches;
+const NOTE_LOCK_SRC = "/sequences/popup/note-lock.webp?v=1";
+const framePath = (index: number, mobile: boolean) => {
   const root = `/sequences/popup${mobile ? "/mobile" : ""}`;
   return index === OPEN_FRAME
     ? `${root}/open-frame-lossless.webp?v=2`
@@ -26,6 +23,7 @@ export default function LobbyPopupSequence() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
   const imagesRef = useRef(new Map<number, HTMLImageElement>());
+  const mobileFramesRef = useRef(true);
   const animationFrameRef = useRef(0);
   const pointerGestureRef = useRef<{
     id: number;
@@ -37,6 +35,7 @@ export default function LobbyPopupSequence() {
   const leftLobbyRef = useRef(false);
   const phaseRef = useRef<PopupPhase>("dismissed");
   const [phase, setPhaseState] = useState<PopupPhase>("dismissed");
+  const [lockImageReady, setLockImageReady] = useState(false);
   const visible = phase !== "dismissed";
 
   const setPhase = useCallback((nextPhase: PopupPhase) => {
@@ -77,7 +76,7 @@ export default function LobbyPopupSequence() {
     if (existing) return existing;
     const image = new Image();
     image.decoding = "async";
-    image.src = framePath(bounded);
+    image.src = framePath(bounded, mobileFramesRef.current);
     image.onload = () => {
       if (frameRef.current === bounded) draw(bounded);
     };
@@ -150,6 +149,7 @@ export default function LobbyPopupSequence() {
   const reset = useCallback(() => {
     cancelAnimation();
     releaseFrames();
+    mobileFramesRef.current = isMobileStageExperience();
     frameRef.current = 0;
     pointerGestureRef.current = null;
     suppressClickRef.current = false;
@@ -171,10 +171,50 @@ export default function LobbyPopupSequence() {
   }, [cancelAnimation, releaseFrames, setPhase]);
 
   useEffect(() => {
-    const inLobby = !window.location.hash || window.location.hash === "#top";
-    if (!inLobby) return;
-    reset();
-  }, [reset]);
+    let active = true;
+    const lockImage = new Image();
+    const markReady = () => {
+      if (active) setLockImageReady(true);
+    };
+    lockImage.decoding = "async";
+    lockImage.onload = () => {
+      if (typeof lockImage.decode === "function") {
+        void lockImage.decode().then(markReady, markReady);
+      } else {
+        markReady();
+      }
+    };
+    lockImage.src = NOTE_LOCK_SRC;
+    if (lockImage.complete && lockImage.naturalWidth) markReady();
+    return () => {
+      active = false;
+      lockImage.onload = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncLocation = () => {
+      const inLobby = !window.location.hash || window.location.hash === "#top";
+      if (!inLobby) {
+        leftLobbyRef.current = true;
+        hide();
+        return;
+      }
+      if (leftLobbyRef.current || phaseRef.current === "dismissed") {
+        leftLobbyRef.current = false;
+        reset();
+      }
+    };
+    syncLocation();
+    window.addEventListener("hashchange", syncLocation);
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener("pageshow", syncLocation);
+    return () => {
+      window.removeEventListener("hashchange", syncLocation);
+      window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener("pageshow", syncLocation);
+    };
+  }, [hide, reset]);
 
   useEffect(() => {
     const syncScene = (event: Event) => {
@@ -230,15 +270,17 @@ export default function LobbyPopupSequence() {
       if (phaseRef.current === "closing") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      openFromSwipe();
+      // A trackpad emits a train of inertial wheel events. Only the first may
+      // open the note; later events must not dismiss the newly locked paper.
+      if (phaseRef.current !== "locked") openFromSwipe();
     };
     let clickResetTimer = 0;
-    const armClickSuppression = () => {
+    const armClickSuppression = (duration = 2500) => {
       suppressClickRef.current = true;
       window.clearTimeout(clickResetTimer);
       clickResetTimer = window.setTimeout(() => {
         suppressClickRef.current = false;
-      }, 500);
+      }, duration);
     };
     const pointerDown = (event: PointerEvent) => {
       if (
@@ -262,28 +304,54 @@ export default function LobbyPopupSequence() {
     const pointerMove = (event: PointerEvent) => {
       const gesture = pointerGestureRef.current;
       if (!gesture || gesture.id !== event.pointerId) return;
+      if (gesture.opened) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const verticalDistance = Math.abs(gesture.y - event.clientY);
       const horizontalDistance = Math.abs(gesture.x - event.clientX);
-      if (!gesture.opened && (verticalDistance < 28 || verticalDistance <= horizontalDistance * 1.1)) return;
+      if (verticalDistance < 28 || verticalDistance <= horizontalDistance * 1.1) return;
       gesture.opened = true;
       armClickSuppression();
       event.preventDefault();
       event.stopImmediatePropagation();
-      openFromSwipe();
+      if (phaseRef.current === "locked") enterLobby();
+      else openFromSwipe();
     };
     const pointerEnd = (event: PointerEvent) => {
       const gesture = pointerGestureRef.current;
       if (!gesture || gesture.id !== event.pointerId) return;
       pointerGestureRef.current = null;
       if (!gesture.opened) return;
+      // Keep the synthetic click suppressed after long, slow swipes too. The
+      // opening gesture may outlast the initial safety timer on real devices.
+      armClickSuppression(500);
       event.preventDefault();
       event.stopImmediatePropagation();
     };
-    const suppressSwipeClick = (event: MouseEvent) => {
-      if (!suppressClickRef.current) return;
-      suppressClickRef.current = false;
-      event.preventDefault();
-      event.stopImmediatePropagation();
+    const handleClick = (event: MouseEvent) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+
+      // Ready-state cards stay fully interactive. Once the opening gesture has
+      // committed, however, no click may fall through to the cards behind the
+      // paper. While locked, the whole viewport is a forgiving "come in"
+      // target; during the brief opening animation, clicks are simply held.
+      if (phaseRef.current === "opening") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (phaseRef.current === "locked") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        enterLobby();
+      }
     };
     resize();
     window.addEventListener("resize", resize);
@@ -292,7 +360,7 @@ export default function LobbyPopupSequence() {
     window.addEventListener("pointermove", pointerMove, true);
     window.addEventListener("pointerup", pointerEnd, true);
     window.addEventListener("pointercancel", pointerEnd, true);
-    window.addEventListener("click", suppressSwipeClick, true);
+    window.addEventListener("click", handleClick, true);
     return () => {
       window.removeEventListener("resize", resize);
       window.removeEventListener("wheel", wheel, true);
@@ -300,15 +368,15 @@ export default function LobbyPopupSequence() {
       window.removeEventListener("pointermove", pointerMove, true);
       window.removeEventListener("pointerup", pointerEnd, true);
       window.removeEventListener("pointercancel", pointerEnd, true);
-      window.removeEventListener("click", suppressSwipeClick, true);
+      window.removeEventListener("click", handleClick, true);
       window.clearTimeout(clickResetTimer);
     };
-  }, [draw, openFromSwipe, visible]);
+  }, [draw, enterLobby, openFromSwipe, visible]);
 
   if (!visible) return null;
   return (
     <>
-      <canvas ref={canvasRef} aria-hidden="true" className={`pointer-events-none fixed inset-0 z-[25] h-full w-full transition-opacity duration-150 ${phase === "locked" ? "invisible" : "visible"}`} />
+      <canvas ref={canvasRef} aria-hidden="true" className={`pointer-events-none fixed inset-0 z-[25] h-full w-full transition-opacity duration-150 ${phase === "locked" && lockImageReady ? "invisible" : "visible"}`} />
       {(phase === "locked" || phase === "closing") && (
         <button
           type="button"
@@ -318,12 +386,14 @@ export default function LobbyPopupSequence() {
           className={`fixed left-[49.8%] top-[50.9%] z-[26] aspect-[1126/1397] w-[50vh] -translate-x-1/2 -translate-y-1/2 appearance-none border-0 bg-transparent p-0 transition-opacity duration-[420ms] ease-out ${phase === "closing" ? "pointer-events-none opacity-0" : "pointer-events-auto cursor-pointer opacity-100"}`}
         >
           <NextImage
-            src="/sequences/popup/note-lock.png"
+            src={NOTE_LOCK_SRC}
             alt=""
             fill
             priority
+            unoptimized
             sizes="50vh"
-            className="object-contain"
+            onLoad={() => setLockImageReady(true)}
+            className={`object-contain transition-opacity duration-150 ${lockImageReady ? "opacity-100" : "opacity-0"}`}
           />
           <span
             aria-hidden="true"

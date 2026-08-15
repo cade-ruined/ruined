@@ -177,19 +177,20 @@ export function JourneyLobbyIndex({
               alt={selection.alt}
               fill
               sizes="(min-width: 640px) 18rem, 28vw"
-              fetchPriority="low"
+              priority={selection.key === "what-is-this"}
+              fetchPriority={selection.key === "what-is-this" ? "high" : "low"}
               className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
             />
           )}
           <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/5 to-black/35" />
-          <span className="absolute left-2 top-2 bg-black/90 px-1.5 py-1 font-sans text-[0.4rem] font-medium uppercase tracking-[0.16em] text-[var(--color-signal)] sm:left-3 sm:top-3 sm:text-[0.5rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 bg-black/90 px-1.5 py-1 font-sans text-[clamp(0.4rem,0.9vw,0.5rem)] font-medium uppercase tracking-[0.16em] text-[var(--color-signal)] sm:left-3 sm:top-3 sm:tracking-[0.2em]">
             {selection.realm}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3">
-            <strong className="journey-card-title block text-[0.78rem] leading-[0.95] text-white sm:text-xl">
+            <strong className="journey-card-title block text-[clamp(0.78rem,2.2vw,1.25rem)] leading-[0.95] text-white">
               {selection.title}
             </strong>
-            <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[0.38rem] uppercase leading-tight tracking-[0.08em] text-white/60 sm:text-[0.48rem] sm:tracking-[0.12em]">
+            <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[clamp(0.38rem,0.9vw,0.48rem)] uppercase leading-tight tracking-[0.08em] text-white/60 sm:tracking-[0.12em]">
               <span>{selection.meta}</span>
               {selection.href && <span className="shrink-0 text-white/80 transition-transform group-hover:translate-x-1">↗</span>}
             </span>
@@ -243,15 +244,15 @@ export function JourneyStoreIndex({ products }: { products: Product[] }) {
             />
           )}
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
             {index === 0 ? "Featured · " : ""}
             {product.code}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
+            <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
               {product.name}
             </strong>
-            <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+            <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
               <span>{product.price}</span>
             </span>
           </span>
@@ -282,15 +283,15 @@ export function JourneyWorkIndex({ projects }: { projects: Project[] }) {
             />
           )}
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
             {index === 0 ? "Featured · " : ""}
             RU / {project.no}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
+            <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
               {project.title}
             </strong>
-            <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+            <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
               <span>
                 {project.medium} · {project.year}
               </span>
@@ -339,14 +340,14 @@ export function JourneyAboutIndex() {
             className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
           />
           <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
             {selection.label}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
+            <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
               {selection.title}
             </strong>
-            <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+            <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
               <span>{selection.meta}</span>
             </span>
           </span>
@@ -384,14 +385,14 @@ export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
                 className="pointer-events-none absolute inset-0 bg-black/55 transition-colors duration-300 group-hover:bg-black/45 group-focus-visible:bg-black/45"
               />
             )}
-            <span className="absolute left-2 top-2 font-sans text-[0.4rem] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:text-[0.52rem] sm:tracking-[0.2em]">
+            <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
               {index === 0 ? "Featured · " : ""}0{index + 1}
             </span>
             <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-              <strong className="journey-card-title block text-[0.62rem] leading-tight text-white sm:text-lg">
+              <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
                 {event.title}
               </strong>
-              <span className="mt-1 flex items-center justify-between font-sans text-[0.4rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[0.52rem] sm:tracking-[0.16em]">
+              <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
                 <span>{event.date}</span>
                 <span className="transition-transform group-hover:translate-x-1">↗</span>
               </span>

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import "@/styles/index.css";
 import SiteHeader from "@/components/SiteHeader";
 import WebVitals from "@/components/WebVitals";
@@ -6,6 +7,15 @@ import SiteFooter from "@/components/SiteFooter";
 import BrandCursor from "@/components/BrandCursor";
 import { SITE_URL } from "@/lib/site";
 import "@fontsource-variable/inter";
+
+const cadeHandy2 = localFont({
+  src: "../public/fonts/CadeHandy2.otf",
+  variable: "--font-cadehandy2",
+  display: "swap",
+  preload: true,
+  weight: "400",
+  style: "normal",
+});
 
 const SITE_NAME = "Ruined";
 const SITE_DESC =
@@ -86,7 +96,11 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={cadeHandy2.variable}
+    >
       <body>
         <a href="#main-content" className="ruined-skip-link">
           Skip to content

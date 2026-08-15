@@ -22,7 +22,7 @@ export default function JourneyAboutStatement({
           </h2>
         </header>
 
-        <div className="space-y-3 text-[0.72rem] leading-[1.55] text-white/76 sm:text-sm sm:leading-relaxed">
+        <div className="space-y-3 text-[clamp(0.72rem,1.5vw,0.875rem)] leading-[1.55] text-white/76 sm:leading-relaxed">
           <p>
             Ruined exists to refine potential into identity. We believe what we
             become is shaped by what we choose to keep, change, and create. That

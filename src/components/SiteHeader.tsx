@@ -64,12 +64,20 @@ export default function SiteHeader() {
     }
 
     let frame = 0;
-    const syncHeader = (hash = window.location.hash || "#top") => {
+    const syncHeader = (
+      hash = window.location.hash || "#top",
+      syncSceneFromHash = true
+    ) => {
       setHeaderSolid(window.scrollY > 24 || hash !== "#top");
+      if (!syncSceneFromHash) return;
       const sceneIndex = EXPLORE_ROOMS.findIndex((room) => room.hash === hash);
       if (sceneIndex >= 0) setHomeSceneIndex(sceneIndex);
     };
-    const scheduleHeaderSync = () => {
+    const scheduleHeaderSolidSync = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => syncHeader(undefined, false));
+    };
+    const scheduleLocationSync = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => syncHeader());
     };
@@ -82,13 +90,13 @@ export default function SiteHeader() {
     };
 
     syncHeader();
-    window.addEventListener("scroll", scheduleHeaderSync, { passive: true });
-    window.addEventListener("hashchange", scheduleHeaderSync);
+    window.addEventListener("scroll", scheduleHeaderSolidSync, { passive: true });
+    window.addEventListener("hashchange", scheduleLocationSync);
     window.addEventListener("ruined:home-scene-change", syncScene);
     return () => {
       cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", scheduleHeaderSync);
-      window.removeEventListener("hashchange", scheduleHeaderSync);
+      window.removeEventListener("scroll", scheduleHeaderSolidSync);
+      window.removeEventListener("hashchange", scheduleLocationSync);
       window.removeEventListener("ruined:home-scene-change", syncScene);
     };
   }, [isHome]);

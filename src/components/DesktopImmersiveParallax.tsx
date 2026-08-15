@@ -632,7 +632,10 @@ export default function DesktopImmersiveParallax({
     ],
     [bands]
   );
-  useDesktopJourneyScene({ progress: p, stops: journeyRoomStops });
+  // Wayfinding follows the actual scroll position rather than the softened
+  // visual spring. A spring can settle a fraction before an exact arrival and
+  // leave a fully revealed Store panel labelled Lobby on some devices.
+  useDesktopJourneyScene({ progress: scrollYProgress, stops: journeyRoomStops });
 
   const desktopWheelStops = useMemo(() => {
     const candidates = [

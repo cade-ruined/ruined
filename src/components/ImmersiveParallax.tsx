@@ -19,9 +19,13 @@ import {
   sequenceAssetFocalX,
   sequenceFocalBoxGeometry,
 } from "@/utils/sequenceFraming";
+import {
+  DESKTOP_EXPERIENCE_QUERY,
+  MOBILE_STAGE_QUERY,
+  immersiveExperienceMediaQueries,
+  isDesktopImmersiveExperience,
+} from "@/utils/immersiveExperience";
 
-const DESKTOP_EXPERIENCE_QUERY =
-  "(min-width: 768px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
 const DESKTOP_JOURNEY_RETRY_BASE_MS = 400;
 const DESKTOP_JOURNEY_RETRY_MAX_MS = 4_000;
 const HOME_HASHES = new Set(["#top", "#store", "#work", "#about", "#events"]);
@@ -38,7 +42,7 @@ type ReadyDesktopJourney = {
 };
 
 function desktopMediaQueries() {
-  return [window.matchMedia(DESKTOP_EXPERIENCE_QUERY)];
+  return immersiveExperienceMediaQueries();
 }
 
 function subscribeToDesktopExperience(onStoreChange: () => void) {
@@ -50,8 +54,7 @@ function subscribeToDesktopExperience(onStoreChange: () => void) {
 }
 
 function getDesktopExperienceSnapshot() {
-  const [desktop] = desktopMediaQueries();
-  return desktop.matches;
+  return isDesktopImmersiveExperience();
 }
 
 function getServerDesktopExperienceSnapshot() {
@@ -189,7 +192,7 @@ export default function ImmersiveParallax({
             display: none;
           }
 
-          @media (min-width: 768px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+          @media ${DESKTOP_EXPERIENCE_QUERY} {
             .ruined-responsive-static-journey {
               display: none;
             }
@@ -228,6 +231,19 @@ export default function ImmersiveParallax({
               z-index: 1;
               width: min(calc(100% - 2rem), 56rem);
               margin-inline: auto;
+            }
+          }
+
+          /* Compact hybrid devices can report a fine primary pointer while a
+             touchscreen remains available. The stage query wins so an iPad
+             never receives the desktop bootstrap or falls through to pages. */
+          @media ${MOBILE_STAGE_QUERY} {
+            .ruined-responsive-static-journey {
+              display: block;
+            }
+
+            .ruined-desktop-sequence-bootstrap {
+              display: none;
             }
           }
         `}</style>
