@@ -2,29 +2,13 @@
 
 import NextImage from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isMobileStageExperience } from "@/utils/immersiveExperience";
 
-const FRAME_COUNT = 129;
-const OPEN_FRAME = 31;
-// Frames 93–114 in the source are a baked hold. Start on source frame 115 so
-// the paper begins folding on the same instant the lock frame crossfades.
-const CLOSE_START_FRAME = 114;
 const NOTE_LOCK_SRC = "/sequences/popup/note-lock.webp?v=1";
-const framePath = (index: number, mobile: boolean) => {
-  const root = `/sequences/popup${mobile ? "/mobile" : ""}`;
-  return index === OPEN_FRAME
-    ? `${root}/open-frame-lossless.webp?v=2`
-    : `${root}/frame-${String(index + 1).padStart(4, "0")}.webp?v=5`;
-};
+const DISMISS_DURATION_MS = 180;
 
-type PopupPhase = "dismissed" | "ready" | "opening" | "locked" | "closing";
+type PopupPhase = "dismissed" | "ready" | "locked" | "closing";
 
 export default function LobbyPopupSequence() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const frameRef = useRef(0);
-  const imagesRef = useRef(new Map<number, HTMLImageElement>());
-  const mobileFramesRef = useRef(true);
-  const animationFrameRef = useRef(0);
   const pointerGestureRef = useRef<{
     id: number;
     x: number;
@@ -34,8 +18,9 @@ export default function LobbyPopupSequence() {
   const suppressClickRef = useRef(false);
   const leftLobbyRef = useRef(false);
   const phaseRef = useRef<PopupPhase>("dismissed");
+  const dismissalTimerRef = useRef(0);
   const [phase, setPhaseState] = useState<PopupPhase>("dismissed");
-  const [lockImageReady, setLockImageReady] = useState(false);
+  const [paperReady, setPaperReady] = useState(false);
   const visible = phase !== "dismissed";
 
   const setPhase = useCallback((nextPhase: PopupPhase) => {
@@ -43,154 +28,42 @@ export default function LobbyPopupSequence() {
     setPhaseState(nextPhase);
   }, []);
 
-  const cancelAnimation = useCallback(() => {
-    if (!animationFrameRef.current) return;
-    cancelAnimationFrame(animationFrameRef.current);
-    animationFrameRef.current = 0;
+  const clearDismissalTimer = useCallback(() => {
+    if (!dismissalTimerRef.current) return;
+    window.clearTimeout(dismissalTimerRef.current);
+    dismissalTimerRef.current = 0;
   }, []);
 
-  const releaseFrames = useCallback(() => {
-    imagesRef.current.forEach((image) => {
-      image.onload = null;
-    });
-    imagesRef.current.clear();
-  }, []);
-
-  const draw = useCallback((index: number) => {
-    const canvas = canvasRef.current;
-    const image = imagesRef.current.get(index);
-    if (!canvas || !image?.complete || !image.naturalWidth) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-    const width = image.naturalWidth * scale;
-    const height = image.naturalHeight * scale;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
-    canvas.style.opacity = String(index > FRAME_COUNT - 14 ? (FRAME_COUNT - 1 - index) / 12 : 1);
-  }, []);
-
-  const loadFrame = useCallback((index: number) => {
-    const bounded = Math.max(0, Math.min(FRAME_COUNT - 1, index));
-    const existing = imagesRef.current.get(bounded);
-    if (existing) return existing;
-    const image = new Image();
-    image.decoding = "async";
-    image.src = framePath(bounded, mobileFramesRef.current);
-    image.onload = () => {
-      if (frameRef.current === bounded) draw(bounded);
-    };
-    imagesRef.current.set(bounded, image);
-    return image;
-  }, [draw]);
-
-  const openFromSwipe = useCallback(() => {
+  const revealPaper = useCallback(() => {
     if (phaseRef.current !== "ready") return;
-    cancelAnimation();
-    setPhase("opening");
-    const initialFrame = frameRef.current;
-    const startedAt = performance.now();
-    const duration = 720;
-    const animate = (now: number) => {
-      if (phaseRef.current !== "opening") return;
-      const progress = Math.min(1, (now - startedAt) / duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const index = Math.round(initialFrame + eased * (OPEN_FRAME - initialFrame));
-      frameRef.current = index;
-      loadFrame(index);
-      draw(index);
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-        return;
-      }
-      animationFrameRef.current = 0;
-      frameRef.current = OPEN_FRAME;
-      draw(OPEN_FRAME);
-      setPhase("locked");
-
-      // The lossless lock image takes over here. Drop the opening sequence
-      // before staging only the short closing run so mobile browsers never
-      // retain both decoded sequences at the same time.
-      releaseFrames();
-      for (let index = CLOSE_START_FRAME; index < FRAME_COUNT; index += 1) {
-        loadFrame(index);
-      }
-    };
-    animationFrameRef.current = requestAnimationFrame(animate);
-  }, [cancelAnimation, draw, loadFrame, releaseFrames, setPhase]);
+    setPhase("locked");
+  }, [setPhase]);
 
   const enterLobby = useCallback(() => {
     if (phaseRef.current !== "locked") return;
-    cancelAnimation();
+    clearDismissalTimer();
     setPhase("closing");
-    frameRef.current = CLOSE_START_FRAME;
-    loadFrame(CLOSE_START_FRAME);
-    draw(CLOSE_START_FRAME);
-    const startedAt = performance.now();
-    const duration = 560;
-    const animate = (now: number) => {
-      if (phaseRef.current !== "closing") return;
-      const progress = Math.min(1, (now - startedAt) / duration);
-      const index = Math.round(CLOSE_START_FRAME + progress * (FRAME_COUNT - 1 - CLOSE_START_FRAME));
-      frameRef.current = index;
-      loadFrame(index);
-      draw(index);
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-        return;
-      }
-      animationFrameRef.current = 0;
-      releaseFrames();
+    dismissalTimerRef.current = window.setTimeout(() => {
+      dismissalTimerRef.current = 0;
       setPhase("dismissed");
-    };
-    animationFrameRef.current = requestAnimationFrame(animate);
-  }, [cancelAnimation, draw, loadFrame, releaseFrames, setPhase]);
+    }, DISMISS_DURATION_MS);
+  }, [clearDismissalTimer, setPhase]);
 
   const reset = useCallback(() => {
-    cancelAnimation();
-    releaseFrames();
-    mobileFramesRef.current = isMobileStageExperience();
-    frameRef.current = 0;
+    clearDismissalTimer();
     pointerGestureRef.current = null;
     suppressClickRef.current = false;
+    setPaperReady(false);
     setPhase("ready");
-    loadFrame(0);
-    for (let index = 1; index <= OPEN_FRAME; index += 1) loadFrame(index);
-    animationFrameRef.current = requestAnimationFrame(() => {
-      animationFrameRef.current = 0;
-      if (phaseRef.current === "ready") draw(0);
-    });
-  }, [cancelAnimation, draw, loadFrame, releaseFrames, setPhase]);
+  }, [clearDismissalTimer, setPhase]);
 
   const hide = useCallback(() => {
-    cancelAnimation();
-    releaseFrames();
+    clearDismissalTimer();
     pointerGestureRef.current = null;
     suppressClickRef.current = false;
+    setPaperReady(false);
     setPhase("dismissed");
-  }, [cancelAnimation, releaseFrames, setPhase]);
-
-  useEffect(() => {
-    let active = true;
-    const lockImage = new Image();
-    const markReady = () => {
-      if (active) setLockImageReady(true);
-    };
-    lockImage.decoding = "async";
-    lockImage.onload = () => {
-      if (typeof lockImage.decode === "function") {
-        void lockImage.decode().then(markReady, markReady);
-      } else {
-        markReady();
-      }
-    };
-    lockImage.src = NOTE_LOCK_SRC;
-    if (lockImage.complete && lockImage.naturalWidth) markReady();
-    return () => {
-      active = false;
-      lockImage.onload = null;
-    };
-  }, []);
+  }, [clearDismissalTimer, setPhase]);
 
   useEffect(() => {
     const syncLocation = () => {
@@ -249,31 +122,23 @@ export default function LobbyPopupSequence() {
     };
   }, [hide, reset]);
 
-  useEffect(() => () => {
-    cancelAnimation();
-    releaseFrames();
-  }, [cancelAnimation, releaseFrames]);
+  useEffect(() => () => clearDismissalTimer(), [clearDismissalTimer]);
 
   useEffect(() => {
     if (!visible) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(window.innerWidth * dpr);
-      canvas.height = Math.round(window.innerHeight * dpr);
-      draw(Math.round(frameRef.current));
-    };
+
     const wheel = (event: WheelEvent) => {
-      // Once the user has chosen to enter, do not swallow their next gesture.
-      // The closing animation may finish over the beginning of the walk.
+      // Once the paper is leaving, the next deliberate gesture belongs to the
+      // immersive journey rather than this overlay.
       if (phaseRef.current === "closing") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      // A trackpad emits a train of inertial wheel events. Only the first may
-      // open the note; later events must not dismiss the newly locked paper.
-      if (phaseRef.current !== "locked") openFromSwipe();
+
+      // Trackpads emit a train of inertial wheel events. The first reveals the
+      // paper; later events are swallowed until the user dismisses it.
+      if (phaseRef.current === "ready") revealPaper();
     };
+
     let clickResetTimer = 0;
     const armClickSuppression = (duration = 2500) => {
       suppressClickRef.current = true;
@@ -282,6 +147,7 @@ export default function LobbyPopupSequence() {
         suppressClickRef.current = false;
       }, duration);
     };
+
     const pointerDown = (event: PointerEvent) => {
       if (
         phaseRef.current === "closing" ||
@@ -295,12 +161,11 @@ export default function LobbyPopupSequence() {
         opened: false,
       };
 
-      // The popup gets first refusal on a drag, so the mobile journey cannot
-      // record the same pointerdown and advance to Store. We deliberately do
-      // not prevent the default: an unmoved tap still produces its normal
-      // click on a Lobby card or on the paper button.
+      // The popup gets first refusal on a drag so the journey cannot consume
+      // the same pointerdown. An unmoved tap can still activate Lobby cards.
       event.stopImmediatePropagation();
     };
+
     const pointerMove = (event: PointerEvent) => {
       const gesture = pointerGestureRef.current;
       if (!gesture || gesture.id !== event.pointerId) return;
@@ -316,20 +181,19 @@ export default function LobbyPopupSequence() {
       armClickSuppression();
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (phaseRef.current === "locked") enterLobby();
-      else openFromSwipe();
+      if (phaseRef.current === "ready") revealPaper();
     };
+
     const pointerEnd = (event: PointerEvent) => {
       const gesture = pointerGestureRef.current;
       if (!gesture || gesture.id !== event.pointerId) return;
       pointerGestureRef.current = null;
       if (!gesture.opened) return;
-      // Keep the synthetic click suppressed after long, slow swipes too. The
-      // opening gesture may outlast the initial safety timer on real devices.
       armClickSuppression(500);
       event.preventDefault();
       event.stopImmediatePropagation();
     };
+
     const handleClick = (event: MouseEvent) => {
       if (suppressClickRef.current) {
         suppressClickRef.current = false;
@@ -337,24 +201,12 @@ export default function LobbyPopupSequence() {
         event.stopImmediatePropagation();
         return;
       }
-
-      // Ready-state cards stay fully interactive. Once the opening gesture has
-      // committed, however, no click may fall through to the cards behind the
-      // paper. While locked, the whole viewport is a forgiving "come in"
-      // target; during the brief opening animation, clicks are simply held.
-      if (phaseRef.current === "opening") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-      if (phaseRef.current === "locked") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        enterLobby();
-      }
+      if (phaseRef.current !== "locked") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (paperReady) enterLobby();
     };
-    resize();
-    window.addEventListener("resize", resize);
+
     window.addEventListener("wheel", wheel, { passive: false, capture: true });
     window.addEventListener("pointerdown", pointerDown, true);
     window.addEventListener("pointermove", pointerMove, true);
@@ -362,7 +214,6 @@ export default function LobbyPopupSequence() {
     window.addEventListener("pointercancel", pointerEnd, true);
     window.addEventListener("click", handleClick, true);
     return () => {
-      window.removeEventListener("resize", resize);
       window.removeEventListener("wheel", wheel, true);
       window.removeEventListener("pointerdown", pointerDown, true);
       window.removeEventListener("pointermove", pointerMove, true);
@@ -371,38 +222,40 @@ export default function LobbyPopupSequence() {
       window.removeEventListener("click", handleClick, true);
       window.clearTimeout(clickResetTimer);
     };
-  }, [draw, enterLobby, openFromSwipe, visible]);
+  }, [enterLobby, paperReady, revealPaper, visible]);
 
   if (!visible) return null;
+
+  const paperVisible = phase === "locked" && paperReady;
+
   return (
-    <>
-      <canvas ref={canvasRef} aria-hidden="true" className={`pointer-events-none fixed inset-0 z-[25] h-full w-full transition-opacity duration-150 ${phase === "locked" && lockImageReady ? "invisible" : "visible"}`} />
-      {(phase === "locked" || phase === "closing") && (
-        <button
-          type="button"
-          aria-label="Come in"
-          onClick={enterLobby}
-          disabled={phase === "closing"}
-          className={`fixed left-[49.8%] top-[50.9%] z-[26] aspect-[1126/1397] w-[50vh] -translate-x-1/2 -translate-y-1/2 appearance-none border-0 bg-transparent p-0 transition-opacity duration-[420ms] ease-out ${phase === "closing" ? "pointer-events-none opacity-0" : "pointer-events-auto cursor-pointer opacity-100"}`}
-        >
-          <NextImage
-            src={NOTE_LOCK_SRC}
-            alt=""
-            fill
-            priority
-            unoptimized
-            sizes="50vh"
-            onLoad={() => setLockImageReady(true)}
-            className={`object-contain transition-opacity duration-150 ${lockImageReady ? "opacity-100" : "opacity-0"}`}
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute left-[54%] top-[75%] h-[6.5%] w-[32%] -translate-x-1/2 -translate-y-1/2 -rotate-2 rounded-[50%] border-2 border-[var(--color-poster)] shadow-[0_0_18px_rgba(214,47,43,0.28)] animate-[pulse_1.8s_ease-in-out_infinite]"
-          >
-            <span className="absolute inset-[-5px] rotate-3 rounded-[48%] border border-[var(--color-poster)]/55" />
-          </span>
-        </button>
-      )}
-    </>
+    <button
+      type="button"
+      aria-label="Come in"
+      onClick={enterLobby}
+      disabled={!paperVisible}
+      className={`fixed left-1/2 top-1/2 z-[26] aspect-[1126/1397] w-[min(50vh,92vw)] origin-center -translate-x-1/2 -translate-y-1/2 appearance-none border-0 bg-transparent p-0 transition-[opacity,transform] duration-200 ease-out ${
+        paperVisible
+          ? "pointer-events-auto scale-100 cursor-pointer opacity-100"
+          : "pointer-events-none scale-[0.985] opacity-0"
+      }`}
+    >
+      <NextImage
+        src={NOTE_LOCK_SRC}
+        alt=""
+        fill
+        priority
+        unoptimized
+        sizes="(max-width: 640px) 92vw, 50vh"
+        onLoad={() => setPaperReady(true)}
+        className="object-contain"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-[54%] top-[75%] h-[6.5%] w-[32%] -translate-x-1/2 -translate-y-1/2 -rotate-2 rounded-[50%] border-2 border-[var(--color-poster)] shadow-[0_0_18px_rgba(214,47,43,0.28)] animate-[pulse_1.8s_ease-in-out_infinite]"
+      >
+        <span className="absolute inset-[-5px] rotate-3 rounded-[48%] border border-[var(--color-poster)]/55" />
+      </span>
+    </button>
   );
 }

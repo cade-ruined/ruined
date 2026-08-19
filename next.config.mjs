@@ -59,6 +59,20 @@ const nextConfig = {
           },
         ],
       })),
+      ...[
+        "/events/byob-01-recap.mp4",
+        "/events/byob-01-recap-poster.webp",
+        "/events/byob-01/gallery/:path*",
+      ].map((source) => ({
+        source,
+        headers: [
+          {
+            key: "Cache-Control",
+            value:
+              "public, max-age=31536000, s-maxage=31536000, immutable",
+          },
+        ],
+      })),
       { source: "/(.*)", headers: securityHeaders },
     ];
   },

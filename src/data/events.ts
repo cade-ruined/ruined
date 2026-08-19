@@ -1,4 +1,24 @@
-export type StudioEvent = { id: string; title: string; eyebrow: string; date: string; dateTime: string; time: string; location: string; admission: string; summary: string; image?: string; status: "Upcoming" | "Ongoing" | "Archive" };
+import {
+  BYOB_01_GALLERY,
+  type EventGalleryImage,
+} from "@/data/eventGalleries";
+
+export type StudioEvent = {
+  id: string;
+  title: string;
+  eyebrow: string;
+  date: string;
+  dateTime: string;
+  time: string;
+  location: string;
+  admission: string;
+  summary: string;
+  image?: string;
+  video?: string;
+  videoPoster?: string;
+  gallery?: readonly EventGalleryImage[];
+  status: "Upcoming" | "Ongoing" | "Ended";
+};
 
 function secondFriday(year: number, month: number) {
   const first = new Date(Date.UTC(year, month, 1));
@@ -15,17 +35,25 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 12 }, (_, index) => {
   const day = secondFriday(year, month).getUTCDate();
   const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const number = String(index + 1).padStart(2, "0");
+  const isFirstEvent = index === 0;
   return {
     id: `byob-${number}`,
     title: `BYOB Nº ${number}`,
     eyebrow: "Monthly gathering",
     date: `${day} ${MONTHS[month]} ${year}`,
     dateTime: `${isoDate}T08:00:00`,
-    time: "8:00 AM",
-    location: "Tibble Fork Reservoir · Up on the hill",
+    time: isFirstEvent ? "8:00 AM" : "Details to come",
+    location: isFirstEvent
+      ? "Tibble Fork Reservoir · Up on the hill"
+      : "Details to come",
     admission: "",
     summary: "Bring Your Own (Bell or bodyweight).",
     image: "/events/byob-key-art.png",
-    status: "Upcoming",
+    video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : undefined,
+    videoPoster: isFirstEvent
+      ? "/events/byob-01-recap-poster.webp?v=2"
+      : undefined,
+    gallery: isFirstEvent ? BYOB_01_GALLERY : undefined,
+    status: isFirstEvent ? "Ended" : "Upcoming",
   };
 });

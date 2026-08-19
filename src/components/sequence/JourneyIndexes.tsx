@@ -115,7 +115,7 @@ export function JourneyLobbyIndex({
 }: {
   events: StudioEvent[];
 }) {
-  const event = events[0];
+  const event = events.find((candidate) => candidate.status === "Upcoming") ?? events[0];
   const selections: LobbySelection[] = [
     {
       key: "what-is-this",
@@ -144,7 +144,7 @@ export function JourneyLobbyIndex({
             href: `/community#${event.id}`,
             realm: "Community" as const,
             title: event.title,
-            meta: event.date,
+            meta: `Next available · ${event.date}`,
             image: event.image,
             alt: event.title,
           },
@@ -358,18 +358,22 @@ export function JourneyAboutIndex() {
 }
 
 export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
+  const nextAvailable = events.find((event) => event.status === "Upcoming");
+
   return (
     <div>
     <div className={JOURNEY_GRID_CLASS}>
       {events.slice(0, 3).map((event, index) => {
-        const isAugustLaunchEvent = event.dateTime.startsWith("2026-08-14");
+        const isEnded = event.status === "Ended";
+        const isNextAvailable = event.id === nextAvailable?.id;
+        const isDimmed = !isNextAvailable;
 
         return (
           <Link
             key={event.id}
             href={`/community#${event.id}`}
             className={JOURNEY_CARD_CLASS}
-            data-event-dimmed={isAugustLaunchEvent ? undefined : "true"}
+            data-event-dimmed={isDimmed ? "true" : undefined}
           >
             {event.image && <Image
               src={event.image}
@@ -379,14 +383,18 @@ export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
               className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
             />}
             <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-            {!isAugustLaunchEvent && (
+            {isDimmed && (
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 bg-black/55 transition-colors duration-300 group-hover:bg-black/45 group-focus-visible:bg-black/45"
+                className={`pointer-events-none absolute inset-0 transition-colors duration-300 group-hover:bg-black/40 group-focus-visible:bg-black/40 ${isEnded ? "bg-black/45" : "bg-black/55"}`}
               />
             )}
             <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
-              {index === 0 ? "Featured · " : ""}0{index + 1}
+              {isEnded
+                ? `Ended · 0${index + 1}`
+                : isNextAvailable
+                  ? `Available · 0${index + 1}`
+                  : `0${index + 1}`}
             </span>
             <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
               <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">

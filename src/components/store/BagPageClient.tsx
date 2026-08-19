@@ -71,7 +71,7 @@ export default function BagPageClient({ email }: { email: string }) {
     return (
       <div className="border-y border-white/15 py-16 text-center sm:py-24">
         <p className="display text-4xl sm:text-6xl">The bag is empty.</p>
-        <Link href="/store" className="mt-8 inline-flex border border-white px-6 py-4 font-mono text-[0.62rem] uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-black">
+        <Link href="/#store" className="mt-8 inline-flex border border-white px-6 py-4 font-mono text-[0.62rem] uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-black">
           View all pieces
         </Link>
       </div>

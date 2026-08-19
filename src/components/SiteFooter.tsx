@@ -33,9 +33,9 @@ export default function SiteFooter() {
         </div>
         <FooterColumn title="Index" links={FOOTER_INDEX_ITEMS} />
         <FooterColumn title="Service" links={SERVICE_NAV_ITEMS} />
-        <div>
+        <div className="min-w-0">
           <p className="font-mono text-[0.58rem] uppercase tracking-[0.3em] opacity-45">Studio</p>
-          <Link className="mt-4 block text-sm underline underline-offset-4" href="/contact">connect@theruinedproject.com</Link>
+          <Link className="mt-4 block text-[clamp(0.65rem,1.2vw,0.875rem)] underline underline-offset-4 [overflow-wrap:anywhere]" href="/contact">connect@theruinedproject.com</Link>
           <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.2em] opacity-55">40.4478° N · 111.7783° W</p>
         </div>
       </div>

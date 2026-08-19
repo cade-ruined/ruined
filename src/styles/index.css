@@ -335,6 +335,7 @@ html {
   top: 62%;
   left: 50%;
   z-index: 2;
+  pointer-events: none;
   color: var(--color-primary);
   font-family: var(--font-handwritten);
   font-size: clamp(1.9rem, 4.2vw, 2.75rem);
@@ -345,6 +346,15 @@ html {
   transform: translate(2%, 0) rotate(-5deg);
   transform-origin: top left;
   white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .ruined-section-locator {
+    font-size: clamp(0.95rem, 4.6vw, 1.3rem);
+    letter-spacing: 0;
+    transform: translate(-50%, 0.1rem) rotate(-4deg);
+    transform-origin: center;
+  }
 }
 
 @media (min-width: 768px) {

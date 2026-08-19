@@ -89,6 +89,22 @@ test("dormant Store and Artifacts routes stay out of search", async () => {
   }
 });
 
+test("the dormant Store index returns visitors to the immersive shop", async () => {
+  const [storePage, bagPage, bagClient, productPage] = await Promise.all([
+    read("app/store/page.tsx"),
+    read("app/bag/page.tsx"),
+    read("src/components/store/BagPageClient.tsx"),
+    read("app/store/[handle]/page.tsx"),
+  ]);
+
+  assert.match(storePage, /redirect\("\/#store"\)/);
+  assert.doesNotMatch(storePage, /ComingSoonGate|Store · Coming Soon/);
+  for (const source of [bagPage, bagClient, productPage]) {
+    assert.match(source, /href="\/#store"/);
+    assert.doesNotMatch(source, /href="\/store"/);
+  }
+});
+
 test("the future programme implementation stays dormant but retained", async () => {
   const futureLandingPage = await read("app/lp/future-page.tsx");
 

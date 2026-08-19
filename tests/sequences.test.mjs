@@ -327,8 +327,10 @@ test("responsive journey has no tablet or hybrid-input fallthrough", async () =>
   assert.match(bootstrap, /@media \$\{MOBILE_STAGE_QUERY\}/);
   assert.match(journey, /immersiveExperienceMediaQueries/);
   assert.match(journey, /isMobileStageExperience/);
-  assert.match(popup, /mobileFramesRef\.current = isMobileStageExperience\(\)/);
-  assert.match(popup, /framePath\(bounded, mobileFramesRef\.current\)/);
+  assert.doesNotMatch(
+    popup,
+    /isMobileStageExperience|mobileFramesRef|framePath/
+  );
   assert.match(journey, /max-width: min\(42rem, 92dvh\)/);
   assert.match(journey, /onPointerMove=\{handlePointerMove\}/);
   assert.match(journey, /onClickCapture=\{handleClickCapture\}/);
@@ -455,7 +457,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.doesNotMatch(desktop, /kicker=/);
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
-  assert.match(indexes, /const event = events\[0\]/);
+  assert.match(indexes, /events\.find\(\(candidate\) => candidate\.status === "Upcoming"\) \?\? events\[0\]/);
   const lobbyIndex = indexes.slice(
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
@@ -479,15 +481,21 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /events\.slice\(0, 3\)/);
   assert.match(indexes, /href=\{`\/community#\$\{event\.id\}`\}/);
-  assert.match(indexes, /event\.dateTime\.startsWith\("2026-08-14"\)/);
-  assert.match(indexes, /data-event-dimmed=\{isAugustLaunchEvent \? undefined : "true"\}/);
-  assert.match(indexes, /!isAugustLaunchEvent && \(/);
-  assert.match(indexes, /group-hover:bg-black\/45 group-focus-visible:bg-black\/45/);
+  assert.match(indexes, /const nextAvailable = events\.find\(\(event\) => event\.status === "Upcoming"\)/);
+  assert.match(indexes, /const isEnded = event\.status === "Ended"/);
+  assert.match(indexes, /const isNextAvailable = event\.id === nextAvailable\?\.id/);
+  assert.match(indexes, /data-event-dimmed=\{isDimmed \? "true" : undefined\}/);
+  assert.match(indexes, /`Ended · 0\$\{index \+ 1\}`/);
+  assert.match(indexes, /`Available · 0\$\{index \+ 1\}`/);
   assert.match(eventsIndex, /window\.location\.hash\.slice\(1\)/);
   assert.match(eventsIndex, /setSelectedId\(event\.id\)/);
-  assert.match(eventsIndex, /setMonthCursor\(new Date\(year, month - 1, 1\)\)/);
-  assert.match(eventsIndex, /aria-pressed=\{event \? active : undefined\}/);
+  assert.match(eventsIndex, /window\.history\.replaceState/);
+  assert.match(eventsIndex, /value=\{selected\.id\}/);
+  assert.match(eventsIndex, /if \(nextEvent\) selectEvent\(nextEvent\)/);
   assert.match(eventsIndex, /aria-live="polite"/);
+  assert.match(eventsIndex, /<details[\s\S]*<summary[\s\S]*Event details/);
+  assert.match(eventsIndex, /\{selected\.title\}[\s\S]*<video/);
+  assert.doesNotMatch(eventsIndex, /min-h-\[28rem\]/);
   assert.match(journey, /setSettledIndex\(index\)/);
   assert.match(journey, /settledIndex === activeIndex/);
   assert.match(journey, /locationFrame = requestAnimationFrame/);
@@ -923,17 +931,67 @@ test("BYOB explains what guests should bring", async () => {
   ]);
 
   assert.match(events, /summary: "Bring Your Own \(Bell or bodyweight\)\."/);
-  assert.match(eventsIndex, /selected\?\.summary/);
   assert.match(eventsIndex, /\{selected\.summary\}/);
 });
 
+test("BYOB Nº 01 is an ended recap and the next gathering stays current", async () => {
+  const [events, eventsIndex, video, videoStat, posterStat, posterMetadata] =
+    await Promise.all([
+      fs.readFile(path.join(root, "src", "data", "events.ts"), "utf8"),
+      fs.readFile(
+        path.join(root, "src", "components", "events", "EventsIndex.tsx"),
+        "utf8"
+      ),
+      fs.readFile(path.join(root, "public", "events", "byob-01-recap.mp4")),
+      fs.stat(path.join(root, "public", "events", "byob-01-recap.mp4")),
+      fs.stat(
+        path.join(root, "public", "events", "byob-01-recap-poster.webp")
+      ),
+      sharp(
+        path.join(root, "public", "events", "byob-01-recap-poster.webp")
+      ).metadata(),
+    ]);
+
+  assert.match(events, /status: isFirstEvent \? "Ended" : "Upcoming"/);
+  assert.match(events, /time: isFirstEvent \? "8:00 AM" : "Details to come"/);
+  assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);
+  assert.match(events, /\/events\/byob-01-recap-poster\.webp\?v=2/);
+  assert.match(eventsIndex, /const NEXT_AVAILABLE = EVENTS\.find/);
+  assert.match(eventsIndex, /const DEFAULT_EVENT = NEXT_AVAILABLE \?\? EVENTS\[0\]/);
+  assert.match(eventsIndex, /controls[\s\S]*playsInline[\s\S]*preload="metadata"/);
+  assert.doesNotMatch(eventsIndex, /Watch the recap/);
+  assert.match(eventsIndex, /Next available/);
+  assert.match(eventsIndex, /<optgroup label="Archive">/);
+  assert.match(eventsIndex, /<optgroup label="Upcoming">/);
+  assert.match(eventsIndex, /value=\{selected\.id\}/);
+  assert.doesNotMatch(
+    eventsIndex,
+    /calendarDays|monthCursor|Previous month|Next month/
+  );
+
+  assert.ok(videoStat.size < 10 * 1024 * 1024, "BYOB recap exceeds 10 MiB");
+  assert.ok(
+    posterStat.size < 200 * 1024,
+    "BYOB recap poster exceeds 200 KiB"
+  );
+  assert.equal(posterMetadata.width, 720);
+  assert.equal(posterMetadata.height, 1280);
+  assert.ok(video.indexOf("moov") >= 0, "MP4 has no moov atom");
+  assert.ok(video.indexOf("mdat") >= 0, "MP4 has no mdat atom");
+  assert.ok(
+    video.indexOf("moov") < video.indexOf("mdat"),
+    "MP4 is not fast-start"
+  );
+});
+
 test("the handwritten system preloads CadeHandy2 with the original face retained", async () => {
-  const [fontFaces, theme, header, layout, landingStyles] = await Promise.all([
+  const [fontFaces, theme, header, layout, landingStyles, siteStyles] = await Promise.all([
     fs.readFile(path.join(root, "src", "styles", "fonts.css"), "utf8"),
     fs.readFile(path.join(root, "src", "styles", "theme.css"), "utf8"),
     fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
     fs.readFile(path.join(root, "app", "layout.tsx"), "utf8"),
     fs.readFile(path.join(root, "app", "lp", "lp.module.css"), "utf8"),
+    fs.readFile(path.join(root, "src", "styles", "index.css"), "utf8"),
   ]);
 
   await fs.access(path.join(root, "public", "fonts", "CadeHandy2.otf"));
@@ -949,6 +1007,14 @@ test("the handwritten system preloads CadeHandy2 with the original face retained
     /--font-handwritten: var\(--font-cadehandy2\), "CadeHandy", "Bradley Hand"/
   );
   assert.match(header, /ruined-section-locator/);
+  assert.match(
+    siteStyles,
+    /\.ruined-section-locator \{[\s\S]*?pointer-events: none;/
+  );
+  assert.match(
+    siteStyles,
+    /@media \(max-width: 767px\) \{[\s\S]*?\.ruined-section-locator \{[\s\S]*?font-size: clamp\(0\.95rem, 4\.6vw, 1\.3rem\);[\s\S]*?translate\(-50%, 0\.1rem\)/
+  );
   assert.match(landingStyles, /\.footer div \{[\s\S]*?flex-wrap: wrap;/);
 });
 
@@ -1041,7 +1107,7 @@ test("the botanical mark owns the favicon and fine-pointer cursor", async () => 
   }
 });
 
-test("the Lobby note owns one opening gesture and the full paper enters", async () => {
+test("the Lobby note reveals one static paper and releases the next gesture", async () => {
   const [popup, packageJson, popupBuild] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "LobbyPopupSequence.tsx"),
@@ -1051,34 +1117,44 @@ test("the Lobby note owns one opening gesture and the full paper enters", async 
     fs.readFile(path.join(root, "scripts", "build-popup-mobile.mjs"), "utf8"),
   ]);
 
-  assert.match(popup, /type PopupPhase = "dismissed" \| "ready" \| "opening" \| "locked" \| "closing"/);
-  assert.match(popup, /isMobileStageExperience/);
-  assert.match(popup, /mobileFramesRef/);
-  assert.match(popup, /sequences\/popup\$\{mobile \? "\/mobile" : ""\}/);
+  assert.match(
+    popup,
+    /type PopupPhase = "dismissed" \| "ready" \| "locked" \| "closing"/
+  );
   assert.doesNotMatch(popup, /touchGestureRef|addEventListener\("touch(?:start|move|end|cancel)"/);
   assert.match(popup, /window\.addEventListener\("pointerdown", pointerDown, true\)/);
   assert.match(popup, /window\.addEventListener\("pointermove", pointerMove, true\)/);
-  assert.match(popup, /not prevent the default[\s\S]*event\.stopImmediatePropagation\(\);/i);
+  assert.match(
+    popup,
+    /pointerGestureRef\.current = \{[\s\S]*event\.stopImmediatePropagation\(\);/
+  );
   assert.match(popup, /verticalDistance < 28/);
   assert.match(popup, /if \(gesture\.opened\) \{[\s\S]*event\.stopImmediatePropagation\(\);[\s\S]*return;/);
-  assert.match(popup, /phaseRef\.current !== "locked"\) openFromSwipe\(\)/);
+  assert.match(popup, /phaseRef\.current === "ready"\) revealPaper\(\)/);
   assert.match(popup, /window\.addEventListener\("click", handleClick, true\)/);
   assert.match(popup, /armClickSuppression\(500\)/);
-  assert.match(popup, /if \(phaseRef\.current === "opening"\)[\s\S]*event\.stopImmediatePropagation\(\);/);
-  assert.match(popup, /if \(phaseRef\.current === "locked"\)[\s\S]*enterLobby\(\);/);
+  assert.match(
+    popup,
+    /phaseRef\.current !== "locked"\) return;[\s\S]*event\.preventDefault\(\);[\s\S]*event\.stopImmediatePropagation\(\);[\s\S]*if \(paperReady\) enterLobby\(\);/
+  );
   assert.match(popup, /phaseRef\.current === "closing"/);
-  assert.match(popup, /cancelAnimationFrame\(animationFrameRef\.current\)/);
-  assert.match(popup, /imagesRef\.current\.clear\(\)/);
-  assert.match(popup, /for \(let index = 1; index <= OPEN_FRAME; index \+= 1\)/);
-  assert.match(popup, /for \(let index = CLOSE_START_FRAME; index < FRAME_COUNT; index \+= 1\)/);
+  assert.match(popup, /DISMISS_DURATION_MS = 180/);
+  assert.match(popup, /setPhase\("closing"\)[\s\S]*setPhase\("dismissed"\)/);
   assert.match(popup, /NOTE_LOCK_SRC = "\/sequences\/popup\/note-lock\.webp\?v=1"/);
-  assert.match(popup, /lockImage\.decode\(\)\.then\(markReady, markReady\)/);
-  assert.match(popup, /phase === "locked" && lockImageReady \? "invisible" : "visible"/);
-  assert.match(popup, /phaseRef\.current === "locked"\) enterLobby\(\)/);
+  assert.match(popup, /const paperVisible = phase === "locked" && paperReady/);
+  assert.doesNotMatch(
+    popup,
+    /<canvas|FRAME_COUNT|OPEN_FRAME|CLOSE_START_FRAME|imagesRef|animationFrameRef|requestAnimationFrame|getContext\("2d"\)/
+  );
   assert.match(popup, /window\.addEventListener\("hashchange", syncLocation\)/);
   assert.match(popup, /window\.addEventListener\("pageshow", syncLocation\)/);
-  assert.match(popup, /aria-label="Come in"[\s\S]*fixed left-\[49\.8%\][\s\S]*<NextImage/);
+  assert.match(
+    popup,
+    /aria-label="Come in"[\s\S]*fixed left-1\/2 top-1\/2[\s\S]*transition-\[opacity,transform\][\s\S]*<NextImage/
+  );
+  assert.match(popup, /disabled=\{!paperVisible\}/);
   assert.match(popup, /src=\{NOTE_LOCK_SRC\}[\s\S]*unoptimized/);
+  assert.match(popup, /onLoad=\{\(\) => setPaperReady\(true\)\}/);
   assert.match(popup, /aria-hidden="true"[\s\S]*pointer-events-none absolute left-\[54%\]/);
   assert.doesNotMatch(popup, /fixed inset-0 z-\[30\]/);
   assert.match(popup, /window\.addEventListener\("ruined:home-scene-request", requestScene\)/);
