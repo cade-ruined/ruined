@@ -175,8 +175,8 @@ html {
 }
 
 /* The shell stays conventional so the experience beneath it can be strange:
-   stable Menu at left, a mathematically centered wordmark, and Search + Bag at
-   right on every route and input type. */
+   Menu + Search balance My Ruined + Bag around a mathematically centered
+   wordmark on every route and input type. */
 :root {
   --ruined-header-height: calc(4rem + env(safe-area-inset-top, 0px));
 }
@@ -299,6 +299,12 @@ html {
   stroke: currentColor;
   stroke-width: 1.65;
   stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.ruined-person-glyph {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .ruined-header-brand {
@@ -354,6 +360,12 @@ html {
     letter-spacing: 0;
     transform: translate(-50%, 0.1rem) rotate(-4deg);
     transform-origin: center;
+  }
+}
+
+@media (max-width: 350px) {
+  .ruined-header-wordmark {
+    height: 2rem;
   }
 }
 

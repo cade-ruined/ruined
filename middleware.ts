@@ -1,8 +1,13 @@
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
+import { isMyRuinedVisible } from "@/lib/platform/visibility";
 import { refreshSupabaseMiddlewareSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/my") && !isMyRuinedVisible()) {
+    return NextResponse.next();
+  }
+
   const { response } = await refreshSupabaseMiddlewareSession(request);
   return response;
 }

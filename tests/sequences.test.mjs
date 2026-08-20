@@ -705,6 +705,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
     bagStore,
     bagLink,
     bagGlyph,
+    personGlyph,
     searchDialog,
     searchStyles,
     searchData,
@@ -751,6 +752,10 @@ test("the showroom resolves into a direct catalogue and conventional global util
       "utf8"
     ),
     fs.readFile(
+      path.join(root, "src", "components", "nav", "PersonGlyph.tsx"),
+      "utf8"
+    ),
+    fs.readFile(
       path.join(root, "src", "components", "search", "UniversalSearch.tsx"),
       "utf8"
     ),
@@ -779,6 +784,12 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(header, /ruined-header-rail/);
   assert.match(header, /ruined-header-menu-trigger/);
   assert.match(header, /ruined-header-search-trigger/);
+  assert.match(header, /const showMyRuined = isMyRuinedVisible\(\)/);
+  assert.match(header, /href=\{SITE_ROUTES\.my\.href\}/);
+  assert.match(header, /aria-label="My Ruined"/);
+  assert.match(header, /<PersonGlyph className="ruined-person-glyph"/);
+  assert.match(header, /\{showMyRuined && \([\s\S]*href=\{SITE_ROUTES\.my\.href\}/);
+  assert.doesNotMatch(header, /ruined-header-control-label">Search/);
   assert.match(header, /<UniversalSearch open=\{searchOpen\} onOpenChange=\{setSearchOpen\} \/>/);
   assert.match(header, /variant="icon"/);
   assert.match(header, /role="dialog"/);
@@ -799,6 +810,10 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(bagLink, /<BagGlyph className="ruined-bag-glyph h-10 w-9"/);
   assert.doesNotMatch(bagLink, /CouchGlyph/);
   assert.match(bagGlyph, /<CouchGlyph index=\{1\} className=\{className\} \/>/);
+  assert.match(personGlyph, /aria-hidden="true"/);
+  assert.match(personGlyph, /fill="currentColor"/);
+  assert.match(personGlyph, /fillRule="evenodd"/);
+  assert.doesNotMatch(personGlyph, /<Image|<text|\.png|\.webp|\.svg"/);
   assert.doesNotMatch(bagLink, /font-mono/);
   assert.doesNotMatch(bagLink, /padStart|Bag\{.*·/s);
   assert.match(styles, /\.ruined-header-rail/);
@@ -810,6 +825,11 @@ test("the showroom resolves into a direct catalogue and conventional global util
     /\.ruined-site-menu-nav strong \{[^}]*font-family: var\(--font-header\);/s
   );
   assert.match(styles, /\.ruined-bag-glyph/);
+  assert.match(styles, /\.ruined-person-glyph/);
+  assert.match(
+    styles,
+    /@media \(max-width: 350px\) \{[^}]*\.ruined-header-wordmark \{[^}]*height: 2rem;/s
+  );
   assert.match(styles, /drop-shadow\(3px 3px 0 rgb\(0 0 0 \/ 0\.62\)\)/);
   assert.doesNotMatch(
     styles,
@@ -829,6 +849,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.doesNotMatch(searchDialog, /font-mono|monospace/);
   assert.match(searchStyles, /@media \(max-width: 640px\)/);
   assert.match(searchStyles, /min-height: 100dvh/);
+  assert.match(searchStyles, /animation: search-dialog-expand/);
   assert.match(searchData, /productDocuments/);
   assert.match(searchData, /PROJECT_DOCUMENTS/);
   assert.match(searchData, /EVENT_DOCUMENTS/);
@@ -843,6 +864,14 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(navigation, /SITE_ROUTES\.work/);
   assert.match(navigation, /SITE_ROUTES\.about/);
   assert.match(navigation, /SITE_ROUTES\.events/);
+  assert.match(navigation, /my: \{ id: "my", label: "My Ruined", href: "\/my" \}/);
+  assert.doesNotMatch(
+    navigation.slice(
+      navigation.indexOf("export const GLOBAL_NAV_ITEMS"),
+      navigation.indexOf("export const EXPLORE_ROOM_IDS")
+    ),
+    /SITE_ROUTES\.my/
+  );
   assert.match(navigation, /store: \{[^}]*glyphIndex: 1/);
   assert.match(navigation, /events: \{[^}]*glyphIndex: 4/);
   assert.doesNotMatch(

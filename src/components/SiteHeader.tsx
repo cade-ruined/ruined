@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CalendarGlyph } from "@/components/nav/CalendarGlyph";
 import { CouchGlyph } from "@/components/nav/CouchGlyph";
+import { PersonGlyph } from "@/components/nav/PersonGlyph";
 import UniversalSearch from "@/components/search/UniversalSearch";
 import BagLink from "@/components/store/BagLink";
 import {
@@ -23,6 +24,7 @@ import {
   sectionLocatorForPathname,
   type ExploreRoom,
 } from "@/data/navigation";
+import { isMyRuinedVisible } from "@/lib/platform/visibility";
 
 const MENU_ID = "site-navigation-menu";
 
@@ -39,6 +41,7 @@ export default function SiteHeader() {
     pathname.startsWith(SITE_ROUTES.store.href) ||
     isBag ||
     pathname.startsWith(`${SITE_ROUTES.work.href}/`);
+  const showMyRuined = isMyRuinedVisible();
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [headerSolid, setHeaderSolid] = useState(!isHome);
@@ -141,6 +144,15 @@ export default function SiteHeader() {
     restoreMenuFocusRef.current = false;
     setMenuOpen(false);
   };
+  const openSearch = () => {
+    if (menuOpen) {
+      restoreMenuFocusRef.current = false;
+      setMenuOpen(false);
+      requestAnimationFrame(() => setSearchOpen(true));
+    } else {
+      setSearchOpen(true);
+    }
+  };
 
   const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab" || !menuPanelRef.current) return;
@@ -218,30 +230,22 @@ export default function SiteHeader() {
                   {menuOpen ? "Close" : "Menu"}
                 </span>
               </button>
+              {showMyRuined && <SearchControl open={searchOpen} onOpen={openSearch} />}
             </div>
 
             <BrandHomeLink isHome={isHome} onHomeClick={handleWalkLink} />
 
             <div className="ruined-header-utilities">
-              <button
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded={searchOpen}
-                aria-label="Search Ruined"
-                className="ruined-header-control ruined-header-search-trigger"
-                onClick={() => {
-                  if (menuOpen) {
-                    restoreMenuFocusRef.current = false;
-                    setMenuOpen(false);
-                    requestAnimationFrame(() => setSearchOpen(true));
-                  } else {
-                    setSearchOpen(true);
-                  }
-                }}
-              >
-                <SearchGlyph />
-                <span className="ruined-header-control-label">Search</span>
-              </button>
+              {!showMyRuined && <SearchControl open={searchOpen} onOpen={openSearch} />}
+              {showMyRuined && (
+                <Link
+                  href={SITE_ROUTES.my.href}
+                  aria-label="My Ruined"
+                  className="ruined-header-control ruined-header-person"
+                >
+                  <PersonGlyph className="ruined-person-glyph" />
+                </Link>
+              )}
               <BagLink
                 variant="icon"
                 current={isBag}
@@ -396,6 +400,21 @@ function SearchGlyph() {
       <circle cx="10.5" cy="10.5" r="6.25" />
       <path d="m15.25 15.25 4.5 4.5" />
     </svg>
+  );
+}
+
+function SearchControl({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-label="Search Ruined"
+      className="ruined-header-control ruined-header-search-trigger"
+      onClick={onOpen}
+    >
+      <SearchGlyph />
+    </button>
   );
 }
 

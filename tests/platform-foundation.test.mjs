@@ -25,6 +25,7 @@ const [
   memberLayout,
   opsLayout,
   signOutRoute,
+  platformVisibility,
 ] = await Promise.all([
   source("src/lib/platform/config.ts"),
   source("src/lib/platform/page-data.ts"),
@@ -44,7 +45,25 @@ const [
   source("app/my/layout.tsx"),
   source("app/ops/layout.tsx"),
   source("app/api/auth/sign-out/route.ts"),
+  source("src/lib/platform/visibility.ts"),
 ]);
+
+test("My Ruined stays hidden in deployed environments until its release switch opens", () => {
+  assert.match(platformVisibility, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(
+    platformVisibility,
+    /process\.env\.NEXT_PUBLIC_MY_RUINED_ENABLED === "true"/,
+  );
+  assert.match(memberLayout, /if \(!isMyRuinedVisible\(\)\) notFound\(\);/);
+  assert.ok(
+    memberLayout.indexOf("notFound();") < memberLayout.indexOf("getPlatformConfiguration();"),
+    "the hidden route must stop before platform configuration or viewer work",
+  );
+  assert.match(
+    rootMiddleware,
+    /request\.nextUrl\.pathname\.startsWith\("\/my"\) && !isMyRuinedVisible\(\)/,
+  );
+});
 
 test("preview is development-only and never fabricates an authenticated viewer", () => {
   assert.match(
