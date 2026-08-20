@@ -115,17 +115,21 @@ export function JourneyLobbyIndex({
 }: {
   events: StudioEvent[];
 }) {
-  const event = events.find((candidate) => candidate.status === "Upcoming") ?? events[0];
+  const byobOne = events.find((candidate) => candidate.id === "byob-01");
   const selections: LobbySelection[] = [
-    {
-      key: "what-is-this",
-      href: "#about",
-      realm: "About",
-      title: "What is this?",
-      meta: "About Ruined",
-      image: "/media/what-is-this.webp",
-      alt: "The Ruined Project collage",
-    },
+    ...(byobOne
+      ? [
+          {
+            key: `events-${byobOne.id}`,
+            href: `/community#${byobOne.id}`,
+            realm: "Community" as const,
+            title: byobOne.title,
+            meta: `View the recap · ${byobOne.date}`,
+            image: byobOne.gallery?.[0]?.src ?? byobOne.image,
+            alt: byobOne.gallery?.[0]?.alt ?? byobOne.title,
+          },
+        ]
+      : []),
     {
       key: "meet-the-cast",
       href: "https://www.instagram.com/theruinedproject/",
@@ -137,26 +141,22 @@ export function JourneyLobbyIndex({
       poster: "/media/meet-the-cast-poster.jpg",
       alt: "Meet the Cast from The Ruined Project",
     },
-    ...(event
-      ? [
-          {
-            key: `events-${event.id}`,
-            href: `/community#${event.id}`,
-            realm: "Community" as const,
-            title: event.title,
-            meta: `Next available · ${event.date}`,
-            image: event.image,
-            alt: event.title,
-          },
-        ]
-      : []),
+    {
+      key: "what-is-this",
+      href: "#about",
+      realm: "About",
+      title: "What is this?",
+      meta: "About Ruined",
+      image: "/media/what-is-this.webp",
+      alt: "The Ruined Project collage",
+    },
   ];
 
   if (!selections.length) return null;
 
   return (
     <div className={JOURNEY_GRID_CLASS}>
-      {selections.map((selection) => {
+      {selections.map((selection, index) => {
         const content = <>
           {selection.video && (
             <video
@@ -177,8 +177,8 @@ export function JourneyLobbyIndex({
               alt={selection.alt}
               fill
               sizes="(min-width: 640px) 18rem, 28vw"
-              priority={selection.key === "what-is-this"}
-              fetchPriority={selection.key === "what-is-this" ? "high" : "low"}
+              priority={index === 0}
+              fetchPriority={index === 0 ? "high" : "low"}
               className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
             />
           )}
@@ -359,59 +359,79 @@ export function JourneyAboutIndex() {
 
 export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
   const nextAvailable = events.find((event) => event.status === "Upcoming");
+  const visibleEvents = events.slice(0, 3);
+  const compactGridClass =
+    visibleEvents.length === 1
+      ? "sm:mx-auto sm:w-1/3"
+      : visibleEvents.length === 2
+        ? "sm:mx-auto sm:w-2/3"
+        : "";
 
   return (
     <div>
-    <div className={JOURNEY_GRID_CLASS}>
-      {events.slice(0, 3).map((event, index) => {
-        const isEnded = event.status === "Ended";
-        const isNextAvailable = event.id === nextAvailable?.id;
-        const isDimmed = !isNextAvailable;
+      <div
+        className={`${JOURNEY_GRID_CLASS} ${compactGridClass}`}
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(visibleEvents.length, 1)}, minmax(0, 1fr))`,
+        }}
+      >
+        {visibleEvents.map((event, index) => {
+          const isEnded = event.status === "Ended";
+          const isNextAvailable = event.id === nextAvailable?.id;
+          const isDimmed = !isNextAvailable;
 
-        return (
-          <Link
-            key={event.id}
-            href={`/community#${event.id}`}
-            className={JOURNEY_CARD_CLASS}
-            data-event-dimmed={isDimmed ? "true" : undefined}
-          >
-            {event.image && <Image
-              src={event.image}
-              alt={event.title}
-              fill
-              sizes="(min-width: 640px) 22rem, 28vw"
-              className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
-            />}
-            <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-            {isDimmed && (
-              <span
-                aria-hidden="true"
-                className={`pointer-events-none absolute inset-0 transition-colors duration-300 group-hover:bg-black/40 group-focus-visible:bg-black/40 ${isEnded ? "bg-black/45" : "bg-black/55"}`}
-              />
-            )}
-            <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
-              {isEnded
-                ? `Ended · 0${index + 1}`
-                : isNextAvailable
-                  ? `Available · 0${index + 1}`
-                  : `0${index + 1}`}
-            </span>
-            <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-              <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
-                {event.title}
-              </strong>
-              <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
-                <span>{event.date}</span>
-                <span className="transition-transform group-hover:translate-x-1">↗</span>
+          return (
+            <Link
+              key={event.id}
+              href={`/community#${event.id}`}
+              className={JOURNEY_CARD_CLASS}
+              data-event-dimmed={isDimmed ? "true" : undefined}
+            >
+              {event.image && (
+                <Image
+                  src={event.image}
+                  alt={event.title}
+                  fill
+                  sizes="(min-width: 640px) 22rem, 28vw"
+                  className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+                />
+              )}
+              <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+              {isDimmed && (
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-0 transition-colors duration-300 group-hover:bg-black/40 group-focus-visible:bg-black/40 ${isEnded ? "bg-black/45" : "bg-black/55"}`}
+                />
+              )}
+              <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
+                {isEnded
+                  ? `Ended · 0${index + 1}`
+                  : isNextAvailable
+                    ? `Available · 0${index + 1}`
+                    : `0${index + 1}`}
               </span>
-            </span>
-          </Link>
-        );
-      })}
-    </div>
-    <Link href="/community" className="ui-heading mt-3 flex items-center justify-between border border-white/25 bg-black/80 px-4 py-3 text-xs text-white">
-      <span>See all events</span><span aria-hidden="true">→</span>
-    </Link>
+              <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
+                <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
+                  {event.title}
+                </strong>
+                <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
+                  <span>{event.date}</span>
+                  <span className="transition-transform group-hover:translate-x-1">
+                    ↗
+                  </span>
+                </span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      <Link
+        href="/community"
+        className="ui-heading mt-3 flex items-center justify-between border border-white/25 bg-black/80 px-4 py-3 text-xs text-white"
+      >
+        <span>See all events</span>
+        <span aria-hidden="true">→</span>
+      </Link>
     </div>
   );
 }

@@ -10,13 +10,12 @@ async function source(file) {
 }
 
 test("public forms expose labels, autofill hints, progress, and live feedback", async () => {
-  const [contact, gate, journey] = await Promise.all([
+  const [contact, signup] = await Promise.all([
     source("src/components/ContactForm.tsx"),
-    source("src/components/ComingSoonGate.tsx"),
-    source("src/components/sequence/JourneyComingSoon.tsx"),
+    source("src/components/EmailSignupForm.tsx"),
   ]);
 
-  for (const component of [contact, gate, journey]) {
+  for (const component of [contact, signup]) {
     assert.match(component, /<label/);
     assert.match(component, /htmlFor=/);
     assert.match(component, /autoComplete="email"/);
@@ -33,18 +32,17 @@ test("public forms expose labels, autofill hints, progress, and live feedback", 
 
   assert.match(contact, /autoComplete="name"/);
   assert.match(contact, /\{state === "sending" \? "Sending…" : "Send submission"\}/);
+  assert.match(signup, /name="consent"/);
+  assert.match(signup, /type="checkbox"/);
+  assert.match(signup, /required/);
+  assert.match(signup, /href="\/privacy"/);
 });
 
-test("form delivery routes bound outbound requests and return controlled failures", async () => {
-  const [contactRoute, signupRoute] = await Promise.all([
-    source("app/api/contact/route.ts"),
-    source("app/api/hubspot-signup/route.ts"),
-  ]);
+test("contact delivery bounds outbound requests and returns controlled failures", async () => {
+  const contactRoute = await source("app/api/contact/route.ts");
 
-  for (const route of [contactRoute, signupRoute]) {
-    assert.match(route, /signal: AbortSignal\.timeout\(10_000\)/);
-    assert.match(route, /try \{/);
-    assert.match(route, /catch \{/);
-    assert.match(route, /status: 502/);
-  }
+  assert.match(contactRoute, /signal: AbortSignal\.timeout\(10_000\)/);
+  assert.match(contactRoute, /try \{/);
+  assert.match(contactRoute, /catch \{/);
+  assert.match(contactRoute, /status: 502/);
 });

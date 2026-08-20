@@ -16,10 +16,10 @@ test("production metadata uses the brand domain and restrained positioning", asy
     read(".env.example"),
   ]);
 
-  assert.match(site, /https:\/\/www\.theruinedproject\.com/);
+  assert.match(site, /https:\/\/theruinedproject\.com/);
   assert.match(site, /SITE_URL = PRODUCTION_SITE_URL/);
   assert.doesNotMatch(site, /VERCEL_PROJECT_PRODUCTION_URL|NEXT_PUBLIC_SITE_URL/);
-  assert.match(env, /NEXT_PUBLIC_SITE_URL=https:\/\/www\.theruinedproject\.com/);
+  assert.match(env, /NEXT_PUBLIC_SITE_URL=https:\/\/theruinedproject\.com/);
   assert.match(layout, /A Creative Company in Alpine, Utah/);
   assert.match(layout, /Ruined refines potential into identity/);
   assert.match(layout, /openGraph:[\s\S]*title: SITE_NAME/);

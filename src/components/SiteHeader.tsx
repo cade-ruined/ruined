@@ -31,6 +31,8 @@ export default function SiteHeader() {
   const menuTitleId = useId();
   const isLanding = pathname.startsWith("/lp");
   const isFoundations = pathname === "/foundations";
+  const isPlatform =
+    pathname.startsWith("/my") || pathname.startsWith("/ops") || pathname.startsWith("/auth");
   const isHome = pathname === "/";
   const isBag = pathname === SITE_ROUTES.bag.href;
   const usesDarkSurface =
@@ -183,7 +185,7 @@ export default function SiteHeader() {
     if (!window.dispatchEvent(request)) event.preventDefault();
   };
 
-  if (isLanding || isFoundations) return null;
+  if (isLanding || isFoundations || isPlatform) return null;
 
   const overlayOpen = menuOpen || searchOpen;
 

@@ -1,12 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import EventGallery from "@/components/events/EventGallery";
 import { EVENTS, type StudioEvent } from "@/data/events";
 
 const NEXT_AVAILABLE = EVENTS.find((event) => event.status === "Upcoming");
-const DEFAULT_EVENT = NEXT_AVAILABLE ?? EVENTS[0];
 const ARCHIVE_EVENTS = EVENTS.filter((event) => event.status === "Ended");
 const UPCOMING_EVENTS = EVENTS.filter((event) => event.status !== "Ended");
 
@@ -17,21 +17,35 @@ function eventState(event: StudioEvent) {
 }
 
 export default function EventsIndex() {
-  const [selectedId, setSelectedId] = useState(DEFAULT_EVENT?.id ?? "");
-  const selected =
-    EVENTS.find((event) => event.id === selectedId) ?? DEFAULT_EVENT;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId
+    ? EVENTS.find((event) => event.id === selectedId)
+    : undefined;
 
   useEffect(() => {
     const selectFromHash = () => {
       const id = decodeURIComponent(window.location.hash.slice(1));
       const event = EVENTS.find((candidate) => candidate.id === id);
-      if (event) setSelectedId(event.id);
+      setSelectedId(event?.id ?? null);
     };
 
     selectFromHash();
     window.addEventListener("hashchange", selectFromHash);
-    return () => window.removeEventListener("hashchange", selectFromHash);
+    window.addEventListener("popstate", selectFromHash);
+    return () => {
+      window.removeEventListener("hashchange", selectFromHash);
+      window.removeEventListener("popstate", selectFromHash);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(selectedId)?.scrollIntoView({ block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedId]);
 
   function selectEvent(event: StudioEvent) {
     setSelectedId(event.id);
@@ -42,7 +56,9 @@ export default function EventsIndex() {
     );
   }
 
-  if (!selected) return null;
+  if (!selected) {
+    return <EventsOverview onSelect={(event) => setSelectedId(event.id)} />;
+  }
 
   const selectedState = eventState(selected);
   const statusClasses =
@@ -57,17 +73,31 @@ export default function EventsIndex() {
       <h1 className="sr-only">Community</h1>
 
       <section
+        id={selected.id}
         aria-labelledby="event-index-heading"
-        className="bg-[var(--color-bone)] px-4 pb-4 pt-0 text-[var(--color-faded)] sm:px-8 sm:pb-8"
+        className="scroll-mt-14 bg-[var(--color-bone)] px-4 pb-4 pt-0 text-[var(--color-faded)] sm:px-8 sm:pb-8"
       >
         <div className="mx-auto max-w-[96rem]">
           <header className="grid gap-3 border-y border-black/25 py-3 sm:grid-cols-[1fr_minmax(18rem,28rem)] sm:items-center sm:gap-6 sm:py-4">
             <div className="flex items-center justify-between gap-5 sm:justify-start">
-              <h2
-                id="event-index-heading"
-                className="ui-heading text-[0.58rem] uppercase tracking-[0.14em] text-[var(--color-poster)]"
-              >
-                Community events
+              <h2 id="event-index-heading">
+                <Link
+                  href="/community"
+                  onClick={(clickEvent) => {
+                    if (
+                      clickEvent.button === 0 &&
+                      !clickEvent.metaKey &&
+                      !clickEvent.ctrlKey &&
+                      !clickEvent.shiftKey &&
+                      !clickEvent.altKey
+                    ) {
+                      setSelectedId(null);
+                    }
+                  }}
+                  className="ui-heading text-[0.58rem] uppercase tracking-[0.14em] text-[var(--color-poster)] transition-colors hover:text-black focus-visible:text-black"
+                >
+                  ← All events
+                </Link>
               </h2>
               <p className="ui-heading text-right text-[0.55rem] uppercase tracking-[0.14em] text-black/45">
                 {String(EVENTS.length).padStart(2, "0")} dates
@@ -240,5 +270,168 @@ export default function EventsIndex() {
         />
       ) : null}
     </main>
+  );
+}
+
+function EventsOverview({
+  onSelect,
+}: {
+  onSelect: (event: StudioEvent) => void;
+}) {
+  return (
+    <main className="-mt-[3.25rem] min-h-screen bg-black text-[var(--color-bone)] sm:-mt-[3.5rem]">
+      <h1 className="sr-only">Community</h1>
+
+      <section
+        aria-labelledby="all-events-heading"
+        className="bg-[var(--color-bone)] px-3 pb-8 pt-0 text-[var(--color-faded)] sm:px-6 sm:pb-12"
+      >
+        <div className="mx-auto max-w-[96rem]">
+          <header className="flex items-end justify-between gap-5 border-y border-black/25 px-1 py-4 sm:px-2 sm:py-5">
+            <div>
+              <p className="ui-heading text-[0.55rem] uppercase tracking-[0.14em] text-[var(--color-poster)]">
+                Community
+              </p>
+              <h2
+                id="all-events-heading"
+                className="display mt-2 text-[clamp(2.8rem,7vw,6rem)] leading-[0.82]"
+              >
+                All events
+              </h2>
+            </div>
+            <p className="ui-heading pb-1 text-right text-[0.52rem] uppercase tracking-[0.12em] text-black/45 sm:text-[0.58rem]">
+              {String(UPCOMING_EVENTS.length).padStart(2, "0")} upcoming
+              <br />
+              {String(ARCHIVE_EVENTS.length).padStart(2, "0")} previously held
+            </p>
+          </header>
+
+          <EventGroup
+            heading="Upcoming"
+            events={UPCOMING_EVENTS}
+            onSelect={onSelect}
+          />
+          <EventGroup
+            heading="Previously held"
+            events={ARCHIVE_EVENTS}
+            onSelect={onSelect}
+          />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function EventGroup({
+  heading,
+  events,
+  onSelect,
+}: {
+  heading: string;
+  events: StudioEvent[];
+  onSelect: (event: StudioEvent) => void;
+}) {
+  if (!events.length) return null;
+
+  return (
+    <section aria-labelledby={`${heading.toLowerCase().replace(" ", "-")}-heading`}>
+      <header className="flex items-center justify-between border-b border-black/15 px-1 pb-3 pt-8 sm:px-2 sm:pb-4 sm:pt-10">
+        <h3
+          id={`${heading.toLowerCase().replace(" ", "-")}-heading`}
+          className="ui-heading text-[0.62rem] uppercase tracking-[0.14em]"
+        >
+          {heading}
+        </h3>
+        <span className="ui-heading text-[0.52rem] uppercase tracking-[0.14em] text-black/40">
+          {String(events.length).padStart(2, "0")}
+        </span>
+      </header>
+
+      <div className="grid grid-cols-2 border-l border-t border-black/15 lg:grid-cols-4">
+        {events.map((event, index) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            featured={index === 0}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EventCard({
+  event,
+  featured,
+  onSelect,
+}: {
+  event: StudioEvent;
+  featured: boolean;
+  onSelect: (event: StudioEvent) => void;
+}) {
+  return (
+    <Link
+      href={`/community#${event.id}`}
+      onClick={(clickEvent) => {
+        if (
+          clickEvent.button === 0 &&
+          !clickEvent.metaKey &&
+          !clickEvent.ctrlKey &&
+          !clickEvent.shiftKey &&
+          !clickEvent.altKey
+        ) {
+          onSelect(event);
+        }
+      }}
+      className={`group border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${
+        featured ? "col-span-2" : ""
+      }`}
+    >
+      <div
+        className={`relative overflow-hidden bg-black ${
+          featured
+            ? "aspect-[5/4] sm:aspect-[4/3] lg:aspect-[5/4]"
+            : "aspect-[4/5]"
+        }`}
+      >
+        {event.image ? (
+          <Image
+            src={event.image}
+            alt={`${event.title} event artwork`}
+            fill
+            priority={featured}
+            sizes={
+              featured
+                ? "(min-width: 1024px) 50vw, 100vw"
+                : "(min-width: 1024px) 25vw, 50vw"
+            }
+            className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018]"
+          />
+        ) : null}
+        <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
+        <span className="absolute inset-x-2 top-2 flex items-center justify-between font-sans text-[0.44rem] uppercase tracking-[0.16em] text-white/70 sm:inset-x-3 sm:top-3">
+          <span>{String(EVENTS.indexOf(event) + 1).padStart(2, "0")}</span>
+          <span>{eventState(event)}</span>
+        </span>
+        <span className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center border border-white/40 bg-black/30 text-white transition-colors group-hover:bg-[var(--color-poster)] sm:bottom-3 sm:right-3">
+          ↗
+        </span>
+      </div>
+
+      <div className="px-1 pb-3 pt-3 sm:pt-4">
+        <h4
+          className={`ui-heading leading-tight ${
+            featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"
+          }`}
+        >
+          {event.title}
+        </h4>
+        <div className="mt-2 flex items-center justify-between gap-2 font-sans text-[0.44rem] uppercase tracking-[0.12em] text-black/45 sm:text-[0.5rem]">
+          <time dateTime={event.dateTime}>{event.date}</time>
+          <span className="shrink-0 text-[var(--color-poster)]">View event</span>
+        </div>
+      </div>
+    </Link>
   );
 }

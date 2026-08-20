@@ -28,7 +28,7 @@ function secondFriday(year: number, month: number) {
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-export const EVENTS: StudioEvent[] = Array.from({ length: 12 }, (_, index) => {
+export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
   const monthIndex = 7 + index;
   const year = 2026 + Math.floor(monthIndex / 12);
   const month = monthIndex % 12;

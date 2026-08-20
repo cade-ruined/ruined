@@ -1,0 +1,43 @@
+import PasswordlessAccessForm from "@/components/platform/PasswordlessAccessForm";
+
+export default function AccessPage({
+  audience,
+  enabled,
+}: {
+  audience: "member" | "ops";
+  enabled: boolean;
+}) {
+  const member = audience === "member";
+
+  return (
+    <main className="grid min-h-[68vh] gap-14 border-t border-white/15 pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-24">
+      <div>
+        <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-white/40">
+          {member ? "My Ruined" : "Ruined operations"}
+        </p>
+        <h1 className="mt-12 max-w-4xl font-[var(--font-header)] text-[clamp(3.8rem,9vw,8.5rem)] font-bold uppercase leading-[0.78] tracking-[-0.06em]">
+          {member ? "Return without a password." : "Enter the system."}
+        </h1>
+      </div>
+
+      <section className="lg:pt-12" aria-labelledby={`${audience}-access-title`}>
+        <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--color-poster)]">
+          Passwordless access
+        </p>
+        <h2 className="ui-heading mt-5 text-3xl font-semibold tracking-[-0.03em]" id={`${audience}-access-title`}>
+          One email. One code.
+        </h2>
+        <p className="mt-5 text-sm leading-relaxed text-white/50">
+          {member
+            ? "Use the email attached to your Ruined account. New member accounts remain pending until Stripe confirms payment."
+            : "Operator access is internally assigned. A valid account without an active operations role cannot open the roster."}
+        </p>
+        <PasswordlessAccessForm
+          audience={audience}
+          enabled={enabled}
+          nextPath={member ? "/my" : "/ops"}
+        />
+      </section>
+    </main>
+  );
+}

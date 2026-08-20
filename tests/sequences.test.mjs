@@ -454,16 +454,22 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(desktop, /LobbyOpeningOverlay/);
   assert.match(desktop, /<JourneyLobbyIndex/);
   assert.match(desktop, /<JourneyAboutStatement headingId="desktop-journey-about-heading"/);
+  assert.match(desktop, /room=\{EXPLORE_ROOMS\[4\]\}[\s\S]*placement="above-fire"[\s\S]*<JourneyEventsIndex/);
+  assert.match(desktop, /var\(--ruined-header-height, 4\.5rem\) \+ 1\.5rem/);
+  assert.match(desktop, /sm:max-w-\[min\(56rem,90svh\)\]/);
   assert.doesNotMatch(desktop, /kicker=/);
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
-  assert.match(indexes, /events\.find\(\(candidate\) => candidate\.status === "Upcoming"\) \?\? events\[0\]/);
+  assert.match(indexes, /events\.find\(\(candidate\) => candidate\.id === "byob-01"\)/);
   const lobbyIndex = indexes.slice(
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
   );
-  assert.match(lobbyIndex, /priority=\{selection\.key === "what-is-this"\}/);
-  assert.match(lobbyIndex, /fetchPriority=\{selection\.key === "what-is-this" \? "high" : "low"\}/);
+  assert.match(lobbyIndex, /priority=\{index === 0\}/);
+  assert.match(lobbyIndex, /fetchPriority=\{index === 0 \? "high" : "low"\}/);
+  assert.match(lobbyIndex, /key: `events-\$\{byobOne\.id\}`/);
+  assert.match(lobbyIndex, /href: `\/community#\$\{byobOne\.id\}`/);
+  assert.match(lobbyIndex, /image: byobOne\.gallery\?\.\[0\]\?\.src \?\? byobOne\.image/);
   assert.match(lobbyIndex, /key: "what-is-this"/);
   assert.match(lobbyIndex, /href: "#about"/);
   assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
@@ -479,7 +485,9 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /className="journey-card-title/);
   assert.match(indexes, /products\.slice\(0, 3\)/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
-  assert.match(indexes, /events\.slice\(0, 3\)/);
+  assert.match(indexes, /const visibleEvents = events\.slice\(0, 3\)/);
+  assert.match(indexes, /visibleEvents\.length === 2[\s\S]*"sm:mx-auto sm:w-2\/3"/);
+  assert.match(indexes, /gridTemplateColumns: `repeat\(\$\{Math\.max\(visibleEvents\.length, 1\)\}/);
   assert.match(indexes, /href=\{`\/community#\$\{event\.id\}`\}/);
   assert.match(indexes, /const nextAvailable = events\.find\(\(event\) => event\.status === "Upcoming"\)/);
   assert.match(indexes, /const isEnded = event\.status === "Ended"/);
@@ -934,6 +942,24 @@ test("BYOB explains what guests should bring", async () => {
   assert.match(eventsIndex, /\{selected\.summary\}/);
 });
 
+test("Community defaults to all events and event details return to that index", async () => {
+  const eventsIndex = await fs.readFile(
+    path.join(root, "src", "components", "events", "EventsIndex.tsx"),
+    "utf8"
+  );
+
+  assert.match(eventsIndex, /useState<string \| null>\(null\)/);
+  assert.match(eventsIndex, /return <EventsOverview/);
+  assert.match(eventsIndex, /heading="Upcoming"/);
+  assert.match(eventsIndex, /heading="Previously held"/);
+  assert.match(eventsIndex, /href="\/community"[\s\S]*?← All events/);
+  assert.match(eventsIndex, /href=\{`\/community#\$\{event\.id\}`\}/);
+  assert.match(eventsIndex, /id=\{selected\.id\}/);
+  assert.match(eventsIndex, /getElementById\(selectedId\)\?\.scrollIntoView/);
+  assert.match(eventsIndex, /addEventListener\("popstate", selectFromHash\)/);
+  assert.match(eventsIndex, /setSelectedId\(event\?\.id \?\? null\)/);
+});
+
 test("BYOB Nº 01 is an ended recap and the next gathering stays current", async () => {
   const [events, eventsIndex, video, videoStat, posterStat, posterMetadata] =
     await Promise.all([
@@ -952,12 +978,13 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
       ).metadata(),
     ]);
 
+  assert.match(events, /Array\.from\(\{ length: 2 \}/);
   assert.match(events, /status: isFirstEvent \? "Ended" : "Upcoming"/);
   assert.match(events, /time: isFirstEvent \? "8:00 AM" : "Details to come"/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);
   assert.match(events, /\/events\/byob-01-recap-poster\.webp\?v=2/);
   assert.match(eventsIndex, /const NEXT_AVAILABLE = EVENTS\.find/);
-  assert.match(eventsIndex, /const DEFAULT_EVENT = NEXT_AVAILABLE \?\? EVENTS\[0\]/);
+  assert.doesNotMatch(eventsIndex, /DEFAULT_EVENT/);
   assert.match(eventsIndex, /controls[\s\S]*playsInline[\s\S]*preload="metadata"/);
   assert.doesNotMatch(eventsIndex, /Watch the recap/);
   assert.match(eventsIndex, /Next available/);
@@ -1164,28 +1191,15 @@ test("the Lobby note reveals one static paper and releases the next gesture", as
   assert.match(popupBuild, /alphaQuality: 100/);
 });
 
-test("desktop wheel gestures settle on one room waypoint", async () => {
-  const [desktop, header] = await Promise.all([
-    fs.readFile(
-      path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
-      "utf8"
-    ),
-    fs.readFile(path.join(root, "src", "components", "SiteHeader.tsx"), "utf8"),
-  ]);
+test("desktop journey preserves continuous native wheel scrolling", async () => {
+  const desktop = await fs.readFile(
+    path.join(root, "src", "components", "DesktopImmersiveParallax.tsx"),
+    "utf8"
+  );
 
-  assert.match(desktop, /DESKTOP_WHEEL_TRIGGER_PX = 40/);
-  assert.match(desktop, /DESKTOP_WHEEL_ANIMATION_MS = 900/);
-  assert.match(desktop, /const desktopWheelStops = useMemo/);
   assert.match(desktop, /useDesktopJourneyScene\(\{ progress: scrollYProgress, stops: journeyRoomStops \}\)/);
-  assert.match(desktop, /storeArrivalB\?\.count \? storeArrivalB\.playEnd/);
-  assert.match(desktop, /eventsArrivalB\?\.count \? eventsArrivalB\.playEnd/);
-  assert.match(desktop, /const targetStopIndex = \(progress: number, direction: number\)/);
-  assert.match(desktop, /navigationLocked = true/);
-  assert.match(desktop, /event\.preventDefault\(\);[\s\S]*accumulatedDelta \+= delta/);
-  assert.match(desktop, /window\.addEventListener\("wheel", onWheel, \{ passive: false \}\)/);
-  assert.match(desktop, /window\.addEventListener\("hashchange", cancelNavigation\)/);
-  assert.match(header, /syncHeader\(undefined, false\)/);
-  assert.match(header, /window\.addEventListener\("scroll", scheduleHeaderSolidSync/);
+  assert.doesNotMatch(desktop, /DESKTOP_WHEEL_|desktopWheelStops|targetStopIndex|navigationLocked/);
+  assert.doesNotMatch(desktop, /addEventListener\("wheel"|event\.preventDefault\(\)/);
 });
 
 test("mobile fire waits for buffered motion and recovers from interruption", async () => {
