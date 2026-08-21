@@ -2,6 +2,13 @@ import {
   BYOB_01_GALLERY,
   type EventGalleryImage,
 } from "@/data/eventGalleries";
+import { BYOB_02_EVENT_KEY } from "@/lib/events/byob-registration-model";
+
+export type EventRegistration = {
+  href: string;
+  label: string;
+  status: "Open" | "Closed";
+};
 
 export type StudioEvent = {
   id: string;
@@ -17,6 +24,7 @@ export type StudioEvent = {
   video?: string;
   videoPoster?: string;
   gallery?: readonly EventGalleryImage[];
+  registration?: EventRegistration;
   status: "Upcoming" | "Ongoing" | "Ended";
 };
 
@@ -27,6 +35,7 @@ function secondFriday(year: number, month: number) {
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY[0]?.src ?? "/events/byob-key-art.png";
 
 export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
   const monthIndex = 7 + index;
@@ -36,24 +45,41 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
   const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const number = String(index + 1).padStart(2, "0");
   const isFirstEvent = index === 0;
+  const id = `byob-${number}`;
+  const isRegistrationEvent = id === BYOB_02_EVENT_KEY;
   return {
-    id: `byob-${number}`,
+    id,
     title: `BYOB Nº ${number}`,
     eyebrow: "Monthly gathering",
     date: `${day} ${MONTHS[month]} ${year}`,
-    dateTime: `${isoDate}T08:00:00`,
-    time: isFirstEvent ? "8:00 AM" : "Details to come",
+    dateTime: isFirstEvent || isRegistrationEvent
+      ? `${isoDate}T08:00:00`
+      : isoDate,
+    time: isFirstEvent
+      ? "8:00 AM"
+      : isRegistrationEvent
+        ? "8:00 AM MST"
+        : "Details to come",
     location: isFirstEvent
       ? "Tibble Fork Reservoir · Up on the hill"
-      : "Details to come",
+      : isRegistrationEvent
+        ? "Tibble Fork Reservoir · Hill south of the parking lot"
+        : "Details to come",
     admission: "",
     summary: "Bring Your Own (Bell or bodyweight).",
-    image: "/events/byob-key-art.png",
+    image: isFirstEvent ? BYOB_01_FEATURE_IMAGE : "/events/byob-key-art.png",
     video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : undefined,
     videoPoster: isFirstEvent
       ? "/events/byob-01-recap-poster.webp?v=2"
       : undefined,
     gallery: isFirstEvent ? BYOB_01_GALLERY : undefined,
+    registration: isRegistrationEvent
+      ? {
+          href: "/community/byob-02/register",
+          label: "Register your group",
+          status: "Open",
+        }
+      : undefined,
     status: isFirstEvent ? "Ended" : "Upcoming",
   };
 });

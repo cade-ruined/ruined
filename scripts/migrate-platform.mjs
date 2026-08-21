@@ -7,6 +7,9 @@ const migrations = [
   "../db/migrations/20260819_stripe_billing.sql",
   "../db/migrations/20260819_platform_foundation.sql",
   "../db/migrations/20260819_communications.sql",
+  "../db/migrations/20260821_byob_registration.sql",
+  "../db/migrations/20260821_byob_registration_v2.sql",
+  "../db/migrations/20260821_byob_registration_v3.sql",
 ];
 
 if (!databaseUrl) {

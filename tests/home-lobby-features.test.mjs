@@ -27,7 +27,7 @@ test("the home feature grid leads with the BYOB Nº 01 recap", async () => {
   assert.ok(castPosition < aboutPosition);
   assert.match(indexSource, /candidate\.id === "byob-01"/);
   assert.match(indexSource, /href: `\/community#\$\{byobOne\.id\}`/);
-  assert.match(indexSource, /image: byobOne\.gallery\?\.\[0\]\?\.src \?\? byobOne\.image/);
+  assert.match(indexSource, /image: byobOne\.image/);
   assert.match(indexSource, /href: "#about"/);
   assert.match(indexSource, /priority=\{index === 0\}/);
   assert.match(

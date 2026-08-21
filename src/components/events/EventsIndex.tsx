@@ -146,7 +146,7 @@ export default function EventsIndex() {
 
           <article className="mt-2 border-b border-black/25 sm:mt-3">
             <header
-              className="border-b border-black/25 py-4 sm:py-6"
+              className="grid gap-5 border-b border-black/25 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:py-6"
               aria-live="polite"
               aria-atomic="true"
             >
@@ -160,6 +160,15 @@ export default function EventsIndex() {
                   {selected.title}
                 </h2>
               </div>
+              {selected.registration?.status === "Open" ? (
+                <Link
+                  href={selected.registration.href}
+                  className="ui-heading inline-flex min-h-12 items-center justify-between gap-8 border border-black bg-black px-5 py-3 text-[0.62rem] uppercase tracking-[0.14em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black sm:min-w-56"
+                >
+                  {selected.registration.label}
+                  <span aria-hidden="true">→</span>
+                </Link>
+              ) : null}
             </header>
 
             <div className="py-3 sm:py-5 lg:py-6">
@@ -398,7 +407,7 @@ function EventCard({
         {event.image ? (
           <Image
             src={event.image}
-            alt={`${event.title} event artwork`}
+            alt={event.gallery?.[0]?.alt ?? `${event.title} event artwork`}
             fill
             priority={featured}
             sizes={
@@ -406,7 +415,9 @@ function EventCard({
                 ? "(min-width: 1024px) 50vw, 100vw"
                 : "(min-width: 1024px) 25vw, 50vw"
             }
-            className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018]"
+            className={`object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018] ${
+              event.gallery?.[0]?.src === event.image ? "object-[50%_62%]" : ""
+            }`}
           />
         ) : null}
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />

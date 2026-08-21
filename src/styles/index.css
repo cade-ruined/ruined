@@ -135,6 +135,17 @@ html {
     filter: drop-shadow(0 0 1.2px rgb(0 0 0 / 0.95)) drop-shadow(0 1px 0 rgb(0 0 0 / 0.85));
   }
 
+  @supports (mix-blend-mode: difference) {
+    .ruined-brand-cursor {
+      mix-blend-mode: difference;
+    }
+
+    .ruined-brand-cursor__mark--base {
+      color: #fff;
+      filter: none;
+    }
+  }
+
   .ruined-brand-cursor__mark--teal,
   .ruined-brand-cursor__mark--magenta {
     z-index: 1;
@@ -162,6 +173,18 @@ html {
 
   .ruined-brand-cursor[data-pressed] .ruined-brand-cursor__mark--base {
     transform: scale(0.88);
+  }
+}
+
+@media (forced-colors: active) {
+  html.ruined-brand-cursor-active,
+  html.ruined-brand-cursor-active body,
+  html.ruined-brand-cursor-active body * {
+    cursor: revert !important;
+  }
+
+  .ruined-brand-cursor {
+    display: none !important;
   }
 }
 

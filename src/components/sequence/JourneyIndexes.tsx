@@ -138,7 +138,7 @@ export function JourneyLobbyIndex({
             realm: "Community" as const,
             title: byobOne.title,
             meta: `View the recap · ${byobOne.date}`,
-            image: byobOne.gallery?.[0]?.src ?? byobOne.image,
+            image: byobOne.image,
             alt: byobOne.gallery?.[0]?.alt ?? byobOne.title,
           },
         ]
@@ -439,7 +439,7 @@ export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
               {event.image && (
                 <Image
                   src={event.image}
-                  alt={event.title}
+                  alt={event.gallery?.[0]?.alt ?? event.title}
                   fill
                   sizes="(min-width: 640px) 22rem, 28vw"
                   className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"

@@ -476,7 +476,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /fetchPriority=\{index === 0 \? "high" : "low"\}/);
   assert.match(lobbyIndex, /key: `events-\$\{byobOne\.id\}`/);
   assert.match(lobbyIndex, /href: `\/community#\$\{byobOne\.id\}`/);
-  assert.match(lobbyIndex, /image: byobOne\.gallery\?\.\[0\]\?\.src \?\? byobOne\.image/);
+  assert.match(lobbyIndex, /image: byobOne\.image/);
   assert.match(lobbyIndex, /key: "what-is-this"/);
   assert.match(lobbyIndex, /href: "#about"/);
   assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
@@ -1020,13 +1020,17 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
     ]);
 
   assert.match(events, /Array\.from\(\{ length: 2 \}/);
+  assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
+  assert.match(events, /image: isFirstEvent \? BYOB_01_FEATURE_IMAGE : "\/events\/byob-key-art\.png"/);
   assert.match(events, /status: isFirstEvent \? "Ended" : "Upcoming"/);
-  assert.match(events, /time: isFirstEvent \? "8:00 AM" : "Details to come"/);
+  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MST"[\s\S]*?"Details to come"/);
+  assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);
   assert.match(events, /\/events\/byob-01-recap-poster\.webp\?v=2/);
   assert.match(eventsIndex, /const NEXT_AVAILABLE = EVENTS\.find/);
   assert.doesNotMatch(eventsIndex, /DEFAULT_EVENT/);
   assert.match(eventsIndex, /controls[\s\S]*playsInline[\s\S]*preload="metadata"/);
+  assert.match(eventsIndex, /event\.gallery\?\.\[0\]\?\.src === event\.image \? "object-\[50%_62%\]"/);
   assert.doesNotMatch(eventsIndex, /Watch the recap/);
   assert.match(eventsIndex, /Next available/);
   assert.match(eventsIndex, /<optgroup label="Archive">/);
@@ -1148,6 +1152,20 @@ test("the botanical mark owns the favicon and fine-pointer cursor", async () => 
   assert.match(cursor, /event\.pointerType !== "mouse"/);
   assert.match(cursor, /data-interactive/);
   assert.match(cursor, /data-cursor-native/);
+  const baseCursorRule = siteStyles.match(
+    /\.ruined-brand-cursor__mark--base\s*\{[^}]*\}/s
+  );
+  assert.ok(baseCursorRule, "expected a base botanical cursor rule");
+  assert.match(baseCursorRule[0], /color:\s*var\(--color-bone\);/);
+  assert.match(baseCursorRule[0], /filter:\s*drop-shadow\(/);
+  assert.match(
+    siteStyles,
+    /@supports\s*\(mix-blend-mode:\s*difference\)\s*\{[\s\S]*?\.ruined-brand-cursor\s*\{[^}]*mix-blend-mode:\s*difference;[^}]*\}[\s\S]*?\.ruined-brand-cursor__mark--base\s*\{[^}]*color:\s*(?:#fff(?:fff)?|white);[^}]*filter:\s*none;[^}]*\}/i
+  );
+  assert.match(
+    siteStyles,
+    /@media\s*\(forced-colors:\s*active\)\s*\{[\s\S]*?html\.ruined-brand-cursor-active[\s\S]*?cursor:\s*revert\s*!important;[\s\S]*?\.ruined-brand-cursor\s*\{[^}]*display:\s*none\s*!important;[^}]*\}/
+  );
   assert.match(siteStyles, /#00a9a1/);
   assert.match(siteStyles, /#bb204f/);
   assert.match(

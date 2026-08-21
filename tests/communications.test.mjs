@@ -224,6 +224,53 @@ test("confirmation requires a deliberate POST and signup explains the next step"
   assert.match(form, /Check your email to confirm\./);
 });
 
+test("confirmation email carries the Ruined identity with durable fallbacks", async () => {
+  const [resend, template] = await Promise.all([
+    source("src/lib/communications/resend.ts"),
+    source("src/lib/communications/general-updates-confirmation-email.ts"),
+  ]);
+  const wordmark = await fs.readFile(path.join(root, "public", "ruined-wordmark-email.png"));
+
+  assert.equal(wordmark.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(wordmark.readUInt32BE(16), 600);
+  assert.equal(wordmark.readUInt32BE(20), 180);
+  await fs.access(path.join(root, "public", "fonts", "IvyOraText-Regular.ttf"));
+  await fs.access(path.join(root, "public", "fonts", "Inter-Variable-Latin.woff2"));
+
+  assert.match(resend, /const siteUrl = requireProductionSiteUrl\(\)/);
+  assert.match(resend, /createGeneralUpdatesConfirmationEmail\(\{/);
+  assert.match(resend, /\.\.\.confirmationEmail/);
+  assert.match(
+    template,
+    /const wordmarkUrl = new URL\("\/ruined-wordmark-email\.png", input\.siteUrl\)\.toString\(\)/,
+  );
+  assert.match(template, /const escapedWordmarkUrl = escapeHtml\(wordmarkUrl\)/);
+  assert.match(template, /src="\$\{escapedWordmarkUrl\}"/);
+  assert.match(template, /alt="RUINED"/);
+  assert.doesNotMatch(template, /<img[^>]+src="\/ruined-wordmark-email\.png"/);
+
+  assert.match(
+    template,
+    /font-family:&quot;IvyOra Text&quot;,&quot;Iowan Old Style&quot;,Baskerville,Georgia,Cambria,&quot;Times New Roman&quot;,Times,serif/,
+  );
+  assert.match(
+    template,
+    /font-family:&quot;Inter Ruined&quot;,Inter,&quot;Helvetica Neue&quot;,Helvetica,Arial,sans-serif/,
+  );
+  assert.match(template, /IvyOraText-Regular\.ttf/);
+  assert.match(template, /Inter-Variable-Latin\.woff2/);
+
+  assert.match(
+    template,
+    /<a href="\$\{escapedConfirmationUrl\}"[^>]*>Confirm email<\/a>/,
+  );
+  assert.doesNotMatch(template, /href="\$\{confirmationUrl\}"/);
+  assert.match(
+    template,
+    /text:\s*\[[\s\S]*?"Confirm this email address to receive the Ruined updates you requested\."[\s\S]*?confirmationUrl[\s\S]*?"If you did not request this, you can ignore this email\."[\s\S]*?\]\.join\("\\n"\)/,
+  );
+});
+
 test("Resend sync snapshots and recovery preserve consent ordering", async () => {
   const [migration, repository, outbox, worker, resend] = await Promise.all([
     source("db/migrations/20260819_communications.sql"),

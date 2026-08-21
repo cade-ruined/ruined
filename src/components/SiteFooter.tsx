@@ -37,12 +37,12 @@ export default function SiteFooter() {
         <FooterColumn title="Index" links={FOOTER_INDEX_ITEMS} />
         <FooterColumn title="Service" links={SERVICE_NAV_ITEMS} />
         <div className="min-w-0">
-          <p className="font-mono text-[0.58rem] uppercase tracking-[0.3em] opacity-45">Studio</p>
+          <p className="font-sans text-[0.58rem] uppercase tracking-[0.3em] opacity-45">Studio</p>
           <Link className="mt-4 block text-[clamp(0.65rem,1.2vw,0.875rem)] underline underline-offset-4 [overflow-wrap:anywhere]" href="/contact">connect@theruinedproject.com</Link>
-          <p className="mt-3 font-mono text-[0.58rem] uppercase tracking-[0.2em] opacity-55">40.4478° N · 111.7783° W</p>
+          <p className="mt-3 font-sans text-[0.58rem] uppercase tracking-[0.2em] opacity-55">40.4478° N · 111.7783° W</p>
         </div>
       </div>
-      <div className="mx-auto mt-12 flex max-w-6xl flex-wrap justify-between gap-3 border-t border-black/15 pt-5 font-mono text-[0.55rem] uppercase tracking-[0.22em] opacity-55">
+      <div className="mx-auto mt-12 flex max-w-6xl flex-wrap justify-between gap-3 border-t border-black/15 pt-5 font-sans text-[0.55rem] uppercase tracking-[0.22em] opacity-55">
         <span>© 2026 The Ruined Project</span><span>After the fear</span>
       </div>
     </footer>
@@ -56,5 +56,5 @@ function FooterColumn({
   title: string;
   links: ReadonlyArray<{ label: string; href: string }>;
 }) {
-  return <div><p className="font-mono text-[0.58rem] uppercase tracking-[0.3em] opacity-45">{title}</p><ul className="mt-4 space-y-2 text-sm">{links.map(({ label, href }) => <li key={href}><Link className="hover:text-[var(--color-poster)]" href={href}>{label}</Link></li>)}</ul></div>;
+  return <div><p className="font-sans text-[0.58rem] uppercase tracking-[0.3em] opacity-45">{title}</p><ul className="mt-4 space-y-2 text-sm">{links.map(({ label, href }) => <li key={href}><Link className="hover:text-[var(--color-poster)]" href={href}>{label}</Link></li>)}</ul></div>;
 }

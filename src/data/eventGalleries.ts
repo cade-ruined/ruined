@@ -25,7 +25,7 @@ export const BYOB_01_GALLERY = [
     src: "/events/byob-01/gallery/01-img-8059.webp?v=1",
     width: 1102,
     height: 2000,
-    alt: "Storm clouds lifting above the mountain during BYOB Nº 01.",
+    alt: "The BYOB Nº 01 group gathered beneath storm clouds in the mountains.",
     label: BYOB_01_LABEL,
   },
   credited({

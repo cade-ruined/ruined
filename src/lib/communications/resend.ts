@@ -2,6 +2,7 @@ import "server-only";
 
 import { Resend, type ErrorResponse, type WebhookEventPayload } from "resend";
 
+import { createGeneralUpdatesConfirmationEmail } from "@/lib/communications/general-updates-confirmation-email";
 import {
   COMMUNICATION_SOURCES,
   normalizeCommunicationEmail,
@@ -184,14 +185,6 @@ function readWebhookHeader(headers: ResendWebhookHeaderSource, name: string): st
   return undefined;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
 export function getResendConfigurationStatus(): ResendConfigurationStatus {
   const apiKeyConfigured = Boolean(environmentValue("RESEND_API_KEY"));
   const marketingEnabled = process.env.RESEND_MARKETING_ENABLED === "true";
@@ -251,32 +244,20 @@ export async function sendDoubleOptInConfirmationEmail(
   const email = requireEmail(input.email);
   const token = requireNonEmpty(input.token, "Confirmation token");
   const idempotencyKey = requireNonEmpty(input.idempotencyKey, "Idempotency key");
-  const confirmationUrl = new URL("/communications/confirm", requireProductionSiteUrl());
+  const siteUrl = requireProductionSiteUrl();
+  const confirmationUrl = new URL("/communications/confirm", siteUrl);
   confirmationUrl.searchParams.set("token", token);
   const confirmationUrlString = confirmationUrl.toString();
-  const escapedConfirmationUrl = escapeHtml(confirmationUrlString);
+  const confirmationEmail = createGeneralUpdatesConfirmationEmail({
+    confirmationUrl: confirmationUrlString,
+    siteUrl,
+  });
 
   const response = await resend.emails.send(
     {
       from,
       to: email,
-      subject: "Confirm your email",
-      text: [
-        "Confirm this email address to receive the Ruined updates you requested.",
-        "",
-        confirmationUrlString,
-        "",
-        "If you did not request this, you can ignore this email.",
-      ].join("\n"),
-      html: [
-        '<div style="background:#fff;color:#111;font-family:Arial,sans-serif;line-height:1.5;margin:0;padding:32px">',
-        '<div style="max-width:520px;margin:0 auto">',
-        '<p style="font-size:16px;margin:0 0 24px">Confirm this email address to receive the Ruined updates you requested.</p>',
-        `<p style="margin:0 0 24px"><a href="${escapedConfirmationUrl}" style="color:#111;text-decoration:underline">Confirm email</a></p>`,
-        '<p style="color:#666;font-size:13px;margin:0">If you did not request this, you can ignore this email.</p>',
-        "</div>",
-        "</div>",
-      ].join(""),
+      ...confirmationEmail,
     },
     { idempotencyKey },
   );
