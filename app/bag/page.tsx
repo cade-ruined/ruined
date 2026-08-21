@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import BagPageClient from "@/components/store/BagPageClient";
+import { getProducts } from "@/lib/shopify";
+
+// Bag display values are reconciled against Shopify on every request so the
+// price, availability, and preorder date cannot come from a stale deployment.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Bag",
@@ -8,21 +13,22 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-export default function BagPage() {
+export default async function BagPage() {
   const email = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "connect@theruinedproject.com";
+  const products = await getProducts();
 
   return (
     <main className="min-h-screen bg-black px-5 pb-24 pt-10 text-[var(--color-bone)] sm:px-10 sm:pt-12">
       <div className="mx-auto max-w-[96rem]">
         <div className="flex items-center justify-between gap-5 font-mono text-[0.56rem] uppercase tracking-[0.24em] text-white/45">
-          <Link href="/#store" className="transition-colors hover:text-white">← Store</Link>
-          <span>Held in this browser</span>
+          <Link href="/store" className="transition-colors hover:text-white">← Store</Link>
+          <span>Ruined / Bag</span>
         </div>
         <div className="mb-10 mt-10 border-b border-white/15 pb-8 sm:mb-14 sm:mt-14 sm:pb-10">
           <p className="font-mono text-[0.56rem] uppercase tracking-[0.28em] text-[var(--color-poster)]">Your selection</p>
           <h1 className="display mt-3 text-[clamp(3.5rem,10vw,8rem)] leading-[0.82]">Bag.</h1>
         </div>
-        <BagPageClient email={email} />
+        <BagPageClient email={email} products={products} />
       </div>
     </main>
   );

@@ -29,7 +29,7 @@ test("production metadata uses the brand domain and restrained positioning", asy
   assert.match(layout, /https:\/\/www\.instagram\.com\/theruinedproject/);
 });
 
-test("sitemap includes only meaningful public launch pages", async () => {
+test("sitemap includes the public catalogue and product routes", async () => {
   const sitemap = await read("app/sitemap.ts");
 
   for (const route of [
@@ -37,16 +37,20 @@ test("sitemap includes only meaningful public launch pages", async () => {
     "/community",
     "/contact",
     "/privacy",
+    "/store",
   ]) {
     assert.match(sitemap, new RegExp(`path: "${route}"`));
   }
 
-  for (const route of ["/store", "/work", "/foundations"]) {
+  for (const route of ["/work", "/foundations"]) {
     assert.doesNotMatch(sitemap, new RegExp(`path: "${route}"`));
   }
 
   assert.doesNotMatch(sitemap, /lastModified/);
   assert.doesNotMatch(sitemap, /PRODUCTS|PROJECTS/);
+  assert.match(sitemap, /getProducts/);
+  assert.match(sitemap, /products\.map/);
+  assert.match(sitemap, /\/store\/\$\{encodeURIComponent\(product\.id\)\}/);
   assert.match(sitemap, /getShopPolicies/);
   assert.match(sitemap, /terms[\s\S]*path: "\/terms"/);
   assert.match(sitemap, /shipping[\s\S]*path: "\/shipping-returns"/);
@@ -78,31 +82,50 @@ test("About is crawlable content and internal Foundations is noindex", async () 
   assert.match(foundations, /robots: \{ index: false, follow: false \}/);
 });
 
-test("dormant Store and Artifacts routes stay out of search", async () => {
-  const [storeLayout, workLayout] = await Promise.all([
+test("the live Store is crawlable while dormant Artifacts stays out of search", async () => {
+  const [storeLayout, storeOpenGraph, workLayout] = await Promise.all([
     read("app/store/layout.tsx"),
+    read("app/store/opengraph-image.tsx"),
     read("app/work/layout.tsx"),
   ]);
 
-  for (const layout of [storeLayout, workLayout]) {
-    assert.match(layout, /robots: \{ index: false, follow: true \}/);
-  }
+  assert.doesNotMatch(storeLayout, /robots:/);
+  assert.doesNotMatch(storeOpenGraph, /COMING SOON/i);
+  assert.match(storeOpenGraph, /CURRENT PIECES/);
+  assert.match(workLayout, /robots: \{ index: false, follow: true \}/);
 });
 
-test("the dormant Store index returns visitors to the immersive shop", async () => {
-  const [storePage, bagPage, bagClient, productPage] = await Promise.all([
+test("the live Store catalogue and commerce routes remain internally connected", async () => {
+  const [storePage, storeGallery, bagPage, bagClient, productPage, purchase, search] = await Promise.all([
     read("app/store/page.tsx"),
+    read("src/components/store/StoreGallery.tsx"),
     read("app/bag/page.tsx"),
     read("src/components/store/BagPageClient.tsx"),
     read("app/store/[handle]/page.tsx"),
+    read("src/components/store/ProductPurchase.tsx"),
+    read("src/data/search.ts"),
   ]);
 
-  assert.match(storePage, /redirect\("\/#store"\)/);
-  assert.doesNotMatch(storePage, /ComingSoonGate|Store · Coming Soon/);
+  assert.match(storePage, /getProducts\(\)/);
+  assert.match(storePage, /<StoreGallery products=\{products\}/);
+  assert.doesNotMatch(storePage, /redirect\(/);
+  assert.match(storeGallery, /if \(!products\.length\)/);
+  assert.match(storeGallery, /The catalogue is closed\./);
   for (const source of [bagPage, bagClient, productPage]) {
-    assert.match(source, /href="\/#store"/);
-    assert.doesNotMatch(source, /href="\/store"/);
+    assert.match(source, /href="\/store"/);
+    assert.doesNotMatch(source, /href="\/#store"/);
   }
+  assert.match(search, /href: "\/store"/);
+  assert.match(productPage, /product\.images\?\.length/);
+  assert.match(productPage, /slice\(0, 2\)/);
+  assert.match(productPage, /"@type": "Product"/);
+  assert.match(productPage, /"@type": "AggregateOffer"/);
+  assert.match(productPage, /spec\.value\.trim\(\)/);
+  assert.match(purchase, /Secure checkout/);
+  assert.doesNotMatch(
+    `${storePage}${bagPage}${bagClient}${productPage}${purchase}`,
+    /Checkout secured by Shopify|secured by Shopify/
+  );
 });
 
 test("the future programme implementation stays dormant but retained", async () => {

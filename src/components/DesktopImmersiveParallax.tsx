@@ -17,6 +17,7 @@ import {
   type MotionValue,
 } from "motion/react";
 import { EVENTS } from "@/data/events";
+import type { Product } from "@/data/products";
 import {
   EXPLORE_ROOMS,
   FOOTER_INDEX_ITEMS,
@@ -25,6 +26,7 @@ import {
 import {
   JourneyEventsIndex,
   JourneyLobbyIndex,
+  JourneyStoreIndex,
 } from "@/components/sequence/JourneyIndexes";
 import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
@@ -548,8 +550,10 @@ function useDesktopJourneyScene({
 
 export default function DesktopImmersiveParallax({
   manifest,
+  products,
 }: {
   manifest: SequenceManifest;
+  products: Product[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
@@ -762,7 +766,7 @@ export default function DesktopImmersiveParallax({
           room={EXPLORE_ROOMS[1]}
           wide
         >
-          <JourneyComingSoon section="store" />
+          <JourneyStoreIndex products={products} />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && worksArrivalB && worksArrivalB.count > 0 && (

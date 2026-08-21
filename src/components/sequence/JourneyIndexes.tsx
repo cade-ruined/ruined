@@ -13,6 +13,19 @@ const JOURNEY_GRID_CLASS =
 const JOURNEY_CARD_CLASS =
   "group relative aspect-[4/5] overflow-hidden bg-black/85 text-[var(--color-bone)] ring-1 ring-inset ring-white/15";
 
+function formatJourneyShipDate(value: string): string {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00Z`)
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 function requestWalkRoom(
   event: ReactMouseEvent<HTMLAnchorElement>,
   hash: string
@@ -225,39 +238,75 @@ export function JourneyLobbyIndex({
 
 export function JourneyStoreIndex({ products }: { products: Product[] }) {
   const featuredProducts = products.slice(0, 3);
-  if (!featuredProducts.length) return null;
+  const productCount = featuredProducts.length;
+  const shelfWidthClass =
+    productCount <= 1
+      ? "mx-auto max-w-[18rem]"
+      : productCount === 2
+        ? "mx-auto max-w-[38rem]"
+        : "w-full";
 
   return (
-    <div className={JOURNEY_GRID_CLASS}>
-      {featuredProducts.map((product, index) => (
+    <div data-journey-store-index className="w-full">
+      {productCount > 0 && (
         <div
-          key={product.id}
-          className={JOURNEY_CARD_CLASS}
+          className={`${JOURNEY_GRID_CLASS} ${shelfWidthClass}`}
+          style={{
+            gridTemplateColumns: `repeat(${productCount}, minmax(0, 1fr))`,
+          }}
         >
-          {product.image && (
-            <Image
-              src={product.image.url}
-              alt={product.image.alt}
-              fill
-              sizes="(min-width: 640px) 22rem, 28vw"
-              className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
-            />
-          )}
-          <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-          <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
-            {index === 0 ? "Featured · " : ""}
-            {product.code}
-          </span>
-          <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-            <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
-              {product.name}
-            </strong>
-            <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
-              <span>{product.price}</span>
-            </span>
-          </span>
+          {featuredProducts.map((product, index) => {
+            const shipDate = product.expectedShipDate
+              ? formatJourneyShipDate(product.expectedShipDate)
+              : undefined;
+
+            return (
+              <Link
+                key={product.id}
+                href={`/store/${product.id}`}
+                className={JOURNEY_CARD_CLASS}
+              >
+                {product.image && (
+                  <Image
+                    src={product.image.url}
+                    alt={product.image.alt}
+                    fill
+                    sizes="(min-width: 640px) 22rem, 28vw"
+                    className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+                  />
+                )}
+                <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
+                <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
+                  {index === 0 ? "Featured · " : ""}
+                  {product.code}
+                </span>
+                <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
+                  <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
+                    {product.name}
+                  </strong>
+                  <span className="mt-1 block font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
+                    {product.price}
+                  </span>
+                  {shipDate && (
+                    <span className="mt-1 block font-sans text-[clamp(0.38rem,0.82vw,0.5rem)] uppercase tracking-[0.08em] text-[var(--color-poster)] sm:tracking-[0.13em]">
+                      Preorder · Est. ship {shipDate}
+                    </span>
+                  )}
+                </span>
+              </Link>
+            );
+          })}
         </div>
-      ))}
+      )}
+      <div className={`mt-2 flex justify-end ${shelfWidthClass}`}>
+        <Link
+          href="/store"
+          className="ui-heading inline-flex items-center gap-3 border-b border-white/35 pb-1 text-[0.58rem] text-white transition-colors hover:border-[var(--color-poster)] hover:text-[var(--color-poster)] sm:text-[0.62rem]"
+        >
+          <span>View catalogue</span>
+          <span aria-hidden="true">→</span>
+        </Link>
+      </div>
     </div>
   );
 }

@@ -442,7 +442,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(journey, /ruined-mobile-stage-active/);
   assert.match(journey, /onPointerDown/);
   assert.match(journey, /fire-stream-loop-mobile\.mp4/);
-  assert.match(journey, /<JourneyComingSoon key="store-selections" section="store"/);
+  assert.match(journey, /<JourneyStoreIndex key="store-selections" products=\{products\} \/>/);
   assert.match(journey, /<JourneyComingSoon key="work-selections" section="artifacts"/);
   assert.match(journey, /<JourneyAboutStatement[\s\S]*key="about-statement"[\s\S]*headingId="mobile-journey-about-statement-heading"/);
   assert.match(journey, /JourneyEventsIndex/);
@@ -450,9 +450,16 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(journey, /atLobby: index === 0/);
   assert.match(journey, /roomSelections/);
   assert.doesNotMatch(journey, /Enter Ruined|Begin the walk/);
-  assert.match(homePage, /<MobileImmersiveJourney \/>/);
+  assert.match(homePage, /const products = await getProducts\(\)/);
+  assert.equal((homePage.match(/getProducts\(\)/g) ?? []).length, 1);
+  assert.match(homePage, /products=\{products\}[\s\S]*fallback=\{<MobileImmersiveJourney products=\{products\} \/>\}/);
+  assert.match(bootstrap, /products: Product\[\]/);
+  assert.match(bootstrap, /<Component manifest=\{manifest\} products=\{products\} \/>/);
   assert.match(desktop, /LobbyOpeningOverlay/);
   assert.match(desktop, /<JourneyLobbyIndex/);
+  assert.match(desktop, /<JourneyStoreIndex products=\{products\} \/>/);
+  assert.doesNotMatch(desktop, /<JourneyComingSoon section="store"/);
+  assert.match(desktop, /<JourneyComingSoon section="artifacts"/);
   assert.match(desktop, /<JourneyAboutStatement headingId="desktop-journey-about-heading"/);
   assert.match(desktop, /room=\{EXPLORE_ROOMS\[4\]\}[\s\S]*placement="above-fire"[\s\S]*<JourneyEventsIndex/);
   assert.match(desktop, /var\(--ruined-header-height, 4\.5rem\) \+ 1\.5rem/);
@@ -484,6 +491,11 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /target=\{selection\.external \? "_blank" : undefined\}/);
   assert.match(lobbyIndex, /className="journey-card-title/);
   assert.match(indexes, /products\.slice\(0, 3\)/);
+  assert.match(indexes, /gridTemplateColumns: `repeat\(\$\{productCount\}, minmax\(0, 1fr\)\)`/);
+  assert.match(indexes, /productCount === 2[\s\S]*max-w-\[38rem\]/);
+  assert.match(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
+  assert.match(indexes, /product\.expectedShipDate[\s\S]*Preorder · Est\. ship \{shipDate\}/);
+  assert.match(indexes, /href="\/store"[\s\S]*View catalogue/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /const visibleEvents = events\.slice\(0, 3\)/);
   assert.match(indexes, /visibleEvents\.length === 2[\s\S]*"sm:mx-auto sm:w-2\/3"/);
@@ -894,10 +906,10 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(footer, /pathname === "\/"/);
   assert.match(desktop, /WALK_SECTION_ITEMS\.map/);
   assert.doesNotMatch(desktop, /GLOBAL_NAV_ITEMS\.map/);
-  for (const href of ["/#store", "/#work", "/#about", "/#events"]) {
+  for (const href of ["/store", "/#work", "/#about", "/#events"]) {
     assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
   }
-  assert.match(searchDialog, /href="\/#store"[\s\S]*Browse the shop instead/);
+  assert.match(searchDialog, /href="\/store"[\s\S]*Browse the shop instead/);
   assert.doesNotMatch(styles, /any-pointer: coarse/);
   assert.match(bootstrap, /MOBILE_STAGE_QUERY/);
   assert.doesNotMatch(desktop, /<JourneySectionHero/);
@@ -911,7 +923,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.doesNotMatch(mobile, /cta: "Read about Ruined"/);
   assert.match(indexes, />See all events<\/span>/);
   assert.doesNotMatch(`${desktop}\n${mobile}`, /Enter the store/i);
-  assert.doesNotMatch(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
+  assert.match(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
   assert.doesNotMatch(indexes, /href=\{`\/work\/\$\{projectSlug\(project\)\}`\}/);
   assert.match(gallery, /featured=\{index === 0\}/);
   assert.match(gallery, /featured \? "col-span-2"/);
@@ -937,15 +949,15 @@ test("launch navigation keeps dormant section routes out of visitor-facing links
   ]);
 
   assert.match(navigation, /export const WALK_SECTION_ITEMS = EXPLORE_ROOMS\.slice\(1\)/);
-  assert.match(navigation, /FOOTER_INDEX_ITEMS = \[[\s\S]*\.\.\.WALK_SECTION_ITEMS,[\s\S]*SITE_ROUTES\.contact/);
+  assert.match(navigation, /FOOTER_INDEX_ITEMS = \[[\s\S]*SITE_ROUTES\.store,[\s\S]*\.\.\.WALK_SECTION_ITEMS\.slice\(1\),[\s\S]*SITE_ROUTES\.contact/);
   assert.match(footer, /FOOTER_INDEX_ITEMS/);
   assert.match(desktop, /WALK_SECTION_ITEMS\.map/);
   assert.doesNotMatch(desktop, /GLOBAL_NAV_ITEMS\.map/);
-  assert.match(search, /href="\/#store"[\s\S]*Browse the shop instead/);
+  assert.match(search, /href="\/store"[\s\S]*Browse the shop instead/);
   assert.match(siblingNav, /WALK_SECTION_ITEMS\.map/);
   assert.match(siblingNav, /href=\{room\.href\}/);
 
-  for (const href of ["/#store", "/#work", "/#about", "/#events"]) {
+  for (const href of ["/store", "/#work", "/#about", "/#events"]) {
     assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
   }
   assert.match(searchData, /href: `\/community#\$\{event\.id\}`/);

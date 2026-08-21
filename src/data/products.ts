@@ -21,6 +21,13 @@ export type ProductOption = {
   values: string[];
 };
 
+export type ProductImage = {
+  url: string;
+  alt: string;
+  width?: number;
+  height?: number;
+};
+
 export type ProductVariant = {
   id: string;
   title: string;
@@ -44,12 +51,17 @@ export type Product = {
   tone: ProductTone;
   // Product photography from Shopify (featuredImage). When absent (e.g. local
   // fallback), surfaces render the `tone` gradient art instead.
-  image?: { url: string; alt: string };
+  image?: ProductImage;
+  // The complete editorial image sequence. `image` remains the compact-card
+  // cover while product pages can use every Shopify image without exposing a
+  // Shopify-hosted product template.
+  images?: ProductImage[];
   // The complete option/variant model. Local fallback items use stable
   // `local:` IDs so selection and the persistent bag can be tested without
   // exposing a Storefront token or pretending checkout is live.
   options: ProductOption[];
   variants: ProductVariant[];
+  expectedShipDate?: string;
   // Compatibility field for older catalogue surfaces. New purchase controls
   // use `variants` and always require the shopper to choose an available one.
   variantId?: string;

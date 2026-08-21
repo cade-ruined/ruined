@@ -23,6 +23,24 @@ function visibleOptions(product: Product): ProductOption[] {
   );
 }
 
+function formatPriceForSentence(price: string): string {
+  return price.replace(/^([£$€])\s+/, "$1");
+}
+
+function formatExpectedShipDate(value?: string): string | undefined {
+  if (!value) return undefined;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00Z`)
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 export default function ProductPurchase({ product }: { product: Product }) {
   const options = useMemo(() => visibleOptions(product), [product]);
   const firstAvailable = product.variants.find((variant) => variant.available) ?? product.variants[0];
@@ -44,6 +62,8 @@ export default function ProductPurchase({ product }: { product: Product }) {
     ? product.variants.find((variant) => variantMatches(variant, selection))
     : undefined;
   const purchasable = selectedVariant?.available === true;
+  const expectedShipDate = formatExpectedShipDate(product.expectedShipDate);
+  const isPreorder = Boolean(expectedShipDate);
   const isShopifyProduct = product.variants.some((variant) => isShopifyVariantId(variant.id));
   const missingOptions = options.filter((option) => !selection[option.name]);
   const selectionPrompt = missingOptions.length === 1
@@ -51,13 +71,27 @@ export default function ProductPurchase({ product }: { product: Product }) {
     : "Select options";
 
   function canSelect(name: string, value: string): boolean {
-    const next = { ...selection, [name]: value };
+    const optionIndex = options.findIndex((option) => option.name === name);
+    const next = Object.fromEntries([
+      ...options.slice(0, optionIndex).flatMap((option) =>
+        selection[option.name] ? [[option.name, selection[option.name]]] : []
+      ),
+      [name, value],
+    ]);
     return product.variants.some((variant) => variant.available && variantMatches(variant, next));
   }
 
   function choose(name: string, value: string) {
     setAdded(false);
-    setSelection((current) => ({ ...current, [name]: value }));
+    const optionIndex = options.findIndex((option) => option.name === name);
+    setSelection((current) =>
+      Object.fromEntries([
+        ...options.slice(0, optionIndex).flatMap((option) =>
+          current[option.name] ? [[option.name, current[option.name]]] : []
+        ),
+        [name, value],
+      ])
+    );
   }
 
   function addSelectedVariant() {
@@ -73,6 +107,7 @@ export default function ProductPurchase({ product }: { product: Product }) {
       priceAmount: selectedVariant.priceAmount,
       currencyCode: selectedVariant.currencyCode,
       image: product.image,
+      expectedShipDate: product.expectedShipDate,
     });
     setAdded(true);
   }
@@ -80,6 +115,17 @@ export default function ProductPurchase({ product }: { product: Product }) {
   return (
     <div className="mt-6">
       <p className="display text-3xl">{selectedVariant?.price ?? product.price}</p>
+
+      {isPreorder && (
+        <div className="mt-5 border-l border-[var(--color-poster)] pl-4">
+          <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-[var(--color-poster)]">
+            Preorder — pay in full
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-white/65">
+            Pay {formatPriceForSentence(selectedVariant?.price ?? product.price)} now. Expected to ship {expectedShipDate}.
+          </p>
+        </div>
+      )}
 
       {options.map((option) => (
         <fieldset key={option.name} className="mt-8">
@@ -118,24 +164,26 @@ export default function ProductPurchase({ product }: { product: Product }) {
         disabled={!purchasable}
         className="mt-8 w-full border border-white bg-white px-5 py-4 font-mono text-xs uppercase tracking-[0.28em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/35"
       >
-        {!selectionComplete
-          ? selectionPrompt
-          : purchasable
-            ? (added ? "Added to bag" : "Add to bag")
-            : "Unavailable"}
+        <span aria-live="polite">
+          {!selectionComplete
+            ? selectionPrompt
+            : purchasable
+              ? (added ? "Added to bag" : isPreorder ? "Preorder" : "Add to bag")
+              : "Unavailable"}
+        </span>
       </button>
 
-      <div className="mt-4 flex items-center justify-between gap-4 font-mono text-[0.54rem] uppercase tracking-[0.2em] text-white/45">
-        <span>{isShopifyProduct ? "Checkout secured by Shopify" : "Confirmed by the studio"}</span>
+      <div className="mt-4 flex items-center justify-between gap-4 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-white/65">
+        <span>{isShopifyProduct ? "Secure checkout" : "Studio confirmation"}</span>
         <BagLink className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)]" />
       </div>
 
       {!isShopifyProduct && (
-        <p className="mt-5 text-xs leading-relaxed text-white/40">
-          Your selection is held in this browser. Send the bag to the studio for availability and completion.
+        <p className="mt-5 text-xs leading-relaxed text-white/65">
+          Studio confirmation is required before payment.
         </p>
       )}
-      <Link href="/shipping-returns" className="mt-3 inline-block text-xs text-white/40 underline decoration-white/20 underline-offset-4 hover:text-white">
+      <Link href="/shipping-returns" className="mt-3 inline-flex min-h-11 items-center text-xs text-white/65 underline decoration-white/30 underline-offset-4 hover:text-white">
         Shipping + returns
       </Link>
     </div>

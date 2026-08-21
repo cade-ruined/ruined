@@ -107,7 +107,8 @@ export const WALK_MENU_ITEMS = EXPLORE_ROOMS;
 export const WALK_SECTION_ITEMS = EXPLORE_ROOMS.slice(1);
 
 export const FOOTER_INDEX_ITEMS = [
-  ...WALK_SECTION_ITEMS,
+  SITE_ROUTES.store,
+  ...WALK_SECTION_ITEMS.slice(1),
   SITE_ROUTES.contact,
 ] as const;
 

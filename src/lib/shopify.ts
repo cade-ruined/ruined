@@ -23,6 +23,7 @@ import {
 const domain = process.env.SHOPIFY_STORE_DOMAIN;
 const publicAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 const apiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-07";
+const publicCheckoutDomain = process.env.SHOPIFY_CHECKOUT_DOMAIN?.trim().toLowerCase();
 
 export const isShopifyConfigured = Boolean(domain && publicAccessToken);
 
@@ -45,6 +46,9 @@ const PRODUCTS_QUERY = `#graphql
         title
         description
         featuredImage { url altText }
+        images(first: 12) {
+          nodes { url altText width height }
+        }
         priceRange { minVariantPrice { amount currencyCode } }
         options { name values }
         variants(first: 100) {
@@ -63,6 +67,7 @@ const PRODUCTS_QUERY = `#graphql
           { namespace: "custom", key: "origin" }
           { namespace: "custom", key: "care" }
           { namespace: "custom", key: "tone" }
+          { namespace: "custom", key: "expected_ship_date" }
         ]) { key value }
       }
     }
@@ -83,6 +88,7 @@ const CART_CREATE = `#graphql
     cartCreate(input: { lines: $lines }) {
       cart { checkoutUrl }
       userErrors { field message }
+      warnings { code message target }
     }
   }
 `;
@@ -95,6 +101,14 @@ type SFProductNode = {
   title: string;
   description: string;
   featuredImage: { url: string; altText: string | null } | null;
+  images: {
+    nodes: {
+      url: string;
+      altText: string | null;
+      width: number | null;
+      height: number | null;
+    }[];
+  };
   priceRange: { minVariantPrice: SFMoney };
   options: { name: string; values: string[] }[];
   variants: {
@@ -110,7 +124,11 @@ type SFProductNode = {
 };
 type SFProductsResponse = { products: { nodes: SFProductNode[] } };
 type SFCartCreateResponse = {
-  cartCreate: { cart: { checkoutUrl: string } | null };
+  cartCreate: {
+    cart: { checkoutUrl: string } | null;
+    userErrors: { field: string[] | null; message: string }[];
+    warnings: { code: string; message: string; target: string | null }[];
+  };
 };
 
 // ─── Mapping (Shopify → our Product) ─────────────────────────────────────────
@@ -144,6 +162,15 @@ function resolveTone(metaTone: string | undefined, handle: string, index: number
 
 function mapProduct(node: SFProductNode, index: number): Product {
   const meta = toMetaMap(node.metafields);
+  const images = (node.images?.nodes ?? []).map((image) => ({
+    url: image.url,
+    alt: image.altText ?? node.title,
+    ...(image.width ? { width: image.width } : {}),
+    ...(image.height ? { height: image.height } : {}),
+  }));
+  const featuredImage = node.featuredImage
+    ? { url: node.featuredImage.url, alt: node.featuredImage.altText ?? node.title }
+    : images[0];
   const variants: ProductVariant[] = node.variants.nodes.map((variant) => ({
     id: variant.id,
     title: variant.title,
@@ -171,11 +198,11 @@ function mapProduct(node: SFProductNode, index: number): Product {
     origin: meta.origin ?? "",
     care: meta.care ?? "",
     tone: resolveTone(meta.tone, node.handle, index),
-    image: node.featuredImage
-      ? { url: node.featuredImage.url, alt: node.featuredImage.altText ?? node.title }
-      : undefined,
+    image: featuredImage,
+    images: images.length ? images : featuredImage ? [featuredImage] : [],
     options,
     variants,
+    expectedShipDate: meta.expected_ship_date || undefined,
     variantId: defaultVariant?.id,
     available: variants.some((variant) => variant.available),
   };
@@ -212,24 +239,58 @@ export async function getProducts(): Promise<Product[]> {
 export type CheckoutLine = {
   variantId: string;
   quantity: number;
+  attributes?: { key: string; value: string }[];
 };
+
+const CHECKOUT_HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+function resolvePublicCheckoutUrl(checkoutUrl: string): string | null {
+  try {
+    const url = new URL(checkoutUrl);
+    if (url.protocol !== "https:") return null;
+    if (!publicCheckoutDomain) return url.toString();
+    if (!CHECKOUT_HOSTNAME.test(publicCheckoutDomain)) return null;
+    url.hostname = publicCheckoutDomain;
+    url.port = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
 
 export async function createCheckoutUrl(
   input: string | CheckoutLine[],
   quantity = 1
 ): Promise<string | null> {
   if (!client) return null;
-  const lines = typeof input === "string"
-    ? [{ merchandiseId: input, quantity }]
-    : input.map((line) => ({ merchandiseId: line.variantId, quantity: line.quantity }));
+  const lines: {
+    merchandiseId: string;
+    quantity: number;
+    attributes?: { key: string; value: string }[];
+  }[] =
+    typeof input === "string"
+      ? [{ merchandiseId: input, quantity }]
+      : input.map((line) => ({
+          merchandiseId: line.variantId,
+          quantity: line.quantity,
+          ...(line.attributes?.length ? { attributes: line.attributes } : {}),
+        }));
   if (!lines.length) return null;
   try {
     const { data, errors } = await client.request<SFCartCreateResponse>(
       CART_CREATE,
       { variables: { lines } }
     );
-    if (errors) return null;
-    return data?.cartCreate?.cart?.checkoutUrl ?? null;
+    const result = data?.cartCreate;
+    if (
+      errors ||
+      !result ||
+      result.userErrors.length > 0 ||
+      result.warnings.length > 0
+    ) return null;
+    return result.cart?.checkoutUrl
+      ? resolvePublicCheckoutUrl(result.cart.checkoutUrl)
+      : null;
   } catch {
     return null;
   }

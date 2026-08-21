@@ -19,6 +19,7 @@ export type BagItem = {
   priceAmount: string;
   currencyCode: string;
   image?: { url: string; alt: string };
+  expectedShipDate?: string;
   quantity: number;
 };
 
@@ -40,6 +41,10 @@ function isOptionValue(value: unknown): value is ProductOptionValue {
   return typeof option.name === "string" && typeof option.value === "string";
 }
 
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
 function isBagItem(value: unknown): value is BagItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
@@ -55,8 +60,13 @@ function isBagItem(value: unknown): value is BagItem {
     typeof item.unitPrice === "string" &&
     typeof item.priceAmount === "string" &&
     typeof item.currencyCode === "string" &&
+    isOptionalString(item.expectedShipDate) &&
     typeof item.quantity === "number"
   );
+}
+
+function bagItemKey(productId: string, variantId: string): string {
+  return `${productId}::${variantId}`;
 }
 
 function readBag(): BagItem[] {
@@ -64,10 +74,36 @@ function readBag(): BagItem[] {
   try {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isBagItem).map((item) => ({
-      ...item,
+    const normalized = parsed.filter(isBagItem).map((item) => ({
+      key: bagItemKey(item.productId, item.variantId),
+      productId: item.productId,
+      productName: item.productName,
+      productCode: item.productCode,
+      variantId: item.variantId,
+      variantTitle: item.variantTitle,
+      selectedOptions: item.selectedOptions,
+      unitPrice: item.unitPrice,
+      priceAmount: item.priceAmount,
+      currencyCode: item.currencyCode,
+      image: item.image,
+      expectedShipDate: item.expectedShipDate,
       quantity: clampQuantity(item.quantity),
     }));
+    const consolidated = new Map<string, BagItem>();
+    for (const item of normalized) {
+      const existing = consolidated.get(item.key);
+      consolidated.set(
+        item.key,
+        existing
+          ? {
+              ...existing,
+              expectedShipDate: item.expectedShipDate ?? existing.expectedShipDate,
+              quantity: clampQuantity(existing.quantity + item.quantity),
+            }
+          : item
+      );
+    }
+    return Array.from(consolidated.values());
   } catch {
     return [];
   }
@@ -84,13 +120,17 @@ function mutateBag(update: (items: BagItem[]) => BagItem[]) {
 }
 
 export function addBagItem(item: NewBagItem) {
-  const key = `${item.productId}::${item.variantId}`;
+  const key = bagItemKey(item.productId, item.variantId);
   mutateBag((items) => {
     const existing = items.find((line) => line.key === key);
     if (existing) {
       return items.map((line) =>
         line.key === key
-          ? { ...line, quantity: clampQuantity(line.quantity + (item.quantity ?? 1)) }
+          ? {
+              ...line,
+              expectedShipDate: item.expectedShipDate ?? line.expectedShipDate,
+              quantity: clampQuantity(line.quantity + (item.quantity ?? 1)),
+            }
           : line
       );
     }

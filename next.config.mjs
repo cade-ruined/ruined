@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const isDev = process.env.NODE_ENV !== "production";
+const checkoutHostname = process.env.SHOPIFY_CHECKOUT_DOMAIN?.trim().toLowerCase();
+const checkoutOrigin =
+  checkoutHostname && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(checkoutHostname)
+    ? ` https://${checkoutHostname}`
+    : "";
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
@@ -10,7 +15,7 @@ const csp = [
   "connect-src 'self' https://*.myshopify.com https://cdn.shopify.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
-  "form-action 'self' https://*.myshopify.com https://shop.app",
+  `form-action 'self' https://*.myshopify.com https://shop.app${checkoutOrigin}`,
   "object-src 'none'",
 ].join("; ");
 

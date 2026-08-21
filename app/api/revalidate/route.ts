@@ -3,8 +3,8 @@ import { revalidatePath } from "next/cache";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 // On-demand ISR for the store. Wire a Shopify webhook (Settings → Notifications
-// → Webhooks, or via the Admin API) for `products/create`, `products/update`,
-// and `products/delete` to:
+// → Webhooks, or via the Admin API) for product create/update/delete and
+// product publication create/update/delete events to:
 //
 //   POST https://your-site.com/api/revalidate
 //
@@ -12,6 +12,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 // the URL: query strings are commonly retained in proxy and platform logs.
 const recentWebhookIds = new Set<string>();
 const MAX_RECENT_WEBHOOKS = 1_000;
+const SUPPORTED_TOPICS = new Set([
+  "products/create",
+  "products/update",
+  "products/delete",
+  "product_publications/create",
+  "product_publications/update",
+  "product_publications/delete",
+]);
 
 export async function POST(req: NextRequest) {
   const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
@@ -39,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, message: "Invalid signature" }, { status: 401 });
   }
 
-  if (!topic?.startsWith("products/")) {
+  if (!topic || !SUPPORTED_TOPICS.has(topic)) {
     return NextResponse.json({ ok: false, message: "Unsupported topic" }, { status: 400 });
   }
 
@@ -58,10 +66,12 @@ export async function POST(req: NextRequest) {
   // home dive's store-room teaser shelf. Refresh both so a Shopify edit lands
   // everywhere at once.
   revalidatePath("/store");
+  revalidatePath("/store/[handle]", "page");
+  revalidatePath("/bag");
   revalidatePath("/");
   return NextResponse.json({
     ok: true,
-    revalidated: ["/store", "/"],
+    revalidated: ["/store", "/store/[handle]", "/bag", "/"],
     now: Date.now(),
   });
 }

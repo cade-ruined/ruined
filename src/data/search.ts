@@ -27,10 +27,10 @@ const PAGES: SearchDocument[] = [
     id: "shop",
     group: "pages",
     title: "Store",
-    description: "View every available garment and object from the current drop.",
+    description: "View available garments, objects, and current preorder dispatch dates.",
     meta: "Catalogue",
-    href: "/#store",
-    searchable: "store shop catalogue catalog collection garments clothing objects pieces drop",
+    href: "/store",
+    searchable: "store shop catalogue catalog garments clothing objects pieces preorder",
     priority: 95,
   },
   {

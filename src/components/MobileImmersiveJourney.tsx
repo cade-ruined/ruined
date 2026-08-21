@@ -19,10 +19,12 @@ import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
   JourneyEventsIndex,
   JourneyLobbyIndex,
+  JourneyStoreIndex,
 } from "@/components/sequence/JourneyIndexes";
 import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
 import { EVENTS } from "@/data/events";
+import type { Product } from "@/data/products";
 import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
   MOBILE_ARRIVAL_FRAME_PATHS,
@@ -332,7 +334,11 @@ function MobileFiresideVideo({
   );
 }
 
-export default function MobileImmersiveJourney() {
+export default function MobileImmersiveJourney({
+  products,
+}: {
+  products: Product[];
+}) {
   const journeyRef = useRef<HTMLElement>(null);
   const walkRef = useRef<MobileWalkTransitionHandle>(null);
   const activeIndexRef = useRef(0);
@@ -660,7 +666,7 @@ export default function MobileImmersiveJourney() {
       key="lobby-selections"
       events={EVENTS}
     />,
-    <JourneyComingSoon key="store-selections" section="store" />,
+    <JourneyStoreIndex key="store-selections" products={products} />,
     <JourneyComingSoon key="work-selections" section="artifacts" />,
     <JourneyAboutStatement
       key="about-statement"

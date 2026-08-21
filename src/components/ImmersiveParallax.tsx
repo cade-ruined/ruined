@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { EVENTS } from "@/data/events";
+import type { Product } from "@/data/products";
 import { JourneyLobbyIndex } from "@/components/sequence/JourneyIndexes";
 import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
@@ -34,6 +35,7 @@ const OPENING_FOCAL_GEOMETRY = sequenceFocalBoxGeometry(OPENING_FOCAL_X);
 
 type DesktopJourneyProps = {
   manifest: SequenceManifest;
+  products: Product[];
 };
 
 type ReadyDesktopJourney = {
@@ -85,8 +87,10 @@ function isSequenceManifest(value: unknown): value is SequenceManifest {
 
 export default function ImmersiveParallax({
   fallback,
+  products,
 }: {
   fallback: ReactNode;
+  products: Product[];
 }) {
   const desktopEligible = useSyncExternalStore(
     subscribeToDesktopExperience,
@@ -268,5 +272,5 @@ export default function ImmersiveParallax({
   }
 
   const { Component, manifest } = desktopJourney;
-  return <Component manifest={manifest} />;
+  return <Component manifest={manifest} products={products} />;
 }
