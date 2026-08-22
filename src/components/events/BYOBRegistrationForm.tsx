@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   type FormEvent,
@@ -27,6 +28,10 @@ const FIELD_LABEL_CLASS =
 const WAIVER_ACKNOWLEDGMENT_CLASS =
   "mt-5 grid cursor-pointer grid-cols-[1rem_1fr] items-start gap-3 border border-black/60 bg-[var(--color-shop)] px-4 py-3 text-sm leading-relaxed transition-colors has-[:checked]:border-black focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-black";
 const TANK_CTA_HREF = `${BYOB_02_TANK_HREF}?utm_source=byob-02-registration&utm_medium=onsite&utm_campaign=byob-02`;
+const TANK_FLAT_LAY_IMAGE =
+  "https://cdn.shopify.com/s/files/1/1001/4077/7793/files/BYOB_Tee_Product.png?v=1787271453";
+const TANK_FLAT_LAY_ALT =
+  "Black BYOB Tank shown front and back on dark earth among yellow wildflowers.";
 
 export default function BYOBRegistrationForm() {
   const [state, setState] = useState<SubmissionState>("idle");
@@ -105,8 +110,18 @@ export default function BYOBRegistrationForm() {
           <span className="break-all text-black">{submittedEmail}</span>.
         </p>
 
-        <div className="mt-10 grid gap-6 py-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:py-8">
-          <div>
+        <div className="mt-9 grid max-w-3xl gap-6 sm:grid-cols-[minmax(0,20rem)_minmax(15rem,1fr)] sm:items-end lg:gap-9">
+          <div className="relative aspect-[4/5] overflow-hidden bg-black">
+            <Image
+              src={TANK_FLAT_LAY_IMAGE}
+              alt={TANK_FLAT_LAY_ALT}
+              fill
+              sizes="(min-width: 640px) 20rem, calc(100vw - 2rem)"
+              className="object-cover"
+            />
+          </div>
+
+          <div className="pb-1">
             <p className="ui-heading text-[0.55rem] uppercase tracking-[0.16em] text-black/45">
               Optional
             </p>
@@ -116,13 +131,13 @@ export default function BYOBRegistrationForm() {
             <p className="mt-3 font-sans text-sm text-black/55">
               $32 · Preorder · Ships September 14, 2026
             </p>
+            <Link
+              href={TANK_CTA_HREF}
+              className="ui-heading mt-6 inline-flex min-h-12 w-full items-center justify-between gap-8 border border-black bg-black px-5 py-3 text-[0.62rem] uppercase tracking-[0.16em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            >
+              View the tank <span aria-hidden="true">→</span>
+            </Link>
           </div>
-          <Link
-            href={TANK_CTA_HREF}
-            className="ui-heading inline-flex min-h-12 items-center justify-between gap-8 border border-black bg-black px-5 py-3 text-[0.62rem] uppercase tracking-[0.16em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-          >
-            View the tank <span aria-hidden="true">→</span>
-          </Link>
         </div>
 
         <Link

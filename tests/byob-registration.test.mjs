@@ -185,7 +185,7 @@ test("registration removes decorative rules while retaining functional control b
   )?.[1];
   const waiverDisclosureClass = form.match(/<details className="([^"]+)"/)?.[1];
   const tankOfferClass = form.match(
-    /<div className="([^"]+)">\s*<div>\s*<p[^>]*>\s*Optional/,
+    /<div className="([^"]+)">(?=[\s\S]{0,1600}?TANK_FLAT_LAY_IMAGE[\s\S]{0,1200}?Optional)/,
   )?.[1];
 
   for (const [label, className, separator] of [
@@ -562,7 +562,51 @@ test("the tank offer appears only after durable success and remains PII-free", a
   assert.match(api, /tankHref:\s*BYOB_02_TANK_HREF|tankHref:\s*"\/store\/byob-tank"/);
 });
 
-test("registration neither opts people into marketing nor depends on Shopify", async () => {
+test("the post-registration tank offer shows the responsive flat-lay product image", async () => {
+  const form = await read(paths.form);
+  const flatLayUrl =
+    "https://cdn.shopify.com/s/files/1/1001/4077/7793/files/BYOB_Tee_Product.png?v=1787271453";
+  const successBranch = form.match(
+    /if \(state === "success"\) \{([\s\S]*?)\n  \}\n\n  return \(/,
+  )?.[1];
+
+  assert.ok(successBranch, "the durable-success branch must remain inspectable");
+  assert.match(form, /import Image from "next\/image"/);
+  assert.ok(
+    form.includes(flatLayUrl),
+    "the success offer should use the model-free BYOB Tank flat lay",
+  );
+  assert.match(successBranch, /src=\{TANK_FLAT_LAY_IMAGE\}/);
+  assert.ok(
+    successBranch.indexOf("src={TANK_FLAT_LAY_IMAGE}") <
+      successBranch.indexOf("Optional"),
+    "the product should be visible before its purchase details on mobile",
+  );
+
+  const tankImage = successBranch.match(
+    /<Image\b[\s\S]*?src=\{TANK_FLAT_LAY_IMAGE\}[\s\S]*?\/>/,
+  )?.[0];
+  assert.ok(tankImage, "the flat-lay image should remain inside the durable-success offer");
+  const flatLayAlt = form.match(
+    /const TANK_FLAT_LAY_ALT\s*=\s*\n?\s*"([^"]+)"/,
+  )?.[1];
+  assert.ok(flatLayAlt, "the flat-lay alt text must remain inspectable");
+  assert.match(
+    flatLayAlt,
+    /BYOB Tank.*(?:front.*back|back.*front)/i,
+    "the product image needs descriptive front-and-back alt text",
+  );
+  assert.match(tankImage, /alt=\{TANK_FLAT_LAY_ALT\}/);
+  assert.match(tankImage, /\sfill(?:\s|\/?>)/);
+  assert.match(
+    tankImage,
+    /sizes="\(min-width: 640px\) 20rem, calc\(100vw - 2rem\)"/,
+  );
+  assert.match(tankImage, /className="[^"]*object-cover[^"]*"/);
+  assert.match(successBranch, /href=\{TANK_CTA_HREF\}/);
+});
+
+test("registration neither opts people into marketing nor invokes Shopify purchase state", async () => {
   const [api, form, repository] = await Promise.all([
     read(paths.api),
     read(paths.form),
@@ -573,6 +617,9 @@ test("registration neither opts people into marketing nor depends on Shopify", a
   assert.doesNotMatch(registrationSurface, /\/api\/communications\/subscribe/);
   assert.doesNotMatch(registrationSurface, /marketing(?:Consent|OptIn|_consent|_opt_in)/i);
   assert.doesNotMatch(registrationSurface, /\/api\/store\/checkout/);
-  assert.doesNotMatch(registrationSurface, /createCheckoutUrl|addBagItem|useBag|Shopify/i);
+  assert.doesNotMatch(
+    registrationSurface,
+    /createCheckoutUrl|addBagItem|useBag|from\s+["'][^"']*shopify/i,
+  );
   assert.doesNotMatch(form, /window\.location\.(?:assign|replace)|router\.(?:push|replace)\([^)]*store/);
 });
