@@ -264,6 +264,7 @@ export default function ImmersiveParallax({
             <h2 className="sr-only">{EXPLORE_ROOMS[0].headline}</h2>
             <JourneyLobbyIndex
               events={EVENTS}
+              products={products}
             />
           </div>
         </section>

@@ -751,6 +751,7 @@ export default function DesktopImmersiveParallax({
         >
           <JourneyLobbyIndex
             events={EVENTS}
+            products={products}
           />
         </LobbyOpeningOverlay>
       )}

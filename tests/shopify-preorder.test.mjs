@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [shopify, products, checkoutRoute, revalidateRoute, bagStore, bagPage, bagRoute, purchase, storeRoute, productRoute] =
+const [shopify, products, checkoutRoute, revalidateRoute, bagStore, bagPage, bagRoute, purchase, storeGallery, journeyIndexes, storeRoute, productRoute] =
   await Promise.all([
     read("src/lib/shopify.ts"),
     read("src/data/products.ts"),
@@ -14,6 +14,8 @@ const [shopify, products, checkoutRoute, revalidateRoute, bagStore, bagPage, bag
     read("src/components/store/BagPageClient.tsx"),
     read("app/bag/page.tsx"),
     read("src/components/store/ProductPurchase.tsx"),
+    read("src/components/store/StoreGallery.tsx"),
+    read("src/components/sequence/JourneyIndexes.tsx"),
     read("app/store/page.tsx"),
     read("app/store/[handle]/page.tsx"),
   ]);
@@ -24,7 +26,8 @@ test("Shopify queries and maps only the expected ship-date preorder marker", () 
   assert.match(shopify, /images:\s*images\.length\s*\?\s*images\s*:\s*featuredImage\s*\?\s*\[featuredImage\]\s*:\s*\[\]/);
   assert.match(products, /export type ProductImage/);
   assert.match(products, /images\?:\s*ProductImage\[\]/);
-  assert.match(shopify, /expectedShipDate:\s*meta\.expected_ship_date\s*\|\|\s*undefined/);
+  assert.match(shopify, /const expectedShipDate = meta\.expected_ship_date \|\| undefined/);
+  assert.match(shopify, /\n\s*expectedShipDate,\n/);
   assert.match(products, /expectedShipDate\?:\s*string/);
 
   const nativeSellingPlanSurfaces = [shopify, products, checkoutRoute, bagStore, bagPage, purchase]
@@ -122,6 +125,51 @@ test("product and bag present the restrained pay-in-full preorder promise", () =
   assert.match(
     bagPage,
     /Pay \{formatPriceForSentence\(item\.unitPrice\)\} now\. Expected to ship \{formatExpectedShipDate\(item\.expectedShipDate\)\}\./
+  );
+});
+
+test("customer-facing preorder dates show the month without exposing Shopify's exact date", () => {
+  for (const [label, source, functionName] of [
+    ["product", purchase, "formatExpectedShipDate"],
+    ["bag", bagPage, "formatExpectedShipDate"],
+    ["store", storeGallery, "formatExpectedShipDate"],
+    ["home journey", journeyIndexes, "formatJourneyShipDate"],
+  ]) {
+    const formatter = source.match(
+      new RegExp(`function ${functionName}\\([^)]*\\)[\\s\\S]*?\\n}`),
+    )?.[0];
+
+    assert.ok(formatter, `${label} needs an inspectable customer-facing ship-date formatter`);
+    assert.match(formatter, /month:\s*"long"/, `${label} should spell out September`);
+    assert.doesNotMatch(formatter, /day:\s*"numeric"/, `${label} should hide the exact day`);
+    assert.doesNotMatch(formatter, /year:\s*"numeric"/, `${label} should hide the year`);
+  }
+
+  assert.match(
+    checkoutRoute,
+    /\{ key:\s*"Expected ship date",\s*value:\s*expectedShipDate \}/,
+    "Shopify checkout should retain the trusted exact date for fulfillment",
+  );
+  assert.doesNotMatch(
+    checkoutRoute,
+    /format(?:Expected|Journey)ShipDate/,
+    "presentation formatting must not alter Shopify's checkout line attribute",
+  );
+
+  assert.match(shopify, /function normalizeExpectedShipDateLanguage\(/);
+  assert.match(
+    shopify,
+    /description:\s*normalizeExpectedShipDateLanguage\(node\.description, expectedShipDate\)/,
+    "Shopify product copy should use the same month-only customer promise",
+  );
+  assert.match(shopify, /ship\(\?:s\|ped\|ping\)\?/);
+});
+
+test("product detail preserves Shopify description line spacing", () => {
+  assert.match(
+    productRoute,
+    /product\.description[\s\S]*?whitespace-pre-line[\s\S]*?\{product\.description\}/,
+    "plain Shopify descriptions should retain their authored line separation",
   );
 });
 

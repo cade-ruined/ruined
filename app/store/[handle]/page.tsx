@@ -165,7 +165,7 @@ export default async function ProductPage({
             <ProductPurchase product={product} />
 
             {product.description && (
-              <p className="mt-10 max-w-prose border-t border-white/15 pt-7 text-base leading-relaxed text-white/70">
+              <p className="mt-10 max-w-prose whitespace-pre-line border-t border-white/15 pt-7 text-base leading-relaxed text-white/70">
                 {product.description}
               </p>
             )}

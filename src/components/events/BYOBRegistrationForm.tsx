@@ -129,7 +129,7 @@ export default function BYOBRegistrationForm() {
               BYOB Tank
             </h3>
             <p className="mt-3 font-sans text-sm text-black/55">
-              $32 · Preorder · Ships September 14, 2026
+              $32 · Preorder · Ships September
             </p>
             <Link
               href={TANK_CTA_HREF}

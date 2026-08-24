@@ -160,8 +160,37 @@ function resolveTone(metaTone: string | undefined, handle: string, index: number
   return TONE_BY_HANDLE[handle] ?? TONE_CYCLE[index % TONE_CYCLE.length];
 }
 
+function normalizeExpectedShipDateLanguage(
+  description: string,
+  expectedShipDate?: string
+): string {
+  if (!expectedShipDate) return description;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(expectedShipDate)
+    ? new Date(`${expectedShipDate}T12:00:00Z`)
+    : new Date(expectedShipDate);
+  if (Number.isNaN(date.getTime())) return description;
+
+  const month = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  }).format(date);
+  const shortMonth = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  }).format(date);
+  const monthPattern = month === shortMonth
+    ? month
+    : `(?:${month}|${shortMonth}t?\.?)`;
+
+  return description.replace(
+    new RegExp(`(\\bship(?:s|ped|ping)?(?:\\s+on)?\\s+)${monthPattern}\\s+\\d{1,2}(?:,\\s*\\d{4})?`, "gi"),
+    `$1${month}`
+  );
+}
+
 function mapProduct(node: SFProductNode, index: number): Product {
   const meta = toMetaMap(node.metafields);
+  const expectedShipDate = meta.expected_ship_date || undefined;
   const images = (node.images?.nodes ?? []).map((image) => ({
     url: image.url,
     alt: image.altText ?? node.title,
@@ -193,7 +222,7 @@ function mapProduct(node: SFProductNode, index: number): Product {
     name: node.title,
     subtitle: meta.subtitle ?? "",
     price: formatPrice(node.priceRange.minVariantPrice),
-    description: node.description,
+    description: normalizeExpectedShipDateLanguage(node.description, expectedShipDate),
     material: meta.material ?? "",
     origin: meta.origin ?? "",
     care: meta.care ?? "",
@@ -202,7 +231,7 @@ function mapProduct(node: SFProductNode, index: number): Product {
     images: images.length ? images : featuredImage ? [featuredImage] : [],
     options,
     variants,
-    expectedShipDate: meta.expected_ship_date || undefined,
+    expectedShipDate,
     variantId: defaultVariant?.id,
     available: variants.some((variant) => variant.available),
   };

@@ -176,10 +176,8 @@ function formatExpectedShipDate(value: string): string {
     ? new Date(`${value}T12:00:00Z`)
     : new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
     timeZone: "UTC",
   }).format(date);
 }

@@ -76,7 +76,7 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
     registration: isRegistrationEvent
       ? {
           href: "/community/byob-02/register",
-          label: "Register your group",
+          label: "Register",
           status: "Open",
         }
       : undefined,

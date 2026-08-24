@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Product } from "@/data/products";
 import type { Project } from "@/data/projects";
@@ -12,6 +13,22 @@ const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
 const JOURNEY_CARD_CLASS =
   "group relative aspect-[4/5] overflow-hidden bg-black/85 text-[var(--color-bone)] ring-1 ring-inset ring-white/15";
+const JOURNEY_RAIL_CLASS =
+  "flex touch-pan-x snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:gap-1.5 sm:p-1.5";
+const JOURNEY_RAIL_CARD_CLASS =
+  `${JOURNEY_CARD_CLASS} w-[58%] flex-none snap-start focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white sm:w-[38%] lg:w-[31.5%]`;
+const HOME_MARQUEE_SPEED_PX_PER_SECOND = 20;
+const HOME_MARQUEE_MAX_FRAME_MS = 48;
+const HOME_MARQUEE_RESUME_DELAY_MS = 12000;
+const BYOB_TANK_FEATURE_FALLBACK = {
+  id: "byob-tank",
+  title: "BYOB Tank",
+  meta: "$32 · Preorder · Ships September",
+  image: {
+    url: "https://cdn.shopify.com/s/files/1/1001/4077/7793/files/BYOB_Tee_Product.png?v=1787271453",
+    alt: "Black BYOB Tank shown front and back on dark earth among yellow wildflowers.",
+  },
+} as const;
 
 function formatJourneyShipDate(value: string): string {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -19,9 +36,7 @@ function formatJourneyShipDate(value: string): string {
     : new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+    month: "long",
     timeZone: "UTC",
   }).format(date);
 }
@@ -114,7 +129,7 @@ type LobbySelection = {
   key: string;
   href?: string;
   external?: boolean;
-  realm: "About" | "Social" | "Community";
+  realm: "About" | "Social" | "Community" | "Store";
   title: string;
   meta: string;
   image?: string;
@@ -125,11 +140,31 @@ type LobbySelection = {
 
 export function JourneyLobbyIndex({
   events,
+  products,
 }: {
   events: StudioEvent[];
+  products: Product[];
 }) {
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
+  const tank = products.find(
+    (candidate) => candidate.id === BYOB_TANK_FEATURE_FALLBACK.id
+  );
+  const tankImage =
+    tank?.images?.find((image) => image.url.includes("BYOB_Tee_Product.png")) ??
+    tank?.image;
   const selections: LobbySelection[] = [
+    // The marquee is newest-first. Add future features above the current lead.
+    {
+      key: "byob-tank",
+      href: tank ? `/store/${tank.id}` : undefined,
+      realm: "Store",
+      title: tank?.name ?? BYOB_TANK_FEATURE_FALLBACK.title,
+      meta: tank?.expectedShipDate
+        ? `${tank.price.replace(/^([£$€])\s+/, "$1")} · Preorder · Ships ${formatJourneyShipDate(tank.expectedShipDate)}`
+        : tank?.price ?? BYOB_TANK_FEATURE_FALLBACK.meta,
+      image: tankImage?.url ?? BYOB_TANK_FEATURE_FALLBACK.image.url,
+      alt: tankImage?.alt ?? BYOB_TANK_FEATURE_FALLBACK.image.alt,
+    },
     ...(byobOne
       ? [
           {
@@ -164,13 +199,141 @@ export function JourneyLobbyIndex({
       alt: "The Ruined Project collage",
     },
   ];
+  const marqueeRef = useRef<HTMLDivElement>(null);
+  const marqueePauseReasonsRef = useRef(new Set<"drag" | "focus" | "hover">());
+  const marqueeResumeAtRef = useRef(0);
+  const marqueeDirectionRef = useRef<1 | -1>(1);
+  const marqueeVisibleRef = useRef(false);
+  const [marqueeStopped, setMarqueeStopped] = useState(false);
+
+  useEffect(() => {
+    const marquee = marqueeRef.current;
+    if (!marquee || selections.length < 2) return;
+
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const visibilityObserver = new IntersectionObserver(
+      ([entry]) => {
+        marqueeVisibleRef.current = entry?.isIntersecting ?? false;
+      },
+      { threshold: 0.35 }
+    );
+    visibilityObserver.observe(marquee);
+    let animationFrameId: number | undefined;
+    let previousFrameTime: number | undefined;
+
+    const drift = (frameTime: number) => {
+      animationFrameId = window.requestAnimationFrame(drift);
+      if (
+        motionPreference.matches ||
+        marqueeStopped ||
+        marqueePauseReasonsRef.current.size > 0 ||
+        !marqueeVisibleRef.current ||
+        Date.now() < marqueeResumeAtRef.current ||
+        document.visibilityState !== "visible"
+      ) {
+        marquee.style.removeProperty("scroll-snap-type");
+        previousFrameTime = frameTime;
+        return;
+      }
+
+      marquee.style.scrollSnapType = "none";
+      const maxScroll = Math.max(0, marquee.scrollWidth - marquee.clientWidth);
+      if (maxScroll <= 1) {
+        previousFrameTime = frameTime;
+        return;
+      }
+
+      const elapsedMs = Math.min(
+        previousFrameTime === undefined ? 0 : frameTime - previousFrameTime,
+        HOME_MARQUEE_MAX_FRAME_MS
+      );
+      previousFrameTime = frameTime;
+      let nextScrollLeft =
+        marquee.scrollLeft +
+        marqueeDirectionRef.current *
+          HOME_MARQUEE_SPEED_PX_PER_SECOND *
+          (elapsedMs / 1000);
+
+      if (nextScrollLeft >= maxScroll) {
+        nextScrollLeft = maxScroll;
+        marqueeDirectionRef.current = -1;
+      } else if (nextScrollLeft <= 0) {
+        nextScrollLeft = 0;
+        marqueeDirectionRef.current = 1;
+      }
+
+      marquee.scrollLeft = nextScrollLeft;
+    };
+
+    const syncAutoplay = () => {
+      if (animationFrameId !== undefined) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      marquee.style.removeProperty("scroll-snap-type");
+      previousFrameTime = undefined;
+      animationFrameId =
+        motionPreference.matches || marqueeStopped
+          ? undefined
+          : window.requestAnimationFrame(drift);
+    };
+
+    syncAutoplay();
+    motionPreference.addEventListener("change", syncAutoplay);
+    return () => {
+      if (animationFrameId !== undefined) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      marquee.style.removeProperty("scroll-snap-type");
+      visibilityObserver.disconnect();
+      motionPreference.removeEventListener("change", syncAutoplay);
+    };
+  }, [marqueeStopped, selections.length]);
+
+  const deferMarquee = () => {
+    marqueeResumeAtRef.current = Date.now() + HOME_MARQUEE_RESUME_DELAY_MS;
+  };
+  const pauseMarquee = (reason: "drag" | "focus" | "hover") => {
+    marqueePauseReasonsRef.current.add(reason);
+  };
+  const resumeMarquee = (reason: "drag" | "focus" | "hover") => {
+    marqueePauseReasonsRef.current.delete(reason);
+    deferMarquee();
+  };
 
   if (!selections.length) return null;
 
   return (
-    <div className={JOURNEY_GRID_CLASS}>
-      {selections.map((selection, index) => {
-        const content = <>
+    <div data-journey-lobby-index className="relative">
+      <div
+        data-home-marquee
+        ref={marqueeRef}
+        className={JOURNEY_RAIL_CLASS}
+        role="region"
+        aria-label="Featured stories and products"
+        tabIndex={0}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "mouse") pauseMarquee("hover");
+        }}
+        onPointerLeave={() => {
+          resumeMarquee("hover");
+          resumeMarquee("drag");
+        }}
+        onPointerDown={() => {
+          pauseMarquee("drag");
+          deferMarquee();
+        }}
+        onPointerUp={() => resumeMarquee("drag")}
+        onPointerCancel={() => resumeMarquee("drag")}
+        onWheel={deferMarquee}
+        onFocusCapture={() => pauseMarquee("focus")}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            resumeMarquee("focus");
+          }
+        }}
+      >
+        {selections.map((selection, index) => {
+          const content = <>
           {selection.video && (
             <video
               src={selection.video}
@@ -189,7 +352,7 @@ export function JourneyLobbyIndex({
               src={selection.image}
               alt={selection.alt}
               fill
-              sizes="(min-width: 640px) 18rem, 28vw"
+              sizes="(min-width: 1024px) 18rem, (min-width: 640px) 38vw, 58vw"
               priority={index === 0}
               fetchPriority={index === 0 ? "high" : "low"}
               className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
@@ -208,30 +371,48 @@ export function JourneyLobbyIndex({
               {selection.href && <span className="shrink-0 text-white/80 transition-transform group-hover:translate-x-1">↗</span>}
             </span>
           </span>
-        </>;
-        return selection.href?.startsWith("#") ? (
-          <a
-            key={selection.key}
-            href={selection.href}
-            onClick={(event) => requestWalkRoom(event, selection.href!)}
-            className={JOURNEY_CARD_CLASS}
-          >
-            {content}
-          </a>
-        ) : selection.href ? (
-          <Link
-            key={selection.key}
-            href={selection.href}
-            target={selection.external ? "_blank" : undefined}
-            rel={selection.external ? "noreferrer" : undefined}
-            className={JOURNEY_CARD_CLASS}
-          >
-            {content}
-          </Link>
-        ) : (
-          <div key={selection.key} className={JOURNEY_CARD_CLASS}>{content}</div>
-        );
-      })}
+          </>;
+          return selection.href?.startsWith("#") ? (
+            <a
+              key={selection.key}
+              href={selection.href}
+              onClick={(event) => requestWalkRoom(event, selection.href!)}
+              className={JOURNEY_RAIL_CARD_CLASS}
+              data-home-marquee-item
+            >
+              {content}
+            </a>
+          ) : selection.href ? (
+            <Link
+              key={selection.key}
+              href={selection.href}
+              target={selection.external ? "_blank" : undefined}
+              rel={selection.external ? "noreferrer" : undefined}
+              className={JOURNEY_RAIL_CARD_CLASS}
+              data-home-marquee-item
+            >
+              {content}
+            </Link>
+          ) : (
+            <div
+              key={selection.key}
+              className={JOURNEY_RAIL_CARD_CLASS}
+              data-home-marquee-item
+            >
+              {content}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={() => setMarqueeStopped((current) => !current)}
+        aria-pressed={marqueeStopped}
+        aria-label={marqueeStopped ? "Play marquee" : "Pause marquee"}
+        className="absolute right-3 top-3 z-20 flex min-h-11 min-w-11 items-center justify-center border border-white/35 bg-black/75 font-sans text-[0.65rem] text-white transition-colors hover:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      >
+        <span aria-hidden="true">{marqueeStopped ? "▶" : "Ⅱ"}</span>
+      </button>
     </div>
   );
 }

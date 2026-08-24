@@ -1236,8 +1236,21 @@ test("the Lobby note reveals one static paper and releases the next gesture", as
   assert.match(popup, /window\.addEventListener\("pageshow", syncLocation\)/);
   assert.match(
     popup,
-    /aria-label="Come in"[\s\S]*fixed left-1\/2 top-1\/2[\s\S]*transition-\[opacity,transform\][\s\S]*<NextImage/
+    /fixed left-1\/2 top-1\/2[\s\S]*transition-\[opacity,transform\][\s\S]*aria-label="Come in"[\s\S]*<NextImage/
   );
+  const comeInLabelPosition = popup.indexOf('aria-label="Come in"');
+  const comeInButtonStart = popup.lastIndexOf("<button", comeInLabelPosition);
+  const comeInButtonEnd = popup.indexOf("</button>", comeInLabelPosition);
+  const comeInButton = popup.slice(comeInButtonStart, comeInButtonEnd + "</button>".length);
+  const closeLabelPosition = popup.indexOf('aria-label="Close note"');
+  assert.ok(closeLabelPosition >= 0, "the opening note should expose an accessible close control");
+  const closeButtonStart = popup.lastIndexOf("<button", closeLabelPosition);
+  const closeButtonEnd = popup.indexOf("</button>", closeLabelPosition);
+  const closeButton = popup.slice(closeButtonStart, closeButtonEnd + "</button>".length);
+  assert.ok(comeInButtonEnd < closeButtonStart, "the image and close controls should be sibling buttons");
+  assert.match(comeInButton, /onClick=\{enterLobby\}/);
+  assert.match(closeButton, /onClick=\{enterLobby\}/);
+  assert.match(closeButton, /aria-hidden="true"[\s\S]*[×X]/);
   assert.match(popup, /disabled=\{!paperVisible\}/);
   assert.match(popup, /src=\{NOTE_LOCK_SRC\}[\s\S]*unoptimized/);
   assert.match(popup, /onLoad=\{\(\) => setPaperReady\(true\)\}/);

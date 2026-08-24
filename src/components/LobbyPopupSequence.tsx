@@ -229,33 +229,49 @@ export default function LobbyPopupSequence() {
   const paperVisible = phase === "locked" && paperReady;
 
   return (
-    <button
-      type="button"
-      aria-label="Come in"
-      onClick={enterLobby}
-      disabled={!paperVisible}
+    <div
+      aria-hidden={!paperVisible}
       className={`fixed left-1/2 top-1/2 z-[26] aspect-[1126/1397] w-[min(50vh,92vw)] origin-center -translate-x-1/2 -translate-y-1/2 appearance-none border-0 bg-transparent p-0 transition-[opacity,transform] duration-200 ease-out ${
         paperVisible
           ? "pointer-events-auto scale-100 cursor-pointer opacity-100"
           : "pointer-events-none scale-[0.985] opacity-0"
       }`}
     >
-      <NextImage
-        src={NOTE_LOCK_SRC}
-        alt=""
-        fill
-        priority
-        unoptimized
-        sizes="(max-width: 640px) 92vw, 50vh"
-        onLoad={() => setPaperReady(true)}
-        className="object-contain"
-      />
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute left-[54%] top-[75%] h-[6.5%] w-[32%] -translate-x-1/2 -translate-y-1/2 -rotate-2 rounded-[50%] border-2 border-[var(--color-poster)] shadow-[0_0_18px_rgba(214,47,43,0.28)] animate-[pulse_1.8s_ease-in-out_infinite]"
+      <button
+        type="button"
+        aria-label="Come in"
+        onClick={enterLobby}
+        disabled={!paperVisible}
+        className="absolute inset-0 appearance-none border-0 bg-transparent p-0"
       >
-        <span className="absolute inset-[-5px] rotate-3 rounded-[48%] border border-[var(--color-poster)]/55" />
-      </span>
-    </button>
+        <NextImage
+          src={NOTE_LOCK_SRC}
+          alt=""
+          fill
+          priority
+          unoptimized
+          sizes="(max-width: 640px) 92vw, 50vh"
+          onLoad={() => setPaperReady(true)}
+          className="object-contain"
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-[54%] top-[75%] h-[6.5%] w-[32%] -translate-x-1/2 -translate-y-1/2 -rotate-2 rounded-[50%] border-2 border-[var(--color-poster)] shadow-[0_0_18px_rgba(214,47,43,0.28)] animate-[pulse_1.8s_ease-in-out_infinite]"
+        >
+          <span className="absolute inset-[-5px] rotate-3 rounded-[48%] border border-[var(--color-poster)]/55" />
+        </span>
+      </button>
+      <button
+        type="button"
+        aria-label="Close note"
+        onClick={enterLobby}
+        disabled={!paperVisible}
+        className="absolute right-[5%] top-[4%] z-10 flex h-10 w-10 items-center justify-center bg-[var(--color-bone)]/85 text-black/70 transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:pointer-events-none"
+      >
+        <span aria-hidden="true" className="font-sans text-xl leading-none">
+          ×
+        </span>
+      </button>
+    </div>
   );
 }

@@ -59,6 +59,8 @@ test("only BYOB Nº 02 exposes the dedicated registration path", async () => {
   );
   assert.doesNotMatch(events, /\/community\/byob-01\/register/);
   assert.match(events, /registration\??:\s*EventRegistration/);
+  assert.match(events, /label:\s*"Register"/);
+  assert.doesNotMatch(events, /Register your group/i);
   assert.match(index, /selected\.registration\?\.status\s*===\s*"Open"/);
   assert.match(index, /href=\{selected\.registration\.href\}/);
 });
@@ -604,6 +606,8 @@ test("the post-registration tank offer shows the responsive flat-lay product ima
   );
   assert.match(tankImage, /className="[^"]*object-cover[^"]*"/);
   assert.match(successBranch, /href=\{TANK_CTA_HREF\}/);
+  assert.match(successBranch, /\$32 · Preorder · Ships September/);
+  assert.doesNotMatch(successBranch, /Ships September\s+\d/);
 });
 
 test("registration neither opts people into marketing nor invokes Shopify purchase state", async () => {

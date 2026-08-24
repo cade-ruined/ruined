@@ -665,6 +665,7 @@ export default function MobileImmersiveJourney({
     <JourneyLobbyIndex
       key="lobby-selections"
       events={EVENTS}
+      products={products}
     />,
     <JourneyStoreIndex key="store-selections" products={products} />,
     <JourneyComingSoon key="work-selections" section="artifacts" />,
