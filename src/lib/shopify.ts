@@ -73,14 +73,51 @@ const PRODUCTS_QUERY = `#graphql
     }
   }
 `;
-const POLICIES_QUERY = `#graphql query Policies { shop { shippingPolicy { title body } termsOfService { title body } } }`;
+const POLICIES_QUERY = `#graphql
+  query Policies {
+    shop {
+      shippingPolicy { title body }
+      refundPolicy { title body }
+      termsOfService { title body }
+    }
+  }
+`;
 export type ShopifyPolicy = { title: string; body: string };
-export async function getShopPolicies(): Promise<{ shipping: ShopifyPolicy | null; terms: ShopifyPolicy | null }> {
-  if (!client) return { shipping: null, terms: null };
+
+type ShopifyPolicies = {
+  shipping: ShopifyPolicy | null;
+  returns: ShopifyPolicy | null;
+  terms: ShopifyPolicy | null;
+};
+
+const EMPTY_POLICIES: ShopifyPolicies = {
+  shipping: null,
+  returns: null,
+  terms: null,
+};
+
+export async function getShopPolicies(): Promise<ShopifyPolicies> {
+  if (!client) return EMPTY_POLICIES;
+
   try {
-    const { data, errors } = await client.request<{ shop: { shippingPolicy: ShopifyPolicy | null; termsOfService: ShopifyPolicy | null } }>(POLICIES_QUERY);
-    return errors ? { shipping: null, terms: null } : { shipping: data?.shop.shippingPolicy ?? null, terms: data?.shop.termsOfService ?? null };
-  } catch { return { shipping: null, terms: null }; }
+    const { data, errors } = await client.request<{
+      shop: {
+        shippingPolicy: ShopifyPolicy | null;
+        refundPolicy: ShopifyPolicy | null;
+        termsOfService: ShopifyPolicy | null;
+      };
+    }>(POLICIES_QUERY);
+
+    if (errors) return EMPTY_POLICIES;
+
+    return {
+      shipping: data?.shop.shippingPolicy ?? null,
+      returns: data?.shop.refundPolicy ?? null,
+      terms: data?.shop.termsOfService ?? null,
+    };
+  } catch {
+    return EMPTY_POLICIES;
+  }
 }
 
 const CART_CREATE = `#graphql

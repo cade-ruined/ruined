@@ -4,6 +4,10 @@
     {
       "path": "/api/internal/communications/process",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/internal/integrations/google-sheets/process",
+      "schedule": "15 12 * * *"
     }
   ]
 }

@@ -53,7 +53,10 @@ test("sitemap includes the public catalogue and product routes", async () => {
   assert.match(sitemap, /\/store\/\$\{encodeURIComponent\(product\.id\)\}/);
   assert.match(sitemap, /getShopPolicies/);
   assert.match(sitemap, /terms[\s\S]*path: "\/terms"/);
-  assert.match(sitemap, /shipping[\s\S]*path: "\/shipping-returns"/);
+  assert.match(
+    sitemap,
+    /\.\.\.\(shipping \|\| returns[\s\S]*path: "\/shipping-returns"/,
+  );
 });
 
 test("global accessibility and empty legal routes are launch-safe", async () => {
@@ -65,7 +68,10 @@ test("global accessibility and empty legal routes are launch-safe", async () => 
 
   assert.match(layout, /href="#main-content"/);
   assert.match(layout, /id="main-content" tabIndex=\{-1\}/);
-  assert.match(shipping, /robots: shipping \? undefined : \{ index: false, follow: true \}/);
+  assert.match(
+    shipping,
+    /robots: shipping \|\| returns \? undefined : \{ index: false, follow: true \}/,
+  );
   assert.match(terms, /robots: terms \? undefined : \{ index: false, follow: true \}/);
 });
 
@@ -125,6 +131,44 @@ test("the live Store catalogue and commerce routes remain internally connected",
   assert.doesNotMatch(
     `${storePage}${bagPage}${bagClient}${productPage}${purchase}`,
     /Checkout secured by Shopify|secured by Shopify/
+  );
+});
+
+test("Store removes the redundant guide copy and Shipping + Returns mirrors Shopify policies", async () => {
+  const [storeGallery, shippingPage, shopify] = await Promise.all([
+    read("src/components/store/StoreGallery.tsx"),
+    read("app/shipping-returns/page.tsx"),
+    read("src/lib/shopify.ts"),
+  ]);
+
+  assert.doesNotMatch(
+    storeGallery,
+    /Select a piece for its material,[\s\S]*?What matters is kept visible before payment\./,
+  );
+  assert.match(storeGallery, /href="\/shipping-returns"/);
+
+  assert.match(
+    shopify,
+    /shop\s*\{[\s\S]*?shippingPolicy\s*\{\s*title\s+body\s*\}[\s\S]*?refundPolicy\s*\{\s*title\s+body\s*\}[\s\S]*?\}/,
+    "Shopify remains the source of truth for both policy sections",
+  );
+  assert.match(shopify, /shipping:\s*data\?\.shop\.shippingPolicy\s*\?\?\s*null/);
+  assert.match(shopify, /returns:\s*data\?\.shop\.refundPolicy\s*\?\?\s*null/);
+
+  assert.match(
+    shippingPage,
+    /shipping[\s\S]*?title:\s*shipping\.title[\s\S]*?shipping\.body/,
+    "the Shopify shipping policy should render first",
+  );
+  assert.match(
+    shippingPage,
+    /returns[\s\S]*?title:\s*returns\.title[\s\S]*?returns\.body/,
+    "the Shopify return policy should render second",
+  );
+  assert.doesNotMatch(
+    shippingPage,
+    /Shipping and returns will be published with the first collection\./,
+    "the linked page should not fall back to stale placeholder copy",
   );
 });
 

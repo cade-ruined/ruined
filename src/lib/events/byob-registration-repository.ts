@@ -121,5 +121,24 @@ export async function registerByob02Participant(
     // A repeated submission must not reveal that the address already exists or
     // let anyone who knows an email address replace the stored acknowledgment.
     if (!registration) return;
+
+    await tx`
+      insert into integration_outbox (
+        destination,
+        event_type,
+        aggregate_type,
+        aggregate_id,
+        dedupe_key,
+        payload
+      ) values (
+        'google',
+        'community_event_registration.sheet_sync_requested',
+        'community_event_registration',
+        ${registration.id},
+        ${`google:community-event-registration:${registration.id}:created:v1`},
+        '{}'::jsonb
+      )
+      on conflict (dedupe_key) do nothing
+    `;
   });
 }

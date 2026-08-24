@@ -3,7 +3,7 @@ import { SITE_URL } from "@/lib/site";
 import { getProducts, getShopPolicies } from "@/lib/shopify";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [{ shipping, terms }, products] = await Promise.all([
+  const [{ shipping, returns, terms }, products] = await Promise.all([
     getShopPolicies(),
     getProducts(),
   ]);
@@ -21,7 +21,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...(terms
       ? [{ path: "/terms", changeFrequency: "yearly", priority: 0.4 } as const]
       : []),
-    ...(shipping
+    ...(shipping || returns
       ? [{ path: "/shipping-returns", changeFrequency: "yearly", priority: 0.4 } as const]
       : []),
   ];

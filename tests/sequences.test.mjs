@@ -468,14 +468,17 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
   assert.match(indexes, /events\.find\(\(candidate\) => candidate\.id === "byob-01"\)/);
+  assert.match(indexes, /events\.find\(\(candidate\) => candidate\.id === "byob-02"\)/);
   const lobbyIndex = indexes.slice(
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
   );
   assert.match(lobbyIndex, /priority=\{index === 0\}/);
   assert.match(lobbyIndex, /fetchPriority=\{index === 0 \? "high" : "low"\}/);
-  assert.match(lobbyIndex, /key: `events-\$\{byobOne\.id\}`/);
-  assert.match(lobbyIndex, /href: `\/community#\$\{byobOne\.id\}`/);
+  assert.match(lobbyIndex, /key: `events-\$\{byobTwo\.id\}`/);
+  assert.match(lobbyIndex, /href: byobTwo\.registration\.href/);
+  assert.match(lobbyIndex, /title: byobTwo\.title/);
+  assert.match(lobbyIndex, /meta: `Register · \$\{byobTwo\.date\}`/);
   assert.match(lobbyIndex, /image: byobOne\.image/);
   assert.match(lobbyIndex, /key: "what-is-this"/);
   assert.match(lobbyIndex, /href: "#about"/);
@@ -1191,6 +1194,77 @@ test("the botanical mark owns the favicon and fine-pointer cursor", async () => 
     assert.equal(metadata.width, file.includes("apple") ? 180 : 512);
     assert.equal(metadata.height, file.includes("apple") ? 180 : 512);
   }
+});
+
+test("fine-pointer form fields retain native cursors", async () => {
+  const [cursor, siteStyles] = await Promise.all([
+    fs.readFile(path.join(root, "src", "components", "BrandCursor.tsx"), "utf8"),
+    fs.readFile(path.join(root, "src", "styles", "index.css"), "utf8"),
+  ]);
+
+  const hiddenCursorRule = siteStyles.match(
+    /html\.ruined-brand-cursor-active,\s*html\.ruined-brand-cursor-active\s+:where\(\s*body,\s*body\s+\*\s*\)\s*\{[^}]*cursor:\s*none\s*!important;[^}]*\}/s
+  );
+  assert.ok(
+    hiddenCursorRule,
+    "the global cursor-hiding selector must keep descendant specificity low enough for native exceptions"
+  );
+
+  const nativeCursorRule = siteStyles.match(
+    /html\.ruined-brand-cursor-active\s+:where\(\s*([\s\S]*?)\s*\)\s*\{\s*cursor:\s*(?:auto|text|revert)\s*!important;\s*\}/
+  );
+  assert.ok(nativeCursorRule, "expected an explicit native cursor rule for form fields");
+  for (const [label, selector] of [
+    ["input", /\binput\b/],
+    ["textarea", /\btextarea\b/],
+    ["select", /\bselect\b/],
+    ["contenteditable", /\[contenteditable=["']true["']\]/],
+  ]) {
+    assert.match(
+      nativeCursorRule[1],
+      selector,
+      `${label} must remain exempt from the hidden custom-cursor surface`
+    );
+  }
+  assert.ok(
+    siteStyles.indexOf(hiddenCursorRule[0]) < siteStyles.indexOf(nativeCursorRule[0]),
+    "the equal-specificity native form rule must follow the global hide rule"
+  );
+
+  const nativeTargetSelectors = cursor.match(
+    /const NATIVE_CURSOR_SELECTOR = \[([\s\S]*?)\]\.join\(","\);/
+  )?.[1];
+  assert.ok(nativeTargetSelectors, "expected the runtime native-cursor selector list");
+  for (const [label, selector] of [
+    ["input", /\binput\b/],
+    ["textarea", /\btextarea\b/],
+    ["select", /\bselect\b/],
+    ["contenteditable", /contenteditable/],
+  ]) {
+    assert.match(
+      nativeTargetSelectors,
+      selector,
+      `${label} must hide the botanical overlay when it uses its native cursor`
+    );
+  }
+  assert.match(cursor, /element\?\.closest\(NATIVE_CURSOR_SELECTOR\)/);
+  assert.match(cursor, /cursor\.toggleAttribute\("data-native", Boolean\(nativeCursor\)\)/);
+  assert.match(
+    siteStyles,
+    /\.ruined-brand-cursor\[data-native\]\s*\{[^}]*opacity:\s*0;[^}]*\}/s
+  );
+
+  const forcedColorsIndex = siteStyles.indexOf("@media (forced-colors: active)");
+  assert.ok(forcedColorsIndex > siteStyles.indexOf(nativeCursorRule[0]));
+  const forcedColors = siteStyles.slice(forcedColorsIndex);
+  assert.match(
+    forcedColors,
+    /html\.ruined-brand-cursor-active[\s\S]*?cursor:\s*revert\s*!important;/
+  );
+  assert.match(
+    forcedColors,
+    /\.ruined-brand-cursor\s*\{[^}]*display:\s*none\s*!important;[^}]*\}/s
+  );
 });
 
 test("the Lobby note reveals one static paper and releases the next gesture", async () => {

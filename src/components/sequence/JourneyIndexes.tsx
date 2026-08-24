@@ -146,6 +146,7 @@ export function JourneyLobbyIndex({
   products: Product[];
 }) {
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
+  const byobTwo = events.find((candidate) => candidate.id === "byob-02");
   const tank = products.find(
     (candidate) => candidate.id === BYOB_TANK_FEATURE_FALLBACK.id
   );
@@ -165,16 +166,16 @@ export function JourneyLobbyIndex({
       image: tankImage?.url ?? BYOB_TANK_FEATURE_FALLBACK.image.url,
       alt: tankImage?.alt ?? BYOB_TANK_FEATURE_FALLBACK.image.alt,
     },
-    ...(byobOne
+    ...(byobOne && byobTwo?.registration
       ? [
           {
-            key: `events-${byobOne.id}`,
-            href: `/community#${byobOne.id}`,
+            key: `events-${byobTwo.id}`,
+            href: byobTwo.registration.href,
             realm: "Community" as const,
-            title: byobOne.title,
-            meta: `View the recap · ${byobOne.date}`,
+            title: byobTwo.title,
+            meta: `Register · ${byobTwo.date}`,
             image: byobOne.image,
-            alt: byobOne.gallery?.[0]?.alt ?? byobOne.title,
+            alt: "The BYOB community gathered beneath storm clouds in the mountains.",
           },
         ]
       : []),

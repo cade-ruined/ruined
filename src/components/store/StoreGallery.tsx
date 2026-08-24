@@ -95,12 +95,8 @@ export default function StoreGallery({ products }: { products: Product[] }) {
               Made to become more <span className="italic text-[var(--color-poster)]">itself</span> with use.
             </p>
           </div>
-          <div className="md:col-span-4 md:col-start-9">
-            <p className="text-sm leading-relaxed text-white/55 sm:text-base">
-              Select a piece for its material, care, available cuts, and current
-              dispatch timing. What matters is kept visible before payment.
-            </p>
-            <Link href="/shipping-returns" className="ui-heading mt-7 inline-flex border border-white/40 px-5 py-3 text-[0.58rem] uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-black">
+          <div className="md:col-span-4 md:col-start-9 md:self-end">
+            <Link href="/shipping-returns" className="ui-heading inline-flex border border-white/40 px-5 py-3 text-[0.58rem] uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-black">
               Shipping + returns →
             </Link>
           </div>

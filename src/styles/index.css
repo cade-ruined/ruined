@@ -54,8 +54,7 @@ html {
 
 @media (hover: hover) and (pointer: fine) {
   html.ruined-brand-cursor-active,
-  html.ruined-brand-cursor-active body,
-  html.ruined-brand-cursor-active body * {
+  html.ruined-brand-cursor-active :where(body, body *) {
     cursor: none !important;
   }
 

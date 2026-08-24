@@ -25,6 +25,41 @@ Pricing and Artifact definitions are versioned records in Postgres. They can be
 configured after the product decisions are approved without changing the core
 state model.
 
+## Google registrant mirror
+
+The private `Registrants` Google Sheet is an operations mirror, not another
+database. A completed BYOB Nº 02 registration is committed to Postgres first. A
+server-only outbox worker then upserts the canonical record into the Sheet by
+registration UUID. Both the immediate lookup and daily reconciliation are
+scoped to BYOB Nº 02. The daily protected job retries unfinished work and
+rewrites the managed rows from Postgres so manual drift is repaired. A Google
+failure never blocks or rolls back a registration.
+
+The managed tab has exactly nine columns: Registered at, First name, Last name,
+Email, Instagram, Status, Waiver accepted, Waiver version, and Registration ID.
+Column I is hidden and supplies retry-safe identity. Waiver evidence, guest
+records, rate-limit data, and queue payloads are never copied to Google. Dates
+are written as numeric Google Sheet date values in `America/Denver`; all user
+text uses RAW writes so it cannot be interpreted as a formula.
+
+To connect the mirror:
+
+1. Create a dedicated Google Cloud service account with the Sheets API enabled.
+   Do not grant domain-wide delegation or unrelated Google Cloud roles.
+2. Share only the target spreadsheet with that service-account email as an
+   Editor, and name its existing tab `Registrants`.
+3. Store the spreadsheet ID and base64-encoded service-account JSON in the
+   production environment variables documented in `.env.example`. Never expose
+   either value to the browser.
+4. Set `GOOGLE_REGISTRATION_SHEET_ENABLED=true` only after the sheet share and
+   production secrets are in place. `CRON_SECRET` protects both the scheduled
+   and manual worker route.
+
+The worker writes A:I with RAW values, hides the UUID column, and extends an
+existing native Google Sheets table when new rows fall outside its range. If
+the tab is a plain grid rather than a native table, the same managed range still
+works and no table conversion is required.
+
 ## Connect Supabase and Postgres
 
 1. Create a Supabase project and use separate development and production

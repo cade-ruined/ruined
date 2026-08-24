@@ -470,6 +470,64 @@ test("duplicate participant registration is idempotent and never overwrites the 
   assert.match(registrationWriter, /if \(!registration\) return/);
 });
 
+test("new registrations atomically queue a PII-free Google Sheet sync", async () => {
+  const repository = await read(paths.repository);
+  const registrationWriter = repository.slice(
+    repository.indexOf("export async function registerByob02Participant"),
+  );
+  const duplicateExit = registrationWriter.indexOf("if (!registration) return");
+  const enqueueStart = registrationWriter.indexOf("insert into integration_outbox");
+  const enqueueEnd = registrationWriter.indexOf("`;", enqueueStart);
+  const enqueue = registrationWriter.slice(enqueueStart, enqueueEnd);
+
+  assert.match(registrationWriter, /await sql\.begin\(async \(tx\) => \{/);
+  assert.match(registrationWriter, /returning id/);
+  assert.ok(duplicateExit >= 0, "duplicate registrations must retain their early exit");
+  assert.ok(
+    enqueueStart > duplicateExit,
+    "only a newly inserted registration may queue a Sheet sync",
+  );
+  assert.ok(enqueueEnd > enqueueStart, "the Sheet outbox insert must remain inspectable");
+  assert.match(enqueue, /'google'/);
+  assert.match(enqueue, /'community_event_registration\.sheet_sync_requested'/);
+  assert.match(enqueue, /'community_event_registration'/);
+  assert.match(enqueue, /\$\{registration\.id\}/);
+  assert.match(enqueue, /dedupe_key/);
+  assert.match(
+    enqueue,
+    /google:community-event-registration:\$\{registration\.id\}:created:v1/,
+  );
+  assert.match(enqueue, /'\{\}'::jsonb/);
+  assert.match(enqueue, /on conflict\s*\(\s*dedupe_key\s*\)\s*do nothing/i);
+  assert.doesNotMatch(
+    enqueue,
+    /email|instagram|registrant_(?:name|first_name|last_name)|registrant(?:Name|FirstName|LastName)|waiver|fingerprint|submission\./i,
+    "the durable queue should carry only the canonical registration ID",
+  );
+});
+
+test("registration defers Google Sheet delivery without making it part of success", async () => {
+  const api = await read(paths.api);
+  const persist = api.indexOf("await registerByob02Participant(submission)");
+  const deferred = api.indexOf("after(", persist);
+  const response = api.indexOf("return json(SUCCESS_RESPONSE)", persist);
+  const deferredBlock = api.slice(deferred, response);
+
+  assert.match(api, /import \{[^}]*\bafter\b[^}]*\} from "next\/server"/);
+  assert.ok(persist >= 0, "the canonical registration must be stored first");
+  assert.ok(deferred > persist, "Sheet delivery must be scheduled only after persistence");
+  assert.ok(response > deferred, "the public success response should not wait on Sheet delivery");
+  assert.match(deferredBlock, /processRegistrationSheetOutboxBatch\((?:1|2|3)\)/);
+  assert.match(deferredBlock, /try \{[\s\S]*?catch \(error\)/);
+  assert.doesNotMatch(
+    deferredBlock,
+    /return json\([^)]*(?:error|503|502)|throw error/,
+    "a Google outage must not roll back or reject a valid registration",
+  );
+  assert.match(deferredBlock, /error instanceof Error \? error\.name : "Error"/);
+  assert.doesNotMatch(deferredBlock, /error\.message|submission\.|emailNormalized/);
+});
+
 test("registration is self-only from the UI through persistence", async () => {
   const [api, form, model, repository] = await Promise.all([
     read(paths.api),

@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import {
@@ -13,6 +13,7 @@ import {
   consumeByobRegistrationRateLimit,
   registerByob02Participant,
 } from "@/lib/events/byob-registration-repository";
+import { processRegistrationSheetOutboxBatch } from "@/lib/events/registration-sheet-sync";
 
 export const runtime = "nodejs";
 
@@ -120,6 +121,14 @@ export async function POST(request: Request) {
     }
 
     await registerByob02Participant(submission);
+    after(async () => {
+      try {
+        await processRegistrationSheetOutboxBatch(3);
+      } catch (error) {
+        const name = error instanceof Error ? error.name : "Error";
+        console.error("Deferred registration sheet sync failed.", { name });
+      }
+    });
     return json(SUCCESS_RESPONSE);
   } catch (error) {
     const details =

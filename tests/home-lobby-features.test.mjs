@@ -6,34 +6,54 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("the home marquee puts the newest BYOB Tank first", async () => {
-  const [indexSource, gallerySource] = await Promise.all([
+test("the home marquee keeps the tank first and turns the BYOB group image into Nº 02 registration", async () => {
+  const [indexSource, eventsSource, gallerySource] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
       "utf8"
     ),
+    fs.readFile(path.join(root, "src", "data", "events.ts"), "utf8"),
     fs.readFile(
       path.join(root, "src", "data", "eventGalleries.ts"),
       "utf8"
     ),
   ]);
 
-  const byobPosition = indexSource.indexOf("key: `events-${byobOne.id}`");
+  const byobRegistrationPosition = indexSource.indexOf(
+    "key: `events-${byobTwo.id}`"
+  );
   const castPosition = indexSource.indexOf('key: "meet-the-cast"');
   const aboutPosition = indexSource.indexOf('key: "what-is-this"');
   const tankPosition = indexSource.indexOf('key: "byob-tank"');
 
   assert.ok(tankPosition >= 0);
-  assert.ok(tankPosition < byobPosition);
-  assert.ok(byobPosition < castPosition);
+  assert.ok(byobRegistrationPosition >= 0);
+  assert.ok(tankPosition < byobRegistrationPosition);
+  assert.ok(byobRegistrationPosition < castPosition);
   assert.ok(castPosition < aboutPosition);
   assert.match(indexSource, /candidate\.id === "byob-01"/);
+  assert.match(indexSource, /candidate\.id === "byob-02"/);
   assert.match(
     indexSource,
     /products\.find\([\s\S]*?candidate\.id === (?:"byob-tank"|BYOB_TANK_FEATURE_FALLBACK\.id)[\s\S]*?\)/
   );
-  assert.match(indexSource, /href: `\/community#\$\{byobOne\.id\}`/);
+  assert.match(indexSource, /href: byobTwo\.registration\.href/);
+  assert.match(indexSource, /title: byobTwo\.title/);
+  assert.match(indexSource, /meta: `Register · \$\{byobTwo\.date\}`/);
   assert.match(indexSource, /image: byobOne\.image/);
+  assert.match(
+    indexSource,
+    /key: `events-\$\{byobTwo\.id\}`[\s\S]*?alt: "The BYOB community gathered beneath storm clouds in the mountains\."/
+  );
+  assert.doesNotMatch(
+    indexSource,
+    /key: `events-\$\{byobTwo\.id\}`[\s\S]*?alt: [^\n]*BYOB Nº 01/
+  );
+  assert.doesNotMatch(indexSource, /href: `\/community#\$\{byobOne\.id\}`/);
+  assert.match(
+    eventsSource,
+    /registration: isRegistrationEvent[\s\S]*?href: "\/community\/byob-02\/register"[\s\S]*?label: "Register"[\s\S]*?status: "Open"/
+  );
   assert.match(indexSource, /title:\s*tank\?\.name \?\? BYOB_TANK_FEATURE_FALLBACK\.title/);
   assert.match(indexSource, /href:\s*tank \? `\/store\/\$\{tank\.id\}` : undefined/);
   assert.match(indexSource, /tank\?\.images\?\.find\(\(image\) => image\.url\.includes\("BYOB_Tee_Product\.png"\)\)[\s\S]*?\?\?\s*tank\?\.image/);
