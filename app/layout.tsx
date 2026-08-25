@@ -74,8 +74,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({
   children,
+  modal,
 }: {
   children: React.ReactNode;
+  modal: React.ReactNode;
 }) {
   const organizationSchema = {
     "@context": "https://schema.org",
@@ -115,6 +117,7 @@ export default function RootLayout({
           {children}
         </div>
         <SiteFooter />
+        {modal}
         <WebVitals />
       </body>
     </html>

@@ -10,7 +10,6 @@ import {
 } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { CalendarGlyph } from "@/components/nav/CalendarGlyph";
 import { CouchGlyph } from "@/components/nav/CouchGlyph";
 import { PersonGlyph } from "@/components/nav/PersonGlyph";
@@ -25,11 +24,12 @@ import {
   type ExploreRoom,
 } from "@/data/navigation";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
+import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 
 const MENU_ID = "site-navigation-menu";
 
 export default function SiteHeader() {
-  const pathname = usePathname();
+  const pathname = useBackgroundPathname();
   const menuTitleId = useId();
   const isLanding = pathname.startsWith("/lp");
   const isFoundations = pathname === "/foundations";
@@ -214,6 +214,7 @@ export default function SiteHeader() {
             <div className="ruined-header-left">
               <button
                 ref={menuButtonRef}
+                data-contact-return-focus
                 type="button"
                 aria-expanded={menuOpen}
                 aria-controls={MENU_ID}

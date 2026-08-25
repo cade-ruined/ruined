@@ -67,10 +67,10 @@ const PAGES: SearchDocument[] = [
     id: "contact",
     group: "pages",
     title: "Contact",
-    description: "Projects, collaborations, press, wholesale, and studio visits.",
-    meta: "Enquiries",
+    description: "General questions and messages for The Ruined Project.",
+    meta: "Questions",
     href: "/contact",
-    searchable: "contact email enquiry enquiries projects collaborations press wholesale visits location",
+    searchable: "contact email question questions message messages general location",
     priority: 75,
   },
   {

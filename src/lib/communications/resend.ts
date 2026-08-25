@@ -51,6 +51,17 @@ export type SendDoubleOptInConfirmationEmailResult = {
   emailId: string;
 };
 
+export type SendContactSubmissionInput = {
+  email: string;
+  idempotencyKey: string;
+  message: string;
+  name: string;
+};
+
+export type SendContactSubmissionResult = {
+  emailId: string;
+};
+
 export type UpsertResendContactInput = {
   email: string;
   topics: Partial<Record<ResendTopic, ResendTopicSubscription>>;
@@ -233,6 +244,51 @@ export function getResendConfigurationStatus(): ResendConfigurationStatus {
 
 export function getResendTopicId(topic: ResendTopic): string {
   return requireEnvironmentValue(TOPIC_ENVIRONMENT_VARIABLES[topic]);
+}
+
+export function isContactDeliveryConfigured(): boolean {
+  return Boolean(
+    environmentValue("RESEND_API_KEY") &&
+    environmentValue("RESEND_FROM_EMAIL"),
+  );
+}
+
+export async function sendContactSubmission(
+  input: SendContactSubmissionInput,
+): Promise<SendContactSubmissionResult> {
+  const resend = getResendClient();
+  const from = requireEnvironmentValue("RESEND_FROM_EMAIL");
+  const to =
+    environmentValue("CONTACT_TO_EMAIL") ??
+    environmentValue("NEXT_PUBLIC_CONTACT_EMAIL") ??
+    "connect@theruinedproject.com";
+  const email = requireEmail(input.email);
+  const name = requireNonEmpty(input.name, "Name");
+  const message = requireNonEmpty(input.message, "Message");
+  const idempotencyKey = requireNonEmpty(input.idempotencyKey, "Idempotency key");
+
+  const response = await resend.emails.send(
+    {
+      from,
+      to,
+      replyTo: email,
+      subject: "New contact message",
+      text: [
+        "New contact message for The Ruined Project",
+        "",
+        `Name: ${name}`,
+        `Email: ${email}`,
+        "",
+        "Message:",
+        message,
+      ].join("\n"),
+    },
+    { idempotencyKey },
+  );
+
+  if (response.error) throw resendFailure("contact email", response.error);
+
+  return { emailId: response.data.id };
 }
 
 export async function sendDoubleOptInConfirmationEmail(

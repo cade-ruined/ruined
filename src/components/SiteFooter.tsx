@@ -2,14 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   FOOTER_INDEX_ITEMS,
   SERVICE_NAV_ITEMS,
 } from "@/data/navigation";
+import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 
 export default function SiteFooter() {
-  const pathname = usePathname();
+  const pathname = useBackgroundPathname();
   if (
     pathname === "/" ||
     pathname.startsWith("/dive") ||
