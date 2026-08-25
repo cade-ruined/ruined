@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Product } from "@/data/products";
+import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { isShopifyVariantId, type BagItem, useBag } from "./bag-store";
 
 type DisplayBagItem = BagItem & {
@@ -211,7 +212,12 @@ export default function BagPageClient({
               <span className="display text-3xl">{formatTotal(total, currency)}</span>
             </div>
           )}
-          <p className="mt-4 text-xs leading-relaxed text-white/65">
+          {canCheckout && (
+            <p className="mt-4 text-xs leading-relaxed text-white/65">
+              {FREE_STANDARD_SHIPPING_COPY}
+            </p>
+          )}
+          <p className={`${canCheckout ? "mt-2" : "mt-4"} text-xs leading-relaxed text-white/65`}>
             {preorderShipDates.length === 1
               ? `Preorders are paid in full now and expected to ship ${preorderShipDates[0]}. `
               : preorderShipDates.length > 1

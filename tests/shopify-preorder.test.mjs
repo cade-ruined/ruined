@@ -20,6 +20,7 @@ const [
   productDescription,
   productCopy,
   shopifyDescription,
+  storePolicies,
 ] =
   await Promise.all([
     read("src/lib/shopify.ts"),
@@ -37,6 +38,7 @@ const [
     read("src/components/store/ProductDescription.tsx"),
     read("src/lib/store/product-copy.js"),
     read("src/lib/store/shopify-description.ts"),
+    read("src/data/store-policies.ts"),
   ]);
 
 test("Shopify queries and maps only the expected ship-date preorder marker", () => {
@@ -147,6 +149,30 @@ test("product and bag present the restrained pay-in-full preorder promise", () =
   assert.match(
     bagPage,
     /Pay \{formatPriceForSentence\(item\.unitPrice\)\} now\. Expected to ship \{formatExpectedShipDate\(item\.expectedShipDate\)\}\./
+  );
+});
+
+test("product and bag disclose the shared free-standard-shipping threshold", () => {
+  assert.match(
+    storePolicies,
+    /Free standard shipping on U\.S\. orders \$70\+\./
+  );
+
+  for (const source of [purchase, bagPage]) {
+    assert.match(
+      source,
+      /import \{ FREE_STANDARD_SHIPPING_COPY \} from "@\/data\/store-policies"/
+    );
+    assert.match(source, /\{FREE_STANDARD_SHIPPING_COPY\}/);
+  }
+
+  assert.match(
+    purchase,
+    /isShopifyProduct\s*&&\s*\([\s\S]*?FREE_STANDARD_SHIPPING_COPY/
+  );
+  assert.match(
+    bagPage,
+    /canCheckout\s*&&\s*\([\s\S]*?FREE_STANDARD_SHIPPING_COPY/
   );
 });
 

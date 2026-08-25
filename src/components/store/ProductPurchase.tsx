@@ -7,6 +7,7 @@ import {
   getProductSizeGuide,
   getProductSizeGuideConfig,
 } from "@/data/product-size-guides";
+import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import BagLink from "./BagLink";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
@@ -191,6 +192,12 @@ export default function ProductPurchase({ product }: { product: Product }) {
               : "Unavailable"}
         </span>
       </button>
+
+      {isShopifyProduct && (
+        <p className="mt-4 text-xs leading-relaxed text-white/65">
+          {FREE_STANDARD_SHIPPING_COPY}
+        </p>
+      )}
 
       <div className="mt-4 flex items-center justify-between gap-4 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-white/65">
         <span>{isShopifyProduct ? "Secure checkout" : "Studio confirmation"}</span>
