@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Product, ProductOption, ProductVariant } from "@/data/products";
+import {
+  getProductSizeGuide,
+  getProductSizeGuideConfig,
+} from "@/data/product-size-guides";
 import BagLink from "./BagLink";
+import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
 
 function optionValue(variant: ProductVariant, name: string): string | undefined {
@@ -64,6 +69,11 @@ export default function ProductPurchase({ product }: { product: Product }) {
   const isPreorder = Boolean(expectedShipDate);
   const isShopifyProduct = product.variants.some((variant) => isShopifyVariantId(variant.id));
   const missingOptions = options.filter((option) => !selection[option.name]);
+  const sizeGuideConfig = getProductSizeGuideConfig(product.id);
+  const sizeGuide = getProductSizeGuide(
+    product.id,
+    sizeGuideConfig ? selection[sizeGuideConfig.fitOption] : undefined
+  );
   const selectionPrompt = missingOptions.length === 1
     ? `Select ${missingOptions[0].name.toLowerCase()}`
     : "Select options";
@@ -131,6 +141,17 @@ export default function ProductPurchase({ product }: { product: Product }) {
             <span>Select {option.name}</span>
             <span className="text-white">{selection[option.name] || "Required"}</span>
           </legend>
+          {option.name === sizeGuideConfig?.sizeOption && (
+            <div className="mt-1 flex min-h-11 items-center justify-end">
+              {sizeGuide ? (
+                <ProductSizeGuideDialog guide={sizeGuide} />
+              ) : (
+                <span className="font-mono text-[0.54rem] uppercase tracking-[0.16em] text-white/35">
+                  Select fit for size guide
+                </span>
+              )}
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5">
             {option.values.map((value) => {
               const active = selection[option.name] === value;

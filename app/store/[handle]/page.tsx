@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductPurchase from "@/components/store/ProductPurchase";
+import ProductDescription from "@/components/store/ProductDescription";
 import {
   PRODUCT_TONES,
   type Product,
@@ -164,11 +165,11 @@ export default async function ProductPage({
 
             <ProductPurchase product={product} />
 
-            {product.description && (
-              <p className="mt-10 max-w-prose whitespace-pre-line border-t border-white/15 pt-7 text-base leading-relaxed text-white/70">
-                {product.description}
-              </p>
-            )}
+            <ProductDescription
+              description={product.description}
+              descriptionHtml={product.descriptionHtml}
+              expectedShipDate={product.expectedShipDate}
+            />
 
             {specs.length > 0 && (
               <dl className="mt-8 space-y-3 border-y border-white/15 py-6 font-mono text-[0.64rem] uppercase tracking-[0.16em]">

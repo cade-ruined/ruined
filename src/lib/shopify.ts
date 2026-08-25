@@ -8,6 +8,7 @@ import {
   type ProductVariant,
   type ProductTone,
 } from "@/data/products";
+import { normalizeExpectedShipDateLanguage } from "@/lib/store/product-copy.js";
 
 // ─── Storefront API client ──────────────────────────────────────────────────
 // Server-only (this module imports `server-only`, so it can never be bundled
@@ -45,6 +46,7 @@ const PRODUCTS_QUERY = `#graphql
         handle
         title
         description
+        descriptionHtml
         featuredImage { url altText }
         images(first: 12) {
           nodes { url altText width height }
@@ -137,6 +139,7 @@ type SFProductNode = {
   handle: string;
   title: string;
   description: string;
+  descriptionHtml: string;
   featuredImage: { url: string; altText: string | null } | null;
   images: {
     nodes: {
@@ -197,34 +200,6 @@ function resolveTone(metaTone: string | undefined, handle: string, index: number
   return TONE_BY_HANDLE[handle] ?? TONE_CYCLE[index % TONE_CYCLE.length];
 }
 
-function normalizeExpectedShipDateLanguage(
-  description: string,
-  expectedShipDate?: string
-): string {
-  if (!expectedShipDate) return description;
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(expectedShipDate)
-    ? new Date(`${expectedShipDate}T12:00:00Z`)
-    : new Date(expectedShipDate);
-  if (Number.isNaN(date.getTime())) return description;
-
-  const month = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    timeZone: "UTC",
-  }).format(date);
-  const shortMonth = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    timeZone: "UTC",
-  }).format(date);
-  const monthPattern = month === shortMonth
-    ? month
-    : `(?:${month}|${shortMonth}t?\.?)`;
-
-  return description.replace(
-    new RegExp(`(\\bship(?:s|ped|ping)?(?:\\s+on)?\\s+)${monthPattern}\\s+\\d{1,2}(?:,\\s*\\d{4})?`, "gi"),
-    `$1${month}`
-  );
-}
-
 function mapProduct(node: SFProductNode, index: number): Product {
   const meta = toMetaMap(node.metafields);
   const expectedShipDate = meta.expected_ship_date || undefined;
@@ -260,6 +235,7 @@ function mapProduct(node: SFProductNode, index: number): Product {
     subtitle: meta.subtitle ?? "",
     price: formatPrice(node.priceRange.minVariantPrice),
     description: normalizeExpectedShipDateLanguage(node.description, expectedShipDate),
+    descriptionHtml: node.descriptionHtml,
     material: meta.material ?? "",
     origin: meta.origin ?? "",
     care: meta.care ?? "",

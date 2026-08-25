@@ -4,7 +4,23 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [shopify, products, checkoutRoute, revalidateRoute, bagStore, bagPage, bagRoute, purchase, storeGallery, journeyIndexes, storeRoute, productRoute] =
+const [
+  shopify,
+  products,
+  checkoutRoute,
+  revalidateRoute,
+  bagStore,
+  bagPage,
+  bagRoute,
+  purchase,
+  storeGallery,
+  journeyIndexes,
+  storeRoute,
+  productRoute,
+  productDescription,
+  productCopy,
+  shopifyDescription,
+] =
   await Promise.all([
     read("src/lib/shopify.ts"),
     read("src/data/products.ts"),
@@ -18,17 +34,23 @@ const [shopify, products, checkoutRoute, revalidateRoute, bagStore, bagPage, bag
     read("src/components/sequence/JourneyIndexes.tsx"),
     read("app/store/page.tsx"),
     read("app/store/[handle]/page.tsx"),
+    read("src/components/store/ProductDescription.tsx"),
+    read("src/lib/store/product-copy.js"),
+    read("src/lib/store/shopify-description.ts"),
   ]);
 
 test("Shopify queries and maps only the expected ship-date preorder marker", () => {
   assert.match(shopify, /namespace:\s*"custom",\s*key:\s*"expected_ship_date"/);
   assert.match(shopify, /images\(first:\s*12\)/);
+  assert.match(shopify, /\n\s*descriptionHtml\n/);
   assert.match(shopify, /images:\s*images\.length\s*\?\s*images\s*:\s*featuredImage\s*\?\s*\[featuredImage\]\s*:\s*\[\]/);
   assert.match(products, /export type ProductImage/);
   assert.match(products, /images\?:\s*ProductImage\[\]/);
   assert.match(shopify, /const expectedShipDate = meta\.expected_ship_date \|\| undefined/);
   assert.match(shopify, /\n\s*expectedShipDate,\n/);
   assert.match(products, /expectedShipDate\?:\s*string/);
+  assert.match(products, /descriptionHtml\?:\s*string/);
+  assert.match(shopify, /descriptionHtml:\s*node\.descriptionHtml/);
 
   const nativeSellingPlanSurfaces = [shopify, products, checkoutRoute, bagStore, bagPage, purchase]
     .join("\n");
@@ -156,21 +178,23 @@ test("customer-facing preorder dates show the month without exposing Shopify's e
     "presentation formatting must not alter Shopify's checkout line attribute",
   );
 
-  assert.match(shopify, /function normalizeExpectedShipDateLanguage\(/);
+  assert.match(shopify, /import \{ normalizeExpectedShipDateLanguage \}/);
+  assert.match(productCopy, /function normalizeExpectedShipDateLanguage\(/);
   assert.match(
     shopify,
     /description:\s*normalizeExpectedShipDateLanguage\(node\.description, expectedShipDate\)/,
     "Shopify product copy should use the same month-only customer promise",
   );
-  assert.match(shopify, /ship\(\?:s\|ped\|ping\)\?/);
+  assert.match(productCopy, /ship\(\?:s\|ped\|ping\)\?/);
 });
 
-test("product detail preserves Shopify description line spacing", () => {
-  assert.match(
-    productRoute,
-    /product\.description[\s\S]*?whitespace-pre-line[\s\S]*?\{product\.description\}/,
-    "plain Shopify descriptions should retain their authored line separation",
-  );
+test("product detail safely preserves Shopify's semantic description structure", () => {
+  assert.match(productRoute, /<ProductDescription/);
+  assert.match(productRoute, /descriptionHtml=\{product\.descriptionHtml\}/);
+  assert.match(productDescription, /parseShopifyProductDescription/);
+  assert.match(shopifyDescription, /parseFragment\(html\)/);
+  assert.doesNotMatch(productDescription, /dangerouslySetInnerHTML/);
+  assert.doesNotMatch(shopifyDescription, /dangerouslySetInnerHTML/);
 });
 
 test("normal products retain normal bag identity, copy, and attribute-free checkout", () => {

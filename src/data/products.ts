@@ -45,6 +45,9 @@ export type Product = {
   subtitle: string; // e.g. "FOR WEATHER"
   price: string; // e.g. "£ 420" (preformatted for display)
   description: string;
+  // Shopify's authored rich description. Detail pages parse this through a
+  // strict semantic allowlist; excerpts and metadata keep using plain text.
+  descriptionHtml?: string;
   material: string;
   origin: string;
   care: string;
