@@ -53,7 +53,6 @@ const nextConfig = {
         "lounge",
         "mobile",
         "fireside",
-        "popup",
       ].map((room) => ({
         source: `/sequences/${room}/:path*`,
         headers: [

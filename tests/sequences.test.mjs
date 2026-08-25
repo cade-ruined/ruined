@@ -280,36 +280,12 @@ test("only the optimized fireside loop is deployable", async () => {
   );
 });
 
-test("mobile popup frames keep the note animation portrait and lightweight", async () => {
-  const popupRoot = path.join(sequenceRoot, "popup", "mobile");
-  const files = (await fs.readdir(popupRoot)).sort();
-  assert.equal(files.length, 47);
-  assert.ok(files.includes("open-frame-lossless.webp"));
-  assert.ok(files.includes("frame-0001.webp"));
-  assert.ok(files.includes("frame-0129.webp"));
-
-  let totalBytes = 0;
-  for (const file of files) {
-    const absolute = path.join(popupRoot, file);
-    const [stat, metadata] = await Promise.all([
-      fs.stat(absolute),
-      sharp(absolute).metadata(),
-    ]);
-    totalBytes += stat.size;
-    assert.equal(metadata.format, "webp");
-    assert.equal(metadata.width, 608);
-    assert.equal(metadata.height, 1080);
-  }
-  assert.ok(totalBytes < 2 * 1024 * 1024, "mobile popup frames exceed 2 MB");
-});
-
 test("responsive journey has no tablet or hybrid-input fallthrough", async () => {
-  const [contract, bootstrap, journey, popup, indexes, comingSoon] =
+  const [contract, bootstrap, journey, indexes, comingSoon] =
     await Promise.all([
       fs.readFile(path.join(root, "src", "utils", "immersiveExperience.ts"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "ImmersiveParallax.tsx"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "MobileImmersiveJourney.tsx"), "utf8"),
-      fs.readFile(path.join(root, "src", "components", "LobbyPopupSequence.tsx"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "sequence", "JourneyComingSoon.tsx"), "utf8"),
     ]);
@@ -327,10 +303,6 @@ test("responsive journey has no tablet or hybrid-input fallthrough", async () =>
   assert.match(bootstrap, /@media \$\{MOBILE_STAGE_QUERY\}/);
   assert.match(journey, /immersiveExperienceMediaQueries/);
   assert.match(journey, /isMobileStageExperience/);
-  assert.doesNotMatch(
-    popup,
-    /isMobileStageExperience|mobileFramesRef|framePath/
-  );
   assert.match(journey, /max-width: min\(42rem, 92dvh\)/);
   assert.match(journey, /onPointerMove=\{handlePointerMove\}/);
   assert.match(journey, /onClickCapture=\{handleClickCapture\}/);
@@ -1267,74 +1239,27 @@ test("fine-pointer form fields retain native cursors", async () => {
   );
 });
 
-test("the Lobby note reveals one static paper and releases the next gesture", async () => {
-  const [popup, packageJson, popupBuild] = await Promise.all([
-    fs.readFile(
-      path.join(root, "src", "components", "LobbyPopupSequence.tsx"),
-      "utf8"
-    ),
+test("the homepage has no opening note or popup build path", async () => {
+  const [homepage, packageJson, config] = await Promise.all([
+    fs.readFile(path.join(root, "app", "page.tsx"), "utf8"),
     fs.readFile(path.join(root, "package.json"), "utf8"),
-    fs.readFile(path.join(root, "scripts", "build-popup-mobile.mjs"), "utf8"),
+    fs.readFile(path.join(root, "next.config.mjs"), "utf8"),
   ]);
 
-  assert.match(
-    popup,
-    /type PopupPhase = "dismissed" \| "ready" \| "locked" \| "closing"/
-  );
-  assert.doesNotMatch(popup, /touchGestureRef|addEventListener\("touch(?:start|move|end|cancel)"/);
-  assert.match(popup, /window\.addEventListener\("pointerdown", pointerDown, true\)/);
-  assert.match(popup, /window\.addEventListener\("pointermove", pointerMove, true\)/);
-  assert.match(
-    popup,
-    /pointerGestureRef\.current = \{[\s\S]*event\.stopImmediatePropagation\(\);/
-  );
-  assert.match(popup, /verticalDistance < 28/);
-  assert.match(popup, /if \(gesture\.opened\) \{[\s\S]*event\.stopImmediatePropagation\(\);[\s\S]*return;/);
-  assert.match(popup, /phaseRef\.current === "ready"\) revealPaper\(\)/);
-  assert.match(popup, /window\.addEventListener\("click", handleClick, true\)/);
-  assert.match(popup, /armClickSuppression\(500\)/);
-  assert.match(
-    popup,
-    /phaseRef\.current !== "locked"\) return;[\s\S]*event\.preventDefault\(\);[\s\S]*event\.stopImmediatePropagation\(\);[\s\S]*if \(paperReady\) enterLobby\(\);/
-  );
-  assert.match(popup, /phaseRef\.current === "closing"/);
-  assert.match(popup, /DISMISS_DURATION_MS = 180/);
-  assert.match(popup, /setPhase\("closing"\)[\s\S]*setPhase\("dismissed"\)/);
-  assert.match(popup, /NOTE_LOCK_SRC = "\/sequences\/popup\/note-lock\.webp\?v=1"/);
-  assert.match(popup, /const paperVisible = phase === "locked" && paperReady/);
-  assert.doesNotMatch(
-    popup,
-    /<canvas|FRAME_COUNT|OPEN_FRAME|CLOSE_START_FRAME|imagesRef|animationFrameRef|requestAnimationFrame|getContext\("2d"\)/
-  );
-  assert.match(popup, /window\.addEventListener\("hashchange", syncLocation\)/);
-  assert.match(popup, /window\.addEventListener\("pageshow", syncLocation\)/);
-  assert.match(
-    popup,
-    /fixed left-1\/2 top-1\/2[\s\S]*transition-\[opacity,transform\][\s\S]*aria-label="Come in"[\s\S]*<NextImage/
-  );
-  const comeInLabelPosition = popup.indexOf('aria-label="Come in"');
-  const comeInButtonStart = popup.lastIndexOf("<button", comeInLabelPosition);
-  const comeInButtonEnd = popup.indexOf("</button>", comeInLabelPosition);
-  const comeInButton = popup.slice(comeInButtonStart, comeInButtonEnd + "</button>".length);
-  const closeLabelPosition = popup.indexOf('aria-label="Close note"');
-  assert.ok(closeLabelPosition >= 0, "the opening note should expose an accessible close control");
-  const closeButtonStart = popup.lastIndexOf("<button", closeLabelPosition);
-  const closeButtonEnd = popup.indexOf("</button>", closeLabelPosition);
-  const closeButton = popup.slice(closeButtonStart, closeButtonEnd + "</button>".length);
-  assert.ok(comeInButtonEnd < closeButtonStart, "the image and close controls should be sibling buttons");
-  assert.match(comeInButton, /onClick=\{enterLobby\}/);
-  assert.match(closeButton, /onClick=\{enterLobby\}/);
-  assert.match(closeButton, /aria-hidden="true"[\s\S]*[×X]/);
-  assert.match(popup, /disabled=\{!paperVisible\}/);
-  assert.match(popup, /src=\{NOTE_LOCK_SRC\}[\s\S]*unoptimized/);
-  assert.match(popup, /onLoad=\{\(\) => setPaperReady\(true\)\}/);
-  assert.match(popup, /aria-hidden="true"[\s\S]*pointer-events-none absolute left-\[54%\]/);
-  assert.doesNotMatch(popup, /fixed inset-0 z-\[30\]/);
-  assert.match(popup, /window\.addEventListener\("ruined:home-scene-request", requestScene\)/);
-  assert.match(packageJson, /build-popup-mobile\.mjs/);
-  assert.match(popupBuild, /LOCK_SOURCE = path\.join\(POPUP_ROOT, "note-lock\.png"\)/);
-  assert.match(popupBuild, /LOCK_OUTPUT = path\.join\(POPUP_ROOT, "note-lock\.webp"\)/);
-  assert.match(popupBuild, /alphaQuality: 100/);
+  assert.doesNotMatch(homepage, /LobbyPopupSequence|LobbyProcessNote|note-lock|sequences\/popup/);
+  assert.doesNotMatch(packageJson, /build-popup-mobile|sequences\/popup/);
+  assert.doesNotMatch(config, /["']popup["']/);
+
+  for (const retiredPath of [
+    "src/components/LobbyPopupSequence.tsx",
+    "src/components/LobbyProcessNote.tsx",
+    "scripts/build-popup-mobile.mjs",
+    "public/sequences/popup",
+    "public/textures/working-on-this-note.png",
+    "public/textures/working-on-this-note-v2.png",
+  ]) {
+    await assert.rejects(fs.access(path.join(root, retiredPath)), { code: "ENOENT" });
+  }
 });
 
 test("desktop journey preserves continuous native wheel scrolling", async () => {
@@ -1366,7 +1291,6 @@ test("mobile fire waits for buffered motion and recovers from interruption", asy
   assert.match(journey, /window\.addEventListener\("pageshow", attemptPlayback\)/);
   assert.match(journey, /prepare=\{stageEnabled && activeIndex >= 3\}/);
   assert.match(config, /"fireside"/);
-  assert.match(config, /"popup"/);
 });
 
 test("production route boundaries and metadata files exist", async () => {
