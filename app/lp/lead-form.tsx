@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import styles from "./lp.module.css";
 
 type Status = "idle" | "sending" | "success" | "error";
@@ -69,7 +70,7 @@ export default function LeadForm() {
       <div className={styles.heroFormAction}>
         <label className={styles.heroConsent}>
           <input name="consent" type="checkbox" required />
-          <span>I accept the <a href="/privacy">privacy policy</a>.</span>
+          <span>I accept the <Link href="/privacy">privacy policy</Link>.</span>
         </label>
         <button type="submit" disabled={status === "sending"}>
           {status === "sending" ? "Sending…" : "Request invitation"}<span aria-hidden>↗</span>

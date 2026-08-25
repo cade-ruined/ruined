@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import ParallaxHero from "./parallax-hero";
 import styles from "./lp.module.css";
 
@@ -70,7 +71,7 @@ export default function LandingPage() {
           <Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} />
         </a>
         <p>After the Fear · Private programme 01</p>
-        <div><a href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a><a href="/privacy">Privacy</a></div>
+        <div><a href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a><Link href="/privacy">Privacy</Link></div>
         <small>© 2026 The Ruined Project</small>
       </footer>
     </main>

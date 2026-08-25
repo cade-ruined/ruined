@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useRef, useState } from "react";
+import Link from "next/link";
 
 type CheckoutResponse = {
   checkoutUrl?: string;
@@ -95,7 +96,7 @@ export default function JoinForm({
             type="checkbox"
           />
           <span>
-            I accept the current <a className="underline underline-offset-4" href="/terms">membership terms</a> and <a className="underline underline-offset-4" href="/privacy">privacy policy</a>.
+            I accept the current <Link className="underline underline-offset-4" href="/terms">membership terms</Link> and <Link className="underline underline-offset-4" href="/privacy">privacy policy</Link>.
           </span>
         </label>
       </div>
