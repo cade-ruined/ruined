@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import MemberFoundationsHome from "@/components/foundations/MemberFoundationsHome";
+import MemberFoundationsExperience from "@/components/foundations/MemberFoundationsExperience";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/foundations/model";
 import { getMemberFoundationsState } from "@/lib/foundations/repository";
@@ -9,7 +9,7 @@ import { getMemberPageContext } from "@/lib/platform/page-data";
 
 export const dynamic = "force-dynamic";
 
-export default async function MyFoundationsPage() {
+export default async function MemberFoundationsExperiencePage() {
   const context = await getMemberPageContext();
   if (context.state === "signed_out") redirect("/my/access");
   if (
@@ -22,7 +22,7 @@ export default async function MyFoundationsPage() {
 
   if (context.state === "preview") {
     return (
-      <MemberFoundationsHome
+      <MemberFoundationsExperience
         initialState={PREVIEW_MEMBER_FOUNDATIONS_STATE}
         writable={false}
       />
@@ -33,17 +33,19 @@ export default async function MyFoundationsPage() {
     return <PlatformUnavailable accessHref="/my/access" />;
   }
 
+  let foundations;
   try {
-    const foundations = await getMemberFoundationsState(context.viewer.authUserId);
-    return foundations ? (
-      <MemberFoundationsHome initialState={foundations} writable />
-    ) : (
-      <PlatformUnavailable accessHref="/my/access" />
-    );
+    foundations = await getMemberFoundationsState(context.viewer.authUserId);
   } catch (error) {
-    console.error("Member Foundations could not be loaded", {
+    console.error("Member Foundations experience could not be loaded", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
     return <PlatformUnavailable accessHref="/my/access" />;
   }
+
+  if (!foundations) return <PlatformUnavailable accessHref="/my/access" />;
+  if (!foundations.enrollmentId && foundations.status === "not_started") {
+    redirect("/my/foundations");
+  }
+  return <MemberFoundationsExperience initialState={foundations} writable />;
 }
