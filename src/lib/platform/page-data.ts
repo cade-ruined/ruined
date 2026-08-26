@@ -10,10 +10,8 @@ import {
   type PlatformViewer,
 } from "@/lib/platform/model";
 import {
-  ensurePlatformMemberForViewer,
   getMemberPlatformSnapshot,
   getOperatorDashboard,
-  getOperatorRole,
   type OperatorRole,
 } from "@/lib/platform/repository";
 
@@ -48,12 +46,11 @@ export async function getMemberPageContext(): Promise<MemberPageContext> {
   if (!viewer) return { configuration, member: null, state: "signed_out", viewer: null };
 
   try {
-    await ensurePlatformMemberForViewer(viewer);
     const member = await getMemberPlatformSnapshot(viewer.authUserId);
     return {
       configuration,
       member,
-      state: member ? "authenticated" : "unavailable",
+      state: member ? "authenticated" : "denied",
       viewer,
     };
   } catch (error) {
@@ -85,12 +82,17 @@ export async function getOperatorPageContext(): Promise<OperatorPageContext> {
   }
 
   try {
-    const role = await getOperatorRole(viewer.authUserId);
-    if (!role) {
+    const access = await getOperatorDashboard(viewer.authUserId);
+    if (!access) {
       return { configuration, dashboard: null, role: null, state: "denied", viewer };
     }
-    const dashboard = await getOperatorDashboard(viewer.authUserId, role);
-    return { configuration, dashboard, role, state: "authenticated", viewer };
+    return {
+      configuration,
+      dashboard: access.dashboard,
+      role: access.role,
+      state: "authenticated",
+      viewer,
+    };
   } catch (error) {
     console.error("Ruined operations context could not be loaded", {
       errorType: error instanceof Error ? error.name : "UnknownError",

@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { ensurePlatformMemberForViewer } from "@/lib/platform/repository";
+import {
+  PlatformAccessDeniedError,
+  requireActivePlatformMemberLink,
+} from "@/lib/platform/repository";
 import {
   MembershipCheckoutConflictError,
   expireMembershipCheckoutAttempt,
@@ -79,7 +82,7 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
-    const platformUser = await ensurePlatformMemberForViewer(viewer);
+    const platformUser = await requireActivePlatformMemberLink(viewer);
     const stripe = getStripe();
     const agreementVersion = getMembershipAgreementVersion();
     const priceId = getStripeMembershipPriceId();
@@ -174,6 +177,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ checkoutUrl: session.url });
   } catch (error) {
+    if (error instanceof PlatformAccessDeniedError) {
+      return NextResponse.json(
+        { error: "An active invited member account is required before Checkout." },
+        { status: 403 },
+      );
+    }
+
     if (error instanceof MembershipCheckoutConflictError) {
       return NextResponse.json(
         {

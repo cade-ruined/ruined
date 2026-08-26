@@ -3,11 +3,13 @@ import { NextResponse } from "next/server";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getPlatformConfiguration } from "@/lib/platform/config";
+import { getPasswordlessAccessEligibility } from "@/lib/platform/repository";
 import { createSupabaseCurrentResponseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_LENGTH = 254;
 
 type RequestBody = {
   audience?: unknown;
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const audience = body?.audience === "ops" ? "ops" : "member";
 
-  if (!EMAIL_PATTERN.test(email)) {
+  if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
@@ -38,9 +40,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Passwordless access is not configured yet." }, { status: 503 });
   }
 
+  let eligibility: Awaited<ReturnType<typeof getPasswordlessAccessEligibility>>;
+
+  try {
+    eligibility = await getPasswordlessAccessEligibility(email, audience);
+  } catch (error) {
+    console.error("Passwordless access eligibility could not be checked", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+    return response;
+  }
+
+  if (eligibility === "none") return response;
+
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { shouldCreateUser: audience === "member" },
+    options: { shouldCreateUser: eligibility === "invited" },
   });
 
   if (error) {

@@ -63,7 +63,7 @@ export default function MemberHome({
       <section className="mt-14 grid gap-8 md:grid-cols-3">
         {[
           { href: "/my/foundations", label: "Foundations", state: member.foundationsState, text: "The four-part beginning: SEE, CONFRONT, CUT, GROW." },
-          { href: "/my/circle", label: "Circle", state: member.circleName ? "active" : "pending", text: "Your assigned group, leader, and next live session." },
+          { href: "/my/circle", label: "Circle", state: member.circleStatus ?? "pending", text: "Your assigned group, leader, and next live session." },
           { href: "/my/artifacts", label: "Artifacts", state: member.artifactState, text: "Member-controlled inputs that become physical work." },
         ].map((item) => (
           <Link className="group border-t border-white/15 py-5" href={item.href} key={item.href}>

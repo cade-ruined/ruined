@@ -1,6 +1,7 @@
 export type AccountState = "provisional" | "invited" | "active" | "suspended" | "closed";
 export type ArtifactState = "not_started" | "collecting" | "in_production" | "fulfilled";
 export type BillingState = "pending" | "active" | "attention_required" | "ended";
+export type CircleState = "forming" | "active" | "completed" | "archived";
 export type FoundationsState = "not_started" | "in_progress" | "completed";
 export type ProgramState =
   | "prospect"
@@ -15,6 +16,7 @@ export type MemberPlatformSnapshot = {
   artifactState: ArtifactState;
   billingState: BillingState;
   circleName: string | null;
+  circleStatus: CircleState | null;
   email: string;
   foundationsProgress: number;
   foundationsState: FoundationsState;
@@ -28,6 +30,7 @@ export type OperatorMemberSummary = {
   artifactState: ArtifactState;
   billingState: BillingState;
   circleName: string | null;
+  circleStatus: CircleState | null;
   foundationsProgress: number;
   memberId: string;
   name: string;
@@ -60,6 +63,7 @@ export const PREVIEW_MEMBER: MemberPlatformSnapshot = {
   artifactState: "not_started",
   billingState: "pending",
   circleName: null,
+  circleStatus: null,
   email: "preview@ruined.local",
   foundationsProgress: 0,
   foundationsState: "not_started",
@@ -74,6 +78,7 @@ const PREVIEW_OPERATOR_MEMBERS: OperatorMemberSummary[] = [
     artifactState: "collecting",
     billingState: "active",
     circleName: "Circle 01",
+    circleStatus: "active",
     foundationsProgress: 75,
     memberId: "preview-01",
     name: "Member 01",
@@ -84,6 +89,7 @@ const PREVIEW_OPERATOR_MEMBERS: OperatorMemberSummary[] = [
     artifactState: "not_started",
     billingState: "attention_required",
     circleName: "Circle 01",
+    circleStatus: "active",
     foundationsProgress: 50,
     memberId: "preview-02",
     name: "Member 02",
@@ -94,6 +100,7 @@ const PREVIEW_OPERATOR_MEMBERS: OperatorMemberSummary[] = [
     artifactState: "not_started",
     billingState: "pending",
     circleName: null,
+    circleStatus: null,
     foundationsProgress: 0,
     memberId: "preview-03",
     name: "Member 03",
@@ -104,6 +111,7 @@ const PREVIEW_OPERATOR_MEMBERS: OperatorMemberSummary[] = [
     artifactState: "in_production",
     billingState: "active",
     circleName: "Circle 02",
+    circleStatus: "active",
     foundationsProgress: 100,
     memberId: "preview-04",
     name: "Member 04",

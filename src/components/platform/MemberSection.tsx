@@ -41,9 +41,7 @@ export default function MemberSection({
         ? member.artifactState
         : section === "foundations"
           ? member.foundationsState
-          : member.circleName
-            ? "active"
-            : "pending";
+          : member.circleStatus ?? "pending";
 
   return (
     <main className="min-h-[68vh] border-t border-white/15 pt-5">

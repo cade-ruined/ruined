@@ -10,7 +10,7 @@ const migration = await readFile(new URL("../db/migrations/20260819_stripe_billi
 
 test("membership Checkout fixes price and quantity on the server", () => {
   assert.match(checkoutRoute, /const viewer = await getCurrentPlatformViewer\(\)/);
-  assert.match(checkoutRoute, /ensurePlatformMemberForViewer\(viewer\)/);
+  assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
   assert.match(checkoutRoute, /getStripeMembershipPriceId\(\)/);
   assert.match(checkoutRoute, /line_items:\s*\[\{ price: priceId, quantity: 1 \}\]/);
   assert.doesNotMatch(checkoutRoute, /body\.(email|price|priceId|amount|quantity)/);

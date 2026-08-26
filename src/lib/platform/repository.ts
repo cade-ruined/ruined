@@ -1,7 +1,5 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { normalizeEmail } from "@/lib/stripe/membership-state";
 import {
@@ -24,7 +22,107 @@ export type PlatformUserLink = {
 
 export type OperatorRole = "circle_leader" | "guide" | "ops_admin";
 
-export async function ensurePlatformMemberForViewer(
+export type PasswordlessAudience = "member" | "ops";
+export type PasswordlessAccessEligibility = "invited" | "none" | "returning";
+
+export class PlatformAccessDeniedError extends Error {
+  constructor() {
+    super("The verified identity is not linked to an active Ruined account.");
+    this.name = "PlatformAccessDeniedError";
+  }
+}
+
+export async function getPasswordlessAccessEligibility(
+  email: string,
+  audience: PasswordlessAudience,
+): Promise<PasswordlessAccessEligibility> {
+  const sql = getBillingDatabase();
+  const emailNormalized = normalizeEmail(email);
+
+  if (audience === "ops") {
+    const rows = await sql<Array<{ eligible: boolean }>>`
+      select exists (
+        select 1
+        from platform_users platform_user
+        join platform_role_grants grant_row
+          on grant_row.auth_user_id = platform_user.auth_user_id
+        where platform_user.email_normalized = ${emailNormalized}
+          and platform_user.user_type = 'staff'
+          and platform_user.status = 'active'
+          and grant_row.role_slug in ('ops_admin', 'circle_leader', 'guide')
+          and grant_row.revoked_at is null
+      ) as eligible
+    `;
+    return rows[0]?.eligible ? "returning" : "none";
+  }
+
+  const rows = await sql<
+    Array<{
+      has_invite: boolean;
+      is_returning: boolean;
+    }>
+  >`
+    select
+      exists (
+        select 1
+        from platform_users platform_user
+        join ruined_members member on member.id = platform_user.member_id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        where platform_user.email_normalized = ${emailNormalized}
+          and member.email_normalized = ${emailNormalized}
+          and platform_user.user_type = 'member'
+          and platform_user.status = 'active'
+          and lifecycle.account_state = 'active'
+      ) as is_returning,
+      exists (
+        select 1
+        from passwordless_account_invites invitation
+        join ruined_members member on member.id = invitation.member_id
+        where invitation.email_normalized = ${emailNormalized}
+          and member.email_normalized = ${emailNormalized}
+          and invitation.intended_user_type = 'member'
+          and invitation.accepted_at is null
+          and invitation.revoked_at is null
+          and (invitation.expires_at is null or invitation.expires_at > statement_timestamp())
+          and not exists (
+            select 1
+            from member_lifecycle lifecycle
+            where lifecycle.member_id = invitation.member_id
+              and lifecycle.account_state in ('suspended', 'closed')
+          )
+      ) as has_invite
+  `;
+  const eligibility = rows[0];
+  if (eligibility?.is_returning) return "returning";
+  return eligibility?.has_invite ? "invited" : "none";
+}
+
+export async function requireActivePlatformMemberLink(
+  viewer: PlatformViewer,
+): Promise<PlatformUserLink> {
+  const sql = getBillingDatabase();
+  const emailNormalized = normalizeEmail(viewer.email);
+
+  const rows = await sql<Array<{ member_id: string }>>`
+    select platform_user.member_id
+    from platform_users platform_user
+    join ruined_members member on member.id = platform_user.member_id
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    where platform_user.auth_user_id = ${viewer.authUserId}::uuid
+      and platform_user.email_normalized = ${emailNormalized}
+      and member.email_normalized = ${emailNormalized}
+      and platform_user.user_type = 'member'
+      and platform_user.status = 'active'
+      and lifecycle.account_state = 'active'
+    limit 1
+  `;
+  const link = rows[0];
+  if (!link) throw new PlatformAccessDeniedError();
+
+  return { authUserId: viewer.authUserId, memberId: link.member_id };
+}
+
+export async function claimPlatformMemberForViewer(
   viewer: PlatformViewer,
 ): Promise<PlatformUserLink> {
   const sql = getBillingDatabase();
@@ -35,11 +133,13 @@ export async function ensurePlatformMemberForViewer(
 
     const existingLinks = await tx<
       Array<{
+        email_normalized: string;
         member_id: string | null;
         status: "active" | "disabled" | "invited" | "suspended";
+        user_type: "member" | "staff";
       }>
     >`
-      select member_id, status
+      select email_normalized, member_id, status, user_type
       from platform_users
       where auth_user_id = ${viewer.authUserId}::uuid
       limit 1
@@ -47,124 +147,177 @@ export async function ensurePlatformMemberForViewer(
     `;
     const existingLink = existingLinks[0];
 
-    if (existingLink?.status === "suspended" || existingLink?.status === "disabled") {
-      throw new Error("This platform account is not active.");
-    }
-
-    const memberRows = existingLink?.member_id
-      ? await tx<Array<{ id: string; membership_state: BillingState }>>`
-          select id, membership_state
-          from ruined_members
-          where id = ${existingLink.member_id}::uuid
-          limit 1
-          for update
-        `
-      : await tx<Array<{ id: string; membership_state: BillingState }>>`
-          select id, membership_state
-          from ruined_members
-          where email_normalized = ${emailNormalized}
-          limit 1
-          for update
-        `;
-    let member = memberRows[0];
-
-    if (!member) {
-      const inserted = await tx<Array<{ id: string; membership_state: BillingState }>>`
-        insert into ruined_members (id, email, email_normalized)
-        values (${randomUUID()}::uuid, ${viewer.email}, ${emailNormalized})
-        returning id, membership_state
-      `;
-      member = inserted[0];
-    }
-
-    if (!member) throw new Error("A platform member record could not be created.");
-
-    if (!existingLink?.member_id) {
-      const conflictingLinks = await tx<Array<{ auth_user_id: string }>>`
-        select auth_user_id
-        from platform_users
-        where member_id = ${member.id}::uuid
-          and auth_user_id <> ${viewer.authUserId}::uuid
-        limit 1
-        for update
-      `;
-      if (conflictingLinks.length > 0) {
-        throw new Error("This member is already linked to another verified identity.");
+    if (existingLink?.status === "active") {
+      if (
+        existingLink.user_type !== "member" ||
+        !existingLink.member_id ||
+        existingLink.email_normalized !== emailNormalized
+      ) {
+        throw new PlatformAccessDeniedError();
       }
+
+      const memberRows = await tx<
+        Array<{ account_state: AccountState; email_normalized: string }>
+      >`
+        select member.email_normalized, lifecycle.account_state
+        from ruined_members member
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        where member.id = ${existingLink.member_id}::uuid
+        limit 1
+        for update of member, lifecycle
+      `;
+      if (
+        memberRows[0]?.email_normalized !== emailNormalized ||
+        memberRows[0]?.account_state !== "active"
+      ) {
+        throw new PlatformAccessDeniedError();
+      }
+
+      await tx`
+        update platform_users
+        set last_signed_in_at = now(), updated_at = now()
+        where auth_user_id = ${viewer.authUserId}::uuid
+      `;
+      return { authUserId: viewer.authUserId, memberId: existingLink.member_id };
     }
 
-    await tx`
-      insert into platform_users (
-        auth_user_id,
-        member_id,
-        email_normalized,
-        user_type,
-        status,
-        activated_at,
-        last_signed_in_at
-      ) values (
-        ${viewer.authUserId}::uuid,
-        ${member.id}::uuid,
-        ${emailNormalized},
-        'member',
-        'active',
-        now(),
-        now()
-      )
-      on conflict (auth_user_id) do update
-      set
-        member_id = excluded.member_id,
-        email_normalized = excluded.email_normalized,
-        status = case
-          when platform_users.status = 'invited' then 'active'
-          else platform_users.status
-        end,
-        activated_at = case
-          when platform_users.status = 'invited' then coalesce(platform_users.activated_at, now())
-          else platform_users.activated_at
-        end,
-        last_signed_in_at = now(),
-        updated_at = now()
-    `;
+    if (
+      existingLink &&
+      (existingLink.status !== "invited" ||
+        existingLink.user_type !== "member" ||
+        existingLink.email_normalized !== emailNormalized)
+    ) {
+      throw new PlatformAccessDeniedError();
+    }
 
-    const lifecycleRows = await tx<
-      Array<{ account_state: AccountState; program_state: ProgramState }>
+    const conflictingEmailLinks = await tx<Array<{ auth_user_id: string }>>`
+      select auth_user_id
+      from platform_users
+      where email_normalized = ${emailNormalized}
+        and auth_user_id <> ${viewer.authUserId}::uuid
+      limit 1
+      for update
+    `;
+    if (conflictingEmailLinks.length > 0) throw new PlatformAccessDeniedError();
+
+    const invitationRows = await tx<
+      Array<{
+        id: string;
+        invited_at: Date;
+        member_id: string;
+      }>
     >`
-      select account_state, program_state
+      select id, invited_at, member_id
+      from passwordless_account_invites
+      where email_normalized = ${emailNormalized}
+        and intended_user_type = 'member'
+        and member_id is not null
+        and accepted_at is null
+        and revoked_at is null
+        and (expires_at is null or expires_at > statement_timestamp())
+      order by invited_at desc
+      limit 1
+      for update
+    `;
+    const invitation = invitationRows[0];
+    if (!invitation) throw new PlatformAccessDeniedError();
+
+    if (existingLink?.member_id && existingLink.member_id !== invitation.member_id) {
+      throw new PlatformAccessDeniedError();
+    }
+
+    const memberRows = await tx<Array<{ id: string; membership_state: BillingState }>>`
+      select id, membership_state
+      from ruined_members
+      where id = ${invitation.member_id}::uuid
+        and email_normalized = ${emailNormalized}
+      limit 1
+      for update
+    `;
+    const member = memberRows[0];
+    if (!member) throw new PlatformAccessDeniedError();
+
+    const conflictingMemberLinks = await tx<Array<{ auth_user_id: string }>>`
+      select auth_user_id
+      from platform_users
+      where member_id = ${member.id}::uuid
+        and auth_user_id <> ${viewer.authUserId}::uuid
+      limit 1
+      for update
+    `;
+    if (conflictingMemberLinks.length > 0) throw new PlatformAccessDeniedError();
+
+    const lifecycleRows = await tx<Array<{ account_state: AccountState }>>`
+      select account_state
       from member_lifecycle
       where member_id = ${member.id}::uuid
       for update
     `;
     const existingLifecycle = lifecycleRows[0];
-    const nextAccountState: AccountState =
-      !existingLifecycle ||
-      existingLifecycle.account_state === "provisional" ||
-      existingLifecycle.account_state === "invited"
-        ? "active"
-        : existingLifecycle.account_state;
-    const nextProgramState: ProgramState =
-      existingLifecycle?.program_state ?? "prospect";
-    const accountChanged =
-      !existingLifecycle || existingLifecycle.account_state !== nextAccountState;
-    const programChanged =
-      !existingLifecycle || existingLifecycle.program_state !== nextProgramState;
+    if (
+      existingLifecycle?.account_state === "suspended" ||
+      existingLifecycle?.account_state === "closed"
+    ) {
+      throw new PlatformAccessDeniedError();
+    }
+
+    if (existingLink) {
+      const updatedLinks = await tx<Array<{ member_id: string }>>`
+        update platform_users
+        set
+          member_id = ${member.id}::uuid,
+          status = 'active',
+          activated_at = coalesce(activated_at, now()),
+          last_signed_in_at = now(),
+          updated_at = now()
+        where auth_user_id = ${viewer.authUserId}::uuid
+          and email_normalized = ${emailNormalized}
+          and user_type = 'member'
+          and status = 'invited'
+        returning member_id
+      `;
+      if (!updatedLinks[0]) throw new PlatformAccessDeniedError();
+    } else {
+      await tx`
+        insert into platform_users (
+          auth_user_id,
+          member_id,
+          email_normalized,
+          user_type,
+          status,
+          invited_at,
+          activated_at,
+          last_signed_in_at
+        ) values (
+          ${viewer.authUserId}::uuid,
+          ${member.id}::uuid,
+          ${emailNormalized},
+          'member',
+          'active',
+          ${invitation.invited_at},
+          now(),
+          now()
+        )
+      `;
+    }
+
+    const accountChanged = existingLifecycle?.account_state !== "active";
 
     if (!existingLifecycle) {
       await tx`
         insert into member_lifecycle (member_id, account_state, billing_state, program_state)
         values (
           ${member.id}::uuid,
-          ${nextAccountState},
+          'active',
           ${member.membership_state},
-          ${nextProgramState}
+          'prospect'
         )
       `;
-    } else if (accountChanged || programChanged) {
+    } else if (accountChanged) {
       await tx`
         update member_lifecycle
         set
-          account_state = ${nextAccountState},
-          program_state = ${nextProgramState},
+          account_state = 'active',
           version = version + 1,
           updated_at = now()
         where member_id = ${member.id}::uuid
@@ -186,7 +339,7 @@ export async function ensurePlatformMemberForViewer(
           ${member.id}::uuid,
           'account',
           ${existingLifecycle?.account_state ?? null},
-          ${nextAccountState},
+          'active',
           'verified_passwordless_access',
           'system',
           ${viewer.authUserId}::uuid,
@@ -196,6 +349,30 @@ export async function ensurePlatformMemberForViewer(
       `;
     }
 
+    const acceptedInvitations = await tx<Array<{ id: string }>>`
+      update passwordless_account_invites
+      set
+        accepted_by_auth_user_id = ${viewer.authUserId}::uuid,
+        accepted_at = statement_timestamp()
+      where id = ${invitation.id}::bigint
+        and accepted_at is null
+        and revoked_at is null
+        and (expires_at is null or expires_at > statement_timestamp())
+      returning id
+    `;
+    if (!acceptedInvitations[0]) throw new PlatformAccessDeniedError();
+
+    await tx`
+      update passwordless_account_invites
+      set
+        revoked_at = statement_timestamp(),
+        revoked_by_auth_user_id = ${viewer.authUserId}::uuid
+      where email_normalized = ${emailNormalized}
+        and id <> ${invitation.id}::bigint
+        and accepted_at is null
+        and revoked_at is null
+    `;
+
     await tx`
       insert into platform_role_grants (auth_user_id, role_slug, granted_at)
       select ${viewer.authUserId}::uuid, 'member', now()
@@ -204,6 +381,7 @@ export async function ensurePlatformMemberForViewer(
         from platform_role_grants
         where auth_user_id = ${viewer.authUserId}::uuid
           and role_slug = 'member'
+          and revoked_at is null
       )
     `;
 
@@ -216,6 +394,7 @@ type MemberSnapshotRow = {
   artifact_state: ArtifactState;
   billing_state: BillingState;
   circle_name: string | null;
+  circle_status: MemberPlatformSnapshot["circleStatus"];
   display_name: string | null;
   email: string;
   foundations_progress: number | null;
@@ -239,6 +418,7 @@ export async function getMemberPlatformSnapshot(
       lifecycle.foundations_state,
       lifecycle.artifact_state,
       circle.name as circle_name,
+      circle.status as circle_status,
       enrollment.progress_percent as foundations_progress
     from platform_users platform_user
     join ruined_members member on member.id = platform_user.member_id
@@ -255,12 +435,19 @@ export async function getMemberPlatformSnapshot(
     left join lateral (
       select foundation_enrollment.progress_percent
       from foundation_enrollments foundation_enrollment
+      join foundation_versions foundation_version
+        on foundation_version.id = foundation_enrollment.foundation_version_id
+      join foundation_programs foundation_program
+        on foundation_program.id = foundation_version.foundation_program_id
       where foundation_enrollment.member_id = member.id
+        and foundation_program.slug = 'ruined-foundations'
       order by foundation_enrollment.created_at desc
       limit 1
     ) enrollment on true
     where platform_user.auth_user_id = ${authUserId}::uuid
+      and platform_user.user_type = 'member'
       and platform_user.status = 'active'
+      and lifecycle.account_state = 'active'
     limit 1
   `;
   const row = rows[0];
@@ -272,6 +459,7 @@ export async function getMemberPlatformSnapshot(
     artifactState: row.artifact_state,
     billingState: row.billing_state,
     circleName: row.circle_name,
+    circleStatus: row.circle_status,
     email: row.email,
     foundationsProgress,
     foundationsState: row.foundations_state,
@@ -281,7 +469,7 @@ export async function getMemberPlatformSnapshot(
       artifactState: row.artifact_state,
       billingState: row.billing_state,
       foundationsState: row.foundations_state,
-      hasCircle: Boolean(row.circle_name),
+      hasCircle: row.circle_status === "active",
     }),
     programState: row.program_state,
   };
@@ -313,6 +501,7 @@ type OperatorMemberRow = {
   artifact_state: ArtifactState;
   billing_state: BillingState;
   circle_name: string | null;
+  circle_status: OperatorMemberSummary["circleStatus"];
   display_name: string | null;
   email: string;
   foundations_progress: number | null;
@@ -323,10 +512,30 @@ type OperatorMemberRow = {
 
 export async function getOperatorDashboard(
   authUserId: string,
-  role: OperatorRole,
-): Promise<OperatorDashboardSnapshot> {
+): Promise<{ dashboard: OperatorDashboardSnapshot; role: OperatorRole } | null> {
   const sql = getBillingDatabase();
-  const rows = await sql<Array<OperatorMemberRow>>`
+  return sql.begin("isolation level repeatable read read only", async (tx) => {
+  const roleRows = await tx<Array<{ role_slug: OperatorRole }>>`
+    select grant_row.role_slug
+    from platform_role_grants grant_row
+    join platform_users platform_user
+      on platform_user.auth_user_id = grant_row.auth_user_id
+    where grant_row.auth_user_id = ${authUserId}::uuid
+      and grant_row.role_slug in ('ops_admin', 'circle_leader', 'guide')
+      and grant_row.revoked_at is null
+      and platform_user.user_type = 'staff'
+      and platform_user.status = 'active'
+    order by case grant_row.role_slug
+      when 'ops_admin' then 1
+      when 'circle_leader' then 2
+      else 3
+    end
+    limit 1
+  `;
+  const role = roleRows[0]?.role_slug;
+  if (!role) return null;
+
+  const rows = await tx<Array<OperatorMemberRow>>`
     select
       member.id as member_id,
       member.email,
@@ -336,6 +545,7 @@ export async function getOperatorDashboard(
       lifecycle.foundations_state,
       lifecycle.artifact_state,
       circle.name as circle_name,
+      circle.status as circle_status,
       enrollment.progress_percent as foundations_progress
     from ruined_members member
     join member_lifecycle lifecycle on lifecycle.member_id = member.id
@@ -352,7 +562,12 @@ export async function getOperatorDashboard(
     left join lateral (
       select foundation_enrollment.progress_percent
       from foundation_enrollments foundation_enrollment
+      join foundation_versions foundation_version
+        on foundation_version.id = foundation_enrollment.foundation_version_id
+      join foundation_programs foundation_program
+        on foundation_program.id = foundation_version.foundation_program_id
       where foundation_enrollment.member_id = member.id
+        and foundation_program.slug = 'ruined-foundations'
       order by foundation_enrollment.created_at desc
       limit 1
     ) enrollment on true
@@ -379,6 +594,7 @@ export async function getOperatorDashboard(
       artifactState: row.artifact_state,
       billingState: row.billing_state,
       circleName: row.circle_name,
+      circleStatus: row.circle_status,
       foundationsProgress,
       memberId: row.member_id,
       name: row.display_name?.trim() || row.email.split("@")[0] || "Member",
@@ -386,20 +602,24 @@ export async function getOperatorDashboard(
         artifactState: row.artifact_state,
         billingState: row.billing_state,
         foundationsState: row.foundations_state,
-        hasCircle: Boolean(row.circle_name),
+        hasCircle: row.circle_status === "active",
       }),
       programState: row.program_state,
     };
   });
 
   return {
-    activeMembers: members.filter(
-      (member) =>
-        member.billingState === "active" &&
-        (member.programState === "onboarding" || member.programState === "active"),
-    ).length,
-    attentionRequired: members.filter((member) => member.billingState === "attention_required").length,
-    members,
-    unassignedMembers: members.filter((member) => !member.circleName).length,
+    dashboard: {
+      activeMembers: members.filter(
+        (member) =>
+          member.billingState === "active" &&
+          (member.programState === "onboarding" || member.programState === "active"),
+      ).length,
+      attentionRequired: members.filter((member) => member.billingState === "attention_required").length,
+      members,
+      unassignedMembers: members.filter((member) => !member.circleName).length,
+    },
+    role,
   };
+  });
 }

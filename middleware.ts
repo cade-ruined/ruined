@@ -17,6 +17,8 @@ export const config = {
     "/my/:path*",
     "/ops/:path*",
     "/api/auth/:path*",
+    "/api/my/:path*",
+    "/api/ops/:path*",
     "/api/stripe/checkout/:path*",
     "/api/stripe/portal/:path*",
   ],

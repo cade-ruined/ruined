@@ -4,7 +4,10 @@ import { NextResponse } from "next/server";
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { ensurePlatformMemberForViewer } from "@/lib/platform/repository";
+import {
+  PlatformAccessDeniedError,
+  requireActivePlatformMemberLink,
+} from "@/lib/platform/repository";
 import { createBillingPortalSessionForMember } from "@/lib/stripe/portal";
 import { getApplicationOrigin } from "@/lib/stripe/server";
 
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const platformUser = await ensurePlatformMemberForViewer(viewer);
+    const platformUser = await requireActivePlatformMemberLink(viewer);
     const origin = getApplicationOrigin(new URL(request.url).origin);
     const portalUrl = await createBillingPortalSessionForMember({
       memberId: platformUser.memberId,
@@ -34,6 +37,13 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.redirect(portalUrl, 303);
   } catch (error) {
+    if (error instanceof PlatformAccessDeniedError) {
+      return NextResponse.json(
+        { error: "An active member account is required for billing management." },
+        { status: 403 },
+      );
+    }
+
     console.error("Stripe billing Portal could not be opened", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });

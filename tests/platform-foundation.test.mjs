@@ -97,13 +97,31 @@ test("paid active membership is a server-side boundary for private member areas"
     platformModel,
     /hasActiveMemberAccess[\s\S]*accountState === "active"[\s\S]*billingState === "active"[\s\S]*programState === "onboarding"/,
   );
-  assert.match(platformRepository, /existingLifecycle\?\.program_state \?\? "prospect"/);
+  assert.match(
+    platformRepository,
+    /insert into member_lifecycle \(member_id, account_state, billing_state, program_state\)[\s\S]*'prospect'/,
+  );
 
   for (const route of [memberFoundationsPage, memberCirclePage, memberArtifactsPage]) {
     assert.match(route, /context\.state !== "preview"/);
     assert.match(route, /!hasActiveMemberAccess\(context\.member\)/);
     assert.match(route, /redirect\("\/my\/account"\)/);
   }
+});
+
+test("operator dashboards reauthorize inside their own consistent read", () => {
+  const dashboard = platformRepository.slice(
+    platformRepository.indexOf("export async function getOperatorDashboard"),
+  );
+
+  assert.match(dashboard, /isolation level repeatable read read only/);
+  assert.match(dashboard, /grant_row\.role_slug in \('ops_admin', 'circle_leader', 'guide'\)/);
+  assert.match(dashboard, /grant_row\.revoked_at is null/);
+  assert.match(dashboard, /platform_user\.user_type = 'staff'/);
+  assert.match(dashboard, /platform_user\.status = 'active'/);
+  assert.doesNotMatch(dashboard, /authUserId: string,\s*role:/);
+  assert.match(pageData, /const access = await getOperatorDashboard\(viewer\.authUserId\)/);
+  assert.doesNotMatch(pageData, /getOperatorRole\(/);
 });
 
 test("passwordless OTP endpoints enforce origin, audience, and generic delivery boundaries", () => {
@@ -115,7 +133,9 @@ test("passwordless OTP endpoints enforce origin, audience, and generic delivery 
   }
 
   assert.match(authRequestRoute, /body\?\.audience === "ops" \? "ops" : "member"/);
-  assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*options: \{ shouldCreateUser: audience === "member" \}/);
+  assert.match(authRequestRoute, /getPasswordlessAccessEligibility\(email, audience\)/);
+  assert.match(authRequestRoute, /if \(eligibility === "none"\) return response/);
+  assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*options: \{ shouldCreateUser: eligibility === "invited" \}/);
   assert.match(authRequestRoute, /const response = NextResponse\.json\(\{ ok: true \}\)/);
   assert.match(authRequestRoute, /if \(error\) \{[\s\S]*console\.warn[\s\S]*\}[\s\S]*return response/);
   assert.doesNotMatch(authRequestRoute, /console\.(?:warn|error|log)\([^)]*email/);
@@ -135,6 +155,8 @@ test("middleware refreshes verified claims for every protected platform boundary
     "/my/:path*",
     "/ops/:path*",
     "/api/auth/:path*",
+    "/api/my/:path*",
+    "/api/ops/:path*",
     "/api/stripe/checkout/:path*",
     "/api/stripe/portal/:path*",
   ]) {
@@ -148,7 +170,7 @@ test("Checkout derives identity from verified claims and keeps the offer server-
   assert.doesNotMatch(requestType, /email|price|amount|quantity/i);
   assert.match(checkoutRoute, /const viewer = await getCurrentPlatformViewer\(\)/);
   assert.match(checkoutRoute, /if \(!viewer\)[\s\S]*status: 401/);
-  assert.match(checkoutRoute, /ensurePlatformMemberForViewer\(viewer\)/);
+  assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
   assert.match(checkoutRoute, /normalizeEmail\(viewer\.email\)/);
   assert.match(checkoutRoute, /customer_email: email/);
   assert.doesNotMatch(checkoutRoute, /body\.(?:email|price|priceId|amount|quantity)/);
@@ -228,6 +250,18 @@ test("platform migration creates durable, independent, versioned state", () => {
   assert.match(platformMigration, /dedupe_key text not null unique/);
   assert.match(platformMigration, /integration_outbox_delivery_idx/);
   assert.match(platformMigration, /where status in \('pending', 'failed'\)/);
+});
+
+test("historical Circle capacity validation follows the live assignment lock order", () => {
+  const assignmentLock = platformMigration.indexOf(
+    "lock table public.circle_member_assignments in share row exclusive mode;",
+  );
+  const circleLock = platformMigration.indexOf(
+    "lock table public.circles in share row exclusive mode;",
+  );
+
+  assert.ok(assignmentLock >= 0);
+  assert.ok(circleLock > assignmentLock);
 });
 
 test("platform RLS defaults to self-read surfaces without client write policies", () => {
