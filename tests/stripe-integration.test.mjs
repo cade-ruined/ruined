@@ -27,6 +27,17 @@ test("billing persistence binds Stripe identity to the verified platform member"
   assert.match(billingRepository, /is_primary = true/);
 });
 
+test("checkout consent evidence gives Postgres explicit JSON value types", () => {
+  assert.match(
+    billingRepository,
+    /jsonb_build_object\('checkout_attempt_id', \$\{input\.checkoutAttemptId\}::text\)/,
+  );
+  assert.match(
+    billingRepository,
+    /'checkout_attempt_id', \$\{input\.checkoutAttemptId\}::text,[\s\S]*?'minimum_age', \$\{input\.minimumAge\}::integer/,
+  );
+});
+
 test("success redirect never activates membership", () => {
   assert.doesNotMatch(checkoutRoute, /membership_state\s*=|membershipState\s*=(?!=)/);
   assert.match(webhookProcessor, /event\.type === "invoice\.paid" && invoice\.amount_paid > 0/);

@@ -102,7 +102,7 @@ async function recordCheckoutConsents(
         ${input.acceptedAt},
         'checkout',
         ${input.authUserId}::uuid,
-        jsonb_build_object('checkout_attempt_id', ${input.checkoutAttemptId}),
+        jsonb_build_object('checkout_attempt_id', ${input.checkoutAttemptId}::text),
         ${`checkout-consent:${input.checkoutAttemptId}:agreement`}
       ),
       (
@@ -113,8 +113,8 @@ async function recordCheckoutConsents(
         'checkout',
         ${input.authUserId}::uuid,
         jsonb_build_object(
-          'checkout_attempt_id', ${input.checkoutAttemptId},
-          'minimum_age', ${input.minimumAge}
+          'checkout_attempt_id', ${input.checkoutAttemptId}::text,
+          'minimum_age', ${input.minimumAge}::integer
         ),
         ${`checkout-consent:${input.checkoutAttemptId}:age`}
       )
