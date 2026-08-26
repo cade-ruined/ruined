@@ -30,8 +30,7 @@ export function getPlatformConfiguration(): PlatformConfiguration {
   const stripeConfigured =
     hasEnvironmentValue("STRIPE_SECRET_KEY") &&
     hasEnvironmentValue("STRIPE_WEBHOOK_SECRET") &&
-    hasEnvironmentValue("STRIPE_MEMBERSHIP_PRICE_ID") &&
-    hasEnvironmentValue("STRIPE_MEMBERSHIP_AGREEMENT_VERSION");
+    hasEnvironmentValue("STRIPE_MEMBERSHIP_PRICE_ID");
   const requestedMode = process.env.PLATFORM_MODE?.trim().toLowerCase() || "preview";
   const previewAllowed = process.env.NODE_ENV !== "production" && requestedMode === "preview";
   const mode: PlatformMode = previewAllowed

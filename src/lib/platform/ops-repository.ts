@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
+import {
+  ensurePersonForEmail,
+  PersonIdentityConflictError,
+} from "@/lib/identity/repository";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/stripe/membership-state";
 
@@ -122,7 +126,6 @@ async function requireOpsAdmin(
     join platform_role_grants grant_row
       on grant_row.auth_user_id = platform_user.auth_user_id
     where platform_user.auth_user_id = ${actorAuthUserId}::uuid
-      and platform_user.user_type = 'staff'
       and platform_user.status = 'active'
       and grant_row.role_slug = 'ops_admin'
       and grant_row.revoked_at is null
@@ -181,21 +184,18 @@ export async function createOrReissueMemberInvitation({
     const identityRows = await tx<
       Array<{
         member_id: string | null;
+        person_id: string | null;
         status: "active" | "disabled" | "invited" | "suspended";
-        user_type: "member" | "staff";
       }>
     >`
-      select member_id, status, user_type
+      select member_id, person_id, status
       from platform_users
       where email_normalized = ${email}
       limit 1
       for update
     `;
     const identity = identityRows[0];
-    if (identity?.user_type === "staff") {
-      throw new OpsRepositoryError("conflict", "That email belongs to an operator account.");
-    }
-    if (identity?.status === "active") {
+    if (identity?.status === "active" && identity.member_id) {
       throw new OpsRepositoryError("conflict", "That member already has active access.");
     }
     if (identity?.status === "suspended" || identity?.status === "disabled") {
@@ -205,8 +205,10 @@ export async function createOrReissueMemberInvitation({
       );
     }
 
-    const memberRows = await tx<Array<{ id: string; membership_state: string }>>`
-      select id, membership_state
+    const memberRows = await tx<
+      Array<{ id: string; membership_state: string; person_id: string | null }>
+    >`
+      select id, membership_state, person_id
       from ruined_members
       where email_normalized = ${email}
       limit 1
@@ -214,13 +216,49 @@ export async function createOrReissueMemberInvitation({
     `;
     let member = memberRows[0];
 
+    if (identity?.person_id && member?.person_id && identity.person_id !== member.person_id) {
+      throw new OpsRepositoryError(
+        "conflict",
+        "That email is linked to conflicting Ruined identities.",
+      );
+    }
+
+    let personId: string;
+    try {
+      personId = await ensurePersonForEmail(tx, {
+        email: emailValue,
+        emailNormalized: email,
+        preferredPersonId: identity?.person_id ?? member?.person_id,
+        source: "membership",
+        verified: identity?.status === "active",
+      });
+    } catch (error) {
+      if (error instanceof PersonIdentityConflictError) {
+        throw new OpsRepositoryError("conflict", error.message);
+      }
+      throw error;
+    }
+
     if (!member) {
-      const insertedRows = await tx<Array<{ id: string; membership_state: string }>>`
-        insert into ruined_members (id, email, email_normalized)
-        values (${randomUUID()}::uuid, ${emailValue.trim()}, ${email})
-        returning id, membership_state
+      const insertedRows = await tx<
+        Array<{ id: string; membership_state: string; person_id: string }>
+      >`
+        insert into ruined_members (id, person_id, email, email_normalized)
+        values (${randomUUID()}::uuid, ${personId}::uuid, ${emailValue.trim()}, ${email})
+        returning id, membership_state, person_id
       `;
       member = insertedRows[0];
+    } else if (!member.person_id) {
+      const updatedMembers = await tx<
+        Array<{ id: string; membership_state: string; person_id: string }>
+      >`
+        update ruined_members
+        set person_id = ${personId}::uuid, updated_at = statement_timestamp()
+        where id = ${member.id}::uuid
+          and person_id is null
+        returning id, membership_state, person_id
+      `;
+      member = updatedMembers[0] ?? { ...member, person_id: personId };
     }
     if (!member) throw new Error("The invited member record could not be created.");
     if (identity?.member_id && identity.member_id !== member.id) {
@@ -230,19 +268,81 @@ export async function createOrReissueMemberInvitation({
       );
     }
 
+    if (identity && !identity.person_id) {
+      await tx`
+        update platform_users
+        set person_id = ${personId}::uuid, updated_at = statement_timestamp()
+        where email_normalized = ${email}
+          and person_id is null
+      `;
+    }
+
     await tx`
       insert into member_lifecycle (
         member_id,
         account_state,
         billing_state,
-        program_state
+        program_state,
+        admission_state,
+        administrative_onboarding_state,
+        standing_state
       ) values (
         ${member.id}::uuid,
         'invited',
         ${member.membership_state},
-        'prospect'
+        'prospect',
+        'invited',
+        'in_progress',
+        'pre_active'
       )
-      on conflict (member_id) do nothing
+      on conflict (member_id) do update
+      set
+        admission_state = case
+          when member_lifecycle.admission_state in ('interested', 'applied', 'invited')
+            then 'invited'
+          else member_lifecycle.admission_state
+        end,
+        administrative_onboarding_state = case
+          when member_lifecycle.administrative_onboarding_state = 'not_started'
+            then 'in_progress'
+          else member_lifecycle.administrative_onboarding_state
+        end,
+        updated_at = statement_timestamp()
+    `;
+
+    await tx`
+      insert into member_onboardings (
+        member_id,
+        state,
+        form_version,
+        requirements_snapshot,
+        invited_at,
+        started_at
+      ) values (
+        ${member.id}::uuid,
+        'in_progress',
+        'administrative-v1',
+        jsonb_build_object(
+          'legal_name', true,
+          'preferred_name', true,
+          'mobile', true,
+          'birth_date_or_age_attestation', true,
+          'shipping_address', true,
+          'apparel_sizing', true,
+          'profile_photo', 'progressive'
+        ),
+        statement_timestamp(),
+        statement_timestamp()
+      )
+      on conflict (member_id) do update
+      set
+        state = case
+          when member_onboardings.state = 'not_started' then 'in_progress'
+          else member_onboardings.state
+        end,
+        invited_at = coalesce(member_onboardings.invited_at, excluded.invited_at),
+        started_at = coalesce(member_onboardings.started_at, excluded.started_at),
+        updated_at = statement_timestamp()
     `;
 
     const lifecycleRows = await tx<Array<{ account_state: string }>>`

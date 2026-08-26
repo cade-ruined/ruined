@@ -24,6 +24,8 @@ const [
   memberFoundationsPage,
   memberCirclePage,
   memberArtifactsPage,
+  membershipPageContext,
+  membershipRepository,
   memberLayout,
   opsLayout,
   signOutRoute,
@@ -46,6 +48,8 @@ const [
   source("app/my/foundations/page.tsx"),
   source("app/my/circle/page.tsx"),
   source("app/my/artifacts/page.tsx"),
+  source("src/lib/membership/page-context.ts"),
+  source("src/lib/membership/repository.ts"),
   source("app/my/layout.tsx"),
   source("app/ops/layout.tsx"),
   source("app/api/auth/sign-out/route.ts"),
@@ -103,14 +107,35 @@ test("paid active membership is a server-side boundary for private member areas"
   );
   assert.match(
     platformRepository,
-    /insert into member_lifecycle \(member_id, account_state, billing_state, program_state\)[\s\S]*'prospect'/,
+    /insert into member_lifecycle \([\s\S]*member_id,[\s\S]*account_state,[\s\S]*billing_state,[\s\S]*program_state[\s\S]*'prospect'/,
   );
 
-  for (const route of [memberFoundationsPage, memberCirclePage, memberArtifactsPage]) {
-    assert.match(route, /context\.state !== "preview"/);
-    assert.match(route, /!hasActiveMemberAccess\(context\.member\)/);
-    assert.match(route, /redirect\("\/my\/account"\)/);
+  assert.match(memberFoundationsPage, /context\.state !== "preview"/);
+  assert.match(memberFoundationsPage, /!hasActiveMemberAccess\(context\.member\)/);
+  assert.match(memberFoundationsPage, /redirect\("\/my\/account"\)/);
+
+  for (const route of [memberCirclePage, memberArtifactsPage]) {
+    assert.match(route, /getMembershipPageContext\(/);
+    assert.match(route, /if \(!context\.data\) return <PlatformUnavailable/);
   }
+  assert.match(membershipPageContext, /const data = await load\(viewer\.authUserId\)/);
+  assert.match(membershipPageContext, /error instanceof MembershipAccessDeniedError/);
+
+  const circleLoader = membershipRepository.slice(
+    membershipRepository.indexOf("export async function getMemberCircle"),
+    membershipRepository.indexOf("export async function getMemberExperiences"),
+  );
+  assert.match(circleLoader, /requireMemberIdentity\(authUserId\)/);
+  assert.match(circleLoader, /memberCan\(access, "circle\.read"\)/);
+  assert.match(circleLoader, /members: \[\]/);
+
+  const artifactLoader = membershipRepository.slice(
+    membershipRepository.indexOf("export async function getMemberArtifacts"),
+    membershipRepository.indexOf("export async function getMemberUpdates"),
+  );
+  assert.match(artifactLoader, /requireMemberIdentity\(authUserId\)/);
+  assert.match(artifactLoader, /memberCan\(access, "artifacts\.read"\)/);
+  assert.match(artifactLoader, /return \{ access, awards: \[\] \}/);
 });
 
 test("operator dashboards reauthorize inside their own consistent read", () => {
@@ -121,7 +146,8 @@ test("operator dashboards reauthorize inside their own consistent read", () => {
   assert.match(dashboard, /isolation level repeatable read read only/);
   assert.match(dashboard, /grant_row\.role_slug in \('ops_admin', 'circle_leader', 'guide'\)/);
   assert.match(dashboard, /grant_row\.revoked_at is null/);
-  assert.match(dashboard, /platform_user\.user_type = 'staff'/);
+  assert.match(dashboard, /join platform_users platform_user/);
+  assert.match(dashboard, /platform_user\.auth_user_id = grant_row\.auth_user_id/);
   assert.match(dashboard, /platform_user\.status = 'active'/);
   assert.doesNotMatch(dashboard, /authUserId: string,\s*role:/);
   assert.match(pageData, /const access = await getOperatorDashboard\(viewer\.authUserId\)/);
@@ -166,17 +192,15 @@ test("verified members enter membership checkout while paid states return home",
   );
   assert.match(authVerifyRoute, /const redirectTo = safePlatformNextPath\(body\?\.next, audience\)/);
 
-  const paidRedirectIndex = memberJoinPage.indexOf('redirect("/my")');
-  const checkoutEnabledIndex = memberJoinPage.indexOf("const enabled =");
-  assert.ok(paidRedirectIndex >= 0 && paidRedirectIndex < checkoutEnabledIndex);
+  const completedRedirectIndex = memberJoinPage.indexOf('redirect("/my")');
+  const checkoutEnabledIndex = memberJoinPage.indexOf("const checkoutEnabled =");
+  assert.ok(completedRedirectIndex >= 0 && completedRedirectIndex < checkoutEnabledIndex);
   assert.match(
     memberJoinPage,
-    /context\.member\.billingState === "active"[\s\S]*?context\.member\.billingState === "attention_required"[\s\S]*?redirect\("\/my"\)/,
+    /context\.state === "authenticated" && context\.data\.state === "completed"[\s\S]*?redirect\("\/my"\)/,
   );
-  assert.match(
-    memberJoinPage,
-    /context\.member\.billingState === "pending" \|\| context\.member\.billingState === "ended"/,
-  );
+  assert.match(memberJoinPage, /getMembershipPageContext\([\s\S]*getMemberOnboarding/);
+  assert.match(memberJoinPage, /context\.configuration\.stripeCheckoutReady/);
 });
 
 test("middleware refreshes verified claims for every protected platform boundary", () => {

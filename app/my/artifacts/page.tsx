@@ -1,25 +1,18 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import MemberSection from "@/components/platform/MemberSection";
+import MemberArtifactArchive from "@/components/membership/MemberArtifactArchive";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { hasActiveMemberAccess } from "@/lib/platform/model";
-import { getMemberPageContext } from "@/lib/platform/page-data";
+import { getMembershipPageContext } from "@/lib/membership/page-context";
+import { PREVIEW_MEMBER_ARTIFACTS } from "@/lib/membership/preview";
+import { getMemberArtifacts } from "@/lib/membership/repository";
 
+export const metadata: Metadata = { title: "Artifacts | Ruined Membership" };
 export const dynamic = "force-dynamic";
 
 export default async function MyArtifactsPage() {
-  const context = await getMemberPageContext();
+  const context = await getMembershipPageContext(PREVIEW_MEMBER_ARTIFACTS, getMemberArtifacts, "artifacts");
   if (context.state === "signed_out") redirect("/my/access");
-  if (
-    context.state !== "preview" &&
-    context.member &&
-    !hasActiveMemberAccess(context.member)
-  ) {
-    redirect("/my/account");
-  }
-  return context.member ? (
-    <MemberSection member={context.member} section="artifacts" />
-  ) : (
-    <PlatformUnavailable accessHref="/my/access" />
-  );
+  if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
+  return <MemberArtifactArchive artifacts={context.data} />;
 }

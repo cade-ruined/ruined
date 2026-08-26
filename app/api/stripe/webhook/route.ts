@@ -6,6 +6,7 @@ import {
   getStripeWebhookSecret,
 } from "@/lib/stripe/server";
 import { processStripeWebhookEvent } from "@/lib/stripe/webhook";
+import { processWorkflowBatch } from "@/lib/workflows/worker";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,18 @@ export async function POST(request: Request) {
 
   try {
     const result = await processStripeWebhookEvent(event);
+    if (result.handled && !result.duplicate) {
+      try {
+        await processWorkflowBatch(8);
+      } catch (workflowError) {
+        // Stripe is authoritative for billing. Queued membership work remains
+        // durable and the scheduled worker can recover it independently.
+        console.error("Membership workflow follow-up could not run", {
+          errorType: workflowError instanceof Error ? workflowError.name : "UnknownError",
+          eventId: event.id,
+        });
+      }
+    }
     return NextResponse.json({ received: true, ...result });
   } catch (error) {
     console.error("Stripe webhook processing failed", {

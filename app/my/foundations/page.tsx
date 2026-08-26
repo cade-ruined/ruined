@@ -4,6 +4,7 @@ import MemberFoundationsHome from "@/components/foundations/MemberFoundationsHom
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/foundations/model";
 import { getMemberFoundationsState } from "@/lib/foundations/repository";
+import { getMemberFoundationRequirements } from "@/lib/membership/repository";
 import { hasActiveMemberAccess } from "@/lib/platform/model";
 import { getMemberPageContext } from "@/lib/platform/page-data";
 
@@ -34,9 +35,12 @@ export default async function MyFoundationsPage() {
   }
 
   try {
-    const foundations = await getMemberFoundationsState(context.viewer.authUserId);
+    const [foundations, requirements] = await Promise.all([
+      getMemberFoundationsState(context.viewer.authUserId),
+      getMemberFoundationRequirements(context.viewer.authUserId),
+    ]);
     return foundations ? (
-      <MemberFoundationsHome initialState={foundations} writable />
+      <MemberFoundationsHome initialState={{ ...foundations, requirements }} writable />
     ) : (
       <PlatformUnavailable accessHref="/my/access" />
     );

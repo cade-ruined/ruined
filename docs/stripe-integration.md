@@ -22,12 +22,19 @@ Never paste Stripe secrets into chat, source control, client code, or a `NEXT_PU
 2. Add the matching test-mode `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
 3. Add a test-mode `STRIPE_SECRET_KEY` (prefer a restricted key with only the permissions this integration needs).
 4. Add the recurring test Price as `STRIPE_MEMBERSHIP_PRICE_ID` after price and cadence are approved.
-5. Set a real `STRIPE_MEMBERSHIP_AGREEMENT_VERSION`.
-6. Add `DATABASE_URL`, then run `npm run db:migrate:platform`. This applies the billing migration first and the platform migration second.
+5. Add `DATABASE_URL`, then run `npm run db:migrate:platform`.
+6. Publish the approved legal copy as the current `ruined_membership` row in `membership_agreement_versions`. No agreement text is seeded or inferred by the application.
 7. Use the Stripe CLI or a Dashboard test webhook destination to obtain the matching `STRIPE_WEBHOOK_SECRET`.
 8. Keep `STRIPE_TAX_ENABLED=false` until Stripe Tax is operationally ready.
 
-The publishable key initializes Stripe.js in the browser. The server still owns the member, email, Price, quantity, consent evidence, and creation of each embedded Checkout Session. Only the Session client secret crosses the application boundary, in a non-cacheable response; it is never put in a URL or log.
+The publishable key initializes Stripe.js in the browser. Before Checkout opens,
+the server verifies a durable acceptance of the exact published agreement and
+its linked age attestation. The browser sends only that acceptance ID and a
+single-attempt ID; it cannot assert that agreement or age requirements were
+met. The server still owns the member, email, Price, quantity, and creation of
+each embedded Checkout Session. Only the Session client secret crosses the
+application boundary, in a non-cacheable response; it is never put in a URL or
+log.
 
 Before calling Stripe, the server reserves one open Checkout attempt per member
 in Postgres. Reloads and parallel tabs reuse that reservation and Stripe

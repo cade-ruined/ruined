@@ -10,6 +10,7 @@ import type { MemberFoundationsState } from "@/lib/foundations/model";
 type FoundationApiResponse = {
   code?: string;
   error?: string;
+  requirements?: NonNullable<MemberFoundationsState["requirements"]>;
   state?: MemberFoundationsState;
 };
 
@@ -26,6 +27,24 @@ async function writeFoundationAction(body: Record<string, string>) {
     throw error;
   }
   return payload.state;
+}
+
+async function writeFutureLetterCompletion() {
+  const response = await fetch("/api/my/foundations", {
+    body: JSON.stringify({
+      action: "complete_requirement",
+      requirement: "future_letter",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const payload = (await response.json()) as FoundationApiResponse;
+  if (!response.ok || !payload.requirements) {
+    const error = new Error(payload.error || "Future Letter completion could not be saved.");
+    Object.assign(error, { code: payload.code });
+    throw error;
+  }
+  return payload.requirements;
 }
 
 export default function MemberFoundationsExperience({
@@ -45,6 +64,7 @@ export default function MemberFoundationsExperience({
   });
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [recordingLetter, setRecordingLetter] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const writeInFlight = useRef<string | null>(null);
   const failedMoment = useRef<string | null>(null);
@@ -90,10 +110,44 @@ export default function MemberFoundationsExperience({
     activeIndex === state.totalUnits - 1 &&
     state.status !== "completed" &&
     state.completedUnits < state.totalUnits - 1;
+  const futureLetterCompleted = Boolean(state.requirements?.futureLetter.completed);
+  const timelineCompleted = Boolean(state.requirements?.timeline.completed);
+
+  const completeFutureLetter = useCallback(async () => {
+    if (futureLetterCompleted) return true;
+    if (!writable) return true;
+    if (saving || completing || recordingLetter) return false;
+
+    setRecordingLetter(true);
+    setError(null);
+    try {
+      const requirements = await writeFutureLetterCompletion();
+      setState((current) => ({ ...current, requirements }));
+      return requirements.futureLetter.completed;
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Future Letter completion could not be saved.",
+      );
+      return false;
+    } finally {
+      setRecordingLetter(false);
+    }
+  }, [completing, futureLetterCompleted, recordingLetter, saving, writable]);
 
   const complete = useCallback(async () => {
     if (state.status === "completed") return true;
     if (saving || completing || finalProgressPending) return false;
+    if (recordingLetter) return false;
+    if (!timelineCompleted) {
+      router.push("/my/foundations/timeline");
+      return false;
+    }
+    if (!futureLetterCompleted) {
+      setError("Complete the Future Letter before finishing Foundations.");
+      return false;
+    }
     if (state.activeCircleStatus !== "active") {
       router.push("/my/circle");
       return false;
@@ -129,7 +183,18 @@ export default function MemberFoundationsExperience({
     } finally {
       setCompleting(false);
     }
-  }, [completing, finalProgressPending, router, saving, state.activeCircleStatus, state.status, writable]);
+  }, [
+    completing,
+    finalProgressPending,
+    futureLetterCompleted,
+    recordingLetter,
+    router,
+    saving,
+    state.activeCircleStatus,
+    state.status,
+    timelineCompleted,
+    writable,
+  ]);
 
   const maxMomentIndex = writable
     ? Math.min(
@@ -145,6 +210,7 @@ export default function MemberFoundationsExperience({
       member={{
         completed: state.status === "completed",
         error,
+        futureLetterCompleted,
         hasActiveCircle: state.activeCircleStatus === "active",
         maxMomentIndex,
         onComplete: complete,
@@ -155,10 +221,13 @@ export default function MemberFoundationsExperience({
           }
           setActiveIndex(index);
         },
+        onFutureLetterComplete: completeFutureLetter,
         onViewCircle: () => router.push("/my/circle"),
-        pending: saving || completing || finalProgressPending,
+        pending: saving || completing || finalProgressPending || recordingLetter,
         progressLabel: writable
-          ? saving || finalProgressPending
+          ? recordingLetter
+            ? "Recording completion"
+            : saving || finalProgressPending
             ? "Saving place"
             : error
               ? "Save interrupted"

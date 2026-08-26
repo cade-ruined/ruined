@@ -56,7 +56,14 @@ export default function OpsOverview({
               key={member.memberId}
             >
               <div>
-                <h3 className="ui-heading text-base font-semibold">{member.name}</h3>
+                <h3 className="ui-heading text-base font-semibold">
+                  <Link
+                    className="underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black"
+                    href={`/ops/members/${member.memberId}`}
+                  >
+                    {member.name}
+                  </Link>
+                </h3>
                 <p className="mt-1 text-sm text-black/45">{member.email}</p>
               </div>
               <p className="text-sm leading-relaxed text-black/58">

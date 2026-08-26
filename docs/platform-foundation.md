@@ -22,6 +22,21 @@ Each system has one job:
 3. **Stripe** owns payment and subscription facts. Only verified webhook events
    update billing state; a Checkout redirect never activates membership.
 
+The membership operating spine is additive. A durable `people` record now sits
+above login and membership, so one Person may be both a member and an operator
+and may accumulate verified event, learning, purchase, Artifact, leadership,
+and progression history over time. Existing member and login writers remain
+compatible during the dual-write release: a missing Person bridge is created in
+the same transaction, while conflicting email-to-Person links fail closed and
+require an audited merge.
+
+Member access has separate admission, administrative onboarding, billing, and
+standing dimensions. Payment is only one checkpoint. Administrative onboarding
+can complete only after the database can prove an active member login, a
+verified email, required profile completion, active billing, and an immutable
+acceptance of a published agreement. Existing paid members are backfilled to
+preserve their current access; new members use the stricter gate.
+
 Pricing and Artifact definitions are versioned records in Postgres. They can be
 configured after the product decisions are approved without changing the core
 state model.
@@ -100,8 +115,51 @@ A member may start and continue Foundations before being placed in a Circle.
 Only the final completion transition requires a current assignment to an active,
 audited Circle. The database verifies the assignment and Circle time window at
 the completion timestamp and stores that assignment as durable proof. Member
-reflections remain ephemeral; only ordered unit progress and completion proof
-are persisted.
+reflections remain ephemeral. The member's Timeline is the intentional
+exception: it stores only Year, Title, and optional Details, with an immutable
+version for every edit. The Future Letter itself is never stored; only its
+completion marker is retained. Future Ruined Foundations versions default to
+requiring both Timeline and Future Letter markers. The already-published
+historical version is not rewritten, but the completion guard applies the same
+default to future completion attempts on that version. Enrollments completed
+before this migration remain historical evidence and are not reopened.
+
+## Membership operating spine
+
+The five ordered operating-spine migrations add these boundaries without
+deleting or rewriting existing records:
+
+1. **Person and access:** neutral Person identity, verified email bridges,
+   private/public profile separation, dual member/operator roles, and audited
+   identity merges.
+2. **Lifecycle and agreements:** administrative onboarding, standing,
+   cancellation, progression, immutable agreement versions and acceptance
+   snapshots, and deterministic database-backed receipts. Checkout attempts
+   bind to the acceptance UUID that authorized them.
+3. **Community and learning:** closed-by-default directory preferences,
+   accountability pairs, Circle meetings and other experiences, registration
+   and attendance, versioned learning resources, audience targeting, Circle
+   resources, and member saves.
+4. **Foundations and automation:** versioned Timeline entries, requirement
+   markers, member milestones, Artifact awards, internal domain events,
+   idempotent workflow actions, and a Person activity ledger. Unlinked public or
+   Shopify activity can be attached later through an append-only verified link;
+   the source row is never rewritten.
+5. **Communication and operations:** targeted announcements, per-member
+   notifications and read state, append-only operator notes with separate
+   redactions, tasks and task events, constrained overrides, and operator audit
+   events.
+
+All new public tables enable row-level security and begin with explicit revoked
+privileges. Browser-readable tables receive narrowly scoped self or entitlement
+policies; operator and worker writes continue through the trusted server
+connection. Billing, agreement acceptance, and Foundations completion are not
+operator-overridable.
+
+The schema deliberately supplies infrastructure rather than inventing business
+facts. It does not seed agreement language, learning content, Artifact templates,
+fulfillment instructions, event schedules, or announcement copy. Those records
+must be published through the operator workflow after approval.
 
 A Block is the layer above a Circle: one Block contains multiple current
 Circles. It helps operators organize the membership but adds no Foundations
@@ -144,6 +202,10 @@ for that recorded membership subscription is the canonical activation event.
 - Apply the migrations in a non-production environment first and test every
   role, assignment boundary, lifecycle transition, rollback path, and legacy
   Circle preflight before scheduling the production maintenance window.
+- Deploy dual-write application code before making the nullable Person and
+  Checkout acceptance bridges mandatory. Observe legacy/open records, backfill
+  from authoritative evidence, then enforce `NOT NULL` in a later cutover
+  migration rather than changing an applied migration.
 - Configure Stripe Tax only after registrations and tax treatment are approved.
 - Add final Foundations content and Artifact templates as approved versions;
   never overwrite a version already used by a member or production job.

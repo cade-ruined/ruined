@@ -6,10 +6,15 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 const MEMBER_DESTINATIONS = [
-  { href: "/my", label: "Membership" },
+  { href: "/my", label: "Membership home" },
   { href: "/my/foundations", label: "Foundations" },
+  { href: "/my/foundations/timeline", label: "Ruined Timeline" },
   { href: "/my/circle", label: "Circle" },
+  { href: "/my/experiences", label: "Experiences" },
+  { href: "/my/learn", label: "Learn" },
   { href: "/my/artifacts", label: "Artifacts" },
+  { href: "/my/updates", label: "Updates" },
+  { href: "/my/profile", label: "Profile" },
   { href: "/my/account", label: "Account" },
 ] as const;
 
@@ -21,6 +26,9 @@ function isCurrentPath(pathname: string, href: string): boolean {
 
 export default function MemberNavigationFab() {
   const pathname = usePathname();
+  const currentHref = [...MEMBER_DESTINATIONS]
+    .filter((destination) => isCurrentPath(pathname, destination.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -68,7 +76,7 @@ export default function MemberNavigationFab() {
       {open ? (
         <nav
           aria-label="Membership"
-          className="w-[min(21rem,calc(100vw-2rem))] border border-white/15 bg-[#080605] p-2 text-[var(--color-bone)] shadow-[0_24px_70px_rgba(0,0,0,0.34)]"
+          className="max-h-[min(40rem,calc(100dvh-7rem-env(safe-area-inset-bottom,0px)))] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain border border-white/15 bg-[#080605] p-2 text-[var(--color-bone)] shadow-[0_24px_70px_rgba(0,0,0,0.34)]"
           id={menuId}
         >
           <div className="flex items-center justify-between border-b border-white/15 px-4 py-3">
@@ -81,7 +89,7 @@ export default function MemberNavigationFab() {
           </div>
           <ol className="py-1">
             {MEMBER_DESTINATIONS.map((destination, index) => {
-              const current = isCurrentPath(pathname, destination.href);
+              const current = destination.href === currentHref;
               return (
                 <li key={destination.href}>
                   <Link

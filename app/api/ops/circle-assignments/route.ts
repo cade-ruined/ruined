@@ -7,6 +7,7 @@ import {
   endMemberCircleAssignment,
   OpsRepositoryError,
 } from "@/lib/platform/ops-repository";
+import { processWorkflowBatch } from "@/lib/workflows/worker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +60,15 @@ export async function POST(request: Request) {
       circleId,
       memberId,
     });
+    if (assignment.created) {
+      try {
+        await processWorkflowBatch(6);
+      } catch (workflowError) {
+        console.error("Circle assignment follow-up could not run", {
+          errorType: workflowError instanceof Error ? workflowError.name : "UnknownError",
+        });
+      }
+    }
     return json({ assignment }, assignment.created ? 201 : 200);
   } catch (error) {
     if (error instanceof OpsRepositoryError) return repositoryErrorResponse(error);

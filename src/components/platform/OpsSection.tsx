@@ -98,10 +98,18 @@ export default function OpsSection({
               .map((member) => (
                 <article
                   className="grid gap-4 py-5 sm:grid-cols-[minmax(12rem,1fr)_8rem_8rem_minmax(11rem,0.8fr)] sm:items-center"
+                  id={`member-foundations-${member.memberId}`}
                   key={member.memberId}
                 >
                   <div>
-                    <h2 className="ui-heading text-base font-semibold">{member.name}</h2>
+                    <h2 className="ui-heading text-base font-semibold">
+                      <a
+                        className="underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black"
+                        href={`/ops/members/${member.memberId}#journey`}
+                      >
+                        {member.name}
+                      </a>
+                    </h2>
                     <p className="mt-1 text-sm text-black/45">{member.circleName ?? "No active Circle"}</p>
                   </div>
                   <StateLabel state={member.foundationsState} />
@@ -123,10 +131,15 @@ export default function OpsSection({
           {circleRows.map((circle) => (
             <article
               className="grid gap-5 border-b border-black/15 py-6 md:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] md:items-center"
+              id={`circle-${circle.id}`}
               key={circle.id}
             >
               <div>
-                <h2 className="text-2xl leading-none">{circle.name}</h2>
+                <h2 className="text-2xl leading-none">
+                  <a className="underline decoration-black/20 underline-offset-5 hover:decoration-black" href={`#circle-${circle.id}`}>
+                    {circle.name}
+                  </a>
+                </h2>
                 <p className="mt-2 text-sm text-black/42">{circle.blockName ?? "No Block"}</p>
               </div>
               <StateLabel state={circle.status} />

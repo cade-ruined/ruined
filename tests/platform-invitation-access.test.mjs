@@ -58,11 +58,11 @@ test("eligibility admits active returning identities and only live member invita
 
   assert.match(
     eligibility,
-    /platform_user\.user_type = 'staff'[\s\S]*platform_user\.status = 'active'[\s\S]*grant_row\.role_slug in \('ops_admin', 'circle_leader', 'guide'\)[\s\S]*grant_row\.revoked_at is null/,
+    /join platform_role_grants grant_row[\s\S]*platform_user\.status = 'active'[\s\S]*grant_row\.role_slug in \('ops_admin', 'circle_leader', 'guide'\)[\s\S]*grant_row\.revoked_at is null/,
   );
   assert.match(
     eligibility,
-    /join member_lifecycle lifecycle[\s\S]*platform_user\.user_type = 'member'[\s\S]*platform_user\.status = 'active'[\s\S]*lifecycle\.account_state = 'active'/,
+    /join platform_role_grants member_grant[\s\S]*member_grant\.role_slug = 'member'[\s\S]*member_grant\.revoked_at is null[\s\S]*join member_lifecycle lifecycle[\s\S]*platform_user\.status = 'active'[\s\S]*lifecycle\.account_state = 'active'/,
   );
   assert.match(eligibility, /invitation\.intended_user_type = 'member'/);
   assert.match(eligibility, /invitation\.accepted_at is null/);

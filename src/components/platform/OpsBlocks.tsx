@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OperatorDashboardSnapshot } from "@/lib/platform/model";
@@ -45,17 +47,28 @@ export default function OpsBlocks({
         {visibleBlocks.map((block) => (
           <article
             className="grid gap-6 border-b border-black/20 py-7 lg:grid-cols-[minmax(13rem,0.7fr)_8rem_minmax(18rem,1fr)_minmax(12rem,0.55fr)] lg:items-start"
+            id={`block-${block.id}`}
             key={block.id}
           >
             <div>
-              <h2 className="text-3xl leading-none">{block.name}</h2>
+              <h2 className="text-3xl leading-none">
+                <a className="underline decoration-black/20 underline-offset-5 hover:decoration-black" href={`#block-${block.id}`}>
+                  {block.name}
+                </a>
+              </h2>
               <p className="mt-3 text-sm text-black/42">{block.currentCircles} current Circles</p>
             </div>
             <StateLabel state={block.status} />
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-black/65">
               {block.circles.length > 0
                 ? block.circles.map((circle) => (
-                    <span key={circle.id}>{circle.name}</span>
+                    <Link
+                      className="underline decoration-black/20 underline-offset-4 hover:decoration-black"
+                      href={`/ops/circles#circle-${circle.id}`}
+                      key={circle.id}
+                    >
+                      {circle.name}
+                    </Link>
                   ))
                 : <span className="text-black/40">No Circles assigned</span>}
             </div>

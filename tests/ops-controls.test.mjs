@@ -44,7 +44,7 @@ test("every ops mutation verifies origin, identity, and ops_admin again inside i
     assert.match(route, /actorAuthUserId: viewer\.authUserId/);
   }
 
-  assert.match(repository, /platform_user\.user_type = 'staff'/);
+  assert.match(repository, /join platform_role_grants grant_row/);
   assert.match(repository, /platform_user\.status = 'active'/);
   assert.match(repository, /grant_row\.role_slug = 'ops_admin'/);
   assert.match(repository, /grant_row\.revoked_at is null/);
@@ -81,12 +81,14 @@ test("member invitations are bound to a durable member and lifecycle for exactly
   assert.doesNotMatch(requestBody, /role|lifecycle|expiry|expires|userType|memberId/i);
   assert.match(repository, /pg_advisory_xact_lock\(hashtext\(\$\{email\}\), 1\)/);
   assert.match(repository, /from platform_users[\s\S]*email_normalized = \$\{email\}[\s\S]*for update/);
-  assert.match(repository, /identity\?\.user_type === "staff"/);
-  assert.match(repository, /identity\?\.status === "active"/);
+  assert.match(repository, /ensurePersonForEmail\(tx, \{/);
+  assert.match(repository, /preferredPersonId: identity\?\.person_id \?\? member\?\.person_id/);
+  assert.match(repository, /verified: identity\?\.status === "active"/);
   assert.match(repository, /identity\?\.status === "suspended"[\s\S]*identity\?\.status === "disabled"/);
   assert.match(repository, /from ruined_members[\s\S]*email_normalized = \$\{email\}[\s\S]*for update/);
-  assert.match(repository, /insert into ruined_members \(id, email, email_normalized\)/);
+  assert.match(repository, /insert into ruined_members \(id, person_id, email, email_normalized\)/);
   assert.match(repository, /insert into member_lifecycle \([\s\S]*'invited'[\s\S]*'prospect'/);
+  assert.match(repository, /insert into member_onboardings \([\s\S]*'administrative-v1'/);
   assert.match(repository, /lifecycle\.account_state === "suspended"[\s\S]*lifecycle\.account_state === "closed"/);
   assert.match(repository, /update passwordless_account_invites[\s\S]*accepted_at is null[\s\S]*revoked_at is null/);
   assert.match(repository, /insert into passwordless_account_invites \([\s\S]*member_id/);

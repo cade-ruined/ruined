@@ -96,7 +96,7 @@ test("Foundations writes derive member, progress, version, and Circle proof on t
   );
   assert.match(
     repository,
-    /from platform_users[\s\S]*auth_user_id = \$\{viewer\.authUserId\}::uuid[\s\S]*user_type = 'member'[\s\S]*status = 'active'/,
+    /from platform_users platform_user[\s\S]*join platform_role_grants member_grant[\s\S]*member_grant\.role_slug = 'member'[\s\S]*member_grant\.revoked_at is null[\s\S]*platform_user\.auth_user_id = \$\{viewer\.authUserId\}::uuid[\s\S]*platform_user\.status = 'active'/,
   );
 });
 

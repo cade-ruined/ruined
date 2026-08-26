@@ -46,10 +46,6 @@ export function getStripeWebhookSecret(): string {
   return requiredEnvironmentValue("STRIPE_WEBHOOK_SECRET");
 }
 
-export function getMembershipAgreementVersion(): string {
-  return requiredEnvironmentValue("STRIPE_MEMBERSHIP_AGREEMENT_VERSION");
-}
-
 export function isStripeTaxEnabled(): boolean {
   return process.env.STRIPE_TAX_ENABLED?.trim().toLowerCase() === "true";
 }

@@ -124,7 +124,14 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             key={member.memberId}
           >
             <div className="min-w-0">
-              <h3 className="ui-heading truncate text-base font-semibold">{member.name}</h3>
+              <h3 className="ui-heading truncate text-base font-semibold">
+                <Link
+                  className="underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black"
+                  href={`/ops/members/${member.memberId}`}
+                >
+                  {member.name}
+                </Link>
+              </h3>
               <p className="mt-1 truncate text-sm text-black/50">{member.email}</p>
             </div>
             <div className="text-sm leading-relaxed text-black/62">

@@ -4,6 +4,7 @@ import MemberFoundationsExperience from "@/components/foundations/MemberFoundati
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/foundations/model";
 import { getMemberFoundationsState } from "@/lib/foundations/repository";
+import { getMemberFoundationRequirements } from "@/lib/membership/repository";
 import { hasActiveMemberAccess } from "@/lib/platform/model";
 import { getMemberPageContext } from "@/lib/platform/page-data";
 
@@ -34,8 +35,12 @@ export default async function MemberFoundationsExperiencePage() {
   }
 
   let foundations;
+  let requirements;
   try {
-    foundations = await getMemberFoundationsState(context.viewer.authUserId);
+    [foundations, requirements] = await Promise.all([
+      getMemberFoundationsState(context.viewer.authUserId),
+      getMemberFoundationRequirements(context.viewer.authUserId),
+    ]);
   } catch (error) {
     console.error("Member Foundations experience could not be loaded", {
       errorType: error instanceof Error ? error.name : "UnknownError",
@@ -47,5 +52,10 @@ export default async function MemberFoundationsExperiencePage() {
   if (!foundations.enrollmentId && foundations.status === "not_started") {
     redirect("/my/foundations");
   }
-  return <MemberFoundationsExperience initialState={foundations} writable />;
+  return (
+    <MemberFoundationsExperience
+      initialState={{ ...foundations, requirements }}
+      writable
+    />
+  );
 }

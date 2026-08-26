@@ -20,7 +20,6 @@ import {
 } from "@/lib/stripe/membership-state";
 import {
   getApplicationOrigin,
-  getMembershipAgreementVersion,
   getStripe,
   getStripeMembershipPriceId,
   isStripeTaxEnabled,
@@ -30,8 +29,7 @@ import {
 export const runtime = "nodejs";
 
 type CheckoutRequest = {
-  ageConfirmed?: unknown;
-  agreementAccepted?: unknown;
+  acceptanceId?: unknown;
   attemptId?: unknown;
 };
 
@@ -63,17 +61,10 @@ export async function POST(request: Request) {
   }
 
   const checkoutAttemptId = typeof body.attemptId === "string" ? body.attemptId : null;
+  const acceptanceId = typeof body.acceptanceId === "string" ? body.acceptanceId : null;
 
-  if (!isUuid(checkoutAttemptId)) {
+  if (!isUuid(checkoutAttemptId) || !isUuid(acceptanceId)) {
     return invalidRequest("Start a new checkout attempt and try again.");
-  }
-
-  if (body.ageConfirmed !== true) {
-    return invalidRequest("You must confirm the current minimum-age policy.");
-  }
-
-  if (body.agreementAccepted !== true) {
-    return invalidRequest("You must accept the membership terms and privacy policy.");
   }
 
   try {
@@ -94,19 +85,14 @@ export async function POST(request: Request) {
     }
     const platformUser = await requireActivePlatformMemberLink(viewer);
     const stripe = getStripe();
-    const agreementVersion = getMembershipAgreementVersion();
     const priceId = getStripeMembershipPriceId();
     const applicationOrigin = getApplicationOrigin(new URL(request.url).origin);
     const email = normalizeEmail(viewer.email);
-    const acceptedAt = new Date();
     let reservation = await reserveMembershipCheckout({
-      agreementAcceptedAt: acceptedAt,
-      agreementVersion,
-      ageAttestedAt: acceptedAt,
+      acceptanceId,
       attemptId: checkoutAttemptId,
       authUserId: viewer.authUserId,
       email,
-      minimumAge: configuration.minimumAge,
     });
 
     if (reservation.memberId !== platformUser.memberId) {
@@ -119,6 +105,7 @@ export async function POST(request: Request) {
       );
 
       if (
+        reservation.existingAcceptanceMatches &&
         existingSession.status === "open" &&
         existingSession.ui_mode === "embedded_page" &&
         existingSession.client_secret
@@ -140,13 +127,20 @@ export async function POST(request: Request) {
       const replacementAttemptId =
         reservation.attemptId === checkoutAttemptId ? crypto.randomUUID() : checkoutAttemptId;
       reservation = await reserveMembershipCheckout({
-        agreementAcceptedAt: acceptedAt,
-        agreementVersion,
-        ageAttestedAt: acceptedAt,
+        acceptanceId,
         attemptId: replacementAttemptId,
         authUserId: viewer.authUserId,
         email,
-        minimumAge: configuration.minimumAge,
+      });
+    }
+
+    if (!reservation.existingAcceptanceMatches) {
+      await expireMembershipCheckoutAttempt(reservation.attemptId);
+      reservation = await reserveMembershipCheckout({
+        acceptanceId,
+        attemptId: crypto.randomUUID(),
+        authUserId: viewer.authUserId,
+        email,
       });
     }
 
@@ -155,6 +149,9 @@ export async function POST(request: Request) {
       ruined_offer: MEMBERSHIP_OFFER,
       ruined_member_id: reservation.memberId,
       ruined_checkout_attempt_id: reservation.attemptId,
+      agreement_acceptance_id: reservation.agreementAcceptanceId,
+      agreement_content_sha256: reservation.agreementContentSha256,
+      agreement_key: reservation.agreementKey,
       agreement_version: reservation.agreementVersion,
       agreement_accepted_at: reservation.agreementAcceptedAt.toISOString(),
       age_attested_at: reservation.ageAttestedAt.toISOString(),
@@ -174,12 +171,12 @@ export async function POST(request: Request) {
         origin_context: "web",
         payment_method_collection: "always",
         redirect_on_completion: "always",
-        return_url: `${applicationOrigin}/my/join/complete`,
+        return_url: `${applicationOrigin}/my/join/complete?session_id={CHECKOUT_SESSION_ID}`,
         subscription_data: { metadata },
         ui_mode: "embedded_page",
       },
       {
-        idempotencyKey: `ruined-membership:${reservation.attemptId}:${reservation.agreementVersion}`,
+        idempotencyKey: `ruined-membership:${reservation.attemptId}:${reservation.agreementAcceptanceId}`,
       },
     );
 

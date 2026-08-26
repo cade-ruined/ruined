@@ -31,6 +31,17 @@ export type MemberFoundationsState = {
   nextMomentId: string | null;
   progressPercent: number;
   readyForCircle: boolean;
+  requirements?: {
+    futureLetter: {
+      completed: boolean;
+      completedAt: string | null;
+    };
+    timeline: {
+      completed: boolean;
+      completedAt: string | null;
+      entryCount: number;
+    };
+  };
   status: MemberFoundationEnrollmentStatus;
   totalUnits: number;
   units: MemberFoundationUnit[];
@@ -47,6 +58,14 @@ export const PREVIEW_MEMBER_FOUNDATIONS_STATE: MemberFoundationsState = {
   nextMomentId: "story-founder",
   progressPercent: 22.73,
   readyForCircle: false,
+  requirements: {
+    futureLetter: { completed: false, completedAt: null },
+    timeline: {
+      completed: true,
+      completedAt: "2026-08-25T18:00:00.000Z",
+      entryCount: 4,
+    },
+  },
   status: "in_progress",
   totalUnits: 22,
   units: [],

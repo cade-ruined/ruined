@@ -8,6 +8,7 @@ const checkoutCompletionPage = await readFile(new URL("../app/my/join/complete/p
 const webhookRoute = await readFile(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
 const webhookProcessor = await readFile(new URL("../src/lib/stripe/webhook.ts", import.meta.url), "utf8");
 const billingRepository = await readFile(new URL("../src/lib/stripe/billing-repository.ts", import.meta.url), "utf8");
+const membershipRepository = await readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8");
 const migration = await readFile(new URL("../db/migrations/20260819_stripe_billing.sql", import.meta.url), "utf8");
 
 test("embedded membership Checkout fixes the offer on the server", () => {
@@ -26,7 +27,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
   assert.match(checkoutRoute, /redirect_on_completion:\s*"always"/);
   assert.match(
     checkoutRoute,
-    /return_url:\s*`\$\{applicationOrigin\}\/my\/join\/complete`/,
+    /return_url:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
   );
   assert.doesNotMatch(checkoutRoute, /\b(?:success_url|cancel_url|payment_method_types)\s*:/);
   assert.doesNotMatch(checkoutRoute, /customer_update|reservation\.stripeCustomerId/);
@@ -85,20 +86,28 @@ test("an open hosted Checkout Session is expired remotely and locally before rep
 });
 
 test("billing persistence binds Stripe identity to the verified platform member", () => {
-  assert.match(billingRepository, /const newMemberId = randomUUID\(\)/);
   assert.match(billingRepository, /authUserId:\s*string/);
+  assert.match(billingRepository, /join platform_role_grants member_grant/);
+  assert.match(billingRepository, /member_grant\.role_slug = 'member'/);
+  assert.match(billingRepository, /join ruined_members member on member\.person_id = platform_user\.person_id/);
+  assert.match(billingRepository, /and lifecycle\.account_state = 'active'/);
+  assert.doesNotMatch(billingRepository, /const newMemberId = randomUUID\(\)/);
   assert.match(billingRepository, /stripe_customer_id = \$\{input\.customerId\}/);
   assert.match(billingRepository, /is_primary = true/);
 });
 
 test("checkout consent evidence gives Postgres explicit JSON value types", () => {
   assert.match(
-    billingRepository,
-    /jsonb_build_object\('checkout_attempt_id', \$\{input\.checkoutAttemptId\}::text\)/,
+    membershipRepository,
+    /JSON\.stringify\(\{ minimumAge: input\.minimumAge, source: "my_ruined" \}\)\}::jsonb/,
   );
   assert.match(
-    billingRepository,
-    /'checkout_attempt_id', \$\{input\.checkoutAttemptId\}::text,[\s\S]*?'minimum_age', \$\{input\.minimumAge\}::integer/,
+    membershipRepository,
+    /insert into membership_agreement_acceptances \([\s\S]*agreement_body_snapshot,[\s\S]*acceptance_evidence,[\s\S]*dedupe_key/,
+  );
+  assert.match(
+    membershipRepository,
+    /JSON\.stringify\(\{[\s\S]*channel: "my_ruined"[\s\S]*userAgent:[\s\S]*\}\)\}::jsonb/,
   );
 });
 

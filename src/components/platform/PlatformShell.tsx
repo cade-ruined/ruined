@@ -15,7 +15,8 @@ const OPERATIONS_NAVIGATION = [
   { href: "/ops/foundations", label: "Foundations" },
   { href: "/ops/circles", label: "Circles" },
   { href: "/ops/blocks", label: "Blocks" },
-  { href: "/ops/access-billing", label: "Access & Billing" },
+  { href: "/ops/experiences", label: "Experiences" },
+  { href: "/ops/work", label: "Work" },
 ] as const;
 
 function isCurrentPath(pathname: string, href: string): boolean {

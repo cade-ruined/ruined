@@ -83,9 +83,11 @@ function chapterForMoment(index: number): FoundationChapterId | undefined {
 type MemberPresentationMode = {
   completed: boolean;
   error: string | null;
+  futureLetterCompleted: boolean;
   hasActiveCircle: boolean;
   maxMomentIndex: number;
   onComplete: () => Promise<boolean>;
+  onFutureLetterComplete: () => Promise<boolean>;
   onMomentChange: (index: number, momentId: string) => void;
   onViewCircle: () => void;
   pending: boolean;
@@ -123,7 +125,9 @@ export default function PresentationShell({
   const [responsibility, setResponsibility] = useState(50);
   const [cultureCommitted, setCultureCommitted] = useState(false);
   const [letterStep, setLetterStep] = useState(0);
-  const [letterComplete, setLetterComplete] = useState(false);
+  const [letterComplete, setLetterComplete] = useState(
+    () => member?.futureLetterCompleted ?? false,
+  );
   const [closingOverview, setClosingOverview] = useState(false);
   const [selectedDna, setSelectedDna] = useState("perspective");
   const [selectedArtifact, setSelectedArtifact] = useState("letter");
@@ -132,13 +136,26 @@ export default function PresentationShell({
 
   const currentChapter = chapterForMoment(activeMoment);
   const activeLabel = FOUNDATION_MOMENTS[activeMoment]?.label ?? "";
-  const upperMomentIndex = Math.max(
+  const memberUpperMomentIndex = Math.max(
     0,
     Math.min(
       member?.maxMomentIndex ?? FOUNDATION_MOMENTS.length - 1,
       FOUNDATION_MOMENTS.length - 1,
     ),
   );
+  const letterMomentIndex = FOUNDATION_MOMENTS.findIndex(
+    (moment) => moment.kind === "letter",
+  );
+  const upperMomentIndex =
+    member && !letterComplete && letterMomentIndex >= 0
+      ? Math.min(memberUpperMomentIndex, letterMomentIndex)
+      : memberUpperMomentIndex;
+  const futureLetterBlocked =
+    Boolean(member) && activeMoment === letterMomentIndex && !letterComplete;
+
+  useEffect(() => {
+    if (member?.futureLetterCompleted) setLetterComplete(true);
+  }, [member?.futureLetterCompleted]);
 
   const symbolProgress = useMemo<RuinedMarkProgress>(() => {
     if (activeMoment >= 21 || letterComplete) return 4;
@@ -163,12 +180,13 @@ export default function PresentationShell({
   );
 
   const goNext = useCallback(() => {
+    if (futureLetterBlocked) return;
     if (activeMoment === FOUNDATION_MOMENTS.length - 1) {
       if (!member) setClosingOverview(true);
       return;
     }
     scrollToMoment(activeMoment + 1);
-  }, [activeMoment, member, scrollToMoment]);
+  }, [activeMoment, futureLetterBlocked, member, scrollToMoment]);
 
   const goPrevious = useCallback(() => {
     if (activeMoment === FOUNDATION_MOMENTS.length - 1 && closingOverview) {
@@ -292,7 +310,7 @@ export default function PresentationShell({
     setResponsibility(50);
     setCultureCommitted(false);
     setLetterStep(0);
-    setLetterComplete(false);
+    setLetterComplete(member?.futureLetterCompleted ?? false);
     setClosingOverview(false);
     setOverviewOpen(false);
     setGrainEnabled(true);
@@ -450,8 +468,9 @@ export default function PresentationShell({
           type="button"
           onClick={goNext}
           disabled={
-            activeMoment === FOUNDATION_MOMENTS.length - 1 &&
-            (closingOverview || Boolean(member))
+            futureLetterBlocked ||
+            (activeMoment === FOUNDATION_MOMENTS.length - 1 &&
+              (closingOverview || Boolean(member)))
           }
           aria-label="Next presentation moment"
         >
@@ -470,8 +489,9 @@ export default function PresentationShell({
         key={experienceRevision}
         canGoPrevious={activeMoment > 0 || closingOverview}
         canGoNext={
-          activeMoment < FOUNDATION_MOMENTS.length - 1 ||
-          (!closingOverview && !member)
+          !futureLetterBlocked &&
+          (activeMoment < FOUNDATION_MOMENTS.length - 1 ||
+            (!closingOverview && !member))
         }
         grainEnabled={grainEnabled}
         soundEnabled={soundEnabled}
@@ -821,7 +841,14 @@ function renderMoment(props: RenderMomentProps) {
           step={props.letterStep}
           onStepChange={props.setLetterStep}
           complete={props.letterComplete}
-          onComplete={() => {
+          pending={props.member?.pending ?? false}
+          onComplete={async () => {
+            if (
+              props.member &&
+              !(await props.member.onFutureLetterComplete())
+            ) {
+              return;
+            }
             props.setLetterComplete(true);
             window.setTimeout(props.goNext, 520);
           }}
@@ -1307,6 +1334,7 @@ function FutureLetter({
   onStepChange,
   complete,
   onComplete,
+  pending,
   reducedMotion,
 }: {
   reflection: FoundationReflection;
@@ -1315,7 +1343,8 @@ function FutureLetter({
   step: number;
   onStepChange: (step: number) => void;
   complete: boolean;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
+  pending: boolean;
   reducedMotion: boolean;
 }) {
   const field = reflection.fields[step];
@@ -1375,9 +1404,14 @@ function FutureLetter({
             <button
               type="button"
               onClick={onComplete}
+              disabled={pending || complete}
               aria-pressed={complete}
             >
-              {complete ? "Letter complete" : reflection.actionLabel} ↗
+              {pending
+                ? "Recording completion"
+                : complete
+                  ? "Letter complete"
+                  : reflection.actionLabel} ↗
             </button>
           )}
         </div>

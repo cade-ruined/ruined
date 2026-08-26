@@ -19,7 +19,11 @@ const directoryQuery = repository.slice(
 
 test("the full member directory repeats operator authorization and Circle scope on the server", () => {
   assert.match(directoryQuery, /isolation level repeatable read read only/);
-  assert.match(directoryQuery, /platform_user\.user_type = 'staff'/);
+  assert.match(directoryQuery, /from platform_role_grants grant_row/);
+  assert.match(
+    directoryQuery,
+    /join platform_users platform_user[\s\S]*platform_user\.auth_user_id = grant_row\.auth_user_id/,
+  );
   assert.match(directoryQuery, /platform_user\.status = 'active'/);
   assert.match(directoryQuery, /grant_row\.revoked_at is null/);
   assert.match(directoryQuery, /grant_row\.role_slug in \('ops_admin', 'circle_leader', 'guide'\)/);

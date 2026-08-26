@@ -14,6 +14,11 @@ const migrations = [
   "../db/migrations/20260821_byob_registration.sql",
   "../db/migrations/20260821_byob_registration_v2.sql",
   "../db/migrations/20260821_byob_registration_v3.sql",
+  "../db/migrations/20260826_membership_operating_spine_01_person_identity.sql",
+  "../db/migrations/20260826_membership_operating_spine_02_lifecycle_agreements.sql",
+  "../db/migrations/20260826_membership_operating_spine_03_community_experiences.sql",
+  "../db/migrations/20260826_membership_operating_spine_04_foundations_automation.sql",
+  "../db/migrations/20260826_membership_operating_spine_05_content_operations.sql",
 ];
 
 function migrationBody(migration, migrationName) {

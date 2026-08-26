@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 
 import MemberHome from "@/components/platform/MemberHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getMemberPageContext } from "@/lib/platform/page-data";
+import { getMembershipPageContext } from "@/lib/membership/page-context";
+import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
+import { getMemberHome } from "@/lib/membership/repository";
 
 export const metadata: Metadata = {
   title: "Ruined Membership",
@@ -12,9 +14,13 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MyRuinedPage() {
-  const context = await getMemberPageContext();
+  const context = await getMembershipPageContext(
+    PREVIEW_MEMBER_HOME,
+    getMemberHome,
+    "home",
+  );
   if (context.state === "signed_out") redirect("/my/access");
-  if (!context.member) return <PlatformUnavailable accessHref="/my/access" />;
+  if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
 
-  return <MemberHome configuration={context.configuration} member={context.member} />;
+  return <MemberHome member={context.data} />;
 }

@@ -8,6 +8,10 @@
     {
       "path": "/api/internal/integrations/google-sheets/process",
       "schedule": "15 12 * * *"
+    },
+    {
+      "path": "/api/internal/membership/process",
+      "schedule": "30 12 * * *"
     }
   ]
 }

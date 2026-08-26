@@ -16,10 +16,19 @@ type FoundationTransaction = postgres.TransactionSql;
 
 type LockedMember = {
   accountState: "active" | "closed" | "invited" | "provisional" | "suspended";
+  administrativeOnboardingState: "completed" | "in_progress" | "not_started";
   billingState: "active" | "attention_required" | "ended" | "pending";
+  cancellationEffectiveAt: Date | null;
   foundationsState: "completed" | "in_progress" | "not_started";
   memberId: string;
   programState: "active" | "completed" | "onboarding" | "paused" | "prospect" | "withdrawn";
+  standingState:
+    | "active"
+    | "alumni"
+    | "cancellation_requested"
+    | "inactive"
+    | "paused"
+    | "pre_active";
 };
 
 type EnrollmentRow = {
@@ -82,7 +91,11 @@ function asProgress(completed: number, total: number): number {
 function canUseFoundations(member: LockedMember): boolean {
   return (
     member.accountState === "active" &&
+    member.administrativeOnboardingState === "completed" &&
     member.billingState === "active" &&
+    (member.standingState === "active" ||
+      (member.standingState === "cancellation_requested" &&
+        (!member.cancellationEffectiveAt || member.cancellationEffectiveAt > new Date()))) &&
     (member.programState === "onboarding" || member.programState === "active")
   );
 }
@@ -92,13 +105,16 @@ async function lockMemberForFoundations(
   viewer: PlatformViewer,
 ): Promise<LockedMember> {
   const links = await tx<Array<{ member_id: string }>>`
-    select member_id
-    from platform_users
-    where auth_user_id = ${viewer.authUserId}::uuid
-      and email_normalized = lower(btrim(${viewer.email}))
-      and user_type = 'member'
-      and status = 'active'
-      and member_id is not null
+    select member.id as member_id
+    from platform_users platform_user
+    join platform_role_grants member_grant
+      on member_grant.auth_user_id = platform_user.auth_user_id
+      and member_grant.role_slug = 'member'
+      and member_grant.revoked_at is null
+    join ruined_members member on member.person_id = platform_user.person_id
+    where platform_user.auth_user_id = ${viewer.authUserId}::uuid
+      and platform_user.email_normalized = lower(btrim(${viewer.email}))
+      and platform_user.status = 'active'
     limit 1
   `;
   const memberId = links[0]?.member_id;
@@ -117,12 +133,22 @@ async function lockMemberForFoundations(
   const lifecycleRows = await tx<
     Array<{
       account_state: LockedMember["accountState"];
+      administrative_onboarding_state: LockedMember["administrativeOnboardingState"];
       billing_state: LockedMember["billingState"];
+      cancellation_effective_at: Date | null;
       foundations_state: LockedMember["foundationsState"];
       program_state: LockedMember["programState"];
+      standing_state: LockedMember["standingState"];
     }>
   >`
-    select account_state, billing_state, foundations_state, program_state
+    select
+      account_state,
+      administrative_onboarding_state,
+      billing_state,
+      cancellation_effective_at,
+      foundations_state,
+      program_state,
+      standing_state
     from member_lifecycle
     where member_id = ${memberId}::uuid
     for update
@@ -132,10 +158,13 @@ async function lockMemberForFoundations(
 
   const member: LockedMember = {
     accountState: lifecycle.account_state,
+    administrativeOnboardingState: lifecycle.administrative_onboarding_state,
     billingState: lifecycle.billing_state,
+    cancellationEffectiveAt: lifecycle.cancellation_effective_at,
     foundationsState: lifecycle.foundations_state,
     memberId,
     programState: lifecycle.program_state,
+    standingState: lifecycle.standing_state,
   };
   if (!canUseFoundations(member)) throw new FoundationAccessError();
   return member;
@@ -251,28 +280,37 @@ export async function getMemberFoundationsState(
     }>
   >`
     select
-      platform_user.member_id,
+      member.id as member_id,
       active_circle.name as circle_name,
       active_circle.status as circle_status
     from platform_users platform_user
-    join ruined_members member on member.id = platform_user.member_id
+    join platform_role_grants member_grant
+      on member_grant.auth_user_id = platform_user.auth_user_id
+      and member_grant.role_slug = 'member'
+      and member_grant.revoked_at is null
+    join ruined_members member on member.person_id = platform_user.person_id
     join member_lifecycle lifecycle on lifecycle.member_id = member.id
     left join lateral (
       select circle.name, circle.status
       from circle_member_assignments assignment
       join circles circle on circle.id = assignment.circle_id
-      where assignment.member_id = platform_user.member_id
+      where assignment.member_id = member.id
         and assignment.ended_at is null
         and assignment.assigned_at <= now()
       order by assignment.assigned_at desc
       limit 1
     ) active_circle on true
     where platform_user.auth_user_id = ${authUserId}::uuid
-      and platform_user.user_type = 'member'
       and platform_user.status = 'active'
-      and platform_user.member_id is not null
       and lifecycle.account_state = 'active'
+      and lifecycle.administrative_onboarding_state = 'completed'
       and lifecycle.billing_state = 'active'
+      and lifecycle.standing_state in ('active', 'cancellation_requested')
+      and (
+        lifecycle.standing_state = 'active'
+        or lifecycle.cancellation_effective_at is null
+        or lifecycle.cancellation_effective_at > statement_timestamp()
+      )
       and lifecycle.program_state in ('onboarding', 'active')
     limit 1
   `;

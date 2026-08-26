@@ -12,11 +12,18 @@ import {
   startMemberFoundations,
 } from "@/lib/foundations/repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
+import {
+  completeMemberFoundationRequirement,
+  MembershipAccessDeniedError,
+  MembershipConflictError,
+} from "@/lib/membership/repository";
+import { processWorkflowBatch } from "@/lib/workflows/worker";
 
 export const runtime = "nodejs";
 
 type FoundationAction =
   | { action: "complete" }
+  | { action: "complete_requirement"; requirement: "future_letter" }
   | { action: "progress"; momentId: string }
   | { action: "start" };
 
@@ -25,6 +32,14 @@ function isFoundationAction(value: unknown): value is FoundationAction {
   const candidate = value as Record<string, unknown>;
   if (candidate.action === "start" || candidate.action === "complete") {
     return Object.keys(candidate).every((key) => key === "action");
+  }
+  if (candidate.action === "complete_requirement") {
+    return (
+      candidate.requirement === "future_letter" &&
+      Object.keys(candidate).every(
+        (key) => key === "action" || key === "requirement",
+      )
+    );
   }
   return (
     candidate.action === "progress" &&
@@ -36,6 +51,18 @@ function isFoundationAction(value: unknown): value is FoundationAction {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof MembershipConflictError) {
+    return NextResponse.json(
+      { code: "requirement_conflict", error: error.message },
+      { status: 409 },
+    );
+  }
+  if (error instanceof MembershipAccessDeniedError) {
+    return NextResponse.json(
+      { code: "access_denied", error: error.message },
+      { status: 403 },
+    );
+  }
   if (error instanceof CircleRequiredForFoundationCompletionError) {
     return NextResponse.json(
       {
@@ -128,12 +155,30 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (body.action === "complete_requirement") {
+      const requirements = await completeMemberFoundationRequirement(
+        viewer.authUserId,
+        body.requirement,
+      );
+      return NextResponse.json({ ok: true, requirements });
+    }
     const state =
       body.action === "start"
         ? await startMemberFoundations(viewer)
         : body.action === "progress"
           ? await recordMemberFoundationProgress(viewer, body.momentId)
           : await completeMemberFoundations(viewer);
+
+    if (body.action === "complete") {
+      try {
+        await processWorkflowBatch(8);
+      } catch (workflowError) {
+        // Completion is already durable; scheduled recovery owns follow-up.
+        console.error("Foundations completion follow-up could not run", {
+          errorType: workflowError instanceof Error ? workflowError.name : "UnknownError",
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, state });
   } catch (error) {
