@@ -31,6 +31,8 @@ test("permission and connection fallbacks use distinct plain-language copy", asy
   assert.match(component, /title: "Connection required\."/);
   assert.match(component, /unavailable until its secure connection returns/);
   assert.match(component, /accessHref && reason === "connection"/);
+  assert.match(component, /text-black\/58/);
+  assert.doesNotMatch(component, /text-white\/50/);
 });
 
 test("every member page context handles denied before its unavailable fallback", async () => {
