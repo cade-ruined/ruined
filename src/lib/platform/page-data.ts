@@ -17,6 +17,21 @@ import {
 
 type PageState = "authenticated" | "denied" | "preview" | "signed_out" | "unavailable";
 
+function getSafeErrorDetails(error: unknown) {
+  const errorCode =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : null;
+
+  return {
+    errorCode,
+    errorType: error instanceof Error ? error.name : "UnknownError",
+  };
+}
+
 export type MemberPageContext = {
   configuration: PlatformConfiguration;
   member: MemberPlatformSnapshot | null;
@@ -54,9 +69,10 @@ export async function getMemberPageContext(): Promise<MemberPageContext> {
       viewer,
     };
   } catch (error) {
-    console.error("Ruined Membership context could not be loaded", {
-      errorType: error instanceof Error ? error.name : "UnknownError",
-    });
+    console.error(
+      "Ruined Membership context could not be loaded",
+      getSafeErrorDetails(error),
+    );
     return { configuration, member: null, state: "unavailable", viewer };
   }
 }
@@ -94,9 +110,10 @@ export async function getOperatorPageContext(): Promise<OperatorPageContext> {
       viewer,
     };
   } catch (error) {
-    console.error("Ruined operations context could not be loaded", {
-      errorType: error instanceof Error ? error.name : "UnknownError",
-    });
+    console.error(
+      "Ruined operations context could not be loaded",
+      getSafeErrorDetails(error),
+    );
     return { configuration, dashboard: null, role: null, state: "unavailable", viewer };
   }
 }
