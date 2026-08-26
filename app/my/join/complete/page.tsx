@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getMemberPageContext } from "@/lib/platform/page-data";
 
 export const metadata: Metadata = {
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function MembershipCheckoutCompletePage() {
   const context = await getMemberPageContext();
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/my/access" />;
   if (context.member?.billingState === "active") redirect("/my");
 
   return (

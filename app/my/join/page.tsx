@@ -21,6 +21,7 @@ export default async function JoinMyRuinedPage() {
     "entry",
   );
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   if (context.state === "authenticated" && context.data.state === "completed") {
     redirect("/my");

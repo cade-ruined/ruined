@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function OperationsArtifactsPage() {
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
-  if (context.state === "denied") return <PlatformUnavailable title="Operator access required." />;
+  if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
   if (context.state === "preview") return <OperatorArtifactQueue artifacts={PREVIEW_OPS_ARTIFACTS} />;

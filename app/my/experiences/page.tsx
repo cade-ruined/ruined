@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function MyExperiencesPage() {
   const context = await getMembershipPageContext(PREVIEW_MEMBER_EXPERIENCES, getMemberExperiences, "experiences");
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   return <MemberExperiences initialExperiences={context.data} writable={context.state === "authenticated"} />;
 }

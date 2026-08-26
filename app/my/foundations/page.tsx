@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function MyFoundationsPage() {
   const context = await getMemberPageContext();
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (
     context.state !== "preview" &&
     context.member &&

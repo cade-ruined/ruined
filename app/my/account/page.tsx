@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function MyAccountPage() {
   const context = await getMembershipPageContext(PREVIEW_MEMBER_ACCOUNT, getMemberAccount, "account");
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   return <MemberAccount account={context.data} billingConnected={context.configuration.stripe === "connected" && context.state === "authenticated"} />;
 }

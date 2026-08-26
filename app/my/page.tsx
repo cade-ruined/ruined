@@ -20,6 +20,7 @@ export default async function MyRuinedPage() {
     "home",
   );
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
 
   return <MemberHome member={context.data} />;

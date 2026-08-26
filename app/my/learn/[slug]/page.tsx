@@ -18,6 +18,7 @@ export default async function MyLearningResourcePage({ params }: { params: Promi
     "learning resource",
   );
   if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (context.state === "preview" && slug !== PREVIEW_MEMBER_LEARNING_DETAIL.slug) notFound();
   if (context.state === "authenticated" && !context.data) notFound();
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
