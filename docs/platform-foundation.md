@@ -73,7 +73,10 @@ works and no table conversion is required.
    npm run db:migrate:platform
    ```
 
-   This applies the Stripe billing migration followed by the platform migration.
+   The runner records each migration checksum in a private ledger. An unchanged
+   migration is skipped on later runs, while checksum drift stops the run.
+   Existing installations without ledger rows will replay the historical,
+   idempotent migrations once so the ledger can be established.
 4. Configure custom SMTP before production. The default Supabase mail service is
    suitable only for limited testing.
 5. Configure the passwordless email template to show the code using
@@ -83,13 +86,21 @@ works and no table conversion is required.
    state unless both Supabase public configuration and `DATABASE_URL` exist.
 
 Member sign-in lives at `/my/access`; operator sign-in lives at `/ops/access`.
-Member accounts are linked to a stable Ruined member ID after verified email
-access. Creating that identity leaves the program at `prospect`; it does not
-activate membership. In connected mode, Foundations, Circle, and Artifacts are
-server-gated until the member has active account, billing, and onboarding state.
-Operator permissions are app-owned database roles, not editable profile
-metadata. Circle leaders and guides see assigned members only; an active
-`ops_admin` can see all members.
+Member access is invitation-only. A first verified sign-in may claim one
+unexpired, unrevoked invitation for the same normalized email; returning access
+requires an existing active member account. Creating that identity leaves the
+program at `prospect`; it does not activate membership. In connected mode,
+Foundations, Circle, and Artifacts are server-gated until the member has active
+account, billing, and onboarding state. Operator permissions are app-owned
+database roles, not editable profile metadata. Circle leaders and guides see
+assigned members only; an active `ops_admin` can see all members.
+
+A member may start and continue Foundations before being placed in a Circle.
+Only the final completion transition requires a current assignment to an active,
+audited Circle. The database verifies the assignment and Circle time window at
+the completion timestamp and stores that assignment as durable proof. Member
+reflections remain ephemeral; only ordered unit progress and completion proof
+are persisted.
 
 The initial operator records and role grants must be provisioned internally
 before `/ops` is connected. Do not enable open operator account creation.
@@ -113,8 +124,18 @@ for that recorded membership subscription is the canonical activation event.
 - Approve the 16+ age/consent policy and versioned agreement text.
 - Configure Supabase custom SMTP and test OTP delivery, expiry, reuse, and
   account recovery.
-- Apply the migrations in a non-production environment and test every role,
-  assignment boundary, lifecycle transition, and rollback path.
+- Before applying the membership migration, audit every legacy Circle marked
+  `active`, `completed`, or `archived`. Each must have its real start time,
+  activation time, activation actor, and any required end time. Do not invent
+  missing evidence; remediate it from an authoritative operational record.
+- Drain member and operator writes before starting the entire
+  `npm run db:migrate:platform` command, and keep them drained until it exits.
+  This includes the one-time historical replay. The membership migration takes
+  one fail-fast `ACCESS EXCLUSIVE NOWAIT` lock across the affected tables; a
+  lock conflict aborts the run instead of waiting behind live traffic.
+- Apply the migrations in a non-production environment first and test every
+  role, assignment boundary, lifecycle transition, rollback path, and legacy
+  Circle preflight before scheduling the production maintenance window.
 - Configure Stripe Tax only after registrations and tax treatment are approved.
 - Add final Foundations content and Artifact templates as approved versions;
   never overwrite a version already used by a member or production job.
