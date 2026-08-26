@@ -455,7 +455,7 @@ export async function startMemberFoundations(
           'member',
           ${viewer.authUserId}::uuid,
           ${`foundation-started:${enrollment.id}`},
-          jsonb_build_object('enrollment_id', ${enrollment.id})
+          jsonb_build_object('enrollment_id', ${enrollment.id}::uuid)
         )
         on conflict (dedupe_key) do nothing
       `;
@@ -700,9 +700,9 @@ export async function completeMemberFoundations(
           ${`foundation-completed:${enrollment.id}`},
           ${completion.completed_at},
           jsonb_build_object(
-            'enrollment_id', ${enrollment.id},
-            'circle_id', ${circle.circle_id},
-            'circle_assignment_id', ${completionProof}
+            'enrollment_id', ${enrollment.id}::uuid,
+            'circle_id', ${circle.circle_id}::uuid,
+            'circle_assignment_id', ${completionProof}::bigint
           )
         )
         on conflict (dedupe_key) do nothing
@@ -731,9 +731,9 @@ export async function completeMemberFoundations(
             ${`program-activated-after-foundations:${enrollment.id}`},
             ${completion.completed_at},
             jsonb_build_object(
-              'enrollment_id', ${enrollment.id},
-              'circle_id', ${circle.circle_id},
-              'circle_assignment_id', ${completionProof}
+              'enrollment_id', ${enrollment.id}::uuid,
+              'circle_id', ${circle.circle_id}::uuid,
+              'circle_assignment_id', ${completionProof}::bigint
             )
           )
           on conflict (dedupe_key) do nothing

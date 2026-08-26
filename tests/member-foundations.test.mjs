@@ -100,6 +100,25 @@ test("Foundations writes derive member, progress, version, and Circle proof on t
   );
 });
 
+test("Foundations history gives Postgres explicit JSON identifier types", () => {
+  assert.match(
+    repository,
+    /jsonb_build_object\('enrollment_id', \$\{enrollment\.id\}::uuid\)/,
+  );
+  assert.equal(
+    repository.match(/'enrollment_id', \$\{enrollment\.id\}::uuid/g)?.length,
+    3,
+  );
+  assert.equal(
+    repository.match(/'circle_id', \$\{circle\.circle_id\}::uuid/g)?.length,
+    2,
+  );
+  assert.equal(
+    repository.match(/'circle_assignment_id', \$\{completionProof\}::bigint/g)?.length,
+    2,
+  );
+});
+
 test("member journey saves only sequential moment position and cannot arrow past completion", () => {
   assert.match(experience, /activeIndex !== state\.completedUnits \+ 1/);
   assert.match(experience, /FOUNDATION_MOMENTS\[activeIndex - 1\]/);
