@@ -15,7 +15,7 @@ const STATUS_COPY: Record<
   confirmed: {
     eyebrow: "Confirmation complete",
     message:
-      "Your email address is verified. This does not sign you into My Ruined. Continue to access and request a one-time code.",
+      "Your email address is verified. Continue to member access and request a one-time code. Payment follows there only if your membership is not yet active.",
     title: "Email confirmed.",
   },
   error: {
@@ -52,18 +52,18 @@ export default function MemberEmailConfirmationStatus() {
 
   return (
     <section className="lg:pt-12" aria-live="polite" aria-labelledby="confirmation-status">
-      <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--color-poster)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">
         {copy.eyebrow}
       </p>
       <h2
-        className="ui-heading mt-5 text-3xl font-semibold tracking-[-0.03em]"
+        className="mt-5 font-[var(--font-display)] text-4xl tracking-[-0.03em]"
         id="confirmation-status"
       >
         {copy.title}
       </h2>
       <p className="mt-5 text-sm leading-relaxed text-white/50">{copy.message}</p>
       <Link
-        className="mt-10 inline-flex min-h-12 items-center border border-white bg-white px-5 font-mono text-[0.62rem] uppercase tracking-[0.2em] text-black"
+        className="mt-10 inline-flex min-h-12 items-center border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white"
         href="/my/access"
         referrerPolicy="no-referrer"
       >

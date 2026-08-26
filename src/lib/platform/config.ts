@@ -16,11 +16,17 @@ function hasEnvironmentValue(name: string): boolean {
   return Boolean(process.env[name]?.trim());
 }
 
+export function getStripePublishableKey(): string | null {
+  const value = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
+  return value && /^pk_(?:test|live)_/.test(value) ? value : null;
+}
+
 export function getPlatformConfiguration(): PlatformConfiguration {
   const supabaseConfigured =
     hasEnvironmentValue("NEXT_PUBLIC_SUPABASE_URL") &&
     hasEnvironmentValue("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   const databaseConfigured = hasEnvironmentValue("DATABASE_URL");
+  const stripePublishableKeyConfigured = Boolean(getStripePublishableKey());
   const stripeConfigured =
     hasEnvironmentValue("STRIPE_SECRET_KEY") &&
     hasEnvironmentValue("STRIPE_WEBHOOK_SECRET") &&
@@ -47,7 +53,11 @@ export function getPlatformConfiguration(): PlatformConfiguration {
     mode,
     stripe: stripeConfigured ? "connected" : "disconnected",
     stripeCheckoutReady:
-      mode === "connected" && supabaseConfigured && databaseConfigured && stripeConfigured,
+      mode === "connected" &&
+      supabaseConfigured &&
+      databaseConfigured &&
+      stripeConfigured &&
+      stripePublishableKeyConfigured,
     supabase: supabaseConfigured ? "connected" : "disconnected",
   };
 }

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
+
 const INTERACTIVE_SELECTOR = [
   "a[href]",
   "button:not([disabled])",
@@ -32,8 +34,14 @@ const NATIVE_CURSOR_SELECTOR = [
 
 export default function BrandCursor() {
   const cursorRef = useRef<HTMLDivElement>(null);
+  const pathname = useBackgroundPathname();
+  const disabled = pathname.startsWith("/ops");
 
   useEffect(() => {
+    if (disabled) {
+      document.documentElement.classList.remove("ruined-brand-cursor-active");
+      return;
+    }
     const cursor = cursorRef.current;
     if (!cursor) return;
 
@@ -113,7 +121,9 @@ export default function BrandCursor() {
       document.removeEventListener("transitionend", refreshTarget, true);
       document.documentElement.removeEventListener("pointerleave", hide);
     };
-  }, []);
+  }, [disabled]);
+
+  if (disabled) return null;
 
   return (
     <div ref={cursorRef} className="ruined-brand-cursor" aria-hidden="true">

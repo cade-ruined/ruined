@@ -8,6 +8,8 @@ const migrations = [
   "../db/migrations/20260819_stripe_billing.sql",
   "../db/migrations/20260819_platform_foundation.sql",
   "../db/migrations/20260825_membership_foundations_circle_gate.sql",
+  "../db/migrations/20260826_membership_blocks.sql",
+  "../db/migrations/20260826_membership_blocks_hardening.sql",
   "../db/migrations/20260819_communications.sql",
   "../db/migrations/20260821_byob_registration.sql",
   "../db/migrations/20260821_byob_registration_v2.sql",
@@ -52,6 +54,7 @@ if (!databaseUrl) {
       await transaction.unsafe(`
         create schema if not exists private;
         revoke all on schema private from public, anon, authenticated;
+        grant usage on schema private to authenticated;
 
         create table if not exists private.ruined_platform_migrations (
           migration_name text primary key,

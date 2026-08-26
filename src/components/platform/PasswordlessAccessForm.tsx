@@ -16,7 +16,7 @@ export default function PasswordlessAccessForm({
 }: {
   audience: "member" | "ops";
   enabled: boolean;
-  nextPath: "/my" | "/ops";
+  nextPath: "/my/join" | "/ops";
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export default function PasswordlessAccessForm({
     return (
       <form className="mt-10 grid gap-6" onSubmit={requestCode}>
         <label className="grid gap-2">
-          <span className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-white/45">
+          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-white/52">
             Email
           </span>
           <input
@@ -95,7 +95,7 @@ export default function PasswordlessAccessForm({
         {error ? <p aria-live="polite" className="text-sm text-[var(--color-poster)]">{error}</p> : null}
 
         <button
-          className="min-h-12 border border-white bg-white px-5 font-mono text-[0.62rem] uppercase tracking-[0.2em] text-black disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/30"
+          className="min-h-12 border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/30"
           disabled={!enabled || pending}
           type="submit"
         >
@@ -103,7 +103,7 @@ export default function PasswordlessAccessForm({
         </button>
 
         {!enabled && process.env.NODE_ENV !== "production" ? (
-          <Link className="w-fit border-b border-white/30 pb-1 font-mono text-[0.58rem] uppercase tracking-[0.18em] text-white/55" href={nextPath}>
+          <Link className="w-fit border-b border-white/30 pb-1 text-xs uppercase tracking-[0.14em] text-white/55" href={nextPath}>
             Open read-only preview
           </Link>
         ) : null}
@@ -117,7 +117,7 @@ export default function PasswordlessAccessForm({
         If <span className="text-white">{email}</span> is eligible, an access code is on its way.
       </div>
       <label className="grid gap-2">
-        <span className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-white/45">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-white/52">
           Access code
         </span>
         <input
@@ -136,14 +136,14 @@ export default function PasswordlessAccessForm({
       {error ? <p aria-live="polite" className="text-sm text-[var(--color-poster)]">{error}</p> : null}
 
       <button
-        className="min-h-12 border border-white bg-white px-5 font-mono text-[0.62rem] uppercase tracking-[0.2em] text-black disabled:cursor-wait disabled:opacity-50"
+        className="min-h-12 border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50"
         disabled={pending}
         type="submit"
       >
         {pending ? "Verifying…" : "Enter"}
       </button>
       <button
-        className="w-fit border-b border-white/25 pb-1 font-mono text-[0.56rem] uppercase tracking-[0.18em] text-white/45"
+        className="w-fit border-b border-white/25 pb-1 text-xs uppercase tracking-[0.14em] text-white/45"
         onClick={() => setRequested(false)}
         type="button"
       >

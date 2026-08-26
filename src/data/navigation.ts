@@ -5,7 +5,7 @@ export const SITE_ROUTES = {
   about: { id: "about", label: "About", href: "/about", glyphIndex: 3 },
   events: { id: "events", label: "Community", href: "/community", glyphIndex: 4 },
   contact: { id: "contact", label: "Contact", href: "/contact" },
-  my: { id: "my", label: "My Ruined", href: "/my" },
+  my: { id: "my", label: "Membership", href: "/my" },
   bag: { id: "bag", label: "Bag", href: "/bag" },
   shippingReturns: {
     id: "shipping-returns",

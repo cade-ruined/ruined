@@ -36,7 +36,17 @@ type CheckoutRequest = {
 };
 
 function invalidRequest(message: string) {
-  return NextResponse.json({ error: message }, { status: 400 });
+  return NextResponse.json(
+    { error: message },
+    { headers: { "Cache-Control": "no-store" }, status: 400 },
+  );
+}
+
+function clientSecretResponse(clientSecret: string) {
+  return NextResponse.json(
+    { clientSecret },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function POST(request: Request) {
@@ -108,8 +118,12 @@ export async function POST(request: Request) {
         reservation.existingStripeSessionId,
       );
 
-      if (existingSession.status === "open" && existingSession.url) {
-        return NextResponse.json({ checkoutUrl: existingSession.url });
+      if (
+        existingSession.status === "open" &&
+        existingSession.ui_mode === "embedded_page" &&
+        existingSession.client_secret
+      ) {
+        return clientSecretResponse(existingSession.client_secret);
       }
 
       if (existingSession.status === "complete") {
@@ -119,6 +133,9 @@ export async function POST(request: Request) {
         );
       }
 
+      if (existingSession.status === "open") {
+        await stripe.checkout.sessions.expire(existingSession.id);
+      }
       await expireMembershipCheckoutAttempt(reservation.attemptId);
       const replacementAttemptId =
         reservation.attemptId === checkoutAttemptId ? crypto.randomUUID() : checkoutAttemptId;
@@ -148,7 +165,6 @@ export async function POST(request: Request) {
       {
         automatic_tax: { enabled: isStripeTaxEnabled() },
         billing_address_collection: "required",
-        cancel_url: `${applicationOrigin}/my/join`,
         client_reference_id: reservation.memberId,
         customer_email: email,
         integration_identifier: "ruined_my_qvksnctb",
@@ -157,16 +173,18 @@ export async function POST(request: Request) {
         mode: "subscription",
         origin_context: "web",
         payment_method_collection: "always",
+        redirect_on_completion: "always",
+        return_url: `${applicationOrigin}/my/join/complete`,
         subscription_data: { metadata },
-        success_url: `${applicationOrigin}/my/join/complete`,
+        ui_mode: "embedded_page",
       },
       {
         idempotencyKey: `ruined-membership:${reservation.attemptId}:${reservation.agreementVersion}`,
       },
     );
 
-    if (!session.url) {
-      throw new Error("Stripe did not return a Checkout URL.");
+    if (!session.client_secret) {
+      throw new Error("Stripe did not return an embedded Checkout client secret.");
     }
 
     await openMembershipCheckoutAttempt({
@@ -175,7 +193,7 @@ export async function POST(request: Request) {
       stripeSessionId: session.id,
     });
 
-    return NextResponse.json({ checkoutUrl: session.url });
+    return clientSecretResponse(session.client_secret);
   } catch (error) {
     if (error instanceof PlatformAccessDeniedError) {
       return NextResponse.json(

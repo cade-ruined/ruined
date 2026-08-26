@@ -8,6 +8,7 @@ async function source(relativePath) {
 
 const [
   platformConfig,
+  authRequestUtilities,
   pageData,
   authSession,
   authRequestRoute,
@@ -15,6 +16,7 @@ const [
   supabaseMiddleware,
   rootMiddleware,
   checkoutRoute,
+  memberJoinPage,
   billingRepository,
   platformMigration,
   platformModel,
@@ -28,6 +30,7 @@ const [
   platformVisibility,
 ] = await Promise.all([
   source("src/lib/platform/config.ts"),
+  source("src/lib/auth/request.ts"),
   source("src/lib/platform/page-data.ts"),
   source("src/lib/auth/session.ts"),
   source("app/api/auth/otp/request/route.ts"),
@@ -35,6 +38,7 @@ const [
   source("src/lib/supabase/middleware.ts"),
   source("middleware.ts"),
   source("app/api/stripe/checkout/route.ts"),
+  source("app/my/join/page.tsx"),
   source("src/lib/stripe/billing-repository.ts"),
   source("db/migrations/20260819_platform_foundation.sql"),
   source("src/lib/platform/model.ts"),
@@ -48,7 +52,7 @@ const [
   source("src/lib/platform/visibility.ts"),
 ]);
 
-test("My Ruined stays hidden in deployed environments until its release switch opens", () => {
+test("Ruined Membership stays hidden in deployed environments until its release switch opens", () => {
   assert.match(platformVisibility, /process\.env\.NODE_ENV !== "production"/);
   assert.match(
     platformVisibility,
@@ -149,6 +153,30 @@ test("passwordless OTP endpoints enforce origin, audience, and generic delivery 
   assert.match(authVerifyRoute, /safePlatformNextPath\(body\?\.next, audience\)/);
   assert.match(authVerifyRoute, /verifyOtp\(\{ email, token, type: "email" \}\)/);
   assert.match(authVerifyRoute, /if \(error \|\| !data\.user\)/);
+});
+
+test("verified members enter membership checkout while paid states return home", () => {
+  assert.match(
+    authRequestUtilities,
+    /safePlatformNextPath\([\s\S]*?\): "\/my\/join" \| "\/ops"/,
+  );
+  assert.match(
+    authRequestUtilities,
+    /return audience === "ops" \? "\/ops" : "\/my\/join"/,
+  );
+  assert.match(authVerifyRoute, /const redirectTo = safePlatformNextPath\(body\?\.next, audience\)/);
+
+  const paidRedirectIndex = memberJoinPage.indexOf('redirect("/my")');
+  const checkoutEnabledIndex = memberJoinPage.indexOf("const enabled =");
+  assert.ok(paidRedirectIndex >= 0 && paidRedirectIndex < checkoutEnabledIndex);
+  assert.match(
+    memberJoinPage,
+    /context\.member\.billingState === "active"[\s\S]*?context\.member\.billingState === "attention_required"[\s\S]*?redirect\("\/my"\)/,
+  );
+  assert.match(
+    memberJoinPage,
+    /context\.member\.billingState === "pending" \|\| context\.member\.billingState === "ended"/,
+  );
 });
 
 test("middleware refreshes verified claims for every protected platform boundary", () => {

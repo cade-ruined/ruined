@@ -7,12 +7,13 @@ const checkoutOrigin =
     : "";
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://js.stripe.com https://*.js.stripe.com https://checkout.stripe.com`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://cdn.shopify.com",
+  "img-src 'self' data: blob: https://cdn.shopify.com https://*.stripe.com https://*.link.com",
   "media-src 'self' blob:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.myshopify.com https://cdn.shopify.com",
+  "connect-src 'self' https://*.myshopify.com https://cdn.shopify.com https://api.stripe.com https://checkout.stripe.com https://link.com https://*.link.com",
+  "frame-src https://js.stripe.com https://*.js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://link.com https://*.link.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   `form-action 'self' https://*.myshopify.com https://shop.app${checkoutOrigin}`,

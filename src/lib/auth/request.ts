@@ -46,9 +46,8 @@ export function getMemberEmailConfirmationUrl(request: Request): string | null {
 }
 
 export function safePlatformNextPath(
-  value: unknown,
+  _value: unknown,
   audience: "member" | "ops",
-): "/my" | "/ops" {
-  if (audience === "ops") return value === "/ops" ? "/ops" : "/ops";
-  return value === "/my" ? "/my" : "/my";
+): "/my/join" | "/ops" {
+  return audience === "ops" ? "/ops" : "/my/join";
 }

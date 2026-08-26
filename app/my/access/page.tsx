@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import AccessPage from "@/components/platform/AccessPage";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 
-export const metadata: Metadata = { title: "Access My Ruined" };
+export const metadata: Metadata = { title: "Access Ruined Membership" };
 export const dynamic = "force-dynamic";
 
 export default function MyRuinedAccessPage() {

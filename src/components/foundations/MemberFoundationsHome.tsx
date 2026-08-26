@@ -97,20 +97,20 @@ export default function MemberFoundationsHome({
   return (
     <main className="border-t border-white/15 pt-5">
       <div className="flex items-center justify-between gap-6">
-        <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-white/38">
-          My Ruined / Foundations
+        <p className="font-[var(--font-handwritten)] text-xl text-[var(--color-poster)]">
+          RUINED MEMBERSHIP / FOUNDATIONS
         </p>
-        <p className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/38">
-          V{state.version} / {state.status.replaceAll("_", " ")}
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/45">
+          {state.status.replaceAll("_", " ")}
         </p>
       </div>
 
       <section className="mt-14 grid gap-14 lg:grid-cols-[minmax(0,1.35fr)_minmax(21rem,0.65fr)] lg:items-end lg:gap-24">
         <div className="min-w-0">
-          <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--color-poster)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">
             See · Confront · Cut · Grow
           </p>
-          <h1 className="mt-6 font-[var(--font-header)] text-[clamp(2.65rem,12vw,10rem)] font-bold uppercase leading-[0.72] tracking-[-0.075em] lg:text-[clamp(4.5rem,7.5vw,8rem)]">
+          <h1 className="mt-6 font-[var(--font-display)] text-[clamp(3.4rem,12vw,10rem)] leading-[0.78] tracking-[-0.06em] lg:text-[clamp(4.5rem,7.5vw,8rem)]">
             Foundations
           </h1>
         </div>
@@ -125,17 +125,14 @@ export default function MemberFoundationsHome({
       <section className="mt-16 border-y border-white/15 py-7 sm:py-9">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="font-mono text-[0.55rem] uppercase tracking-[0.2em] text-white/32">
-              Path completed
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/38">
+              Moments complete
             </p>
-            <p className="mt-3 font-[var(--font-header)] text-4xl font-bold leading-none tracking-[-0.05em] sm:text-5xl">
+            <p className="mt-3 font-[var(--font-display)] text-5xl leading-none tracking-[-0.05em] sm:text-6xl">
               {String(state.completedUnits).padStart(2, "0")}
               <span className="ml-2 text-white/25">/ {String(state.totalUnits).padStart(2, "0")}</span>
             </p>
           </div>
-          <p className="font-mono text-[0.58rem] uppercase tracking-[0.18em] text-white/42">
-            {state.progressPercent.toFixed(state.progressPercent % 1 === 0 ? 0 : 2)}%
-          </p>
         </div>
 
         <div
@@ -158,7 +155,7 @@ export default function MemberFoundationsHome({
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-5">
           <div>
-            <p className="font-mono text-[0.53rem] uppercase tracking-[0.18em] text-white/28">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/34">
               {state.status === "completed" ? "Path" : "Next moment"}
             </p>
             <p className="mt-2 text-sm text-white/65">
@@ -168,7 +165,7 @@ export default function MemberFoundationsHome({
             </p>
           </div>
           <button
-            className="inline-flex min-h-12 items-center gap-8 border border-white bg-white px-5 font-mono text-[0.6rem] uppercase tracking-[0.2em] text-black transition-colors hover:bg-transparent hover:text-white disabled:cursor-wait disabled:opacity-50"
+            className="inline-flex min-h-12 items-center gap-8 border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-transparent hover:text-white disabled:cursor-wait disabled:opacity-50"
             disabled={pending}
             onClick={enterFoundations}
             type="button"
@@ -187,10 +184,10 @@ export default function MemberFoundationsHome({
       <section className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] lg:gap-20">
         <div>
           <div className="flex items-center justify-between border-b border-white/15 pb-4">
-            <h2 className="font-mono text-[0.57rem] uppercase tracking-[0.2em] text-white/44">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/52">
               Four chapters
             </h2>
-            <span className="font-mono text-[0.53rem] uppercase tracking-[0.18em] text-white/25">
+            <span className="text-xs uppercase tracking-[0.14em] text-white/30">
               In sequence
             </span>
           </div>
@@ -200,11 +197,11 @@ export default function MemberFoundationsHome({
                 className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 py-5"
                 key={chapter.id}
               >
-                <span className="font-mono text-[0.55rem] text-white/28">{chapter.number}</span>
-                <strong className="ui-heading text-base font-semibold uppercase tracking-[-0.015em]">
+                <span className="text-xs text-white/32">{chapter.number}</span>
+                <strong className="font-[var(--font-display)] text-xl font-normal tracking-[-0.015em]">
                   {chapter.title}
                 </strong>
-                <span className="font-mono text-[0.54rem] uppercase tracking-[0.14em] text-white/34">
+                <span className="text-xs uppercase tracking-[0.12em] text-white/40">
                   {chapter.progress.completed}/{chapter.progress.total}
                 </span>
               </li>
@@ -216,7 +213,7 @@ export default function MemberFoundationsHome({
           className={`border-t pt-5 ${hasActiveCircle ? "border-emerald-300/55" : "border-[var(--color-poster)]/65"}`}
         >
           <div className="flex items-center justify-between gap-4">
-            <p className="font-mono text-[0.56rem] uppercase tracking-[0.2em] text-white/42">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/48">
               Completion condition
             </p>
             <span
@@ -237,7 +234,7 @@ export default function MemberFoundationsHome({
               : "A Circle is not required to begin or continue. It becomes required only when you complete the final moment."}
           </p>
           <Link
-            className="mt-8 inline-flex border-b border-white/35 pb-1 font-mono text-[0.57rem] uppercase tracking-[0.18em] text-white/60 hover:text-white"
+            className="mt-8 inline-flex border-b border-white/35 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/65 hover:text-white"
             href="/my/circle"
           >
             {hasActiveCircle ? "View Circle" : "Check Circle status"} →

@@ -163,9 +163,9 @@ test("React Strict Mode cannot consume the stripped callback twice", () => {
 test("the confirmation page and access link suppress referrer details", () => {
   assert.match(confirmedPage, /title: "Email confirmation"/);
   assert.match(confirmedPage, /referrer: "no-referrer"/);
-  assert.match(confirmedPage, />\s*Email\.\s*</);
+  assert.match(confirmedPage, /A place with your name on it\./);
   assert.match(confirmationStatusComponent, /Email confirmed\./);
-  assert.match(confirmationStatusComponent, /This does not sign you into My Ruined\./);
+  assert.match(confirmationStatusComponent, /Continue to member access and request a one-time code\./);
   assert.match(confirmationStatusComponent, /href="\/my\/access"/);
   assert.match(confirmationStatusComponent, /referrerPolicy="no-referrer"/);
 });

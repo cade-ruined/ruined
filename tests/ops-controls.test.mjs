@@ -11,6 +11,8 @@ const [
   invitationRoute,
   circleRoute,
   assignmentRoute,
+  blockRoute,
+  blockAssignmentRoute,
   actions,
   membersPage,
   circlesPage,
@@ -20,6 +22,8 @@ const [
   source("app/api/ops/invitations/route.ts"),
   source("app/api/ops/circles/route.ts"),
   source("app/api/ops/circle-assignments/route.ts"),
+  source("app/api/ops/blocks/route.ts"),
+  source("app/api/ops/block-assignments/route.ts"),
   source("src/components/platform/OpsActions.tsx"),
   source("app/ops/members/page.tsx"),
   source("app/ops/circles/page.tsx"),
@@ -27,7 +31,13 @@ const [
 ]);
 
 test("every ops mutation verifies origin, identity, and ops_admin again inside its transaction", () => {
-  for (const route of [invitationRoute, circleRoute, assignmentRoute]) {
+  for (const route of [
+    invitationRoute,
+    circleRoute,
+    assignmentRoute,
+    blockRoute,
+    blockAssignmentRoute,
+  ]) {
     assert.match(route, /isTrustedPlatformOrigin\(request\)/);
     assert.match(route, /const viewer = await getCurrentPlatformViewer\(\)/);
     assert.match(route, /if \(!viewer\)[\s\S]*401/);
@@ -39,11 +49,27 @@ test("every ops mutation verifies origin, identity, and ops_admin again inside i
   assert.match(repository, /grant_row\.role_slug = 'ops_admin'/);
   assert.match(repository, /grant_row\.revoked_at is null/);
   assert.match(repository, /for update of platform_user, grant_row/);
-  assert.equal(
-    repository.match(/await requireOpsAdmin\(tx, actorAuthUserId\)/g)?.length,
-    7,
-    "each repository transaction, including the Circle read, must reauthorize",
-  );
+  for (const functionName of [
+    "createOrReissueMemberInvitation",
+    "revokeLiveMemberInvitations",
+    "createCircle",
+    "activateCircle",
+    "getOpsCircleSummaries",
+    "createBlock",
+    "activateBlock",
+    "getOpsBlockSummaries",
+    "assignCircleToBlock",
+    "endCircleBlockAssignment",
+    "assignMemberToCircle",
+    "endMemberCircleAssignment",
+  ]) {
+    const start = repository.indexOf(`export async function ${functionName}`);
+    const end = repository.indexOf("export async function", start + 1);
+    const body = repository.slice(start, end < 0 ? undefined : end);
+    assert.ok(start >= 0, `${functionName} must exist`);
+    assert.match(body, /sql\.begin\(async \(tx\) => \{/);
+    assert.match(body, /await requireOpsAdmin\(tx, actorAuthUserId\)/);
+  }
 });
 
 test("member invitations are bound to a durable member and lifecycle for exactly seven days", () => {

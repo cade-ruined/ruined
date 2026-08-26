@@ -5,7 +5,7 @@ Stripe is the billing system of record for membership and consulting invoices. S
 ## Accepted implementation shape
 
 - Responsive web flow at `/my`.
-- Stripe-hosted Checkout for one flat recurring membership Price.
+- Stripe Embedded Checkout inside the branded membership entry page for one flat recurring membership Price.
 - Charge upfront; no free trial, usage, seats, tiers, or volume pricing.
 - Dashboard-managed dynamic payment methods.
 - Stripe Customer Portal for member billing self-service after app authentication exists.
@@ -16,17 +16,18 @@ Stripe is the billing system of record for membership and consulting invoices. S
 
 ## Local configuration
 
-Never paste Stripe secrets into chat, source control, client code, or a `NEXT_PUBLIC_` variable.
+Never paste Stripe secrets into chat, source control, client code, or a `NEXT_PUBLIC_` variable. Stripe's `pk_test_…` / `pk_live_…` publishable key is the sole browser-safe Stripe credential.
 
 1. Copy `.env.example` to `.env.local`.
-2. Add a test-mode `STRIPE_SECRET_KEY` (prefer a restricted key with only the permissions this integration needs).
-3. Add the recurring test Price as `STRIPE_MEMBERSHIP_PRICE_ID` after price and cadence are approved.
-4. Set a real `STRIPE_MEMBERSHIP_AGREEMENT_VERSION`.
-5. Add `DATABASE_URL`, then run `npm run db:migrate:platform`. This applies the billing migration first and the platform migration second.
-6. Use the Stripe CLI or a Dashboard test webhook destination to obtain the matching `STRIPE_WEBHOOK_SECRET`.
-7. Keep `STRIPE_TAX_ENABLED=false` until Stripe Tax is operationally ready.
+2. Add the matching test-mode `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+3. Add a test-mode `STRIPE_SECRET_KEY` (prefer a restricted key with only the permissions this integration needs).
+4. Add the recurring test Price as `STRIPE_MEMBERSHIP_PRICE_ID` after price and cadence are approved.
+5. Set a real `STRIPE_MEMBERSHIP_AGREEMENT_VERSION`.
+6. Add `DATABASE_URL`, then run `npm run db:migrate:platform`. This applies the billing migration first and the platform migration second.
+7. Use the Stripe CLI or a Dashboard test webhook destination to obtain the matching `STRIPE_WEBHOOK_SECRET`.
+8. Keep `STRIPE_TAX_ENABLED=false` until Stripe Tax is operationally ready.
 
-The application does not need a Stripe publishable key because Checkout and the Customer Portal are hosted by Stripe.
+The publishable key initializes Stripe.js in the browser. The server still owns the member, email, Price, quantity, consent evidence, and creation of each embedded Checkout Session. Only the Session client secret crosses the application boundary, in a non-cacheable response; it is never put in a URL or log.
 
 Before calling Stripe, the server reserves one open Checkout attempt per member
 in Postgres. Reloads and parallel tabs reuse that reservation and Stripe

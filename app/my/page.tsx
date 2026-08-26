@@ -6,7 +6,7 @@ import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getMemberPageContext } from "@/lib/platform/page-data";
 
 export const metadata: Metadata = {
-  title: "My Ruined",
+  title: "Ruined Membership",
   description: "The private Ruined member experience.",
 };
 export const dynamic = "force-dynamic";

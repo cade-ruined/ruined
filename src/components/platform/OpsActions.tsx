@@ -7,7 +7,23 @@ import type { OperatorMemberSummary } from "@/lib/platform/model";
 
 export type OpsActionCircle = {
   activeMembers: number;
+  blockId: string | null;
+  blockName: string | null;
+  blockStatus: "active" | "archived" | "completed" | "forming" | null;
   capacity: number;
+  id: string;
+  name: string;
+  slug: string;
+  status: "active" | "archived" | "completed" | "forming";
+};
+
+export type OpsActionBlock = {
+  circles: Array<{
+    id: string;
+    name: string;
+    status: OpsActionCircle["status"];
+  }>;
+  currentCircles: number;
   id: string;
   name: string;
   slug: string;
@@ -46,7 +62,7 @@ function Notice({ notice }: { notice: ActionNotice }) {
     <p
       aria-live="polite"
       className={`min-h-5 text-xs leading-relaxed ${
-        notice?.kind === "error" ? "text-[var(--color-poster)]" : "text-white/42"
+        notice?.kind === "error" ? "text-[var(--color-poster)]" : "text-black/48"
       }`}
       role={notice?.kind === "error" ? "alert" : "status"}
     >
@@ -56,11 +72,11 @@ function Notice({ notice }: { notice: ActionNotice }) {
 }
 
 const INPUT_CLASS =
-  "min-h-12 w-full border border-white/25 bg-transparent px-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white disabled:opacity-40";
+  "min-h-12 w-full border border-black/35 bg-transparent px-4 text-sm text-black outline-none placeholder:text-black/35 focus:border-black disabled:opacity-40";
 const BUTTON_CLASS =
-  "min-h-12 border border-white bg-white px-5 font-mono text-[0.58rem] uppercase tracking-[0.18em] text-black disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/30";
+  "min-h-12 border border-black bg-black px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-[var(--color-bone)] hover:bg-[var(--color-poster)] disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-transparent disabled:text-black/30";
 const SECONDARY_BUTTON_CLASS =
-  "min-h-12 border border-white/25 bg-transparent px-5 font-mono text-[0.58rem] uppercase tracking-[0.18em] text-white/65 hover:border-white hover:text-white disabled:cursor-not-allowed disabled:border-white/15 disabled:text-white/20";
+  "min-h-12 border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
 
 export function OpsInvitationActions() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -114,12 +130,12 @@ export function OpsInvitationActions() {
   }
 
   return (
-    <section className="border-y border-white/15 py-5" aria-labelledby="invite-member-heading">
+    <section className="border-y border-black/25 py-5" aria-labelledby="invite-member-heading">
       <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
         <div>
-          <p className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/30">Admin action</p>
+          <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
           <h2 className="ui-heading mt-3 text-2xl font-semibold" id="invite-member-heading">Invite a member</h2>
-          <p className="mt-3 max-w-md text-sm leading-relaxed text-white/42">
+          <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
             Open passwordless eligibility for seven days. This records access but does not send an email.
           </p>
         </div>
@@ -315,7 +331,13 @@ export function OpsCircleActions({
 
     try {
       const result = await postJson<{
-        assignment: { circleId: string; circleStatus: OpsActionCircle["status"]; endedAt: string };
+        assignment: {
+          blockId: string | null;
+          blockStatus: OpsActionBlock["status"] | null;
+          circleId: string;
+          circleStatus: OpsActionCircle["status"];
+          endedAt: string;
+        };
       }>("/api/ops/circle-assignments", { memberId }, "PATCH");
       setEndedMemberIds((current) => new Set(current).add(memberId));
       setAssignedMemberIds((current) => {
@@ -329,6 +351,10 @@ export function OpsCircleActions({
             ? {
                 ...candidate,
                 activeMembers: Math.max(0, candidate.activeMembers - 1),
+                blockStatus:
+                  candidate.blockId === result.assignment.blockId
+                    ? result.assignment.blockStatus
+                    : candidate.blockStatus,
                 status: result.assignment.circleStatus,
               }
             : candidate,
@@ -336,7 +362,9 @@ export function OpsCircleActions({
       );
       setEndAssignmentNotice({
         kind: "success",
-        text: `${member?.name ?? "Member"} no longer has an active Circle assignment.`,
+        text: result.assignment.blockStatus === "archived"
+          ? `${member?.name ?? "Member"} no longer has an active Circle assignment. Its Circle and Block closed because each no longer meets the minimum active group size.`
+          : `${member?.name ?? "Member"} no longer has an active Circle assignment.`,
       });
       endAssignmentFormRef.current?.reset();
       router.refresh();
@@ -351,11 +379,11 @@ export function OpsCircleActions({
   }
 
   return (
-    <section className="grid border-y border-white/15 lg:grid-cols-2" aria-label="Circle administration">
+    <section className="grid border-y border-black/25 lg:grid-cols-2" aria-label="Circle administration">
       <div className="py-6 lg:pr-10">
-        <p className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/30">Admin action</p>
+        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
         <h2 className="ui-heading mt-3 text-2xl font-semibold">Create a Circle</h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-white/42">
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           Name the Circle. Its slug, forming state, and ten-member capacity stay server-owned.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitCircle} ref={createFormRef}>
@@ -379,26 +407,26 @@ export function OpsCircleActions({
         </form>
       </div>
 
-      <div className="border-t border-white/15 py-6 lg:border-l lg:border-t-0 lg:border-white/15 lg:pl-10">
-        <p className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/30">Admin action</p>
+      <div className="border-t border-black/25 py-6 lg:border-l lg:border-t-0 lg:border-black/25 lg:pl-10">
+        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
         <h2 className="ui-heading mt-3 text-2xl font-semibold">Assign a member</h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-white/42">
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           Only unassigned members with active billing in onboarding or the active program appear here.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitAssignment} ref={assignmentFormRef}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-2 font-mono text-[0.53rem] uppercase tracking-[0.16em] text-white/38">
+            <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/50">
               Member
               <select className={INPUT_CLASS} defaultValue="" disabled={assigning || eligibleMembers.length === 0} name="memberId" required>
-                <option className="bg-[#080605]" disabled value="">Choose member</option>
-                {eligibleMembers.map((member) => <option className="bg-[#080605]" key={member.memberId} value={member.memberId}>{member.name}</option>)}
+                <option className="bg-[var(--color-bone)]" disabled value="">Choose member</option>
+                {eligibleMembers.map((member) => <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>{member.name}</option>)}
               </select>
             </label>
-            <label className="grid gap-2 font-mono text-[0.53rem] uppercase tracking-[0.16em] text-white/38">
+            <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/50">
               Circle
               <select className={INPUT_CLASS} defaultValue="" disabled={assigning || acceptingCircles.length === 0} name="circleId" required>
-                <option className="bg-[#080605]" disabled value="">Choose Circle</option>
-                {acceptingCircles.map((circle) => <option className="bg-[#080605]" key={circle.id} value={circle.id}>{circle.name} · {circle.activeMembers}/{circle.capacity}</option>)}
+                <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
+                {acceptingCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.activeMembers}/{circle.capacity}</option>)}
               </select>
             </label>
           </div>
@@ -413,12 +441,12 @@ export function OpsCircleActions({
         </form>
       </div>
 
-      <div className="border-t border-white/15 py-6 lg:col-span-2">
+      <div className="border-t border-black/25 py-6 lg:col-span-2">
         <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
           <div>
-            <p className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/30">Completion authority</p>
+            <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Completion authority</p>
             <h2 className="ui-heading mt-3 text-2xl font-semibold">Activate a Circle</h2>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-white/42">
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
               Activation is deliberate. It allows assigned members to complete Foundations.
             </p>
           </div>
@@ -432,9 +460,9 @@ export function OpsCircleActions({
               name="circleId"
               required
             >
-              <option className="bg-[#080605]" disabled value="">Choose forming Circle</option>
+              <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Circle</option>
               {activatableCircles.map((circle) => (
-                <option className="bg-[#080605]" key={circle.id} value={circle.id}>
+                <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>
                   {circle.name} · {circle.activeMembers}/{circle.capacity}
                 </option>
               ))}
@@ -451,12 +479,12 @@ export function OpsCircleActions({
         </div>
       </div>
 
-      <div className="border-t border-white/15 py-6 lg:col-span-2">
+      <div className="border-t border-black/25 py-6 lg:col-span-2">
         <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
           <div>
-            <p className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/30">Correction</p>
+            <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Correction</p>
             <h2 className="ui-heading mt-3 text-2xl font-semibold">End an assignment</h2>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-white/42">
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
               Remove a mistaken or obsolete active assignment. Completed Foundations keeps its historical Circle proof; an active Circle is archived if its last member leaves.
             </p>
           </div>
@@ -470,9 +498,9 @@ export function OpsCircleActions({
               name="memberId"
               required
             >
-              <option className="bg-[#080605]" disabled value="">Choose assigned member</option>
+              <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned member</option>
               {assignedMembers.map((member) => (
-                <option className="bg-[#080605]" key={member.memberId} value={member.memberId}>
+                <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>
                   {member.name} · {member.circleName}
                 </option>
               ))}
@@ -487,6 +515,302 @@ export function OpsCircleActions({
             <div className="sm:col-span-2"><Notice notice={endAssignmentNotice} /></div>
           </form>
         </div>
+      </div>
+    </section>
+  );
+}
+
+export function OpsBlockActions({
+  circles: initialCircles,
+  initialBlocks,
+}: {
+  circles: OpsActionCircle[];
+  initialBlocks: OpsActionBlock[];
+}) {
+  const router = useRouter();
+  const [blocks, setBlocks] = useState(initialBlocks);
+  const [circles, setCircles] = useState(initialCircles);
+  const [pendingAction, setPendingAction] = useState<
+    "activate" | "assign" | "create" | "end" | null
+  >(null);
+  const [createNotice, setCreateNotice] = useState<ActionNotice>(null);
+  const [assignmentNotice, setAssignmentNotice] = useState<ActionNotice>(null);
+  const [activationNotice, setActivationNotice] = useState<ActionNotice>(null);
+  const [endNotice, setEndNotice] = useState<ActionNotice>(null);
+
+  useEffect(() => setBlocks(initialBlocks), [initialBlocks]);
+  useEffect(() => setCircles(initialCircles), [initialCircles]);
+
+  const acceptingBlocks = blocks.filter(
+    (block) => block.status === "forming" || block.status === "active",
+  );
+  const availableCircles = circles.filter(
+    (circle) =>
+      !circle.blockId && (circle.status === "forming" || circle.status === "active"),
+  );
+  const activatableBlocks = blocks.filter(
+    (block) => block.status === "forming" && block.currentCircles >= 2,
+  );
+  const assignedCircles = circles.filter((circle) => Boolean(circle.blockId));
+
+  async function submitBlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPendingAction("create");
+    setCreateNotice(null);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const name = String(form.get("name") ?? "");
+
+    try {
+      const result = await postJson<{ block: OpsActionBlock }>("/api/ops/blocks", { name });
+      setBlocks((current) => [...current, result.block]);
+      setCreateNotice({ kind: "success", text: `${result.block.name} created in forming state.` });
+      formElement.reset();
+      router.refresh();
+    } catch (error) {
+      setCreateNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "The Block could not be created.",
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function submitAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPendingAction("assign");
+    setAssignmentNotice(null);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const blockId = String(form.get("blockId") ?? "");
+    const circleId = String(form.get("circleId") ?? "");
+    const block = blocks.find((candidate) => candidate.id === blockId);
+    const circle = circles.find((candidate) => candidate.id === circleId);
+
+    try {
+      const result = await postJson<{ assignment: { created: boolean } }>(
+        "/api/ops/block-assignments",
+        { blockId, circleId },
+      );
+      if (result.assignment.created && block && circle) {
+        setBlocks((current) => current.map((candidate) =>
+          candidate.id === blockId
+            ? {
+                ...candidate,
+                circles: [
+                  ...candidate.circles,
+                  { id: circle.id, name: circle.name, status: circle.status },
+                ],
+                currentCircles: candidate.currentCircles + 1,
+              }
+            : candidate,
+        ));
+        setCircles((current) => current.map((candidate) =>
+          candidate.id === circleId
+            ? {
+                ...candidate,
+                blockId,
+                blockName: block.name,
+                blockStatus: block.status,
+              }
+            : candidate,
+        ));
+      }
+      setAssignmentNotice({
+        kind: "success",
+        text: result.assignment.created
+          ? `${circle?.name ?? "Circle"} assigned to ${block?.name ?? "Block"}.`
+          : `${circle?.name ?? "Circle"} is already assigned to ${block?.name ?? "Block"}.`,
+      });
+      formElement.reset();
+      router.refresh();
+    } catch (error) {
+      setAssignmentNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "The Circle could not be assigned.",
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function submitActivation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPendingAction("activate");
+    setActivationNotice(null);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const blockId = String(form.get("blockId") ?? "");
+    const block = blocks.find((candidate) => candidate.id === blockId);
+
+    try {
+      const result = await postJson<{
+        block: OpsActionBlock & { activated: boolean };
+      }>("/api/ops/blocks", { blockId }, "PATCH");
+      setBlocks((current) => current.map((candidate) =>
+        candidate.id === blockId ? { ...candidate, status: "active" } : candidate,
+      ));
+      setCircles((current) => current.map((candidate) =>
+        candidate.blockId === blockId ? { ...candidate, blockStatus: "active" } : candidate,
+      ));
+      setActivationNotice({
+        kind: "success",
+        text: result.block.activated
+          ? `${block?.name ?? "Block"} is active.`
+          : `${block?.name ?? "Block"} is already active.`,
+      });
+      formElement.reset();
+      router.refresh();
+    } catch (error) {
+      setActivationNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "The Block could not be activated.",
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function submitEndAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPendingAction("end");
+    setEndNotice(null);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const circleId = String(form.get("circleId") ?? "");
+    const circle = circles.find((candidate) => candidate.id === circleId);
+
+    try {
+      const result = await postJson<{
+        assignment: {
+          blockId: string;
+          blockStatus: OpsActionBlock["status"];
+          circleId: string;
+        };
+      }>("/api/ops/block-assignments", { circleId }, "PATCH");
+      setBlocks((current) => current.map((candidate) =>
+        candidate.id === result.assignment.blockId
+          ? {
+              ...candidate,
+              circles: candidate.circles.filter((item) => item.id !== circleId),
+              currentCircles: Math.max(0, candidate.currentCircles - 1),
+              status: result.assignment.blockStatus,
+            }
+          : candidate,
+      ));
+      setCircles((current) => current.map((candidate) =>
+        candidate.id === circleId
+          ? { ...candidate, blockId: null, blockName: null, blockStatus: null }
+          : candidate.blockId === result.assignment.blockId
+            ? { ...candidate, blockStatus: result.assignment.blockStatus }
+          : candidate,
+      ));
+      setEndNotice({
+        kind: "success",
+        text: result.assignment.blockStatus === "archived"
+          ? `${circle?.name ?? "Circle"} no longer has a current Block assignment. The Block closed because fewer than two current Circles remain; all history stays recorded.`
+          : `${circle?.name ?? "Circle"} no longer has a current Block assignment. Its history remains recorded.`,
+      });
+      formElement.reset();
+      router.refresh();
+    } catch (error) {
+      setEndNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "The Block assignment could not be ended.",
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  return (
+    <section className="grid border-y border-black/25 lg:grid-cols-2" aria-label="Block administration">
+      <div className="py-6 lg:pr-10">
+        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
+        <h2 className="ui-heading mt-3 text-2xl font-semibold">Create a Block</h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
+          Create the larger group first. Its stable slug and forming state remain server-owned.
+        </p>
+        <form className="mt-6 grid gap-3" onSubmit={submitBlock}>
+          <label className="sr-only" htmlFor="ops-block-name">Block name</label>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <input
+              className={INPUT_CLASS}
+              disabled={pendingAction === "create"}
+              id="ops-block-name"
+              maxLength={80}
+              minLength={2}
+              name="name"
+              placeholder="Block 01"
+              required
+            />
+            <button className={BUTTON_CLASS} disabled={pendingAction === "create"} type="submit">
+              {pendingAction === "create" ? "Creating" : "Create Block"}
+            </button>
+          </div>
+          <Notice notice={createNotice} />
+        </form>
+      </div>
+
+      <div className="border-t border-black/25 py-6 lg:border-l lg:border-t-0 lg:border-black/25 lg:pl-10">
+        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
+        <h2 className="ui-heading mt-3 text-2xl font-semibold">Assign a Circle</h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
+          A Circle can have one current Block. Reassignment begins by ending its current relationship.
+        </p>
+        <form className="mt-6 grid gap-3" onSubmit={submitAssignment}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || availableCircles.length === 0} name="circleId" required>
+              <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
+              {availableCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name}</option>)}
+            </select>
+            <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || acceptingBlocks.length === 0} name="blockId" required>
+              <option className="bg-[var(--color-bone)]" disabled value="">Choose Block</option>
+              {acceptingBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
+            </select>
+          </div>
+          <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "assign" || availableCircles.length === 0 || acceptingBlocks.length === 0} type="submit">
+            {pendingAction === "assign" ? "Assigning" : "Assign Circle"}
+          </button>
+          <Notice notice={assignmentNotice} />
+        </form>
+      </div>
+
+      <div className="border-t border-black/25 py-6 lg:pr-10">
+        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Activation authority</p>
+        <h2 className="ui-heading mt-3 text-2xl font-semibold">Activate a Block</h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
+          At least two current Circles are required. Block activation does not add a Foundations gate.
+        </p>
+        <form className="mt-6 grid gap-3" onSubmit={submitActivation}>
+          <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "activate" || activatableBlocks.length === 0} name="blockId" required>
+            <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Block</option>
+            {activatableBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
+          </select>
+          <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "activate" || activatableBlocks.length === 0} type="submit">
+            {pendingAction === "activate" ? "Activating" : "Activate Block"}
+          </button>
+          <Notice notice={activationNotice} />
+        </form>
+      </div>
+
+      <div className="border-t border-black/25 py-6 lg:border-l lg:border-black/25 lg:pl-10">
+        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Correction</p>
+        <h2 className="ui-heading mt-3 text-2xl font-semibold">End a Block assignment</h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
+          End only the current relationship. If fewer than two current Circles remain, the Block closes while its full history stays intact.
+        </p>
+        <form className="mt-6 grid gap-3" onSubmit={submitEndAssignment}>
+          <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "end" || assignedCircles.length === 0} name="circleId" required>
+            <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned Circle</option>
+            {assignedCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.blockName}</option>)}
+          </select>
+          <button className={`${SECONDARY_BUTTON_CLASS} w-fit`} disabled={pendingAction === "end" || assignedCircles.length === 0} type="submit">
+            {pendingAction === "end" ? "Ending" : "End assignment"}
+          </button>
+          <Notice notice={endNotice} />
+        </form>
       </div>
     </section>
   );

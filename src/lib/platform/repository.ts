@@ -22,6 +22,22 @@ export type PlatformUserLink = {
 
 export type OperatorRole = "circle_leader" | "guide" | "ops_admin";
 
+export type OperatorMemberDirectoryFilter =
+  | "all"
+  | "attention"
+  | "foundations"
+  | "unassigned";
+
+export type OperatorMemberDirectoryPage = {
+  filter: OperatorMemberDirectoryFilter;
+  members: OperatorMemberSummary[];
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  query: string;
+  totalResults: number;
+};
+
 export type PasswordlessAudience = "member" | "ops";
 export type PasswordlessAccessEligibility = "invited" | "none" | "returning";
 
@@ -393,6 +409,8 @@ type MemberSnapshotRow = {
   account_state: AccountState;
   artifact_state: ArtifactState;
   billing_state: BillingState;
+  block_name: string | null;
+  block_status: MemberPlatformSnapshot["blockStatus"];
   circle_name: string | null;
   circle_status: MemberPlatformSnapshot["circleStatus"];
   display_name: string | null;
@@ -417,6 +435,8 @@ export async function getMemberPlatformSnapshot(
       lifecycle.program_state,
       lifecycle.foundations_state,
       lifecycle.artifact_state,
+      membership_block.name as block_name,
+      membership_block.status as block_status,
       circle.name as circle_name,
       circle.status as circle_status,
       enrollment.progress_percent as foundations_progress
@@ -432,6 +452,11 @@ export async function getMemberPlatformSnapshot(
       limit 1
     ) active_circle on true
     left join circles circle on circle.id = active_circle.circle_id
+    left join block_circle_assignments block_assignment
+      on block_assignment.circle_id = active_circle.circle_id
+      and block_assignment.ended_at is null
+    left join membership_blocks membership_block
+      on membership_block.id = block_assignment.block_id
     left join lateral (
       select foundation_enrollment.progress_percent
       from foundation_enrollments foundation_enrollment
@@ -458,6 +483,8 @@ export async function getMemberPlatformSnapshot(
     accountState: row.account_state,
     artifactState: row.artifact_state,
     billingState: row.billing_state,
+    blockName: row.block_name,
+    blockStatus: row.block_status,
     circleName: row.circle_name,
     circleStatus: row.circle_status,
     email: row.email,
@@ -498,8 +525,11 @@ export async function getOperatorRole(authUserId: string): Promise<OperatorRole 
 }
 
 type OperatorMemberRow = {
+  account_state: AccountState;
   artifact_state: ArtifactState;
   billing_state: BillingState;
+  block_name: string | null;
+  block_status: OperatorMemberSummary["blockStatus"];
   circle_name: string | null;
   circle_status: OperatorMemberSummary["circleStatus"];
   display_name: string | null;
@@ -509,6 +539,238 @@ type OperatorMemberRow = {
   member_id: string;
   program_state: ProgramState;
 };
+
+const OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE = 25;
+
+function operatorMemberSummary(row: OperatorMemberRow): OperatorMemberSummary {
+  const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
+  return {
+    accountState: row.account_state,
+    artifactState: row.artifact_state,
+    billingState: row.billing_state,
+    blockName: row.block_name,
+    blockStatus: row.block_status,
+    circleName: row.circle_name,
+    circleStatus: row.circle_status,
+    email: row.email,
+    foundationsProgress,
+    foundationsState: row.foundations_state,
+    memberId: row.member_id,
+    name: row.display_name?.trim() || row.email.split("@")[0] || "Member",
+    nextAction: nextMemberAction({
+      artifactState: row.artifact_state,
+      billingState: row.billing_state,
+      foundationsState: row.foundations_state,
+      hasCircle: row.circle_status === "active",
+    }),
+    programState: row.program_state,
+  };
+}
+
+function normalizeOperatorMemberDirectoryFilter(
+  filter: string | undefined,
+): OperatorMemberDirectoryFilter {
+  if (
+    filter === "attention" ||
+    filter === "foundations" ||
+    filter === "unassigned"
+  ) {
+    return filter;
+  }
+  return "all";
+}
+
+function normalizeOperatorMemberDirectoryPage(page: number | undefined): number {
+  if (!Number.isSafeInteger(page) || !page || page < 1) return 1;
+  return page;
+}
+
+export async function getOperatorMemberDirectoryPage(
+  authUserId: string,
+  input: {
+    filter?: string;
+    page?: number;
+    query?: string;
+  } = {},
+): Promise<OperatorMemberDirectoryPage | null> {
+  const sql = getBillingDatabase();
+  const filter = normalizeOperatorMemberDirectoryFilter(input.filter);
+  const query = (input.query ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
+  const requestedPage = normalizeOperatorMemberDirectoryPage(input.page);
+
+  return sql.begin("isolation level repeatable read read only", async (tx) => {
+    const roleRows = await tx<Array<{ role_slug: OperatorRole }>>`
+      select grant_row.role_slug
+      from platform_role_grants grant_row
+      join platform_users platform_user
+        on platform_user.auth_user_id = grant_row.auth_user_id
+      where grant_row.auth_user_id = ${authUserId}::uuid
+        and grant_row.role_slug in ('ops_admin', 'circle_leader', 'guide')
+        and grant_row.revoked_at is null
+        and platform_user.user_type = 'staff'
+        and platform_user.status = 'active'
+      order by case grant_row.role_slug
+        when 'ops_admin' then 1
+        when 'circle_leader' then 2
+        else 3
+      end
+      limit 1
+    `;
+    const role = roleRows[0]?.role_slug;
+    if (!role) return null;
+
+    const countRows = await tx<Array<{ total_results: number | string }>>`
+      select count(*) as total_results
+      from ruined_members member
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      left join platform_users platform_user on platform_user.member_id = member.id
+      left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
+      left join lateral (
+        select assignment.circle_id
+        from circle_member_assignments assignment
+        where assignment.member_id = member.id and assignment.ended_at is null
+        order by assignment.assigned_at desc
+        limit 1
+      ) active_circle on true
+      left join circles circle on circle.id = active_circle.circle_id
+      left join block_circle_assignments block_assignment
+        on block_assignment.circle_id = active_circle.circle_id
+        and block_assignment.ended_at is null
+      left join membership_blocks membership_block
+        on membership_block.id = block_assignment.block_id
+      where (
+        ${role} = 'ops_admin'
+        or exists (
+          select 1
+          from circle_staff_assignments staff_assignment
+          join circle_member_assignments member_assignment
+            on member_assignment.circle_id = staff_assignment.circle_id
+            and member_assignment.member_id = member.id
+            and member_assignment.ended_at is null
+          where staff_assignment.auth_user_id = ${authUserId}::uuid
+            and staff_assignment.ended_at is null
+        )
+      )
+        and (
+          ${query}::text = ''
+          or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
+          or strpos(lower(member.email), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
+        )
+        and (
+          ${filter}::text = 'all'
+          or (
+            ${filter}::text = 'attention'
+            and (
+              lifecycle.billing_state = 'attention_required'
+              or lifecycle.account_state in ('suspended', 'closed')
+            )
+          )
+          or (${filter}::text = 'foundations' and lifecycle.foundations_state <> 'completed')
+          or (${filter}::text = 'unassigned' and active_circle.circle_id is null)
+        )
+    `;
+    const totalResults = Number(countRows[0]?.total_results ?? 0);
+    const pageCount = Math.max(1, Math.ceil(totalResults / OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE));
+    const page = Math.min(requestedPage, pageCount);
+    const offset = (page - 1) * OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE;
+
+    const rows = await tx<Array<OperatorMemberRow>>`
+      select
+        member.id as member_id,
+        member.email,
+        profile.display_name,
+        lifecycle.account_state,
+        lifecycle.billing_state,
+        lifecycle.program_state,
+        lifecycle.foundations_state,
+        lifecycle.artifact_state,
+        membership_block.name as block_name,
+        membership_block.status as block_status,
+        circle.name as circle_name,
+        circle.status as circle_status,
+        enrollment.progress_percent as foundations_progress
+      from ruined_members member
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      left join platform_users platform_user on platform_user.member_id = member.id
+      left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
+      left join lateral (
+        select assignment.circle_id
+        from circle_member_assignments assignment
+        where assignment.member_id = member.id and assignment.ended_at is null
+        order by assignment.assigned_at desc
+        limit 1
+      ) active_circle on true
+      left join circles circle on circle.id = active_circle.circle_id
+      left join block_circle_assignments block_assignment
+        on block_assignment.circle_id = active_circle.circle_id
+        and block_assignment.ended_at is null
+      left join membership_blocks membership_block
+        on membership_block.id = block_assignment.block_id
+      left join lateral (
+        select foundation_enrollment.progress_percent
+        from foundation_enrollments foundation_enrollment
+        join foundation_versions foundation_version
+          on foundation_version.id = foundation_enrollment.foundation_version_id
+        join foundation_programs foundation_program
+          on foundation_program.id = foundation_version.foundation_program_id
+        where foundation_enrollment.member_id = member.id
+          and foundation_program.slug = 'ruined-foundations'
+        order by foundation_enrollment.created_at desc
+        limit 1
+      ) enrollment on true
+      where (
+        ${role} = 'ops_admin'
+        or exists (
+          select 1
+          from circle_staff_assignments staff_assignment
+          join circle_member_assignments member_assignment
+            on member_assignment.circle_id = staff_assignment.circle_id
+            and member_assignment.member_id = member.id
+            and member_assignment.ended_at is null
+          where staff_assignment.auth_user_id = ${authUserId}::uuid
+            and staff_assignment.ended_at is null
+        )
+      )
+        and (
+          ${query}::text = ''
+          or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
+          or strpos(lower(member.email), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
+        )
+        and (
+          ${filter}::text = 'all'
+          or (
+            ${filter}::text = 'attention'
+            and (
+              lifecycle.billing_state = 'attention_required'
+              or lifecycle.account_state in ('suspended', 'closed')
+            )
+          )
+          or (${filter}::text = 'foundations' and lifecycle.foundations_state <> 'completed')
+          or (${filter}::text = 'unassigned' and active_circle.circle_id is null)
+        )
+      order by
+        case lifecycle.billing_state when 'attention_required' then 0 else 1 end,
+        member.created_at asc,
+        member.id asc
+      limit ${OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE}
+      offset ${offset}
+    `;
+
+    return {
+      filter,
+      members: rows.map(operatorMemberSummary),
+      page,
+      pageCount,
+      pageSize: OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE,
+      query,
+      totalResults,
+    };
+  });
+}
 
 export async function getOperatorDashboard(
   authUserId: string,
@@ -540,10 +802,13 @@ export async function getOperatorDashboard(
       member.id as member_id,
       member.email,
       profile.display_name,
+      lifecycle.account_state,
       lifecycle.billing_state,
       lifecycle.program_state,
       lifecycle.foundations_state,
       lifecycle.artifact_state,
+      membership_block.name as block_name,
+      membership_block.status as block_status,
       circle.name as circle_name,
       circle.status as circle_status,
       enrollment.progress_percent as foundations_progress
@@ -559,6 +824,11 @@ export async function getOperatorDashboard(
       limit 1
     ) active_circle on true
     left join circles circle on circle.id = active_circle.circle_id
+    left join block_circle_assignments block_assignment
+      on block_assignment.circle_id = active_circle.circle_id
+      and block_assignment.ended_at is null
+    left join membership_blocks membership_block
+      on membership_block.id = block_assignment.block_id
     left join lateral (
       select foundation_enrollment.progress_percent
       from foundation_enrollments foundation_enrollment
@@ -588,36 +858,63 @@ export async function getOperatorDashboard(
     limit 100
   `;
 
-  const members: OperatorMemberSummary[] = rows.map((row) => {
-    const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
-    return {
-      artifactState: row.artifact_state,
-      billingState: row.billing_state,
-      circleName: row.circle_name,
-      circleStatus: row.circle_status,
-      foundationsProgress,
-      memberId: row.member_id,
-      name: row.display_name?.trim() || row.email.split("@")[0] || "Member",
-      nextAction: nextMemberAction({
-        artifactState: row.artifact_state,
-        billingState: row.billing_state,
-        foundationsState: row.foundations_state,
-        hasCircle: row.circle_status === "active",
-      }),
-      programState: row.program_state,
-    };
-  });
+  const aggregateRows = await tx<
+    Array<{
+      active_members: number | string;
+      attention_required: number | string;
+      total_members: number | string;
+      unassigned_members: number | string;
+    }>
+  >`
+    with scoped_members as (
+      select
+        member.id,
+        lifecycle.billing_state,
+        lifecycle.program_state
+      from ruined_members member
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      where ${role} = 'ops_admin'
+        or exists (
+          select 1
+          from circle_staff_assignments staff_assignment
+          join circle_member_assignments member_assignment
+            on member_assignment.circle_id = staff_assignment.circle_id
+            and member_assignment.member_id = member.id
+            and member_assignment.ended_at is null
+          where staff_assignment.auth_user_id = ${authUserId}::uuid
+            and staff_assignment.ended_at is null
+        )
+    )
+    select
+      count(*) as total_members,
+      count(*) filter (
+        where scoped_member.billing_state = 'active'
+          and scoped_member.program_state in ('onboarding', 'active')
+      ) as active_members,
+      count(*) filter (
+        where scoped_member.billing_state = 'attention_required'
+      ) as attention_required,
+      count(*) filter (
+        where not exists (
+          select 1
+          from circle_member_assignments assignment
+          where assignment.member_id = scoped_member.id
+            and assignment.ended_at is null
+        )
+      ) as unassigned_members
+    from scoped_members scoped_member
+  `;
+  const aggregates = aggregateRows[0];
+
+  const members = rows.map(operatorMemberSummary);
 
   return {
     dashboard: {
-      activeMembers: members.filter(
-        (member) =>
-          member.billingState === "active" &&
-          (member.programState === "onboarding" || member.programState === "active"),
-      ).length,
-      attentionRequired: members.filter((member) => member.billingState === "attention_required").length,
+      activeMembers: Number(aggregates?.active_members ?? 0),
+      attentionRequired: Number(aggregates?.attention_required ?? 0),
       members,
-      unassignedMembers: members.filter((member) => !member.circleName).length,
+      totalMembers: Number(aggregates?.total_members ?? 0),
+      unassignedMembers: Number(aggregates?.unassigned_members ?? 0),
     },
     role,
   };

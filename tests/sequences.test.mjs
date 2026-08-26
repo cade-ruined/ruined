@@ -773,7 +773,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(header, /ruined-header-search-trigger/);
   assert.match(header, /const showMyRuined = isMyRuinedVisible\(\)/);
   assert.match(header, /href=\{SITE_ROUTES\.my\.href\}/);
-  assert.match(header, /aria-label="My Ruined"/);
+  assert.match(header, /aria-label="Ruined Membership"/);
   assert.match(header, /<PersonGlyph className="ruined-person-glyph"/);
   assert.match(header, /\{showMyRuined && \([\s\S]*href=\{SITE_ROUTES\.my\.href\}/);
   assert.doesNotMatch(header, /ruined-header-control-label">Search/);
@@ -851,7 +851,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(navigation, /SITE_ROUTES\.work/);
   assert.match(navigation, /SITE_ROUTES\.about/);
   assert.match(navigation, /SITE_ROUTES\.events/);
-  assert.match(navigation, /my: \{ id: "my", label: "My Ruined", href: "\/my" \}/);
+  assert.match(navigation, /my: \{ id: "my", label: "Membership", href: "\/my" \}/);
   assert.doesNotMatch(
     navigation.slice(
       navigation.indexOf("export const GLOBAL_NAV_ITEMS"),

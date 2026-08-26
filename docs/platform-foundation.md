@@ -1,9 +1,10 @@
-# My Ruined platform foundation
+# Ruined Membership platform foundation
 
 This increment establishes two private application surfaces:
 
 - `/my` for a member's next action, Foundations, Circle, Artifacts, and account.
-- `/ops` for internal member, Circle, and integration visibility.
+- `/ops` for internal member, progress, Circle, Block, access, and billing
+  visibility.
 
 The local preview is intentionally read-only. It uses fixture data only outside
 production, displays a persistent preview marker, and disables account access,
@@ -16,7 +17,7 @@ creates a fake session.
 Each system has one job:
 
 1. **Supabase Auth** verifies passwordless identity.
-2. **Postgres** owns the canonical member ID, roles, lifecycle, Circle,
+2. **Postgres** owns the canonical member ID, roles, lifecycle, Circle, Block,
    Foundations, Artifact, consent, and integration state.
 3. **Stripe** owns payment and subscription facts. Only verified webhook events
    update billing state; a Checkout redirect never activates membership.
@@ -102,6 +103,13 @@ the completion timestamp and stores that assignment as durable proof. Member
 reflections remain ephemeral; only ordered unit progress and completion proof
 are persisted.
 
+A Block is the layer above a Circle: one Block contains multiple current
+Circles. It helps operators organize the membership but adds no Foundations
+gate. A Block cannot activate with fewer than two current Circles. If later
+changes leave it below that minimum, it closes automatically while every prior
+Circle relationship remains in history. Members can see only their own Block's
+name and state; they cannot enumerate its other Circles or members.
+
 The initial operator records and role grants must be provisioned internally
 before `/ops` is connected. Do not enable open operator account creation.
 
@@ -139,7 +147,6 @@ for that recorded membership subscription is the canonical activation event.
 - Configure Stripe Tax only after registrations and tax treatment are approved.
 - Add final Foundations content and Artifact templates as approved versions;
   never overwrite a version already used by a member or production job.
-- Migrate and retest the application on Next.js 16.3.1 or later before a live
-  release. The current Next.js 15 dependency still installs Sharp 0.34.5, which
-  the production dependency audit flags for active high-severity libvips
-  advisories; npm's supported fix crosses that major-version boundary.
+- Keep the production dependency audit at zero before release. The current
+  Next.js 15.5.24 tree resolves the prior nested Sharp advisory without a major
+  framework migration; rerun `npm audit --omit=dev` after every lockfile change.

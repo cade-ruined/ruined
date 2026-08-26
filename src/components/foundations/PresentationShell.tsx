@@ -329,7 +329,7 @@ export default function PresentationShell({
           {returnHref ? (
             <Link className={styles.presentationReturn} href={returnHref}>
               <span aria-hidden>←</span>
-              <span>My Ruined</span>
+              <span>Membership</span>
             </Link>
           ) : null}
           <button
@@ -338,7 +338,14 @@ export default function PresentationShell({
             onClick={() => setOverviewOpen(true)}
             aria-label="Open Foundations chapter overview"
           >
-            <span>RUINED</span>
+            <Image
+              alt="Ruined"
+              className={styles.presentationWordmark}
+              height={30}
+              priority
+              src="/ruined-wordmark.svg"
+              width={100}
+            />
             <i aria-hidden />
             <span>FOUNDATIONS</span>
           </button>

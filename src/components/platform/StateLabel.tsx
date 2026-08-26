@@ -24,10 +24,11 @@ export default function StateLabel({ state }: { state: string }) {
 
   return (
     <span
-      className={`font-mono text-[0.56rem] uppercase tracking-[0.17em] ${
-        attention ? "text-[var(--color-poster)]" : "text-white/52"
+      className={`inline-flex items-center gap-2 font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.14em] ${
+        attention ? "text-[var(--color-poster)]" : "text-current opacity-55"
       }`}
     >
+      <span aria-hidden="true" className="h-px w-4 bg-current" />
       {LABELS[state] ?? state.replaceAll("_", " ")}
     </span>
   );

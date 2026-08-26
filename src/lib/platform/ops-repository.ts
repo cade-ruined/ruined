@@ -10,6 +10,7 @@ import { isPlausibleEmail, normalizeEmail } from "@/lib/stripe/membership-state"
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_EMAIL_LENGTH = 254;
+const MAX_BLOCK_NAME_LENGTH = 80;
 const MAX_CIRCLE_NAME_LENGTH = 80;
 
 export type OpsRepositoryErrorCode =
@@ -42,11 +43,51 @@ export type OpsInvitationRevocationResult = {
 
 export type OpsCircleSummary = {
   activeMembers: number;
+  blockId: string | null;
+  blockName: string | null;
+  blockStatus: OpsBlockStatus | null;
   capacity: number;
   id: string;
   name: string;
   slug: string;
   status: "active" | "archived" | "completed" | "forming";
+};
+
+export type OpsBlockStatus = "active" | "archived" | "completed" | "forming";
+
+export type OpsBlockCircleSummary = {
+  id: string;
+  name: string;
+  status: OpsCircleSummary["status"];
+};
+
+export type OpsBlockSummary = {
+  currentCircles: number;
+  circles: OpsBlockCircleSummary[];
+  id: string;
+  name: string;
+  slug: string;
+  status: OpsBlockStatus;
+};
+
+export type OpsBlockActivationResult = OpsBlockSummary & {
+  activated: boolean;
+};
+
+export type OpsBlockCircleAssignmentResult = {
+  assignedAt: string;
+  blockId: string;
+  circleId: string;
+  created: boolean;
+  id: string;
+};
+
+export type OpsBlockCircleAssignmentEndResult = {
+  blockId: string;
+  blockStatus: OpsBlockStatus;
+  circleId: string;
+  endedAt: string;
+  id: string;
 };
 
 export type OpsCircleAssignmentResult = {
@@ -58,6 +99,8 @@ export type OpsCircleAssignmentResult = {
 };
 
 export type OpsCircleAssignmentEndResult = {
+  blockId: string | null;
+  blockStatus: OpsBlockStatus | null;
   circleId: string;
   circleStatus: OpsCircleSummary["status"];
   endedAt: string;
@@ -96,7 +139,7 @@ function normalizedCircleName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
-function circleSlug(name: string): string {
+function entitySlug(name: string, fallback: "block" | "circle"): string {
   const stem = name
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -105,7 +148,15 @@ function circleSlug(name: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
 
-  return `${stem || "circle"}-${randomUUID().slice(0, 8)}`;
+  return `${stem || fallback}-${randomUUID().slice(0, 8)}`;
+}
+
+function circleSlug(name: string): string {
+  return entitySlug(name, "circle");
+}
+
+function blockSlug(name: string): string {
+  return entitySlug(name, "block");
 }
 
 export async function createOrReissueMemberInvitation({
@@ -327,6 +378,9 @@ export async function createCircle({
 
     return {
       activeMembers: 0,
+      blockId: null,
+      blockName: null,
+      blockStatus: null,
       capacity: Number(circle.capacity),
       id: circle.id,
       name: circle.name,
@@ -353,17 +407,33 @@ export async function activateCircle({
     const circleRows = await tx<
       Array<{
         capacity: number;
+        block_id: string | null;
+        block_name: string | null;
+        block_status: OpsBlockStatus | null;
         id: string;
         name: string;
         slug: string;
         status: OpsCircleSummary["status"];
       }>
     >`
-      select id, name, slug, capacity, status
-      from circles
-      where id = ${circleId}::uuid
+      select
+        circle.id,
+        circle.name,
+        circle.slug,
+        circle.capacity,
+        circle.status,
+        block_assignment.block_id,
+        membership_block.name as block_name,
+        membership_block.status as block_status
+      from circles circle
+      left join block_circle_assignments block_assignment
+        on block_assignment.circle_id = circle.id
+        and block_assignment.ended_at is null
+      left join membership_blocks membership_block
+        on membership_block.id = block_assignment.block_id
+      where circle.id = ${circleId}::uuid
       limit 1
-      for update
+      for update of circle
     `;
     const circle = circleRows[0];
     if (!circle) {
@@ -379,7 +449,18 @@ export async function activateCircle({
     const activeMembers = Number(countRows[0]?.active_members ?? 0);
 
     if (circle.status === "active") {
-      return { ...circle, activated: false, activeMembers };
+      return {
+        activated: false,
+        activeMembers,
+        blockId: circle.block_id,
+        blockName: circle.block_name,
+        blockStatus: circle.block_status,
+        capacity: Number(circle.capacity),
+        id: circle.id,
+        name: circle.name,
+        slug: circle.slug,
+        status: circle.status,
+      };
     }
     if (circle.status !== "forming") {
       throw new OpsRepositoryError(
@@ -410,9 +491,15 @@ export async function activateCircle({
     }
 
     return {
-      ...circle,
       activated: true,
       activeMembers,
+      blockId: circle.block_id,
+      blockName: circle.block_name,
+      blockStatus: circle.block_status,
+      capacity: Number(circle.capacity),
+      id: circle.id,
+      name: circle.name,
+      slug: circle.slug,
       status: "active",
     };
   });
@@ -428,6 +515,9 @@ export async function getOpsCircleSummaries(
     const rows = await tx<
       Array<{
         active_members: number | string;
+        block_id: string | null;
+        block_name: string | null;
+        block_status: OpsBlockStatus | null;
         capacity: number;
         id: string;
         name: string;
@@ -441,10 +531,18 @@ export async function getOpsCircleSummaries(
         circle.slug,
         circle.capacity,
         circle.status,
+        block_assignment.block_id,
+        membership_block.name as block_name,
+        membership_block.status as block_status,
         count(assignment.id) filter (where assignment.ended_at is null) as active_members
       from circles circle
       left join circle_member_assignments assignment on assignment.circle_id = circle.id
-      group by circle.id
+      left join block_circle_assignments block_assignment
+        on block_assignment.circle_id = circle.id
+        and block_assignment.ended_at is null
+      left join membership_blocks membership_block
+        on membership_block.id = block_assignment.block_id
+      group by circle.id, block_assignment.block_id, membership_block.name, membership_block.status
       order by
         case circle.status
           when 'active' then 1
@@ -457,12 +555,426 @@ export async function getOpsCircleSummaries(
 
     return rows.map((row) => ({
       activeMembers: Number(row.active_members),
+      blockId: row.block_id,
+      blockName: row.block_name,
+      blockStatus: row.block_status,
       capacity: Number(row.capacity),
       id: row.id,
       name: row.name,
       slug: row.slug,
       status: row.status,
     }));
+  });
+}
+
+export async function createBlock({
+  actorAuthUserId,
+  name: nameValue,
+}: {
+  actorAuthUserId: string;
+  name: string;
+}): Promise<OpsBlockSummary> {
+  const name = normalizedCircleName(nameValue);
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    if (name.length < 2 || name.length > MAX_BLOCK_NAME_LENGTH) {
+      throw new OpsRepositoryError(
+        "invalid_request",
+        `Block names must be between 2 and ${MAX_BLOCK_NAME_LENGTH} characters.`,
+      );
+    }
+
+    const blockRows = await tx<
+      Array<{
+        id: string;
+        name: string;
+        slug: string;
+        status: OpsBlockStatus;
+      }>
+    >`
+      insert into membership_blocks (
+        id,
+        name,
+        slug,
+        created_by_auth_user_id
+      ) values (
+        ${randomUUID()}::uuid,
+        ${name},
+        ${blockSlug(name)},
+        ${actorAuthUserId}::uuid
+      )
+      returning id, name, slug, status
+    `;
+    const block = blockRows[0];
+    if (!block) throw new Error("The Block could not be created.");
+
+    return { ...block, circles: [], currentCircles: 0 };
+  });
+}
+
+export async function activateBlock({
+  actorAuthUserId,
+  blockId,
+}: {
+  actorAuthUserId: string;
+  blockId: string;
+}): Promise<OpsBlockActivationResult> {
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    if (!UUID_PATTERN.test(blockId)) {
+      throw new OpsRepositoryError("invalid_request", "Choose a valid Block.");
+    }
+
+    const blockRows = await tx<
+      Array<{
+        id: string;
+        name: string;
+        slug: string;
+        status: OpsBlockStatus;
+      }>
+    >`
+      select id, name, slug, status
+      from membership_blocks
+      where id = ${blockId}::uuid
+      limit 1
+      for update
+    `;
+    const block = blockRows[0];
+    if (!block) {
+      throw new OpsRepositoryError("not_found", "That Block could not be found.");
+    }
+
+    const circleRows = await tx<
+      Array<{ id: string; name: string; status: OpsCircleSummary["status"] }>
+    >`
+      select circle.id, circle.name, circle.status
+      from block_circle_assignments assignment
+      join circles circle on circle.id = assignment.circle_id
+      where assignment.block_id = ${blockId}::uuid
+        and assignment.ended_at is null
+        and circle.status in ('forming', 'active')
+      order by circle.created_at asc
+    `;
+    const currentCircles = circleRows.length;
+
+    if (block.status === "active") {
+      return { ...block, activated: false, circles: circleRows, currentCircles };
+    }
+    if (block.status !== "forming") {
+      throw new OpsRepositoryError(
+        "conflict",
+        "Only a forming Block can be activated.",
+      );
+    }
+    if (currentCircles < 2) {
+      throw new OpsRepositoryError(
+        "conflict",
+        "Assign at least two current Circles before activating the Block.",
+      );
+    }
+
+    const activatedRows = await tx<Array<{ status: OpsBlockStatus }>>`
+      update membership_blocks
+      set
+        status = 'active',
+        starts_at = coalesce(starts_at, statement_timestamp()),
+        activated_at = coalesce(activated_at, statement_timestamp()),
+        activated_by_auth_user_id = ${actorAuthUserId}::uuid,
+        updated_at = statement_timestamp()
+      where id = ${blockId}::uuid
+        and status = 'forming'
+      returning status
+    `;
+    if (activatedRows[0]?.status !== "active") {
+      throw new OpsRepositoryError("conflict", "That Block could not be activated.");
+    }
+
+    return {
+      ...block,
+      activated: true,
+      circles: circleRows,
+      currentCircles,
+      status: "active",
+    };
+  });
+}
+
+export async function getOpsBlockSummaries(
+  actorAuthUserId: string,
+): Promise<OpsBlockSummary[]> {
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+
+    const rows = await tx<
+      Array<{
+        circles: OpsBlockCircleSummary[] | null;
+        current_circles: number | string;
+        id: string;
+        name: string;
+        slug: string;
+        status: OpsBlockStatus;
+      }>
+    >`
+      select
+        membership_block.id,
+        membership_block.name,
+        membership_block.slug,
+        membership_block.status,
+        count(circle.id) filter (
+          where assignment.ended_at is null
+            and circle.status in ('forming', 'active')
+        ) as current_circles,
+        coalesce(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', circle.id,
+              'name', circle.name,
+              'status', circle.status
+            )
+            order by circle.created_at asc
+          ) filter (
+            where assignment.ended_at is null
+              and circle.status in ('forming', 'active')
+          ),
+          '[]'::jsonb
+        ) as circles
+      from membership_blocks membership_block
+      left join block_circle_assignments assignment
+        on assignment.block_id = membership_block.id
+        and assignment.ended_at is null
+      left join circles circle on circle.id = assignment.circle_id
+      group by membership_block.id
+      order by
+        case membership_block.status
+          when 'active' then 1
+          when 'forming' then 2
+          when 'completed' then 3
+          else 4
+        end,
+        membership_block.created_at asc
+    `;
+
+    return rows.map((row) => ({
+      circles: Array.isArray(row.circles) ? row.circles : [],
+      currentCircles: Number(row.current_circles),
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      status: row.status,
+    }));
+  });
+}
+
+export async function assignCircleToBlock({
+  actorAuthUserId,
+  blockId,
+  circleId,
+}: {
+  actorAuthUserId: string;
+  blockId: string;
+  circleId: string;
+}): Promise<OpsBlockCircleAssignmentResult> {
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    if (!UUID_PATTERN.test(blockId) || !UUID_PATTERN.test(circleId)) {
+      throw new OpsRepositoryError("invalid_request", "Choose a valid Block and Circle.");
+    }
+
+    await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 3)`;
+
+    const circleRows = await tx<
+      Array<{ id: string; status: OpsCircleSummary["status"] }>
+    >`
+      select id, status
+      from circles
+      where id = ${circleId}::uuid
+      limit 1
+      for update
+    `;
+    const circle = circleRows[0];
+    if (!circle) {
+      throw new OpsRepositoryError("not_found", "That Circle could not be found.");
+    }
+    if (circle.status !== "forming" && circle.status !== "active") {
+      throw new OpsRepositoryError("conflict", "Only a current Circle can enter a Block.");
+    }
+
+    // Circle-first locking matches the last-member archival path, which may
+    // reconcile the parent Block after changing the Circle status.
+    const blockRows = await tx<Array<{ id: string; status: OpsBlockStatus }>>`
+      select id, status
+      from membership_blocks
+      where id = ${blockId}::uuid
+      limit 1
+      for update
+    `;
+    const block = blockRows[0];
+    if (!block) {
+      throw new OpsRepositoryError("not_found", "That Block could not be found.");
+    }
+    if (block.status !== "forming" && block.status !== "active") {
+      throw new OpsRepositoryError("conflict", "That Block is not accepting Circles.");
+    }
+
+    const existingRows = await tx<
+      Array<{ assigned_at: Date; block_id: string; circle_id: string; id: string }>
+    >`
+      select id::text, block_id, circle_id, assigned_at
+      from block_circle_assignments
+      where circle_id = ${circleId}::uuid
+        and ended_at is null
+      limit 1
+      for update
+    `;
+    const existing = existingRows[0];
+    if (existing?.block_id === blockId) {
+      return {
+        assignedAt: existing.assigned_at.toISOString(),
+        blockId: existing.block_id,
+        circleId: existing.circle_id,
+        created: false,
+        id: existing.id,
+      };
+    }
+    if (existing) {
+      throw new OpsRepositoryError("conflict", "That Circle already belongs to a Block.");
+    }
+
+    const assignmentRows = await tx<
+      Array<{
+        assigned_at: Date;
+        block_id: string;
+        circle_id: string;
+        id: string;
+      }>
+    >`
+      insert into block_circle_assignments (
+        block_id,
+        circle_id,
+        assigned_by_auth_user_id
+      ) values (
+        ${blockId}::uuid,
+        ${circleId}::uuid,
+        ${actorAuthUserId}::uuid
+      )
+      returning id::text, block_id, circle_id, assigned_at
+    `;
+    const assignment = assignmentRows[0];
+    if (!assignment) throw new Error("The Block assignment could not be created.");
+
+    return {
+      assignedAt: assignment.assigned_at.toISOString(),
+      blockId: assignment.block_id,
+      circleId: assignment.circle_id,
+      created: true,
+      id: assignment.id,
+    };
+  });
+}
+
+export async function endCircleBlockAssignment({
+  actorAuthUserId,
+  circleId,
+}: {
+  actorAuthUserId: string;
+  circleId: string;
+}): Promise<OpsBlockCircleAssignmentEndResult> {
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    if (!UUID_PATTERN.test(circleId)) {
+      throw new OpsRepositoryError("invalid_request", "Choose a valid assigned Circle.");
+    }
+
+    await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 3)`;
+
+    const candidateRows = await tx<Array<{ block_id: string; id: string }>>`
+      select id::text, block_id
+      from block_circle_assignments
+      where circle_id = ${circleId}::uuid
+        and ended_at is null
+      limit 1
+    `;
+    const candidate = candidateRows[0];
+    if (!candidate) {
+      throw new OpsRepositoryError("not_found", "That Circle has no current Block assignment.");
+    }
+
+    const circleRows = await tx<Array<{ id: string }>>`
+      select id
+      from circles
+      where id = ${circleId}::uuid
+      limit 1
+      for update
+    `;
+    if (!circleRows[0]) {
+      throw new OpsRepositoryError("not_found", "That Circle could not be found.");
+    }
+
+    const blockRows = await tx<Array<{ id: string }>>`
+      select id
+      from membership_blocks
+      where id = ${candidate.block_id}::uuid
+      limit 1
+      for update
+    `;
+    if (!blockRows[0]) {
+      throw new OpsRepositoryError("not_found", "That Block could not be found.");
+    }
+
+    const assignmentRows = await tx<
+      Array<{ block_id: string; circle_id: string; id: string }>
+    >`
+      select id::text, block_id, circle_id
+      from block_circle_assignments
+      where id = ${candidate.id}::bigint
+        and circle_id = ${circleId}::uuid
+        and ended_at is null
+      limit 1
+      for update
+    `;
+    const assignment = assignmentRows[0];
+    if (!assignment) {
+      throw new OpsRepositoryError("conflict", "That Block assignment is no longer current.");
+    }
+
+    const endedRows = await tx<Array<{ ended_at: Date }>>`
+      update block_circle_assignments
+      set
+        ended_at = statement_timestamp(),
+        ended_by_auth_user_id = ${actorAuthUserId}::uuid,
+        end_reason = 'ops_ended_assignment'
+      where id = ${assignment.id}::bigint
+        and ended_at is null
+      returning ended_at
+    `;
+    const ended = endedRows[0];
+    if (!ended) {
+      throw new OpsRepositoryError("conflict", "That Block assignment is no longer current.");
+    }
+
+    const finalBlockRows = await tx<Array<{ status: OpsBlockStatus }>>`
+      select status
+      from membership_blocks
+      where id = ${assignment.block_id}::uuid
+      limit 1
+    `;
+    const finalBlock = finalBlockRows[0];
+    if (!finalBlock) {
+      throw new OpsRepositoryError("not_found", "That Block could not be found.");
+    }
+
+    return {
+      blockId: assignment.block_id,
+      blockStatus: finalBlock.status,
+      circleId: assignment.circle_id,
+      endedAt: ended.ended_at.toISOString(),
+      id: assignment.id,
+    };
   });
 }
 
@@ -689,7 +1201,24 @@ export async function endMemberCircleAssignment({
       `;
     }
 
+    const blockRows = archiveCircle
+      ? await tx<Array<{ block_id: string; block_status: OpsBlockStatus }>>`
+          select
+            assignment.block_id,
+            membership_block.status as block_status
+          from block_circle_assignments assignment
+          join membership_blocks membership_block
+            on membership_block.id = assignment.block_id
+          where assignment.circle_id = ${assignment.circle_id}::uuid
+            and assignment.ended_at is null
+          limit 1
+        `
+      : [];
+    const block = blockRows[0] ?? null;
+
     return {
+      blockId: block?.block_id ?? null,
+      blockStatus: block?.block_status ?? null,
       circleId: assignment.circle_id,
       circleStatus: archiveCircle ? "archived" : circle.status,
       endedAt: ended.ended_at.toISOString(),

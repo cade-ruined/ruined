@@ -186,6 +186,12 @@
   transform: rotate(18deg);
 }
 
+.presentationWordmark {
+  width: 4.4rem;
+  height: auto;
+  filter: invert(1);
+}
+
 .presentationStatus {
   display: flex;
   gap: 1rem;

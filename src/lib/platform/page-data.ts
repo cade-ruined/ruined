@@ -54,7 +54,7 @@ export async function getMemberPageContext(): Promise<MemberPageContext> {
       viewer,
     };
   } catch (error) {
-    console.error("My Ruined member context could not be loaded", {
+    console.error("Ruined Membership context could not be loaded", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
     return { configuration, member: null, state: "unavailable", viewer };

@@ -2,6 +2,14 @@
 @import './tailwind.css';
 @import './theme.css';
 
+.ops-navigation-rail {
+  scrollbar-width: none;
+}
+
+.ops-navigation-rail::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body {
   height: 100%;
@@ -197,7 +205,7 @@ html {
 }
 
 /* The shell stays conventional so the experience beneath it can be strange:
-   Menu + Search balance My Ruined + Bag around a mathematically centered
+   Menu + Search balance Membership + Bag around a mathematically centered
    wordmark on every route and input type. */
 :root {
   --ruined-header-height: calc(4rem + env(safe-area-inset-top, 0px));
