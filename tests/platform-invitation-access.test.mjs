@@ -41,7 +41,11 @@ test("OTP delivery is generic and creates an Auth identity only for a current in
   assert.ok(eligibilityIndex >= 0 && otpIndex > eligibilityIndex);
   assert.match(requestRoute, /const response = NextResponse\.json\(\{ ok: true \}\)/);
   assert.match(requestRoute, /if \(eligibility === "none"\) return response/);
-  assert.match(requestRoute, /options: \{ shouldCreateUser: eligibility === "invited" \}/);
+  assert.match(
+    requestRoute,
+    /audience === "member" && eligibility === "invited"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
+  );
+  assert.match(requestRoute, /let options: [\s\S]*shouldCreateUser: false/);
   assert.doesNotMatch(requestRoute, /console\.(?:warn|error|log)\([^)]*email/);
 });
 

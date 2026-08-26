@@ -1,7 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { isTrustedPlatformOrigin } from "@/lib/auth/request";
+import {
+  getMemberEmailConfirmationUrl,
+  isTrustedPlatformOrigin,
+} from "@/lib/auth/request";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getPasswordlessAccessEligibility } from "@/lib/platform/repository";
 import { createSupabaseCurrentResponseClient } from "@/lib/supabase/server";
@@ -53,9 +56,24 @@ export async function POST(request: NextRequest) {
 
   if (eligibility === "none") return response;
 
+  let options: { emailRedirectTo?: string; shouldCreateUser: boolean } = {
+    shouldCreateUser: false,
+  };
+
+  if (audience === "member" && eligibility === "invited") {
+    const emailRedirectTo = getMemberEmailConfirmationUrl(request);
+
+    if (!emailRedirectTo) {
+      console.error("Member confirmation destination is not safely configured");
+      return response;
+    }
+
+    options = { emailRedirectTo, shouldCreateUser: true };
+  }
+
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { shouldCreateUser: eligibility === "invited" },
+    options,
   });
 
   if (error) {

@@ -14,6 +14,37 @@ export function isTrustedPlatformOrigin(request: Request): boolean {
     return false;
   }
 }
+
+function parseTrustedPlatformSiteOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const localDevelopmentHost =
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "[::1]";
+    const allowedProtocol =
+      url.protocol === "https:" ||
+      (process.env.NODE_ENV !== "production" &&
+        url.protocol === "http:" &&
+        localDevelopmentHost);
+
+    return allowedProtocol ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getMemberEmailConfirmationUrl(request: Request): string | null {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const trustedOrigin = configuredSiteUrl
+    ? parseTrustedPlatformSiteOrigin(configuredSiteUrl)
+    : process.env.NODE_ENV !== "production"
+      ? parseTrustedPlatformSiteOrigin(request.url)
+      : null;
+
+  return trustedOrigin ? new URL("/my/confirmed", trustedOrigin).toString() : null;
+}
+
 export function safePlatformNextPath(
   value: unknown,
   audience: "member" | "ops",
