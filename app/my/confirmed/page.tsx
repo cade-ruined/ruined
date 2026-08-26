@@ -16,7 +16,7 @@ export default function MyRuinedEmailConfirmedPage() {
           My Ruined / Email
         </p>
         <h1 className="mt-12 max-w-4xl font-[var(--font-header)] text-[clamp(3.8rem,9vw,8.5rem)] font-bold uppercase leading-[0.78] tracking-[-0.06em]">
-          Email confirmation.
+          Email.
         </h1>
       </div>
 
