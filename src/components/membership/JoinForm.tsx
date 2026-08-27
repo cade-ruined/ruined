@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  type ChangeEvent,
   type Dispatch,
   type FormEvent,
   type SetStateAction,
@@ -12,6 +13,18 @@ import {
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
+import {
+  formatPhoneInput,
+  mobileToE164,
+  PHONE_COUNTRY_OPTIONS,
+  SHIPPING_COUNTRY_OPTIONS,
+  phoneCountryFromInput,
+  phoneCountryFromProfile,
+  phoneInputForCountry,
+  phoneInputFromProfile,
+  supportedPhoneCountry,
+  supportedShippingCountry,
+} from "@/lib/membership/phone";
 
 type CheckoutResponse = {
   clientSecret?: string;
@@ -125,6 +138,7 @@ export default function JoinForm({
   publishableKey: string | null;
 }) {
   const checkoutAttempt = useRef<string | null>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
   const [onboarding, setOnboarding] = useState(initialOnboarding);
   const [acceptanceId, setAcceptanceId] = useState(initialOnboarding.agreement.acceptanceId);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -135,10 +149,35 @@ export default function JoinForm({
   const stage = !profileComplete ? "profile" : !agreementComplete ? "agreement" : "payment";
   const address = onboarding.profile.fulfillmentAddress;
   const sizing = onboarding.profile.apparelSizing;
+  const initialPhoneCountry = phoneCountryFromProfile(
+    onboarding.profile.mobile,
+    savedString(address, "countryCode"),
+  );
+  const [phoneCountry, setPhoneCountry] = useState(initialPhoneCountry);
+  const [phoneNumber, setPhoneNumber] = useState(() =>
+    phoneInputFromProfile(onboarding.profile.mobile, initialPhoneCountry),
+  );
 
   function attemptId() {
     checkoutAttempt.current ??= crypto.randomUUID();
     return checkoutAttempt.current;
+  }
+
+  function changePhoneCountry(event: ChangeEvent<HTMLSelectElement>) {
+    const nextCountry = supportedPhoneCountry(event.currentTarget.value);
+    if (!nextCountry) return;
+    setError(null);
+    phoneInputRef.current?.setCustomValidity("");
+    setPhoneNumber((current) => phoneInputForCountry(current, phoneCountry, nextCountry));
+    setPhoneCountry(nextCountry);
+  }
+
+  function changePhoneNumber(event: FormEvent<HTMLInputElement>) {
+    setError(null);
+    event.currentTarget.setCustomValidity("");
+    const formatted = formatPhoneInput(event.currentTarget.value, phoneCountry);
+    setPhoneNumber(formatted);
+    setPhoneCountry((current) => phoneCountryFromInput(formatted, current));
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -148,13 +187,27 @@ export default function JoinForm({
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
     try {
+      const selectedPhoneCountry =
+        supportedPhoneCountry(String(form.get("mobile-country") ?? "")) ?? phoneCountry;
+      const mobile = mobileToE164(
+        String(form.get("mobile-national") ?? ""),
+        selectedPhoneCountry,
+      );
+      if (!mobile) {
+        phoneInputRef.current?.setCustomValidity(
+          "Enter a complete mobile number for the selected country.",
+        );
+        phoneInputRef.current?.reportValidity();
+        phoneInputRef.current?.focus();
+        throw new Error("Enter a complete mobile number for the selected country.");
+      }
       const response = await fetch("/api/my/onboarding", {
         body: JSON.stringify({
           action: "save_profile",
           apparelTopSize: String(form.get("apparel-size") ?? ""),
           birthDate: String(form.get("birth-date") ?? ""),
           legalName: String(form.get("legal-name") ?? ""),
-          mobile: String(form.get("mobile") ?? ""),
+          mobile,
           preferredName: String(form.get("preferred-name") ?? ""),
           shippingAddress: {
             addressLine1: String(form.get("address-line-1") ?? ""),
@@ -266,22 +319,198 @@ export default function JoinForm({
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Legal name<input className={fieldClass} defaultValue={onboarding.profile.legalName ?? ""} maxLength={180} name="legal-name" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Preferred name<input className={fieldClass} defaultValue={onboarding.profile.preferredName ?? ""} maxLength={120} name="preferred-name" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Confirmed email<input className={`${fieldClass} text-white/45`} disabled value={onboarding.email} /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Mobile / include country code<input className={fieldClass} defaultValue={onboarding.profile.mobile ?? ""} inputMode="tel" name="mobile" placeholder="+18015550100" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Birth date<input className={fieldClass} defaultValue={onboarding.profile.birthDate ?? ""} name="birth-date" required type="date" /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Apparel top size<select className={fieldClass} defaultValue={savedString(sizing, "top")} name="apparel-size" required><option className="text-black" value="">Choose</option>{["XS", "S", "M", "L", "XL", "2XL", "3XL"].map((size) => <option className="text-black" key={size} value={size}>{size}</option>)}</select></label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-legal-name">
+              Legal name
+              <input
+                autoCapitalize="words"
+                autoComplete="name"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={onboarding.profile.legalName ?? ""}
+                id="member-legal-name"
+                maxLength={180}
+                name="legal-name"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-preferred-name">
+              Preferred name
+              <input
+                autoCapitalize="words"
+                autoComplete="nickname"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={onboarding.profile.preferredName ?? ""}
+                id="member-preferred-name"
+                maxLength={120}
+                name="preferred-name"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-email">
+              Confirmed email
+              <input
+                autoComplete="email"
+                className={`${fieldClass} text-white/45`}
+                disabled
+                id="member-email"
+                value={onboarding.email}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-birth-date">
+              Birth date
+              <input
+                autoComplete="bday"
+                className={fieldClass}
+                defaultValue={onboarding.profile.birthDate ?? ""}
+                id="member-birth-date"
+                name="birth-date"
+                required
+                type="date"
+              />
+            </label>
+            <fieldset className="min-w-0">
+              <legend className="text-xs uppercase tracking-[0.12em] text-white/50">Mobile</legend>
+              <div className="grid grid-cols-[minmax(8.75rem,0.9fr)_minmax(0,1.1fr)] gap-2">
+                <label className="sr-only" htmlFor="member-mobile-country">Mobile country and calling code</label>
+                <select
+                  aria-label="Mobile country and calling code"
+                  className={fieldClass}
+                  id="member-mobile-country"
+                  name="mobile-country"
+                  onChange={changePhoneCountry}
+                  value={phoneCountry}
+                >
+                  {PHONE_COUNTRY_OPTIONS.map((country) => (
+                    <option className="text-black" key={country.code} value={country.code}>
+                      {country.callingCode} · {country.name}
+                    </option>
+                  ))}
+                </select>
+                <label className="sr-only" htmlFor="member-mobile-number">Mobile number</label>
+                <input
+                  aria-label="Mobile number"
+                  autoComplete="tel"
+                  className={fieldClass}
+                  id="member-mobile-number"
+                  inputMode="tel"
+                  name="mobile-national"
+                  onInput={changePhoneNumber}
+                  placeholder="Phone number"
+                  ref={phoneInputRef}
+                  required
+                  type="tel"
+                  value={phoneNumber}
+                />
+              </div>
+            </fieldset>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-apparel-size">
+              Apparel top size
+              <select
+                className={fieldClass}
+                defaultValue={savedString(sizing, "top")}
+                id="member-apparel-size"
+                name="apparel-size"
+                required
+              >
+                <option className="text-black" value="">Choose</option>
+                {["XS", "S", "M", "L", "XL", "2XL", "3XL"].map((size) => (
+                  <option className="text-black" key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <fieldset className="grid gap-5 border-t border-white/15 pt-6 sm:grid-cols-2">
             <legend className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-white/48">Default shipping address</legend>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50 sm:col-span-2">Address<input className={fieldClass} defaultValue={savedString(address, "addressLine1")} name="address-line-1" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50 sm:col-span-2">Address line 2 / optional<input className={fieldClass} defaultValue={savedString(address, "addressLine2")} name="address-line-2" /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">City<input className={fieldClass} defaultValue={savedString(address, "city")} name="city" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">State or region<input className={fieldClass} defaultValue={savedString(address, "region")} name="region" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Postal code<input className={fieldClass} defaultValue={savedString(address, "postalCode")} name="postal-code" required /></label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50">Country code<input className={fieldClass} defaultValue={savedString(address, "countryCode") || "US"} maxLength={2} name="country-code" required /></label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50 sm:col-span-2" htmlFor="shipping-address-line-1">
+              Street address
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-line1"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "addressLine1")}
+                id="shipping-address-line-1"
+                name="address-line-1"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50 sm:col-span-2" htmlFor="shipping-address-line-2">
+              Apartment, suite, etc. / Optional
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-line2"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "addressLine2")}
+                id="shipping-address-line-2"
+                name="address-line-2"
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-city">
+              City
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-level2"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "city")}
+                id="shipping-city"
+                name="city"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-region">
+              State or region
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-level1"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "region")}
+                id="shipping-region"
+                name="region"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-postal-code">
+              Postal code
+              <input
+                autoCapitalize="characters"
+                autoComplete="shipping postal-code"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "postalCode")}
+                id="shipping-postal-code"
+                name="postal-code"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-country">
+              Country
+              <select
+                autoComplete="shipping country"
+                className={fieldClass}
+                defaultValue={supportedShippingCountry(savedString(address, "countryCode")) ?? "US"}
+                id="shipping-country"
+                name="country-code"
+                required
+              >
+                {SHIPPING_COUNTRY_OPTIONS.map((country) => (
+                  <option className="text-black" key={country.code} value={country.code}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </fieldset>
 
           <div className="border border-white/15 p-5">
@@ -311,7 +540,18 @@ export default function JoinForm({
           ) : (
             <p className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/68">Ruined has not published the membership agreement yet. Entry remains closed until the approved copy is available.</p>
           )}
-          <label className="text-xs uppercase tracking-[0.12em] text-white/50">Type your saved legal name<input className={fieldClass} name="signer-name" required /></label>
+          <label className="text-xs uppercase tracking-[0.12em] text-white/50">
+            Type your saved legal name
+            <input
+              autoCapitalize="words"
+              autoComplete="name"
+              autoCorrect="off"
+              className={fieldClass}
+              name="signer-name"
+              required
+              spellCheck={false}
+            />
+          </label>
           <div className="grid gap-4 text-sm leading-relaxed text-white/68">
             <label className="grid grid-cols-[1rem_1fr] items-start gap-3"><input className="mt-1 size-4 accent-[var(--color-poster)]" name="age-confirmed" required type="checkbox" /><span>I confirm that I am at least {minimumAge} years old.</span></label>
             <label className="grid grid-cols-[1rem_1fr] items-start gap-3"><input className="mt-1 size-4 accent-[var(--color-poster)]" name="agreement-accepted" required type="checkbox" /><span>I have read and accept this exact published Ruined Membership Agreement. A durable receipt will be kept with my account.</span></label>

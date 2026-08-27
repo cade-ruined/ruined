@@ -1,7 +1,10 @@
 import "server-only";
 
+import parsePhoneNumber from "libphonenumber-js/min";
+
 import { getApplicationDatabase } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
+import { supportedShippingCountry } from "@/lib/membership/phone";
 import type {
   MemberAccountSnapshot,
   MemberArtifactsSnapshot,
@@ -324,7 +327,7 @@ export type MemberOnboardingProfileInput = {
   };
 };
 
-const E164 = /^\+[1-9][0-9]{7,14}$/;
+const E164 = /^\+[1-9][0-9]{1,14}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -340,8 +343,16 @@ function validateOnboardingProfile(input: MemberOnboardingProfileInput) {
   const legalName = cleanRequired(input.legalName, "Legal name", 180);
   const preferredName = cleanRequired(input.preferredName, "Preferred name", 120);
   const mobile = input.mobile.trim();
-  if (!E164.test(mobile)) {
-    throw new MembershipInputError("Use a mobile number with country code.");
+  const parsedMobile = mobile.startsWith("+")
+    ? parsePhoneNumber(mobile, { extract: false })
+    : undefined;
+  if (
+    !E164.test(mobile) ||
+    !parsedMobile?.isPossible() ||
+    parsedMobile.ext ||
+    parsedMobile.number !== mobile
+  ) {
+    throw new MembershipInputError("Use a complete mobile number with country code.");
   }
   if (!ISO_DATE.test(input.birthDate)) {
     throw new MembershipInputError("A valid birth date is required.");
@@ -351,17 +362,18 @@ function validateOnboardingProfile(input: MemberOnboardingProfileInput) {
     throw new MembershipInputError("A valid birth date is required.");
   }
 
+  const countryCode = supportedShippingCountry(input.shippingAddress.countryCode);
+  if (!countryCode) {
+    throw new MembershipInputError("Choose a recognized country.");
+  }
   const shippingAddress = {
     addressLine1: cleanRequired(input.shippingAddress.addressLine1, "Address", 160),
     addressLine2: input.shippingAddress.addressLine2?.trim().slice(0, 160) || null,
     city: cleanRequired(input.shippingAddress.city, "City", 100),
-    countryCode: cleanRequired(input.shippingAddress.countryCode, "Country", 2).toUpperCase(),
+    countryCode,
     postalCode: cleanRequired(input.shippingAddress.postalCode, "Postal code", 24),
     region: cleanRequired(input.shippingAddress.region, "State or region", 100),
   };
-  if (!/^[A-Z]{2}$/.test(shippingAddress.countryCode)) {
-    throw new MembershipInputError("Use a two-letter country code.");
-  }
   const apparelTopSize = cleanRequired(input.apparelTopSize, "Apparel size", 40);
 
   return { apparelTopSize, birthDate: input.birthDate, legalName, mobile, preferredName, shippingAddress };
