@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -27,19 +28,34 @@ test("member home is an identity-led profile instead of the old membership landi
   assert.match(home, /member\.profile\.preferredName/);
   assert.match(home, /bg-\[var\(--color-highlight\)\]/);
   assert.match(home, /Portrait not added/);
+  assert.match(home, /Photo pending/);
   assert.match(home, /data-member-polaroid/);
   assert.match(home, /data-member-profile-dossier/);
-  assert.match(home, /Membership at a glance/);
-  assert.match(home, /Your place\./);
-  assert.match(home, /Ruined history\./);
-  assert.match(home, /Artifacts\./);
-  assert.match(home, /Upcoming experiences\./);
-  assert.match(home, /Profile details\./);
+  assert.match(home, /\/membership\/polaroid-frame\.png/);
+  assert.match(home, /\/membership\/portrait-pending-editorial\.webp/);
+  assert.match(home, /\/membership\/archive-material-placeholder\.webp/);
+  assert.match(home, /data-placeholder/);
+  assert.match(home, />History</);
+  assert.match(home, />Artifacts</);
+  assert.match(home, />Upcoming</);
+  assert.match(home, />Member info</);
   assert.match(home, /member\.profile\.fullName/);
   assert.doesNotMatch(home, /Do the next true thing/);
   assert.doesNotMatch(home, /Members & Membership/);
   assert.doesNotMatch(home, /Ruined Membership \/ Home/);
   assert.doesNotMatch(home, /EditorialImagePlaceholder/);
+  assert.doesNotMatch(home, /Membership at a glance/);
+  assert.doesNotMatch(home, /Your place\./);
+  assert.doesNotMatch(home, /Private completion recorded/);
+  assert.doesNotMatch(home, /Membership started/);
+});
+
+test("member profile preserves the supplied Polaroid frame byte for byte", async () => {
+  const frame = await readFile(new URL("../public/membership/polaroid-frame.png", import.meta.url));
+  assert.equal(
+    createHash("sha256").update(frame).digest("hex"),
+    "cc05a8d4c91b4efb1c2707379f8877457f1c07a0e71711e4719b508945133b31",
+  );
 });
 
 test("member profile modules only use real membership data and valid routes", () => {
@@ -59,6 +75,8 @@ test("member profile modules only use real membership data and valid routes", ()
   assert.match(home, /href="\/my\/profile"/);
   assert.doesNotMatch(home, /member\.identity\.memberId/);
   assert.doesNotMatch(home, /0047/);
+  assert.doesNotMatch(home, /Mitch/);
+  assert.doesNotMatch(home, /Circle 03/);
 });
 
 test("member home repository separates preferred greeting data and suppresses private arrays", () => {
@@ -79,6 +97,7 @@ test("member home repository separates preferred greeting data and suppresses pr
 });
 
 test("profile home gets a light paper dossier without repeated top branding", () => {
+  const main = section(home, "<main", "<header>");
   assert.match(shell, /const memberHome = member && pathname === "\/my"/);
   assert.match(shell, /const dark = !member \|\| threshold \|\| foundations;/);
   assert.match(shell, /member-profile-paper/);
@@ -90,4 +109,6 @@ test("profile home gets a light paper dossier without repeated top branding", ()
   assert.match(navigation, /\{ href: "\/my\/profile", label: "Edit profile" \}/);
   assert.match(preview, /circleMembers: \[previewSelf, previewPartner\]/);
   assert.match(preview, /upcomingExperiences: \[previewMeeting, previewExperience\]/);
+  assert.doesNotMatch(main, /border/);
+  assert.doesNotMatch(main, /shadow/);
 });

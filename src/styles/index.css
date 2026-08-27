@@ -214,19 +214,15 @@ html {
 /* The member home is a physical record inside the otherwise digital shell.
    The layered, non-animated grain stays quiet enough to preserve type contrast. */
 .member-profile-paper {
-  background-color: #d8d0c2 !important;
+  background-color: #e8e1d5 !important;
   background-image:
     url("/textures/member-paper.svg"),
-    linear-gradient(105deg, rgb(255 255 255 / 0.18), transparent 28%, rgb(74 57 36 / 0.035) 72%, transparent);
+    linear-gradient(105deg, rgb(255 255 255 / 0.14), transparent 28%, rgb(74 57 36 / 0.028) 72%, transparent);
   background-size: 512px 512px, 100% 100%;
 }
 
 .member-profile-dossier {
-  background-color: #e8e1d5;
-  background-image:
-    url("/textures/member-paper.svg"),
-    linear-gradient(101deg, rgb(255 255 255 / 0.15), transparent 32%, rgb(83 62 36 / 0.025) 68%, transparent);
-  background-size: 512px 512px, 100% 100%;
+  background: transparent;
 }
 
 @media (forced-colors: active) {

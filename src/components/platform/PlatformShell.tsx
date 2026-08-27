@@ -279,7 +279,7 @@ export default function PlatformShell({
           membershipEntry
             ? "pb-10 sm:pb-14 lg:pb-16"
             : memberHome
-              ? "pb-10 pt-4 sm:pb-14 sm:pt-6 lg:pb-16 lg:pt-8"
+              ? "pb-0 pt-3 sm:pt-4 lg:pt-5"
             : "py-10 sm:py-14 lg:py-16"
         }`}
       >
@@ -287,8 +287,12 @@ export default function PlatformShell({
       </div>
 
       <footer
-        className={`border-t px-4 py-7 font-[var(--font-body)] text-[0.64rem] uppercase tracking-[0.14em] sm:px-6 lg:px-10 ${
-          dark ? "border-white/10 text-white/55" : "border-black/15 text-black/60"
+        className={`border-t px-4 font-[var(--font-body)] text-[0.64rem] uppercase tracking-[0.1em] sm:px-6 lg:px-10 ${
+          memberHome
+            ? "border-transparent py-4 text-black/42"
+            : dark
+              ? "border-white/10 py-7 text-white/55"
+              : "border-black/15 py-7 text-black/60"
         }`}
       >
         <div className="mx-auto flex max-w-[96rem] flex-wrap justify-between gap-3">
