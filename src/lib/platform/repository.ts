@@ -629,7 +629,10 @@ type OperatorMemberRow = {
 
 const OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE = 25;
 
-function operatorMemberSummary(row: OperatorMemberRow): OperatorMemberSummary {
+function operatorMemberSummary(
+  row: OperatorMemberRow,
+  includeOperationalContact = true,
+): OperatorMemberSummary {
   const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
   return {
     accountState: row.account_state,
@@ -639,11 +642,13 @@ function operatorMemberSummary(row: OperatorMemberRow): OperatorMemberSummary {
     blockStatus: row.block_status,
     circleName: row.circle_name,
     circleStatus: row.circle_status,
-    email: row.email,
+    email: includeOperationalContact ? row.email : "",
     foundationsProgress,
     foundationsState: row.foundations_state,
     memberId: row.member_id,
-    name: row.display_name?.trim() || row.email.split("@")[0] || "Member",
+    name: row.display_name?.trim()
+      || (includeOperationalContact ? row.email.split("@")[0] : "Member")
+      || "Member",
     nextAction: nextMemberAction({
       artifactState: row.artifact_state,
       billingState: row.billing_state,
@@ -740,7 +745,7 @@ export async function getOperatorMemberDirectoryPage(
         and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
-          or strpos(lower(member.email), lower(${query}::text)) > 0
+          or (${role} = 'ops_admin' and strpos(lower(member.email), lower(${query}::text)) > 0)
           or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
           or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
         )
@@ -822,7 +827,7 @@ export async function getOperatorMemberDirectoryPage(
         and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
-          or strpos(lower(member.email), lower(${query}::text)) > 0
+          or (${role} = 'ops_admin' and strpos(lower(member.email), lower(${query}::text)) > 0)
           or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
           or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
         )
@@ -848,7 +853,7 @@ export async function getOperatorMemberDirectoryPage(
 
     return {
       filter,
-      members: rows.map(operatorMemberSummary),
+      members: rows.map((row) => operatorMemberSummary(row, role === "ops_admin")),
       page,
       pageCount,
       pageSize: OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE,
@@ -954,6 +959,7 @@ export async function getOperatorDashboard(
     with scoped_members as (
       select
         member.id,
+        lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.program_state
       from ruined_members member
@@ -974,13 +980,17 @@ export async function getOperatorDashboard(
       count(*) as total_members,
       count(*) filter (
         where scoped_member.billing_state = 'active'
+          and scoped_member.account_state = 'active'
           and scoped_member.program_state in ('onboarding', 'active')
       ) as active_members,
       count(*) filter (
         where scoped_member.billing_state = 'attention_required'
       ) as attention_required,
       count(*) filter (
-        where not exists (
+        where scoped_member.account_state = 'active'
+          and scoped_member.billing_state = 'active'
+          and scoped_member.program_state in ('onboarding', 'active')
+          and not exists (
           select 1
           from circle_member_assignments assignment
           where assignment.member_id = scoped_member.id
@@ -991,7 +1001,7 @@ export async function getOperatorDashboard(
   `;
   const aggregates = aggregateRows[0];
 
-  const members = rows.map(operatorMemberSummary);
+  const members = rows.map((row) => operatorMemberSummary(row, role === "ops_admin"));
 
   return {
     dashboard: {

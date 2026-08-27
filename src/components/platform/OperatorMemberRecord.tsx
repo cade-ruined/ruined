@@ -7,6 +7,7 @@ import {
   OperatorTaskCreateAction,
 } from "@/components/platform/OperatorMemberActions";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorProgress from "@/components/platform/OperatorProgress";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 
@@ -30,8 +31,6 @@ function formatMoney(amount: number | null, currency: string | null): string {
 }
 
 function SectionHeading({
-  eyebrow,
-  introduction,
   title,
 }: {
   eyebrow: string;
@@ -39,12 +38,8 @@ function SectionHeading({
   title: string;
 }) {
   return (
-    <header className="grid gap-5 border-t border-black/25 pt-5 lg:grid-cols-[minmax(0,0.75fr)_minmax(18rem,0.35fr)] lg:items-end">
-      <div>
-        <p className="text-[0.62rem] font-medium uppercase tracking-[0.17em] text-black/42">{eyebrow}</p>
-        <h2 className="mt-4 text-[clamp(2.4rem,5vw,5rem)] leading-[0.9] tracking-[-0.04em]">{title}</h2>
-      </div>
-      <p className="max-w-md text-sm leading-relaxed text-black/52">{introduction}</p>
+    <header>
+      <h2 className="font-[var(--font-display)] text-3xl leading-none tracking-[-0.03em] sm:text-4xl">{title}</h2>
     </header>
   );
 }
@@ -71,19 +66,24 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
   ];
 
   return (
-    <OperatorPageFrame
-      eyebrow="Members / Record"
-      introduction={`${header.circleName ?? "No Circle"}${header.blockName ? ` · ${header.blockName}` : ""}. ${header.openWorkCount} open work item${header.openWorkCount === 1 ? "" : "s"}.`}
-      title={header.preferredName}
-    >
-      <div className="mt-12 flex flex-wrap items-center justify-between gap-4 border-y border-black/25 py-4">
-        <Link
-          className="text-[0.64rem] font-medium uppercase tracking-[0.15em] text-black/52 underline decoration-black/25 underline-offset-6 hover:text-black"
-          href="/ops/members"
-        >
-          ← All members
-        </Link>
-        <p className="text-sm text-black/42">{header.primaryEmail ?? "Contact is restricted"}</p>
+    <OperatorPageFrame title={header.preferredName}>
+      <div className="mt-12 grid gap-7 bg-[#080605] p-5 text-[var(--color-bone)] sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.45fr)] lg:items-end">
+        <div>
+          <Link className="text-sm text-white/48 transition-colors hover:text-white" href="/ops/members">
+            ← All members
+          </Link>
+          <h2 className="mt-8 font-[var(--font-display)] text-[clamp(2.8rem,6vw,5.5rem)] leading-[0.86] tracking-[-0.04em]">
+            {header.preferredName}
+          </h2>
+          <p className="mt-5 text-sm text-white/52">
+            {header.circleName ?? "No Circle"}{header.blockName ? ` · ${header.blockName}` : ""}
+          </p>
+        </div>
+        <div>
+          <p className="font-[var(--font-display)] text-2xl leading-tight text-white/88">{header.nextDecision}</p>
+          <p className="mt-5 text-sm text-white/48">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
+          {header.primaryEmail ? <p className="mt-2 text-sm text-white/40">{header.primaryEmail}</p> : null}
+        </div>
       </div>
 
       <nav
@@ -107,41 +107,26 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
         ))}
       </nav>
 
-      <section className="scroll-mt-36 pt-16" id="overview">
+      <section className="scroll-mt-36 pt-10" id="overview">
         <SectionHeading
           eyebrow="Current position"
           introduction="The dimensions remain independent. Payment never silently rewrites standing, progress, or Circle history."
           title="Overview"
         />
-        <div className="mt-10 grid border-y border-black/25 sm:grid-cols-2 xl:grid-cols-4">
-          {stateRows.map(([label, state], index) => (
+        <div className="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {stateRows.map(([label, state]) => (
             <div
-              className={`min-h-28 py-5 sm:px-5 ${index > 0 ? "border-t border-black/15 sm:border-l sm:border-t-0" : ""} ${index === 4 ? "xl:border-l-0" : ""}`}
+              className="min-h-24 bg-black/[0.025] px-4 py-4"
               key={label}
             >
-              <p className="mb-5 text-[0.6rem] font-medium uppercase tracking-[0.15em] text-black/38">{label}</p>
+              <p className="mb-4 text-sm text-black/42">{label}</p>
               <StateLabel state={state} />
             </div>
           ))}
         </div>
-        <div className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.4fr)]">
-          <div className="border-t border-black/25 py-6">
-            <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">Next decision</p>
-            <p className="mt-5 max-w-4xl text-[clamp(1.8rem,4vw,3.8rem)] leading-[1.02] tracking-[-0.035em] text-black/82">
-              {header.nextDecision}
-            </p>
-          </div>
-          <div className="border-t border-black/25 py-6">
-            <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">Open work</p>
-            <p className="mt-5 text-5xl tracking-[-0.04em]">{header.openWorkCount}</p>
-            <a className="mt-7 inline-block text-xs uppercase tracking-[0.14em] underline underline-offset-5" href="#record">
-              Review the record
-            </a>
-          </div>
-        </div>
       </section>
 
-      <section className="scroll-mt-36 pt-24" id="membership">
+      <section className="scroll-mt-36 pt-16" id="membership">
         <SectionHeading
           eyebrow="Administrative entry"
           introduction="Identity, onboarding, agreement evidence, and payment are visible together without becoming one status."
@@ -261,13 +246,13 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
         </div>
       </section>
 
-      <section className="scroll-mt-36 pt-24" id="journey">
+      <section className="scroll-mt-36 pt-16" id="journey">
         <SectionHeading
           eyebrow="Cultural path"
           introduction="Operators see proof of completion and timing. Private reflections, Timeline entries, and Future Letter content never enter this view."
           title="Journey"
         />
-        <div className="mt-10 border-y border-black/25 py-7">
+        <div className="mt-6 bg-black/[0.025] p-5 sm:p-6">
           <div className="flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">Foundations</p>
@@ -275,6 +260,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             </div>
             <StateLabel state={journey.foundations.state} />
           </div>
+          <div className="mt-6"><OperatorProgress label={`${header.preferredName} Foundations`} value={journey.foundations.progressPercent} /></div>
           <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-4">
             {journey.foundations.stages.map((stage, index) => (
               <div className={`py-5 sm:px-5 ${index > 0 ? "border-t border-black/15 sm:border-l sm:border-t-0" : ""}`} key={stage.key}>
@@ -339,7 +325,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
         </div>
       </section>
 
-      <section className="scroll-mt-36 pt-24" id="community">
+      <section className="scroll-mt-36 pt-16" id="community">
         <SectionHeading
           eyebrow="Belonging"
           introduction="Circle relationships, accountability, meetings, and resources remain visible as durable history—not disposable assignments."
@@ -408,7 +394,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
         {canManageAccountability ? <div className="mt-12"><OperatorAccountabilityAction record={record} /></div> : null}
       </section>
 
-      <section className="scroll-mt-36 pt-24" id="record">
+      <section className="scroll-mt-36 pt-16" id="record">
         <SectionHeading
           eyebrow="Internal record"
           introduction="Tasks, notes, corrections, and state movement stay attributable. Nothing here is member-visible."
@@ -461,11 +447,19 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
           </div>
         </div>
 
-        <div className="mt-16 grid gap-12 lg:grid-cols-2">
-          {canManageTasks ? <OperatorTaskCreateAction memberId={header.memberId} /> : null}
-          {canWriteNote ? <OperatorNoteAction memberId={header.memberId} /> : null}
-          {canOverride ? <OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} /> : null}
-        </div>
+        {canManageTasks || canWriteNote || canOverride ? (
+          <details className="group mt-12 bg-[var(--color-surface)]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
+              <span>Manage member record</span>
+              <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
+            </summary>
+            <div className="grid gap-12 border-t border-black/10 px-5 pb-6 pt-5 sm:px-6 lg:grid-cols-2">
+              {canManageTasks ? <OperatorTaskCreateAction memberId={header.memberId} /> : null}
+              {canWriteNote ? <OperatorNoteAction memberId={header.memberId} /> : null}
+              {canOverride ? <OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} /> : null}
+            </div>
+          </details>
+        ) : null}
       </section>
     </OperatorPageFrame>
   );

@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
+import {
+  OPERATOR_BUTTON_CLASS,
+  OPERATOR_FIELD_CLASS,
+  OPERATOR_LABEL_CLASS,
+  OPERATOR_LABEL_TEXT_CLASS,
+} from "@/components/platform/operatorStyles";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
-
-const INPUT_CLASS =
-  "min-h-12 w-full border border-black/30 bg-transparent px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:border-black";
-const BUTTON_CLASS =
-  "min-h-12 border border-black bg-black px-5 text-[0.64rem] font-medium uppercase tracking-[0.15em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] disabled:cursor-not-allowed disabled:opacity-40";
 
 type Notice = { kind: "error" | "success"; text: string } | null;
 
@@ -72,15 +73,12 @@ export function OperatorNoteAction({ memberId }: { memberId: string }) {
   return (
     <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
       <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">Operator action</p>
-          <h3 className="ui-heading mt-2 text-xl font-semibold">Add a note</h3>
-        </div>
+        <h3 className="ui-heading text-xl font-semibold">Add a note</h3>
         <span className="text-xs text-black/38">Internal only</span>
       </div>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Note type
-        <select className={INPUT_CLASS} defaultValue="general" name="category">
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Category</span>
+        <select className={OPERATOR_FIELD_CLASS} defaultValue="general" name="category">
           <option value="general">General</option>
           <option value="outreach">Outreach</option>
           <option value="support">Support</option>
@@ -89,20 +87,19 @@ export function OperatorNoteAction({ memberId }: { memberId: string }) {
           <option value="circle">Circle</option>
         </select>
       </label>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Note
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Internal note</span>
         <textarea
-          className={`${INPUT_CLASS} min-h-28 resize-y normal-case tracking-normal`}
+          className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`}
           maxLength={2000}
           minLength={3}
           name="body"
-          placeholder="Record the useful context, not a private reflection."
           required
         />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
           {submitting ? "Adding note" : "Add note"}
         </button>
       </div>
@@ -144,36 +141,33 @@ export function OperatorTaskCreateAction({ memberId }: { memberId: string }) {
 
   return (
     <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
-      <div>
-        <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">Operator action</p>
-        <h3 className="ui-heading mt-2 text-xl font-semibold">Create a task</h3>
-      </div>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Task
-        <input className={INPUT_CLASS} maxLength={200} minLength={3} name="title" required />
+      <h3 className="ui-heading text-xl font-semibold">Create a task</h3>
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
+        <input className={OPERATOR_FIELD_CLASS} maxLength={200} minLength={3} name="title" required />
       </label>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-          Priority
-          <select className={INPUT_CLASS} defaultValue="normal" name="priority">
+        <label className={OPERATOR_LABEL_CLASS}>
+          <span className={OPERATOR_LABEL_TEXT_CLASS}>Priority</span>
+          <select className={OPERATOR_FIELD_CLASS} defaultValue="normal" name="priority">
             <option value="low">Low</option>
             <option value="normal">Normal</option>
             <option value="high">High</option>
             <option value="urgent">Urgent</option>
           </select>
         </label>
-        <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-          Due
-          <input className={INPUT_CLASS} name="dueAt" type="date" />
+        <label className={OPERATOR_LABEL_CLASS}>
+          <span className={OPERATOR_LABEL_TEXT_CLASS}>Due date / optional</span>
+          <input className={OPERATOR_FIELD_CLASS} name="dueAt" type="date" />
         </label>
       </div>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Useful context
-        <textarea className={`${INPUT_CLASS} min-h-24 resize-y normal-case tracking-normal`} maxLength={2000} name="description" />
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Details / optional</span>
+        <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} maxLength={2000} name="description" />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
           {submitting ? "Creating" : "Create task"}
         </button>
       </div>
@@ -268,17 +262,16 @@ export function OperatorOverrideAction({
   return (
     <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
       <div>
-        <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-[var(--color-poster)]">Restricted action</p>
-        <h3 className="ui-heading mt-2 text-xl font-semibold">Record a state correction</h3>
+        <h3 className="ui-heading text-xl font-semibold">Record a state correction</h3>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-black/48">
           Payment, agreements, and Foundations completion cannot be overridden here. Every correction keeps its actor, reason, and prior state.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-          Dimension
+        <label className={OPERATOR_LABEL_CLASS}>
+          <span className={OPERATOR_LABEL_TEXT_CLASS}>What changed?</span>
           <select
-            className={INPUT_CLASS}
+            className={OPERATOR_FIELD_CLASS}
             name="dimension"
             onChange={(event) => setDimension(event.target.value)}
             value={dimension}
@@ -291,9 +284,9 @@ export function OperatorOverrideAction({
             <option value="progression">Progression</option>
           </select>
         </label>
-        <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-          Correct state
-          <select className={INPUT_CLASS} defaultValue="" key={dimension} name="nextState" required>
+        <label className={OPERATOR_LABEL_CLASS}>
+          <span className={OPERATOR_LABEL_TEXT_CLASS}>Correct status</span>
+          <select className={OPERATOR_FIELD_CLASS} defaultValue="" key={dimension} name="nextState" required>
             <option disabled value="">Choose state</option>
             {OVERRIDE_STATES[dimension].map((state) => (
               <option key={state.value} value={state.value}>{state.label}</option>
@@ -301,29 +294,28 @@ export function OperatorOverrideAction({
           </select>
         </label>
       </div>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Reason code
-        <select className={INPUT_CLASS} defaultValue="operator_correction" name="reasonCode">
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Reason category</span>
+        <select className={OPERATOR_FIELD_CLASS} defaultValue="operator_correction" name="reasonCode">
           <option value="operator_correction">Operator correction</option>
           <option value="member_request">Member request</option>
           <option value="policy_exception">Approved policy exception</option>
           <option value="data_repair">Data repair</option>
         </select>
       </label>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Written reason
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Reason</span>
         <textarea
-          className={`${INPUT_CLASS} min-h-28 resize-y normal-case tracking-normal`}
+          className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`}
           maxLength={1000}
           minLength={12}
           name="reason"
-          placeholder="Explain why this correction is justified."
           required
         />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
           {submitting ? "Recording" : "Record correction"}
         </button>
       </div>
@@ -370,13 +362,10 @@ export function OperatorAccountabilityAction({ record }: { record: OpsMemberReco
 
   return (
     <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
-      <div>
-        <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">Circle action</p>
-        <h3 className="ui-heading mt-2 text-xl font-semibold">Accountability partner</h3>
-      </div>
-      <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/50">
-        Partner in {circle.name}
-        <select className={INPUT_CLASS} defaultValue="" disabled={availablePartners.length === 0 || submitting} name="partnerMemberId" required>
+      <h3 className="ui-heading text-xl font-semibold">Accountability partner</h3>
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Partner in {circle.name}</span>
+        <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={availablePartners.length === 0 || submitting} name="partnerMemberId" required>
           <option disabled value="">Choose member</option>
           {availablePartners.map((member) => (
             <option key={member.memberId} value={member.memberId}>{member.preferredName}</option>
@@ -385,7 +374,7 @@ export function OperatorAccountabilityAction({ record }: { record: OpsMemberReco
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={BUTTON_CLASS} disabled={availablePartners.length === 0 || submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={availablePartners.length === 0 || submitting} type="submit">
           {submitting ? "Assigning" : "Assign partner"}
         </button>
       </div>

@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  OPERATOR_BUTTON_CLASS,
+  OPERATOR_FIELD_CLASS,
+  OPERATOR_LABEL_CLASS,
+  OPERATOR_LABEL_TEXT_CLASS,
+} from "@/components/platform/operatorStyles";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 
 export type OpsActionCircle = {
@@ -71,10 +77,8 @@ function Notice({ notice }: { notice: ActionNotice }) {
   );
 }
 
-const INPUT_CLASS =
-  "min-h-12 w-full border border-black/35 bg-transparent px-4 text-sm text-black outline-none placeholder:text-black/35 focus:border-black disabled:opacity-40";
-const BUTTON_CLASS =
-  "min-h-12 border border-black bg-black px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-[var(--color-bone)] hover:bg-[var(--color-poster)] disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-transparent disabled:text-black/30";
+const INPUT_CLASS = OPERATOR_FIELD_CLASS;
+const BUTTON_CLASS = OPERATOR_BUTTON_CLASS;
 const SECONDARY_BUTTON_CLASS =
   "min-h-12 border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
 
@@ -130,29 +134,23 @@ export function OpsInvitationActions() {
   }
 
   return (
-    <section className="border-y border-black/25 py-5" aria-labelledby="invite-member-heading">
-      <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
-        <div>
-          <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
-          <h2 className="ui-heading mt-3 text-2xl font-semibold" id="invite-member-heading">Invite a member</h2>
-          <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-            Open passwordless eligibility for seven days. This records access but does not send an email.
-          </p>
-        </div>
-
-        <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]" onSubmit={submitInvitation} ref={formRef}>
-          <label className="sr-only" htmlFor="ops-invitation-email">Member email</label>
-          <input
-            autoComplete="email"
-            className={INPUT_CLASS}
-            disabled={pending}
-            id="ops-invitation-email"
-            maxLength={254}
-            name="email"
-            placeholder="member@email.com"
-            required
-            type="email"
-          />
+    <section aria-labelledby="invite-member-heading">
+      <h2 className="sr-only" id="invite-member-heading">Invite a member</h2>
+      <form className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end" onSubmit={submitInvitation} ref={formRef}>
+          <label className={`${OPERATOR_LABEL_CLASS} sm:col-span-3`} htmlFor="ops-invitation-email">
+            <span className={OPERATOR_LABEL_TEXT_CLASS}>Email</span>
+            <input
+              autoComplete="email"
+              className={INPUT_CLASS}
+              disabled={pending}
+              id="ops-invitation-email"
+              maxLength={254}
+              name="email"
+              placeholder="member@email.com"
+              required
+              type="email"
+            />
+          </label>
           <button className={BUTTON_CLASS} disabled={pending} name="intent" type="submit" value="record">
             {pending ? "Recording" : "Record invitation"}
           </button>
@@ -160,8 +158,7 @@ export function OpsInvitationActions() {
             Revoke live invite
           </button>
           <div className="sm:col-span-3"><Notice notice={notice} /></div>
-        </form>
-      </div>
+      </form>
     </section>
   );
 }
@@ -379,15 +376,16 @@ export function OpsCircleActions({
   }
 
   return (
-    <section className="grid border-y border-black/25 lg:grid-cols-2" aria-label="Circle administration">
-      <div className="py-6 lg:pr-10">
-        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
-        <h2 className="ui-heading mt-3 text-2xl font-semibold">Create a Circle</h2>
+    <section className="grid gap-10 lg:grid-cols-2" aria-label="Circle administration">
+      <div>
+        <h2 className="ui-heading text-xl font-semibold">Create a Circle</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           Name the Circle. Its slug, forming state, and ten-member capacity stay server-owned.
         </p>
-        <form className="mt-6 grid gap-3" onSubmit={submitCircle} ref={createFormRef}>
-          <label className="sr-only" htmlFor="ops-circle-name">Circle name</label>
+        <form className="mt-5 grid gap-3" onSubmit={submitCircle} ref={createFormRef}>
+          <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-name">
+            <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span>
+          </label>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <input
               className={INPUT_CLASS}
@@ -407,23 +405,22 @@ export function OpsCircleActions({
         </form>
       </div>
 
-      <div className="border-t border-black/25 py-6 lg:border-l lg:border-t-0 lg:border-black/25 lg:pl-10">
-        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
-        <h2 className="ui-heading mt-3 text-2xl font-semibold">Assign a member</h2>
+      <div>
+        <h2 className="ui-heading text-xl font-semibold">Assign a member</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           Only unassigned members with active billing in onboarding or the active program appear here.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitAssignment} ref={assignmentFormRef}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/50">
-              Member
+            <label className={OPERATOR_LABEL_CLASS}>
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Member</span>
               <select className={INPUT_CLASS} defaultValue="" disabled={assigning || eligibleMembers.length === 0} name="memberId" required>
                 <option className="bg-[var(--color-bone)]" disabled value="">Choose member</option>
                 {eligibleMembers.map((member) => <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>{member.name}</option>)}
               </select>
             </label>
-            <label className="grid gap-2 text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/50">
-              Circle
+            <label className={OPERATOR_LABEL_CLASS}>
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
               <select className={INPUT_CLASS} defaultValue="" disabled={assigning || acceptingCircles.length === 0} name="circleId" required>
                 <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
                 {acceptingCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.activeMembers}/{circle.capacity}</option>)}
@@ -441,32 +438,33 @@ export function OpsCircleActions({
         </form>
       </div>
 
-      <div className="border-t border-black/25 py-6 lg:col-span-2">
+      <div className="lg:col-span-2">
         <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
           <div>
-            <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Completion authority</p>
-            <h2 className="ui-heading mt-3 text-2xl font-semibold">Activate a Circle</h2>
+            <h2 className="ui-heading text-xl font-semibold">Activate a Circle</h2>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
               Activation is deliberate. It allows assigned members to complete Foundations.
             </p>
           </div>
-          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={submitActivation} ref={activationFormRef}>
-            <label className="sr-only" htmlFor="ops-circle-activation">Forming Circle</label>
-            <select
-              className={INPUT_CLASS}
-              defaultValue=""
-              disabled={activating || activatableCircles.length === 0}
-              id="ops-circle-activation"
-              name="circleId"
-              required
-            >
-              <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Circle</option>
-              {activatableCircles.map((circle) => (
-                <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>
-                  {circle.name} · {circle.activeMembers}/{circle.capacity}
-                </option>
-              ))}
-            </select>
+          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submitActivation} ref={activationFormRef}>
+            <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-activation">
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Forming Circle</span>
+              <select
+                className={INPUT_CLASS}
+                defaultValue=""
+                disabled={activating || activatableCircles.length === 0}
+                id="ops-circle-activation"
+                name="circleId"
+                required
+              >
+                <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Circle</option>
+                {activatableCircles.map((circle) => (
+                  <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>
+                    {circle.name} · {circle.activeMembers}/{circle.capacity}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               className={BUTTON_CLASS}
               disabled={activating || activatableCircles.length === 0}
@@ -479,32 +477,33 @@ export function OpsCircleActions({
         </div>
       </div>
 
-      <div className="border-t border-black/25 py-6 lg:col-span-2">
+      <div className="lg:col-span-2">
         <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
           <div>
-            <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Correction</p>
-            <h2 className="ui-heading mt-3 text-2xl font-semibold">End an assignment</h2>
+            <h2 className="ui-heading text-xl font-semibold">End an assignment</h2>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
               Remove a mistaken or obsolete active assignment. Completed Foundations keeps its historical Circle proof; an active Circle is archived if its last member leaves.
             </p>
           </div>
-          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={submitEndAssignment} ref={endAssignmentFormRef}>
-            <label className="sr-only" htmlFor="ops-circle-assignment-end">Assigned member</label>
-            <select
-              className={INPUT_CLASS}
-              defaultValue=""
-              disabled={endingAssignment || assignedMembers.length === 0}
-              id="ops-circle-assignment-end"
-              name="memberId"
-              required
-            >
-              <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned member</option>
-              {assignedMembers.map((member) => (
-                <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>
-                  {member.name} · {member.circleName}
-                </option>
-              ))}
-            </select>
+          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submitEndAssignment} ref={endAssignmentFormRef}>
+            <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-assignment-end">
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Assigned member</span>
+              <select
+                className={INPUT_CLASS}
+                defaultValue=""
+                disabled={endingAssignment || assignedMembers.length === 0}
+                id="ops-circle-assignment-end"
+                name="memberId"
+                required
+              >
+                <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned member</option>
+                {assignedMembers.map((member) => (
+                  <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>
+                    {member.name} · {member.circleName}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               className={SECONDARY_BUTTON_CLASS}
               disabled={endingAssignment || assignedMembers.length === 0}
@@ -725,15 +724,16 @@ export function OpsBlockActions({
   }
 
   return (
-    <section className="grid border-y border-black/25 lg:grid-cols-2" aria-label="Block administration">
-      <div className="py-6 lg:pr-10">
-        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
-        <h2 className="ui-heading mt-3 text-2xl font-semibold">Create a Block</h2>
+    <section className="grid gap-10 lg:grid-cols-2" aria-label="Block administration">
+      <div>
+        <h2 className="ui-heading text-xl font-semibold">Create a Block</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           Create the larger group first. Its stable slug and forming state remain server-owned.
         </p>
-        <form className="mt-6 grid gap-3" onSubmit={submitBlock}>
-          <label className="sr-only" htmlFor="ops-block-name">Block name</label>
+        <form className="mt-5 grid gap-3" onSubmit={submitBlock}>
+          <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-block-name">
+            <span className={OPERATOR_LABEL_TEXT_CLASS}>Block name</span>
+          </label>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <input
               className={INPUT_CLASS}
@@ -753,22 +753,27 @@ export function OpsBlockActions({
         </form>
       </div>
 
-      <div className="border-t border-black/25 py-6 lg:border-l lg:border-t-0 lg:border-black/25 lg:pl-10">
-        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Admin action</p>
-        <h2 className="ui-heading mt-3 text-2xl font-semibold">Assign a Circle</h2>
+      <div>
+        <h2 className="ui-heading text-xl font-semibold">Assign a Circle</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           A Circle can have one current Block. Reassignment begins by ending its current relationship.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitAssignment}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || availableCircles.length === 0} name="circleId" required>
-              <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
-              {availableCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name}</option>)}
-            </select>
-            <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || acceptingBlocks.length === 0} name="blockId" required>
-              <option className="bg-[var(--color-bone)]" disabled value="">Choose Block</option>
-              {acceptingBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
-            </select>
+            <label className={OPERATOR_LABEL_CLASS}>
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
+              <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || availableCircles.length === 0} name="circleId" required>
+                <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
+                {availableCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name}</option>)}
+              </select>
+            </label>
+            <label className={OPERATOR_LABEL_CLASS}>
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Block</span>
+              <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || acceptingBlocks.length === 0} name="blockId" required>
+                <option className="bg-[var(--color-bone)]" disabled value="">Choose Block</option>
+                {acceptingBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
+              </select>
+            </label>
           </div>
           <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "assign" || availableCircles.length === 0 || acceptingBlocks.length === 0} type="submit">
             {pendingAction === "assign" ? "Assigning" : "Assign Circle"}
@@ -777,17 +782,19 @@ export function OpsBlockActions({
         </form>
       </div>
 
-      <div className="border-t border-black/25 py-6 lg:pr-10">
-        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Activation authority</p>
-        <h2 className="ui-heading mt-3 text-2xl font-semibold">Activate a Block</h2>
+      <div>
+        <h2 className="ui-heading text-xl font-semibold">Activate a Block</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           At least two current Circles are required. Block activation does not add a Foundations gate.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitActivation}>
-          <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "activate" || activatableBlocks.length === 0} name="blockId" required>
-            <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Block</option>
-            {activatableBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
-          </select>
+          <label className={OPERATOR_LABEL_CLASS}>
+            <span className={OPERATOR_LABEL_TEXT_CLASS}>Forming Block</span>
+            <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "activate" || activatableBlocks.length === 0} name="blockId" required>
+              <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Block</option>
+              {activatableBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
+            </select>
+          </label>
           <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "activate" || activatableBlocks.length === 0} type="submit">
             {pendingAction === "activate" ? "Activating" : "Activate Block"}
           </button>
@@ -795,17 +802,19 @@ export function OpsBlockActions({
         </form>
       </div>
 
-      <div className="border-t border-black/25 py-6 lg:border-l lg:border-black/25 lg:pl-10">
-        <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/45">Correction</p>
-        <h2 className="ui-heading mt-3 text-2xl font-semibold">End a Block assignment</h2>
+      <div>
+        <h2 className="ui-heading text-xl font-semibold">End a Block assignment</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           End only the current relationship. If fewer than two current Circles remain, the Block closes while its full history stays intact.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitEndAssignment}>
-          <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "end" || assignedCircles.length === 0} name="circleId" required>
-            <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned Circle</option>
-            {assignedCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.blockName}</option>)}
-          </select>
+          <label className={OPERATOR_LABEL_CLASS}>
+            <span className={OPERATOR_LABEL_TEXT_CLASS}>Assigned Circle</span>
+            <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "end" || assignedCircles.length === 0} name="circleId" required>
+              <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned Circle</option>
+              {assignedCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.blockName}</option>)}
+            </select>
+          </label>
           <button className={`${SECONDARY_BUTTON_CLASS} w-fit`} disabled={pendingAction === "end" || assignedCircles.length === 0} type="submit">
             {pendingAction === "end" ? "Ending" : "End assignment"}
           </button>

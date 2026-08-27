@@ -3,6 +3,7 @@ import type {
   OpsArtifactQueueItem,
   OpsExperienceDirectoryItem,
   OpsMemberRecord,
+  OpsOverviewData,
   OpsSystemHealth,
   OpsWorkQueue,
 } from "@/lib/platform/ops-model";
@@ -313,6 +314,82 @@ export const PREVIEW_OPS_EXPERIENCES: OpsExperienceDirectoryItem[] = [
     title: "Ruined Academy / Session 02",
   },
 ];
+
+export const PREVIEW_OPS_OVERVIEW: OpsOverviewData = {
+  activity: [
+    {
+      activityId: "preview-activity-billing-01",
+      href: "/ops/members/preview-02#membership",
+      kind: "membership",
+      memberId: "preview-02",
+      occurredAt: "2026-08-26T15:50:00.000Z",
+      subject: "Member 02",
+      summary: "Billing needs attention",
+      tone: "attention",
+    },
+    {
+      activityId: "preview-activity-foundations-01",
+      href: "/ops/members/preview-04#journey",
+      kind: "foundations",
+      memberId: "preview-04",
+      occurredAt: "2026-08-26T14:30:00.000Z",
+      subject: "Member 04",
+      summary: "Completed Ruined Foundations",
+      tone: "complete",
+    },
+    {
+      activityId: "preview-activity-onboarding-01",
+      href: "/ops/members/preview-03#membership",
+      kind: "membership",
+      memberId: "preview-03",
+      occurredAt: "2026-08-26T13:10:00.000Z",
+      subject: "Member 03",
+      summary: "Membership intake updated",
+      tone: "neutral",
+    },
+    {
+      activityId: "preview-activity-timeline-01",
+      href: "/ops/members/preview-01#journey",
+      kind: "foundations",
+      memberId: "preview-01",
+      occurredAt: "2026-08-26T12:20:00.000Z",
+      subject: "Member 01",
+      summary: "Timeline confirmed",
+      tone: "complete",
+    },
+    {
+      activityId: "preview-activity-circle-01",
+      href: "/ops/members/preview-04#community",
+      kind: "circle",
+      memberId: "preview-04",
+      occurredAt: "2026-08-25T19:00:00.000Z",
+      subject: "Member 04",
+      summary: "Assigned to Circle 02",
+      tone: "neutral",
+    },
+    {
+      activityId: "preview-activity-experience-01",
+      href: "/ops/members/preview-01#journey",
+      kind: "experience",
+      memberId: "preview-01",
+      occurredAt: "2026-08-24T03:00:00.000Z",
+      subject: "Member 01",
+      summary: "Attended BYOB Nº 01",
+      tone: "complete",
+    },
+  ],
+  counts: {
+    activeMembers: 2,
+    attentionRequired: 1,
+    circles: { active: 2, forming: 0 },
+    eligibleWithoutCircle: 1,
+    foundations: { completed: 1, inProgress: 2, notStarted: 1 },
+    totalMembers: 4,
+    work: { artifacts: 1, failures: 1, tasks: 1 },
+  },
+  priorityWork: PREVIEW_OPS_WORK_QUEUE.items,
+  upcomingExperiences: PREVIEW_OPS_EXPERIENCES,
+};
 
 export const PREVIEW_OPS_ANNOUNCEMENTS: OpsAnnouncementSummary[] = [
   {

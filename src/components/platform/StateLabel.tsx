@@ -21,14 +21,24 @@ const LABELS: Record<string, string> = {
 
 export default function StateLabel({ state }: { state: string }) {
   const attention = state === "attention_required" || state === "ended" || state === "suspended";
+  const complete = state === "active" || state === "completed" || state === "fulfilled";
 
   return (
     <span
-      className={`inline-flex items-center gap-2 font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.14em] ${
-        attention ? "text-[var(--color-poster)]" : "text-current opacity-55"
+      className={`inline-flex items-center gap-2 font-[var(--font-body)] text-sm leading-none ${
+        attention ? "text-[var(--color-poster)]" : "text-current opacity-60"
       }`}
     >
-      <span aria-hidden="true" className="h-px w-4 bg-current" />
+      <span
+        aria-hidden="true"
+        className={`size-1.5 shrink-0 ${
+          attention
+            ? "bg-[var(--color-poster)]"
+            : complete
+              ? "bg-[var(--color-verdigris)]"
+              : "bg-current"
+        }`}
+      />
       {LABELS[state] ?? state.replaceAll("_", " ")}
     </span>
   );

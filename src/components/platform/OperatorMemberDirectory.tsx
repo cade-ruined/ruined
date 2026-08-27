@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import OperatorProgress from "@/components/platform/OperatorProgress";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import type {
@@ -63,13 +64,13 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
     <section className="mt-14" aria-labelledby="member-directory-heading">
       <form
         action="/ops/members"
-        className="grid gap-4 border-y border-black/25 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,0.4fr)_auto] lg:items-end"
+        className="grid gap-5 bg-[var(--color-surface)] p-5 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,0.4fr)_auto] lg:items-end sm:p-6"
         method="get"
       >
-        <label className="grid gap-2 text-[0.64rem] font-medium uppercase tracking-[0.16em] text-black/50">
-          Search the full roster
+        <label className="grid gap-2">
+          <span className="inline-block w-fit origin-left font-[var(--font-handwritten)] text-2xl leading-none text-[var(--color-poster)] -rotate-2">Search</span>
           <input
-            className="min-h-12 border border-black/35 bg-transparent px-4 text-base normal-case tracking-normal text-black outline-none placeholder:text-black/35 focus:border-black"
+            className="min-h-12 border border-black/60 bg-[var(--color-shop)] px-4 py-3 text-base text-[var(--color-faded)] outline-none placeholder:text-black/55 transition-colors hover:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
             defaultValue={directory.query}
             maxLength={120}
             name="q"
@@ -77,10 +78,10 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             type="search"
           />
         </label>
-        <label className="grid gap-2 text-[0.64rem] font-medium uppercase tracking-[0.16em] text-black/50">
-          Show
+        <label className="grid gap-2">
+          <span className="inline-block w-fit origin-left font-[var(--font-handwritten)] text-2xl leading-none text-[var(--color-poster)] -rotate-2">Show</span>
           <select
-            className="min-h-12 border border-black/35 bg-transparent px-4 text-sm text-black outline-none focus:border-black"
+            className="min-h-12 border border-black/60 bg-[var(--color-shop)] px-4 py-3 text-sm text-[var(--color-faded)] outline-none transition-colors hover:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
             defaultValue={directory.filter}
             name="filter"
           >
@@ -99,10 +100,8 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
         </button>
       </form>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/15 py-4 text-[0.66rem] uppercase tracking-[0.14em] text-black/45">
-        <h2 className="ui-heading text-[0.66rem] uppercase tracking-[0.14em]" id="member-directory-heading">
-          Member directory
-        </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 py-5 text-sm text-black/45">
+        <h2 className="sr-only" id="member-directory-heading">Member directory</h2>
         <div className="flex items-center gap-5">
           <span>
             {directory.totalResults === 0
@@ -117,22 +116,22 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
         </div>
       </div>
 
-      <div className="divide-y divide-black/15">
+      <div className="grid gap-2">
         {directory.members.map((member) => (
           <article
-            className="grid gap-4 py-5 md:grid-cols-[minmax(13rem,1.2fr)_minmax(10rem,0.8fr)_8rem_minmax(11rem,1fr)] md:items-center"
+            className="grid gap-4 bg-black/[0.025] px-4 py-4 transition-colors hover:bg-black/[0.05] md:grid-cols-[minmax(13rem,1.2fr)_minmax(10rem,0.8fr)_10rem_minmax(11rem,1fr)] md:items-center md:px-5"
             key={member.memberId}
           >
             <div className="min-w-0">
-              <h3 className="ui-heading truncate text-base font-semibold">
+              <h3 className="truncate font-[var(--font-display)] text-xl leading-none">
                 <Link
-                  className="underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black"
+                  className="transition-colors hover:text-[var(--color-poster)]"
                   href={`/ops/members/${member.memberId}`}
                 >
                   {member.name}
                 </Link>
               </h3>
-              <p className="mt-1 truncate text-sm text-black/50">{member.email}</p>
+              {member.email ? <p className="mt-2 truncate text-sm text-black/50">{member.email}</p> : null}
             </div>
             <div className="text-sm leading-relaxed text-black/62">
               <p>{member.circleName ?? "No Circle"}</p>
@@ -140,7 +139,8 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             </div>
             <div>
               <StateLabel state={member.billingState} />
-              <p className="mt-2 text-xs text-black/45">Foundations {member.foundationsProgress}%</p>
+              <p className="mt-3 text-xs tabular-nums text-black/45">Foundations {member.foundationsProgress}%</p>
+              <div className="mt-2"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
             </div>
             <p className="text-sm leading-relaxed text-black/58">{member.nextAction}</p>
           </article>

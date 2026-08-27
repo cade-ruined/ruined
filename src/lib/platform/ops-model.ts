@@ -298,3 +298,52 @@ export type OpsAnnouncementSummary = {
   targetLabel: string;
   title: string;
 };
+
+export type OpsOverviewActivityKind =
+  | "artifact"
+  | "circle"
+  | "experience"
+  | "foundations"
+  | "membership"
+  | "operations";
+
+export type OpsOverviewActivityTone = "attention" | "complete" | "neutral";
+
+export type OpsOverviewActivityItem = {
+  activityId: string;
+  href: string | null;
+  kind: OpsOverviewActivityKind;
+  memberId: string | null;
+  occurredAt: string;
+  subject: string;
+  summary: string;
+  tone: OpsOverviewActivityTone;
+};
+
+export type OpsOverviewCounts = {
+  activeMembers: number;
+  attentionRequired: number;
+  circles: {
+    active: number;
+    forming: number;
+  };
+  eligibleWithoutCircle: number;
+  foundations: {
+    completed: number;
+    inProgress: number;
+    notStarted: number;
+  };
+  totalMembers: number;
+  work: {
+    artifacts: number;
+    failures: number;
+    tasks: number;
+  };
+};
+
+export type OpsOverviewData = {
+  activity: OpsOverviewActivityItem[];
+  counts: OpsOverviewCounts;
+  priorityWork: OpsWorkItem[];
+  upcomingExperiences: OpsExperienceDirectoryItem[];
+};

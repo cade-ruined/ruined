@@ -1,36 +1,13 @@
+import Link from "next/link";
+
 import OperatorMemberDirectory from "@/components/platform/OperatorMemberDirectory";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorProgress from "@/components/platform/OperatorProgress";
 import StateLabel from "@/components/platform/StateLabel";
 import type { PlatformConfiguration } from "@/lib/platform/config";
 import type { OperatorDashboardSnapshot } from "@/lib/platform/model";
 
 type OpsSectionName = "access-billing" | "circles" | "foundations" | "members" | "sync";
-
-const SECTION_COPY: Record<
-  OpsSectionName,
-  { introduction: string; title: string }
-> = {
-  "access-billing": {
-    introduction: "Read access and payment health together without collapsing them into one state. A billing problem should never silently rewrite a member account.",
-    title: "Access & Billing",
-  },
-  circles: {
-    introduction: "Circles are the member-level working groups. Place eligible members, protect capacity, and activate only when the Circle is ready.",
-    title: "Circles",
-  },
-  foundations: {
-    introduction: "See who is beginning, moving, or complete. A member still needs an active Circle before Foundations can be completed.",
-    title: "Foundations",
-  },
-  members: {
-    introduction: "Search the visible roster by person, email, Circle, or Block, then narrow the view to the decision that needs attention.",
-    title: "Members",
-  },
-  sync: {
-    introduction: "The membership system commits its own truth before downstream delivery. External services remain visible but independent.",
-    title: "Access & Billing",
-  },
-};
 
 export default function OpsSection({
   actions,
@@ -54,7 +31,9 @@ export default function OpsSection({
   dashboard: OperatorDashboardSnapshot;
   section: OpsSectionName;
 }) {
-  const copy = SECTION_COPY[section];
+  const title = section === "access-billing" || section === "sync"
+    ? "Access & Billing"
+    : section[0].toUpperCase() + section.slice(1);
   const circleRows = circles ?? Array.from(
     new Set(dashboard.members.map((member) => member.circleName).filter(Boolean)),
   ).map((circleName) => {
@@ -72,54 +51,50 @@ export default function OpsSection({
   });
 
   return (
-    <OperatorPageFrame
-      eyebrow={section === "sync" ? "Access & Billing" : copy.title}
-      introduction={copy.introduction}
-      title={copy.title}
-    >
-      {actions ? <div className="mt-14">{actions}</div> : null}
-
+    <OperatorPageFrame title={title}>
       {section === "members" ? (
         <OperatorMemberDirectory members={dashboard.members} />
       ) : null}
 
       {section === "foundations" ? (
-        <section className="mt-14">
-          <div className="border-y border-black/25 py-7">
-            <p className="max-w-5xl text-[clamp(1.5rem,3.2vw,3rem)] leading-[1.05] tracking-[-0.03em] text-black/82">
-              {dashboard.members.filter((member) => member.foundationsState === "completed").length} complete,
-              {" "}{dashboard.members.filter((member) => member.foundationsState === "in_progress").length} in progress,
-              {" "}and {dashboard.members.filter((member) => member.foundationsState === "not_started").length} not started in the visible roster.
-            </p>
+        <section className="mt-14" aria-label="Foundations snapshot">
+          <div className="grid gap-px bg-black sm:grid-cols-3">
+            {[
+              ["Not started", dashboard.members.filter((member) => member.foundationsState === "not_started").length],
+              ["Moving", dashboard.members.filter((member) => member.foundationsState === "in_progress").length],
+              ["Complete", dashboard.members.filter((member) => member.foundationsState === "completed").length],
+            ].map(([label, value]) => (
+              <div className="bg-[#080605] px-5 py-5 text-[var(--color-bone)] sm:px-6" key={label}>
+                <p className="text-sm text-white/48">{label}</p>
+                <p className="mt-3 font-[var(--font-display)] text-4xl leading-none">{value}</p>
+              </div>
+            ))}
           </div>
-          <div className="divide-y divide-black/15">
+          <div className="mt-6 grid gap-2">
             {[...dashboard.members]
               .sort((left, right) => left.foundationsProgress - right.foundationsProgress)
               .map((member) => (
                 <article
-                  className="grid gap-4 py-5 sm:grid-cols-[minmax(12rem,1fr)_8rem_8rem_minmax(11rem,0.8fr)] sm:items-center"
+                  className="grid gap-4 bg-black/[0.025] px-4 py-4 transition-colors hover:bg-black/[0.05] sm:grid-cols-[minmax(12rem,1fr)_9rem_5rem_minmax(11rem,0.8fr)] sm:items-center sm:px-5"
                   id={`member-foundations-${member.memberId}`}
                   key={member.memberId}
                 >
                   <div>
-                    <h2 className="ui-heading text-base font-semibold">
-                      <a
-                        className="underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black"
+                    <h2 className="font-[var(--font-display)] text-xl leading-none">
+                      <Link
+                        className="transition-colors hover:text-[var(--color-poster)]"
                         href={`/ops/members/${member.memberId}#journey`}
                       >
                         {member.name}
-                      </a>
+                      </Link>
                     </h2>
-                    <p className="mt-1 text-sm text-black/45">{member.circleName ?? "No active Circle"}</p>
+                    <p className={`mt-2 text-sm ${member.circleName ? "text-black/45" : "text-[var(--color-poster)]"}`}>
+                      {member.circleName ?? "Needs Circle"}
+                    </p>
                   </div>
                   <StateLabel state={member.foundationsState} />
                   <p className="text-sm tabular-nums text-black/58">{member.foundationsProgress}%</p>
-                  <div className="h-px bg-black/15" aria-hidden="true">
-                    <div
-                      className="h-px bg-black"
-                      style={{ width: `${member.foundationsProgress}%` }}
-                    />
-                  </div>
+                  <OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} />
                 </article>
               ))}
           </div>
@@ -127,16 +102,16 @@ export default function OpsSection({
       ) : null}
 
       {section === "circles" ? (
-        <section className="mt-14 border-t border-black/25">
+        <section className="mt-14 grid gap-2" aria-label="Circle snapshot">
           {circleRows.map((circle) => (
             <article
-              className="grid gap-5 border-b border-black/15 py-6 md:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] md:items-center"
+              className="grid gap-4 bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.05] md:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] md:items-center md:px-5"
               id={`circle-${circle.id}`}
               key={circle.id}
             >
               <div>
-                <h2 className="text-2xl leading-none">
-                  <a className="underline decoration-black/20 underline-offset-5 hover:decoration-black" href={`#circle-${circle.id}`}>
+                <h2 className="font-[var(--font-display)] text-2xl leading-none">
+                  <a className="hover:text-[var(--color-poster)]" href={`#circle-${circle.id}`}>
                     {circle.name}
                   </a>
                 </h2>
@@ -147,29 +122,29 @@ export default function OpsSection({
                 {circle.activeMembers} / {circle.capacity} members
               </p>
               <p className="text-sm leading-relaxed text-black/50">
-                {Math.max(0, circle.capacity - circle.activeMembers)} open member positions
+                {Math.max(0, circle.capacity - circle.activeMembers)} open
               </p>
             </article>
           ))}
-          <article className="grid gap-5 border-b border-black/15 py-6 md:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] md:items-center">
-            <h2 className="text-2xl leading-none">Without a Circle</h2>
+          <article className="grid gap-4 bg-[var(--color-poster)]/[0.08] px-4 py-5 md:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] md:items-center md:px-5">
+            <h2 className="font-[var(--font-display)] text-2xl leading-none">Without a Circle</h2>
             <StateLabel state="pending" />
             <p className="text-sm tabular-nums text-[var(--color-poster)]">{dashboard.unassignedMembers} members</p>
-            <p className="text-sm leading-relaxed text-black/50">Placement remains an operator decision.</p>
+            <Link className="text-sm underline decoration-black/25 underline-offset-4" href="/ops/members?filter=unassigned">Place members</Link>
           </article>
         </section>
       ) : null}
 
       {section === "access-billing" || section === "sync" ? (
-        <section className="mt-14 grid gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.55fr)]">
-          <div className="border-t border-black/25">
+        <section className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.55fr)]">
+          <div className="grid gap-2">
             {[
               ["Member identity", configuration.supabase, "Passwordless sign-in and verified identity."],
               ["Membership record", configuration.database, "Accounts, progress, Circles, Blocks, and history."],
               ["Membership billing", configuration.stripe, "Checkout, subscriptions, and payment attention."],
             ].map(([name, state, description]) => (
               <div
-                className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[minmax(10rem,0.6fr)_8rem_minmax(12rem,1fr)] sm:items-center"
+                className="grid gap-3 bg-black/[0.025] px-4 py-5 sm:grid-cols-[minmax(10rem,0.6fr)_8rem_minmax(12rem,1fr)] sm:items-center"
                 key={name}
               >
                 <h2 className="ui-heading text-base font-semibold">{name}</h2>
@@ -178,14 +153,21 @@ export default function OpsSection({
               </div>
             ))}
           </div>
-          <aside className="border-t border-black/25 py-6">
-            <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/42">Billing attention</p>
+          <aside className="bg-[#080605] p-6 text-[var(--color-bone)]">
+            <p className="text-sm text-white/48">Billing attention</p>
             <p className="mt-5 text-5xl tracking-[-0.04em] text-[var(--color-poster)]">{dashboard.attentionRequired}</p>
-            <p className="mt-5 max-w-sm text-sm leading-relaxed text-black/55">
-              Payment issues remain visible without deleting access history, Foundations progress, or Circle proof.
-            </p>
           </aside>
         </section>
+      ) : null}
+
+      {actions ? (
+        <details className="group mt-10 bg-[var(--color-surface)]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
+            <span>Manage {title}</span>
+            <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
+          </summary>
+          <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>
+        </details>
       ) : null}
     </OperatorPageFrame>
   );

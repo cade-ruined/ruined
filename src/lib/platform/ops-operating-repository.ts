@@ -15,6 +15,9 @@ import type {
   OpsExperienceDirectoryItem,
   OpsHistoryEvent,
   OpsMemberRecord,
+  OpsOverviewActivityKind,
+  OpsOverviewActivityTone,
+  OpsOverviewData,
   OpsSystemHealth,
   OpsTaskSummary,
   OpsWorkItem,
@@ -127,6 +130,24 @@ function asIso(value: Date | string | null | undefined): string | null {
 
 function priorityWeight(priority: string): number {
   return priority === "urgent" ? 100 : priority === "high" ? 75 : priority === "low" ? 20 : 50;
+}
+
+function overviewActivityKind(value: string): OpsOverviewActivityKind {
+  if (
+    value === "artifact" ||
+    value === "circle" ||
+    value === "experience" ||
+    value === "foundations" ||
+    value === "membership"
+  ) {
+    return value;
+  }
+  return "operations";
+}
+
+function overviewActivityTone(value: string): OpsOverviewActivityTone {
+  if (value === "attention" || value === "complete") return value;
+  return "neutral";
 }
 
 async function requireOperatorAccess(
@@ -1282,6 +1303,683 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         failures: workflowRows.length,
         tasks: taskRows.length,
       },
+    };
+  });
+}
+
+export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOverviewData> {
+  const sql = getApplicationDatabase();
+  return sql.begin(async (tx) => {
+    await tx`set transaction isolation level repeatable read read only`;
+    const access = await requireOperatorAccess(tx, actorAuthUserId);
+    const isAdmin = access.roles.includes("ops_admin");
+
+    const countRows = await tx<Array<{
+      active_circles: number | string;
+      active_members: number | string;
+      artifact_work: number | string;
+      attention_required: number | string;
+      eligible_without_circle: number | string;
+      forming_circles: number | string;
+      foundations_completed: number | string;
+      foundations_in_progress: number | string;
+      foundations_not_started: number | string;
+      open_tasks: number | string;
+      total_members: number | string;
+      workflow_failures: number | string;
+    }>>`
+      with scoped_members as (
+        select
+          member.id,
+          lifecycle.account_state,
+          lifecycle.billing_state,
+          lifecycle.foundations_state,
+          lifecycle.program_state,
+          lifecycle.standing_state,
+          current_circle.circle_id,
+          current_circle.circle_state
+        from ruined_members member
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        left join lateral (
+          select circle.id as circle_id, circle.status as circle_state
+          from circle_member_assignments assignment
+          join circles circle on circle.id = assignment.circle_id
+          where assignment.member_id = member.id
+            and assignment.ended_at is null
+          order by assignment.assigned_at desc
+          limit 1
+        ) current_circle on true
+        where ${isAdmin}
+          or exists (
+            select 1
+            from circle_staff_assignments staff_assignment
+            join circle_member_assignments member_assignment
+              on member_assignment.circle_id = staff_assignment.circle_id
+             and member_assignment.member_id = member.id
+             and member_assignment.ended_at is null
+            join platform_role_grants role_grant
+              on role_grant.auth_user_id = staff_assignment.auth_user_id
+             and role_grant.role_slug = staff_assignment.role_slug
+             and role_grant.revoked_at is null
+            where staff_assignment.auth_user_id = ${access.authUserId}::uuid
+              and staff_assignment.ended_at is null
+          )
+      ), scoped_circles as (
+        select circle.id, circle.status
+        from circles circle
+        where ${isAdmin}
+          or exists (
+            select 1
+            from circle_staff_assignments staff_assignment
+            join platform_role_grants role_grant
+              on role_grant.auth_user_id = staff_assignment.auth_user_id
+             and role_grant.role_slug = staff_assignment.role_slug
+             and role_grant.revoked_at is null
+            where staff_assignment.circle_id = circle.id
+              and staff_assignment.auth_user_id = ${access.authUserId}::uuid
+              and staff_assignment.ended_at is null
+          )
+      )
+      select
+        count(*) as total_members,
+        count(*) filter (
+          where account_state = 'active'
+            and billing_state = 'active'
+            and standing_state = 'active'
+            and program_state in ('onboarding', 'active')
+        ) as active_members,
+        count(*) filter (
+          where billing_state = 'attention_required'
+             or account_state = 'suspended'
+             or standing_state in ('paused', 'cancellation_requested')
+        ) as attention_required,
+        count(*) filter (
+          where account_state = 'active'
+            and billing_state = 'active'
+            and standing_state = 'active'
+            and program_state in ('onboarding', 'active')
+            and (circle_id is null or circle_state <> 'active')
+        ) as eligible_without_circle,
+        count(*) filter (where foundations_state = 'not_started') as foundations_not_started,
+        count(*) filter (where foundations_state = 'in_progress') as foundations_in_progress,
+        count(*) filter (where foundations_state = 'completed') as foundations_completed,
+        (select count(*) from scoped_circles where status = 'active') as active_circles,
+        (select count(*) from scoped_circles where status = 'forming') as forming_circles,
+        (
+          select count(*) from operator_tasks task
+          where ${isAdmin} and task.status in ('open', 'in_progress', 'blocked')
+        ) as open_tasks,
+        (
+          select count(*) from artifact_jobs job
+          where ${isAdmin} and job.status not in ('fulfilled', 'canceled')
+        ) as artifact_work,
+        (
+          select count(*) from workflow_actions action
+          where ${isAdmin} and action.status in ('failed', 'dead_letter')
+        ) as workflow_failures
+      from scoped_members
+    `;
+
+    const activityRows = await tx<Array<{
+      activity_id: string;
+      href: string | null;
+      kind: string;
+      member_id: string | null;
+      occurred_at: Date | string;
+      subject: string;
+      summary: string;
+      tone: string;
+    }>>`
+      with scoped_members as materialized (
+        select
+          member.id as member_id,
+          coalesce(profile.preferred_name, profile.display_name, 'Member') as member_name
+        from ruined_members member
+        left join person_profiles profile on profile.person_id = member.person_id
+        where ${isAdmin}
+          or exists (
+            select 1
+            from circle_staff_assignments staff_assignment
+            join circle_member_assignments member_assignment
+              on member_assignment.circle_id = staff_assignment.circle_id
+             and member_assignment.member_id = member.id
+             and member_assignment.ended_at is null
+            join platform_role_grants role_grant
+              on role_grant.auth_user_id = staff_assignment.auth_user_id
+             and role_grant.role_slug = staff_assignment.role_slug
+             and role_grant.revoked_at is null
+            where staff_assignment.auth_user_id = ${access.authUserId}::uuid
+              and staff_assignment.ended_at is null
+          )
+      ), recent_activity as (
+        select
+          'domain:' || domain_event.id::text as activity_id,
+          case
+            when domain_event.event_type = 'artifact.awarded' then 'artifact'
+            else 'membership'
+          end as kind,
+          scoped_member.member_id,
+          scoped_member.member_name as subject,
+          case
+            when domain_event.event_type = 'membership.agreement_accepted' then 'Membership agreement accepted'
+            when domain_event.event_type = 'membership.administrative_onboarding_completed' then 'Administrative onboarding completed'
+            else 'Artifact awarded' || coalesce(' · ' || artifact_award.award_name, '')
+          end as summary,
+          'complete'::text as tone,
+          domain_event.occurred_at,
+          case
+            when domain_event.event_type = 'artifact.awarded'
+              then '/ops/members/' || scoped_member.member_id::text || '#journey'
+            else '/ops/members/' || scoped_member.member_id::text || '#membership'
+          end as href
+        from domain_events domain_event
+        join scoped_members scoped_member on scoped_member.member_id = domain_event.member_id
+        left join artifact_awards artifact_award
+          on artifact_award.id::text = domain_event.aggregate_id
+         and domain_event.event_type = 'artifact.awarded'
+        where domain_event.occurred_at >= statement_timestamp() - interval '90 days'
+          and domain_event.event_type in (
+            'membership.agreement_accepted',
+            'membership.administrative_onboarding_completed',
+            'artifact.awarded'
+          )
+          and ${isAdmin}
+
+        union all
+
+        select
+          'foundation-state:' || history.id::text,
+          'foundations',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          case history.next_state
+            when 'in_progress' then 'Began Ruined Foundations'
+            when 'completed' then 'Completed Ruined Foundations'
+            else 'Foundations moved to ' || replace(history.next_state, '_', ' ')
+          end,
+          case when history.next_state = 'completed' then 'complete' else 'neutral' end,
+          history.occurred_at,
+          '/ops/members/' || scoped_member.member_id::text || '#journey'
+        from member_state_history history
+        join scoped_members scoped_member on scoped_member.member_id = history.member_id
+        where history.dimension = 'foundations'
+          and history.source <> 'migration'
+          and history.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'foundation-unit:' || progress.enrollment_id::text || ':' || progress.unit_id::text,
+          'foundations',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          'Completed ' || unit.title,
+          'complete',
+          progress.completed_at,
+          '/ops/members/' || scoped_member.member_id::text || '#journey'
+        from foundation_unit_progress progress
+        join foundation_enrollments enrollment on enrollment.id = progress.enrollment_id
+        join foundation_units unit on unit.id = progress.unit_id
+        join scoped_members scoped_member on scoped_member.member_id = enrollment.member_id
+        where progress.status = 'completed'
+          and progress.completed_at >= statement_timestamp() - interval '90 days'
+          and unit.position < (
+            select max(sibling.position)
+            from foundation_units sibling
+            where sibling.foundation_version_id = unit.foundation_version_id
+          )
+
+        union all
+
+        select
+          'foundation-requirement:' || completion.id::text,
+          'foundations',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          case
+            when completion.requirement_slug = 'timeline' and completion.state = 'completed' then 'Timeline confirmed'
+            when completion.requirement_slug = 'timeline' then 'Timeline confirmation reopened'
+            when completion.state = 'completed' then 'Future Letter confirmed'
+            else 'Future Letter confirmation reopened'
+          end,
+          case when completion.state = 'completed' then 'complete' else 'neutral' end,
+          completion.completed_at,
+          '/ops/members/' || scoped_member.member_id::text || '#journey'
+        from member_foundation_requirement_completions completion
+        join scoped_members scoped_member on scoped_member.member_id = completion.member_id
+        where completion.source <> 'migration'
+          and completion.completed_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'membership-state:' || history.id::text,
+          'membership',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          case
+            when history.dimension = 'billing' and history.next_state = 'attention_required' then 'Billing needs attention'
+            when history.dimension = 'billing' and history.next_state = 'active' then 'Billing restored'
+            when history.dimension = 'billing' then 'Billing moved to ' || replace(history.next_state, '_', ' ')
+            when history.dimension = 'account' then 'Account moved to ' || replace(history.next_state, '_', ' ')
+            else 'Standing moved to ' || replace(history.next_state, '_', ' ')
+          end,
+          case
+            when history.next_state in ('attention_required', 'suspended', 'paused', 'cancellation_requested', 'inactive') then 'attention'
+            when history.next_state = 'active' then 'complete'
+            else 'neutral'
+          end,
+          history.occurred_at,
+          '/ops/members/' || scoped_member.member_id::text || '#membership'
+        from member_state_history history
+        join scoped_members scoped_member on scoped_member.member_id = history.member_id
+        where ${isAdmin}
+          and history.dimension in ('account', 'billing', 'standing')
+          and history.source <> 'migration'
+          and history.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'onboarding:' || onboarding_event.id::text,
+          'membership',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          case onboarding_event.event_type
+            when 'started' then 'Administrative onboarding started'
+            when 'reopened' then 'Administrative onboarding reopened'
+            else 'Membership intake updated'
+          end,
+          'neutral',
+          onboarding_event.occurred_at,
+          '/ops/members/' || scoped_member.member_id::text || '#membership'
+        from member_onboarding_events onboarding_event
+        join scoped_members scoped_member on scoped_member.member_id = onboarding_event.member_id
+        where ${isAdmin}
+          and onboarding_event.event_type in ('started', 'field_completed', 'reopened')
+          and onboarding_event.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'circle-assignment:' || assignment.id::text || ':started',
+          'circle',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          'Assigned to ' || circle.name,
+          'neutral',
+          assignment.assigned_at,
+          '/ops/members/' || scoped_member.member_id::text || '#community'
+        from circle_member_assignments assignment
+        join circles circle on circle.id = assignment.circle_id
+        join scoped_members scoped_member on scoped_member.member_id = assignment.member_id
+        where assignment.assigned_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'circle-assignment:' || assignment.id::text || ':ended',
+          'circle',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          'Left ' || circle.name,
+          'neutral',
+          assignment.ended_at,
+          '/ops/members/' || scoped_member.member_id::text || '#community'
+        from circle_member_assignments assignment
+        join circles circle on circle.id = assignment.circle_id
+        join scoped_members scoped_member on scoped_member.member_id = assignment.member_id
+        where assignment.ended_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'experience-registration:' || registration.id::text,
+          'experience',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          case registration.status
+            when 'waitlisted' then 'Joined the waitlist for ' || experience.title
+            when 'cancelled' then 'Cancelled ' || experience.title
+            else 'Registered for ' || experience.title
+          end,
+          'neutral',
+          coalesce(registration.cancelled_at, registration.registered_at),
+          '/ops/members/' || scoped_member.member_id::text || '#journey'
+        from experience_registrations registration
+        join experiences experience on experience.id = registration.experience_id
+        join scoped_members scoped_member on scoped_member.member_id = registration.member_id
+        where coalesce(registration.cancelled_at, registration.registered_at)
+          >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'experience-attendance:' || attendance.id::text,
+          'experience',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          case attendance.event_type
+            when 'checked_in' then 'Checked in to ' || experience.title
+            when 'attended' then 'Attended ' || experience.title
+            when 'credited' then 'Received credit for ' || experience.title
+            when 'no_show' then 'No-show recorded for ' || experience.title
+            else 'Attendance reopened for ' || experience.title
+          end,
+          case
+            when attendance.event_type in ('attended', 'credited') then 'complete'
+            when attendance.event_type = 'no_show' then 'attention'
+            else 'neutral'
+          end,
+          attendance.occurred_at,
+          '/ops/members/' || scoped_member.member_id::text || '#journey'
+        from experience_attendance_events attendance
+        join experiences experience on experience.id = attendance.experience_id
+        join scoped_members scoped_member on scoped_member.member_id = attendance.member_id
+        where attendance.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'artifact-job:' || artifact_event.id::text,
+          'artifact',
+          scoped_member.member_id,
+          scoped_member.member_name,
+          'Artifact moved to ' || replace(artifact_event.next_status, '_', ' '),
+          case when artifact_event.next_status = 'fulfilled' then 'complete' else 'neutral' end,
+          artifact_event.occurred_at,
+          '/ops/artifacts?focus=' || job.id::text || '#artifact-' || job.id::text
+        from artifact_job_events artifact_event
+        join artifact_jobs job on job.id = artifact_event.artifact_job_id
+        join scoped_members scoped_member on scoped_member.member_id = job.member_id
+        where ${isAdmin}
+          and artifact_event.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'operator-task:' || task_event.id::text,
+          'operations',
+          task.member_id,
+          coalesce(scoped_member.member_name, 'Operations'),
+          task.title || case
+            when task_event.event_type = 'completed' then ' completed'
+            when task_event.event_type = 'created' then ' created'
+            else ' · ' || replace(task_event.event_type, '_', ' ')
+          end,
+          case when task_event.event_type = 'completed' then 'complete' else 'neutral' end,
+          task_event.occurred_at,
+          case
+            when task.member_id is not null
+              then '/ops/members/' || task.member_id::text || '#record'
+            else '/ops/work'
+          end
+        from operator_task_events task_event
+        join operator_tasks task on task.id = task_event.operator_task_id
+        left join scoped_members scoped_member on scoped_member.member_id = task.member_id
+        where ${isAdmin}
+          and task_event.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'workflow-attempt:' || attempt.id::text,
+          'operations',
+          domain_event.member_id,
+          coalesce(scoped_member.member_name, 'System'),
+          replace(action.action_type, '_', ' ') || case
+            when attempt.outcome = 'dead_lettered' then ' stopped after repeated failures'
+            else ' failed'
+          end,
+          'attention',
+          attempt.occurred_at,
+          '/ops/system'
+        from workflow_action_attempts attempt
+        join workflow_actions action on action.id = attempt.workflow_action_id
+        join domain_events domain_event on domain_event.id = action.domain_event_id
+        left join scoped_members scoped_member on scoped_member.member_id = domain_event.member_id
+        where ${isAdmin}
+          and attempt.outcome in ('failed', 'dead_lettered')
+          and attempt.occurred_at >= statement_timestamp() - interval '90 days'
+
+        union all
+
+        select
+          'announcement:' || announcement.id::text || ':published',
+          'operations',
+          null::uuid,
+          'Operations',
+          'Published ' || announcement.title,
+          'complete',
+          announcement.published_at,
+          '/ops/announcements'
+        from member_announcements announcement
+        where ${isAdmin}
+          and announcement.status = 'published'
+          and announcement.published_at >= statement_timestamp() - interval '90 days'
+      )
+      select activity_id, kind, member_id, subject, summary, tone, occurred_at, href
+      from recent_activity
+      order by occurred_at desc, activity_id desc
+      limit 30
+    `;
+
+    const priorityWorkRows = isAdmin
+      ? await tx<Array<{
+          due_at: Date | string | null;
+          error_code: string | null;
+          kind: "artifact" | "task" | "workflow_failure";
+          label: string;
+          member_id: string | null;
+          member_name: string | null;
+          priority: number | string;
+          state: string;
+          work_id: string;
+        }>>`
+          select *
+          from (
+            select
+              'task'::text as kind,
+              task.id::text as work_id,
+              task.title as label,
+              task.member_id,
+              coalesce(profile.preferred_name, profile.display_name) as member_name,
+              case task.priority
+                when 'urgent' then 100 when 'high' then 75 when 'low' then 20 else 50
+              end as priority,
+              task.status as state,
+              task.due_at,
+              null::text as error_code
+            from operator_tasks task
+            left join ruined_members member on member.id = task.member_id
+            left join person_profiles profile on profile.person_id = member.person_id
+            where task.status in ('open', 'in_progress', 'blocked')
+
+            union all
+
+            select
+              'artifact',
+              job.id::text,
+              coalesce(award.award_name, template_version.name),
+              job.member_id,
+              coalesce(profile.preferred_name, profile.display_name, 'Member'),
+              job.priority,
+              job.status,
+              job.due_at,
+              null::text
+            from artifact_jobs job
+            join ruined_members member on member.id = job.member_id
+            left join person_profiles profile on profile.person_id = member.person_id
+            left join artifact_awards award on award.id = job.artifact_award_id
+            join artifact_template_versions template_version
+              on template_version.id = job.artifact_template_version_id
+            where job.status not in ('fulfilled', 'canceled')
+
+            union all
+
+            select
+              'workflow_failure',
+              action.id::text,
+              replace(action.action_type, '_', ' '),
+              domain_event.member_id,
+              coalesce(profile.preferred_name, profile.display_name),
+              case when action.status = 'dead_letter' then 100 else 80 end,
+              action.status,
+              action.updated_at,
+              latest_attempt.error_code
+            from workflow_actions action
+            join domain_events domain_event on domain_event.id = action.domain_event_id
+            left join ruined_members member on member.id = domain_event.member_id
+            left join person_profiles profile on profile.person_id = member.person_id
+            left join lateral (
+              select attempt.error_code
+              from workflow_action_attempts attempt
+              where attempt.workflow_action_id = action.id
+              order by attempt.occurred_at desc
+              limit 1
+            ) latest_attempt on true
+            where action.status in ('failed', 'dead_letter')
+          ) work
+          order by priority desc, due_at nulls last, work_id
+          limit 6
+        `
+      : [];
+
+    const upcomingRows = await tx<Array<{
+      ends_at: Date | string | null;
+      experience_id: string;
+      kind: string;
+      registered_count: number | string;
+      scope_label: string;
+      starts_at: Date | string;
+      state: string;
+      title: string;
+    }>>`
+      select
+        experience.id as experience_id,
+        experience.title,
+        experience.kind,
+        experience.starts_at,
+        experience.ends_at,
+        experience.status as state,
+        case
+          when experience.visibility = 'circle' then coalesce(circle.name, 'Circle')
+          when experience.visibility = 'block' then coalesce(membership_block.name, 'Block')
+          when experience.visibility = 'progression' then coalesce(level_record.display_name, 'Progression')
+          when experience.visibility = 'public' then 'Public'
+          when experience.visibility = 'invite_only' then 'Invite only'
+          else 'All active members'
+        end as scope_label,
+        count(registration.id) filter (where registration.status in ('registered', 'waitlisted')) as registered_count
+      from experiences experience
+      left join circles circle on circle.id = experience.circle_id
+      left join membership_blocks membership_block on membership_block.id = experience.block_id
+      left join membership_progression_levels level_record
+        on level_record.slug = experience.progression_level_slug
+      left join experience_registrations registration on registration.experience_id = experience.id
+      where experience.status = 'published'
+        and experience.starts_at >= statement_timestamp()
+        and (
+          ${isAdmin}
+          or (
+            experience.circle_id is not null
+            and exists (
+              select 1
+              from circle_staff_assignments staff_assignment
+              join platform_role_grants role_grant
+                on role_grant.auth_user_id = staff_assignment.auth_user_id
+               and role_grant.role_slug = staff_assignment.role_slug
+               and role_grant.revoked_at is null
+              where staff_assignment.circle_id = experience.circle_id
+                and staff_assignment.auth_user_id = ${access.authUserId}::uuid
+                and staff_assignment.ended_at is null
+            )
+          )
+        )
+      group by experience.id, circle.name, membership_block.name, level_record.display_name
+      order by experience.starts_at
+      limit 3
+    `;
+
+    const counts = countRows[0];
+    return {
+      activity: activityRows.map((row) => ({
+        activityId: row.activity_id,
+        href: row.href,
+        kind: overviewActivityKind(row.kind),
+        memberId: row.member_id,
+        occurredAt: asIso(row.occurred_at)!,
+        subject: row.subject,
+        summary: row.summary,
+        tone: overviewActivityTone(row.tone),
+      })),
+      counts: {
+        activeMembers: Number(counts?.active_members ?? 0),
+        attentionRequired: Number(counts?.attention_required ?? 0),
+        circles: {
+          active: Number(counts?.active_circles ?? 0),
+          forming: Number(counts?.forming_circles ?? 0),
+        },
+        eligibleWithoutCircle: Number(counts?.eligible_without_circle ?? 0),
+        foundations: {
+          completed: Number(counts?.foundations_completed ?? 0),
+          inProgress: Number(counts?.foundations_in_progress ?? 0),
+          notStarted: Number(counts?.foundations_not_started ?? 0),
+        },
+        totalMembers: Number(counts?.total_members ?? 0),
+        work: {
+          artifacts: Number(counts?.artifact_work ?? 0),
+          failures: Number(counts?.workflow_failures ?? 0),
+          tasks: Number(counts?.open_tasks ?? 0),
+        },
+      },
+      priorityWork: priorityWorkRows.map((row): OpsWorkItem => {
+        if (row.kind === "workflow_failure") {
+          return {
+            dueAt: asIso(row.due_at),
+            errorCode: row.error_code ?? "unknown_failure",
+            kind: "workflow_failure",
+            label: row.label,
+            memberId: row.member_id,
+            memberName: row.member_name,
+            priority: Number(row.priority),
+            state: row.state,
+            workId: row.work_id,
+          };
+        }
+        if (row.kind === "artifact") {
+          return {
+            dueAt: asIso(row.due_at),
+            kind: "artifact",
+            label: row.label,
+            memberId: row.member_id!,
+            memberName: row.member_name!,
+            priority: Number(row.priority),
+            state: row.state,
+            workId: row.work_id,
+          };
+        }
+        return {
+          dueAt: asIso(row.due_at),
+          kind: "task",
+          label: row.label,
+          memberId: row.member_id,
+          memberName: row.member_name,
+          priority: Number(row.priority),
+          state: row.state,
+          workId: row.work_id,
+        };
+      }),
+      upcomingExperiences: upcomingRows.map((row) => ({
+        endsAt: asIso(row.ends_at),
+        experienceId: row.experience_id,
+        kind: row.kind,
+        registeredCount: Number(row.registered_count),
+        scope: row.scope_label,
+        startsAt: asIso(row.starts_at),
+        state: row.state,
+        title: row.title,
+      })),
     };
   });
 }

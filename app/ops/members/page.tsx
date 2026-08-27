@@ -105,13 +105,17 @@ export default async function OperationsMembersPage({
     : undefined;
 
   return (
-    <OperatorPageFrame
-      eyebrow="Members"
-      introduction="Search the full membership roster you are authorized to see. Narrow it by payment attention, Foundations, or Circle placement without losing anyone beyond the first page."
-      title="Members"
-    >
-      {actions ? <div className="mt-14">{actions}</div> : null}
+    <OperatorPageFrame title="Members">
       <OperatorMemberDirectory directory={directory} />
+      {actions ? (
+        <details className="group mt-10 bg-[var(--color-surface)]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
+            <span>Invite a member</span>
+            <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
+          </summary>
+          <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>
+        </details>
+      ) : null}
     </OperatorPageFrame>
   );
 }

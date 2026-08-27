@@ -181,7 +181,8 @@ test("mutating controls are connected-only and remain absent for non-admin opera
   assert.match(membersPage, /context\.role === "ops_admin" && context\.viewer/);
   assert.match(circlesPage, /context\.role === "ops_admin" && context\.viewer/);
   assert.match(circlesPage, /getOpsCircleSummaries\(context\.viewer\.authUserId\)/);
-  assert.match(actions, /Open passwordless eligibility for seven days/);
+  assert.match(actions, /export function OpsInvitationActions/);
+  assert.match(actions, /name="email"[\s\S]*required[\s\S]*type="email"/);
   assert.match(actions, /No email was sent/);
   assert.match(actions, /\/api\/ops\/invitations", \{ email \}/);
   assert.match(actions, /\/api\/ops\/circles", \{ name \}/);

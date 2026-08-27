@@ -2,99 +2,197 @@ import Link from "next/link";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
-import type { PlatformConfiguration } from "@/lib/platform/config";
-import type { OperatorDashboardSnapshot } from "@/lib/platform/model";
+import type {
+  OpsOverviewActivityItem,
+  OpsOverviewData,
+  OpsWorkItem,
+} from "@/lib/platform/ops-model";
 
-export default function OpsOverview({
-  dashboard,
-}: {
-  configuration: PlatformConfiguration;
-  dashboard: OperatorDashboardSnapshot;
-}) {
-  const priorityMembers = dashboard.members
-    .filter((member) => member.billingState === "attention_required")
-    .slice(0, 6);
-  const overviewMembers = priorityMembers.length > 0
-    ? priorityMembers
-    : dashboard.members.slice(0, 6);
+const DENVER_TIME_ZONE = "America/Denver";
+
+function dateKey(value: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: DENVER_TIME_ZONE,
+    year: "numeric",
+  }).format(value);
+}
+
+function activityGroup(value: string, now: Date): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Earlier";
+  if (dateKey(date) === dateKey(now)) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dateKey(date) === dateKey(yesterday)) return "Yesterday";
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: DENVER_TIME_ZONE,
+  }).format(date);
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: DENVER_TIME_ZONE,
+  }).format(date);
+}
+
+function formatExperienceDate(value: string | null): string {
+  if (!value) return "Schedule pending";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Schedule pending";
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    timeZone: DENVER_TIME_ZONE,
+  }).format(date);
+}
+
+function activityTone(tone: OpsOverviewActivityItem["tone"]): string {
+  if (tone === "attention") return "bg-[var(--color-poster)]";
+  if (tone === "complete") return "bg-[var(--color-verdigris)]";
+  return "bg-black/35";
+}
+
+function workHref(item: OpsWorkItem): string {
+  if (item.kind === "workflow_failure") return "/ops/system";
+  if (item.kind === "artifact") {
+    return `/ops/artifacts?focus=${encodeURIComponent(item.workId)}#artifact-${item.workId}`;
+  }
+  return item.memberId ? `/ops/members/${item.memberId}#record` : "/ops/work";
+}
+
+export default function OpsOverview({ data }: { data: OpsOverviewData }) {
+  const now = new Date();
+  const groupedActivity = data.activity.reduce<Array<{
+    items: OpsOverviewActivityItem[];
+    label: string;
+  }>>((groups, item) => {
+    const label = activityGroup(item.occurredAt, now);
+    const current = groups.at(-1);
+    if (current?.label === label) current.items.push(item);
+    else groups.push({ items: [item], label });
+    return groups;
+  }, []);
+  const openWork = data.counts.work.artifacts
+    + data.counts.work.failures
+    + data.counts.work.tasks;
+
+  const snapshot = [
+    { href: "/ops/members", label: "Active members", tone: "", value: data.counts.activeMembers },
+    { href: "/ops/members?filter=attention", label: "Needs attention", tone: "text-[var(--color-poster)]", value: data.counts.attentionRequired },
+    { href: "/ops/foundations", label: "Foundations moving", tone: "", value: data.counts.foundations.inProgress },
+    { href: "/ops/members?filter=unassigned", label: "Without a Circle", tone: "", value: data.counts.eligibleWithoutCircle },
+    { href: "/ops/work", label: "Open work", tone: "", value: openWork },
+  ];
 
   return (
-    <OperatorPageFrame
-      eyebrow="Overview"
-      introduction="A quiet control room for member access, progress, Circles, Blocks, and billing. Each state stays independent so operators can see the real next decision."
-      title="The membership, in view."
-    >
-      <section className="mt-16 border-y border-black/25 py-8" aria-label="Membership summary">
-        <p className="max-w-6xl text-[clamp(1.75rem,4vw,3.8rem)] leading-[1.02] tracking-[-0.035em] text-black/84">
-          <span className="font-medium text-black">{dashboard.activeMembers}</span> active members
-          across <span className="font-medium text-black">{dashboard.totalMembers}</span> total,
-          with <span className="font-medium text-[var(--color-poster)]"> {dashboard.attentionRequired}</span> needing attention
-          and <span className="font-medium text-black"> {dashboard.unassignedMembers}</span> without a Circle.
-        </p>
-      </section>
-
-      <section className="mt-16">
-        <div className="flex flex-wrap items-end justify-between gap-5 border-b border-black/25 pb-4">
-          <div>
-            <p className="text-[0.64rem] font-medium uppercase tracking-[0.17em] text-black/42">
-              {priorityMembers.length > 0 ? "Needs attention" : "Current roster"}
+    <OperatorPageFrame title="Overview">
+      <nav className="mt-14 grid grid-cols-2 bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
+        {snapshot.map((item, index) => (
+          <Link
+            className={`group min-h-24 px-5 py-5 transition-colors hover:bg-white/[0.055] sm:px-6 ${index === snapshot.length - 1 ? "col-span-2 lg:col-span-1" : ""}`}
+            href={item.href}
+            key={item.label}
+          >
+            <p className="text-sm text-white/48 transition-colors group-hover:text-white/70">{item.label}</p>
+            <p className={`mt-5 font-[var(--font-display)] text-5xl leading-none tracking-[-0.04em] ${item.tone}`}>
+              {item.value}
             </p>
-            <h2 className="mt-3 text-3xl leading-none">Member decisions</h2>
-          </div>
-          <Link
-            className="text-[0.66rem] font-medium uppercase tracking-[0.15em] text-black/55 underline decoration-black/25 underline-offset-8 hover:text-black"
-            href="/ops/members"
-          >
-            Open member directory
-          </Link>
-        </div>
-
-        <div className="divide-y divide-black/15">
-          {overviewMembers.map((member) => (
-            <article
-              className="grid gap-4 py-5 sm:grid-cols-[minmax(12rem,1fr)_minmax(10rem,0.7fr)_8rem_minmax(11rem,1fr)] sm:items-center"
-              key={member.memberId}
-            >
-              <div>
-                <h3 className="ui-heading text-base font-semibold">
-                  <Link
-                    className="underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black"
-                    href={`/ops/members/${member.memberId}`}
-                  >
-                    {member.name}
-                  </Link>
-                </h3>
-                <p className="mt-1 text-sm text-black/45">{member.email}</p>
-              </div>
-              <p className="text-sm leading-relaxed text-black/58">
-                {member.circleName ?? "No Circle"}
-                <span className="block text-black/38">{member.blockName ?? "No Block"}</span>
-              </p>
-              <StateLabel state={member.billingState} />
-              <p className="text-sm leading-relaxed text-black/58">{member.nextAction}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <nav className="mt-16 grid border-y border-black/25 sm:grid-cols-3" aria-label="Operator next views">
-        {[
-          ["Foundations", "/ops/foundations", "Review completion and members still in progress."],
-          ["Circles", "/ops/circles", "Place eligible members and manage active groups."],
-          ["Blocks", "/ops/blocks", "Organize multiple Circles without changing Foundations."],
-        ].map(([label, href, description], index) => (
-          <Link
-            className={`group py-6 sm:px-7 ${index > 0 ? "border-t border-black/15 sm:border-l sm:border-t-0" : ""}`}
-            href={href}
-            key={href}
-          >
-            <span className="ui-heading text-lg font-semibold">{label}</span>
-            <span className="mt-3 block max-w-xs text-sm leading-relaxed text-black/50 group-hover:text-black/70">
-              {description}
-            </span>
           </Link>
         ))}
       </nav>
+
+      <div className="mt-10 grid gap-10 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.55fr)]">
+        <section aria-labelledby="recent-activity-heading">
+          <div className="flex items-end justify-between gap-5">
+            <h2 className="font-[var(--font-display)] text-3xl leading-none sm:text-4xl" id="recent-activity-heading">
+              Recent activity
+            </h2>
+            <span className="text-sm text-black/40">Last 90 days</span>
+          </div>
+
+          <div className="mt-6 grid gap-7">
+            {groupedActivity.map((group) => (
+              <div key={group.label}>
+                <p className="mb-2 text-sm text-black/40">{group.label}</p>
+                <div className="grid gap-2">
+                  {group.items.map((item) => {
+                    const content = (
+                      <>
+                        <span aria-hidden="true" className={`mt-1.5 size-1.5 shrink-0 ${activityTone(item.tone)}`} />
+                        <span className="min-w-0">
+                          <span className="block font-[var(--font-display)] text-xl leading-none">{item.subject}</span>
+                          <span className="mt-2 block text-sm leading-relaxed text-black/55">{item.summary}</span>
+                        </span>
+                        <time className="text-xs tabular-nums text-black/35" dateTime={item.occurredAt}>{formatTime(item.occurredAt)}</time>
+                      </>
+                    );
+                    const className = "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-4 bg-black/[0.025] px-4 py-4 transition-colors hover:bg-black/[0.055] sm:px-5";
+                    return item.href ? (
+                      <Link className={className} href={item.href} key={item.activityId}>{content}</Link>
+                    ) : (
+                      <div className={className} key={item.activityId}>{content}</div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            {data.activity.length === 0 ? (
+              <p className="bg-black/[0.025] px-5 py-8 text-sm text-black/48">No recent activity is visible.</p>
+            ) : null}
+          </div>
+        </section>
+
+        <aside className="grid content-start gap-8">
+          <section className="bg-[var(--color-surface)] p-5 sm:p-6" aria-labelledby="priority-work-heading">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="font-[var(--font-display)] text-2xl" id="priority-work-heading">Needs a decision</h2>
+              <Link className="text-sm text-black/45 underline decoration-black/25 underline-offset-4 hover:text-black" href="/ops/work">All work</Link>
+            </div>
+            <div className="mt-5 grid gap-4">
+              {data.priorityWork.map((item) => (
+                <Link className="group grid gap-2" href={workHref(item)} key={`${item.kind}-${item.workId}`}>
+                  <span className="font-medium leading-tight group-hover:text-[var(--color-poster)]">{item.label}</span>
+                  <span className="flex flex-wrap items-center justify-between gap-3 text-xs text-black/42">
+                    <span>{item.memberName ?? (item.kind === "workflow_failure" ? "System" : "Operations")}</span>
+                    <StateLabel state={item.state} />
+                  </span>
+                </Link>
+              ))}
+              {data.priorityWork.length === 0 ? <p className="text-sm text-black/45">No open work.</p> : null}
+            </div>
+          </section>
+
+          <section className="bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6" aria-labelledby="upcoming-heading">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="font-[var(--font-display)] text-2xl" id="upcoming-heading">Next</h2>
+              <Link className="text-sm text-white/45 underline decoration-white/25 underline-offset-4 hover:text-white" href="/ops/experiences">Experiences</Link>
+            </div>
+            <div className="mt-5 grid gap-5">
+              {data.upcomingExperiences.map((experience) => (
+                <Link className="group" href={`/ops/experiences#experience-${experience.experienceId}`} key={experience.experienceId}>
+                  <span className="block font-[var(--font-display)] text-xl leading-tight group-hover:text-[var(--color-poster)]">{experience.title}</span>
+                  <span className="mt-2 block text-xs text-white/42">{formatExperienceDate(experience.startsAt)}</span>
+                </Link>
+              ))}
+              {data.upcomingExperiences.length === 0 ? <p className="text-sm text-white/42">Nothing scheduled.</p> : null}
+            </div>
+          </section>
+
+          <Link className="bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white transition-colors hover:bg-[#080605]" href="/ops/members?filter=unassigned">
+            Place {data.counts.eligibleWithoutCircle} eligible member{data.counts.eligibleWithoutCircle === 1 ? "" : "s"} into a Circle →
+          </Link>
+        </aside>
+      </div>
     </OperatorPageFrame>
   );
 }

@@ -36,27 +36,26 @@ export default function OpsBlocks({
   });
 
   return (
-    <OperatorPageFrame
-      eyebrow="Blocks"
-      introduction="A Block gathers multiple Circles into one larger membership group. It changes how operators organize the system; it does not add another Foundations requirement."
-      title="Blocks"
-    >
-      {actions ? <div className="mt-14">{actions}</div> : null}
-
-      <section className="mt-14 border-t border-black/25" aria-label="Block hierarchy">
+    <OperatorPageFrame title="Blocks">
+      <section className="mt-14 grid gap-3" aria-label="Block hierarchy">
         {visibleBlocks.map((block) => (
           <article
-            className="grid gap-6 border-b border-black/20 py-7 lg:grid-cols-[minmax(13rem,0.7fr)_8rem_minmax(18rem,1fr)_minmax(12rem,0.55fr)] lg:items-start"
+            className="grid gap-5 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.05] lg:grid-cols-[minmax(13rem,0.7fr)_8rem_minmax(18rem,1fr)] lg:items-start lg:px-6"
             id={`block-${block.id}`}
             key={block.id}
           >
             <div>
-              <h2 className="text-3xl leading-none">
-                <a className="underline decoration-black/20 underline-offset-5 hover:decoration-black" href={`#block-${block.id}`}>
+              <h2 className="font-[var(--font-display)] text-3xl leading-none">
+                <a className="hover:text-[var(--color-poster)]" href={`#block-${block.id}`}>
                   {block.name}
                 </a>
               </h2>
-              <p className="mt-3 text-sm text-black/42">{block.currentCircles} current Circles</p>
+              <p className="mt-3 text-sm text-black/42">
+                {block.currentCircles} current Circles
+                {block.status === "forming" && block.currentCircles < 2
+                  ? ` · ${2 - block.currentCircles} more needed`
+                  : ""}
+              </p>
             </div>
             <StateLabel state={block.status} />
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-black/65">
@@ -72,21 +71,24 @@ export default function OpsBlocks({
                   ))
                 : <span className="text-black/40">No Circles assigned</span>}
             </div>
-            <p className="text-sm leading-relaxed text-black/50">
-              {block.status === "forming" && block.currentCircles < 2
-                ? `${2 - block.currentCircles} more current Circle${2 - block.currentCircles === 1 ? "" : "s"} needed before activation.`
-                : block.status === "forming"
-                  ? "Ready for deliberate activation."
-                  : "Current Block relationship is visible to its own members."}
-            </p>
           </article>
         ))}
         {visibleBlocks.length === 0 ? (
-          <p className="border-b border-black/15 py-10 text-sm text-black/50">
+          <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
             No Blocks have been created yet.
           </p>
         ) : null}
       </section>
+
+      {actions ? (
+        <details className="group mt-10 bg-[var(--color-surface)]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
+            <span>Manage Blocks</span>
+            <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
+          </summary>
+          <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>
+        </details>
+      ) : null}
     </OperatorPageFrame>
   );
 }

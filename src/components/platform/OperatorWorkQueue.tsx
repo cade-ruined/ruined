@@ -21,33 +21,38 @@ function formatDate(value: string | null): string {
 
 export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
   return (
-    <OperatorPageFrame
-      eyebrow="Work"
-      introduction="One ordered queue for member follow-up, Artifact production, and automation failures. Priority and due date determine what should move next."
-      title="Work"
-    >
-      <section className="mt-14 grid border-y border-black/25 sm:grid-cols-3" aria-label="Open work totals">
+    <OperatorPageFrame title="Work">
+      <dl
+        className="grid gap-6 bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
+        aria-label="Open work totals"
+      >
         {[
           ["Tasks", queue.totals.tasks],
           ["Artifacts", queue.totals.artifacts],
           ["Automation failures", queue.totals.failures],
-        ].map(([label, value], index) => (
-          <div className={`py-6 sm:px-7 ${index > 0 ? "border-t border-black/15 sm:border-l sm:border-t-0" : ""}`} key={label}>
-            <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-black/42">{label}</p>
-            <p className="mt-5 text-5xl tracking-[-0.04em]">{value}</p>
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-sm text-white/48">{label}</dt>
+            <dd className="mt-2 font-[var(--font-display)] text-4xl leading-none tracking-[-0.03em] sm:text-5xl">
+              {value}
+            </dd>
           </div>
         ))}
-      </section>
+      </dl>
 
-      <section className="mt-14 border-t border-black/25" aria-label="Prioritized operator work">
+      <section className="mt-8 space-y-3" aria-label="Prioritized operator work">
         {queue.items.map((item) => (
           <article
-            className="grid gap-5 border-b border-black/15 py-6 lg:grid-cols-[7rem_minmax(13rem,1fr)_9rem_minmax(13rem,0.75fr)] lg:items-center"
+            className="grid gap-5 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[8rem_minmax(13rem,1fr)_10rem_minmax(13rem,0.75fr)] lg:items-center"
             key={`${item.kind}-${item.workId}`}
           >
             <div>
-              <p className="text-[0.6rem] font-medium uppercase tracking-[0.15em] text-black/38">{item.kind.replaceAll("_", " ")}</p>
-              <p className="mt-2 text-sm tabular-nums text-black/55">Priority {item.priority}</p>
+              <p className="text-sm capitalize text-black/45">
+                {item.kind.replaceAll("_", " ")}
+              </p>
+              <p className="mt-2 text-sm tabular-nums text-black/55">
+                Priority {item.priority}
+              </p>
             </div>
             <div>
               <h2 className="ui-heading text-lg font-semibold">{item.label}</h2>
@@ -82,22 +87,11 @@ export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
           </article>
         ))}
         {queue.items.length === 0 ? (
-          <p className="border-b border-black/15 py-10 text-sm text-black/50">No open operator work.</p>
+          <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
+            No open operator work.
+          </p>
         ) : null}
       </section>
-
-      <nav className="mt-16 grid border-y border-black/25 sm:grid-cols-3" aria-label="Related operating views">
-        {[
-          ["Artifacts", "/ops/artifacts", "Move earned Artifacts through production and fulfillment."],
-          ["Announcements", "/ops/announcements", "Prepare member-facing updates with an explicit audience."],
-          ["System", "/ops/system", "Inspect connected services and failed automations."],
-        ].map(([label, href, detail], index) => (
-          <Link className={`group py-6 sm:px-7 ${index > 0 ? "border-t border-black/15 sm:border-l sm:border-t-0" : ""}`} href={href} key={href}>
-            <span className="ui-heading text-lg font-semibold">{label}</span>
-            <span className="mt-3 block max-w-xs text-sm leading-relaxed text-black/50 group-hover:text-black/70">{detail}</span>
-          </Link>
-        ))}
-      </nav>
     </OperatorPageFrame>
   );
 }

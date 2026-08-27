@@ -17,6 +17,9 @@ const OPERATIONS_NAVIGATION = [
   { href: "/ops/blocks", label: "Blocks" },
   { href: "/ops/experiences", label: "Experiences" },
   { href: "/ops/work", label: "Work" },
+  { href: "/ops/artifacts", label: "Artifacts" },
+  { href: "/ops/announcements", label: "Announcements" },
+  { href: "/ops/system", label: "System" },
 ] as const;
 
 function isCurrentPath(pathname: string, href: string): boolean {
@@ -36,7 +39,7 @@ function ConnectionMark({
     <span className="inline-flex items-center gap-2 whitespace-nowrap">
       <span
         aria-hidden="true"
-        className={`size-1.5 ${state === "connected" ? "bg-emerald-400" : "bg-white/25"}`}
+        className={`size-1.5 ${state === "connected" ? "bg-[var(--color-verdigris)]" : "bg-white/25"}`}
       />
       {label} {state === "connected" ? "on" : "off"}
     </span>

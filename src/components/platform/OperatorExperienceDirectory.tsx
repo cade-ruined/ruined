@@ -16,23 +16,46 @@ function formatDate(value: string | null): string {
 }
 
 export default function OperatorExperienceDirectory({ experiences }: { experiences: OpsExperienceDirectoryItem[] }) {
+  const registeredCount = experiences.reduce(
+    (total, experience) => total + experience.registeredCount,
+    0,
+  );
+  const scheduledCount = experiences.filter((experience) => experience.startsAt).length;
+
   return (
-    <OperatorPageFrame
-      eyebrow="Experiences"
-      introduction="Events, Academy sessions, challenges, and Circle meetings share one operating history. Audience and attendance stay explicit."
-      title="Experiences"
-    >
-      <section className="mt-14 border-t border-black/25" aria-label="Experience directory">
+    <OperatorPageFrame title="Experiences">
+      <dl
+        aria-label="Experience snapshot"
+        className="grid gap-6 bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
+      >
+        {[
+          ["Experiences", experiences.length],
+          ["Scheduled", scheduledCount],
+          ["Registrations", registeredCount],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-sm text-white/48">{label}</dt>
+            <dd className="mt-2 font-[var(--font-display)] text-4xl leading-none tracking-[-0.03em] sm:text-5xl">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <section className="mt-8 space-y-3" aria-label="Experience directory">
         {experiences.map((experience) => (
           <article
-            className="grid gap-5 border-b border-black/15 py-7 lg:grid-cols-[minmax(15rem,1fr)_10rem_10rem_8rem] lg:items-center"
+            className="grid gap-5 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_12rem_9rem_8rem] lg:items-center"
             id={`experience-${experience.experienceId}`}
             key={experience.experienceId}
           >
             <div>
-              <p className="text-[0.6rem] font-medium uppercase tracking-[0.15em] text-black/38">{experience.kind.replaceAll("_", " ")}</p>
-              <h2 className="mt-3 text-3xl leading-none tracking-[-0.025em]">{experience.title}</h2>
-              <p className="mt-3 text-sm text-black/48">{experience.scope}</p>
+              <p className="text-sm capitalize text-black/45">
+                {experience.kind.replaceAll("_", " ")} · {experience.scope}
+              </p>
+              <h2 className="mt-2 text-3xl leading-none tracking-[-0.025em]">
+                {experience.title}
+              </h2>
             </div>
             <div className="text-sm leading-relaxed text-black/55">
               <p>{formatDate(experience.startsAt)}</p>
@@ -46,7 +69,9 @@ export default function OperatorExperienceDirectory({ experiences }: { experienc
           </article>
         ))}
         {experiences.length === 0 ? (
-          <p className="border-b border-black/15 py-10 text-sm text-black/50">No Experiences are visible to this operator.</p>
+          <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
+            No Experiences are visible to this operator.
+          </p>
         ) : null}
       </section>
     </OperatorPageFrame>
