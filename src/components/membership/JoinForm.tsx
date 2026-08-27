@@ -12,17 +12,18 @@ import {
 } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 
-import AddressFields from "@/components/membership/AddressFields";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
 import {
   formatPhoneInput,
   mobileToE164,
   PHONE_COUNTRY_OPTIONS,
+  SHIPPING_COUNTRY_OPTIONS,
   phoneCountryFromInput,
   phoneCountryFromProfile,
   phoneInputForCountry,
   phoneInputFromProfile,
   supportedPhoneCountry,
+  supportedShippingCountry,
 } from "@/lib/membership/phone";
 
 type CheckoutResponse = {
@@ -123,7 +124,6 @@ function StageLine({ active, complete, label, number }: { active: boolean; compl
 }
 
 export default function JoinForm({
-  addressLookupEnabled,
   disabledReason,
   checkoutDisabledReason,
   checkoutEnabled,
@@ -132,7 +132,6 @@ export default function JoinForm({
   minimumAge,
   publishableKey,
 }: {
-  addressLookupEnabled: boolean;
   disabledReason: string | null;
   checkoutDisabledReason: string | null;
   checkoutEnabled: boolean;
@@ -205,31 +204,6 @@ export default function JoinForm({
         phoneInputRef.current?.focus();
         throw new Error("Enter a complete mobile number for the selected country.");
       }
-      const shippingAddress = {
-        addressLine1: String(form.get("address-line-1") ?? "").trim(),
-        addressLine2: String(form.get("address-line-2") ?? "").trim() || null,
-        city: String(form.get("city") ?? "").trim(),
-        countryCode: String(form.get("country-code") ?? "").trim(),
-        postalCode: String(form.get("postal-code") ?? "").trim(),
-        region: String(form.get("region") ?? "").trim(),
-      };
-      if (
-        !shippingAddress.addressLine1 ||
-        !shippingAddress.city ||
-        !shippingAddress.countryCode ||
-        !shippingAddress.postalCode ||
-        !shippingAddress.region
-      ) {
-        const lookupInput = event.currentTarget.querySelector<HTMLInputElement>(
-          "#shipping-address-search",
-        );
-        lookupInput?.setCustomValidity(
-          "Choose an address from the results or enter it manually.",
-        );
-        lookupInput?.reportValidity();
-        lookupInput?.focus();
-        throw new Error("Choose an address from the results or enter it manually.");
-      }
       const response = await fetch("/api/my/onboarding", {
         body: JSON.stringify({
           action: "save_profile",
@@ -238,7 +212,14 @@ export default function JoinForm({
           legalName: String(form.get("legal-name") ?? ""),
           mobile,
           preferredName: String(form.get("preferred-name") ?? ""),
-          shippingAddress,
+          shippingAddress: {
+            addressLine1: String(form.get("address-line-1") ?? ""),
+            addressLine2: String(form.get("address-line-2") ?? "").trim() || null,
+            city: String(form.get("city") ?? ""),
+            countryCode: String(form.get("country-code") ?? ""),
+            postalCode: String(form.get("postal-code") ?? ""),
+            region: String(form.get("region") ?? ""),
+          },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -437,13 +418,95 @@ export default function JoinForm({
             </div>
           </div>
 
-          <AddressFields
-            addressLookupEnabled={addressLookupEnabled}
-            fieldClass={fieldClass}
-            fieldLabelClass={fieldLabelClass}
-            fieldLabelTextClass={fieldLabelTextClass}
-            initialAddress={address}
-          />
+          <fieldset className="grid gap-5 sm:grid-cols-2">
+            <legend className={`${fieldLabelTextClass} mb-5 text-[1.65rem]`}>Default shipping address</legend>
+            <label className={`${fieldLabelClass} sm:col-span-2`} htmlFor="shipping-address-line-1">
+              <span className={fieldLabelTextClass}>Street address</span>
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-line1"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "addressLine1")}
+                id="shipping-address-line-1"
+                name="address-line-1"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className={`${fieldLabelClass} sm:col-span-2`} htmlFor="shipping-address-line-2">
+              <span className={fieldLabelTextClass}>Apartment, suite, etc. / Optional</span>
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-line2"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "addressLine2")}
+                id="shipping-address-line-2"
+                name="address-line-2"
+                spellCheck={false}
+              />
+            </label>
+            <label className={fieldLabelClass} htmlFor="shipping-city">
+              <span className={fieldLabelTextClass}>City</span>
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-level2"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "city")}
+                id="shipping-city"
+                name="city"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className={fieldLabelClass} htmlFor="shipping-region">
+              <span className={fieldLabelTextClass}>State or region</span>
+              <input
+                autoCapitalize="words"
+                autoComplete="shipping address-level1"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "region")}
+                id="shipping-region"
+                name="region"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className={fieldLabelClass} htmlFor="shipping-postal-code">
+              <span className={fieldLabelTextClass}>Postal code</span>
+              <input
+                autoCapitalize="characters"
+                autoComplete="shipping postal-code"
+                autoCorrect="off"
+                className={fieldClass}
+                defaultValue={savedString(address, "postalCode")}
+                id="shipping-postal-code"
+                name="postal-code"
+                required
+                spellCheck={false}
+              />
+            </label>
+            <label className={fieldLabelClass} htmlFor="shipping-country">
+              <span className={fieldLabelTextClass}>Country</span>
+              <select
+                autoComplete="shipping country"
+                className={fieldClass}
+                defaultValue={supportedShippingCountry(savedString(address, "countryCode")) ?? "US"}
+                id="shipping-country"
+                name="country-code"
+                required
+              >
+                {SHIPPING_COUNTRY_OPTIONS.map((country) => (
+                  <option className="text-black" key={country.code} value={country.code}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </fieldset>
 
           <div>
             <p className={fieldLabelTextClass}>Profile photo / Optional</p>

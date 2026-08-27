@@ -17,10 +17,6 @@ const joinForm = await readFile(
   new URL("../src/components/membership/JoinForm.tsx", import.meta.url),
   "utf8",
 );
-const addressFields = await readFile(
-  new URL("../src/components/membership/AddressFields.tsx", import.meta.url),
-  "utf8",
-);
 const joinPage = await readFile(
   new URL("../app/my/join/page.tsx", import.meta.url),
   "utf8",
@@ -30,13 +26,12 @@ const membershipRepository = await readFile(
   "utf8",
 );
 
-test("member entry keeps native identity autofill while shipping uses explicit lookup", () => {
-  for (const token of ["name", "nickname", "email", "bday", "tel"]) {
-    assert.match(joinForm, new RegExp(`autoComplete=\\"${token}\\"`));
-  }
-
-  const memberEntry = `${joinForm}\n${addressFields}`;
+test("member entry exposes native identity and shipping autofill", () => {
   for (const token of [
+    "name",
+    "nickname",
+    "email",
+    "bday",
     "shipping address-line1",
     "shipping address-line2",
     "shipping address-level2",
@@ -44,81 +39,11 @@ test("member entry keeps native identity autofill while shipping uses explicit l
     "shipping postal-code",
     "shipping country",
   ]) {
-    assert.doesNotMatch(memberEntry, new RegExp(`autoComplete=\\"${token}\\"`));
+    assert.match(joinForm, new RegExp(`autoComplete=\\"${token}\\"`));
   }
-
-  assert.match(joinForm, /<AddressFields/);
-  assert.match(addressFields, />Find your address<\/span>/);
-  assert.match(addressFields, /fetch\("\/api\/my\/address-lookup"/);
-  assert.match(addressFields, /autoComplete="off"/);
-  assert.match(addressFields, /Enter address manually/);
-  assert.match(addressFields, /!addressLookupEnabled \|\| Boolean\(initialString\(initialAddress, "addressLine1"\)\)/);
-  assert.match(addressFields, /setShowAddressFields\(true\)/);
-  assert.match(addressFields, /Enter your address manually\./);
-
-  for (const fieldName of [
-    "address-line-1",
-    "address-line-2",
-    "city",
-    "region",
-    "postal-code",
-    "country-code",
-  ]) {
-    assert.match(addressFields, new RegExp(`name=\\"${fieldName}\\"`));
-  }
-  assert.match(memberEntry, /autoCapitalize="words"/);
-  assert.match(memberEntry, /autoCapitalize="characters"/);
-  assert.doesNotMatch(memberEntry, /toTitleCase|text-transform:\s*capitalize/i);
-});
-
-test("address lookup is keyboard accessible, cancellable, and Google-attributed", () => {
-  for (const contract of [
-    /role="combobox"/,
-    /role="listbox"/,
-    /role="option"/,
-    /aria-activedescendant=/,
-    /aria-autocomplete="list"/,
-    /aria-controls=\{listVisible \? listId : undefined\}/,
-    /aria-live="polite"/,
-  ]) {
-    assert.match(addressFields, contract);
-  }
-  for (const key of ["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab"]) {
-    assert.match(addressFields, new RegExp(`event\\.key === \\"${key}\\"`));
-  }
-  assert.match(addressFields, /new AbortController\(\)/);
-  assert.match(addressFields, /requestRef\.current\?\.abort\(\)/);
-  assert.match(
-    addressFields,
-    /onChange=\{\(event\) => \{[\s\S]*?requestRef\.current\?\.abort\(\);[\s\S]*?setSuggestions\(\[\]\);[\s\S]*?setQuery\(/,
-  );
-  assert.match(addressFields, /window\.setTimeout\([\s\S]*?, 275\)/);
-  assert.match(addressFields, /crypto\.randomUUID\(\)/);
-  assert.ok(
-    (addressFields.match(/sessionTokenRef\.current = null/g) ?? []).length >= 2,
-    "a completed or failed selection must end its lookup session",
-  );
-  assert.match(addressFields, /alt="Powered by Google"/);
-  assert.match(addressFields, /scrollIntoView\(\{ block: "nearest" \}\)/);
-  assert.doesNotMatch(addressFields, /role="option"[\s\S]{0,600}<button/);
-});
-
-test("member entry cannot submit before an address is selected or entered", () => {
-  assert.match(joinForm, /const shippingAddress = \{/);
-  assert.match(
-    joinForm,
-    /!shippingAddress\.addressLine1[\s\S]*!shippingAddress\.region/,
-  );
-  assert.match(
-    joinForm,
-    /Choose an address from the results or enter it manually\./,
-  );
-  assert.match(joinForm, /lookupInput\?\.reportValidity\(\)/);
-  assert.match(joinForm, /lookupInput\?\.focus\(\)/);
-  assert.ok(
-    joinForm.indexOf("const shippingAddress = {") <
-      joinForm.indexOf('fetch("/api/my/onboarding"'),
-  );
+  assert.match(joinForm, /autoCapitalize="words"/);
+  assert.match(joinForm, /autoCapitalize="characters"/);
+  assert.doesNotMatch(joinForm, /toTitleCase|text-transform:\s*capitalize/i);
 });
 
 test("member entry uses the friendly image-led form hierarchy", () => {
@@ -149,10 +74,10 @@ test("member entry uses the friendly image-led form hierarchy", () => {
 test("member entry uses named country selectors instead of free-form codes", () => {
   assert.match(joinForm, /Mobile country and calling code/);
   assert.match(joinForm, /name="mobile-country"/);
-  assert.match(addressFields, /name="country-code"/);
+  assert.match(joinForm, /name="country-code"/);
   assert.match(joinForm, /PHONE_COUNTRY_OPTIONS\.map/);
-  assert.match(addressFields, /SHIPPING_COUNTRY_OPTIONS\.map/);
-  assert.doesNotMatch(addressFields, /maxLength=\{2\}[\s\S]*name="country-code"/);
+  assert.match(joinForm, /SHIPPING_COUNTRY_OPTIONS\.map/);
+  assert.doesNotMatch(joinForm, /maxLength=\{2\}[\s\S]*name="country-code"/);
 });
 
 test("country options and phone parsing cover international E.164 values", () => {

@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 
 import JoinForm from "@/components/membership/JoinForm";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { isAddressLookupConfigured } from "@/lib/membership/address-provider";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
 import { getMemberOnboarding } from "@/lib/membership/repository";
@@ -69,9 +68,6 @@ export default async function JoinMyRuinedPage() {
           These details stay private and never appear on your Circle profile.
         </p>
         <JoinForm
-          addressLookupEnabled={
-            context.state === "preview" || isAddressLookupConfigured()
-          }
           checkoutDisabledReason={checkoutDisabledReason}
           checkoutEnabled={checkoutEnabled}
           disabledReason={disabledReason}
