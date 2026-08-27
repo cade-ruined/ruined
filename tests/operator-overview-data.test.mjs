@@ -69,6 +69,14 @@ test("operator Overview uses durable activity sources without selecting private 
   assert.doesNotMatch(overview, /body_text|agreement_body_snapshot|acceptance_evidence|mobile_e164|legal_name/);
 });
 
+test("Foundations activity reports four chapter milestones instead of every moment", () => {
+  const branch = activityBranch("foundation-unit:");
+  assert.match(branch, /Completed Foundations \/ /);
+  assert.match(branch, /sibling\.configuration ->> 'chapter' = unit\.configuration ->> 'chapter'/);
+  assert.doesNotMatch(branch, /'Completed ' \|\| unit\.title/);
+  assert.match(repository, /group by unit\.configuration ->> 'chapter'/);
+});
+
 test("sensitive Overview activity remains ops-admin only", () => {
   for (const prefix of [
     "domain:",

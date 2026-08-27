@@ -53,8 +53,9 @@ test("every member page context handles denied before its unavailable fallback",
 
 test("every operator page context uses operator permission copy for denied accounts", async () => {
   const pages = await contextPages("app/ops", "getOperatorPageContext(");
+  const overview = await readFile(new URL("../app/ops/page.tsx", import.meta.url), "utf8");
 
-  assert.equal(pages.length, 11);
+  assert.equal(pages.length, 10);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
     const deniedFallback = contents.indexOf('reason="operator_access"');
@@ -62,4 +63,8 @@ test("every operator page context uses operator permission copy for denied accou
     assert.ok(deniedFallback > denied, `${entry} must show the operator permission fallback`);
     assert.doesNotMatch(contents, /title="Operator access required\."/);
   }
+
+  assert.match(overview, /OpsOperatingRepositoryError/);
+  assert.match(overview, /error\.code === "forbidden"[\s\S]*reason="operator_access"/);
+  assert.match(overview, /if \(!viewer\) redirect\("\/ops\/access"\)/);
 });

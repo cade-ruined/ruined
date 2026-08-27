@@ -511,8 +511,8 @@ export async function getOpsMemberOperatingRecord(
           total: number | string;
         }>>`
           select
-            unit.unit_slug as key,
-            unit.title as label,
+            unit.configuration ->> 'chapter' as key,
+            initcap(replace(unit.configuration ->> 'chapter', '_', ' ')) as label,
             count(*) filter (where progress.status = 'completed') as completed,
             count(*) as total
           from foundation_units unit
@@ -522,8 +522,9 @@ export async function getOpsMemberOperatingRecord(
             on progress.enrollment_id = enrollment.id
            and progress.unit_id = unit.id
           where enrollment.id = ${enrollment.id}::uuid
-          group by unit.unit_slug, unit.title, unit.position
-          order by unit.position
+            and nullif(unit.configuration ->> 'chapter', '') is not null
+          group by unit.configuration ->> 'chapter'
+          order by min(unit.position)
         `
       : [];
     const requirementRows = enrollment
@@ -1513,7 +1514,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           'foundations',
           scoped_member.member_id,
           scoped_member.member_name,
-          'Completed ' || unit.title,
+          'Completed Foundations / ' || initcap(replace(unit.configuration ->> 'chapter', '_', ' ')),
           'complete',
           progress.completed_at,
           '/ops/members/' || scoped_member.member_id::text || '#journey'
@@ -1523,10 +1524,12 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         join scoped_members scoped_member on scoped_member.member_id = enrollment.member_id
         where progress.status = 'completed'
           and progress.completed_at >= statement_timestamp() - interval '90 days'
-          and unit.position < (
+          and nullif(unit.configuration ->> 'chapter', '') is not null
+          and unit.position = (
             select max(sibling.position)
             from foundation_units sibling
             where sibling.foundation_version_id = unit.foundation_version_id
+              and sibling.configuration ->> 'chapter' = unit.configuration ->> 'chapter'
           )
 
         union all

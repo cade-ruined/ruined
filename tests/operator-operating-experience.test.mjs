@@ -40,7 +40,8 @@ test("the member directory opens one unified, server-projected operating record"
     assert.match(memberRecord, new RegExp(`id="${section}"`));
     assert.match(memberRecord, new RegExp(`"#${section}"`));
   }
-  assert.match(memberRecord, /Private reflections, Timeline entries, and Future Letter content never enter this view/);
+  assert.doesNotMatch(memberRecord, /divide-y|border-y|uppercase tracking-\[0\.1/);
+  assert.match(memberRecord, /Manage member record/);
   assert.match(memberRecord, /OperatorTaskCreateAction/);
   assert.match(memberRecord, /OperatorNoteAction/);
   assert.match(memberRecord, /OperatorOverrideAction/);
