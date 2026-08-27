@@ -88,6 +88,10 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.doesNotMatch(joinPage, /<main className="[^"]*border-t/);
   assert.match(joinForm, />Profile<\/h3>/);
   assert.match(joinForm, />Full name<\/span>/);
+  assert.doesNotMatch(joinForm, />Default shipping address<\/legend>/);
+  assert.match(joinForm, /<legend className="sr-only">Shipping address<\/legend>/);
+  assert.match(joinForm, />Shipping address<\/span>/);
+  assert.doesNotMatch(joinForm, />Street address<\/span>/);
   assert.match(joinForm, /const fieldClass =\s*\n\s*"[^"]*rounded-\[4px\]/);
   assert.match(joinForm, /fieldLabelTextClass[\s\S]*--font-cadehandy2/);
   assert.match(joinForm, /Profile photo \/ Optional[\s\S]*aspect-square/);

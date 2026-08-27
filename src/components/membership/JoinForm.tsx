@@ -420,9 +420,9 @@ export default function JoinForm({
           </div>
 
           <fieldset className="grid gap-5 sm:grid-cols-2">
-            <legend className={`${fieldLabelTextClass} mb-5 text-[1.65rem]`}>Default shipping address</legend>
+            <legend className="sr-only">Shipping address</legend>
             <label className={`${fieldLabelClass} sm:col-span-2`} htmlFor="shipping-address-line-1">
-              <span className={fieldLabelTextClass}>Street address</span>
+              <span className={fieldLabelTextClass}>Shipping address</span>
               <input
                 autoCapitalize="words"
                 autoComplete="shipping address-line1"
