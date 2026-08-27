@@ -340,7 +340,7 @@ function cleanRequired(value: string, label: string, max: number): string {
 }
 
 function validateOnboardingProfile(input: MemberOnboardingProfileInput) {
-  const legalName = cleanRequired(input.legalName, "Legal name", 180);
+  const legalName = cleanRequired(input.legalName, "Full name", 180);
   const preferredName = cleanRequired(input.preferredName, "Preferred name", 120);
   const mobile = input.mobile.trim();
   const parsedMobile = mobile.startsWith("+")
@@ -537,7 +537,7 @@ export async function acceptPublishedMembershipAgreement(
   if (!Number.isInteger(input.minimumAge) || input.minimumAge < 16 || input.minimumAge > 120) {
     throw new MembershipInputError("The minimum-age policy is not valid.");
   }
-  const signerName = cleanRequired(input.signerName, "Legal name", 180);
+  const signerName = cleanRequired(input.signerName, "Full name", 180);
   const identity = await requireMemberIdentity(authUserId);
   requireMemberCapability(identity, "profile.write");
   const sql = getApplicationDatabase();
@@ -553,7 +553,7 @@ export async function acceptPublishedMembershipAgreement(
     `;
     const profile = profileRows[0];
     if (!profile?.legal_name || profile.legal_name.trim() !== signerName) {
-      throw new MembershipConflictError("The signer name must match the saved legal name.");
+      throw new MembershipConflictError("The full name must match the name saved in your profile.");
     }
     if (!profile.birth_date) {
       throw new MembershipConflictError("Complete the member profile before accepting the agreement.");

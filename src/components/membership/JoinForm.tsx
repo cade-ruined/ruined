@@ -103,7 +103,10 @@ function EmbeddedCheckout({
 }
 
 const fieldClass =
-  "mt-2 min-h-12 w-full border border-white/20 bg-transparent px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[var(--color-poster)]";
+  "min-h-12 w-full rounded-[4px] border border-white/20 bg-transparent px-3 py-3 font-[var(--font-body)] text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[var(--color-poster)]";
+const fieldLabelClass = "grid gap-2";
+const fieldLabelTextClass =
+  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none tracking-normal text-[var(--color-poster)] [transform:rotate(-2deg)]";
 
 function savedString(value: Record<string, unknown> | null, key: string) {
   return value && typeof value[key] === "string" ? String(value[key]) : "";
@@ -303,24 +306,14 @@ export default function JoinForm({
   }
 
   return (
-    <div className="mt-10">
-      <ol className="grid grid-cols-3 gap-3">
-        <StageLine active={stage === "profile"} complete={profileComplete} label="Profile" number="01" />
-        <StageLine active={stage === "agreement"} complete={agreementComplete} label="Agreement" number="02" />
-        <StageLine active={stage === "payment"} complete={Boolean(clientSecret)} label="Payment" number="03" />
-      </ol>
-
+    <div className="mt-8">
       {stage === "profile" ? (
-        <form className="mt-9 grid gap-6" onSubmit={saveProfile}>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">First / Who you are</p>
-            <h3 className="mt-4 font-[var(--font-display)] text-4xl tracking-[-0.03em]">Administrative profile</h3>
-            <p className="mt-4 text-sm leading-relaxed text-white/52">These details hold access, age verification, and physical fulfillment. They are never shown on the Circle roster.</p>
-          </div>
+        <form className="grid gap-8" onSubmit={saveProfile}>
+          <h3 className="font-[var(--font-display)] text-4xl tracking-[-0.03em]">Profile</h3>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-legal-name">
-              Legal name
+            <label className={fieldLabelClass} htmlFor="member-legal-name">
+              <span className={fieldLabelTextClass}>Full name</span>
               <input
                 autoCapitalize="words"
                 autoComplete="name"
@@ -334,8 +327,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-preferred-name">
-              Preferred name
+            <label className={fieldLabelClass} htmlFor="member-preferred-name">
+              <span className={fieldLabelTextClass}>Preferred name</span>
               <input
                 autoCapitalize="words"
                 autoComplete="nickname"
@@ -349,8 +342,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-email">
-              Confirmed email
+            <label className={fieldLabelClass} htmlFor="member-email">
+              <span className={fieldLabelTextClass}>Confirmed email</span>
               <input
                 autoComplete="email"
                 className={`${fieldClass} text-white/45`}
@@ -359,8 +352,8 @@ export default function JoinForm({
                 value={onboarding.email}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-birth-date">
-              Birth date
+            <label className={fieldLabelClass} htmlFor="member-birth-date">
+              <span className={fieldLabelTextClass}>Birth date</span>
               <input
                 autoComplete="bday"
                 className={fieldClass}
@@ -371,62 +364,64 @@ export default function JoinForm({
                 type="date"
               />
             </label>
-            <fieldset className="min-w-0">
-              <legend className="text-xs uppercase tracking-[0.12em] text-white/50">Mobile</legend>
-              <div className="grid grid-cols-[minmax(8.75rem,0.9fr)_minmax(0,1.1fr)] gap-2">
-                <label className="sr-only" htmlFor="member-mobile-country">Mobile country and calling code</label>
+            <div className="grid gap-5 sm:col-span-2 sm:grid-cols-[minmax(0,1.35fr)_minmax(12rem,0.65fr)]">
+              <fieldset className="min-w-0">
+                <legend className={fieldLabelTextClass}>Mobile</legend>
+                <div className="mt-2 grid grid-cols-[minmax(9.5rem,0.55fr)_minmax(0,1fr)] gap-2">
+                  <label className="sr-only" htmlFor="member-mobile-country">Mobile country and calling code</label>
+                  <select
+                    aria-label="Mobile country and calling code"
+                    className={fieldClass}
+                    id="member-mobile-country"
+                    name="mobile-country"
+                    onChange={changePhoneCountry}
+                    value={phoneCountry}
+                  >
+                    {PHONE_COUNTRY_OPTIONS.map((country) => (
+                      <option className="text-black" key={country.code} value={country.code}>
+                        {country.callingCode} · {country.name}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="sr-only" htmlFor="member-mobile-number">Mobile number</label>
+                  <input
+                    aria-label="Mobile number"
+                    autoComplete="tel"
+                    className={fieldClass}
+                    id="member-mobile-number"
+                    inputMode="tel"
+                    name="mobile-national"
+                    onInput={changePhoneNumber}
+                    placeholder="Phone number"
+                    ref={phoneInputRef}
+                    required
+                    type="tel"
+                    value={phoneNumber}
+                  />
+                </div>
+              </fieldset>
+              <label className={fieldLabelClass} htmlFor="member-apparel-size">
+                <span className={fieldLabelTextClass}>Apparel top size</span>
                 <select
-                  aria-label="Mobile country and calling code"
                   className={fieldClass}
-                  id="member-mobile-country"
-                  name="mobile-country"
-                  onChange={changePhoneCountry}
-                  value={phoneCountry}
+                  defaultValue={savedString(sizing, "top")}
+                  id="member-apparel-size"
+                  name="apparel-size"
+                  required
                 >
-                  {PHONE_COUNTRY_OPTIONS.map((country) => (
-                    <option className="text-black" key={country.code} value={country.code}>
-                      {country.callingCode} · {country.name}
-                    </option>
+                  <option className="text-black" value="">Choose</option>
+                  {["XS", "S", "M", "L", "XL", "2XL", "3XL"].map((size) => (
+                    <option className="text-black" key={size} value={size}>{size}</option>
                   ))}
                 </select>
-                <label className="sr-only" htmlFor="member-mobile-number">Mobile number</label>
-                <input
-                  aria-label="Mobile number"
-                  autoComplete="tel"
-                  className={fieldClass}
-                  id="member-mobile-number"
-                  inputMode="tel"
-                  name="mobile-national"
-                  onInput={changePhoneNumber}
-                  placeholder="Phone number"
-                  ref={phoneInputRef}
-                  required
-                  type="tel"
-                  value={phoneNumber}
-                />
-              </div>
-            </fieldset>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="member-apparel-size">
-              Apparel top size
-              <select
-                className={fieldClass}
-                defaultValue={savedString(sizing, "top")}
-                id="member-apparel-size"
-                name="apparel-size"
-                required
-              >
-                <option className="text-black" value="">Choose</option>
-                {["XS", "S", "M", "L", "XL", "2XL", "3XL"].map((size) => (
-                  <option className="text-black" key={size} value={size}>{size}</option>
-                ))}
-              </select>
-            </label>
+              </label>
+            </div>
           </div>
 
-          <fieldset className="grid gap-5 border-t border-white/15 pt-6 sm:grid-cols-2">
-            <legend className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-white/48">Default shipping address</legend>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50 sm:col-span-2" htmlFor="shipping-address-line-1">
-              Street address
+          <fieldset className="grid gap-5 sm:grid-cols-2">
+            <legend className={`${fieldLabelTextClass} mb-5 text-[1.65rem]`}>Default shipping address</legend>
+            <label className={`${fieldLabelClass} sm:col-span-2`} htmlFor="shipping-address-line-1">
+              <span className={fieldLabelTextClass}>Street address</span>
               <input
                 autoCapitalize="words"
                 autoComplete="shipping address-line1"
@@ -439,8 +434,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50 sm:col-span-2" htmlFor="shipping-address-line-2">
-              Apartment, suite, etc. / Optional
+            <label className={`${fieldLabelClass} sm:col-span-2`} htmlFor="shipping-address-line-2">
+              <span className={fieldLabelTextClass}>Apartment, suite, etc. / Optional</span>
               <input
                 autoCapitalize="words"
                 autoComplete="shipping address-line2"
@@ -452,8 +447,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-city">
-              City
+            <label className={fieldLabelClass} htmlFor="shipping-city">
+              <span className={fieldLabelTextClass}>City</span>
               <input
                 autoCapitalize="words"
                 autoComplete="shipping address-level2"
@@ -466,8 +461,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-region">
-              State or region
+            <label className={fieldLabelClass} htmlFor="shipping-region">
+              <span className={fieldLabelTextClass}>State or region</span>
               <input
                 autoCapitalize="words"
                 autoComplete="shipping address-level1"
@@ -480,8 +475,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-postal-code">
-              Postal code
+            <label className={fieldLabelClass} htmlFor="shipping-postal-code">
+              <span className={fieldLabelTextClass}>Postal code</span>
               <input
                 autoCapitalize="characters"
                 autoComplete="shipping postal-code"
@@ -494,8 +489,8 @@ export default function JoinForm({
                 spellCheck={false}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.12em] text-white/50" htmlFor="shipping-country">
-              Country
+            <label className={fieldLabelClass} htmlFor="shipping-country">
+              <span className={fieldLabelTextClass}>Country</span>
               <select
                 autoComplete="shipping country"
                 className={fieldClass}
@@ -513,11 +508,10 @@ export default function JoinForm({
             </label>
           </fieldset>
 
-          <div className="border border-white/15 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-white/45">Member portrait / Optional now</p>
-            <div className="mt-4 aspect-[16/5] border border-dashed border-white/20 bg-white/[0.025] p-4">
-              <p className="font-[var(--font-handwritten)] text-lg text-[var(--color-poster)]">portrait placeholder</p>
-              <p className="mt-2 max-w-md text-xs leading-relaxed text-white/38">Your portrait remains visibly incomplete until private member-photo storage is connected. It does not block entry.</p>
+          <div>
+            <p className={fieldLabelTextClass}>Profile photo / Optional</p>
+            <div className="mt-3 flex aspect-square w-full max-w-64 items-end overflow-hidden rounded-[4px] border border-dashed border-white/20 bg-white/[0.025] p-5">
+              <p className="max-w-48 font-[var(--font-body)] text-xs leading-relaxed text-white/42">Photo upload will open when private member storage is connected.</p>
             </div>
           </div>
 
@@ -540,8 +534,8 @@ export default function JoinForm({
           ) : (
             <p className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/68">Ruined has not published the membership agreement yet. Entry remains closed until the approved copy is available.</p>
           )}
-          <label className="text-xs uppercase tracking-[0.12em] text-white/50">
-            Type your saved legal name
+          <label className={fieldLabelClass}>
+            <span className={fieldLabelTextClass}>Type the full name you entered</span>
             <input
               autoCapitalize="words"
               autoComplete="name"
@@ -569,7 +563,7 @@ export default function JoinForm({
             <h3 className="font-[var(--font-display)] text-4xl" id="secure-payment-title">Membership payment</h3>
             <span className="text-sm text-white/48">{onboarding.email}</span>
           </div>
-          <p className="mt-5 text-sm leading-relaxed text-white/52">Your profile and agreement are saved. Payment is the final administrative threshold.</p>
+          <p className="mt-5 text-sm leading-relaxed text-white/52">Your profile and agreement are saved. Payment is the final step.</p>
           {error || checkoutDisabledReason ? <p aria-live="polite" className="mt-6 border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/72">{error ?? checkoutDisabledReason}</p> : null}
           {!clientSecret ? (
             <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!checkoutEnabled || !publishableKey || submitting} onClick={openCheckout} type="button">{submitting ? "Preparing payment" : checkoutEnabled && publishableKey ? "Open secure payment" : "Payment not connected"}</button>
@@ -578,6 +572,12 @@ export default function JoinForm({
           <p className="mt-4 text-xs leading-relaxed text-white/40">Payment is handled securely by Stripe. Store purchases remain separate.</p>
         </section>
       ) : null}
+
+      <ol aria-label="Membership progress" className="mt-12 grid grid-cols-3 gap-3">
+        <StageLine active={stage === "profile"} complete={profileComplete} label="Profile" number="01" />
+        <StageLine active={stage === "agreement"} complete={agreementComplete} label="Agreement" number="02" />
+        <StageLine active={stage === "payment"} complete={Boolean(clientSecret)} label="Payment" number="03" />
+      </ol>
     </div>
   );
 }

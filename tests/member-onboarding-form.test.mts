@@ -17,6 +17,10 @@ const joinForm = await readFile(
   new URL("../src/components/membership/JoinForm.tsx", import.meta.url),
   "utf8",
 );
+const joinPage = await readFile(
+  new URL("../app/my/join/page.tsx", import.meta.url),
+  "utf8",
+);
 const membershipRepository = await readFile(
   new URL("../src/lib/membership/repository.ts", import.meta.url),
   "utf8",
@@ -40,6 +44,31 @@ test("member entry exposes native identity and shipping autofill", () => {
   assert.match(joinForm, /autoCapitalize="words"/);
   assert.match(joinForm, /autoCapitalize="characters"/);
   assert.doesNotMatch(joinForm, /toTitleCase|text-transform:\s*capitalize/i);
+});
+
+test("member entry uses the friendly image-led form hierarchy", () => {
+  for (const removedCopy of [
+    "Administrative entry",
+    "Administrative profile",
+    "Three thresholds",
+    "Your email is confirmed. Save the practical details",
+    "MEMBER PORTRAIT / ARRIVAL",
+  ]) {
+    assert.doesNotMatch(`${joinPage}\n${joinForm}`, new RegExp(removedCopy, "i"));
+  }
+
+  assert.match(joinPage, /src="\/after-the-fear-hero\.webp"/);
+  assert.match(joinPage, /Your place begins here\./);
+  assert.doesNotMatch(joinPage, /<main className="[^"]*border-t/);
+  assert.match(joinForm, />Profile<\/h3>/);
+  assert.match(joinForm, />Full name<\/span>/);
+  assert.match(joinForm, /const fieldClass =\s*\n\s*"[^"]*rounded-\[4px\]/);
+  assert.match(joinForm, /fieldLabelTextClass[\s\S]*--font-cadehandy2/);
+  assert.match(joinForm, /Profile photo \/ Optional[\s\S]*aspect-square/);
+
+  const progressIndex = joinForm.indexOf('<ol aria-label="Membership progress"');
+  const paymentStageIndex = joinForm.indexOf('{stage === "payment" ?');
+  assert.ok(paymentStageIndex >= 0 && progressIndex > paymentStageIndex);
 });
 
 test("member entry uses named country selectors instead of free-form codes", () => {
