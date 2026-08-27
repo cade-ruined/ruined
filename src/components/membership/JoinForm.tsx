@@ -12,6 +12,8 @@ import {
 } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 
+import { useMembershipEntryProgressStage } from "@/components/membership/MembershipEntryProgress";
+import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
 import {
   formatPhoneInput,
@@ -112,17 +114,6 @@ function savedString(value: Record<string, unknown> | null, key: string) {
   return value && typeof value[key] === "string" ? String(value[key]) : "";
 }
 
-function StageLine({ active, complete, label, number }: { active: boolean; complete: boolean; label: string; number: string }) {
-  return (
-    <li className={`border-t pt-3 ${active ? "border-[var(--color-poster)]" : "border-white/15"}`}>
-      <span className="text-[0.58rem] uppercase tracking-[0.14em] text-white/35">{number}</span>
-      <p className={`mt-2 text-xs uppercase tracking-[0.12em] ${active ? "text-white" : complete ? "text-white/58" : "text-white/30"}`}>
-        {complete ? `${label} / Complete` : label}
-      </p>
-    </li>
-  );
-}
-
 export default function JoinForm({
   disabledReason,
   checkoutDisabledReason,
@@ -149,7 +140,10 @@ export default function JoinForm({
   const [submitting, setSubmitting] = useState(false);
   const profileComplete = onboarding.requiredFieldsComplete;
   const agreementComplete = Boolean(acceptanceId);
-  const stage = !profileComplete ? "profile" : !agreementComplete ? "agreement" : "payment";
+  const stage = membershipEntryStage(profileComplete, agreementComplete);
+  const previousStage = useRef(stage);
+  const stageHeadingRef = useRef<HTMLHeadingElement>(null);
+  useMembershipEntryProgressStage(stage);
   const address = onboarding.profile.fulfillmentAddress;
   const sizing = onboarding.profile.apparelSizing;
   const initialPhoneCountry = phoneCountryFromProfile(
@@ -160,6 +154,13 @@ export default function JoinForm({
   const [phoneNumber, setPhoneNumber] = useState(() =>
     phoneInputFromProfile(onboarding.profile.mobile, initialPhoneCountry),
   );
+
+  useEffect(() => {
+    if (previousStage.current === stage) return;
+    previousStage.current = stage;
+    const frame = requestAnimationFrame(() => stageHeadingRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [stage]);
 
   function attemptId() {
     checkoutAttempt.current ??= crypto.randomUUID();
@@ -309,7 +310,7 @@ export default function JoinForm({
     <div className="mt-8">
       {stage === "profile" ? (
         <form className="grid gap-8" onSubmit={saveProfile}>
-          <h3 className="font-[var(--font-display)] text-4xl tracking-[-0.03em]">Profile</h3>
+          <h3 className="font-[var(--font-display)] text-4xl tracking-[-0.03em]" ref={stageHeadingRef} tabIndex={-1}>Profile</h3>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <label className={fieldLabelClass} htmlFor="member-legal-name">
@@ -524,7 +525,7 @@ export default function JoinForm({
         <form className="mt-9 grid gap-6" onSubmit={acceptAgreement}>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">Second / Exact agreement</p>
-            <h3 className="mt-4 font-[var(--font-display)] text-4xl tracking-[-0.03em]">{onboarding.agreement.title ?? "Agreement not published"}</h3>
+            <h3 className="mt-4 font-[var(--font-display)] text-4xl tracking-[-0.03em]" ref={stageHeadingRef} tabIndex={-1}>{onboarding.agreement.title ?? "Agreement not published"}</h3>
             {onboarding.agreement.version ? <p className="mt-3 text-xs uppercase tracking-[0.13em] text-white/38">Version {onboarding.agreement.version}</p> : null}
           </div>
           {onboarding.agreement.body && onboarding.agreement.id ? (
@@ -560,7 +561,7 @@ export default function JoinForm({
         <section className="mt-9" aria-labelledby="secure-payment-title">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">Final / Secure payment</p>
           <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4">
-            <h3 className="font-[var(--font-display)] text-4xl" id="secure-payment-title">Membership payment</h3>
+            <h3 className="font-[var(--font-display)] text-4xl" id="secure-payment-title" ref={stageHeadingRef} tabIndex={-1}>Membership payment</h3>
             <span className="text-sm text-white/48">{onboarding.email}</span>
           </div>
           <p className="mt-5 text-sm leading-relaxed text-white/52">Your profile and agreement are saved. Payment is the final step.</p>
@@ -573,11 +574,6 @@ export default function JoinForm({
         </section>
       ) : null}
 
-      <ol aria-label="Membership progress" className="mt-12 grid grid-cols-3 gap-3">
-        <StageLine active={stage === "profile"} complete={profileComplete} label="Profile" number="01" />
-        <StageLine active={stage === "agreement"} complete={agreementComplete} label="Agreement" number="02" />
-        <StageLine active={stage === "payment"} complete={Boolean(clientSecret)} label="Payment" number="03" />
-      </ol>
     </div>
   );
 }

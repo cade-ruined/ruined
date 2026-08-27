@@ -214,6 +214,7 @@ export default function PlatformShell({
   const preview = configuration.mode === "preview";
   const member = surface === "member";
   const threshold = member && isMemberThreshold(pathname);
+  const membershipEntry = member && pathname === "/my/join";
   const foundations = member && isMemberFoundations(pathname);
   const foundationsExperience = pathname.startsWith("/my/foundations/experience");
   const dark = !member || threshold || foundations;
@@ -262,7 +263,13 @@ export default function PlatformShell({
         </div>
       ) : null}
 
-      <div className="mx-auto max-w-[96rem] px-4 py-10 sm:px-6 sm:py-14 lg:px-10 lg:py-16">
+      <div
+        className={`mx-auto max-w-[96rem] px-4 sm:px-6 lg:px-10 ${
+          membershipEntry
+            ? "pb-10 sm:pb-14 lg:pb-16"
+            : "py-10 sm:py-14 lg:py-16"
+        }`}
+      >
         {children}
       </div>
 

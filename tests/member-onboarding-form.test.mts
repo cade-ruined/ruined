@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  MEMBERSHIP_ENTRY_STAGES,
+  membershipEntryStage,
+} from "../src/lib/membership/entry-stage.ts";
+import {
   formatPhoneInput,
   mobileToE164,
   PHONE_COUNTRY_OPTIONS,
@@ -21,12 +25,20 @@ const joinPage = await readFile(
   new URL("../app/my/join/page.tsx", import.meta.url),
   "utf8",
 );
+const entryProgress = await readFile(
+  new URL("../src/components/membership/MembershipEntryProgress.tsx", import.meta.url),
+  "utf8",
+);
 const membershipRepository = await readFile(
   new URL("../src/lib/membership/repository.ts", import.meta.url),
   "utf8",
 );
 const theme = await readFile(
   new URL("../src/styles/theme.css", import.meta.url),
+  "utf8",
+);
+const platformShell = await readFile(
+  new URL("../src/components/platform/PlatformShell.tsx", import.meta.url),
   "utf8",
 );
 
@@ -80,9 +92,42 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.match(joinForm, /fieldLabelTextClass[\s\S]*--font-cadehandy2/);
   assert.match(joinForm, /Profile photo \/ Optional[\s\S]*aspect-square/);
 
-  const progressIndex = joinForm.indexOf('<ol aria-label="Membership progress"');
-  const paymentStageIndex = joinForm.indexOf('{stage === "payment" ?');
-  assert.ok(paymentStageIndex >= 0 && progressIndex > paymentStageIndex);
+  const progressIndex = joinPage.indexOf("<MembershipEntryProgress />");
+  const heroIndex = joinPage.indexOf('<section className="relative isolate');
+  assert.ok(progressIndex >= 0 && heroIndex > progressIndex);
+  assert.doesNotMatch(joinForm, /StageLine|Membership progress/);
+});
+
+test("member entry uses a live accessible step rail beneath the header", () => {
+  assert.deepEqual(
+    MEMBERSHIP_ENTRY_STAGES.map(({ id }) => id),
+    ["profile", "agreement", "payment"],
+  );
+  assert.equal(membershipEntryStage(false, false), "profile");
+  assert.equal(membershipEntryStage(true, false), "agreement");
+  assert.equal(membershipEntryStage(true, true), "payment");
+
+  for (const token of [
+    'role="status"',
+    'aria-live="polite"',
+    'aria-atomic="true"',
+    'aria-label="Membership entry steps"',
+    'aria-current={status === "current" ? "step" : undefined}',
+    "bg-[var(--color-verdigris)]",
+    "bg-[var(--color-poster)]",
+    "bg-white/15",
+    "max-w-4xl",
+  ]) {
+    assert.ok(entryProgress.includes(token), `missing progress token: ${token}`);
+  }
+  assert.match(entryProgress, /Step \{currentIndex \+ 1\} of 3/);
+  assert.doesNotMatch(entryProgress, /color-highlight|sticky|rounded/);
+  assert.match(joinForm, /useMembershipEntryProgressStage\(stage\)/);
+  assert.match(joinForm, /previousStage\.current === stage[\s\S]*stageHeadingRef\.current\?\.focus\(\)/);
+  assert.equal((joinForm.match(/ref=\{stageHeadingRef\}/g) ?? []).length, 3);
+  assert.doesNotMatch(joinForm, /complete=\{Boolean\(clientSecret\)\}/);
+  assert.match(platformShell, /const membershipEntry = member && pathname === "\/my\/join";/);
+  assert.match(platformShell, /membershipEntry[\s\S]*\? "pb-10 sm:pb-14 lg:pb-16"/);
 });
 
 test("member entry uses named country selectors instead of free-form codes", () => {
