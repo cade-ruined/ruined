@@ -1913,6 +1913,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         summary: row.summary,
         tone: overviewActivityTone(row.tone),
       })),
+      canPlaceMembers: isAdmin,
       counts: {
         activeMembers: Number(counts?.active_members ?? 0),
         attentionRequired: Number(counts?.attention_required ?? 0),

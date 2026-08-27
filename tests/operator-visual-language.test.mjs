@@ -14,6 +14,8 @@ const [
   styles,
   actions,
   stateLabel,
+  shell,
+  memberRecord,
 ] = await Promise.all([
   source("src/components/platform/OperatorPageFrame.tsx"),
   source("src/components/platform/OpsOverview.tsx"),
@@ -22,6 +24,8 @@ const [
   source("src/components/platform/operatorStyles.ts"),
   source("src/components/platform/OpsActions.tsx"),
   source("src/components/platform/StateLabel.tsx"),
+  source("src/components/platform/PlatformShell.tsx"),
+  source("src/components/platform/OperatorMemberRecord.tsx"),
 ]);
 
 test("operator pages let navigation name the route once", () => {
@@ -52,4 +56,12 @@ test("operator fields reuse the Ruined intake language without tool eyebrows", (
   assert.match(styles, /color-shop/);
   assert.doesNotMatch(actions, />Admin action<|>Completion authority<|>Activation authority</);
   assert.doesNotMatch(stateLabel, /h-px w-4|uppercase tracking/);
+});
+
+test("operator navigation and member records avoid stacked utility rails and divider tables", () => {
+  assert.match(shell, /member \? \(\s*<PlatformUtilityRail/);
+  assert.match(shell, /<OperationsNavigation\s+configuration=\{configuration\}/);
+  assert.doesNotMatch(memberRecord, /divide-y|border-y/);
+  assert.doesNotMatch(memberRecord, /uppercase tracking-\[0\.1/);
+  assert.match(memberRecord, /Manage member record/);
 });

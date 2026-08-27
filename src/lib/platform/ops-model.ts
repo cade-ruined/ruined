@@ -343,6 +343,7 @@ export type OpsOverviewCounts = {
 
 export type OpsOverviewData = {
   activity: OpsOverviewActivityItem[];
+  canPlaceMembers: boolean;
   counts: OpsOverviewCounts;
   priorityWork: OpsWorkItem[];
   upcomingExperiences: OpsExperienceDirectoryItem[];

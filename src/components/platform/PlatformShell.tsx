@@ -113,9 +113,18 @@ function PlatformUtilityRail({
   );
 }
 
-function OperationsNavigation({ pathname }: { pathname: string }) {
+function OperationsNavigation({
+  configuration,
+  pathname,
+  viewerLabel,
+}: {
+  configuration: PlatformConfiguration;
+  pathname: string;
+  viewerLabel?: string | null;
+}) {
   const railRef = useRef<HTMLDivElement>(null);
   const currentRef = useRef<HTMLAnchorElement>(null);
+  const preview = configuration.mode === "preview";
 
   useEffect(() => {
     const rail = railRef.current;
@@ -153,12 +162,26 @@ function OperationsNavigation({ pathname }: { pathname: string }) {
             );
           })}
         </nav>
-        <Link
-          className="ml-auto hidden whitespace-nowrap font-[var(--font-body)] text-[0.66rem] uppercase tracking-[0.13em] text-white/35 transition-colors hover:text-white sm:block"
-          href="/"
-        >
-          Public site ↗
-        </Link>
+        <div className="ml-auto flex min-w-max items-center gap-5 pl-5 font-[var(--font-body)] text-xs text-white/38">
+          <ConnectionMark
+            label={preview ? "Preview" : configuration.mode === "connected" ? "Live" : "Unavailable"}
+            state={configuration.mode === "connected" ? "connected" : "disconnected"}
+          />
+          {viewerLabel ? <span className="hidden max-w-48 truncate lg:inline">{viewerLabel}</span> : null}
+          {viewerLabel && !preview ? (
+            <form action="/api/auth/sign-out?next=/ops/access" method="post">
+              <button
+                className="transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
+                type="submit"
+              >
+                Sign out
+              </button>
+            </form>
+          ) : null}
+          <Link className="whitespace-nowrap transition-colors hover:text-white" href="/">
+            Public site ↗
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -205,14 +228,20 @@ export default function PlatformShell({
       data-platform-surface={surface}
       data-platform-threshold={threshold ? "true" : undefined}
     >
-      <PlatformUtilityRail
-        configuration={configuration}
-        dark={dark}
-        surface={surface}
-        viewerLabel={viewerLabel}
-      />
-
-      {!member ? <OperationsNavigation pathname={pathname} /> : null}
+      {member ? (
+        <PlatformUtilityRail
+          configuration={configuration}
+          dark={dark}
+          surface={surface}
+          viewerLabel={viewerLabel}
+        />
+      ) : (
+        <OperationsNavigation
+          configuration={configuration}
+          pathname={pathname}
+          viewerLabel={viewerLabel}
+        />
+      )}
 
       {configuration.mode !== "connected" ? (
         <div

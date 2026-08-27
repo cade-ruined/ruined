@@ -3,26 +3,34 @@ import { redirect } from "next/navigation";
 
 import OpsOverview from "@/components/platform/OpsOverview";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getOpsOverviewData } from "@/lib/platform/ops-operating-repository";
+import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { getPlatformConfiguration } from "@/lib/platform/config";
+import {
+  getOpsOverviewData,
+  OpsOperatingRepositoryError,
+} from "@/lib/platform/ops-operating-repository";
 import { PREVIEW_OPS_OVERVIEW } from "@/lib/platform/ops-preview";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
 
 export const metadata: Metadata = { title: "Overview" };
 export const dynamic = "force-dynamic";
 
 export default async function OperationsPage() {
-  const context = await getOperatorPageContext();
-  if (context.state === "signed_out") redirect("/ops/access");
-  if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  const configuration = getPlatformConfiguration();
+  if (configuration.mode === "preview") return <OpsOverview data={PREVIEW_OPS_OVERVIEW} />;
+  if (configuration.mode === "unavailable") {
+    return <PlatformUnavailable accessHref="/ops/access" />;
+  }
 
-  if (context.state === "preview") return <OpsOverview data={PREVIEW_OPS_OVERVIEW} />;
-  if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
+  const viewer = await getCurrentPlatformViewer();
+  if (!viewer) redirect("/ops/access");
 
   try {
-    const data = await getOpsOverviewData(context.viewer.authUserId);
+    const data = await getOpsOverviewData(viewer.authUserId);
     return <OpsOverview data={data} />;
   } catch (error) {
+    if (error instanceof OpsOperatingRepositoryError && error.code === "forbidden") {
+      return <PlatformUnavailable reason="operator_access" />;
+    }
     console.error("Operations overview could not be loaded", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });

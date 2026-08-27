@@ -6,10 +6,13 @@ async function source(relativePath) {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
-const [repository, model, preview] = await Promise.all([
+const [repository, model, preview, memberRepository, page, component] = await Promise.all([
   source("src/lib/platform/ops-operating-repository.ts"),
   source("src/lib/platform/ops-model.ts"),
   source("src/lib/platform/ops-preview.ts"),
+  source("src/lib/platform/repository.ts"),
+  source("app/ops/page.tsx"),
+  source("src/components/platform/OpsOverview.tsx"),
 ]);
 
 const overview = repository.slice(
@@ -95,10 +98,32 @@ test("operator Overview contract and preview expose stable activity, work, and u
     assert.match(model, new RegExp(`${field}:`));
   }
   assert.match(model, /export type OpsOverviewData/);
+  assert.match(model, /canPlaceMembers: boolean/);
   assert.match(model, /priorityWork: OpsWorkItem\[\]/);
   assert.match(model, /upcomingExperiences: OpsExperienceDirectoryItem\[\]/);
   assert.match(preview, /export const PREVIEW_OPS_OVERVIEW: OpsOverviewData/);
   assert.match(preview, /preview-activity-billing-01/);
   assert.match(preview, /priorityWork: PREVIEW_OPS_WORK_QUEUE\.items/);
   assert.match(preview, /upcomingExperiences: PREVIEW_OPS_EXPERIENCES/);
+});
+
+test("Overview decisions link to member filters with the same eligibility rules", () => {
+  for (const condition of [
+    /billing_state = 'attention_required'/,
+    /account_state = 'suspended'/,
+    /standing_state in \('paused', 'cancellation_requested'\)/,
+    /program_state in \('onboarding', 'active'\)/,
+  ]) {
+    assert.match(overview, condition);
+    assert.match(memberRepository, condition);
+  }
+  assert.match(overview, /circle_state <> 'active'/);
+  assert.match(memberRepository, /circle\.status <> 'active'/);
+});
+
+test("Overview authorizes directly and only offers Circle placement to admins", () => {
+  assert.doesNotMatch(page, /getOperatorPageContext/);
+  assert.match(page, /getOpsOverviewData\(viewer\.authUserId\)/);
+  assert.match(repository, /canPlaceMembers: isAdmin/);
+  assert.match(component, /data\.canPlaceMembers \? \(/);
 });

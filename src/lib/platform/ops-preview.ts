@@ -378,6 +378,7 @@ export const PREVIEW_OPS_OVERVIEW: OpsOverviewData = {
       tone: "complete",
     },
   ],
+  canPlaceMembers: true,
   counts: {
     activeMembers: 2,
     attentionRequired: 1,

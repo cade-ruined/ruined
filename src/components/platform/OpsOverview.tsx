@@ -188,9 +188,11 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
             </div>
           </section>
 
-          <Link className="bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white transition-colors hover:bg-[#080605]" href="/ops/members?filter=unassigned">
-            Place {data.counts.eligibleWithoutCircle} eligible member{data.counts.eligibleWithoutCircle === 1 ? "" : "s"} into a Circle →
-          </Link>
+          {data.canPlaceMembers ? (
+            <Link className="bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white transition-colors hover:bg-[#080605]" href="/ops/members?filter=unassigned">
+              Place {data.counts.eligibleWithoutCircle} eligible member{data.counts.eligibleWithoutCircle === 1 ? "" : "s"} into a Circle →
+            </Link>
+          ) : null}
         </aside>
       </div>
     </OperatorPageFrame>

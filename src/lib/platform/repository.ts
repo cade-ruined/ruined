@@ -755,11 +755,19 @@ export async function getOperatorMemberDirectoryPage(
             ${filter}::text = 'attention'
             and (
               lifecycle.billing_state = 'attention_required'
-              or lifecycle.account_state in ('suspended', 'closed')
+              or lifecycle.account_state = 'suspended'
+              or lifecycle.standing_state in ('paused', 'cancellation_requested')
             )
           )
           or (${filter}::text = 'foundations' and lifecycle.foundations_state <> 'completed')
-          or (${filter}::text = 'unassigned' and active_circle.circle_id is null)
+          or (
+            ${filter}::text = 'unassigned'
+            and lifecycle.account_state = 'active'
+            and lifecycle.billing_state = 'active'
+            and lifecycle.standing_state = 'active'
+            and lifecycle.program_state in ('onboarding', 'active')
+            and (active_circle.circle_id is null or circle.status <> 'active')
+          )
         )
     `;
     const totalResults = Number(countRows[0]?.total_results ?? 0);
@@ -837,11 +845,19 @@ export async function getOperatorMemberDirectoryPage(
             ${filter}::text = 'attention'
             and (
               lifecycle.billing_state = 'attention_required'
-              or lifecycle.account_state in ('suspended', 'closed')
+              or lifecycle.account_state = 'suspended'
+              or lifecycle.standing_state in ('paused', 'cancellation_requested')
             )
           )
           or (${filter}::text = 'foundations' and lifecycle.foundations_state <> 'completed')
-          or (${filter}::text = 'unassigned' and active_circle.circle_id is null)
+          or (
+            ${filter}::text = 'unassigned'
+            and lifecycle.account_state = 'active'
+            and lifecycle.billing_state = 'active'
+            and lifecycle.standing_state = 'active'
+            and lifecycle.program_state in ('onboarding', 'active')
+            and (active_circle.circle_id is null or circle.status <> 'active')
+          )
         )
       order by
         case lifecycle.billing_state when 'attention_required' then 0 else 1 end,
