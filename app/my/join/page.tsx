@@ -55,8 +55,10 @@ export default async function JoinMyRuinedPage() {
           src="/after-the-fear-hero.webp"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
-        <h1 className="absolute inset-x-5 bottom-7 max-w-5xl font-[var(--font-display)] text-[clamp(3.6rem,8vw,8rem)] leading-[0.86] tracking-[-0.055em] text-[var(--color-bone)] sm:inset-x-10 sm:bottom-10">
-          Your place begins here.
+        <h1 className="absolute inset-x-5 bottom-7 max-w-6xl sm:inset-x-10 sm:bottom-10">
+          <span className="ui-heading inline-block max-w-full bg-[var(--color-highlight)] px-[0.3em] py-[0.2em] text-[clamp(2rem,5.2vw,4.75rem)] uppercase leading-[0.92] tracking-[-0.045em] text-[#080605]">
+            Your place begins here.
+          </span>
         </h1>
       </section>
 

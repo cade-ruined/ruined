@@ -25,6 +25,10 @@ const membershipRepository = await readFile(
   new URL("../src/lib/membership/repository.ts", import.meta.url),
   "utf8",
 );
+const theme = await readFile(
+  new URL("../src/styles/theme.css", import.meta.url),
+  "utf8",
+);
 
 test("member entry exposes native identity and shipping autofill", () => {
   for (const token of [
@@ -59,6 +63,16 @@ test("member entry uses the friendly image-led form hierarchy", () => {
 
   assert.match(joinPage, /src="\/after-the-fear-hero\.webp"/);
   assert.match(joinPage, /Your place begins here\./);
+  assert.match(theme, /--color-highlight:\s*#FFCD35;/);
+  assert.match(
+    joinPage,
+    /ui-heading[^"\n]*bg-\[var\(--color-highlight\)\][^"\n]*uppercase/,
+  );
+  assert.equal(
+    (`${joinPage}\n${joinForm}`.match(/bg-\[var\(--color-highlight\)\]/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(joinForm, /color-highlight/);
   assert.doesNotMatch(joinPage, /<main className="[^"]*border-t/);
   assert.match(joinForm, />Profile<\/h3>/);
   assert.match(joinForm, />Full name<\/span>/);
