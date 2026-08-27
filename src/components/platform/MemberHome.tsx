@@ -190,9 +190,9 @@ function GlanceFact({
   value: string;
 }) {
   return (
-    <div className={`min-w-0 ${className}`}>
-      <dt className="font-[var(--font-body)] text-[0.64rem] font-semibold uppercase tracking-[0.11em] text-black/58">{label}</dt>
-      <dd className="mt-1 break-words font-[var(--font-body)] text-[0.82rem] font-semibold leading-snug text-black/82">{value}</dd>
+    <div className={`min-w-0 lg:flex lg:items-baseline lg:justify-between lg:gap-3 ${className}`}>
+      <dt className="shrink-0 font-[var(--font-body)] text-[0.64rem] font-semibold uppercase tracking-[0.11em] text-black/58">{label}</dt>
+      <dd className="mt-1 break-words font-[var(--font-body)] text-[0.82rem] font-semibold leading-snug text-black/82 lg:mt-0 lg:text-right">{value}</dd>
     </div>
   );
 }
@@ -345,11 +345,11 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
             <p className={eyebrow}>At a glance</p>
             <dl className="mt-5 grid grid-cols-3 gap-x-4 gap-y-5 lg:grid-cols-1 lg:gap-3">
               <GlanceFact label="Foundations" value={`${foundationPercent}%`} />
-              <GlanceFact className="hidden lg:block" label="Circle" value={member.circleName ?? "Not formed"} />
-              <GlanceFact className="hidden lg:block" label="Accountability" value={member.partner?.displayName ?? "Not paired"} />
+              <GlanceFact className="hidden" label="Circle" value={member.circleName ?? "Not formed"} />
+              <GlanceFact className="hidden" label="Accountability" value={member.partner?.displayName ?? "Not paired"} />
               <GlanceFact label="Artifacts" value={String(member.artifacts.length)} />
               <GlanceFact label="Upcoming" value={String(member.upcomingExperiences.length)} />
-              {member.memberSince ? <GlanceFact className="hidden lg:block" label="Member since" value={formatMonthYear(member.memberSince)} /> : null}
+              {member.memberSince ? <GlanceFact className="hidden" label="Member since" value={formatMonthYear(member.memberSince)} /> : null}
             </dl>
 
             <section aria-labelledby="member-next-action" className="mt-5 border border-black/22 bg-[#eee7da]/70 p-4 sm:p-5">
