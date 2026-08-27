@@ -61,8 +61,8 @@ function PlatformUtilityRail({
 
   return (
     <div
-      className={`border-b font-[var(--font-body)] ${
-        dark ? "border-white/12 text-white" : "border-black/15 text-[#201d19]"
+      className={`font-[var(--font-body)] ${
+        dark ? "text-white" : "text-[#201d19]"
       }`}
     >
       <div className="mx-auto flex min-h-14 max-w-[96rem] flex-wrap items-center justify-between gap-x-8 gap-y-2 px-4 py-3 sm:px-6 lg:px-10">

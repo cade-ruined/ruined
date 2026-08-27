@@ -15,6 +15,7 @@ const [
   actions,
   stateLabel,
   shell,
+  siteHeader,
   memberRecord,
 ] = await Promise.all([
   source("src/components/platform/OperatorPageFrame.tsx"),
@@ -25,6 +26,7 @@ const [
   source("src/components/platform/OpsActions.tsx"),
   source("src/components/platform/StateLabel.tsx"),
   source("src/components/platform/PlatformShell.tsx"),
+  source("src/components/SiteHeader.tsx"),
   source("src/components/platform/OperatorMemberRecord.tsx"),
 ]);
 
@@ -61,6 +63,9 @@ test("operator fields reuse the Ruined intake language without tool eyebrows", (
 test("operator navigation and member records avoid stacked utility rails and divider tables", () => {
   assert.match(shell, /member \? \(\s*<PlatformUtilityRail/);
   assert.match(shell, /<OperationsNavigation\s+configuration=\{configuration\}/);
+  assert.match(shell, /min-h-screen pt-\[var\(--ruined-header-height\)\]/);
+  assert.match(siteHeader, /!isHome && !isPlatform && \(/);
+  assert.doesNotMatch(shell, /className=\{`border-b font-\[var\(--font-body\)\]/);
   assert.doesNotMatch(memberRecord, /divide-y|border-y/);
   assert.doesNotMatch(memberRecord, /uppercase tracking-\[0\.1/);
   assert.match(memberRecord, /Manage member record/);

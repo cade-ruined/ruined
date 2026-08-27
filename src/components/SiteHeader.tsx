@@ -344,7 +344,7 @@ export default function SiteHeader() {
 
       <UniversalSearch open={searchOpen} onOpenChange={setSearchOpen} />
 
-      {!isHome && (
+      {!isHome && !isPlatform && (
         <div
           aria-hidden
           className={`${
