@@ -49,11 +49,13 @@ function ConnectionMark({
 function PlatformUtilityRail({
   configuration,
   dark,
+  hideBrand,
   surface,
   viewerLabel,
 }: {
   configuration: PlatformConfiguration;
   dark: boolean;
+  hideBrand?: boolean;
   surface: PlatformSurface;
   viewerLabel?: string | null;
 }) {
@@ -65,19 +67,21 @@ function PlatformUtilityRail({
         dark ? "text-white" : "text-[#201d19]"
       }`}
     >
-      <div className="mx-auto flex min-h-14 max-w-[96rem] flex-wrap items-center justify-between gap-x-8 gap-y-2 px-4 py-3 sm:px-6 lg:px-10">
-        <p className="text-[0.66rem] font-medium uppercase tracking-[0.18em] opacity-70">
-          {surface === "member" ? "Ruined Membership" : "Ruined Operations"}
-        </p>
+      <div className={`mx-auto flex max-w-[96rem] flex-wrap items-center gap-x-8 gap-y-2 px-4 sm:px-6 lg:px-10 ${hideBrand ? "min-h-11 justify-end py-0" : "min-h-14 justify-between py-3"}`}>
+        {!hideBrand ? (
+          <p className="text-[0.66rem] font-medium uppercase tracking-[0.18em] opacity-70">
+            {surface === "member" ? "Ruined Membership" : "Ruined Operations"}
+          </p>
+        ) : null}
 
-        <div className="flex min-w-0 items-center gap-3 text-[0.64rem] uppercase tracking-[0.12em]">
+        <div className="flex min-w-0 items-center gap-3 text-[0.7rem] uppercase tracking-[0.1em]">
           <span
             className={
               preview
-                ? "text-[var(--color-poster)]"
+                ? "inline-flex items-center gap-2 text-white/70 before:size-1.5 before:bg-[var(--color-poster)]"
                 : configuration.mode === "connected"
                   ? "opacity-50"
-                  : "text-[var(--color-poster)]"
+                  : "inline-flex items-center gap-2 text-current opacity-70 before:size-1.5 before:bg-[var(--color-poster)]"
             }
           >
             {preview
@@ -100,7 +104,7 @@ function PlatformUtilityRail({
               method="post"
             >
               <button
-                className="uppercase tracking-[0.12em] opacity-55 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
+                className="inline-flex min-h-11 items-center uppercase tracking-[0.12em] opacity-65 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
                 type="submit"
               >
                 Sign out
@@ -215,9 +219,10 @@ export default function PlatformShell({
   const member = surface === "member";
   const threshold = member && isMemberThreshold(pathname);
   const membershipEntry = member && pathname === "/my/join";
+  const memberHome = member && pathname === "/my";
   const foundations = member && isMemberFoundations(pathname);
   const foundationsExperience = pathname.startsWith("/my/foundations/experience");
-  const dark = !member || threshold || foundations;
+  const dark = !member || threshold || foundations || memberHome;
 
   return (
     <div
@@ -233,6 +238,7 @@ export default function PlatformShell({
         <PlatformUtilityRail
           configuration={configuration}
           dark={dark}
+          hideBrand={memberHome}
           surface={surface}
           viewerLabel={viewerLabel}
         />
@@ -267,6 +273,8 @@ export default function PlatformShell({
         className={`mx-auto max-w-[96rem] px-4 sm:px-6 lg:px-10 ${
           membershipEntry
             ? "pb-10 sm:pb-14 lg:pb-16"
+            : memberHome
+              ? "pb-10 pt-4 sm:pb-14 sm:pt-6 lg:pb-16 lg:pt-8"
             : "py-10 sm:py-14 lg:py-16"
         }`}
       >
@@ -275,12 +283,12 @@ export default function PlatformShell({
 
       <footer
         className={`border-t px-4 py-7 font-[var(--font-body)] text-[0.64rem] uppercase tracking-[0.14em] sm:px-6 lg:px-10 ${
-          dark ? "border-white/10 text-white/30" : "border-black/15 text-black/45"
+          dark ? "border-white/10 text-white/55" : "border-black/15 text-black/60"
         }`}
       >
         <div className="mx-auto flex max-w-[96rem] flex-wrap justify-between gap-3">
           <span>The Ruined Project</span>
-          <span>{member ? "Members & Membership" : "Internal operations"}</span>
+          {!memberHome ? <span>{member ? "Members & Membership" : "Internal operations"}</span> : null}
         </div>
       </footer>
 

@@ -2193,8 +2193,25 @@ export async function getMemberHome(
         from current_enrollment enrollment
       `
     : Promise.resolve([]);
-  const [profile, progression, circle, experiences, artifacts, updates, requirements, foundationRows] =
-    await Promise.all([
+  const memberSinceRowsPromise = sql<
+    Array<{ member_since: Date | string | null }>
+  >`
+    select membership_activated_at as member_since
+    from ruined_members
+    where id = ${identity.memberId}::uuid
+    limit 1
+  `;
+  const [
+    profile,
+    progression,
+    circle,
+    experiences,
+    artifacts,
+    updates,
+    requirements,
+    foundationRows,
+    memberSinceRows,
+  ] = await Promise.all([
       getMemberProfile(authUserId),
       getMemberProgression(identity.memberId),
       getMemberCircle(authUserId),
@@ -2203,6 +2220,7 @@ export async function getMemberHome(
       getMemberUpdates(authUserId),
       getMemberFoundationRequirements(authUserId),
       foundationRowsPromise,
+      memberSinceRowsPromise,
     ]);
   if (!profile || !circle || !experiences || !artifacts || !updates) return null;
   const foundationRow = foundationRows[0] ?? {
@@ -2236,6 +2254,9 @@ export async function getMemberHome(
         .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0] ?? null;
   const nextExperience = suppressPrivateHighlights ? null : experiences.upcoming[0] ?? null;
   const firstArtifact = suppressPrivateHighlights ? null : artifacts.awards[0] ?? null;
+  const visibleArtifacts = suppressPrivateHighlights ? [] : artifacts.awards;
+  const visibleCircleMembers = suppressPrivateHighlights ? [] : circle.members;
+  const visibleUpcomingExperiences = suppressPrivateHighlights ? [] : experiences.upcoming;
   const latestAnnouncement = suppressPrivateHighlights
     ? null
     : updates.items.find((item) => item.kind === "announcement") ?? null;
@@ -2327,18 +2348,32 @@ export async function getMemberHome(
         }
       : null,
     artifact: firstArtifact,
+    artifacts: visibleArtifacts,
     avatarUrl: profile.directory.avatarUrl,
     blockName: suppressPrivateHighlights ? null : circle.block?.name ?? null,
+    circleMembers: visibleCircleMembers,
     circleName: suppressPrivateHighlights ? null : circle.circle?.name ?? null,
-    displayName: profile.directory.preferredName ?? profile.directory.displayName,
+    displayName: profile.directory.preferredName?.trim() || profile.directory.displayName,
     foundations,
     identity,
+    memberSince: toIso(memberSinceRows[0]?.member_since),
     nextAction,
     nextExperience,
     nextMeeting,
     partner: suppressPrivateHighlights ? null : circle.accountabilityPartner,
+    profile: {
+      bio: profile.directory.bio,
+      buildingNow: profile.directory.buildingNow,
+      directoryStatus: profile.preferences.directoryStatus,
+      displayName: profile.directory.displayName,
+      fullName: profile.privateProfile.legalName,
+      location: profile.directory.location,
+      preferredName: profile.directory.preferredName?.trim() || null,
+      timezone: profile.directory.timezone,
+    },
     progression,
     unreadUpdates: suppressPrivateHighlights ? 0 : updates.unreadCount,
+    upcomingExperiences: visibleUpcomingExperiences,
   };
 }
 

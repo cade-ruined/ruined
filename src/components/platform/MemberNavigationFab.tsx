@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 const MEMBER_DESTINATIONS = [
-  { href: "/my", label: "Membership home" },
+  { href: "/my", label: "Profile" },
   { href: "/my/foundations", label: "Foundations" },
   { href: "/my/foundations/timeline", label: "Ruined Timeline" },
   { href: "/my/circle", label: "Circle" },
@@ -14,7 +14,7 @@ const MEMBER_DESTINATIONS = [
   { href: "/my/learn", label: "Learn" },
   { href: "/my/artifacts", label: "Artifacts" },
   { href: "/my/updates", label: "Updates" },
-  { href: "/my/profile", label: "Profile" },
+  { href: "/my/profile", label: "Edit profile" },
   { href: "/my/account", label: "Account" },
 ] as const;
 

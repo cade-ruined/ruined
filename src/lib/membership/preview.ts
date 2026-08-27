@@ -79,6 +79,30 @@ const previewExperience = {
   title: "BYOB Nº 02",
 };
 
+const previewArtifact = {
+  artifactState: "fulfilled" as const,
+  awardId: "preview-artifact",
+  earnedAt: "2026-08-25T16:00:00.000Z",
+  earnedReason: "Foundations completed",
+  fulfilledAt: "2026-08-26T16:00:00.000Z",
+  imageUrl: null,
+  inputRequired: false,
+  name: "Foundations Artifact",
+  trackingUrl: null,
+};
+
+const previewSelf: PrivacySafePersonSummary = {
+  avatarUrl: null,
+  bio: "Learning to make fewer promises and keep the ones that remain.",
+  buildingNow: "A more deliberate creative practice.",
+  displayName: "Preview member",
+  email: PREVIEW_MEMBER_IDENTITY.email,
+  id: "preview-directory-self",
+  isSelf: true,
+  location: "Alpine, Utah",
+  phone: "+18015550100",
+};
+
 export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
   access,
   announcement: {
@@ -88,9 +112,11 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
     publishedAt: "2026-08-25T16:00:00.000Z",
     title: "The next room",
   },
-  artifact: null,
+  artifact: previewArtifact,
+  artifacts: [previewArtifact],
   avatarUrl: null,
   blockName: "Block 01",
+  circleMembers: [previewSelf, previewPartner],
   circleName: "Circle 01",
   displayName: "Preview member",
   foundations: {
@@ -104,6 +130,7 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
     state: "in_progress",
   },
   identity: PREVIEW_MEMBER_IDENTITY,
+  memberSince: "2026-08-01T16:00:00.000Z",
   nextAction: {
     body: "Continue from the place you last left it. Your Circle is already in place.",
     href: "/my/foundations",
@@ -113,8 +140,19 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
   nextExperience: previewExperience,
   nextMeeting: previewMeeting,
   partner: previewPartner,
+  profile: {
+    bio: "Learning to make fewer promises and keep the ones that remain.",
+    buildingNow: "A more deliberate creative practice.",
+    directoryStatus: "circle_visible",
+    displayName: "Preview member",
+    fullName: "Preview Member",
+    location: "Alpine, Utah",
+    preferredName: "Preview",
+    timezone: "America/Denver",
+  },
   progression: PREVIEW_PROGRESSION,
   unreadUpdates: 2,
+  upcomingExperiences: [previewMeeting, previewExperience],
 };
 
 export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
@@ -201,20 +239,7 @@ export const PREVIEW_MEMBER_CIRCLE: MemberCircleSnapshot = {
     phone: null,
   },
   meetings: [previewMeeting],
-  members: [
-    {
-      avatarUrl: null,
-      bio: "Learning to make fewer promises and keep the ones that remain.",
-      buildingNow: "A more deliberate creative practice.",
-      displayName: "Preview member",
-      email: PREVIEW_MEMBER_IDENTITY.email,
-      id: "preview-directory-self",
-      isSelf: true,
-      location: "Alpine, Utah",
-      phone: "+18015550100",
-    },
-    previewPartner,
-  ],
+  members: [previewSelf, previewPartner],
   resources: [
     {
       description: "The standing notes for how the Circle holds the room.",

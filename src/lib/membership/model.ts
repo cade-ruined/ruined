@@ -169,18 +169,32 @@ export type MemberHomeSnapshot = {
   access: MemberAccessPolicy;
   announcement: MemberAnnouncementSummary | null;
   artifact: MemberArtifactSummary | null;
+  artifacts: MemberArtifactSummary[];
   avatarUrl: string | null;
   blockName: string | null;
+  circleMembers: PrivacySafePersonSummary[];
   circleName: string | null;
   displayName: string;
   foundations: FoundationSummary;
   identity: MemberIdentity;
+  memberSince: string | null;
   nextAction: MemberNextAction;
   nextExperience: MemberExperienceSummary | null;
   nextMeeting: MemberExperienceSummary | null;
   partner: PrivacySafePersonSummary | null;
+  profile: {
+    bio: string | null;
+    buildingNow: string | null;
+    directoryStatus: MemberDirectoryPreferences["directoryStatus"];
+    displayName: string;
+    fullName: string | null;
+    location: string | null;
+    preferredName: string | null;
+    timezone: string | null;
+  };
   progression: ProgressionSummary;
   unreadUpdates: number;
+  upcomingExperiences: MemberExperienceSummary[];
 };
 
 export type MemberDirectoryPreferences = {

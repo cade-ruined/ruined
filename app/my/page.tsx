@@ -8,8 +8,8 @@ import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
 import { getMemberHome } from "@/lib/membership/repository";
 
 export const metadata: Metadata = {
-  title: "Ruined Membership",
-  description: "The private Ruined member experience.",
+  title: "Your Profile | Ruined",
+  description: "Your private Ruined member profile, progression, Circle, artifacts, and experiences.",
 };
 export const dynamic = "force-dynamic";
 
