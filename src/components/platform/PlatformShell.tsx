@@ -78,9 +78,13 @@ function PlatformUtilityRail({
           <span
             className={
               preview
-                ? "inline-flex items-center gap-2 text-white/70 before:size-1.5 before:bg-[var(--color-poster)]"
+                ? `inline-flex items-center gap-2 before:size-1.5 before:bg-[var(--color-poster)] ${
+                    dark ? "text-white/70" : "text-current opacity-70"
+                  }`
                 : configuration.mode === "connected"
-                  ? "opacity-50"
+                  ? dark
+                    ? "opacity-50"
+                    : "opacity-65"
                   : "inline-flex items-center gap-2 text-current opacity-70 before:size-1.5 before:bg-[var(--color-poster)]"
             }
           >
@@ -222,15 +226,16 @@ export default function PlatformShell({
   const memberHome = member && pathname === "/my";
   const foundations = member && isMemberFoundations(pathname);
   const foundationsExperience = pathname.startsWith("/my/foundations/experience");
-  const dark = !member || threshold || foundations || memberHome;
+  const dark = !member || threshold || foundations;
 
   return (
     <div
-      className={`min-h-screen pt-[var(--ruined-header-height)] ${
+      className={`min-h-screen pt-[var(--ruined-header-height)] ${memberHome ? "member-profile-paper" : ""} ${
         dark
           ? "bg-[#080605] text-[var(--color-bone)]"
           : "bg-[var(--color-bone)] text-[#201d19]"
       }`}
+      data-platform-member-home={memberHome ? "true" : undefined}
       data-platform-surface={surface}
       data-platform-threshold={threshold ? "true" : undefined}
     >

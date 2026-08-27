@@ -27,6 +27,9 @@ test("member home is an identity-led profile instead of the old membership landi
   assert.match(home, /member\.profile\.preferredName/);
   assert.match(home, /bg-\[var\(--color-highlight\)\]/);
   assert.match(home, /Portrait not added/);
+  assert.match(home, /data-member-polaroid/);
+  assert.match(home, /data-member-profile-dossier/);
+  assert.match(home, /Membership at a glance/);
   assert.match(home, /Your place\./);
   assert.match(home, /Ruined history\./);
   assert.match(home, /Artifacts\./);
@@ -75,11 +78,14 @@ test("member home repository separates preferred greeting data and suppresses pr
   assert.match(loader, /visibleUpcomingExperiences = suppressPrivateHighlights \? \[\] : experiences\.upcoming/);
 });
 
-test("profile home gets the dark form surface without repeated top branding", () => {
+test("profile home gets a light paper dossier without repeated top branding", () => {
   assert.match(shell, /const memberHome = member && pathname === "\/my"/);
-  assert.match(shell, /foundations \|\| memberHome/);
+  assert.match(shell, /const dark = !member \|\| threshold \|\| foundations;/);
+  assert.match(shell, /member-profile-paper/);
+  assert.match(shell, /data-platform-member-home/);
   assert.match(shell, /hideBrand=\{memberHome\}/);
   assert.match(shell, /!memberHome \? <span>/);
+  assert.match(shell, /member && !threshold && !foundationsExperience/);
   assert.match(navigation, /\{ href: "\/my", label: "Profile" \}/);
   assert.match(navigation, /\{ href: "\/my\/profile", label: "Edit profile" \}/);
   assert.match(preview, /circleMembers: \[previewSelf, previewPartner\]/);
