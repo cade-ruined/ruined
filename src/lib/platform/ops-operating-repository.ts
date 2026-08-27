@@ -318,7 +318,12 @@ export async function getOpsMemberOperatingRecord(
       select
         member.id as member_id,
         member.person_id,
-        coalesce(profile.preferred_name, profile.display_name, 'Member') as preferred_name,
+        coalesce(
+          profile.preferred_name,
+          profile.display_name,
+          case when ${isAdmin} then nullif(split_part(member.email, '@', 1), '') end,
+          'Member'
+        ) as preferred_name,
         coalesce(primary_email.email, member.email) as primary_email,
         coalesce(directory.email_scope, 'none') as email_scope,
         coalesce(directory.phone_scope, 'none') as phone_scope,
@@ -1434,7 +1439,12 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
       with scoped_members as materialized (
         select
           member.id as member_id,
-          coalesce(profile.preferred_name, profile.display_name, 'Member') as member_name
+          coalesce(
+            profile.preferred_name,
+            profile.display_name,
+            case when ${isAdmin} then nullif(split_part(member.email, '@', 1), '') end,
+            'Member'
+          ) as member_name
         from ruined_members member
         left join person_profiles profile on profile.person_id = member.person_id
         where ${isAdmin}

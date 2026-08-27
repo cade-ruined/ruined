@@ -89,6 +89,10 @@ test("sensitive Overview activity remains ops-admin only", () => {
   ]) {
     assert.match(activityBranch(prefix), /\$\{isAdmin\}/, `${prefix} must be admin gated`);
   }
+  assert.match(
+    overview,
+    /case when \$\{isAdmin\} then nullif\(split_part\(member\.email, '@', 1\), ''\) end/,
+  );
 });
 
 test("operator Overview counts are aggregate queries rather than the capped dashboard roster", () => {
