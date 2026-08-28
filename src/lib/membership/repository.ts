@@ -1665,8 +1665,13 @@ export async function getMemberExperiences(
 ): Promise<MemberExperiencesSnapshot | null> {
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
+  const now = Date.now();
   if (!memberCan(access, "experiences.member")) {
-    return { access, past: [], upcoming: [] };
+    return {
+      access,
+      past: [],
+      upcoming: mergeUpcomingPublicMemberExperiences([], now),
+    };
   }
   const sql = getApplicationDatabase();
   const rows = await sql<Array<ExperienceRow>>`
@@ -1726,7 +1731,6 @@ export async function getMemberExperiences(
       )
     order by experience.starts_at
   `;
-  const now = Date.now();
   const experiences = rows.map(experienceFromRow);
   return {
     access,

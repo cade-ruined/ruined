@@ -98,6 +98,14 @@ test("public events merge into member upcoming events without weakening entitlem
   assert.match(repository, /mergeUpcomingPublicMemberExperiences/);
   assert.match(loader, /mergeUpcomingPublicMemberExperiences\s*\(/);
 
+  const capabilityGuard = loader.indexOf('if (!memberCan(access, "experiences.member"))');
+  const databaseRead = loader.indexOf("const sql = getApplicationDatabase()");
+  assert.ok(capabilityGuard >= 0 && capabilityGuard < databaseRead);
+  assert.match(
+    loader.slice(capabilityGuard, databaseRead),
+    /upcoming:\s*mergeUpcomingPublicMemberExperiences\(\[\], now\)/,
+  );
+
   // The database query remains the authority for member, Circle, Block,
   // progression, and invite-only entitlements. Public registry events merge
   // only after those rows have been authorized and adapted.
