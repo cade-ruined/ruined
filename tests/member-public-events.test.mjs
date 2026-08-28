@@ -58,6 +58,8 @@ test("public member experiences are derived from the canonical event registry", 
     /detailHref:\s*`\/community#\$\{encodeURIComponent\(event\.id\)\}`/,
   );
   assert.match(conversion, /registrationHref:[^\n]*event\.registration\?\.href[^\n]*null/);
+  assert.match(conversion, /timezone:\s*event\.timezone/);
+  assert.match(events, /timezone:\s*"America\/Denver"/);
 });
 
 test("public event detail links and registration links remain separate", () => {
@@ -115,6 +117,7 @@ test("public events merge into member upcoming events without weakening entitlem
   assert.match(loader, /experience\.visibility = 'block' and experience\.block_id = scope\.block_id/);
   assert.match(loader, /experience\.visibility = 'progression'[\s\S]*experience\.progression_level_slug = scope\.current_progression_level_slug/);
   assert.match(loader, /experience\.visibility = 'invite_only'[\s\S]*registration\.status in \('external_pending', 'registered', 'waitlisted'\)/);
+  assert.match(loader, /experience\.timezone/);
 
   const queryEnd = loader.indexOf("const now =");
   const firstPublicRegistryRead = loader.search(/mergeUpcomingPublicMemberExperiences\s*\(/);

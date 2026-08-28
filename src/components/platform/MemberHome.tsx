@@ -514,7 +514,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
             {member.upcomingExperiences.length > 0 ? (
               <ol className="mt-4 grid gap-2">
                 {member.upcomingExperiences.slice(0, 3).map((experience) => {
-                  const stamp = formatEventStamp(experience.startsAt, member.profile.timezone);
+                  const stamp = formatEventStamp(experience.startsAt, experience.timezone);
                   return (
                     <li key={experience.id}>
                       <Link
@@ -522,13 +522,13 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                         href={experience.detailHref}
                       >
                         <article className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] gap-3 sm:grid-cols-[3.75rem_minmax(0,1fr)_auto] sm:gap-4">
-                          <time aria-label={formatEventDate(experience.startsAt, member.profile.timezone)} className="font-[var(--font-body)]" dateTime={experience.startsAt}>
+                          <time aria-label={formatEventDate(experience.startsAt, experience.timezone)} className="font-[var(--font-body)]" dateTime={experience.startsAt}>
                             <span aria-hidden="true" className="block text-[0.59rem] font-bold uppercase tracking-[0.06em] text-black/48">{stamp.month}</span>
                             <span aria-hidden="true" className="ui-heading mt-0.5 block text-3xl font-black leading-none tracking-[-0.04em] text-black/78">{stamp.day}</span>
                           </time>
                           <div>
                             <h3 className="ui-heading text-lg font-black uppercase leading-[0.92] tracking-[-0.025em] text-black/82 transition-colors group-hover:text-[var(--color-poster)] sm:text-xl">{experience.title}</h3>
-                            <p className="mt-1.5 font-[var(--font-body)] text-[0.68rem] leading-relaxed text-black/52">{formatEventDate(experience.startsAt, member.profile.timezone)}{experience.locationLabel ? ` · ${experience.locationLabel}` : ""}</p>
+                            <p className="mt-1.5 font-[var(--font-body)] text-[0.68rem] leading-relaxed text-black/52">{formatEventDate(experience.startsAt, experience.timezone)}{experience.locationLabel ? ` · ${experience.locationLabel}` : ""}</p>
                             <p className="mt-1 font-[var(--font-body)] text-[0.67rem] font-semibold text-black/52">{experience.audienceLabel} · {registrationLabel(experience.registrationState)}</p>
                           </div>
                           <span aria-hidden="true" className="font-[var(--font-body)] text-sm font-bold text-black/44 transition-transform group-hover:translate-x-0.5">→</span>

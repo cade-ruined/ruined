@@ -42,6 +42,7 @@ export function memberExperienceFromStudioEvent(
         : "none",
     startsAt: eventStartsAt(event),
     summary: event.summary || null,
+    timezone: event.timezone,
     title: event.title,
   };
 }

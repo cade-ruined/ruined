@@ -21,6 +21,7 @@ export type StudioEvent = {
   location: string;
   admission: string;
   summary: string;
+  timezone: string;
   image?: string;
   video?: string;
   videoPoster?: string;
@@ -68,6 +69,7 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
         : "Details to come",
     admission: "",
     summary: "Bring Your Own (Bell or bodyweight).",
+    timezone: "America/Denver",
     image: isFirstEvent ? BYOB_01_FEATURE_IMAGE : "/events/byob-key-art.png",
     video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : undefined,
     videoPoster: isFirstEvent

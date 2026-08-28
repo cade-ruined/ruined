@@ -1356,6 +1356,7 @@ type ExperienceRow = {
   slug: string;
   starts_at: Date | string;
   summary: string | null;
+  timezone: string;
   title: string;
   visibility: "all_members" | "block" | "circle" | "invite_only" | "progression" | "public";
 };
@@ -1396,6 +1397,7 @@ function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
     registrationState,
     startsAt: toIso(row.starts_at)!,
     summary: row.summary,
+    timezone: row.timezone,
     title: row.title,
   };
 }
@@ -1606,6 +1608,7 @@ export async function getMemberCircle(
         experience.summary,
         experience.starts_at,
         experience.ends_at,
+        experience.timezone,
         experience.location_label,
         experience.registration_mode,
         experience.external_registration_url,
@@ -1698,6 +1701,7 @@ export async function getMemberExperiences(
       experience.summary,
       experience.starts_at,
       experience.ends_at,
+      experience.timezone,
       experience.location_label,
       experience.registration_mode,
       experience.external_registration_url,

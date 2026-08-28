@@ -11,19 +11,21 @@ import type {
   MemberExperiencesSnapshot,
 } from "@/lib/membership/model";
 
-function formatDate(value: string) {
+function formatDate(value: string, timezone: string) {
   return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "long",
+    timeZone: timezone,
     weekday: "short",
     year: "numeric",
   }).format(new Date(value));
 }
 
-function formatTime(value: string) {
+function formatTime(value: string, timezone: string) {
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: timezone,
     timeZoneName: "short",
   }).format(new Date(value));
 }
@@ -83,10 +85,10 @@ function ExperienceRow({
     <li className="grid gap-6 border-b border-black/20 py-9 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-start sm:gap-8 sm:py-11" id={`experience-${experience.id}`}>
       <div>
         <time className="font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.14em] text-black/46">
-          {formatDate(experience.startsAt)}
+          {formatDate(experience.startsAt, experience.timezone)}
         </time>
         <p className="mt-2 font-[var(--font-body)] text-xs text-black/36">
-          {formatTime(experience.startsAt)}
+          {formatTime(experience.startsAt, experience.timezone)}
         </p>
       </div>
       <div>

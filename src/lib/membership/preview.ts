@@ -64,6 +64,7 @@ const previewMeeting = {
   registrationState: "registered" as const,
   startsAt: "2026-09-04T01:00:00.000Z",
   summary: "A working session for the choices in front of the Circle.",
+  timezone: "America/Denver",
   title: "Circle 01 / Monthly room",
 };
 

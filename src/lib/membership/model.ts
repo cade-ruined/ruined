@@ -145,6 +145,7 @@ export type MemberExperienceSummary = {
     | "waitlisted";
   startsAt: string;
   summary: string | null;
+  timezone: string;
   title: string;
 };
 

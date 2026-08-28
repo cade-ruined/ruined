@@ -9,9 +9,10 @@ import type {
   PrivacySafePersonSummary,
 } from "@/lib/membership/model";
 
-function formatMoment(value: string) {
+function formatMoment(value: string, timezone: string) {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
+    timeZone: timezone,
     timeStyle: "short",
   }).format(new Date(value));
 }
@@ -36,7 +37,7 @@ function MeetingRow({ meeting }: { meeting: MemberExperienceSummary }) {
   return (
     <li className="grid gap-4 border-b border-black/15 py-7 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-start sm:gap-8">
       <time className="font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.14em] text-black/42">
-        {formatMoment(meeting.startsAt)}
+        {formatMoment(meeting.startsAt, meeting.timezone)}
       </time>
       <div>
         <h3 className="font-[var(--font-display)] text-3xl leading-none tracking-[-0.025em]">
