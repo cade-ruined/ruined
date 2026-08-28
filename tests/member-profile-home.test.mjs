@@ -15,10 +15,11 @@ function section(sourceText, startMarker, endMarker) {
   return sourceText.slice(start, end);
 }
 
-const [home, shell, navigation, repository, preview] = await Promise.all([
+const [home, shell, navigation, siteNavigation, repository, preview] = await Promise.all([
   source("src/components/platform/MemberHome.tsx"),
   source("src/components/platform/PlatformShell.tsx"),
   source("src/components/platform/MemberNavigationFab.tsx"),
+  source("src/data/navigation.ts"),
   source("src/lib/membership/repository.ts"),
   source("src/lib/membership/preview.ts"),
 ]);
@@ -111,4 +112,16 @@ test("profile home gets a light paper dossier without repeated top branding", ()
   assert.match(preview, /upcomingExperiences: \[previewMeeting, previewExperience\]/);
   assert.doesNotMatch(main, /border/);
   assert.doesNotMatch(main, /shadow/);
+});
+
+test("profile refinements use the established handwritten and section-label systems", () => {
+  assert.match(home, /const microLabel =[\s\S]*?--font-cadehandy2/);
+  assert.match(home, /text-\[clamp\(1\.9rem,5\.2vw,4\.75rem\)\]/);
+  assert.match(home, /grid-cols-\[7\.75rem_minmax\(0,1fr\)\]/);
+  assert.match(home, /rounded-\[4px\]/);
+  assert.match(home, /Joined \{formatMonthYear\(member\.memberSince\)\}/);
+  assert.match(
+    siteNavigation,
+    /pathname === "\/my" \|\| pathname\.startsWith\("\/my\/"\)\) return "MEMBERS"/,
+  );
 });

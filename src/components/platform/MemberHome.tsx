@@ -6,13 +6,15 @@ import type { MemberHomeSnapshot } from "@/lib/membership/model";
 const progressionLevels = ["Member", "Shaper", "Builder", "Author", "Partner"] as const;
 
 const microLabel =
-  "font-[var(--font-body)] text-[0.64rem] font-bold uppercase tracking-[0.065em] text-black/58";
+  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.28rem] leading-none tracking-normal text-[var(--color-poster)] [transform:rotate(-1deg)]";
+const darkMicroLabel =
+  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.28rem] leading-none tracking-normal text-[var(--color-highlight)] [transform:rotate(-1deg)]";
 const sectionTitle =
   "ui-heading text-[clamp(1.5rem,3vw,2.45rem)] font-black uppercase leading-[0.88] tracking-[-0.045em] text-[#191613]";
 const handLabel =
   "[font-family:var(--font-cadehandy2)] text-[1.55rem] leading-none tracking-normal text-[var(--color-poster)] sm:text-[1.75rem]";
 const quietLink =
-  "inline-flex min-h-11 items-center font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-black/64 underline decoration-black/25 underline-offset-[0.34rem] transition-colors hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]";
+  "inline-flex min-h-11 items-center font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.055em] text-black/64 transition-colors hover:text-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]";
 
 const stateLabels: Record<string, string> = {
   active: "Active",
@@ -115,7 +117,7 @@ function MemberPortrait({ member }: { member: MemberHomeSnapshot }) {
           className={`object-cover ${member.avatarUrl ? "saturate-[0.82] contrast-[1.04]" : "saturate-[0.72] contrast-[1.08]"}`}
           fill
           priority
-          sizes="(min-width: 1024px) 280px, (min-width: 640px) 210px, 116px"
+          sizes="(min-width: 1280px) 330px, (min-width: 1024px) 290px, (min-width: 640px) 230px, 140px"
           src={member.avatarUrl ?? "/membership/portrait-pending-editorial.webp"}
           unoptimized
         />
@@ -126,15 +128,20 @@ function MemberPortrait({ member }: { member: MemberHomeSnapshot }) {
         className="pointer-events-none absolute inset-0 size-full object-contain"
         fill
         priority
-        sizes="(min-width: 1024px) 280px, (min-width: 640px) 210px, 116px"
+        sizes="(min-width: 1280px) 330px, (min-width: 1024px) 290px, (min-width: 640px) 230px, 140px"
         src="/membership/polaroid-frame.png"
         unoptimized
       />
-      {!member.avatarUrl ? (
-        <figcaption className="ui-heading absolute bottom-[5.4%] left-[8%] right-[8%] text-[0.58rem] font-black uppercase tracking-[0.055em] text-black/72 sm:text-[0.68rem]">
-          Photo pending
-        </figcaption>
-      ) : null}
+      <figcaption className="absolute bottom-[5.1%] left-[8%] right-[8%] flex flex-col items-start justify-end gap-0.5 text-black/72 sm:flex-row sm:items-end sm:justify-between sm:gap-2">
+        <span className="[font-family:var(--font-cadehandy2)] text-[0.86rem] leading-none sm:text-[1rem]">
+          {member.avatarUrl ? "Member portrait" : "Photo pending"}
+        </span>
+        {member.memberSince ? (
+          <span className="font-[var(--font-body)] text-[0.45rem] font-bold uppercase tracking-[0.04em] sm:text-[0.55rem]">
+            Joined {formatMonthYear(member.memberSince)}
+          </span>
+        ) : null}
+      </figcaption>
     </figure>
   );
 }
@@ -184,7 +191,7 @@ function ProfileState({ state }: { state: string }) {
 function RecordFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="font-[var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.055em] text-black/48">{label}</dt>
+      <dt className="[font-family:var(--font-cadehandy2)] text-[1.12rem] leading-none tracking-normal text-[var(--color-poster)]">{label}</dt>
       <dd className="mt-1 break-words font-[var(--font-body)] text-sm font-semibold leading-snug text-black/78">{value}</dd>
     </div>
   );
@@ -324,12 +331,12 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
           {greeting}
         </h1>
 
-        <div className="mt-4 grid grid-cols-[6.6rem_minmax(0,1fr)] gap-x-4 gap-y-4 min-[380px]:grid-cols-[7.25rem_minmax(0,1fr)] sm:mt-5 sm:grid-cols-[11.5rem_minmax(0,1fr)] sm:gap-x-6 lg:grid-cols-[minmax(14rem,0.82fr)_minmax(24rem,1.62fr)_minmax(15rem,0.78fr)] lg:items-start lg:gap-x-9 xl:grid-cols-[minmax(16rem,0.82fr)_minmax(28rem,1.58fr)_minmax(17rem,0.78fr)] xl:gap-x-11">
+        <div className="mt-4 grid grid-cols-[7.75rem_minmax(0,1fr)] gap-x-4 gap-y-4 min-[380px]:grid-cols-[8.5rem_minmax(0,1fr)] sm:mt-5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-6 lg:grid-cols-[minmax(18rem,0.96fr)_minmax(20rem,1.34fr)_minmax(14rem,0.72fr)] lg:items-start lg:gap-x-8 xl:grid-cols-[minmax(19rem,0.96fr)_minmax(26rem,1.34fr)_minmax(16rem,0.72fr)] xl:gap-x-10">
           <div className="min-w-0 sm:row-span-2"><MemberPortrait member={member} /></div>
 
           <div className="min-w-0 self-center lg:self-start lg:pt-2">
             <p className={microLabel}>Member</p>
-            <h2 className="ui-heading mt-1.5 break-words text-[clamp(2.1rem,7.5vw,6.15rem)] font-black uppercase leading-[0.79] tracking-[-0.06em] text-[#15120f] sm:mt-2">
+            <h2 className="ui-heading mt-1.5 max-w-[12ch] break-words text-balance text-[clamp(1.9rem,5.2vw,4.75rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[#15120f] sm:mt-2">
               {profileName}
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-[var(--font-body)] text-[0.68rem] font-semibold uppercase tracking-[0.035em] text-black/52 sm:text-xs">
@@ -339,13 +346,13 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
             </div>
           </div>
 
-          <aside aria-labelledby="member-next-action" className="order-4 col-span-2 bg-[#171411] p-4 text-[#eee8dd] sm:p-5 lg:order-none lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1">
-            <p className="font-[var(--font-body)] text-[0.63rem] font-bold uppercase tracking-[0.07em] text-[var(--color-poster)]">Next</p>
+          <aside aria-labelledby="member-next-action" className="order-4 col-span-2 rounded-[4px] bg-[#171411] p-4 text-[#eee8dd] sm:p-5 lg:order-none lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:self-start">
+            <p className={darkMicroLabel}>Next</p>
             <h2 className="mt-3 font-[var(--font-display)] text-[1.75rem] leading-[0.94] tracking-[-0.035em] text-[#f1ece3] sm:text-3xl" id="member-next-action">
               {member.nextAction.title}
             </h2>
             <Link
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-between bg-[#eee8dd] px-3.5 py-2 font-[var(--font-body)] text-[0.66rem] font-black uppercase tracking-[0.045em] text-[#11100e] transition-colors hover:bg-[var(--color-highlight)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-highlight)]"
+              className="mt-5 inline-flex min-h-11 w-full items-center justify-between rounded-[4px] bg-[#eee8dd] px-3.5 py-2 font-[var(--font-body)] text-[0.66rem] font-black uppercase tracking-[0.045em] text-[#11100e] transition-colors hover:bg-[var(--color-highlight)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-highlight)]"
               href={member.nextAction.href}
             >
               {nextActionLabel(member.nextAction.kind)} <span aria-hidden="true">→</span>
@@ -371,13 +378,13 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
       </header>
 
       {member.access.reason ? (
-        <aside aria-label="Membership access" className="mt-4 bg-[var(--color-poster)]/[0.08] px-4 py-3 font-[var(--font-body)] text-sm leading-relaxed text-black/68">
+        <aside aria-label="Membership access" className="mt-4 rounded-[4px] bg-[var(--color-poster)]/[0.08] px-4 py-3 font-[var(--font-body)] text-sm leading-relaxed text-black/68">
           {member.access.reason}
         </aside>
       ) : null}
 
       <section aria-label="Membership snapshot" className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
-        <article aria-labelledby="foundations-summary-title" className="bg-black/[0.045] p-4 sm:p-5 lg:p-6">
+        <article aria-labelledby="foundations-summary-title" className="rounded-[4px] bg-black/[0.045] p-4 sm:p-5 lg:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className={microLabel}>Foundations</p>
@@ -389,8 +396,8 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
             <Link className={quietLink} href="/my/foundations">View →</Link>
           </div>
           {circleGateOutstanding ? <p className="mt-3 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-[var(--color-poster)]">Active Circle required to complete.</p> : null}
-          <div aria-label={foundationValueText} aria-valuemax={100} aria-valuemin={0} aria-valuenow={foundationPercent} aria-valuetext={foundationValueText} className="mt-4 h-2 overflow-hidden bg-black/14" role="progressbar">
-            <span className={`block h-full ${foundationComplete ? "bg-[var(--color-verdigris)]" : "bg-[var(--color-poster)]"}`} style={{ width: `${foundationPercent}%` }} />
+          <div aria-label={foundationValueText} aria-valuemax={100} aria-valuemin={0} aria-valuenow={foundationPercent} aria-valuetext={foundationValueText} className="mt-4 h-2 overflow-hidden rounded-[2px] bg-black/14" role="progressbar">
+            <span className={`block h-full rounded-[2px] ${foundationComplete ? "bg-[var(--color-verdigris)]" : "bg-[var(--color-poster)]"}`} style={{ width: `${foundationPercent}%` }} />
           </div>
           <ol className="mt-4 grid grid-cols-4 gap-2">
             {requirementSteps.map((step, index) => {
@@ -410,10 +417,10 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
           </ol>
         </article>
 
-        <article aria-labelledby="circle-summary-title" className="flex min-h-full flex-col bg-[#171411] p-4 text-[#eee8dd] sm:p-5 lg:p-6">
+        <article aria-labelledby="circle-summary-title" className="flex min-h-full flex-col rounded-[4px] bg-[#171411] p-4 text-[#eee8dd] sm:p-5 lg:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="font-[var(--font-body)] text-[0.64rem] font-bold uppercase tracking-[0.065em] text-white/50">Circle</p>
+              <p className={darkMicroLabel}>Circle</p>
               <h2 className="ui-heading mt-2 text-[clamp(1.75rem,4vw,3.25rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[#f0ebe2]" id="circle-summary-title">
                 {member.circleName ?? "Circle forming"}
               </h2>
@@ -424,7 +431,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
             <ul aria-label="Circle members" className="mt-4 flex -space-x-2 overflow-hidden py-1">{member.circleMembers.slice(0, 7).map((person) => <li key={person.id}><PersonAvatar dark person={person} /></li>)}</ul>
           ) : null}
           <div className="mt-auto pt-5">
-            <p className="font-[var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.055em] text-white/42">Accountability partner</p>
+            <p className={darkMicroLabel}>Accountability partner</p>
             <div className="mt-2 flex items-center gap-3">
               {member.partner ? <PersonAvatar dark person={member.partner} size="small" /> : null}
               <p className="ui-heading text-lg font-black uppercase leading-none tracking-[-0.025em] text-white/82">{member.partner?.displayName ?? "Unpaired"}</p>
@@ -465,7 +472,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                 {member.artifacts.slice(0, 3).map((artifact) => (
                   <li key={artifact.awardId}>
                     <article>
-                      <div className="relative aspect-[4/3] overflow-hidden bg-[#171411]" data-placeholder={artifact.imageUrl ? undefined : "artifact-image-not-recorded"}>
+                      <div className="relative aspect-[4/3] overflow-hidden rounded-[4px] bg-[#171411]" data-placeholder={artifact.imageUrl ? undefined : "artifact-image-not-recorded"}>
                         <Image
                           alt=""
                           aria-hidden="true"
@@ -475,7 +482,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                           src={artifact.imageUrl ?? "/membership/archive-material-placeholder.webp"}
                           unoptimized
                         />
-                        {!artifact.imageUrl ? <span className="absolute bottom-2 left-2 bg-[#171411] px-2 py-1 font-[var(--font-body)] text-[0.55rem] font-bold uppercase tracking-[0.045em] text-white/78">Image not recorded</span> : null}
+                        {!artifact.imageUrl ? <span className="absolute bottom-2 left-2 rounded-[2px] bg-[#171411] px-2 py-1 [font-family:var(--font-cadehandy2)] text-[0.9rem] leading-none text-[var(--color-highlight)]">Image not recorded</span> : null}
                       </div>
                       <h3 className="ui-heading mt-2.5 text-lg font-black uppercase leading-[0.92] tracking-[-0.025em] text-black/82 sm:text-xl">{artifact.name}</h3>
                       <p className="mt-1.5 font-[var(--font-body)] text-[0.62rem] font-semibold uppercase tracking-[0.025em] text-black/48">Earned <time dateTime={artifact.earnedAt}>{formatDate(artifact.earnedAt)}</time></p>
@@ -485,7 +492,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                 ))}
               </ul>
             ) : (
-              <div className="mt-4 grid overflow-hidden bg-black/[0.045] sm:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1.15fr)]" data-placeholder="empty-artifact-archive">
+              <div className="mt-4 grid overflow-hidden rounded-[4px] bg-black/[0.045] sm:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1.15fr)]" data-placeholder="empty-artifact-archive">
                 <div className="relative aspect-[3/2] min-h-[9rem] sm:aspect-auto">
                   <Image alt="" aria-hidden="true" className="object-cover saturate-[0.7] contrast-[1.05]" fill sizes="(min-width: 1024px) 28vw, 100vw" src="/membership/archive-material-placeholder.webp" unoptimized />
                 </div>
@@ -507,7 +514,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                 {member.upcomingExperiences.slice(0, 3).map((experience) => {
                   const stamp = formatEventStamp(experience.startsAt, member.profile.timezone);
                   return (
-                    <li className="bg-black/[0.035] p-3 sm:p-4" key={experience.id}>
+                    <li className="rounded-[4px] bg-black/[0.035] p-3 sm:p-4" key={experience.id}>
                       <article className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 sm:grid-cols-[3.75rem_minmax(0,1fr)] sm:gap-4">
                         <time aria-label={formatEventDate(experience.startsAt, member.profile.timezone)} className="font-[var(--font-body)]" dateTime={experience.startsAt}>
                           <span aria-hidden="true" className="block text-[0.59rem] font-bold uppercase tracking-[0.06em] text-black/48">{stamp.month}</span>
@@ -528,7 +535,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
         </div>
       </div>
 
-      <section aria-labelledby="member-information-title" className="mt-8 bg-black/[0.045] p-4 sm:p-5">
+      <section aria-labelledby="member-information-title" className="mt-8 rounded-[4px] bg-black/[0.045] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="ui-heading text-lg font-black uppercase tracking-[-0.025em] text-black/76" id="member-information-title">Member info</h2>
           <span className={microLabel}>Private to you</span>

@@ -132,6 +132,7 @@ export function activeGlobalNavigationId(pathname: string): GlobalNavId | null {
 }
 
 export function sectionLocatorForPathname(pathname: string) {
+  if (pathname === "/my" || pathname.startsWith("/my/")) return "MEMBERS";
   if (pathname === SITE_ROUTES.bag.href) return SECTION_LOCATORS.bag;
   const activeId = activeGlobalNavigationId(pathname);
   return activeId ? SECTION_LOCATORS[activeId] : undefined;
