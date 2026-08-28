@@ -287,10 +287,12 @@ function nextActionLabel(kind: MemberHomeSnapshot["nextAction"]["kind"]) {
 
 function registrationLabel(value: MemberHomeSnapshot["upcomingExperiences"][number]["registrationState"]) {
   switch (value) {
+    case "available": return "Registration open";
     case "registered": return "Registered";
     case "waitlisted": return "Waitlisted";
     case "external": return "External registration";
     case "cancelled": return "Cancelled";
+    case "closed": return "Registration closed";
     default: return "No registration required";
   }
 }
@@ -514,18 +516,24 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                 {member.upcomingExperiences.slice(0, 3).map((experience) => {
                   const stamp = formatEventStamp(experience.startsAt, member.profile.timezone);
                   return (
-                    <li className="rounded-[4px] bg-black/[0.035] p-3 sm:p-4" key={experience.id}>
-                      <article className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 sm:grid-cols-[3.75rem_minmax(0,1fr)] sm:gap-4">
-                        <time aria-label={formatEventDate(experience.startsAt, member.profile.timezone)} className="font-[var(--font-body)]" dateTime={experience.startsAt}>
-                          <span aria-hidden="true" className="block text-[0.59rem] font-bold uppercase tracking-[0.06em] text-black/48">{stamp.month}</span>
-                          <span aria-hidden="true" className="ui-heading mt-0.5 block text-3xl font-black leading-none tracking-[-0.04em] text-black/78">{stamp.day}</span>
-                        </time>
-                        <div>
-                          <h3 className="ui-heading text-lg font-black uppercase leading-[0.92] tracking-[-0.025em] text-black/82 sm:text-xl">{experience.title}</h3>
-                          <p className="mt-1.5 font-[var(--font-body)] text-[0.68rem] leading-relaxed text-black/52">{formatEventDate(experience.startsAt, member.profile.timezone)}{experience.locationLabel ? ` · ${experience.locationLabel}` : ""}</p>
-                          <p className="mt-1 font-[var(--font-body)] text-[0.67rem] font-semibold text-black/52">{experience.audienceLabel} · {registrationLabel(experience.registrationState)}</p>
-                        </div>
-                      </article>
+                    <li key={experience.id}>
+                      <Link
+                        className="group block rounded-[4px] bg-black/[0.035] p-3 transition-colors hover:bg-black/[0.065] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] sm:p-4"
+                        href={experience.detailHref}
+                      >
+                        <article className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] gap-3 sm:grid-cols-[3.75rem_minmax(0,1fr)_auto] sm:gap-4">
+                          <time aria-label={formatEventDate(experience.startsAt, member.profile.timezone)} className="font-[var(--font-body)]" dateTime={experience.startsAt}>
+                            <span aria-hidden="true" className="block text-[0.59rem] font-bold uppercase tracking-[0.06em] text-black/48">{stamp.month}</span>
+                            <span aria-hidden="true" className="ui-heading mt-0.5 block text-3xl font-black leading-none tracking-[-0.04em] text-black/78">{stamp.day}</span>
+                          </time>
+                          <div>
+                            <h3 className="ui-heading text-lg font-black uppercase leading-[0.92] tracking-[-0.025em] text-black/82 transition-colors group-hover:text-[var(--color-poster)] sm:text-xl">{experience.title}</h3>
+                            <p className="mt-1.5 font-[var(--font-body)] text-[0.68rem] leading-relaxed text-black/52">{formatEventDate(experience.startsAt, member.profile.timezone)}{experience.locationLabel ? ` · ${experience.locationLabel}` : ""}</p>
+                            <p className="mt-1 font-[var(--font-body)] text-[0.67rem] font-semibold text-black/52">{experience.audienceLabel} · {registrationLabel(experience.registrationState)}</p>
+                          </div>
+                          <span aria-hidden="true" className="font-[var(--font-body)] text-sm font-bold text-black/44 transition-transform group-hover:translate-x-0.5">→</span>
+                        </article>
+                      </Link>
                     </li>
                   );
                 })}

@@ -15,6 +15,7 @@ export type StudioEvent = {
   title: string;
   eyebrow: string;
   date: string;
+  /** Absolute RFC 3339 instant. Timed events must include Z or a UTC offset. */
   dateTime: string;
   time: string;
   location: string;
@@ -53,12 +54,12 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
     eyebrow: "Monthly gathering",
     date: `${day} ${MONTHS[month]} ${year}`,
     dateTime: isFirstEvent || isRegistrationEvent
-      ? `${isoDate}T08:00:00`
-      : isoDate,
+      ? `${isoDate}T14:00:00.000Z`
+      : `${isoDate}T18:00:00.000Z`,
     time: isFirstEvent
       ? "8:00 AM"
       : isRegistrationEvent
-        ? "8:00 AM MST"
+        ? "8:00 AM MDT"
         : "Details to come",
     location: isFirstEvent
       ? "Tibble Fork Reservoir · Up on the hill"

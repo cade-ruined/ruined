@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import MemberPageHeader, {
@@ -44,6 +45,10 @@ function ExperienceRow({
   const canCancel =
     experience.registrationState === "registered" ||
     experience.registrationState === "waitlisted";
+  const registrationLeavesRuined = Boolean(
+    experience.registrationHref
+    && !experience.registrationHref.startsWith("/"),
+  );
 
   async function changeRegistration(action: "cancel" | "register") {
     if (!writable || pending || !experience.registrationHref) return;
@@ -75,7 +80,7 @@ function ExperienceRow({
   }
 
   return (
-    <li className="grid gap-6 border-b border-black/20 py-9 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-start sm:gap-8 sm:py-11">
+    <li className="grid gap-6 border-b border-black/20 py-9 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-start sm:gap-8 sm:py-11" id={`experience-${experience.id}`}>
       <div>
         <time className="font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.14em] text-black/46">
           {formatDate(experience.startsAt)}
@@ -89,7 +94,9 @@ function ExperienceRow({
           {experience.audienceLabel} / {experience.kind.replaceAll("_", " ")}
         </p>
         <h3 className="mt-4 font-[var(--font-display)] text-4xl leading-[0.94] tracking-[-0.035em] sm:text-5xl">
-          {experience.title}
+          <Link className="transition-colors hover:text-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]" href={experience.detailHref}>
+            {experience.title} <span aria-hidden="true">→</span>
+          </Link>
         </h3>
         {experience.summary ? (
           <p className="mt-5 max-w-2xl font-[var(--font-body)] text-sm leading-relaxed text-black/54 sm:text-base">
@@ -112,8 +119,8 @@ function ExperienceRow({
           <a
             className="inline-flex min-h-11 items-center border border-black px-5 font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white"
             href={experience.registrationHref}
-            rel="noreferrer"
-            target="_blank"
+            rel={registrationLeavesRuined ? "noreferrer" : undefined}
+            target={registrationLeavesRuined ? "_blank" : undefined}
           >
             Register ↗
           </a>
@@ -136,7 +143,9 @@ function ExperienceRow({
           <span className="font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.14em] text-black/38">
             {experience.registrationState === "registered"
               ? "Place held"
-              : "No registration"}
+              : experience.registrationState === "closed"
+                ? "Registration closed"
+                : "No registration"}
           </span>
         )}
       </div>

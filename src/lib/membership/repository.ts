@@ -3,6 +3,10 @@ import "server-only";
 import parsePhoneNumber from "libphonenumber-js/min";
 
 import { getApplicationDatabase } from "@/lib/database/server";
+import {
+  mergeUpcomingPublicMemberExperiences,
+  publicEventDetailHref,
+} from "@/lib/events/member-experiences";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { supportedShippingCountry } from "@/lib/membership/phone";
 import type {
@@ -1349,9 +1353,11 @@ type ExperienceRow = {
   location_label: string | null;
   registration_mode: "external" | "internal" | "none";
   registration_status: "cancelled" | "external_pending" | "registered" | "waitlisted" | null;
+  slug: string;
   starts_at: Date | string;
   summary: string | null;
   title: string;
+  visibility: "all_members" | "block" | "circle" | "invite_only" | "progression" | "public";
 };
 
 function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
@@ -1364,9 +1370,18 @@ function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
           ? "cancelled"
           : row.registration_mode === "external"
             ? "external"
-            : "none";
+            : row.registration_mode === "internal"
+              ? "available"
+              : "none";
+  const communityHref = row.visibility === "public"
+    ? publicEventDetailHref(row.slug)
+    : null;
   return {
     audienceLabel: row.audience_label ?? "Ruined Membership",
+    detailHref: communityHref
+      ?? (row.kind === "circle_meeting"
+        ? "/my/circle"
+        : `/my/experiences#experience-${row.id}`),
     endsAt: toIso(row.ends_at),
     id: row.id,
     kind: row.kind,
@@ -1585,6 +1600,7 @@ export async function getMemberCircle(
     sql<Array<ExperienceRow>>`
       select
         experience.id,
+        experience.slug,
         experience.kind,
         experience.title,
         experience.summary,
@@ -1593,6 +1609,7 @@ export async function getMemberCircle(
         experience.location_label,
         experience.registration_mode,
         experience.external_registration_url,
+        experience.visibility,
         registration.status as registration_status,
         ${circle.circle_name}::text as audience_label
       from experiences experience
@@ -1670,6 +1687,7 @@ export async function getMemberExperiences(
     )
     select
       experience.id,
+      experience.slug,
       experience.kind,
       experience.title,
       experience.summary,
@@ -1678,6 +1696,7 @@ export async function getMemberExperiences(
       experience.location_label,
       experience.registration_mode,
       experience.external_registration_url,
+      experience.visibility,
       registration.status as registration_status,
       case experience.visibility
         when 'circle' then 'Your Circle'
@@ -1714,8 +1733,11 @@ export async function getMemberExperiences(
     past: experiences
       .filter((experience) => new Date(experience.endsAt ?? experience.startsAt).getTime() < now)
       .reverse(),
-    upcoming: experiences.filter(
-      (experience) => new Date(experience.endsAt ?? experience.startsAt).getTime() >= now,
+    upcoming: mergeUpcomingPublicMemberExperiences(
+      experiences.filter(
+        (experience) => new Date(experience.endsAt ?? experience.startsAt).getTime() >= now,
+      ),
+      now,
     ),
   };
 }
@@ -2323,7 +2345,7 @@ export async function getMemberHome(
   } else if (nextExperience) {
     nextAction = {
       body: nextExperience.summary ?? "The next member experience is ready to enter.",
-      href: "/my/experiences",
+      href: nextExperience.detailHref,
       kind: "experience",
       title: nextExperience.title,
     };

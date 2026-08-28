@@ -109,7 +109,7 @@ test("profile home gets a light paper dossier without repeated top branding", ()
   assert.match(navigation, /\{ href: "\/my", label: "Profile" \}/);
   assert.match(navigation, /\{ href: "\/my\/profile", label: "Edit profile" \}/);
   assert.match(preview, /circleMembers: \[previewSelf, previewPartner\]/);
-  assert.match(preview, /upcomingExperiences: \[previewMeeting, previewExperience\]/);
+  assert.match(preview, /upcomingExperiences: previewUpcomingExperiences/);
   assert.doesNotMatch(main, /border/);
   assert.doesNotMatch(main, /shadow/);
 });

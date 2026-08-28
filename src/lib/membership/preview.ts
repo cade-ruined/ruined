@@ -1,4 +1,5 @@
 import { deriveMemberAccessPolicy } from "@/lib/membership/access-policy";
+import { getUpcomingPublicMemberExperiences } from "@/lib/events/member-experiences";
 import type {
   MemberAccountSnapshot,
   MemberArtifactsSnapshot,
@@ -53,6 +54,7 @@ const previewPartner: PrivacySafePersonSummary = {
 
 const previewMeeting = {
   audienceLabel: "Circle 01",
+  detailHref: "/my/circle",
   endsAt: "2026-09-04T02:30:00.000Z",
   id: "preview-meeting",
   kind: "circle_meeting",
@@ -65,19 +67,12 @@ const previewMeeting = {
   title: "Circle 01 / Monthly room",
 };
 
-const previewExperience = {
-  audienceLabel: "All members",
-  endsAt: null,
-  id: "preview-experience",
-  kind: "gathering",
-  locationLabel: "Tibble Fork Reservoir",
-  meetingUrl: null,
-  registrationHref: "/community/byob-02/register",
-  registrationState: "external" as const,
-  startsAt: "2026-09-11T14:00:00.000Z",
-  summary: "Bring your own bell or bodyweight.",
-  title: "BYOB Nº 02",
-};
+const previewPublicExperiences = getUpcomingPublicMemberExperiences(
+  Date.parse("2026-08-27T12:00:00.000Z"),
+);
+const previewExperience = previewPublicExperiences[0] ?? null;
+const previewUpcomingExperiences = [previewMeeting, ...previewPublicExperiences]
+  .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
 
 const previewArtifact = {
   artifactState: "fulfilled" as const,
@@ -152,7 +147,7 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
   },
   progression: PREVIEW_PROGRESSION,
   unreadUpdates: 2,
-  upcomingExperiences: [previewMeeting, previewExperience],
+  upcomingExperiences: previewUpcomingExperiences,
 };
 
 export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
@@ -253,7 +248,7 @@ export const PREVIEW_MEMBER_CIRCLE: MemberCircleSnapshot = {
 export const PREVIEW_MEMBER_EXPERIENCES: MemberExperiencesSnapshot = {
   access,
   past: [],
-  upcoming: [previewMeeting, previewExperience],
+  upcoming: previewUpcomingExperiences,
 };
 
 export const PREVIEW_MEMBER_LEARNING: MemberLearningSnapshot = {

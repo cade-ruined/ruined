@@ -128,6 +128,7 @@ export type PrivacySafePersonSummary = {
 
 export type MemberExperienceSummary = {
   audienceLabel: string;
+  detailHref: string;
   endsAt: string | null;
   id: string;
   kind: string;
@@ -135,7 +136,9 @@ export type MemberExperienceSummary = {
   meetingUrl: string | null;
   registrationHref: string | null;
   registrationState:
+    | "available"
     | "cancelled"
+    | "closed"
     | "external"
     | "none"
     | "registered"
