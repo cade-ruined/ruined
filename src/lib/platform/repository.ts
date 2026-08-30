@@ -1,6 +1,7 @@
 import "server-only";
 
 import { markPersonEmailVerified } from "@/lib/identity/repository";
+import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { normalizeEmail } from "@/lib/stripe/membership-state";
 import {
@@ -58,19 +59,33 @@ export async function getPasswordlessAccessEligibility(
   const emailNormalized = normalizeEmail(email);
 
   if (audience === "ops") {
-    const rows = await sql<Array<{ eligible: boolean }>>`
-      select exists (
-        select 1
-        from platform_users platform_user
-        join platform_role_grants grant_row
-          on grant_row.auth_user_id = platform_user.auth_user_id
-        where platform_user.email_normalized = ${emailNormalized}
-          and platform_user.status = 'active'
-          and grant_row.role_slug in ('ops_admin', 'circle_leader', 'guide')
-          and grant_row.revoked_at is null
-      ) as eligible
+    const rows = await sql<Array<{ has_invite: boolean; is_returning: boolean }>>`
+      select
+        exists (
+          select 1
+          from platform_users platform_user
+          join platform_role_grants grant_row
+            on grant_row.auth_user_id = platform_user.auth_user_id
+          where platform_user.email_normalized = ${emailNormalized}
+            and platform_user.status = 'active'
+            and grant_row.role_slug in ('ops_admin', 'circle_leader', 'guide')
+            and grant_row.revoked_at is null
+        ) as is_returning,
+        exists (
+          select 1
+          from passwordless_account_invites invitation
+          join operator_invitation_configs config
+            on config.invitation_id = invitation.id
+          where invitation.email_normalized = ${emailNormalized}
+            and invitation.intended_user_type = 'staff'
+            and invitation.accepted_at is null
+            and invitation.revoked_at is null
+            and (invitation.expires_at is null or invitation.expires_at > statement_timestamp())
+            and config.role_slug in ('ops_admin', 'circle_leader', 'guide')
+        ) as has_invite
     `;
-    return rows[0]?.eligible ? "returning" : "none";
+    if (rows[0]?.is_returning) return "returning";
+    return rows[0]?.has_invite ? "invited" : "none";
   }
 
   const rows = await sql<
@@ -480,6 +495,10 @@ export async function claimPlatformMemberForViewer(
       email: viewer.email,
       emailNormalized,
       personId: member.person_id,
+    });
+    await markCalendarAudiencesPendingForMember(tx, {
+      actorAuthUserId: viewer.authUserId,
+      memberId: member.id,
     });
 
     return {

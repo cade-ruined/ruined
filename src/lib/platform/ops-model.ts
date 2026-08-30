@@ -1,9 +1,10 @@
 export type OpsAccessRole = "circle_leader" | "guide" | "ops_admin";
 
 export type OpsCapability =
-  | "accountability.manage"
   | "announcement.manage"
   | "artifact.manage"
+  | "circle.resource.manage"
+  | "circle.shaper.manage"
   | "experience.manage"
   | "member.agreement_evidence.read"
   | "member.billing_detail.read"
@@ -126,10 +127,6 @@ export type OpsMemberJourneyRecord = {
     state: string;
     timelineCompletedAt: string | null;
   };
-  progression: {
-    assignedAt: string;
-    levelName: string;
-  } | null;
 };
 
 export type OpsCircleMemberSummary = {
@@ -138,12 +135,6 @@ export type OpsCircleMemberSummary = {
 };
 
 export type OpsMemberCommunityRecord = {
-  accountabilityPartner: {
-    assignedAt: string;
-    assignmentId: string;
-    memberId: string;
-    preferredName: string;
-  } | null;
   block: {
     blockId: string;
     name: string;
@@ -152,9 +143,9 @@ export type OpsMemberCommunityRecord = {
   circle: {
     circleId: string;
     guides: string[];
-    leaderName: string | null;
     members: OpsCircleMemberSummary[];
     name: string;
+    shaperName: string | null;
     state: string;
   } | null;
   meetings: OpsExperienceSummary[];
@@ -283,11 +274,26 @@ export type OpsExperienceDirectoryItem = {
   endsAt: string | null;
   experienceId: string;
   kind: string;
+  googleCommunicationsConfigured?: boolean;
+  meetingUrl?: string | null;
   registeredCount: number;
   scope: string;
   startsAt: string | null;
   state: string;
   title: string;
+};
+
+export type OpsCircleCommunicationItem = {
+  activeMembers: number;
+  blockId: string | null;
+  blockName: string | null;
+  blockStatus: string | null;
+  capacity: number;
+  chatUrl: string | null;
+  googleCommunicationsConfigured: boolean;
+  id: string;
+  name: string;
+  status: string;
 };
 
 export type OpsAnnouncementSummary = {
@@ -297,6 +303,12 @@ export type OpsAnnouncementSummary = {
   state: string;
   targetLabel: string;
   title: string;
+};
+
+export type OpsAnnouncementAudienceOptions = {
+  blocks: Array<{ id: string; label: string }>;
+  circles: Array<{ id: string; label: string }>;
+  members: Array<{ id: string; label: string }>;
 };
 
 export type OpsOverviewActivityKind =

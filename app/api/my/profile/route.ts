@@ -21,8 +21,8 @@ function isDirectory(value: unknown): value is MemberProfileInput["directory"] {
     typeof candidate.buildingVisible === "boolean" &&
     ["hidden", "circle_visible"].includes(String(candidate.directoryStatus)) &&
     typeof candidate.locationVisible === "boolean" &&
-    ["none", "accountability_partner", "circle"].includes(String(candidate.emailScope)) &&
-    ["none", "accountability_partner", "circle"].includes(String(candidate.phoneScope)) &&
+    ["none", "circle"].includes(String(candidate.emailScope)) &&
+    ["none", "circle"].includes(String(candidate.phoneScope)) &&
     Object.keys(candidate).every((key) =>
       [
         "avatarVisible",

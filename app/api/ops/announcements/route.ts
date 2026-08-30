@@ -11,7 +11,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type AnnouncementBody = { body?: unknown; targetKind?: unknown; title?: unknown };
+type AnnouncementBody = { body?: unknown; targetId?: unknown; targetKind?: unknown; title?: unknown };
 
 export async function POST(request: Request) {
   const access = await requireOpsMutationRequest(request);
@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     const announcement = await createOpsAnnouncement({
       actorAuthUserId: access.viewer.authUserId,
       body: typeof body?.body === "string" ? body.body : "",
+      targetId: typeof body?.targetId === "string" ? body.targetId : null,
       targetKind: typeof body?.targetKind === "string" ? body.targetKind : "",
       title: typeof body?.title === "string" ? body.title : "",
     });

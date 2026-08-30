@@ -9,8 +9,6 @@ import {
   OPERATOR_LABEL_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
 } from "@/components/platform/operatorStyles";
-import type { OpsMemberRecord } from "@/lib/platform/ops-model";
-
 type Notice = { kind: "error" | "success"; text: string } | null;
 
 function ActionNotice({ notice }: { notice: Notice }) {
@@ -210,13 +208,6 @@ const OVERRIDE_STATES: Record<string, Array<{ label: string; value: string }>> =
     { label: "In production", value: "in_production" },
     { label: "Fulfilled", value: "fulfilled" },
   ],
-  progression: [
-    { label: "Member", value: "member" },
-    { label: "Shaper", value: "shaper" },
-    { label: "Builder", value: "builder" },
-    { label: "Author", value: "author" },
-    { label: "Partner", value: "partner" },
-  ],
 };
 
 export function OperatorOverrideAction({
@@ -281,7 +272,6 @@ export function OperatorOverrideAction({
             <option value="admission">Admission</option>
             <option value="administrative_onboarding">Administrative onboarding</option>
             <option value="artifact">Artifact</option>
-            <option value="progression">Progression</option>
           </select>
         </label>
         <label className={OPERATOR_LABEL_CLASS}>
@@ -317,65 +307,6 @@ export function OperatorOverrideAction({
         <ActionNotice notice={notice} />
         <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
           {submitting ? "Recording" : "Record correction"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-export function OperatorAccountabilityAction({ record }: { record: OpsMemberRecord }) {
-  const router = useRouter();
-  const [notice, setNotice] = useState<Notice>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const circle = record.community.circle;
-  if (!circle) return null;
-  const circleId = circle.circleId;
-
-  const availablePartners = circle.members.filter(
-    (member) => member.memberId !== record.header.memberId,
-  );
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setNotice(null);
-    const form = event.currentTarget;
-    const data = new FormData(form);
-
-    try {
-      await sendJson("/api/ops/accountability-partners", {
-        circleId,
-        memberId: record.header.memberId,
-        partnerMemberId: String(data.get("partnerMemberId") ?? ""),
-      });
-      setNotice({ kind: "success", text: "The accountability pairing was recorded." });
-      router.refresh();
-    } catch (error) {
-      setNotice({
-        kind: "error",
-        text: error instanceof Error ? error.message : "The pairing could not be recorded.",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
-      <h3 className="ui-heading text-xl font-semibold">Accountability partner</h3>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Partner in {circle.name}</span>
-        <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={availablePartners.length === 0 || submitting} name="partnerMemberId" required>
-          <option disabled value="">Choose member</option>
-          {availablePartners.map((member) => (
-            <option key={member.memberId} value={member.memberId}>{member.preferredName}</option>
-          ))}
-        </select>
-      </label>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <ActionNotice notice={notice} />
-        <button className={OPERATOR_BUTTON_CLASS} disabled={availablePartners.length === 0 || submitting} type="submit">
-          {submitting ? "Assigning" : "Assign partner"}
         </button>
       </div>
     </form>

@@ -65,13 +65,6 @@ export type MemberIdentity = {
   standingState: MembershipStandingState;
 };
 
-export type ProgressionSummary = {
-  assignedAt: string | null;
-  name: string;
-  position: number;
-  slug: "member" | "shaper" | "builder" | "author" | "partner";
-};
-
 export type MemberNextAction = {
   body: string;
   href: string;
@@ -150,14 +143,25 @@ export type MemberExperienceSummary = {
 };
 
 export type MemberArtifactSummary = {
+  acquisitionType: "earned" | "gifted" | "purchased";
   artifactState: ArtifactState;
   awardId: string;
+  description: string | null;
   earnedAt: string;
   earnedReason: string;
   fulfilledAt: string | null;
   imageUrl: string | null;
   inputRequired: boolean;
   name: string;
+  product: {
+    href: string | null;
+    imageAlt: string | null;
+    imageUrl: string | null;
+    name: string | null;
+    productGid: string;
+    productHandle: string;
+    provider: "shopify";
+  } | null;
   trackingUrl: string | null;
 };
 
@@ -185,7 +189,6 @@ export type MemberHomeSnapshot = {
   nextAction: MemberNextAction;
   nextExperience: MemberExperienceSummary | null;
   nextMeeting: MemberExperienceSummary | null;
-  partner: PrivacySafePersonSummary | null;
   profile: {
     bio: string | null;
     buildingNow: string | null;
@@ -196,7 +199,6 @@ export type MemberHomeSnapshot = {
     preferredName: string | null;
     timezone: string | null;
   };
-  progression: ProgressionSummary;
   unreadUpdates: number;
   upcomingExperiences: MemberExperienceSummary[];
 };
@@ -206,9 +208,9 @@ export type MemberDirectoryPreferences = {
   bioVisible: boolean;
   buildingVisible: boolean;
   directoryStatus: "circle_visible" | "hidden";
-  emailScope: "accountability_partner" | "circle" | "none";
+  emailScope: "circle" | "none";
   locationVisible: boolean;
-  phoneScope: "accountability_partner" | "circle" | "none";
+  phoneScope: "circle" | "none";
   version: number;
 };
 
@@ -235,7 +237,6 @@ export type MemberProfileSnapshot = {
     mobile: string | null;
   };
   preferences: MemberDirectoryPreferences;
-  progression: ProgressionSummary;
 };
 
 export type MemberOnboardingSnapshot = {
@@ -268,7 +269,6 @@ export type MemberOnboardingSnapshot = {
 
 export type MemberCircleSnapshot = {
   access: MemberAccessPolicy;
-  accountabilityPartner: PrivacySafePersonSummary | null;
   block: {
     id: string;
     name: string;
@@ -279,7 +279,11 @@ export type MemberCircleSnapshot = {
     name: string;
     status: CircleState;
   } | null;
-  leader: PrivacySafePersonSummary | null;
+  communication: {
+    chatHref: string | null;
+    chatState: "ready" | "unavailable";
+  };
+  shaper: PrivacySafePersonSummary | null;
   meetings: MemberExperienceSummary[];
   members: PrivacySafePersonSummary[];
   resources: Array<{
@@ -297,13 +301,19 @@ export type MemberExperiencesSnapshot = {
 };
 
 export type MemberLearningResourceSummary = {
+  captionsUrl: string | null;
   collectionName: string | null;
+  durationLabel: string | null;
+  featured: boolean;
   href: string;
   id: string;
+  presenter: string | null;
   publishedAt: string;
   resourceType: "article" | "audio" | "download" | "external_link" | "video";
   summary: string | null;
+  thumbnailUrl: string | null;
   title: string;
+  videoUrl: string | null;
 };
 
 export type MemberLearningSnapshot = {
@@ -321,16 +331,22 @@ export type MemberLearningSnapshot = {
 export type MemberLearningResourceDetail = {
   access: MemberAccessPolicy;
   bodyMarkdown: string | null;
+  captionsUrl: string | null;
   collectionName: string | null;
+  durationLabel: string | null;
   externalUrl: string | null;
+  featured: boolean;
+  presenter: string | null;
   publishedAt: string;
   resourceType: MemberLearningResourceSummary["resourceType"];
   slug: string;
   storageBucket: string | null;
   storagePath: string | null;
   summary: string | null;
+  thumbnailUrl: string | null;
   title: string;
   version: number;
+  videoUrl: string | null;
 };
 
 export type MemberArtifactsSnapshot = {

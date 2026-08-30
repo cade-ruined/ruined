@@ -12,9 +12,7 @@ const fieldClass =
 function scopeLabel(value: string) {
   return value === "none"
     ? "Keep private"
-    : value === "circle"
-      ? "Share with Circle"
-      : "Accountability partner only";
+    : "Share with Circle";
 }
 
 export default function MemberProfileEditor({
@@ -189,13 +187,13 @@ export default function MemberProfileEditor({
               <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
                 Email sharing
                 <select className={fieldClass} defaultValue={profile.preferences.emailScope} name="email-scope">
-                  {["none", "accountability_partner", "circle"].map((scope) => <option key={scope} value={scope}>{scopeLabel(scope)}</option>)}
+                  {["none", "circle"].map((scope) => <option key={scope} value={scope}>{scopeLabel(scope)}</option>)}
                 </select>
               </label>
               <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
                 Phone sharing
                 <select className={fieldClass} defaultValue={profile.preferences.phoneScope} name="phone-scope">
-                  {["none", "accountability_partner", "circle"].map((scope) => <option key={scope} value={scope}>{scopeLabel(scope)}</option>)}
+                  {["none", "circle"].map((scope) => <option key={scope} value={scope}>{scopeLabel(scope)}</option>)}
                 </select>
               </label>
             </div>

@@ -30,7 +30,7 @@ export default function AccessPage({
         <p className="mt-5 text-sm leading-relaxed text-white/50">
           {member
             ? "Use the email attached to your Ruined account. New member accounts remain pending until Stripe confirms payment."
-            : "Operator access is internally assigned. A valid account without an active operations role cannot open the roster."}
+            : "Use the email your Ruined invitation was sent to. Your code confirms identity; the approved responsibility and Circle access are applied automatically."}
         </p>
         <PasswordlessAccessForm
           audience={audience}

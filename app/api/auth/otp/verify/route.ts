@@ -6,9 +6,9 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   PlatformAccessDeniedError,
   claimPlatformMemberForViewer,
-  getOperatorRole,
   getPasswordlessAccessEligibility,
 } from "@/lib/platform/repository";
+import { claimPlatformOperatorForViewer } from "@/lib/platform/ops-access-repository";
 import { createSupabaseCurrentResponseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -103,8 +103,8 @@ export async function POST(request: NextRequest) {
   try {
     if (audience === "member") {
       await claimPlatformMemberForViewer({ authUserId, email: verifiedEmail });
-    } else if (!(await getOperatorRole(authUserId))) {
-      throw new PlatformAccessDeniedError();
+    } else {
+      await claimPlatformOperatorForViewer({ authUserId, email: verifiedEmail });
     }
   } catch (authorizationError) {
     const denied = authorizationError instanceof PlatformAccessDeniedError;

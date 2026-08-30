@@ -35,6 +35,7 @@ export default function SiteHeader() {
   const isFoundations = pathname === "/foundations";
   const isPlatform =
     pathname.startsWith("/my") || pathname.startsWith("/ops");
+  const isOperations = pathname.startsWith("/ops");
   const isAuth = pathname.startsWith("/auth");
   const isHome = pathname === "/";
   const isBag = pathname === SITE_ROUTES.bag.href;
@@ -199,7 +200,7 @@ export default function SiteHeader() {
     if (!window.dispatchEvent(request)) event.preventDefault();
   };
 
-  if (isLanding || isFoundations || isAuth) return null;
+  if (isLanding || isFoundations || isAuth || isOperations) return null;
 
   const overlayOpen = menuOpen || searchOpen;
 

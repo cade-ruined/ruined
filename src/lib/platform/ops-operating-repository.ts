@@ -5,13 +5,22 @@ import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
+import { getGoogleCalendarConfigurationStatus } from "@/lib/google/calendar";
+import {
+  googleCommunicationLivemode,
+  googleCommunicationUrlFromMetadata,
+  safeGoogleCommunicationUrl,
+  type GoogleCommunicationKind,
+} from "@/lib/google/communications";
 import type { PlatformConfiguration } from "@/lib/platform/config";
 import type {
   OpsAccessContext,
   OpsAccessRole,
+  OpsAnnouncementAudienceOptions,
   OpsAnnouncementSummary,
   OpsArtifactQueueItem,
   OpsCapability,
+  OpsCircleCommunicationItem,
   OpsExperienceDirectoryItem,
   OpsHistoryEvent,
   OpsMemberRecord,
@@ -33,7 +42,6 @@ const OVERRIDE_VALUES: Record<string, Set<string>> = {
   admission: new Set(["interested", "applied", "invited", "accepted", "declined", "withdrawn"]),
   administrative_onboarding: new Set(["not_started", "in_progress", "completed"]),
   artifact: new Set(["not_started", "collecting", "in_production", "fulfilled"]),
-  progression: new Set(["member", "shaper", "builder", "author", "partner"]),
   standing: new Set(["pre_active", "active", "paused", "cancellation_requested", "inactive", "alumni"]),
 };
 const ARTIFACT_TRANSITIONS: Record<string, Set<string>> = {
@@ -45,10 +53,21 @@ const ARTIFACT_TRANSITIONS: Record<string, Set<string>> = {
   review: new Set(["ready", "in_production", "canceled"]),
 };
 
+export type OpsGoogleCommunicationEntityType = "circle" | "experience";
+
+export type OpsGoogleCommunicationResult = {
+  connected: boolean;
+  entityId: string;
+  entityType: OpsGoogleCommunicationEntityType;
+  kind: GoogleCommunicationKind;
+  url: string | null;
+};
+
 const ADMIN_CAPABILITIES: OpsCapability[] = [
-  "accountability.manage",
   "announcement.manage",
   "artifact.manage",
+  "circle.resource.manage",
+  "circle.shaper.manage",
   "experience.manage",
   "member.agreement_evidence.read",
   "member.billing_detail.read",
@@ -63,7 +82,6 @@ const ADMIN_CAPABILITIES: OpsCapability[] = [
   "workflow.retry",
 ];
 const ASSIGNED_CIRCLE_CAPABILITIES: OpsCapability[] = [
-  "accountability.manage",
   "experience.manage",
   "member.community.read",
   "member.journey.read",
@@ -262,6 +280,107 @@ async function writeAudit(
       ${randomUUID()}
     )
   `;
+}
+
+function googleCommunicationKindForEntity(
+  entityType: OpsGoogleCommunicationEntityType,
+): GoogleCommunicationKind {
+  return entityType === "circle" ? "chat" : "meet";
+}
+
+function googleExternalEntityType(kind: GoogleCommunicationKind): "chat_space" | "meet_space" {
+  return kind === "chat" ? "chat_space" : "meet_space";
+}
+
+function googleExternalEntityId(kind: GoogleCommunicationKind, urlValue: string): string {
+  const url = new URL(urlValue);
+  const gmailChatIdentifier = kind === "chat" && url.hostname === "mail.google.com"
+    ? /^#chat\/space\/([A-Za-z0-9_-]+)$/.exec(url.hash)?.[1]
+    : null;
+  const identifier = gmailChatIdentifier ?? url.pathname.split("/").filter(Boolean).at(-1);
+  if (!identifier) {
+    throw new OpsOperatingRepositoryError("invalid_request", "The Google link is invalid.");
+  }
+  return kind === "chat" ? `spaces/${identifier}` : `spaces/${identifier.toLowerCase()}`;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "23505",
+  );
+}
+
+async function requireAssignedCircleAccess(
+  tx: postgres.TransactionSql,
+  access: OpsAccessContext,
+  circleId: string,
+): Promise<void> {
+  if (access.roles.includes("ops_admin")) return;
+  const assignmentRows = await tx<Array<{ circle_id: string }>>`
+    select staff_assignment.circle_id
+    from circle_staff_assignments staff_assignment
+    join platform_role_grants role_grant
+      on role_grant.auth_user_id = staff_assignment.auth_user_id
+     and role_grant.role_slug = staff_assignment.role_slug
+     and role_grant.revoked_at is null
+    where staff_assignment.circle_id = ${circleId}::uuid
+      and staff_assignment.auth_user_id = ${access.authUserId}::uuid
+      and staff_assignment.ended_at is null
+      and staff_assignment.role_slug in ('guide', 'circle_leader')
+    limit 1
+  `;
+  if (!assignmentRows[0]) {
+    throw new OpsOperatingRepositoryError(
+      "forbidden",
+      "This Circle is outside the operator's current assignment.",
+    );
+  }
+}
+
+async function requireGoogleCommunicationEntityAccess(
+  tx: postgres.TransactionSql,
+  access: OpsAccessContext,
+  entityType: OpsGoogleCommunicationEntityType,
+  entityId: string,
+): Promise<{ label: string }> {
+  if (entityType === "circle") {
+    const circleRows = await tx<Array<{ id: string; name: string }>>`
+      select id, name
+      from circles
+      where id = ${entityId}::uuid
+      for update
+    `;
+    const circle = circleRows[0];
+    if (!circle) throw new OpsOperatingRepositoryError("not_found", "Circle not found.");
+    await requireAssignedCircleAccess(tx, access, circle.id);
+    return { label: circle.name };
+  }
+
+  const experienceRows = await tx<Array<{
+    circle_id: string | null;
+    id: string;
+    title: string;
+  }>>`
+    select id, title, circle_id
+    from experiences
+    where id = ${entityId}::uuid
+    for update
+  `;
+  const experience = experienceRows[0];
+  if (!experience) throw new OpsOperatingRepositoryError("not_found", "Experience not found.");
+  if (!access.roles.includes("ops_admin")) {
+    if (!experience.circle_id) {
+      throw new OpsOperatingRepositoryError(
+        "forbidden",
+        "Only an operations administrator can connect a non-Circle Experience.",
+      );
+    }
+    await requireAssignedCircleAccess(tx, access, experience.circle_id);
+  }
+  return { label: experience.title };
 }
 
 function nextDecision(input: {
@@ -551,22 +670,6 @@ export async function getOpsMemberOperatingRecord(
         `
       : [];
 
-    const progressionRows = isAdmin
-      ? await tx<Array<{
-          assigned_at: Date | string;
-          display_name: string;
-        }>>`
-          select level_record.display_name, assignment.assigned_at
-          from member_progression_assignments assignment
-          join membership_progression_levels level_record
-            on level_record.slug = assignment.progression_level_slug
-          where assignment.member_id = ${memberId}::uuid
-            and assignment.ended_at is null
-          order by assignment.assigned_at desc
-          limit 1
-        `
-      : [];
-
     const artifactRows = isAdmin
       ? await tx<Array<{
           artifact_award_id: string;
@@ -651,32 +754,6 @@ export async function getOpsMemberOperatingRecord(
           order by staff_assignment.role_slug, preferred_name
         `
       : [];
-    const accountabilityRows = base.circle_id
-      ? await tx<Array<{
-          assigned_at: Date | string;
-          assignment_id: string;
-          partner_member_id: string;
-          preferred_name: string;
-        }>>`
-          select
-            assignment.id as assignment_id,
-            assignment.assigned_at,
-            partner.id as partner_member_id,
-            coalesce(profile.preferred_name, profile.display_name, 'Member') as preferred_name
-          from accountability_partner_assignments assignment
-          join ruined_members partner
-            on partner.id = case
-              when assignment.member_one_id = ${memberId}::uuid then assignment.member_two_id
-              else assignment.member_one_id
-            end
-          left join person_profiles profile on profile.person_id = partner.person_id
-          where assignment.circle_id = ${base.circle_id}::uuid
-            and assignment.ended_at is null
-            and ${memberId}::uuid in (assignment.member_one_id, assignment.member_two_id)
-          order by assignment.assigned_at desc
-          limit 1
-        `
-      : [];
     const meetingRows = base.circle_id
       ? await tx<Array<{
           experience_id: string;
@@ -710,6 +787,7 @@ export async function getOpsMemberOperatingRecord(
           join learning_resources resource
             on resource.id = version_record.learning_resource_id
           where circle_resource.circle_id = ${base.circle_id}::uuid
+            and circle_resource.ended_at is null
           order by circle_resource.is_pinned desc, circle_resource.position, resource.title
         `
       : [];
@@ -902,7 +980,6 @@ export async function getOpsMemberOperatingRecord(
     const privateContact = contactRows[0];
     const timeline = requirementRows.find((row) => row.requirement_slug === "timeline");
     const futureLetter = requirementRows.find((row) => row.requirement_slug === "future_letter");
-    const accountability = accountabilityRows[0];
     const primaryEmail = isAdmin || base.email_scope === "circle" ? base.primary_email : null;
     const combinedHistory: OpsHistoryEvent[] = [
       ...historyRows.map((row) => ({
@@ -946,14 +1023,6 @@ export async function getOpsMemberOperatingRecord(
     return {
       access,
       community: {
-        accountabilityPartner: accountability
-          ? {
-              assignedAt: asIso(accountability.assigned_at)!,
-              assignmentId: accountability.assignment_id,
-              memberId: accountability.partner_member_id,
-              preferredName: accountability.preferred_name,
-            }
-          : null,
         block: base.block_id
           ? { blockId: base.block_id, name: base.block_name ?? "Block", state: base.block_state ?? "forming" }
           : null,
@@ -961,9 +1030,9 @@ export async function getOpsMemberOperatingRecord(
           ? {
               circleId: base.circle_id,
               guides: staffRows.filter((row) => row.role_slug === "guide").map((row) => row.preferred_name),
-              leaderName: staffRows.find((row) => row.role_slug === "circle_leader")?.preferred_name ?? null,
               members: circleMembers.map((row) => ({ memberId: row.member_id, preferredName: row.preferred_name })),
               name: base.circle_name ?? "Circle",
+              shaperName: staffRows.find((row) => row.role_slug === "circle_leader")?.preferred_name ?? null,
               state: base.circle_state ?? "forming",
             }
           : null,
@@ -1039,12 +1108,6 @@ export async function getOpsMemberOperatingRecord(
           state: enrollment?.status ?? "not_started",
           timelineCompletedAt: asIso(timeline?.completed_at),
         },
-        progression: progressionRows[0]
-          ? {
-              assignedAt: asIso(progressionRows[0].assigned_at)!,
-              levelName: progressionRows[0].display_name,
-            }
-          : null,
       },
       membership: {
         agreement: {
@@ -1878,7 +1941,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         case
           when experience.visibility = 'circle' then coalesce(circle.name, 'Circle')
           when experience.visibility = 'block' then coalesce(membership_block.name, 'Block')
-          when experience.visibility = 'progression' then coalesce(level_record.display_name, 'Progression')
+          when experience.visibility = 'progression' then 'Selected members'
           when experience.visibility = 'public' then 'Public'
           when experience.visibility = 'invite_only' then 'Invite only'
           else 'All active members'
@@ -2050,10 +2113,107 @@ export async function getOpsArtifactQueue(actorAuthUserId: string): Promise<OpsA
   });
 }
 
+export async function getOpsCircleCommunicationDirectory(
+  actorAuthUserId: string,
+): Promise<OpsCircleCommunicationItem[]> {
+  const sql = getApplicationDatabase();
+  const livemode = googleCommunicationLivemode();
+  const googleCommunicationsConfigured = livemode !== null;
+  return sql.begin(async (tx) => {
+    await tx`set transaction isolation level repeatable read read only`;
+    const access = await requireOperatorAccess(tx, actorAuthUserId);
+    const isAdmin = access.roles.includes("ops_admin");
+    const rows = await tx<Array<{
+      active_members: number | string;
+      block_id: string | null;
+      block_name: string | null;
+      block_status: string | null;
+      capacity: number | string;
+      chat_metadata: unknown;
+      circle_id: string;
+      circle_name: string;
+      circle_status: string;
+    }>>`
+      select
+        circle.id as circle_id,
+        circle.name as circle_name,
+        circle.capacity,
+        circle.status as circle_status,
+        block_assignment.block_id,
+        membership_block.name as block_name,
+        membership_block.status as block_status,
+        communication_link.metadata as chat_metadata,
+        count(distinct member_assignment.id)
+          filter (where member_assignment.ended_at is null) as active_members
+      from circles circle
+      left join circle_member_assignments member_assignment
+        on member_assignment.circle_id = circle.id
+      left join block_circle_assignments block_assignment
+        on block_assignment.circle_id = circle.id
+       and block_assignment.ended_at is null
+      left join membership_blocks membership_block
+        on membership_block.id = block_assignment.block_id
+      left join integration_entity_links communication_link
+        on communication_link.provider = 'google'
+       and communication_link.local_entity_type = 'circle'
+       and communication_link.local_entity_id = circle.id::text
+       and communication_link.external_entity_type = 'chat_space'
+       and communication_link.livemode = ${livemode}
+      where (
+        ${isAdmin}
+        or exists (
+          select 1
+          from circle_staff_assignments staff_assignment
+          join platform_role_grants role_grant
+            on role_grant.auth_user_id = staff_assignment.auth_user_id
+           and role_grant.role_slug = staff_assignment.role_slug
+           and role_grant.revoked_at is null
+          where staff_assignment.circle_id = circle.id
+            and staff_assignment.auth_user_id = ${access.authUserId}::uuid
+            and staff_assignment.ended_at is null
+            and staff_assignment.role_slug in ('guide', 'circle_leader')
+        )
+      )
+      group by
+        circle.id,
+        block_assignment.block_id,
+        membership_block.name,
+        membership_block.status,
+        communication_link.metadata
+      order by
+        case circle.status
+          when 'active' then 1
+          when 'forming' then 2
+          when 'completed' then 3
+          else 4
+        end,
+        circle.created_at
+      limit 300
+    `;
+
+    return rows.map((row) => ({
+      activeMembers: Number(row.active_members),
+      blockId: row.block_id,
+      blockName: row.block_name,
+      blockStatus: row.block_status,
+      capacity: Number(row.capacity),
+      chatUrl: googleCommunicationsConfigured
+        ? googleCommunicationUrlFromMetadata("chat", row.chat_metadata)
+        : null,
+      googleCommunicationsConfigured,
+      id: row.circle_id,
+      name: row.circle_name,
+      status: row.circle_status,
+    }));
+  });
+}
+
 export async function getOpsExperienceDirectory(
   actorAuthUserId: string,
 ): Promise<OpsExperienceDirectoryItem[]> {
   const sql = getApplicationDatabase();
+  const livemode = googleCommunicationLivemode();
+  const googleCommunicationsConfigured = livemode !== null;
   return sql.begin(async (tx) => {
     await tx`set transaction isolation level repeatable read read only`;
     const access = await requireOperatorAccess(tx, actorAuthUserId);
@@ -2062,6 +2222,7 @@ export async function getOpsExperienceDirectory(
       ends_at: Date | string | null;
       experience_id: string;
       kind: string;
+      meeting_metadata: unknown;
       registered_count: number | string;
       scope_label: string;
       starts_at: Date | string;
@@ -2075,10 +2236,11 @@ export async function getOpsExperienceDirectory(
         experience.starts_at,
         experience.ends_at,
         experience.status as state,
+        communication_link.metadata as meeting_metadata,
         case
           when experience.visibility = 'circle' then coalesce(circle.name, 'Circle')
           when experience.visibility = 'block' then coalesce(membership_block.name, 'Block')
-          when experience.visibility = 'progression' then coalesce(level_record.display_name, 'Progression')
+          when experience.visibility = 'progression' then 'Selected members'
           when experience.visibility = 'public' then 'Public'
           when experience.visibility = 'invite_only' then 'Invite only'
           else 'All active members'
@@ -2090,6 +2252,12 @@ export async function getOpsExperienceDirectory(
       left join membership_progression_levels level_record
         on level_record.slug = experience.progression_level_slug
       left join experience_registrations registration on registration.experience_id = experience.id
+      left join integration_entity_links communication_link
+        on communication_link.provider = 'google'
+       and communication_link.local_entity_type = 'experience'
+       and communication_link.local_entity_id = experience.id::text
+       and communication_link.external_entity_type = 'meet_space'
+       and communication_link.livemode = ${livemode}
       where (
         ${isAdmin}
         or (
@@ -2111,7 +2279,8 @@ export async function getOpsExperienceDirectory(
         experience.id,
         circle.name,
         membership_block.name,
-        level_record.display_name
+        level_record.display_name,
+        communication_link.metadata
       order by experience.starts_at desc
       limit 300
     `;
@@ -2119,6 +2288,10 @@ export async function getOpsExperienceDirectory(
       endsAt: asIso(row.ends_at),
       experienceId: row.experience_id,
       kind: row.kind,
+      googleCommunicationsConfigured,
+      meetingUrl: googleCommunicationsConfigured
+        ? googleCommunicationUrlFromMetadata("meet", row.meeting_metadata)
+        : null,
       registeredCount: Number(row.registered_count),
       scope: row.scope_label,
       startsAt: asIso(row.starts_at),
@@ -2128,8 +2301,161 @@ export async function getOpsExperienceDirectory(
   });
 }
 
+export async function setOpsGoogleCommunicationLink(input: {
+  actorAuthUserId: string;
+  entityId: string;
+  entityType: OpsGoogleCommunicationEntityType;
+  url: string | null;
+}): Promise<OpsGoogleCommunicationResult> {
+  const entityId = requireUuid(input.entityId, input.entityType === "circle" ? "Circle" : "Experience");
+  const kind = googleCommunicationKindForEntity(input.entityType);
+  const externalEntityType = googleExternalEntityType(kind);
+  const suppliedUrl = input.url?.trim() ?? "";
+  const url = suppliedUrl ? safeGoogleCommunicationUrl(kind, suppliedUrl) : null;
+  if (suppliedUrl && !url) {
+    throw new OpsOperatingRepositoryError(
+      "invalid_request",
+      kind === "chat"
+        ? "Paste a full Google Chat space link beginning with https://chat.google.com/room/."
+        : "Paste a Google Meet link like https://meet.google.com/abc-defg-hij.",
+    );
+  }
+
+  const livemode = googleCommunicationLivemode();
+  if (livemode === null) {
+    throw new OpsOperatingRepositoryError(
+      "conflict",
+      "Google communications must be set to test or live before links can change.",
+    );
+  }
+  const sql = getApplicationDatabase();
+  return sql.begin(async (tx) => {
+    const access = await requireOperatorAccess(tx, input.actorAuthUserId, { lock: true });
+    const entity = await requireGoogleCommunicationEntityAccess(
+      tx,
+      access,
+      input.entityType,
+      entityId,
+    );
+    const existingRows = await tx<Array<{
+      external_entity_id: string;
+      id: number | string;
+      metadata: unknown;
+    }>>`
+      select id, external_entity_id, metadata
+      from integration_entity_links
+      where provider = 'google'
+        and local_entity_type = ${input.entityType}
+        and local_entity_id = ${entityId}
+        and external_entity_type = ${externalEntityType}
+        and livemode = ${livemode}
+      limit 1
+      for update
+    `;
+    const existing = existingRows[0];
+    const beforeUrl = existing
+      ? googleCommunicationUrlFromMetadata(kind, existing.metadata)
+      : null;
+
+    if (!url) {
+      if (existing) {
+        await tx`
+          delete from integration_entity_links
+          where id = ${existing.id}
+            and provider = 'google'
+            and local_entity_type = ${input.entityType}
+            and local_entity_id = ${entityId}
+            and external_entity_type = ${externalEntityType}
+            and livemode = ${livemode}
+        `;
+        await writeAudit(tx, {
+          action: input.entityType === "circle"
+            ? "circle.google_chat_cleared"
+            : "experience.google_meet_cleared",
+          actorAuthUserId: access.authUserId,
+          before: { url: beforeUrl },
+          metadata: { entityLabel: entity.label, livemode },
+          subjectId: entityId,
+          subjectType: input.entityType,
+        });
+      }
+      return {
+        connected: false,
+        entityId,
+        entityType: input.entityType,
+        kind,
+        url: null,
+      };
+    }
+
+    const externalEntityId = googleExternalEntityId(kind, url);
+    const metadata = kind === "chat"
+      ? { spaceUri: url, source: "operator" }
+      : { meetingUri: url, source: "operator" };
+    try {
+      await tx`
+        insert into integration_entity_links (
+          provider,
+          local_entity_type,
+          local_entity_id,
+          external_entity_type,
+          external_entity_id,
+          livemode,
+          metadata
+        ) values (
+          'google',
+          ${input.entityType},
+          ${entityId},
+          ${externalEntityType},
+          ${externalEntityId},
+          ${livemode},
+          ${tx.json(metadata)}
+        )
+        on conflict (
+          provider,
+          local_entity_type,
+          local_entity_id,
+          external_entity_type,
+          livemode
+        ) do update set
+          external_entity_id = excluded.external_entity_id,
+          metadata = excluded.metadata,
+          updated_at = statement_timestamp()
+      `;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new OpsOperatingRepositoryError(
+          "conflict",
+          `That Google ${kind === "chat" ? "Chat space" : "Meet room"} is already connected elsewhere.`,
+        );
+      }
+      throw error;
+    }
+
+    await writeAudit(tx, {
+      action: input.entityType === "circle"
+        ? "circle.google_chat_linked"
+        : "experience.google_meet_linked",
+      actorAuthUserId: access.authUserId,
+      after: { url },
+      before: existing ? { url: beforeUrl } : undefined,
+      metadata: { entityLabel: entity.label, livemode },
+      subjectId: entityId,
+      subjectType: input.entityType,
+    });
+    return {
+      connected: true,
+      entityId,
+      entityType: input.entityType,
+      kind,
+      url,
+    };
+  });
+}
+
 export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
   announcements: OpsAnnouncementSummary[];
+  audienceOptions: OpsAnnouncementAudienceOptions;
   canManage: boolean;
 }> {
   const sql = getApplicationDatabase();
@@ -2156,7 +2482,7 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
               when 'all_active_members' then 'All active members'
               when 'circle' then coalesce(circle.name, 'Circle')
               when 'block' then coalesce(membership_block.name, 'Block')
-              when 'progression' then coalesce(level_record.display_name, 'Progression')
+              when 'progression' then 'Selected members'
               else coalesce(profile.preferred_name, profile.display_name, 'Member')
             end,
             ', '
@@ -2176,6 +2502,31 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
       order by announcement.created_at desc
       limit 200
     `;
+    const [circleRows, blockRows, memberRows] = await Promise.all([
+      tx<Array<{ id: string; label: string }>>`
+        select id, name as label
+        from circles
+        where status <> 'archived'
+        order by name
+      `,
+      tx<Array<{ id: string; label: string }>>`
+        select id, name as label
+        from membership_blocks
+        where status <> 'archived'
+        order by name
+      `,
+      tx<Array<{ id: string; label: string }>>`
+        select
+          member.id,
+          coalesce(profile.preferred_name, profile.display_name, private_profile.legal_name, 'Member') as label
+        from ruined_members member
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        left join person_profiles profile on profile.person_id = member.person_id
+        left join person_private_profiles private_profile on private_profile.person_id = member.person_id
+        where lifecycle.account_state = 'active'
+        order by label, member.id
+      `,
+    ]);
     return {
       announcements: rows.map((row) => ({
         announcementId: row.announcement_id,
@@ -2185,6 +2536,11 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
         targetLabel: row.target_label,
         title: row.title,
       })),
+      audienceOptions: {
+        blocks: blockRows,
+        circles: circleRows,
+        members: memberRows,
+      },
       canManage: true,
     };
   });
@@ -2199,13 +2555,26 @@ export async function getOpsSystemHealth(
     await tx`set transaction isolation level repeatable read read only`;
     await requireOperatorAccess(tx, actorAuthUserId, { requireAdmin: true });
     const timestampRows = await tx<Array<{
+      calendar_attention_count: number | string;
       database_checked_at: Date | string;
+      last_calendar_at: Date | string | null;
       last_identity_at: Date | string | null;
       last_notification_at: Date | string | null;
       last_stripe_at: Date | string | null;
     }>>`
       select
         statement_timestamp() as database_checked_at,
+        (select max(last_synced_at) from experience_calendar_links) as last_calendar_at,
+        (
+          (select count(*)
+           from experience_calendar_links
+           where status in ('failed', 'pending_create', 'pending_update', 'pending_cancel'))
+          +
+          (select count(*)
+           from experience_calendar_sync_requests
+           where status in ('queued', 'processing')
+             and updated_at < statement_timestamp() - interval '5 minutes')
+        ) as calendar_attention_count,
         (select max(last_signed_in_at) from platform_users) as last_identity_at,
         (select max(coalesce(delivered_at, sent_at)) from member_notifications) as last_notification_at,
         (select max(processed_at) from stripe_webhook_events where status = 'processed') as last_stripe_at
@@ -2238,6 +2607,7 @@ export async function getOpsSystemHealth(
       limit 200
     `;
     const timestamps = timestampRows[0];
+    const calendarConfiguration = getGoogleCalendarConfigurationStatus();
     const services: OpsSystemHealth["services"] = [
       {
         detail: "Identity and passwordless access",
@@ -2262,6 +2632,21 @@ export async function getOpsSystemHealth(
         label: "Notifications",
         lastSucceededAt: asIso(timestamps?.last_notification_at),
         state: failureRows.some((row) => row.action_type === "send_notification") ? "attention" : "connected",
+      },
+      {
+        detail: calendarConfiguration.ready && timestamps?.last_calendar_at
+          ? `Invitations organized by ${calendarConfiguration.organizerEmail}`
+          : calendarConfiguration.ready
+            ? `Organizer configured for ${calendarConfiguration.organizerEmail}; private provider check required`
+          : "Workspace organizer connection required",
+        label: "Google Calendar",
+        lastSucceededAt: asIso(timestamps?.last_calendar_at),
+        state: !calendarConfiguration.ready
+          ? "unavailable"
+          : !timestamps?.last_calendar_at
+            || Number(timestamps?.calendar_attention_count ?? 0) > 0
+            ? "attention"
+            : "connected",
       },
     ];
     return {
@@ -2343,7 +2728,6 @@ type LifecycleOverrideRow = {
   administrative_onboarding_state: string;
   admission_state: string;
   artifact_state: string;
-  current_progression_level_slug: string;
   standing_state: string;
   version: number | string;
 };
@@ -2389,7 +2773,6 @@ export async function recordOpsMemberStateOverride(input: {
         administrative_onboarding_state,
         standing_state,
         artifact_state,
-        current_progression_level_slug,
         version
       from member_lifecycle
       where member_id = ${memberId}::uuid
@@ -2408,7 +2791,6 @@ export async function recordOpsMemberStateOverride(input: {
       admission: lifecycle.admission_state,
       administrative_onboarding: lifecycle.administrative_onboarding_state,
       artifact: lifecycle.artifact_state,
-      progression: lifecycle.current_progression_level_slug,
       standing: lifecycle.standing_state,
     };
     const previousValue = priorValues[dimension];
@@ -2432,40 +2814,6 @@ export async function recordOpsMemberStateOverride(input: {
           "The administrative onboarding record must exist before it can be corrected.",
         );
       }
-    }
-
-    if (dimension === "progression") {
-      const currentAssignments = await tx<Array<{ id: string; progression_level_slug: string }>>`
-        select id, progression_level_slug
-        from member_progression_assignments
-        where member_id = ${memberId}::uuid
-          and ended_at is null
-        order by id
-        for update
-      `;
-      await tx`
-        update member_progression_assignments
-        set
-          ended_at = statement_timestamp(),
-          ended_by_auth_user_id = ${access.authUserId}::uuid,
-          end_reason = ${reason}
-        where member_id = ${memberId}::uuid
-          and ended_at is null
-      `;
-      await tx`
-        insert into member_progression_assignments (
-          member_id,
-          progression_level_slug,
-          assigned_by_auth_user_id,
-          assignment_reason
-        ) values (
-          ${memberId}::uuid,
-          ${nextState},
-          ${access.authUserId}::uuid,
-          ${reason}
-        )
-      `;
-      void currentAssignments;
     }
 
     const updateRows = dimension === "account"
@@ -2496,19 +2844,12 @@ export async function recordOpsMemberStateOverride(input: {
                 where member_id = ${memberId}::uuid and version = ${input.expectedLifecycleVersion}
                 returning version
               `
-            : dimension === "artifact"
-              ? await tx<Array<{ version: number | string }>>`
-                  update member_lifecycle
-                  set artifact_state = ${nextState}, version = version + 1, updated_at = statement_timestamp()
-                  where member_id = ${memberId}::uuid and version = ${input.expectedLifecycleVersion}
-                  returning version
-                `
-              : await tx<Array<{ version: number | string }>>`
-                  update member_lifecycle
-                  set current_progression_level_slug = ${nextState}, version = version + 1, updated_at = statement_timestamp()
-                  where member_id = ${memberId}::uuid and version = ${input.expectedLifecycleVersion}
-                  returning version
-                `;
+            : await tx<Array<{ version: number | string }>>`
+                update member_lifecycle
+                set artifact_state = ${nextState}, version = version + 1, updated_at = statement_timestamp()
+                where member_id = ${memberId}::uuid and version = ${input.expectedLifecycleVersion}
+                returning version
+              `;
     if (!updateRows[0]) {
       throw new OpsOperatingRepositoryError(
         "conflict",
@@ -2583,6 +2924,17 @@ export async function recordOpsMemberStateOverride(input: {
       subjectId: overrideId,
       subjectType: "member_state_override",
     });
+    if (new Set(["account", "administrative_onboarding", "standing"]).has(dimension)) {
+      // Loaded after this repository initializes to avoid a static cycle: the
+      // Calendar boundary reuses OpsOperatingRepositoryError from this module.
+      const { markCalendarAudiencesPendingForMember } = await import(
+        "@/lib/platform/calendar-audience-invalidation"
+      );
+      await markCalendarAudiencesPendingForMember(tx, {
+        actorAuthUserId: access.authUserId,
+        memberId,
+      });
+    }
     return {
       dimension,
       id: overrideId,
@@ -2590,94 +2942,6 @@ export async function recordOpsMemberStateOverride(input: {
       previousState: previousValue,
       version: Number(updateRows[0].version),
     };
-  });
-}
-
-export async function assignOpsAccountabilityPartner(input: {
-  actorAuthUserId: string;
-  circleId: string;
-  memberId: string;
-  partnerMemberId: string;
-}) {
-  const circleId = requireUuid(input.circleId, "Circle");
-  const memberId = requireUuid(input.memberId, "Member");
-  const partnerMemberId = requireUuid(input.partnerMemberId, "Partner member");
-  if (memberId === partnerMemberId) {
-    throw new OpsOperatingRepositoryError("invalid_request", "Choose a different Circle member.");
-  }
-  const [memberOneId, memberTwoId] = [memberId, partnerMemberId].sort();
-  const sql = getApplicationDatabase();
-  return sql.begin(async (tx) => {
-    const access = await requireOperatorAccess(tx, input.actorAuthUserId, {
-      lock: true,
-      memberId,
-    });
-    if (!access.roles.includes("ops_admin")) {
-      await requireOperatorAccess(tx, input.actorAuthUserId, { memberId: partnerMemberId });
-    }
-    const membershipRows = await tx<Array<{ member_id: string }>>`
-      select assignment.member_id
-      from circle_member_assignments assignment
-      where assignment.circle_id = ${circleId}::uuid
-        and assignment.member_id in (${memberId}::uuid, ${partnerMemberId}::uuid)
-        and assignment.ended_at is null
-      order by assignment.member_id
-      for update
-    `;
-    if (membershipRows.length !== 2) {
-      throw new OpsOperatingRepositoryError(
-        "conflict",
-        "Both accountability partners must be current members of the same Circle.",
-      );
-    }
-    const existingRows = await tx<Array<{ id: string }>>`
-      select id
-      from accountability_partner_assignments
-      where ended_at is null
-        and (
-          ${memberId}::uuid in (member_one_id, member_two_id)
-          or ${partnerMemberId}::uuid in (member_one_id, member_two_id)
-        )
-      order by id
-      for update
-    `;
-    if (existingRows.length > 0) {
-      await tx`
-        update accountability_partner_assignments
-        set
-          ended_at = statement_timestamp(),
-          ended_by_auth_user_id = ${access.authUserId}::uuid,
-          end_reason = 'Replaced by a new operator assignment'
-        where id in ${tx(existingRows.map((row) => row.id))}
-      `;
-    }
-    const assignmentRows = await tx<Array<{ assigned_at: Date | string; id: string }>>`
-      insert into accountability_partner_assignments (
-        circle_id,
-        member_one_id,
-        member_two_id,
-        assigned_by_auth_user_id,
-        assignment_reason
-      ) values (
-        ${circleId}::uuid,
-        ${memberOneId}::uuid,
-        ${memberTwoId}::uuid,
-        ${access.authUserId}::uuid,
-        'Operator assignment'
-      )
-      returning id, assigned_at
-    `;
-    const assignment = assignmentRows[0];
-    await writeAudit(tx, {
-      action: "circle.accountability_partner_assigned",
-      actorAuthUserId: access.authUserId,
-      after: { circleId, memberOneId, memberTwoId },
-      memberId,
-      metadata: { endedAssignmentIds: existingRows.map((row) => row.id) },
-      subjectId: assignment.id,
-      subjectType: "accountability_partner_assignment",
-    });
-    return { assignedAt: asIso(assignment.assigned_at), id: assignment.id };
   });
 }
 
@@ -3111,23 +3375,48 @@ export async function transitionOpsArtifactJob(input: {
 export async function createOpsAnnouncement(input: {
   actorAuthUserId: string;
   body: string;
+  targetId?: string | null;
   targetKind: string;
   title: string;
 }) {
   const title = normalizedText(input.title, "Title", 3, 200);
   const body = normalizedBody(input.body, "Announcement", 3, 10_000);
-  if (input.targetKind !== "all_active_members") {
+  const targetKind = input.targetKind.trim();
+  if (!new Set(["all_active_members", "circle", "block", "member"]).has(targetKind)) {
     throw new OpsOperatingRepositoryError(
       "invalid_request",
-      "This draft form currently supports the all-active-members audience only.",
+      "Choose a valid announcement audience.",
     );
   }
+  const targetId = targetKind === "all_active_members"
+    ? null
+    : requireUuid(input.targetId ?? "", "Announcement audience");
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
     const access = await requireOperatorAccess(tx, input.actorAuthUserId, {
       lock: true,
       requireAdmin: true,
     });
+    if (targetKind === "circle") {
+      const rows = await tx<Array<{ id: string }>>`
+        select id from circles where id = ${targetId}::uuid and status <> 'archived' for update
+      `;
+      if (!rows[0]) throw new OpsOperatingRepositoryError("not_found", "Circle not found.");
+    } else if (targetKind === "block") {
+      const rows = await tx<Array<{ id: string }>>`
+        select id from membership_blocks where id = ${targetId}::uuid and status <> 'archived' for update
+      `;
+      if (!rows[0]) throw new OpsOperatingRepositoryError("not_found", "Block not found.");
+    } else if (targetKind === "member") {
+      const rows = await tx<Array<{ id: string }>>`
+        select member.id
+        from ruined_members member
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        where member.id = ${targetId}::uuid and lifecycle.account_state = 'active'
+        for update of member, lifecycle
+      `;
+      if (!rows[0]) throw new OpsOperatingRepositoryError("not_found", "Active member not found.");
+    }
     const announcementId = randomUUID();
     await tx`
       insert into member_announcements (
@@ -3150,17 +3439,23 @@ export async function createOpsAnnouncement(input: {
       insert into member_announcement_targets (
         announcement_id,
         target_type,
+        circle_id,
+        block_id,
+        member_id,
         created_by_auth_user_id
       ) values (
         ${announcementId}::uuid,
-        'all_active_members',
+        ${targetKind},
+        ${targetKind === "circle" ? targetId : null}::uuid,
+        ${targetKind === "block" ? targetId : null}::uuid,
+        ${targetKind === "member" ? targetId : null}::uuid,
         ${access.authUserId}::uuid
       )
     `;
     await writeAudit(tx, {
       action: "announcement.draft_created",
       actorAuthUserId: access.authUserId,
-      after: { state: "draft", targetType: "all_active_members", title },
+      after: { state: "draft", targetId, targetType: targetKind, title },
       subjectId: announcementId,
       subjectType: "member_announcement",
     });

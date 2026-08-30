@@ -8,6 +8,10 @@ import {
   ensurePersonForEmail,
   PersonIdentityConflictError,
 } from "@/lib/identity/repository";
+import {
+  markCalendarAudiencesPendingForBlock,
+  markCalendarAudiencesPendingForCircle,
+} from "@/lib/platform/calendar-audience-invalidation";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/stripe/membership-state";
 
@@ -53,8 +57,44 @@ export type OpsCircleSummary = {
   capacity: number;
   id: string;
   name: string;
+  resources: OpsCircleResourceAssignment[];
+  shaper: OpsCircleShaperAssignment | null;
   slug: string;
   status: "active" | "archived" | "completed" | "forming";
+};
+
+export type OpsCircleShaperAssignment = {
+  assignedAt: string;
+  assignmentId: string;
+  authUserId: string;
+  name: string;
+};
+
+export type OpsShaperCandidate = {
+  authUserId: string;
+  name: string;
+};
+
+export type OpsCircleResourceAssignment = {
+  assignedAt: string;
+  assignmentId: string;
+  isPinned: boolean;
+  resourceId: string;
+  title: string;
+  version: number;
+  versionId: string;
+};
+
+export type OpsLearningResourceOption = {
+  resourceId: string;
+  title: string;
+  version: number;
+  versionId: string;
+};
+
+export type OpsCircleManagementOptions = {
+  resources: OpsLearningResourceOption[];
+  shapers: OpsShaperCandidate[];
 };
 
 export type OpsBlockStatus = "active" | "archived" | "completed" | "forming";
@@ -136,6 +176,45 @@ async function requireOpsAdmin(
   if (!authorizedRows[0]) {
     throw new OpsRepositoryError("forbidden", "Operations administrator access is required.");
   }
+}
+
+async function writeOpsAudit(
+  tx: postgres.TransactionSql,
+  input: {
+    action: string;
+    actorAuthUserId: string;
+    after?: postgres.JSONValue;
+    before?: postgres.JSONValue;
+    reason?: string;
+    subjectId: string;
+    subjectType: string;
+  },
+): Promise<void> {
+  const before = input.before === undefined ? null : tx.json(input.before);
+  const after = input.after === undefined ? null : tx.json(input.after);
+  await tx`
+    insert into operator_audit_events (
+      actor_auth_user_id,
+      action,
+      subject_type,
+      subject_id,
+      reason,
+      before_snapshot,
+      after_snapshot,
+      metadata,
+      dedupe_key
+    ) values (
+      ${input.actorAuthUserId}::uuid,
+      ${input.action},
+      ${input.subjectType},
+      ${input.subjectId},
+      ${input.reason ?? null},
+      ${before},
+      ${after},
+      '{}'::jsonb,
+      ${randomUUID()}
+    )
+  `;
 }
 
 function normalizedCircleName(value: string): string {
@@ -484,6 +563,8 @@ export async function createCircle({
       capacity: Number(circle.capacity),
       id: circle.id,
       name: circle.name,
+      resources: [],
+      shaper: null,
       slug: circle.slug,
       status: circle.status,
     };
@@ -558,6 +639,8 @@ export async function activateCircle({
         capacity: Number(circle.capacity),
         id: circle.id,
         name: circle.name,
+        resources: [],
+        shaper: null,
         slug: circle.slug,
         status: circle.status,
       };
@@ -599,6 +682,8 @@ export async function activateCircle({
       capacity: Number(circle.capacity),
       id: circle.id,
       name: circle.name,
+      resources: [],
+      shaper: null,
       slug: circle.slug,
       status: "active",
     };
@@ -653,6 +738,67 @@ export async function getOpsCircleSummaries(
         circle.created_at asc
     `;
 
+    const shaperRows = await tx<Array<{
+      assigned_at: Date | string;
+      assignment_id: string;
+      auth_user_id: string;
+      circle_id: string;
+      name: string;
+    }>>`
+      select
+        staff_assignment.id::text as assignment_id,
+        staff_assignment.circle_id,
+        staff_assignment.auth_user_id,
+        staff_assignment.assigned_at,
+        coalesce(
+          person_profile.preferred_name,
+          person_profile.display_name,
+          user_profile.display_name,
+          platform_user.email_normalized
+        ) as name
+      from circle_staff_assignments staff_assignment
+      join platform_users platform_user
+        on platform_user.auth_user_id = staff_assignment.auth_user_id
+      left join person_profiles person_profile
+        on person_profile.person_id = platform_user.person_id
+      left join user_profiles user_profile
+        on user_profile.auth_user_id = platform_user.auth_user_id
+      where staff_assignment.role_slug = 'circle_leader'
+        and staff_assignment.ended_at is null
+      order by staff_assignment.assigned_at desc
+    `;
+    const resourceRows = await tx<Array<{
+      assigned_at: Date | string;
+      assignment_id: string;
+      circle_id: string;
+      is_pinned: boolean;
+      resource_id: string;
+      title: string;
+      version: number;
+      version_id: string;
+    }>>`
+      select
+        circle_resource.id as assignment_id,
+        circle_resource.circle_id,
+        circle_resource.learning_resource_id as resource_id,
+        circle_resource.learning_resource_version_id as version_id,
+        circle_resource.is_pinned,
+        circle_resource.created_at as assigned_at,
+        resource.title,
+        version_record.version
+      from circle_resources circle_resource
+      join learning_resources resource
+        on resource.id = circle_resource.learning_resource_id
+      join learning_resource_versions version_record
+        on version_record.id = circle_resource.learning_resource_version_id
+      where circle_resource.ended_at is null
+      order by
+        circle_resource.circle_id,
+        circle_resource.is_pinned desc,
+        circle_resource.position,
+        circle_resource.created_at
+    `;
+
     return rows.map((row) => ({
       activeMembers: Number(row.active_members),
       blockId: row.block_id,
@@ -661,9 +807,483 @@ export async function getOpsCircleSummaries(
       capacity: Number(row.capacity),
       id: row.id,
       name: row.name,
+      resources: resourceRows
+        .filter((resource) => resource.circle_id === row.id)
+        .map((resource) => ({
+          assignedAt: new Date(resource.assigned_at).toISOString(),
+          assignmentId: resource.assignment_id,
+          isPinned: resource.is_pinned,
+          resourceId: resource.resource_id,
+          title: resource.title,
+          version: Number(resource.version),
+          versionId: resource.version_id,
+        })),
+      shaper: (() => {
+        const shaper = shaperRows.find((candidate) => candidate.circle_id === row.id);
+        return shaper
+          ? {
+              assignedAt: new Date(shaper.assigned_at).toISOString(),
+              assignmentId: shaper.assignment_id,
+              authUserId: shaper.auth_user_id,
+              name: shaper.name,
+            }
+          : null;
+      })(),
       slug: row.slug,
       status: row.status,
     }));
+  });
+}
+
+export async function getOpsCircleManagementOptions(
+  actorAuthUserId: string,
+): Promise<OpsCircleManagementOptions> {
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    const shaperRows = await tx<Array<{ auth_user_id: string; name: string }>>`
+      select
+        platform_user.auth_user_id,
+        coalesce(
+          person_profile.preferred_name,
+          person_profile.display_name,
+          user_profile.display_name,
+          platform_user.email_normalized
+        ) as name
+      from platform_users platform_user
+      join platform_role_grants role_grant
+        on role_grant.auth_user_id = platform_user.auth_user_id
+       and role_grant.role_slug = 'circle_leader'
+       and role_grant.revoked_at is null
+      left join person_profiles person_profile
+        on person_profile.person_id = platform_user.person_id
+      left join user_profiles user_profile
+        on user_profile.auth_user_id = platform_user.auth_user_id
+      where platform_user.status = 'active'
+      order by name, platform_user.auth_user_id
+    `;
+    const resourceRows = await tx<Array<{
+      resource_id: string;
+      title: string;
+      version: number;
+      version_id: string;
+    }>>`
+      select
+        resource.id as resource_id,
+        resource.title,
+        version_record.id as version_id,
+        version_record.version
+      from learning_resources resource
+      join learning_resource_versions version_record
+        on version_record.id = resource.current_version_id
+      where resource.status = 'published'
+        and version_record.published_at is not null
+      order by resource.position, resource.title, version_record.version desc
+    `;
+    return {
+      resources: resourceRows.map((resource) => ({
+        resourceId: resource.resource_id,
+        title: resource.title,
+        version: Number(resource.version),
+        versionId: resource.version_id,
+      })),
+      shapers: shaperRows.map((shaper) => ({
+        authUserId: shaper.auth_user_id,
+        name: shaper.name,
+      })),
+    };
+  });
+}
+
+export async function assignShaperToCircle({
+  actorAuthUserId,
+  circleId,
+  shaperAuthUserId,
+}: {
+  actorAuthUserId: string;
+  circleId: string;
+  shaperAuthUserId: string;
+}) {
+  if (!UUID_PATTERN.test(circleId) || !UUID_PATTERN.test(shaperAuthUserId)) {
+    throw new OpsRepositoryError("invalid_request", "Choose a valid Circle and Shaper.");
+  }
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 4)`;
+
+    const circleRows = await tx<Array<{ id: string; name: string; status: OpsCircleSummary["status"] }>>`
+      select id, name, status
+      from circles
+      where id = ${circleId}::uuid
+      for update
+    `;
+    const circle = circleRows[0];
+    if (!circle) throw new OpsRepositoryError("not_found", "That Circle could not be found.");
+    if (!new Set(["forming", "active"]).has(circle.status)) {
+      throw new OpsRepositoryError("conflict", "Only a forming or active Circle can receive a Shaper.");
+    }
+
+    const shaperRows = await tx<Array<{ auth_user_id: string; name: string }>>`
+      select
+        platform_user.auth_user_id,
+        coalesce(
+          person_profile.preferred_name,
+          person_profile.display_name,
+          user_profile.display_name,
+          platform_user.email_normalized
+        ) as name
+      from platform_users platform_user
+      join platform_role_grants role_grant
+        on role_grant.auth_user_id = platform_user.auth_user_id
+       and role_grant.role_slug = 'circle_leader'
+       and role_grant.revoked_at is null
+      left join person_profiles person_profile
+        on person_profile.person_id = platform_user.person_id
+      left join user_profiles user_profile
+        on user_profile.auth_user_id = platform_user.auth_user_id
+      where platform_user.auth_user_id = ${shaperAuthUserId}::uuid
+        and platform_user.status = 'active'
+      limit 1
+      for update of platform_user, role_grant
+    `;
+    const shaper = shaperRows[0];
+    if (!shaper) {
+      throw new OpsRepositoryError(
+        "conflict",
+        "That person needs an active Shaper role before they can lead a Circle.",
+      );
+    }
+
+    const existingRows = await tx<Array<{
+      assigned_at: Date | string;
+      auth_user_id: string;
+      id: string;
+    }>>`
+      select id::text, auth_user_id, assigned_at
+      from circle_staff_assignments
+      where circle_id = ${circleId}::uuid
+        and role_slug = 'circle_leader'
+        and ended_at is null
+      limit 1
+      for update
+    `;
+    const existing = existingRows[0];
+    if (existing?.auth_user_id === shaperAuthUserId) {
+      return {
+        assignedAt: new Date(existing.assigned_at).toISOString(),
+        assignmentId: existing.id,
+        authUserId: existing.auth_user_id,
+        circleId,
+        created: false,
+        name: shaper.name,
+      };
+    }
+    if (existing) {
+      throw new OpsRepositoryError(
+        "conflict",
+        "That Circle already has a Shaper. End the current assignment first.",
+      );
+    }
+
+    const insertedRows = await tx<Array<{
+      assigned_at: Date | string;
+      auth_user_id: string;
+      id: string;
+    }>>`
+      insert into circle_staff_assignments (
+        circle_id,
+        auth_user_id,
+        role_slug,
+        assigned_by_auth_user_id
+      ) values (
+        ${circleId}::uuid,
+        ${shaperAuthUserId}::uuid,
+        'circle_leader',
+        ${actorAuthUserId}::uuid
+      )
+      returning id::text, auth_user_id, assigned_at
+    `;
+    const assignment = insertedRows[0];
+    if (!assignment) throw new Error("The Shaper assignment could not be created.");
+    await writeOpsAudit(tx, {
+      action: "circle.shaper_assigned",
+      actorAuthUserId,
+      after: { circleId, shaperAuthUserId },
+      subjectId: assignment.id,
+      subjectType: "circle_staff_assignment",
+    });
+    return {
+      assignedAt: new Date(assignment.assigned_at).toISOString(),
+      assignmentId: assignment.id,
+      authUserId: assignment.auth_user_id,
+      circleId,
+      created: true,
+      name: shaper.name,
+    };
+  });
+}
+
+export async function endCircleShaperAssignment({
+  actorAuthUserId,
+  assignmentId,
+}: {
+  actorAuthUserId: string;
+  assignmentId: string;
+}) {
+  if (!/^\d+$/.test(assignmentId)) {
+    throw new OpsRepositoryError("invalid_request", "Choose a valid Shaper assignment.");
+  }
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    const assignmentRows = await tx<Array<{
+      auth_user_id: string;
+      circle_id: string;
+      id: string;
+    }>>`
+      select id::text, circle_id, auth_user_id
+      from circle_staff_assignments
+      where id = ${assignmentId}::bigint
+        and role_slug = 'circle_leader'
+        and ended_at is null
+      for update
+    `;
+    const assignment = assignmentRows[0];
+    if (!assignment) {
+      throw new OpsRepositoryError("not_found", "That active Shaper assignment could not be found.");
+    }
+    const endedRows = await tx<Array<{ ended_at: Date | string }>>`
+      update circle_staff_assignments
+      set
+        ended_at = statement_timestamp(),
+        ended_by_auth_user_id = ${actorAuthUserId}::uuid,
+        end_reason = 'ops_ended_assignment'
+      where id = ${assignmentId}::bigint
+        and ended_at is null
+      returning ended_at
+    `;
+    const ended = endedRows[0];
+    if (!ended) throw new OpsRepositoryError("conflict", "That Shaper assignment is no longer active.");
+    await writeOpsAudit(tx, {
+      action: "circle.shaper_assignment_ended",
+      actorAuthUserId,
+      before: { circleId: assignment.circle_id, shaperAuthUserId: assignment.auth_user_id },
+      reason: "ops_ended_assignment",
+      subjectId: assignment.id,
+      subjectType: "circle_staff_assignment",
+    });
+    return {
+      assignmentId: assignment.id,
+      circleId: assignment.circle_id,
+      endedAt: new Date(ended.ended_at).toISOString(),
+    };
+  });
+}
+
+export async function assignResourceToCircle({
+  actorAuthUserId,
+  circleId,
+  isPinned,
+  resourceId,
+}: {
+  actorAuthUserId: string;
+  circleId: string;
+  isPinned: boolean;
+  resourceId: string;
+}) {
+  if (!UUID_PATTERN.test(circleId) || !UUID_PATTERN.test(resourceId)) {
+    throw new OpsRepositoryError("invalid_request", "Choose a valid Circle and resource.");
+  }
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 5)`;
+    const circleRows = await tx<Array<{ id: string; status: OpsCircleSummary["status"] }>>`
+      select id, status
+      from circles
+      where id = ${circleId}::uuid
+      for update
+    `;
+    const circle = circleRows[0];
+    if (!circle) throw new OpsRepositoryError("not_found", "That Circle could not be found.");
+    if (!new Set(["forming", "active"]).has(circle.status)) {
+      throw new OpsRepositoryError("conflict", "Only a forming or active Circle can receive resources.");
+    }
+
+    const resourceRows = await tx<Array<{
+      resource_id: string;
+      title: string;
+      version: number;
+      version_id: string;
+    }>>`
+      select
+        resource.id as resource_id,
+        resource.title,
+        version_record.id as version_id,
+        version_record.version
+      from learning_resources resource
+      join learning_resource_versions version_record
+        on version_record.id = resource.current_version_id
+      where resource.id = ${resourceId}::uuid
+        and resource.status = 'published'
+        and version_record.published_at is not null
+      limit 1
+      for update of resource
+    `;
+    const resource = resourceRows[0];
+    if (!resource) {
+      throw new OpsRepositoryError("conflict", "That resource has no published version to assign.");
+    }
+
+    const existingRows = await tx<Array<{
+      created_at: Date | string;
+      id: string;
+      is_pinned: boolean;
+      learning_resource_version_id: string;
+      version: number;
+    }>>`
+      select
+        circle_resource.id,
+        circle_resource.learning_resource_version_id,
+        circle_resource.is_pinned,
+        circle_resource.created_at,
+        assigned_version.version
+      from circle_resources circle_resource
+      join learning_resource_versions assigned_version
+        on assigned_version.id = circle_resource.learning_resource_version_id
+      where circle_resource.circle_id = ${circleId}::uuid
+        and circle_resource.learning_resource_id = ${resourceId}::uuid
+        and circle_resource.ended_at is null
+      limit 1
+      for update of circle_resource
+    `;
+    const existing = existingRows[0];
+    if (existing) {
+      return {
+        assignedAt: new Date(existing.created_at).toISOString(),
+        assignmentId: existing.id,
+        circleId,
+        created: false,
+        isPinned: existing.is_pinned,
+        resourceId,
+        title: resource.title,
+        version: Number(existing.version),
+        versionId: existing.learning_resource_version_id,
+      };
+    }
+
+    const positionRows = await tx<Array<{ next_position: number | string }>>`
+      select coalesce(max(position), 0) + 1 as next_position
+      from circle_resources
+      where circle_id = ${circleId}::uuid
+        and ended_at is null
+    `;
+    const insertedRows = await tx<Array<{ created_at: Date | string; id: string }>>`
+      insert into circle_resources (
+        circle_id,
+        learning_resource_id,
+        learning_resource_version_id,
+        position,
+        is_pinned,
+        shared_by_auth_user_id
+      ) values (
+        ${circleId}::uuid,
+        ${resource.resource_id}::uuid,
+        ${resource.version_id}::uuid,
+        ${Number(positionRows[0]?.next_position ?? 1)},
+        ${isPinned},
+        ${actorAuthUserId}::uuid
+      )
+      returning id, created_at
+    `;
+    const assignment = insertedRows[0];
+    if (!assignment) throw new Error("The Circle resource could not be assigned.");
+    await writeOpsAudit(tx, {
+      action: "circle.resource_assigned",
+      actorAuthUserId,
+      after: {
+        circleId,
+        isPinned,
+        resourceId: resource.resource_id,
+        version: Number(resource.version),
+        versionId: resource.version_id,
+      },
+      subjectId: assignment.id,
+      subjectType: "circle_resource",
+    });
+    return {
+      assignedAt: new Date(assignment.created_at).toISOString(),
+      assignmentId: assignment.id,
+      circleId,
+      created: true,
+      isPinned,
+      resourceId: resource.resource_id,
+      title: resource.title,
+      version: Number(resource.version),
+      versionId: resource.version_id,
+    };
+  });
+}
+
+export async function endCircleResourceAssignment({
+  actorAuthUserId,
+  assignmentId,
+}: {
+  actorAuthUserId: string;
+  assignmentId: string;
+}) {
+  if (!UUID_PATTERN.test(assignmentId)) {
+    throw new OpsRepositoryError("invalid_request", "Choose a valid Circle resource assignment.");
+  }
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    const assignmentRows = await tx<Array<{
+      circle_id: string;
+      id: string;
+      learning_resource_id: string;
+      learning_resource_version_id: string;
+    }>>`
+      select id, circle_id, learning_resource_id, learning_resource_version_id
+      from circle_resources
+      where id = ${assignmentId}::uuid
+        and ended_at is null
+      for update
+    `;
+    const assignment = assignmentRows[0];
+    if (!assignment) {
+      throw new OpsRepositoryError("not_found", "That active Circle resource could not be found.");
+    }
+    const endedRows = await tx<Array<{ ended_at: Date | string }>>`
+      update circle_resources
+      set
+        ended_at = statement_timestamp(),
+        ended_by_auth_user_id = ${actorAuthUserId}::uuid,
+        end_reason = 'ops_ended_assignment'
+      where id = ${assignmentId}::uuid
+        and ended_at is null
+      returning ended_at
+    `;
+    const ended = endedRows[0];
+    if (!ended) throw new OpsRepositoryError("conflict", "That Circle resource is no longer active.");
+    await writeOpsAudit(tx, {
+      action: "circle.resource_assignment_ended",
+      actorAuthUserId,
+      before: {
+        circleId: assignment.circle_id,
+        resourceId: assignment.learning_resource_id,
+        versionId: assignment.learning_resource_version_id,
+      },
+      reason: "ops_ended_assignment",
+      subjectId: assignment.id,
+      subjectType: "circle_resource",
+    });
+    return {
+      assignmentId: assignment.id,
+      circleId: assignment.circle_id,
+      endedAt: new Date(ended.ended_at).toISOString(),
+    };
   });
 }
 
@@ -966,6 +1586,11 @@ export async function assignCircleToBlock({
     const assignment = assignmentRows[0];
     if (!assignment) throw new Error("The Block assignment could not be created.");
 
+    await markCalendarAudiencesPendingForBlock(tx, {
+      actorAuthUserId,
+      blockId: assignment.block_id,
+    });
+
     return {
       assignedAt: assignment.assigned_at.toISOString(),
       blockId: assignment.block_id,
@@ -1056,6 +1681,11 @@ export async function endCircleBlockAssignment({
     if (!ended) {
       throw new OpsRepositoryError("conflict", "That Block assignment is no longer current.");
     }
+
+    await markCalendarAudiencesPendingForBlock(tx, {
+      actorAuthUserId,
+      blockId: assignment.block_id,
+    });
 
     const finalBlockRows = await tx<Array<{ status: OpsBlockStatus }>>`
       select status
@@ -1202,6 +1832,11 @@ export async function assignMemberToCircle({
     const assignment = assignmentRows[0];
     if (!assignment) throw new Error("The Circle assignment could not be created.");
 
+    await markCalendarAudiencesPendingForCircle(tx, {
+      actorAuthUserId,
+      circleId: assignment.circle_id,
+    });
+
     return {
       assignedAt: assignment.assigned_at.toISOString(),
       circleId: assignment.circle_id,
@@ -1286,6 +1921,11 @@ export async function endMemberCircleAssignment({
     if (!ended) {
       throw new OpsRepositoryError("conflict", "That Circle assignment is no longer active.");
     }
+
+    await markCalendarAudiencesPendingForCircle(tx, {
+      actorAuthUserId,
+      circleId: assignment.circle_id,
+    });
 
     const archiveCircle =
       circle.status === "active" && activeMembers === 1;

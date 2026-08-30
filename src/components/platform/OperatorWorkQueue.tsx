@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import {
   OperatorTaskAction,
@@ -19,11 +20,27 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
+function urgencyLabel(item: OpsWorkQueue["items"][number]): string {
+  if (item.dueAt) {
+    const due = new Date(item.dueAt);
+    if (!Number.isNaN(due.getTime())) {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+      if (dueDay < today) return "Overdue";
+      if (dueDay.getTime() === today.getTime()) return "Due today";
+    }
+  }
+  if (item.priority >= 90) return "Urgent";
+  if (item.priority >= 70) return "Up next";
+  return "Open";
+}
+
 export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
   return (
     <OperatorPageFrame title="Work">
       <dl
-        className="grid gap-6 bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
+        className="grid gap-6 rounded-[4px] bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
         aria-label="Open work totals"
       >
         {[
@@ -43,15 +60,15 @@ export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
       <section className="mt-8 space-y-3" aria-label="Prioritized operator work">
         {queue.items.map((item) => (
           <article
-            className="grid gap-5 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[8rem_minmax(13rem,1fr)_10rem_minmax(13rem,0.75fr)] lg:items-center"
+            className="grid gap-5 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[8rem_minmax(13rem,1fr)_10rem_minmax(13rem,0.75fr)] lg:items-center"
             key={`${item.kind}-${item.workId}`}
           >
             <div>
               <p className="text-sm capitalize text-black/45">
                 {item.kind.replaceAll("_", " ")}
               </p>
-              <p className="mt-2 text-sm tabular-nums text-black/55">
-                Priority {item.priority}
+              <p className={`mt-2 text-sm ${["Overdue", "Urgent"].includes(urgencyLabel(item)) ? "text-[var(--color-poster)]" : "text-black/55"}`}>
+                {urgencyLabel(item)}
               </p>
             </div>
             <div>
@@ -87,9 +104,27 @@ export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
           </article>
         ))}
         {queue.items.length === 0 ? (
-          <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
-            No open operator work.
-          </p>
+          <div className="grid gap-3">
+            <OperatorEmptyState
+              actionHref="/ops"
+              actionLabel="Return to overview"
+              detail="There are no member tasks, Artifact jobs, or failed automations waiting for an operator."
+              eyebrow="All clear"
+              title="Nothing needs a decision."
+            />
+            <nav aria-label="Continue working" className="grid gap-3 sm:grid-cols-3">
+              {[
+                ["Members", "Review member records", "/ops/members"],
+                ["Experiences", "Check the upcoming calendar", "/ops/experiences"],
+                ["System", "Verify connected services", "/ops/system"],
+              ].map(([label, detail, href]) => (
+                <Link className="rounded-[4px] bg-black/[0.025] p-5 transition-colors hover:bg-black/[0.07]" href={href} key={href}>
+                  <span className="font-[var(--font-display)] text-2xl leading-none">{label}</span>
+                  <span className="mt-2 block text-sm text-black/50">{detail} →</span>
+                </Link>
+              ))}
+            </nav>
+          </div>
         ) : null}
       </section>
     </OperatorPageFrame>

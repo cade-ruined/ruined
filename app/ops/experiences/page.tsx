@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 
 import OperatorExperienceDirectory from "@/components/platform/OperatorExperienceDirectory";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getOpsExperienceDirectory } from "@/lib/platform/ops-operating-repository";
+import { getOpsExperienceManagementDirectory } from "@/lib/platform/ops-experience-repository";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
-import { PREVIEW_OPS_EXPERIENCES } from "@/lib/platform/ops-preview";
+import { PREVIEW_OPS_EXPERIENCE_DIRECTORY } from "@/lib/platform/ops-experience-preview";
 
 export const metadata: Metadata = { title: "Experiences" };
 export const dynamic = "force-dynamic";
@@ -17,13 +17,22 @@ export default async function OperationsExperiencesPage() {
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
   if (context.state === "preview") {
-    return <OperatorExperienceDirectory experiences={PREVIEW_OPS_EXPERIENCES} />;
+    return (
+      <OperatorExperienceDirectory
+        directory={PREVIEW_OPS_EXPERIENCE_DIRECTORY}
+        preview
+      />
+    );
   }
   if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
 
   try {
-    const experiences = await getOpsExperienceDirectory(context.viewer.authUserId);
-    return <OperatorExperienceDirectory experiences={experiences} />;
+    const directory = await getOpsExperienceManagementDirectory(context.viewer.authUserId);
+    return (
+      <OperatorExperienceDirectory
+        directory={directory}
+      />
+    );
   } catch (error) {
     console.error("Operations Experience directory could not be loaded", {
       errorType: error instanceof Error ? error.name : "UnknownError",

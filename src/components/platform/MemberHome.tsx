@@ -1,9 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import CircleMemberPortrait from "@/components/membership/CircleMemberPortrait";
 import type { MemberHomeSnapshot } from "@/lib/membership/model";
 
-const progressionLevels = ["Member", "Shaper", "Builder", "Author", "Partner"] as const;
+const contributionWays = ["Shape", "Build", "Author", "Partner"] as const;
 
 const microLabel =
   "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.28rem] leading-none tracking-normal text-[var(--color-poster)] [transform:rotate(-1deg)]";
@@ -34,6 +35,12 @@ const stateLabels: Record<string, string> = {
   pre_active: "Preparing access",
   suspended: "Suspended",
 };
+
+const artifactAcquisitionLabels = {
+  earned: "Earned",
+  gifted: "Gifted",
+  purchased: "Purchased",
+} as const;
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -90,16 +97,6 @@ function formatEventStamp(value: string, timezone: string | null) {
   }
 }
 
-function initials(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
 function MemberPortrait({ member }: { member: MemberHomeSnapshot }) {
   return (
     <figure
@@ -117,7 +114,7 @@ function MemberPortrait({ member }: { member: MemberHomeSnapshot }) {
           className={`object-cover ${member.avatarUrl ? "saturate-[0.82] contrast-[1.04]" : "saturate-[0.72] contrast-[1.08]"}`}
           fill
           priority
-          sizes="(min-width: 1280px) 330px, (min-width: 1024px) 290px, (min-width: 640px) 230px, 140px"
+          sizes="(min-width: 1280px) 480px, (min-width: 1024px) 42vw, (min-width: 640px) 44vw, 52vw"
           src={member.avatarUrl ?? "/membership/portrait-pending-editorial.webp"}
           unoptimized
         />
@@ -128,19 +125,14 @@ function MemberPortrait({ member }: { member: MemberHomeSnapshot }) {
         className="pointer-events-none absolute inset-0 size-full object-contain"
         fill
         priority
-        sizes="(min-width: 1280px) 330px, (min-width: 1024px) 290px, (min-width: 640px) 230px, 140px"
+        sizes="(min-width: 1280px) 480px, (min-width: 1024px) 42vw, (min-width: 640px) 44vw, 52vw"
         src="/membership/polaroid-frame.png"
         unoptimized
       />
-      <figcaption className="absolute bottom-[5.1%] left-[8%] right-[8%] flex flex-col items-start justify-end gap-0.5 text-black/72 sm:flex-row sm:items-end sm:justify-between sm:gap-2">
+      <figcaption className="absolute bottom-[5.1%] left-[8%] right-[8%] text-black/72">
         <span className="[font-family:var(--font-cadehandy2)] text-[0.86rem] leading-none sm:text-[1rem]">
           {member.avatarUrl ? "Member portrait" : "Photo pending"}
         </span>
-        {member.memberSince ? (
-          <span className="font-[var(--font-body)] text-[0.45rem] font-bold uppercase tracking-[0.04em] sm:text-[0.55rem]">
-            Joined {formatMonthYear(member.memberSince)}
-          </span>
-        ) : null}
       </figcaption>
     </figure>
   );
@@ -162,23 +154,23 @@ function PersonAvatar({
         dark ? "border-white/30 bg-white/10" : "border-black/25 bg-black/[0.06]"
       }`}
     >
-      {person.avatarUrl ? (
-        <Image alt="" className="object-cover" fill sizes={size === "small" ? "36px" : "44px"} src={person.avatarUrl} unoptimized />
-      ) : (
-        <span aria-hidden="true" className={`font-[var(--font-body)] text-[0.65rem] font-bold ${dark ? "text-white/82" : "text-black/72"}`}>
-          {initials(person.displayName) || "R"}
-        </span>
-      )}
+      <CircleMemberPortrait
+        imageClassName="object-cover saturate-[0.82] contrast-[1.04]"
+        imageSizes={size === "small" ? "36px" : "44px"}
+        initialsClassName={`absolute inset-0 grid place-items-center font-[var(--font-body)] text-[0.65rem] font-bold ${dark ? "bg-white/10 text-white/82" : "bg-black/[0.06] text-black/72"}`}
+        person={person}
+        previewClassName="absolute inset-0 bg-[var(--color-workwear)] bg-no-repeat saturate-[0.8] contrast-[1.035]"
+      />
       <span className="sr-only">{person.displayName}</span>
     </span>
   );
 }
 
-function ProfileState({ state }: { state: string }) {
+function ProfileState({ compact = false, state }: { compact?: boolean; state: string }) {
   const attention = state === "attention_required" || state === "ended" || state === "suspended";
   const complete = state === "active" || state === "completed" || state === "fulfilled";
   return (
-    <span className="inline-flex items-center gap-2 font-[var(--font-body)] text-xs font-semibold uppercase tracking-[0.04em] text-black/64">
+    <span className={`inline-flex items-center gap-2 font-[var(--font-body)] font-semibold uppercase tracking-[0.04em] text-black/64 ${compact ? "text-[0.62rem] sm:text-xs" : "text-xs"}`}>
       <span
         aria-hidden="true"
         className={`size-1.5 shrink-0 ${attention ? "bg-[var(--color-poster)]" : complete ? "bg-[var(--color-verdigris)]" : "bg-black/45"}`}
@@ -197,28 +189,24 @@ function RecordFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProgressionRail({ member }: { member: MemberHomeSnapshot }) {
+function WantMore() {
   return (
-    <div className="mt-5 max-w-2xl" data-member-progression>
-      <div className="flex items-baseline justify-between gap-3">
-        <p className={microLabel}>Current level</p>
-        <p className="ui-heading text-sm font-black uppercase tracking-[-0.02em] text-black/76">{member.progression.name}</p>
+    <aside className="w-full max-w-2xl rounded-[4px] bg-black/[0.045] px-3.5 py-3 sm:px-4 sm:py-3.5" data-member-more>
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1">
+        <p className={microLabel}>Want more?</p>
+        <a
+          className={quietLink}
+          href="mailto:connect@theruinedproject.com?subject=I%20want%20to%20take%20part"
+        >
+          Raise your hand →
+        </a>
       </div>
-      <ol aria-label="Membership progression" className="mt-2 grid grid-cols-5 gap-1.5">
-        {progressionLevels.map((level, index) => {
-          const reached = index + 1 < member.progression.position;
-          const current = index + 1 === member.progression.position;
-          const state = current ? "Current" : reached ? "Reached" : "Upcoming";
-          return (
-            <li aria-current={current ? "step" : undefined} className="min-w-0 font-[var(--font-body)]" key={level}>
-              <span aria-hidden="true" className={`block h-1.5 ${current ? "bg-[var(--color-poster)]" : reached ? "bg-[var(--color-verdigris)]" : "bg-black/15"}`} />
-              <span className={`mt-1.5 block truncate text-[0.58rem] font-bold uppercase tracking-[-0.01em] ${current ? "text-black" : "text-black/48"}`}>{level}</span>
-              <span className="sr-only">{state}</span>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+      <ul aria-label="Ways to take part" className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+        {contributionWays.map((way) => (
+          <li className="ui-heading text-sm font-black uppercase tracking-[-0.015em] text-black/58" key={way}>{way}</li>
+        ))}
+      </ul>
+    </aside>
   );
 }
 
@@ -231,7 +219,7 @@ function historyFor(member: MemberHomeSnapshot) {
       detail: artifact.earnedReason || null,
       id: `artifact-${artifact.awardId}`,
       title: artifact.name,
-      verb: "Earned",
+      verb: artifactAcquisitionLabels[artifact.acquisitionType],
     });
   }
 
@@ -297,11 +285,108 @@ function registrationLabel(value: MemberHomeSnapshot["upcomingExperiences"][numb
   }
 }
 
+function NextActionsBento({
+  circleGateOutstanding,
+  foundationComplete,
+  foundationHeading,
+  foundationPercent,
+  foundationValueText,
+  member,
+}: {
+  circleGateOutstanding: boolean;
+  foundationComplete: boolean;
+  foundationHeading: string;
+  foundationPercent: number;
+  foundationValueText: string;
+  member: MemberHomeSnapshot;
+}) {
+  const upcoming = member.upcomingExperiences[0] ?? null;
+  const upcomingStamp = upcoming ? formatEventStamp(upcoming.startsAt, upcoming.timezone) : null;
+  const foundationsIsNext = member.nextAction.kind === "foundations";
+
+  return (
+    <section aria-labelledby="member-next-actions" className="mt-10 sm:mt-12" data-member-next-actions>
+      <h2 className={handLabel} id="member-next-actions">Next actions</h2>
+      <div className="mt-3 grid grid-cols-2 gap-3 pb-2 pr-2 sm:gap-4 lg:auto-rows-[minmax(7.75rem,auto)] lg:grid-cols-12">
+        <Link
+          className={`group col-span-2 flex min-h-[9.25rem] flex-col justify-between rounded-[4px] p-3.5 shadow-[7px_8px_0_var(--color-poster)] transition-[background-color,box-shadow,transform] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_5px_0_var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:transition-none sm:min-h-[10.5rem] sm:p-5 lg:col-span-5 lg:row-span-2 lg:min-h-full ${foundationsIsNext ? "bg-[var(--color-verdigris)] text-[var(--color-bone)] hover:bg-[#466b5c] focus-visible:outline-[var(--color-highlight)]" : "bg-[var(--color-faded)] text-[var(--color-bone)] hover:bg-[#353535] focus-visible:outline-[var(--color-highlight)]"}`}
+          data-primary-action-tone={foundationsIsNext ? "verdigris" : "faded"}
+          href={member.nextAction.href}
+        >
+          <div>
+            <p className={darkMicroLabel}>Start here</p>
+            <h3 className="ui-heading mt-2.5 max-w-[15ch] text-[clamp(1.6rem,4.1vw,3.35rem)] font-black uppercase leading-[0.84] tracking-[-0.055em] text-[var(--color-bone)]">
+              {member.nextAction.title}
+            </h3>
+          </div>
+          <span className="mt-6 flex items-center justify-between font-[var(--font-body)] text-[0.68rem] font-black uppercase tracking-[0.045em] text-white/68 transition-colors group-hover:text-[var(--color-highlight)]">
+            {nextActionLabel(member.nextAction.kind)} <span aria-hidden="true">→</span>
+          </span>
+        </Link>
+
+        <Link
+          className="group col-span-1 flex min-h-[8.25rem] flex-col rounded-[4px] bg-[var(--color-faded)] p-3.5 text-[var(--color-bone)] shadow-[7px_8px_0_rgba(0,0,0,0.5)] transition-[background-color,box-shadow,transform] hover:bg-[#353535] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_5px_0_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-highlight)] motion-reduce:transition-none sm:min-h-[9.5rem] sm:p-4 lg:col-span-3"
+          data-foundations-action
+          href="/my/foundations"
+        >
+          <p className={darkMicroLabel}>Foundations</p>
+          <p className="ui-heading mt-2 text-[2.45rem] font-black leading-[0.82] tracking-[-0.055em] text-[var(--color-bone)] sm:text-5xl">{foundationPercent}%</p>
+          <p className={`mt-2 font-[var(--font-body)] text-[0.61rem] font-bold uppercase leading-tight tracking-[0.025em] ${circleGateOutstanding ? "text-[var(--color-highlight)]" : "text-white/52"}`}>
+            {circleGateOutstanding ? "Active Circle required" : foundationHeading}
+          </p>
+          <div aria-label={foundationValueText} aria-valuemax={100} aria-valuemin={0} aria-valuenow={foundationPercent} aria-valuetext={foundationValueText} className="mt-auto h-1.5 overflow-hidden rounded-[2px] bg-white/16" role="progressbar">
+            <span className={`block h-full rounded-[2px] ${foundationComplete ? "bg-[var(--color-verdigris)]" : "bg-[var(--color-poster)]"}`} style={{ width: `${foundationPercent}%` }} />
+          </div>
+        </Link>
+
+        <Link
+          className="group col-span-1 flex min-h-[8.25rem] flex-col rounded-[4px] bg-[var(--color-highlight)] p-3.5 text-[#11100e] shadow-[7px_8px_0_rgba(0,0,0,0.5)] transition-[background-color,box-shadow,transform] hover:bg-[#f3bd18] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_5px_0_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black motion-reduce:transition-none sm:min-h-[9.5rem] sm:p-4 lg:col-span-4"
+          href={upcoming?.detailHref ?? "/my/experiences"}
+        >
+          <p className="[font-family:var(--font-cadehandy2)] text-[1.28rem] leading-none tracking-normal text-black/72">Upcoming</p>
+          {upcoming && upcomingStamp ? (
+            <div className="mt-3">
+              <p className="font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.045em] text-black/52">{upcomingStamp.month} {upcomingStamp.day}</p>
+              <h3 className="ui-heading mt-1.5 text-base font-black uppercase leading-[0.9] tracking-[-0.035em] text-black/84 sm:text-xl">{upcoming.title}</h3>
+            </div>
+          ) : (
+            <p className="ui-heading mt-3 text-lg font-black uppercase leading-[0.9] tracking-[-0.035em] text-black/72">No dates yet</p>
+          )}
+          <span className="mt-auto pt-3 font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.04em] text-black/58">View →</span>
+        </Link>
+
+        <Link
+          className="group col-span-2 grid min-h-[8.5rem] grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-[4px] bg-[var(--color-shop)] p-3.5 text-[var(--color-faded)] shadow-[7px_8px_0_rgba(0,0,0,0.5)] transition-[background-color,box-shadow,transform] hover:bg-[#a9c2d7] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_5px_0_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] motion-reduce:transition-none sm:min-h-[9rem] sm:gap-4 sm:p-5 lg:col-span-7"
+          data-circle-action
+          href="/my/circle"
+        >
+          <div className="min-w-0">
+            <p className={microLabel}>Circle</p>
+            <h3 className="ui-heading mt-2 break-words text-[clamp(1.7rem,3.8vw,3rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[var(--color-faded)]">{member.circleName ?? "Circle forming"}</h3>
+            {member.circleMembers.length > 0 ? (
+              <ul aria-label="Circle members" className="mt-3 flex -space-x-2 overflow-hidden py-1">
+                {member.circleMembers.slice(0, 6).map((person) => <li key={person.id}><PersonAvatar person={person} size="small" /></li>)}
+              </ul>
+            ) : null}
+          </div>
+          <div className="sm:text-right">
+            <p className="[font-family:var(--font-cadehandy2)] text-[1.12rem] leading-none text-[var(--color-poster)]">People</p>
+            <p className="ui-heading mt-1.5 text-base font-black uppercase leading-none tracking-[-0.025em] text-black/68">{member.circleMembers.length} members</p>
+            {member.blockName ? <p className="mt-2 font-[var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.035em] text-black/46">{member.blockName}</p> : null}
+            <span className="mt-3 inline-block font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.04em] text-black/52">Open →</span>
+          </div>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
   const preferredName = member.profile.preferredName || (member.displayName === "Member" ? null : member.displayName);
   const greeting = preferredName ? `Welcome, ${preferredName}.` : "Welcome.";
   const profileName = member.profile.fullName?.trim()
     || (member.profile.displayName === "Member" ? "Name not added" : member.profile.displayName);
+  const profileBio = member.profile.bio?.trim() || member.profile.buildingNow?.trim() || null;
   const foundationPercent = Math.max(0, Math.min(100, Math.round(member.foundations.progressPercent)));
   const foundationComplete = member.foundations.state === "completed";
   const workReachedHundred = foundationPercent >= 100 && !foundationComplete;
@@ -315,66 +400,46 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
         ? "Foundations work complete. Final completion is pending."
         : `Foundations ${foundationPercent}% complete`;
   const history = historyFor(member);
-  const requirementSteps = [
-    { complete: member.foundations.requirements.timeline.completed, label: "Timeline" },
-    {
-      complete: member.foundations.requirements.moments.completed >= member.foundations.requirements.moments.total,
-      label: `${member.foundations.requirements.moments.completed}/${member.foundations.requirements.moments.total} moments`,
-    },
-    { complete: member.foundations.requirements.futureLetter.completed, label: "Future Letter" },
-    { complete: member.foundations.requirements.activeCircle.completed, label: "Active Circle" },
-  ];
-  const firstIncompleteRequirement = requirementSteps.findIndex((step) => !step.complete);
 
   return (
     <main className="member-profile-dossier mx-auto max-w-[82rem] pb-20 pt-1 sm:pb-24 sm:pt-2" data-member-profile-dossier>
       <header>
-        <h1 className="ui-heading inline-block max-w-full break-words bg-[var(--color-highlight)] px-[0.26em] py-[0.14em] text-[clamp(1.05rem,2.35vw,2rem)] font-black uppercase leading-[0.92] tracking-[-0.045em] text-[#080605]">
+        <h1 className="ui-heading mt-4 inline-block max-w-full break-words bg-[var(--color-highlight)] px-[0.28em] py-[0.16em] text-[clamp(0.82rem,1.45vw,1.18rem)] font-black uppercase leading-none tracking-[-0.035em] text-[#080605] sm:mt-6">
           {greeting}
         </h1>
 
-        <div className="mt-4 grid grid-cols-[7.75rem_minmax(0,1fr)] gap-x-4 gap-y-4 min-[380px]:grid-cols-[8.5rem_minmax(0,1fr)] sm:mt-5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-6 lg:grid-cols-[minmax(18rem,0.96fr)_minmax(20rem,1.34fr)_minmax(14rem,0.72fr)] lg:items-start lg:gap-x-8 xl:grid-cols-[minmax(19rem,0.96fr)_minmax(26rem,1.34fr)_minmax(16rem,0.72fr)] xl:gap-x-10">
-          <div className="min-w-0 sm:row-span-2"><MemberPortrait member={member} /></div>
+        <div className="relative mt-3 grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] items-start gap-x-4 gap-y-5 sm:mt-4 sm:grid-cols-[minmax(17rem,0.88fr)_minmax(0,1.12fr)] sm:gap-x-8 lg:grid-cols-[minmax(22rem,0.88fr)_minmax(0,1.12fr)] lg:gap-x-10 xl:grid-cols-[minmax(25rem,0.88fr)_minmax(0,1.12fr)] xl:gap-x-12" data-member-profile-hero>
+          <Link
+            aria-label="Edit profile"
+            className="absolute right-0 top-0 z-10 grid size-11 place-items-center rounded-full bg-[var(--color-bone)]/65 text-black/52 transition-colors hover:bg-[var(--color-bone)] hover:text-black/82 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+            data-member-profile-edit
+            href="/my/profile"
+          >
+            <svg aria-hidden="true" className="size-[1.05rem]" fill="none" viewBox="0 0 24 24">
+              <path d="m13.5 6.5 4 4M4.5 19.5l3.8-.8L19 8a2.83 2.83 0 0 0-4-4L4.3 14.7l-.8 3.8 1 1Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+            </svg>
+          </Link>
 
-          <div className="min-w-0 self-center lg:self-start lg:pt-2">
+          <div className="min-w-0 self-start lg:max-w-[30rem]" data-member-profile-portrait>
+            <MemberPortrait member={member} />
+          </div>
+
+          <div className="min-w-0 self-start pt-11 sm:pr-12 sm:pt-2" data-member-profile-identity>
             <p className={microLabel}>Member</p>
-            <h2 className="ui-heading mt-1.5 max-w-[12ch] break-words text-balance text-[clamp(1.9rem,5.2vw,4.75rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[#15120f] sm:mt-2">
+            <h2 className="ui-heading mt-1.5 max-w-[12ch] break-words text-balance text-[clamp(1.6rem,6.5vw,2.05rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[#15120f] sm:mt-2 sm:text-[clamp(2.2rem,4.7vw,4.25rem)]">
               {profileName}
             </h2>
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 font-[var(--font-body)] text-[0.68rem] font-semibold uppercase tracking-[0.035em] text-black/52 sm:text-xs">
-              <ProfileState state={member.identity.standingState} />
+            <div className="mt-2.5 flex flex-col items-start gap-y-1.5 font-[var(--font-body)] text-[0.58rem] font-semibold uppercase tracking-[0.025em] text-black/62 sm:mt-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:text-xs sm:tracking-[0.035em]">
+              <ProfileState state={member.identity.standingState} compact />
               {member.profile.location ? <span>{member.profile.location}</span> : null}
               {member.memberSince ? <span>Joined {formatMonthYear(member.memberSince)}</span> : null}
             </div>
-          </div>
-
-          <aside aria-labelledby="member-next-action" className="order-4 col-span-2 rounded-[4px] bg-[#171411] p-4 text-[#eee8dd] sm:p-5 lg:order-none lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:self-start">
-            <p className={darkMicroLabel}>Next</p>
-            <h2 className="mt-3 font-[var(--font-display)] text-[1.75rem] leading-[0.94] tracking-[-0.035em] text-[#f1ece3] sm:text-3xl" id="member-next-action">
-              {member.nextAction.title}
-            </h2>
-            <Link
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-between rounded-[4px] bg-[#eee8dd] px-3.5 py-2 font-[var(--font-body)] text-[0.66rem] font-black uppercase tracking-[0.045em] text-[#11100e] transition-colors hover:bg-[var(--color-highlight)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-highlight)]"
-              href={member.nextAction.href}
-            >
-              {nextActionLabel(member.nextAction.kind)} <span aria-hidden="true">→</span>
-            </Link>
-          </aside>
-
-          <div className="order-3 col-span-2 min-w-0 sm:col-start-2 sm:col-span-1 lg:order-none lg:col-start-2">
-            {member.profile.buildingNow || member.profile.bio ? (
-              <div className="max-w-2xl">
-                <p className={handLabel}>what I’m building</p>
-                {member.profile.buildingNow ? <p className="mt-2 font-[var(--font-display)] text-xl leading-[1.08] tracking-[-0.02em] text-black/82 sm:text-2xl">{member.profile.buildingNow}</p> : null}
-                {member.profile.bio ? <p className="mt-2 max-w-xl font-[var(--font-body)] text-sm leading-relaxed text-black/58">{member.profile.bio}</p> : null}
-              </div>
-            ) : (
-              <p className="font-[var(--font-body)] text-sm font-medium text-black/52">Add what you’re building to make this record yours.</p>
-            )}
-            <div className="mt-2 flex flex-wrap items-end justify-between gap-x-5 gap-y-1">
-              <Link className={quietLink} href="/my/profile">Edit profile →</Link>
-            </div>
-            <ProgressionRail member={member} />
+            {profileBio ? (
+              <p className="mt-3 line-clamp-5 max-w-[34rem] font-[var(--font-body)] text-[0.68rem] leading-[1.45] text-black/62 sm:mt-4 sm:line-clamp-4 sm:text-sm" data-member-profile-bio>
+                {profileBio}
+              </p>
+            ) : null}
+            {/* Keep the remaining identity-column space open for durable member badges. */}
           </div>
         </div>
       </header>
@@ -385,70 +450,22 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
         </aside>
       ) : null}
 
-      <section aria-label="Membership snapshot" className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
-        <article aria-labelledby="foundations-summary-title" className="rounded-[4px] bg-black/[0.045] p-4 sm:p-5 lg:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className={microLabel}>Foundations</p>
-              <h2 className="ui-heading mt-2 text-[clamp(2.8rem,6vw,5.3rem)] font-black uppercase leading-[0.8] tracking-[-0.06em] text-black/88" id="foundations-summary-title">
-                {foundationPercent}%
-              </h2>
-              <p className="mt-2 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-black/55">{foundationHeading}</p>
-            </div>
-            <Link className={quietLink} href="/my/foundations">View →</Link>
-          </div>
-          {circleGateOutstanding ? <p className="mt-3 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-[var(--color-poster)]">Active Circle required to complete.</p> : null}
-          <div aria-label={foundationValueText} aria-valuemax={100} aria-valuemin={0} aria-valuenow={foundationPercent} aria-valuetext={foundationValueText} className="mt-4 h-2 overflow-hidden rounded-[2px] bg-black/14" role="progressbar">
-            <span className={`block h-full rounded-[2px] ${foundationComplete ? "bg-[var(--color-verdigris)]" : "bg-[var(--color-poster)]"}`} style={{ width: `${foundationPercent}%` }} />
-          </div>
-          <ol className="mt-4 grid grid-cols-4 gap-2">
-            {requirementSteps.map((step, index) => {
-              const current = firstIncompleteRequirement === index;
-              const stepState = step.complete ? "Complete" : current ? "Current" : "Waiting";
-              return (
-                <li aria-current={current ? "step" : undefined} className="min-w-0" key={step.label}>
-                  <div className="flex items-center gap-1.5">
-                    <span aria-hidden="true" className={`size-1.5 shrink-0 ${step.complete ? "bg-[var(--color-verdigris)]" : current ? "bg-[var(--color-poster)]" : "bg-black/24"}`} />
-                    <span className="font-[var(--font-body)] text-[0.58rem] font-bold text-black/42">{String(index + 1).padStart(2, "0")}</span>
-                  </div>
-                  <p className="mt-1.5 break-words font-[var(--font-body)] text-[0.63rem] font-bold uppercase leading-tight tracking-[-0.01em] text-black/68 sm:text-[0.69rem]">{step.label}</p>
-                  <span className="sr-only">{stepState}</span>
-                </li>
-              );
-            })}
-          </ol>
-        </article>
-
-        <article aria-labelledby="circle-summary-title" className="flex min-h-full flex-col rounded-[4px] bg-[#171411] p-4 text-[#eee8dd] sm:p-5 lg:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className={darkMicroLabel}>Circle</p>
-              <h2 className="ui-heading mt-2 text-[clamp(1.75rem,4vw,3.25rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[#f0ebe2]" id="circle-summary-title">
-                {member.circleName ?? "Circle forming"}
-              </h2>
-            </div>
-            <Link className="inline-flex min-h-11 items-center font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-white/62 underline decoration-white/25 underline-offset-[0.34rem] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-highlight)]" href="/my/circle">Open →</Link>
-          </div>
-          {member.circleMembers.length > 0 ? (
-            <ul aria-label="Circle members" className="mt-4 flex -space-x-2 overflow-hidden py-1">{member.circleMembers.slice(0, 7).map((person) => <li key={person.id}><PersonAvatar dark person={person} /></li>)}</ul>
-          ) : null}
-          <div className="mt-auto pt-5">
-            <p className={darkMicroLabel}>Accountability partner</p>
-            <div className="mt-2 flex items-center gap-3">
-              {member.partner ? <PersonAvatar dark person={member.partner} size="small" /> : null}
-              <p className="ui-heading text-lg font-black uppercase leading-none tracking-[-0.025em] text-white/82">{member.partner?.displayName ?? "Unpaired"}</p>
-            </div>
-          </div>
-        </article>
-      </section>
+      <NextActionsBento
+        circleGateOutstanding={circleGateOutstanding}
+        foundationComplete={foundationComplete}
+        foundationHeading={foundationHeading}
+        foundationPercent={foundationPercent}
+        foundationValueText={foundationValueText}
+        member={member}
+      />
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.28fr)] lg:gap-9">
         <section aria-labelledby="history-title">
           <h2 className={sectionTitle} id="history-title">History</h2>
           {history.length > 0 ? (
-            <ol className="mt-5 space-y-5">
+            <ol className="mt-4 grid gap-2">
               {history.map((entry) => (
-                <li className="grid grid-cols-[4.7rem_minmax(0,1fr)] gap-3" key={entry.id}>
+                <li className="grid grid-cols-[4.7rem_minmax(0,1fr)] gap-3 rounded-[4px] bg-black/[0.035] p-3 sm:p-4" data-member-history-entry key={entry.id}>
                   <div className="font-[var(--font-body)] text-[0.61rem] font-semibold uppercase leading-snug tracking-[0.035em] text-black/48">
                     <time className="block" dateTime={entry.date}>{formatDate(entry.date)}</time>
                     <span className="mt-1 block text-[var(--color-poster)]">{entry.verb}</span>
@@ -487,8 +504,10 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                         {!artifact.imageUrl ? <span className="absolute bottom-2 left-2 rounded-[2px] bg-[#171411] px-2 py-1 [font-family:var(--font-cadehandy2)] text-[0.9rem] leading-none text-[var(--color-highlight)]">Image not recorded</span> : null}
                       </div>
                       <h3 className="ui-heading mt-2.5 text-lg font-black uppercase leading-[0.92] tracking-[-0.025em] text-black/82 sm:text-xl">{artifact.name}</h3>
-                      <p className="mt-1.5 font-[var(--font-body)] text-[0.62rem] font-semibold uppercase tracking-[0.025em] text-black/48">Earned <time dateTime={artifact.earnedAt}>{formatDate(artifact.earnedAt)}</time></p>
+                      {artifact.description ? <p className="mt-1.5 font-[var(--font-body)] text-xs leading-snug text-black/58">{artifact.description}</p> : null}
+                      <p className="mt-1.5 font-[var(--font-body)] text-[0.62rem] font-semibold uppercase tracking-[0.025em] text-black/48">{artifactAcquisitionLabels[artifact.acquisitionType]} <time dateTime={artifact.earnedAt}>{formatDate(artifact.earnedAt)}</time></p>
                       <div className="mt-2"><ProfileState state={artifact.artifactState} /></div>
+                      {artifact.product?.href ? <Link className="mt-2 inline-flex font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.04em] text-black/58 underline decoration-black/25 underline-offset-4 hover:text-black" href={artifact.product.href}>View product →</Link> : null}
                     </article>
                   </li>
                 ))}
@@ -541,6 +560,10 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
             ) : <p className="mt-4 font-[var(--font-body)] text-sm text-black/54">No dates yet.</p>}
           </section>
         </div>
+      </div>
+
+      <div className="mt-8 flex justify-end">
+        <WantMore />
       </div>
 
       <section aria-labelledby="member-information-title" className="mt-8 rounded-[4px] bg-black/[0.045] p-4 sm:p-5">

@@ -1,10 +1,11 @@
+import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import {
   OperatorAnnouncementCreateAction,
   OperatorAnnouncementPublishAction,
 } from "@/components/platform/OperatorWorkActions";
 import StateLabel from "@/components/platform/StateLabel";
-import type { OpsAnnouncementSummary } from "@/lib/platform/ops-model";
+import type { OpsAnnouncementAudienceOptions, OpsAnnouncementSummary } from "@/lib/platform/ops-model";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not published";
@@ -17,13 +18,21 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
-export default function OperatorAnnouncements({ announcements, canManage }: { announcements: OpsAnnouncementSummary[]; canManage: boolean }) {
+export default function OperatorAnnouncements({
+  announcements,
+  audienceOptions,
+  canManage,
+}: {
+  announcements: OpsAnnouncementSummary[];
+  audienceOptions: OpsAnnouncementAudienceOptions;
+  canManage: boolean;
+}) {
   return (
     <OperatorPageFrame title="Announcements">
       <section className="space-y-3" aria-label="Recent announcements">
         {announcements.map((announcement) => (
           <article
-            className="grid gap-6 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_10rem_minmax(12rem,0.55fr)] lg:items-start"
+            className="grid gap-6 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_10rem_minmax(12rem,0.55fr)] lg:items-start"
             key={announcement.announcementId}
           >
             <div>
@@ -44,14 +53,22 @@ export default function OperatorAnnouncements({ announcements, canManage }: { an
           </article>
         ))}
         {announcements.length === 0 ? (
-          <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
-            No announcements have been recorded.
-          </p>
+          <OperatorEmptyState
+            actionHref={canManage ? "#new-announcement" : "/ops"}
+            actionLabel={canManage ? "Write announcement" : "Return to overview"}
+            detail="Announcements become part of the member record once they are published. Draft first, then review the audience before sending."
+            eyebrow="Nothing published"
+            title="The announcement board is quiet."
+          />
         ) : null}
       </section>
 
       {canManage ? (
-        <details className="group mt-8 bg-black/[0.025]">
+        <details
+          className={`group mt-8 rounded-[4px] bg-black/[0.025] ${announcements.length === 0 ? "shadow-[5px_5px_0_var(--color-poster)]" : ""}`}
+          id="new-announcement"
+          open={announcements.length === 0}
+        >
           <summary className="flex cursor-pointer list-none items-center justify-between gap-6 px-5 py-5 transition-colors hover:bg-black/[0.04] sm:px-6 [&::-webkit-details-marker]:hidden">
             <span className="font-[var(--font-display)] text-2xl leading-none tracking-[-0.02em]">
               New announcement
@@ -64,7 +81,7 @@ export default function OperatorAnnouncements({ announcements, canManage }: { an
             </span>
           </summary>
           <div className="px-5 pb-5 sm:px-6 [&>form]:border-0 [&>form]:py-0">
-            <OperatorAnnouncementCreateAction />
+            <OperatorAnnouncementCreateAction audienceOptions={audienceOptions} />
           </div>
         </details>
       ) : null}

@@ -6,13 +6,12 @@ async function source(relativePath) {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
-const [repository, api, overrideRoute, noteRoute, taskRoute, accountabilityRoute] = await Promise.all([
+const [repository, api, overrideRoute, noteRoute, taskRoute] = await Promise.all([
   source("src/lib/platform/ops-operating-repository.ts"),
   source("src/lib/platform/ops-api.ts"),
   source("app/api/ops/members/[memberId]/state-overrides/route.ts"),
   source("app/api/ops/members/[memberId]/notes/route.ts"),
   source("app/api/ops/tasks/route.ts"),
-  source("app/api/ops/accountability-partners/route.ts"),
 ]);
 
 test("operator authorization unions active grants and scopes guides and leaders to current Circles", () => {
@@ -50,14 +49,14 @@ test("state corrections are versioned, audited, and cannot target billing, agree
     repository.indexOf("const OVERRIDE_VALUES"),
     repository.indexOf("const ARTIFACT_TRANSITIONS"),
   );
-  for (const dimension of ["account", "admission", "administrative_onboarding", "standing", "artifact", "progression"]) {
+  for (const dimension of ["account", "admission", "administrative_onboarding", "standing", "artifact"]) {
     assert.match(allowed, new RegExp(`${dimension}:`));
   }
-  assert.doesNotMatch(allowed, /billing|agreement|foundations|program/);
+  assert.doesNotMatch(allowed, /billing|agreement|foundations|program|progression/);
 
   const mutation = repository.slice(
     repository.indexOf("export async function recordOpsMemberStateOverride"),
-    repository.indexOf("export async function assignOpsAccountabilityPartner"),
+    repository.indexOf("export async function createOpsTask"),
   );
   assert.match(mutation, /requireAdmin: true/);
   assert.match(mutation, /version = \$\{input\.expectedLifecycleVersion\}/);
@@ -71,7 +70,7 @@ test("every new mutation shares origin, session, JSON, and repository authorizat
   assert.match(api, /isTrustedPlatformOrigin\(request\)/);
   assert.match(api, /getCurrentPlatformViewer\(\)/);
   assert.match(api, /application\/json/);
-  for (const route of [overrideRoute, noteRoute, taskRoute, accountabilityRoute]) {
+  for (const route of [overrideRoute, noteRoute, taskRoute]) {
     assert.match(route, /requireOpsMutationRequest\(request\)/);
     assert.match(route, /actorAuthUserId: access\.viewer\.authUserId/);
     assert.match(route, /OpsOperatingRepositoryError/);
@@ -80,12 +79,11 @@ test("every new mutation shares origin, session, JSON, and repository authorizat
   assert.match(repository, /insert into operator_audit_events/);
 });
 
-test("notes and task events are append-only records while accountability replacement ends history", () => {
+test("notes and task events remain append-only while retired relationship writes stay absent", () => {
   assert.match(repository, /insert into operator_member_notes/);
   assert.doesNotMatch(repository, /delete from operator_member_notes/);
   assert.match(repository, /insert into operator_task_events/);
   assert.doesNotMatch(repository, /delete from operator_task_events/);
-  assert.match(repository, /ended_at = statement_timestamp\(\)/);
-  assert.match(repository, /end_reason = 'Replaced by a new operator assignment'/);
-  assert.doesNotMatch(repository, /delete from accountability_partner_assignments/);
+  assert.doesNotMatch(repository, /accountability_partner_assignments/);
+  assert.doesNotMatch(repository, /assignOpsAccountabilityPartner/);
 });

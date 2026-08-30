@@ -1,15 +1,16 @@
 import Link from "next/link";
 
 import {
-  OperatorAccountabilityAction,
   OperatorNoteAction,
   OperatorOverrideAction,
   OperatorTaskCreateAction,
 } from "@/components/platform/OperatorMemberActions";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorProfileSupport from "@/components/platform/OperatorProfileSupport";
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
+import type { OpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not recorded";
@@ -39,12 +40,17 @@ function SectionHeading({ title }: { title: string }) {
 }
 
 function EmptyRow({ children }: { children: React.ReactNode }) {
-  return <p className="bg-black/[0.025] px-4 py-5 text-sm leading-relaxed text-black/42">{children}</p>;
+  return <p className="rounded-[4px] bg-black/[0.025] px-4 py-5 text-sm leading-relaxed text-black/42">{children}</p>;
 }
 
-export default function OperatorMemberRecord({ record }: { record: OpsMemberRecord }) {
+export default function OperatorMemberRecord({
+  profileSupport,
+  record,
+}: {
+  profileSupport?: OpsMemberProfileSupport | null;
+  record: OpsMemberRecord;
+}) {
   const { access, community, header, journey, membership, operational } = record;
-  const canManageAccountability = access.capabilities.includes("accountability.manage");
   const canManageTasks = access.capabilities.includes("task.manage");
   const canOverride = access.capabilities.includes("member.override.write");
   const canWriteNote = access.capabilities.includes("member.note.write");
@@ -58,10 +64,17 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
     ["Foundations", header.states.foundations],
     ["Artifact", header.states.artifact],
   ];
+  const nextDecisionHref = !header.circleName
+    ? "/ops/circles#manage-circles"
+    : header.states.billing === "attention_required"
+      ? "#membership"
+      : header.states.foundations !== "completed"
+        ? "#journey"
+        : "#record";
 
   return (
     <OperatorPageFrame title={header.preferredName}>
-      <div className="mt-12 grid gap-7 bg-[#080605] p-5 text-[var(--color-bone)] sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.45fr)] lg:items-end">
+      <div className="mt-2 grid gap-7 rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.45fr)] lg:items-end">
         <div>
           <Link className="text-sm text-white/48 transition-colors hover:text-white" href="/ops/members">
             ← All members
@@ -77,6 +90,9 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
           <p className="font-[var(--font-display)] text-2xl leading-tight text-white/88">{header.nextDecision}</p>
           <p className="mt-5 text-sm text-white/48">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
           {header.primaryEmail ? <p className="mt-2 text-sm text-white/40">{header.primaryEmail}</p> : null}
+          <Link className="ui-heading mt-5 inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-bone)] px-4 text-sm font-semibold text-black transition-colors hover:bg-[var(--color-highlight)]" href={nextDecisionHref}>
+            Take action →
+          </Link>
         </div>
       </div>
 
@@ -106,7 +122,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
         <div className="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {stateRows.map(([label, state]) => (
             <div
-              className="min-h-24 bg-black/[0.025] px-4 py-4"
+              className="min-h-24 rounded-[4px] bg-black/[0.025] px-4 py-4"
               key={label}
             >
               <p className="mb-4 text-sm text-black/42">{label}</p>
@@ -119,8 +135,8 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
       <section className="scroll-mt-36 pt-16" id="membership">
         <SectionHeading title="Membership" />
 
-        <div className="mt-10 grid gap-3 lg:grid-cols-2">
-          <div className="bg-black/[0.025] p-5 sm:p-6">
+        <div className="mt-10">
+          <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
             <div className="flex items-center justify-between gap-4">
               <h3 className="ui-heading text-xl font-semibold">Administrative onboarding</h3>
               <StateLabel state={membership.onboarding.state} />
@@ -143,7 +159,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             </p>
           </div>
 
-          <div className="bg-black/[0.025] p-5 sm:p-6">
+          <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
             <h3 className="ui-heading text-xl font-semibold">Contact</h3>
             <dl className="mt-6 grid gap-2">
               {[
@@ -161,8 +177,10 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
           </div>
         </div>
 
+        {profileSupport ? <OperatorProfileSupport memberId={header.memberId} profile={profileSupport} /> : null}
+
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
-          <div className="bg-black/[0.025] p-5 sm:p-6">
+          <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="ui-heading text-2xl font-semibold">Agreement</h3>
@@ -186,7 +204,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             </dl>
           </div>
 
-          <div className="bg-black/[0.025] p-5 sm:p-6">
+          <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <h3 className="ui-heading text-2xl font-semibold">Membership billing</h3>
               <StateLabel state={header.states.billing} />
@@ -229,7 +247,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
 
       <section className="scroll-mt-36 pt-16" id="journey">
         <SectionHeading title="Journey" />
-        <div className="mt-6 bg-black/[0.025] p-5 sm:p-6">
+        <div className="mt-6 rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
           <div className="flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="text-sm text-black/42">Foundations</p>
@@ -262,7 +280,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             <div className="mt-5 grid gap-2">
               {journey.artifacts.map((artifact) => (
                 <Link
-                  className="grid gap-3 bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
+                  className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
                   href={`/ops/artifacts?focus=${encodeURIComponent(artifact.artifactJobId ?? artifact.artifactAwardId)}#artifact-${artifact.artifactJobId ?? artifact.artifactAwardId}`}
                   key={artifact.artifactAwardId}
                 >
@@ -285,8 +303,8 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             <div className="mt-5 grid gap-2">
               {journey.experiences.map((experience) => (
                 <Link
-                  className="grid gap-3 bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
-                  href={`/ops/experiences?focus=${encodeURIComponent(experience.experienceId)}#experience-${experience.experienceId}`}
+                  className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
+                  href={`/ops/experiences/${experience.experienceId}`}
                   key={experience.experienceId}
                 >
                   <div>
@@ -305,7 +323,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
       <section className="scroll-mt-36 pt-16" id="community">
         <SectionHeading title="Community" />
         <div className="mt-10 grid gap-3 lg:grid-cols-2">
-          <div className="bg-black/[0.025] p-5 sm:p-6">
+          <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
             <p className="text-sm text-black/42">Circle</p>
             {community.circle ? (
               <>
@@ -313,22 +331,13 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
                   {community.circle.name}
                 </Link>
                 <div className="mt-7 grid gap-3 text-sm text-black/58 sm:grid-cols-2">
-                  <p>Leader · {community.circle.leaderName ?? "Not assigned"}</p>
+                  <p>Shaper · {community.circle.shaperName ?? "Not assigned"}</p>
                   <p>Members · {community.circle.members.length}</p>
                   <p>Block · {community.block?.name ?? "Not assigned"}</p>
                   <p>Guides · {community.circle.guides.join(", ") || "Not assigned"}</p>
                 </div>
               </>
             ) : <EmptyRow>No current Circle assignment.</EmptyRow>}
-          </div>
-          <div className="bg-black/[0.025] p-5 sm:p-6">
-            <p className="text-sm text-black/42">Accountability</p>
-            <p className="mt-4 text-3xl tracking-[-0.03em]">
-              {community.accountabilityPartner?.preferredName ?? "No partner assigned"}
-            </p>
-            {community.accountabilityPartner ? (
-              <p className="mt-4 text-sm text-black/48">Paired {formatDate(community.accountabilityPartner.assignedAt)}</p>
-            ) : null}
           </div>
         </div>
 
@@ -338,8 +347,8 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             <div className="mt-5 grid gap-2">
               {community.meetings.map((meeting) => (
                 <Link
-                  className="grid gap-3 bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem]"
-                  href={`/ops/experiences?focus=${encodeURIComponent(meeting.experienceId)}#experience-${meeting.experienceId}`}
+                  className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-5 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem]"
+                  href={`/ops/experiences/${meeting.experienceId}`}
                   key={meeting.experienceId}
                 >
                   <div>
@@ -356,7 +365,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             <h3 className="ui-heading text-xl font-semibold">Resources</h3>
             <div className="mt-5 grid gap-2">
               {community.resources.map((resource) => (
-                <a className="block bg-black/[0.025] px-4 py-5 text-sm underline decoration-black/25 underline-offset-5 transition-colors hover:bg-black/[0.045]" href={resource.url} key={resource.resourceId}>
+                <a className="block rounded-[4px] bg-black/[0.025] px-4 py-5 text-sm underline decoration-black/25 underline-offset-5 transition-colors hover:bg-black/[0.045]" href={resource.url} key={resource.resourceId}>
                   {resource.label}
                 </a>
               ))}
@@ -373,7 +382,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             <h3 className="ui-heading text-xl font-semibold">Tasks</h3>
             <div className="mt-5 grid gap-2">
               {operational.tasks.map((task) => (
-                <div className="grid gap-3 bg-black/[0.025] px-4 py-5 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center" key={task.taskId}>
+                <div className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-5 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center" key={task.taskId}>
                   <div>
                     <p className="font-medium">{task.title}</p>
                     <p className="mt-2 text-sm text-black/45">Due {formatDate(task.dueAt)} · {task.assignedTo ?? "Unassigned"}</p>
@@ -388,7 +397,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
             <h3 className="ui-heading text-xl font-semibold">Notes</h3>
             <div className="mt-5 grid gap-2">
               {operational.notes.map((note) => (
-                <article className="bg-black/[0.025] px-4 py-5" key={note.noteId}>
+                <article className="rounded-[4px] bg-black/[0.025] px-4 py-5" key={note.noteId}>
                   <div className="flex flex-wrap justify-between gap-3 text-xs text-black/38">
                     <span>{note.category.replaceAll("_", " ")}</span>
                     <span>{formatDate(note.createdAt)} · {note.createdBy}</span>
@@ -405,7 +414,7 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
           <h3 className="ui-heading text-xl font-semibold">History</h3>
           <div className="mt-5 grid gap-2">
             {operational.history.map((event) => (
-              <div className="grid gap-3 bg-black/[0.025] px-4 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_12rem]" key={`${event.occurredAt}:${event.source}:${event.summary}`}>
+              <div className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_12rem]" key={`${event.occurredAt}:${event.source}:${event.summary}`}>
                 <time className="text-xs text-black/42">{formatDate(event.occurredAt)}</time>
                 <p className="text-sm text-black/68">{event.summary}</p>
                 <p className="text-xs text-black/40">{event.actor ?? event.source}</p>
@@ -415,14 +424,13 @@ export default function OperatorMemberRecord({ record }: { record: OpsMemberReco
           </div>
         </div>
 
-        {canManageAccountability || canManageTasks || canWriteNote || canOverride ? (
-          <details className="group mt-12 bg-[var(--color-surface)]">
+        {canManageTasks || canWriteNote || canOverride ? (
+          <details className="group mt-12 rounded-[4px] bg-[var(--color-surface)]">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
               <span>Manage member record</span>
               <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
             </summary>
             <div className="grid gap-12 border-t border-black/10 px-5 pb-6 pt-5 sm:px-6 lg:grid-cols-2">
-              {canManageAccountability ? <OperatorAccountabilityAction record={record} /> : null}
               {canManageTasks ? <OperatorTaskCreateAction memberId={header.memberId} /> : null}
               {canWriteNote ? <OperatorNoteAction memberId={header.memberId} /> : null}
               {canOverride ? <OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} /> : null}

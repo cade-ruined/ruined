@@ -43,7 +43,11 @@ test("OTP delivery is generic and creates an Auth identity only for a current in
   assert.match(requestRoute, /if \(eligibility === "none"\) return response/);
   assert.match(
     requestRoute,
-    /audience === "member" && eligibility === "invited"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
+    /eligibility === "invited"[\s\S]*audience === "member"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
+  );
+  assert.match(
+    requestRoute,
+    /eligibility === "invited"[\s\S]*else \{[\s\S]*options = \{ shouldCreateUser: true \}/,
   );
   assert.match(requestRoute, /let options: [\s\S]*shouldCreateUser: false/);
   assert.doesNotMatch(requestRoute, /console\.(?:warn|error|log)\([^)]*email/);
@@ -117,11 +121,20 @@ test("verification rechecks authorization and clears the verified session on den
   const eligibilityIndex = verifyRoute.indexOf("getPasswordlessAccessEligibility(email, audience)");
   const verifyIndex = verifyRoute.indexOf("supabase.auth.verifyOtp");
   const claimIndex = verifyRoute.indexOf("claimPlatformMemberForViewer", verifyIndex);
+  const operatorClaimIndex = verifyRoute.indexOf("claimPlatformOperatorForViewer", verifyIndex);
 
-  assert.ok(eligibilityIndex >= 0 && verifyIndex > eligibilityIndex && claimIndex > verifyIndex);
+  assert.ok(
+    eligibilityIndex >= 0 &&
+      verifyIndex > eligibilityIndex &&
+      claimIndex > verifyIndex &&
+      operatorClaimIndex > verifyIndex,
+  );
   assert.match(verifyRoute, /const verifiedEmail = data\.user\.email\?\.trim\(\)\.toLowerCase\(\)/);
   assert.match(verifyRoute, /verifiedEmail !== email/);
-  assert.match(verifyRoute, /await getOperatorRole\(authUserId\)/);
+  assert.match(
+    verifyRoute,
+    /audience === "member"[\s\S]*claimPlatformMemberForViewer[\s\S]*claimPlatformOperatorForViewer/,
+  );
   assert.match(
     verifyRoute,
     /const denialResponse = NextResponse\.json[\s\S]*response: denialResponse[\s\S]*denialClient\.auth\.signOut\(\{ scope: "local" \}\)[\s\S]*return denialResponse/,

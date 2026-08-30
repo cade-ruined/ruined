@@ -9,6 +9,7 @@ import {
   OPERATOR_LABEL_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
 } from "@/components/platform/operatorStyles";
+import type { OpsAnnouncementAudienceOptions } from "@/lib/platform/ops-model";
 
 async function actionRequest(url: string, body: unknown, method = "POST") {
   const response = await fetch(url, {
@@ -142,7 +143,11 @@ export function OperatorArtifactAction({ artifactJobId, state }: { artifactJobId
   );
 }
 
-export function OperatorAnnouncementCreateAction() {
+export function OperatorAnnouncementCreateAction({
+  audienceOptions,
+}: {
+  audienceOptions: OpsAnnouncementAudienceOptions;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -153,10 +158,12 @@ export function OperatorAnnouncementCreateAction() {
     setMessage("");
     const form = event.currentTarget;
     const data = new FormData(form);
+    const [targetKind, targetId = ""] = String(data.get("audience") ?? "all_active_members:").split(":");
     try {
       await actionRequest("/api/ops/announcements", {
         body: String(data.get("body") ?? ""),
-        targetKind: String(data.get("targetKind") ?? "all_active_members"),
+        targetId,
+        targetKind,
         title: String(data.get("title") ?? ""),
       });
       form.reset();
@@ -179,8 +186,17 @@ export function OperatorAnnouncementCreateAction() {
         </label>
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Audience</span>
-          <select className={OPERATOR_FIELD_CLASS} defaultValue="all_active_members" name="targetKind">
-            <option value="all_active_members">All active members</option>
+          <select className={OPERATOR_FIELD_CLASS} defaultValue="all_active_members:" name="audience">
+            <option value="all_active_members:">All active members</option>
+            <optgroup label="Circles">
+              {audienceOptions.circles.map((circle) => <option key={circle.id} value={`circle:${circle.id}`}>{circle.label}</option>)}
+            </optgroup>
+            <optgroup label="Blocks">
+              {audienceOptions.blocks.map((block) => <option key={block.id} value={`block:${block.id}`}>{block.label}</option>)}
+            </optgroup>
+            <optgroup label="One member">
+              {audienceOptions.members.map((member) => <option key={member.id} value={`member:${member.id}`}>{member.label}</option>)}
+            </optgroup>
           </select>
         </label>
       </div>

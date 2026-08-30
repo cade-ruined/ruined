@@ -15,5 +15,11 @@ export default async function MyTimelinePage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  return <RuinedTimeline initialTimeline={context.data} writable={context.state === "authenticated"} />;
+  return (
+    <RuinedTimeline
+      initialTimeline={context.data}
+      preview={context.state === "preview"}
+      writable={context.state === "authenticated"}
+    />
+  );
 }

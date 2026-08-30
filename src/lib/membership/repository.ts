@@ -7,8 +7,18 @@ import {
   mergeUpcomingPublicMemberExperiences,
   publicEventDetailHref,
 } from "@/lib/events/member-experiences";
+import {
+  googleCommunicationLivemode,
+  googleCommunicationUrlFromMetadata,
+} from "@/lib/google/communications";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
+import { shopifyArtifactProductFromSpecification } from "@/lib/membership/artifact-products";
 import { supportedShippingCountry } from "@/lib/membership/phone";
+import {
+  markOpsExperienceCalendarPending,
+  syncMemberExperienceCalendar,
+} from "@/lib/platform/ops-calendar-repository";
+import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 import type {
   MemberAccountSnapshot,
   MemberArtifactsSnapshot,
@@ -29,7 +39,6 @@ import type {
   FoundationSummary,
   MembershipStandingState,
   PrivacySafePersonSummary,
-  ProgressionSummary,
 } from "@/lib/membership/model";
 import type {
   AccountState,
@@ -149,44 +158,6 @@ function requireMemberCapability(
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   if (!memberCan(access, capability)) throw new MembershipAccessDeniedError();
   return access;
-}
-
-type ProgressionRow = {
-  assigned_at: Date | string | null;
-  display_name: string;
-  position: number;
-  slug: ProgressionSummary["slug"];
-};
-
-export async function getMemberProgression(
-  memberId: string,
-): Promise<ProgressionSummary> {
-  const sql = getApplicationDatabase();
-  const rows = await sql<Array<ProgressionRow>>`
-    select
-      level.slug,
-      level.display_name,
-      level.position,
-      assignment.assigned_at
-    from member_lifecycle lifecycle
-    join membership_progression_levels level
-      on level.slug = lifecycle.current_progression_level_slug
-    left join member_progression_assignments assignment
-      on assignment.member_id = lifecycle.member_id
-      and assignment.ended_at is null
-      and assignment.progression_level_slug = lifecycle.current_progression_level_slug
-    where lifecycle.member_id = ${memberId}::uuid
-    limit 1
-  `;
-  const row = rows[0];
-  return row
-    ? {
-        assignedAt: toIso(row.assigned_at),
-        name: row.display_name,
-        position: row.position,
-        slug: row.slug,
-      }
-    : { assignedAt: null, name: "Member", position: 1, slug: "member" };
 }
 
 type OnboardingRow = {
@@ -906,6 +877,15 @@ export async function completeMemberAdministrativeOnboarding(
       )
       on conflict (dedupe_key) do nothing
     `;
+    if (
+      lifecycleBefore.administrative_onboarding_state !== "completed" ||
+      lifecycleBefore.standing_state !== "active"
+    ) {
+      await markCalendarAudiencesPendingForMember(tx, {
+        actorAuthUserId: authUserId,
+        memberId: identity.memberId,
+      });
+    }
   });
   const onboarding = await getMemberOnboarding(authUserId);
   if (!onboarding) throw new Error("Completed onboarding could not be reloaded.");
@@ -1109,39 +1089,36 @@ export async function getMemberProfile(
 ): Promise<MemberProfileSnapshot | null> {
   const identity = await requireMemberIdentity(authUserId);
   const access = requireMemberCapability(identity, "profile.read");
-  const [progression, rows] = await Promise.all([
-    getMemberProgression(identity.memberId),
-    getApplicationDatabase()<Array<ProfileRow>>`
-      select
-        profile.display_name,
-        profile.preferred_name,
-        profile.avatar_storage_path,
-        profile.timezone,
-        profile.location_label,
-        profile.bio,
-        profile.building_now,
-        private_profile.legal_name,
-        private_profile.mobile_e164,
-        private_profile.birth_date,
-        private_profile.default_fulfillment_address,
-        private_profile.apparel_sizing,
-        private_profile.accessibility_notes,
-        preference.directory_status,
-        preference.avatar_visible,
-        preference.location_visible,
-        preference.bio_visible,
-        preference.building_visible,
-        preference.email_scope,
-        preference.phone_scope,
-        preference.version as preference_version
-      from ruined_members member
-      left join person_profiles profile on profile.person_id = member.person_id
-      left join person_private_profiles private_profile on private_profile.person_id = member.person_id
-      left join member_directory_preferences preference on preference.member_id = member.id
-      where member.id = ${identity.memberId}::uuid
-      limit 1
-    `,
-  ]);
+  const rows = await getApplicationDatabase()<Array<ProfileRow>>`
+    select
+      profile.display_name,
+      profile.preferred_name,
+      profile.avatar_storage_path,
+      profile.timezone,
+      profile.location_label,
+      profile.bio,
+      profile.building_now,
+      private_profile.legal_name,
+      private_profile.mobile_e164,
+      private_profile.birth_date,
+      private_profile.default_fulfillment_address,
+      private_profile.apparel_sizing,
+      private_profile.accessibility_notes,
+      preference.directory_status,
+      preference.avatar_visible,
+      preference.location_visible,
+      preference.bio_visible,
+      preference.building_visible,
+      preference.email_scope,
+      preference.phone_scope,
+      preference.version as preference_version
+    from ruined_members member
+    left join person_profiles profile on profile.person_id = member.person_id
+    left join person_private_profiles private_profile on private_profile.person_id = member.person_id
+    left join member_directory_preferences preference on preference.member_id = member.id
+    where member.id = ${identity.memberId}::uuid
+    limit 1
+  `;
   const row = rows[0];
   if (!row) return null;
   const displayName = row.display_name?.trim() || row.preferred_name?.trim() || "Member";
@@ -1177,7 +1154,6 @@ export async function getMemberProfile(
       legalName: row.legal_name,
       mobile: row.mobile_e164,
     },
-    progression,
   };
 }
 
@@ -1208,10 +1184,10 @@ export async function saveMemberProfile(
   if (!['hidden', 'circle_visible'].includes(input.directory.directoryStatus)) {
     throw new MembershipInputError("The Circle directory choice is not valid.");
   }
-  if (!["none", "accountability_partner", "circle"].includes(input.directory.emailScope)) {
+  if (!["none", "circle"].includes(input.directory.emailScope)) {
     throw new MembershipInputError("The email-sharing choice is not valid.");
   }
-  if (!["none", "accountability_partner", "circle"].includes(input.directory.phoneScope)) {
+  if (!["none", "circle"].includes(input.directory.phoneScope)) {
     throw new MembershipInputError("The phone-sharing choice is not valid.");
   }
   const sql = getApplicationDatabase();
@@ -1351,7 +1327,10 @@ type ExperienceRow = {
   id: string;
   kind: string;
   location_label: string | null;
+  meeting_link_metadata: unknown;
+  registration_closes_at: Date | string | null;
   registration_mode: "external" | "internal" | "none";
+  registration_opens_at: Date | string | null;
   registration_status: "cancelled" | "external_pending" | "registered" | "waitlisted" | null;
   slug: string;
   starts_at: Date | string;
@@ -1362,20 +1341,35 @@ type ExperienceRow = {
 };
 
 function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
+  const now = Date.now();
+  const registrationClosed = (
+    (row.registration_opens_at && new Date(row.registration_opens_at).getTime() > now) ||
+    (row.registration_closes_at && new Date(row.registration_closes_at).getTime() < now) ||
+    new Date(row.starts_at).getTime() < now
+  );
   const registrationState: MemberExperienceSummary["registrationState"] =
     row.registration_status === "waitlisted"
       ? "waitlisted"
       : row.registration_status === "registered"
         ? "registered"
-        : row.registration_status === "cancelled"
-          ? "cancelled"
-          : row.registration_mode === "external"
-            ? "external"
-            : row.registration_mode === "internal"
-              ? "available"
-              : "none";
+        : registrationClosed && row.registration_mode !== "none"
+            ? "closed"
+          : row.registration_status === "cancelled"
+            ? "cancelled"
+            : row.registration_mode === "external"
+              ? "external"
+              : row.registration_mode === "internal"
+                ? "available"
+                : "none";
   const communityHref = row.visibility === "public"
     ? publicEventDetailHref(row.slug)
+    : null;
+  const meetingAvailable = row.registration_mode === "none" || row.registration_status === "registered";
+  const meetingUrl = meetingAvailable && googleCommunicationUrlFromMetadata(
+    "meet",
+    row.meeting_link_metadata,
+  )
+    ? `/api/my/experiences/${encodeURIComponent(row.id)}/join`
     : null;
   return {
     audienceLabel: row.audience_label ?? "Ruined Membership",
@@ -1387,7 +1381,7 @@ function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
     id: row.id,
     kind: row.kind,
     locationLabel: row.location_label,
-    meetingUrl: null,
+    meetingUrl,
     registrationHref:
       row.registration_mode === "external"
         ? row.external_registration_url
@@ -1422,7 +1416,6 @@ type DirectoryRow = {
   directory_id: string;
   display_name: string | null;
   email: string | null;
-  is_partner: boolean;
   is_self: boolean;
   location_label: string | null;
   phone: string | null;
@@ -1450,13 +1443,13 @@ export async function getMemberCircle(
   if (!memberCan(access, "circle.read")) {
     return {
       access,
-      accountabilityPartner: null,
       block: null,
       circle: null,
-      leader: null,
+      communication: { chatHref: null, chatState: "unavailable" },
       meetings: [],
       members: [],
       resources: [],
+      shaper: null,
     };
   }
   const sql = getApplicationDatabase();
@@ -1484,33 +1477,22 @@ export async function getMemberCircle(
   if (!circle) {
     return {
       access,
-      accountabilityPartner: null,
       block: null,
       circle: null,
-      leader: null,
+      communication: { chatHref: null, chatState: "unavailable" },
       meetings: [],
       members: [],
       resources: [],
+      shaper: null,
     };
   }
 
-  const [directoryRows, leaderRows, meetingRows, resourceRows] = await Promise.all([
+  const googleLivemode = googleCommunicationLivemode();
+  const [directoryRows, shaperRows, meetingRows, resourceRows, chatLinkRows] = await Promise.all([
     sql<Array<DirectoryRow>>`
-      with viewer_partner as (
-        select case
-          when partner.member_one_id = ${identity.memberId}::uuid then partner.member_two_id
-          else partner.member_one_id
-        end as member_id
-        from accountability_partner_assignments partner
-        where partner.circle_id = ${circle.circle_id}::uuid
-          and partner.ended_at is null
-          and ${identity.memberId}::uuid in (partner.member_one_id, partner.member_two_id)
-        limit 1
-      )
       select
         assignment.id::text as directory_id,
         target_member.id = ${identity.memberId}::uuid as is_self,
-        target_member.id = (select member_id from viewer_partner) as is_partner,
         coalesce(profile.display_name, profile.preferred_name, 'Member') as display_name,
         case
           when target_member.id = ${identity.memberId}::uuid
@@ -1536,13 +1518,7 @@ export async function getMemberCircle(
           when target_member.id = ${identity.memberId}::uuid
             or (
               preference.directory_status = 'circle_visible'
-              and (
-                preference.email_scope = 'circle'
-                or (
-                  preference.email_scope = 'accountability_partner'
-                  and target_member.id = (select member_id from viewer_partner)
-                )
-              )
+              and preference.email_scope = 'circle'
             )
           then primary_email.email
         end as email,
@@ -1550,13 +1526,7 @@ export async function getMemberCircle(
           when target_member.id = ${identity.memberId}::uuid
             or (
               preference.directory_status = 'circle_visible'
-              and (
-                preference.phone_scope = 'circle'
-                or (
-                  preference.phone_scope = 'accountability_partner'
-                  and target_member.id = (select member_id from viewer_partner)
-                )
-              )
+              and preference.phone_scope = 'circle'
             )
           then private_profile.mobile_e164
         end as phone
@@ -1581,8 +1551,7 @@ export async function getMemberCircle(
       select
         staff_assignment.id::text as directory_id,
         false as is_self,
-        false as is_partner,
-        coalesce(profile.display_name, profile.preferred_name, 'Circle leader') as display_name,
+        coalesce(profile.display_name, profile.preferred_name, 'Shaper') as display_name,
         null::text as avatar_storage_path,
         null::text as location_label,
         null::text as bio,
@@ -1611,14 +1580,23 @@ export async function getMemberCircle(
         experience.timezone,
         experience.location_label,
         experience.registration_mode,
+        experience.registration_opens_at,
+        experience.registration_closes_at,
         experience.external_registration_url,
         experience.visibility,
+        meet_link.metadata as meeting_link_metadata,
         registration.status as registration_status,
         ${circle.circle_name}::text as audience_label
       from experiences experience
       left join experience_registrations registration
         on registration.experience_id = experience.id
         and registration.person_id = ${identity.personId}::uuid
+      left join integration_entity_links meet_link
+        on meet_link.provider = 'google'
+        and meet_link.local_entity_type = 'experience'
+        and meet_link.local_entity_id = experience.id::text
+        and meet_link.external_entity_type = 'meet_space'
+        and meet_link.livemode = ${googleLivemode}
       where experience.circle_id = ${circle.circle_id}::uuid
         and experience.kind = 'circle_meeting'
         and experience.status in ('published', 'completed')
@@ -1637,16 +1615,28 @@ export async function getMemberCircle(
       join learning_resources resource
         on resource.id = resource_version.learning_resource_id
       where circle_resource.circle_id = ${circle.circle_id}::uuid
+        and circle_resource.ended_at is null
         and resource.status = 'published'
       order by circle_resource.is_pinned desc, circle_resource.position, circle_resource.created_at
+    `,
+    sql<Array<{ metadata: unknown }>>`
+      select link.metadata
+      from integration_entity_links link
+      where link.provider = 'google'
+        and link.local_entity_type = 'circle'
+        and link.local_entity_id = ${circle.circle_id}
+        and link.external_entity_type = 'chat_space'
+        and link.livemode = ${googleLivemode}
+      limit 1
     `,
   ]);
 
   const members = directoryRows.map(directoryPerson);
+  const chatReady = Boolean(
+    googleCommunicationUrlFromMetadata("chat", chatLinkRows[0]?.metadata),
+  );
   return {
     access,
-    accountabilityPartner:
-      directoryRows.find((row) => row.is_partner) ? directoryPerson(directoryRows.find((row) => row.is_partner)!) : null,
     block:
       circle.block_id && circle.block_name && circle.block_status
         ? { id: circle.block_id, name: circle.block_name, status: circle.block_status }
@@ -1656,11 +1646,102 @@ export async function getMemberCircle(
       name: circle.circle_name,
       status: circle.circle_status,
     },
-    leader: leaderRows[0] ? directoryPerson(leaderRows[0]) : null,
+    communication: {
+      chatHref: chatReady ? "/api/my/circle/chat" : null,
+      chatState: chatReady ? "ready" : "unavailable",
+    },
     meetings: meetingRows.map(experienceFromRow),
     members,
     resources: resourceRows,
+    shaper: shaperRows[0] ? directoryPerson(shaperRows[0]) : null,
   };
+}
+
+export async function getMemberCircleChatDestination(
+  authUserId: string,
+): Promise<string | null> {
+  const identity = await requireMemberIdentity(authUserId);
+  requireMemberCapability(identity, "circle.read");
+  const sql = getApplicationDatabase();
+  const googleLivemode = googleCommunicationLivemode();
+  const rows = await sql<Array<{ metadata: unknown }>>`
+    select link.metadata
+    from circle_member_assignments member_assignment
+    join integration_entity_links link
+      on link.provider = 'google'
+      and link.local_entity_type = 'circle'
+      and link.local_entity_id = member_assignment.circle_id::text
+      and link.external_entity_type = 'chat_space'
+      and link.livemode = ${googleLivemode}
+    where member_assignment.member_id = ${identity.memberId}::uuid
+      and member_assignment.ended_at is null
+    order by member_assignment.assigned_at desc
+    limit 1
+  `;
+  return googleCommunicationUrlFromMetadata("chat", rows[0]?.metadata);
+}
+
+export async function getMemberExperienceMeetingDestination(
+  authUserId: string,
+  experienceId: string,
+): Promise<string | null> {
+  if (!UUID.test(experienceId)) {
+    throw new MembershipInputError("That experience is not valid.");
+  }
+  const identity = await requireMemberIdentity(authUserId);
+  requireMemberCapability(identity, "experiences.member");
+  const sql = getApplicationDatabase();
+  const googleLivemode = googleCommunicationLivemode();
+  const rows = await sql<Array<{ metadata: unknown }>>`
+    with membership_scope as (
+      select
+        member_assignment.circle_id,
+        block_assignment.block_id,
+        lifecycle.current_progression_level_slug
+      from member_lifecycle lifecycle
+      left join circle_member_assignments member_assignment
+        on member_assignment.member_id = lifecycle.member_id
+        and member_assignment.ended_at is null
+      left join block_circle_assignments block_assignment
+        on block_assignment.circle_id = member_assignment.circle_id
+        and block_assignment.ended_at is null
+      where lifecycle.member_id = ${identity.memberId}::uuid
+      limit 1
+    )
+    select link.metadata
+    from experiences experience
+    join integration_entity_links link
+      on link.provider = 'google'
+      and link.local_entity_type = 'experience'
+      and link.local_entity_id = experience.id::text
+      and link.external_entity_type = 'meet_space'
+      and link.livemode = ${googleLivemode}
+    left join experience_registrations registration
+      on registration.experience_id = experience.id
+      and registration.person_id = ${identity.personId}::uuid
+    cross join membership_scope scope
+    where experience.id = ${experienceId}::uuid
+      and experience.status in ('published', 'completed')
+      and (
+        experience.registration_mode = 'none'
+        or registration.status = 'registered'
+      )
+      and (
+        experience.visibility in ('public', 'all_members')
+        or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
+        or (experience.visibility = 'block' and experience.block_id = scope.block_id)
+        or (
+          experience.visibility = 'progression'
+          and experience.progression_level_slug = scope.current_progression_level_slug
+        )
+        or (
+          experience.visibility = 'invite_only'
+          and registration.status in ('external_pending', 'registered', 'waitlisted')
+        )
+      )
+    limit 1
+  `;
+  return googleCommunicationUrlFromMetadata("meet", rows[0]?.metadata);
 }
 
 export async function getMemberExperiences(
@@ -1677,6 +1758,7 @@ export async function getMemberExperiences(
     };
   }
   const sql = getApplicationDatabase();
+  const googleLivemode = googleCommunicationLivemode();
   const rows = await sql<Array<ExperienceRow>>`
     with membership_scope as (
       select
@@ -1704,13 +1786,16 @@ export async function getMemberExperiences(
       experience.timezone,
       experience.location_label,
       experience.registration_mode,
+      experience.registration_opens_at,
+      experience.registration_closes_at,
       experience.external_registration_url,
       experience.visibility,
+      meet_link.metadata as meeting_link_metadata,
       registration.status as registration_status,
       case experience.visibility
         when 'circle' then 'Your Circle'
         when 'block' then 'Your Block'
-        when 'progression' then 'Your progression'
+        when 'progression' then 'Selected members'
         when 'public' then 'Ruined community'
         else 'All members'
       end as audience_label
@@ -1718,6 +1803,12 @@ export async function getMemberExperiences(
     left join experience_registrations registration
       on registration.experience_id = experience.id
       and registration.person_id = ${identity.personId}::uuid
+    left join integration_entity_links meet_link
+      on meet_link.provider = 'google'
+      and meet_link.local_entity_type = 'experience'
+      and meet_link.local_entity_id = experience.id::text
+      and meet_link.external_entity_type = 'meet_space'
+      and meet_link.livemode = ${googleLivemode}
     cross join membership_scope scope
     where experience.status in ('published', 'completed')
       and (
@@ -1762,12 +1853,16 @@ export async function setMemberExperienceRegistration(
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   if (!memberCan(access, "experiences.member")) throw new MembershipAccessDeniedError();
   const sql = getApplicationDatabase();
-  return sql.begin(async (tx) => {
+  const result = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${experienceId}), 48)`;
     const experienceRows = await tx<
       Array<{
         capacity: number | null;
+        registration_closes_at: Date | string | null;
         registration_mode: "external" | "internal" | "none";
+        registration_opens_at: Date | string | null;
+        starts_at: Date | string;
+        waitlist_enabled: boolean;
       }>
     >`
       with membership_scope as (
@@ -1785,7 +1880,13 @@ export async function setMemberExperienceRegistration(
         where lifecycle.member_id = ${identity.memberId}::uuid
         limit 1
       )
-      select experience.registration_mode, experience.capacity
+      select
+        experience.registration_mode,
+        experience.capacity,
+        experience.waitlist_enabled,
+        experience.registration_opens_at,
+        experience.registration_closes_at,
+        experience.starts_at
       from experiences experience
       cross join membership_scope scope
       where experience.id = ${experienceId}::uuid
@@ -1821,23 +1922,126 @@ export async function setMemberExperienceRegistration(
       );
     }
 
+    const currentRows = await tx<Array<{
+      id: string;
+      person_id: string;
+      status: "cancelled" | "external_pending" | "registered" | "waitlisted";
+    }>>`
+      select id, person_id, status
+      from experience_registrations
+      where experience_id = ${experienceId}::uuid
+        and person_id = ${identity.personId}::uuid
+        and member_id = ${identity.memberId}::uuid
+      limit 1
+      for update
+    `;
+    const current = currentRows[0];
+
     if (action === "cancel") {
-      const cancelledRows = await tx<Array<{ status: "cancelled" }>>`
+      if (!current || current.status === "cancelled") {
+        throw new MembershipConflictError("There is no current registration to cancel.");
+      }
+      await tx`
         update experience_registrations
         set
           status = 'cancelled',
           cancelled_at = statement_timestamp(),
+          cancellation_reason = 'Member released place.',
+          version = version + 1,
           updated_at = statement_timestamp()
-        where experience_id = ${experienceId}::uuid
-          and person_id = ${identity.personId}::uuid
-          and member_id = ${identity.memberId}::uuid
-          and status <> 'cancelled'
-        returning status
+        where id = ${current.id}::uuid
       `;
-      if (!cancelledRows[0]) {
-        throw new MembershipConflictError("There is no current registration to cancel.");
+      await tx`
+        insert into experience_registration_events (
+          registration_id,
+          experience_id,
+          person_id,
+          previous_status,
+          next_status,
+          source,
+          actor_auth_user_id,
+          reason,
+          dedupe_key
+        ) values (
+          ${current.id}::uuid,
+          ${experienceId}::uuid,
+          ${identity.personId}::uuid,
+          ${current.status},
+          'cancelled',
+          'member',
+          ${authUserId}::uuid,
+          'Member released place.',
+          ${crypto.randomUUID()}
+        )
+      `;
+      if (current.status === "registered") {
+        const promotedRows = await tx<Array<{ id: string; person_id: string }>>`
+          with next_waitlisted as (
+            select id
+            from experience_registrations
+            where experience_id = ${experienceId}::uuid
+              and status = 'waitlisted'
+            order by waitlisted_at, registered_at, id
+            limit 1
+            for update
+          )
+          update experience_registrations registration
+          set
+            status = 'registered',
+            promoted_at = statement_timestamp(),
+            cancelled_at = null,
+            cancellation_reason = null,
+            version = registration.version + 1,
+            updated_at = statement_timestamp()
+          from next_waitlisted
+          where registration.id = next_waitlisted.id
+          returning registration.id, registration.person_id
+        `;
+        const promoted = promotedRows[0];
+        if (promoted) {
+          await tx`
+            insert into experience_registration_events (
+              registration_id,
+              experience_id,
+              person_id,
+              previous_status,
+              next_status,
+              source,
+              reason,
+              dedupe_key
+            ) values (
+              ${promoted.id}::uuid,
+              ${experienceId}::uuid,
+              ${promoted.person_id}::uuid,
+              'waitlisted',
+              'registered',
+              'system',
+              'Promoted when a place became available.',
+              ${crypto.randomUUID()}
+            )
+          `;
+        }
       }
-      return { status: "cancelled" as const };
+      const calendarChanged = current.status === "registered"
+        ? await markOpsExperienceCalendarPending(tx, {
+            actorAuthUserId: authUserId,
+            experienceId,
+            reason: "attendees",
+          })
+        : false;
+      return { calendarChanged, status: "cancelled" as const };
+    }
+
+    if (current?.status === "registered" || current?.status === "waitlisted") {
+      return { calendarChanged: false, status: current.status };
+    }
+    const now = Date.now();
+    if (
+      (experience.registration_opens_at && new Date(experience.registration_opens_at).getTime() > now) ||
+      (experience.registration_closes_at && new Date(experience.registration_closes_at).getTime() < now) ||
+      new Date(experience.starts_at).getTime() < now
+    ) {
+      throw new MembershipConflictError("Registration is not currently open.");
     }
 
     const countRows = await tx<Array<{ registered_count: number }>>`
@@ -1851,34 +2055,95 @@ export async function setMemberExperienceRegistration(
       Number(countRows[0]?.registered_count ?? 0) >= experience.capacity
         ? "waitlisted"
         : "registered";
-    const registrationRows = await tx<Array<{ status: "registered" | "waitlisted" }>>`
+    if (status === "waitlisted" && !experience.waitlist_enabled) {
+      throw new MembershipConflictError("This Experience is full.");
+    }
+    const registrationRows = await tx<Array<{
+      id: string;
+      status: "registered" | "waitlisted";
+    }>>`
       insert into experience_registrations (
         experience_id,
         person_id,
         member_id,
         status,
         source,
-        registered_at
+        registered_at,
+        waitlisted_at
       ) values (
         ${experienceId}::uuid,
         ${identity.personId}::uuid,
         ${identity.memberId}::uuid,
         ${status},
         'member',
-        statement_timestamp()
+        statement_timestamp(),
+        case when ${status} = 'waitlisted' then statement_timestamp() end
       )
       on conflict (experience_id, person_id) do update
       set
         member_id = excluded.member_id,
         status = excluded.status,
         source = 'member',
-        registered_at = statement_timestamp(),
+        waitlisted_at = case
+          when excluded.status = 'waitlisted' then statement_timestamp()
+          else experience_registrations.waitlisted_at
+        end,
         cancelled_at = null,
+        cancellation_reason = null,
+        version = experience_registrations.version + 1,
         updated_at = statement_timestamp()
-      returning status
+      returning id, status
     `;
-    return { status: registrationRows[0]?.status ?? status };
+    const registration = registrationRows[0];
+    if (!registration) throw new MembershipConflictError("Registration could not be saved.");
+    await tx`
+      insert into experience_registration_events (
+        registration_id,
+        experience_id,
+        person_id,
+        previous_status,
+        next_status,
+        source,
+        actor_auth_user_id,
+        dedupe_key
+      ) values (
+        ${registration.id}::uuid,
+        ${experienceId}::uuid,
+        ${identity.personId}::uuid,
+        ${current?.status ?? null},
+        ${registration.status},
+        'member',
+        ${authUserId}::uuid,
+        ${crypto.randomUUID()}
+      )
+    `;
+    const calendarChanged = registration.status === "registered"
+      ? await markOpsExperienceCalendarPending(tx, {
+          actorAuthUserId: authUserId,
+          experienceId,
+          reason: "attendees",
+        })
+      : false;
+    return { calendarChanged, status: registration.status };
   });
+  if (result.calendarChanged) {
+    try {
+      await syncMemberExperienceCalendar({
+        actorAuthUserId: authUserId,
+        expectedRegistrationStatus: result.status === "cancelled" ? "cancelled" : "registered",
+        experienceId,
+        requestKey: `member:${action}:${experienceId}:${crypto.randomUUID()}`,
+      });
+    } catch (error) {
+      // Registration remains authoritative. The durable Calendar link stays
+      // pending so an operator can retry without losing the member's place.
+      console.error("Member registration Calendar reconciliation needs attention", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+        experienceId,
+      });
+    }
+  }
+  return { status: result.status };
 }
 
 function learningResourceType(
@@ -1889,13 +2154,106 @@ function learningResourceType(
   return "download";
 }
 
+type LearningMediaMetadata = Pick<
+  MemberLearningResourceSummary,
+  | "captionsUrl"
+  | "durationLabel"
+  | "featured"
+  | "presenter"
+  | "thumbnailUrl"
+  | "videoUrl"
+>;
+
+function metadataRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      return metadataRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function metadataString(
+  records: Array<Record<string, unknown> | null>,
+  keys: string[],
+): string | null {
+  for (const record of records) {
+    if (!record) continue;
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return null;
+}
+
+function metadataBoolean(
+  records: Array<Record<string, unknown> | null>,
+  keys: string[],
+): boolean {
+  for (const record of records) {
+    if (!record) continue;
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "boolean") return value;
+      if (value === 1 || value === "true") return true;
+      if (value === 0 || value === "false") return false;
+    }
+  }
+  return false;
+}
+
+function safeLearningMediaUrl(value: string | null): string | null {
+  const candidate = value?.trim();
+  if (!candidate) return null;
+  if (candidate.startsWith("/") && !candidate.startsWith("//")) return candidate;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function directLearningVideoUrl(value: string | null): string | null {
+  const safeUrl = safeLearningMediaUrl(value);
+  if (!safeUrl) return null;
+  const pathname = new URL(safeUrl, "https://ruined.local").pathname;
+  return /\.(?:m3u8|mp4|ogg|ogv|webm)$/i.test(pathname) ? safeUrl : null;
+}
+
+function learningMediaMetadata(value: unknown): LearningMediaMetadata {
+  const root = metadataRecord(value);
+  const media = metadataRecord(root?.media);
+  const records = [root, media];
+  return {
+    captionsUrl: safeLearningMediaUrl(
+      metadataString(records, ["captionsUrl", "captions_url"]),
+    ),
+    durationLabel: metadataString(records, ["durationLabel", "duration_label", "duration"]),
+    featured: metadataBoolean(records, ["featured", "isFeatured", "is_featured"]),
+    presenter: metadataString(records, ["presenter", "instructor", "byline"]),
+    thumbnailUrl: safeLearningMediaUrl(
+      metadataString(records, ["thumbnailUrl", "thumbnail_url", "posterUrl", "poster_url"]),
+    ),
+    videoUrl: safeLearningMediaUrl(
+      metadataString(records, ["videoUrl", "video_url", "playbackUrl", "playback_url"]),
+    ),
+  };
+}
+
 type LearningRow = {
   collection_id: string | null;
   collection_name: string | null;
   collection_slug: string | null;
   collection_summary: string | null;
   content_type: string;
+  external_url: string | null;
   id: string;
+  metadata: unknown;
   published_at: Date | string;
   slug: string;
   summary: string | null;
@@ -1934,11 +2292,15 @@ export async function getMemberLearning(
       resource.summary,
       resource.content_type,
       resource.published_at,
+      resource_version.external_url,
+      resource_version.metadata,
       collection.id as collection_id,
       collection.slug as collection_slug,
       collection.name as collection_name,
       collection.summary as collection_summary
     from learning_resources resource
+    left join learning_resource_versions resource_version
+      on resource_version.id = resource.current_version_id
     left join learning_collections collection
       on collection.id = resource.collection_id
       and collection.status = 'published'
@@ -1962,14 +2324,24 @@ export async function getMemberLearning(
   `;
   const summaries = new Map<string, MemberLearningResourceSummary>();
   for (const row of rows) {
+    const media = learningMediaMetadata(row.metadata);
+    const resourceType = learningResourceType(row.content_type);
     summaries.set(row.id, {
+      captionsUrl: media.captionsUrl,
       collectionName: row.collection_name,
+      durationLabel: media.durationLabel,
+      featured: media.featured,
       href: `/my/learn/${row.slug}`,
       id: row.id,
+      presenter: media.presenter,
       publishedAt: toIso(row.published_at)!,
-      resourceType: learningResourceType(row.content_type),
+      resourceType,
       summary: row.summary,
+      thumbnailUrl: media.thumbnailUrl,
       title: row.title,
+      videoUrl:
+        directLearningVideoUrl(media.videoUrl) ??
+        (resourceType === "video" ? directLearningVideoUrl(row.external_url) : null),
     });
   }
   const collections = new Map<string, MemberLearningSnapshot["collections"][number]>();
@@ -2009,6 +2381,7 @@ export async function getMemberLearningResource(
       collection_name: string | null;
       content_type: string;
       external_url: string | null;
+      metadata: unknown;
       published_at: Date | string;
       slug: string;
       storage_bucket: string | null;
@@ -2043,6 +2416,7 @@ export async function getMemberLearningResource(
       resource_version.version,
       resource_version.body_text,
       resource_version.external_url,
+      resource_version.metadata,
       resource_version.storage_bucket,
       resource_version.storage_path
     from learning_resources resource
@@ -2070,19 +2444,29 @@ export async function getMemberLearningResource(
   `;
   const row = rows[0];
   if (!row) return null;
+  const media = learningMediaMetadata(row.metadata);
+  const resourceType = learningResourceType(row.content_type);
   return {
     access,
     bodyMarkdown: row.body_text,
+    captionsUrl: media.captionsUrl,
     collectionName: row.collection_name,
+    durationLabel: media.durationLabel,
     externalUrl: row.external_url,
+    featured: media.featured,
+    presenter: media.presenter,
     publishedAt: toIso(row.published_at)!,
-    resourceType: learningResourceType(row.content_type),
+    resourceType,
     slug: row.slug,
     storageBucket: row.storage_bucket,
     storagePath: row.storage_path,
     summary: row.summary,
+    thumbnailUrl: media.thumbnailUrl,
     title: row.title,
     version: row.version,
+    videoUrl:
+      directLearningVideoUrl(media.videoUrl) ??
+      (resourceType === "video" ? directLearningVideoUrl(row.external_url) : null),
   };
 }
 
@@ -2233,7 +2617,6 @@ export async function getMemberHome(
   `;
   const [
     profile,
-    progression,
     circle,
     experiences,
     artifacts,
@@ -2243,7 +2626,6 @@ export async function getMemberHome(
     memberSinceRows,
   ] = await Promise.all([
       getMemberProfile(authUserId),
-      getMemberProgression(identity.memberId),
       getMemberCircle(authUserId),
       getMemberExperiences(authUserId),
       getMemberArtifacts(authUserId),
@@ -2390,7 +2772,6 @@ export async function getMemberHome(
     nextAction,
     nextExperience,
     nextMeeting,
-    partner: suppressPrivateHighlights ? null : circle.accountabilityPartner,
     profile: {
       bio: profile.directory.bio,
       buildingNow: profile.directory.buildingNow,
@@ -2401,7 +2782,6 @@ export async function getMemberHome(
       preferredName: profile.directory.preferredName?.trim() || null,
       timezone: profile.directory.timezone,
     },
-    progression,
     unreadUpdates: suppressPrivateHighlights ? 0 : updates.unreadCount,
     upcomingExperiences: visibleUpcomingExperiences,
   };
@@ -2427,7 +2807,7 @@ export async function getMemberTimeline(
       from member_timeline_entries
       where member_id = ${identity.memberId}::uuid
         and status = 'active'
-      order by position, entry_year, created_at
+      order by entry_year, position, created_at
     `,
   ]);
   return {
@@ -2663,6 +3043,7 @@ export async function getMemberArtifacts(
   const sql = getApplicationDatabase();
   const rows = await sql<
     Array<{
+      acquisition_type: "earned" | "gifted" | "purchased";
       award_id: string;
       award_name: string;
       award_reason: string | null;
@@ -2671,9 +3052,14 @@ export async function getMemberArtifacts(
       completed_at: Date | string | null;
       job_status: string | null;
       production_snapshot: Record<string, unknown> | null;
+      production_specification: Record<string, unknown> | null;
+      shipment_delivered_at: Date | string | null;
+      shipment_tracking_url: string | null;
+      template_description: string | null;
     }>
   >`
     select
+      award.acquisition_type,
       award.id as award_id,
       award.award_name,
       award.award_reason,
@@ -2681,9 +3067,25 @@ export async function getMemberArtifacts(
       award.awarded_at,
       job.status as job_status,
       job.production_snapshot,
-      job.completed_at
+      job.completed_at,
+      shipment.delivered_at as shipment_delivered_at,
+      shipment.tracking_url as shipment_tracking_url,
+      template.description as template_description,
+      template_version.production_specification
     from artifact_awards award
     left join artifact_jobs job on job.artifact_award_id = award.id
+    left join artifact_template_versions template_version
+      on template_version.id = award.artifact_template_version_id
+    left join artifact_templates template
+      on template.id = template_version.artifact_template_id
+    left join lateral (
+      select fulfillment.tracking_url, fulfillment.delivered_at
+      from artifact_fulfillment_shipments fulfillment
+      where fulfillment.artifact_job_id = job.id
+        and fulfillment.status <> 'cancelled'
+      order by fulfillment.created_at desc
+      limit 1
+    ) shipment on true
     where award.member_id = ${identity.memberId}::uuid
       and award.person_id = ${identity.personId}::uuid
       and award.status <> 'revoked'
@@ -2692,15 +3094,19 @@ export async function getMemberArtifacts(
   return {
     access,
     awards: rows.map((row) => ({
+      acquisitionType: row.acquisition_type,
       artifactState: artifactStateFromStatus(row.award_status, row.job_status),
       awardId: row.award_id,
+      description: row.template_description,
       earnedAt: toIso(row.awarded_at)!,
       earnedReason: row.award_reason ?? "Ruined artifact award",
-      fulfilledAt: toIso(row.completed_at),
+      fulfilledAt: toIso(row.completed_at ?? row.shipment_delivered_at),
       imageUrl: null,
       inputRequired: row.job_status === "collecting",
       name: row.award_name,
-      trackingUrl: safeExternalUrl(row.production_snapshot?.tracking_url),
+      product: shopifyArtifactProductFromSpecification(row.production_specification),
+      trackingUrl: safeExternalUrl(row.shipment_tracking_url)
+        ?? safeExternalUrl(row.production_snapshot?.tracking_url),
     })),
   };
 }

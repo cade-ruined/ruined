@@ -484,7 +484,6 @@ async function sendAnnouncementNotifications(
           and lifecycle.standing_state in ('active', 'cancellation_requested')
           and (
             lifecycle.standing_state = 'active'
-            or lifecycle.cancellation_effective_at is null
             or lifecycle.cancellation_effective_at > statement_timestamp()
           )
           and exists (

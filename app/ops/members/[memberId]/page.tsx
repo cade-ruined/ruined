@@ -5,8 +5,12 @@ import OperatorMemberRecord from "@/components/platform/OperatorMemberRecord";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { getOpsMemberOperatingRecord } from "@/lib/platform/ops-operating-repository";
+import { getOpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
-import { getPreviewOpsMemberRecord } from "@/lib/platform/ops-preview";
+import {
+  getPreviewOpsMemberProfileSupport,
+  getPreviewOpsMemberRecord,
+} from "@/lib/platform/ops-preview";
 
 export const metadata: Metadata = { title: "Member record" };
 export const dynamic = "force-dynamic";
@@ -25,7 +29,12 @@ export default async function OperationsMemberRecordPage({
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
   if (context.state === "preview") {
-    return <OperatorMemberRecord record={getPreviewOpsMemberRecord(memberId)} />;
+    return (
+      <OperatorMemberRecord
+        profileSupport={getPreviewOpsMemberProfileSupport(memberId)}
+        record={getPreviewOpsMemberRecord(memberId)}
+      />
+    );
   }
   if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
 
@@ -39,5 +48,13 @@ export default async function OperationsMemberRecordPage({
     return <PlatformUnavailable accessHref="/ops/access" />;
   }
   if (!record) notFound();
-  return <OperatorMemberRecord record={record} />;
+  const profileSupport = record.access.capabilities.includes("member.private_profile.read")
+    ? await getOpsMemberProfileSupport(context.viewer.authUserId, memberId).catch((error) => {
+        console.error("Operations member profile support could not be loaded", {
+          errorType: error instanceof Error ? error.name : "UnknownError",
+        });
+        return null;
+      })
+    : null;
+  return <OperatorMemberRecord profileSupport={profileSupport} record={record} />;
 }

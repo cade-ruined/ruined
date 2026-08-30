@@ -14,7 +14,6 @@ import type {
   MemberTimelineSnapshot,
   MemberUpdatesSnapshot,
   PrivacySafePersonSummary,
-  ProgressionSummary,
 } from "@/lib/membership/model";
 
 export const PREVIEW_MEMBER_IDENTITY: MemberIdentity = {
@@ -33,18 +32,11 @@ export const PREVIEW_MEMBER_IDENTITY: MemberIdentity = {
 
 const access = deriveMemberAccessPolicy(PREVIEW_MEMBER_IDENTITY);
 
-export const PREVIEW_PROGRESSION: ProgressionSummary = {
-  assignedAt: "2026-08-01T16:00:00.000Z",
-  name: "Member",
-  position: 1,
-  slug: "member",
-};
-
 const previewPartner: PrivacySafePersonSummary = {
   avatarUrl: null,
   bio: "Building a quieter, more deliberate way to work.",
   buildingNow: "A studio practice with fewer, better decisions.",
-  displayName: "Member 02",
+  displayName: "Mara Bell",
   email: null,
   id: "preview-directory-02",
   isSelf: false,
@@ -76,14 +68,17 @@ const previewUpcomingExperiences = [previewMeeting, ...previewPublicExperiences]
   .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
 
 const previewArtifact = {
-  artifactState: "fulfilled" as const,
+  acquisitionType: "earned" as const,
+  artifactState: "collecting" as const,
   awardId: "preview-artifact",
+  description: "A hand-forged artifact.",
   earnedAt: "2026-08-25T16:00:00.000Z",
   earnedReason: "Foundations completed",
-  fulfilledAt: "2026-08-26T16:00:00.000Z",
+  fulfilledAt: null,
   imageUrl: null,
-  inputRequired: false,
-  name: "Foundations Artifact",
+  inputRequired: true,
+  name: "The First Coin",
+  product: null,
   trackingUrl: null,
 };
 
@@ -99,6 +94,99 @@ const previewSelf: PrivacySafePersonSummary = {
   phone: "+18015550100",
 };
 
+const previewCircleMembers: PrivacySafePersonSummary[] = [
+  previewSelf,
+  previewPartner,
+  {
+    avatarUrl: null,
+    bio: "Turning overlooked materials into useful objects.",
+    buildingNow: "A small-batch furniture workshop.",
+    displayName: "Jonah Reed",
+    email: null,
+    id: "preview-directory-03",
+    isSelf: false,
+    location: "Ogden, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Making systems that leave more room for people.",
+    buildingNow: "A neighborhood design practice.",
+    displayName: "Sana Park",
+    email: null,
+    id: "preview-directory-04",
+    isSelf: false,
+    location: "Salt Lake City, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Writing about work, attention, and the American West.",
+    buildingNow: "A first collection of essays.",
+    displayName: "Eli Mercer",
+    email: null,
+    id: "preview-directory-05",
+    isSelf: false,
+    location: "Provo, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Rebuilding a family trade for a slower future.",
+    buildingNow: "A contemporary metal shop.",
+    displayName: "Niko Tan",
+    email: null,
+    id: "preview-directory-06",
+    isSelf: false,
+    location: "Park City, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Helping independent teams make clearer choices.",
+    buildingNow: "A strategy studio for owner-led companies.",
+    displayName: "Rae Morgan",
+    email: null,
+    id: "preview-directory-07",
+    isSelf: false,
+    location: "Draper, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Photographing the places people pass without seeing.",
+    buildingNow: "A long-form documentary project.",
+    displayName: "Tomas Vale",
+    email: null,
+    id: "preview-directory-08",
+    isSelf: false,
+    location: "Heber, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Building gatherings around food, memory, and place.",
+    buildingNow: "A twelve-seat neighborhood table.",
+    displayName: "Imani Cole",
+    email: null,
+    id: "preview-directory-09",
+    isSelf: false,
+    location: "Millcreek, Utah",
+    phone: null,
+  },
+  {
+    avatarUrl: null,
+    bio: "Making durable tools for independent creative work.",
+    buildingNow: "A focused publishing platform.",
+    displayName: "Noah Quinn",
+    email: null,
+    id: "preview-directory-10",
+    isSelf: false,
+    location: "Lehi, Utah",
+    phone: null,
+  },
+];
+
 export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
   access,
   announcement: {
@@ -112,7 +200,7 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
   artifacts: [previewArtifact],
   avatarUrl: null,
   blockName: "Block 01",
-  circleMembers: [previewSelf, previewPartner],
+  circleMembers: previewCircleMembers,
   circleName: "Circle 01",
   displayName: "Preview member",
   foundations: {
@@ -135,7 +223,6 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
   },
   nextExperience: previewExperience,
   nextMeeting: previewMeeting,
-  partner: previewPartner,
   profile: {
     bio: "Learning to make fewer promises and keep the ones that remain.",
     buildingNow: "A more deliberate creative practice.",
@@ -146,7 +233,6 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
     preferredName: "Preview",
     timezone: "America/Denver",
   },
-  progression: PREVIEW_PROGRESSION,
   unreadUpdates: 2,
   upcomingExperiences: previewUpcomingExperiences,
 };
@@ -172,7 +258,7 @@ export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
     directoryStatus: "circle_visible",
     emailScope: "none",
     locationVisible: true,
-    phoneScope: "accountability_partner",
+    phoneScope: "none",
     version: 1,
   },
   privateProfile: {
@@ -183,7 +269,6 @@ export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
     legalName: "Preview Member",
     mobile: "+18015550100",
   },
-  progression: PREVIEW_PROGRESSION,
 };
 
 export const PREVIEW_MEMBER_ONBOARDING: MemberOnboardingSnapshot = {
@@ -220,14 +305,14 @@ export const PREVIEW_MEMBER_ONBOARDING: MemberOnboardingSnapshot = {
 
 export const PREVIEW_MEMBER_CIRCLE: MemberCircleSnapshot = {
   access,
-  accountabilityPartner: previewPartner,
   block: { id: "preview-block", name: "Block 01", status: "active" },
   circle: { id: "preview-circle", name: "Circle 01", status: "active" },
-  leader: {
+  communication: { chatHref: null, chatState: "unavailable" },
+  shaper: {
     avatarUrl: null,
     bio: null,
     buildingNow: null,
-    displayName: "Circle leader",
+    displayName: "Tyler Bastian",
     email: "leader@ruined.local",
     id: "preview-leader",
     isSelf: false,
@@ -235,7 +320,7 @@ export const PREVIEW_MEMBER_CIRCLE: MemberCircleSnapshot = {
     phone: null,
   },
   meetings: [previewMeeting],
-  members: [previewSelf, previewPartner],
+  members: previewCircleMembers,
   resources: [
     {
       description: "The standing notes for how the Circle holds the room.",
@@ -252,61 +337,236 @@ export const PREVIEW_MEMBER_EXPERIENCES: MemberExperiencesSnapshot = {
   upcoming: previewUpcomingExperiences,
 };
 
+export const PREVIEW_MEMBER_LEARNING_DETAILS = {
+  "welcome-to-ruined": {
+    access,
+    bodyMarkdown:
+      "Ruined begins with removal. We take away borrowed expectations, unnecessary noise, and the performance of having it figured out. What remains is the work that is actually yours.\n\nUse this Academy as a working shelf. Take one lesson into the week, test it in real life, and bring what happened back to your Circle.",
+    captionsUrl: null,
+    collectionName: "Start here",
+    durationLabel: "00:25",
+    externalUrl: null,
+    featured: true,
+    presenter: "Ruined",
+    publishedAt: "2026-08-28T16:00:00.000Z",
+    resourceType: "video",
+    slug: "welcome-to-ruined",
+    storageBucket: null,
+    storagePath: null,
+    summary: "Meet the people, place, and premise behind the work.",
+    thumbnailUrl: "/media/meet-the-cast-poster.jpg",
+    title: "Welcome to Ruined",
+    version: 1,
+    videoUrl: "/media/meet-the-cast.mp4",
+  },
+  "the-next-true-thing": {
+    access,
+    bodyMarkdown:
+      "The next true thing is rarely the loudest option. It is the choice that remains after performance, urgency, and borrowed expectation are removed.\n\nChoose one thing. Name why it matters. Let the rest wait.",
+    captionsUrl: null,
+    collectionName: "Start here",
+    durationLabel: "04 min",
+    externalUrl: null,
+    featured: false,
+    presenter: "Cade Mangelson",
+    publishedAt: "2026-08-20T16:00:00.000Z",
+    resourceType: "article",
+    slug: "the-next-true-thing",
+    storageBucket: null,
+    storagePath: null,
+    summary: "A field note on choosing what deserves the next move.",
+    thumbnailUrl: "/media/what-is-this.webp",
+    title: "The next true thing",
+    version: 1,
+    videoUrl: null,
+  },
+  "what-we-remove": {
+    access,
+    bodyMarkdown:
+      "Removal is not minimalism for appearance's sake. It is a way to expose the decision hiding under the noise.\n\nName what is decorative, inherited, delayed, or performed. Remove one layer at a time until the work can stand on its own.",
+    captionsUrl: null,
+    collectionName: "Start here",
+    durationLabel: "06 min",
+    externalUrl: null,
+    featured: false,
+    presenter: "Ruined",
+    publishedAt: "2026-08-18T16:00:00.000Z",
+    resourceType: "article",
+    slug: "what-we-remove",
+    storageBucket: null,
+    storagePath: null,
+    summary: "The difference between stripping something down and making it clear.",
+    thumbnailUrl: "/after-the-fear-hero.webp",
+    title: "What we remove",
+    version: 1,
+    videoUrl: null,
+  },
+  "hold-the-room": {
+    access,
+    bodyMarkdown:
+      "A useful room does not rush to fill silence. It gives the truth enough time to arrive.\n\nBefore your next Circle, lower the pace. Ask one honest question. Let the first answer pass, then stay for the answer underneath it.",
+    captionsUrl: null,
+    collectionName: "The practice",
+    durationLabel: "00:08",
+    externalUrl: null,
+    featured: false,
+    presenter: "Ruined",
+    publishedAt: "2026-08-16T16:00:00.000Z",
+    resourceType: "video",
+    slug: "hold-the-room",
+    storageBucket: null,
+    storagePath: null,
+    summary: "A short visual reset before the next honest conversation.",
+    thumbnailUrl: "/ruined-hero-lounge.jpg",
+    title: "Fireside / Hold the room",
+    version: 1,
+    videoUrl: "/sequences/fireside/fire-stream-loop-mobile.mp4",
+  },
+  "work-without-performance": {
+    access,
+    bodyMarkdown:
+      "Performance asks how the work will look. Practice asks what the work requires. Those questions create different days.\n\nProtect a block of time that cannot be displayed, announced, or optimized. Use it to make the part only you can make.",
+    captionsUrl: null,
+    collectionName: "The practice",
+    durationLabel: "07 min",
+    externalUrl: null,
+    featured: false,
+    presenter: "Cade Mangelson",
+    publishedAt: "2026-08-12T16:00:00.000Z",
+    resourceType: "article",
+    slug: "work-without-performance",
+    storageBucket: null,
+    storagePath: null,
+    summary: "Build a practice that remains useful when nobody is watching.",
+    thumbnailUrl: "/ruined-work-shelf.webp",
+    title: "Work without performance",
+    version: 1,
+    videoUrl: null,
+  },
+  "bring-your-own-burden-01": {
+    access,
+    bodyMarkdown:
+      "Bring Your Own Burden is a room for telling the truth without turning it into content. Watch how the first gathering held tension, humor, and unfinished work at the same table.\n\nAfter watching, write down what you would bring into the room and what you would be willing to leave there.",
+    captionsUrl: null,
+    collectionName: "Field films",
+    durationLabel: "00:29",
+    externalUrl: null,
+    featured: false,
+    presenter: "Ruined Community",
+    publishedAt: "2026-08-10T16:00:00.000Z",
+    resourceType: "video",
+    slug: "bring-your-own-burden-01",
+    storageBucket: null,
+    storagePath: null,
+    summary: "A field film from the first Bring Your Own Burden gathering.",
+    thumbnailUrl: "/events/byob-01-recap-poster.webp?v=2",
+    title: "Bring Your Own Burden / 01",
+    version: 1,
+    videoUrl: "/events/byob-01-recap.mp4?v=2",
+  },
+  "after-the-fear": {
+    access,
+    bodyMarkdown:
+      "Fear gets loud near the edge of a real decision. The aim is not to wait until it disappears. The aim is to make the next honest move while it is still in the room.\n\nWrite the decision in one sentence. Remove every imagined audience. What remains is where the work begins.",
+    captionsUrl: null,
+    collectionName: "Field films",
+    durationLabel: "05 min",
+    externalUrl: null,
+    featured: false,
+    presenter: "Ruined",
+    publishedAt: "2026-08-08T16:00:00.000Z",
+    resourceType: "article",
+    slug: "after-the-fear",
+    storageBucket: null,
+    storagePath: null,
+    summary: "A field note for the moment after certainty stops being available.",
+    thumbnailUrl: "/after-the-fear-hero.webp",
+    title: "After the fear",
+    version: 1,
+    videoUrl: null,
+  },
+} satisfies Record<string, MemberLearningResourceDetail>;
+
+type PreviewLearningSlug = keyof typeof PREVIEW_MEMBER_LEARNING_DETAILS;
+
+export function getPreviewMemberLearningResource(
+  slug: string,
+): MemberLearningResourceDetail | null {
+  return (
+    (PREVIEW_MEMBER_LEARNING_DETAILS as Record<string, MemberLearningResourceDetail>)[slug] ??
+    null
+  );
+}
+
+function previewLearningSummary(
+  id: string,
+  slug: PreviewLearningSlug,
+): MemberLearningSnapshot["collections"][number]["resources"][number] {
+  const resource = PREVIEW_MEMBER_LEARNING_DETAILS[slug];
+  return {
+    captionsUrl: resource.captionsUrl,
+    collectionName: resource.collectionName,
+    durationLabel: resource.durationLabel,
+    featured: resource.featured,
+    href: `/my/learn/${resource.slug}`,
+    id,
+    presenter: resource.presenter,
+    publishedAt: resource.publishedAt,
+    resourceType: resource.resourceType,
+    summary: resource.summary,
+    thumbnailUrl: resource.thumbnailUrl,
+    title: resource.title,
+    videoUrl: resource.videoUrl,
+  };
+}
+
 export const PREVIEW_MEMBER_LEARNING: MemberLearningSnapshot = {
   access,
   collections: [
     {
-      description: "The shared language carried forward from Foundations.",
-      id: "preview-learning-collection",
+      description: "The shared language and first moves of Ruined membership.",
+      id: "preview-learning-start-here",
+      name: "Start here",
+      resources: [
+        previewLearningSummary("preview-learning-welcome", "welcome-to-ruined"),
+        previewLearningSummary("preview-learning-next-true-thing", "the-next-true-thing"),
+        previewLearningSummary("preview-learning-what-we-remove", "what-we-remove"),
+      ],
+      slug: "start-here",
+    },
+    {
+      description: "Training for clearer attention, steadier work, and more useful rooms.",
+      id: "preview-learning-practice",
       name: "The practice",
       resources: [
-        {
-          collectionName: "The practice",
-          href: "/my/learn/the-next-true-thing",
-          id: "preview-learning-resource",
-          publishedAt: "2026-08-20T16:00:00.000Z",
-          resourceType: "article",
-          summary: "A short field note on choosing what deserves the next move.",
-          title: "The next true thing",
-        },
+        previewLearningSummary("preview-learning-hold-room", "hold-the-room"),
+        previewLearningSummary(
+          "preview-learning-work-without-performance",
+          "work-without-performance",
+        ),
       ],
       slug: "the-practice",
+    },
+    {
+      description: "The principles tested in gatherings, studios, and unfinished work.",
+      id: "preview-learning-field-films",
+      name: "Field films",
+      resources: [
+        previewLearningSummary(
+          "preview-learning-bring-your-own-burden",
+          "bring-your-own-burden-01",
+        ),
+        previewLearningSummary("preview-learning-after-the-fear", "after-the-fear"),
+      ],
+      slug: "field-films",
     },
   ],
   uncollected: [],
 };
 
-export const PREVIEW_MEMBER_LEARNING_DETAIL: MemberLearningResourceDetail = {
-  access,
-  bodyMarkdown:
-    "The next true thing is rarely the loudest option. It is the choice that remains after performance, urgency, and borrowed expectation are removed.\n\nChoose one thing. Name why it matters. Let the rest wait.",
-  collectionName: "The practice",
-  externalUrl: null,
-  publishedAt: "2026-08-20T16:00:00.000Z",
-  resourceType: "article",
-  slug: "the-next-true-thing",
-  storageBucket: null,
-  storagePath: null,
-  summary: "A short field note on choosing what deserves the next move.",
-  title: "The next true thing",
-  version: 1,
-};
-
 export const PREVIEW_MEMBER_ARTIFACTS: MemberArtifactsSnapshot = {
   access,
-  awards: [
-    {
-      artifactState: "collecting",
-      awardId: "preview-artifact",
-      earnedAt: "2026-08-25T16:00:00.000Z",
-      earnedReason: "Foundations completed",
-      fulfilledAt: null,
-      imageUrl: null,
-      inputRequired: true,
-      name: "Foundations Artifact",
-      trackingUrl: null,
-    },
-  ],
+  awards: [previewArtifact],
 };
 
 export const PREVIEW_MEMBER_UPDATES: MemberUpdatesSnapshot = {

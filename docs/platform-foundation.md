@@ -3,7 +3,7 @@
 This increment establishes two private application surfaces:
 
 - `/my` for a member's next action, Foundations, Circle, Artifacts, and account.
-- `/ops` for internal member, progress, Circle, Block, access, and billing
+- `/ops` for internal member, Foundations, Circle, Block, access, and billing
   visibility.
 
 The local preview is intentionally read-only. It uses fixture data only outside
@@ -25,7 +25,7 @@ Each system has one job:
 The membership operating spine is additive. A durable `people` record now sits
 above login and membership, so one Person may be both a member and an operator
 and may accumulate verified event, learning, purchase, Artifact, leadership,
-and progression history over time. Existing member and login writers remain
+and membership history over time. Existing member and login writers remain
 compatible during the dual-write release: a missing Person bridge is created in
 the same transaction, while conflicting email-to-Person links fail closed and
 require an audited merge.
@@ -108,7 +108,7 @@ requires an existing active member account. Creating that identity leaves the
 program at `prospect`; it does not activate membership. In connected mode,
 Foundations, Circle, and Artifacts are server-gated until the member has active
 account, billing, and onboarding state. Operator permissions are app-owned
-database roles, not editable profile metadata. Circle leaders and guides see
+database roles, not editable profile metadata. Shapers and guides see
 assigned members only; an active `ops_admin` can see all members.
 
 A member may start and continue Foundations before being placed in a Circle.
@@ -124,6 +124,57 @@ historical version is not rewritten, but the completion guard applies the same
 default to future completion attempts on that version. Enrollments completed
 before this migration remain historical evidence and are not reopened.
 
+## Circle communication with Google
+
+Ruined remains the member and operator home. Google Chat owns Circle
+conversation, and Google Meet owns live gatherings; the portal does not iframe
+either product or copy Chat messages into Postgres.
+
+Operators connect a private Chat space to a Circle. An Experience can also use a
+manually supplied Meet room as a fallback, but the normal workflow is now
+Calendar-owned: **Publish + send invite** creates one private Google Calendar
+event, one unique Meet conference, and attendee invitations from the configured
+Ruined Workspace organizer. Editing the Experience or changing its roster marks
+that same event for reconciliation. A member registration, cancellation, or
+automatic waitlist promotion commits in Ruined first and then reconciles that
+same invitation; if Google is unavailable, the member's place remains correct
+and the durable operator state stays pending for retry. Cancelling an Experience
+sends a Calendar cancellation instead of silently deleting Ruined history.
+
+Circle and Block Experiences resolve current, eligible members in the assigned
+group. All-member Experiences resolve every current eligible member. Public and
+invite-only Experiences invite only confirmed registrations, including guests
+who are not members. An explicit
+waitlist or cancellation is always excluded, and only a verified primary email
+is sent to Google. The private Calendar ledgers store current sync state,
+retry-safe operator intent, provider acknowledgement, and per-person
+reconciliation evidence. They do not claim that an email reached an inbox and
+they never store Google credentials or tokens. Each link permanently records
+both the Calendar ID and delegated organizer email so changing server settings
+cannot silently move an existing event to another Workspace account.
+
+The existing `integration_entity_links` table continues to store protected
+`circle -> chat_space` and `experience -> meet_space` destinations. Member pages
+receive only protected Ruined routes. Those routes re-check active membership,
+the current Circle or Experience audience, and the approved Google host before
+redirecting.
+
+Set `GOOGLE_COMMUNICATIONS_LIVEMODE=false` for test mappings or `true` for live
+mappings. An omitted or invalid value exposes no links and rejects operator
+writes. Before enabling the controls, apply the complete platform migration so
+the Experience, audit, mode-aware integration, and private Calendar sync tables
+all exist.
+
+Calendar delivery is independently fail-closed. Keep
+`GOOGLE_CALENDAR_ENABLED=false` until the dedicated service account is created,
+the Calendar API is enabled, and a Workspace super administrator grants
+domain-wide delegation for only `calendar.events.owned`. Configure
+`GOOGLE_CALENDAR_ORGANIZER_EMAIL=connect@theruinedproject.com`, keep its Calendar
+ID as `primary` unless a dedicated owned calendar is selected, and store the
+base64 service-account JSON only in the server environment. This credential is
+intentionally separate from the Google Sheets service account. Prove the setup
+with a private test Experience before enabling production invitations.
+
 ## Membership operating spine
 
 The five ordered operating-spine migrations add these boundaries without
@@ -133,12 +184,12 @@ deleting or rewriting existing records:
    private/public profile separation, dual member/operator roles, and audited
    identity merges.
 2. **Lifecycle and agreements:** administrative onboarding, standing,
-   cancellation, progression, immutable agreement versions and acceptance
+   cancellation, immutable agreement versions and acceptance
    snapshots, and deterministic database-backed receipts. Checkout attempts
    bind to the acceptance UUID that authorized them.
 3. **Community and learning:** closed-by-default directory preferences,
-   accountability pairs, Circle meetings and other experiences, registration
-   and attendance, versioned learning resources, audience targeting, Circle
+   Circle staff, Circle meetings and other experiences, registration and
+   attendance, versioned learning resources, audience targeting, Circle
    resources, and member saves.
 4. **Foundations and automation:** versioned Timeline entries, requirement
    markers, member milestones, Artifact awards, internal domain events,
@@ -150,6 +201,13 @@ deleting or rewriting existing records:
    redactions, tasks and task events, constrained overrides, and operator audit
    events.
 
+The additive Shaper and Circle-resource migration retires accountability pairing
+without deleting its historical records. It closes active pairs, changes any
+pair-only contact preference to private, rejects new pairs, and removes their
+member read policy. Circle leadership now uses append-preserving Shaper
+assignments, while Circle resources pin an exact published version and are ended
+rather than overwritten.
+
 All new public tables enable row-level security and begin with explicit revoked
 privileges. Browser-readable tables receive narrowly scoped self or entitlement
 policies; operator and worker writes continue through the trusted server
@@ -157,9 +215,58 @@ connection. Billing, agreement acceptance, and Foundations completion are not
 operator-overridable.
 
 The schema deliberately supplies infrastructure rather than inventing business
-facts. It does not seed agreement language, learning content, Artifact templates,
-fulfillment instructions, event schedules, or announcement copy. Those records
-must be published through the operator workflow after approval.
+facts. It does not seed agreement language, learning content, fulfillment
+instructions, event schedules, or announcement copy. Those records must be
+published through the operator workflow after approval. The sole approved
+Artifact seed is The First Coin v1 and its verified live Shopify binding.
+
+## Operator control surfaces
+
+The operator portal is the working control layer for the member experience:
+
+- `/ops/circles` assigns and ends Shapers, manages Circle membership, and pins
+  exact published resources without overwriting history. Accountability pairing
+  and promotion-style progression are retired from the active experience.
+- `/ops/experiences` creates and publishes events, manages capacity, ordered
+  waitlists, roster changes, attendance, cancellation, completion, archive
+  history, and permissioned Google Calendar invitations with a unique Meet.
+- `/ops/academy` creates immutable learning versions, collections, audiences,
+  video sources, captions, downloads, publishing, unpublishing, and retirement.
+- `/ops/artifacts` manages immutable templates, exact live Shopify bindings,
+  retry-safe awards, production work, fulfillment, tracking corrections, and
+  delivery reconciliation across the shipment, award, job, and member state.
+- `/ops/members/[memberId]` supports targeted profile corrections under operator
+  authorization. Private profile reads and changed field categories are audited;
+  private values are not copied into audit evidence.
+- `/ops/announcements` publishes audience-targeted member communications, while
+  `/ops/notifications` sends retry-safe in-app notifications to all active
+  members, one Block, one Circle, or one member and shows delivery/read state.
+
+Every mutation re-checks the operator's current server-side role and scope.
+Direct member reads remain protected by row-level security, and former, unpaid,
+or administratively incomplete members cannot read member updates.
+
+### Artifact products
+
+An earned Artifact remains a Ruined membership record, while Shopify remains the
+product catalogue. A published `artifact_template_versions` record may bind the
+two inside its immutable `production_specification`:
+
+```json
+{
+  "shopify": {
+    "product_gid": "gid://shopify/Product/123456789",
+    "product_handle": "the-first-coin"
+  }
+}
+```
+
+The Product GID is the durable identity; the handle is only a route snapshot.
+Member pages resolve the GID against the current live Storefront catalogue and
+use Shopify's current handle and featured image. Missing, unpublished, or
+unconfigured products leave the Artifact visible but produce no storefront link.
+Do not publish the binding until the Shopify product exists. The first approved
+Artifact is **The First Coin**, described as **A hand-forged artifact.**
 
 A Block is the layer above a Circle: one Block contains multiple current
 Circles. It helps operators organize the membership but adds no Foundations

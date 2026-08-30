@@ -78,7 +78,7 @@ test("Home removes private highlights for entry and limited access", () => {
   assert.match(home, /access\.mode === "entry" \|\| access\.mode === "limited" \|\| access\.mode === "suspended"/);
   assert.match(home, /blockName: suppressPrivateHighlights \? null/);
   assert.match(home, /circleName: suppressPrivateHighlights \? null/);
-  assert.match(home, /partner: suppressPrivateHighlights \? null/);
+  assert.doesNotMatch(home, /partner:|accountabilityPartner/);
   assert.match(home, /unreadUpdates: suppressPrivateHighlights \? 0/);
   assert.match(home, /const firstArtifact = suppressPrivateHighlights \? null/);
   assert.match(home, /const latestAnnouncement = suppressPrivateHighlights/);
@@ -93,6 +93,8 @@ test("Circle directory visibility is an explicit hidden-by-default member choice
   assert.match(repository, /const directoryStatus = input\.directory\.directoryStatus/);
   assert.doesNotMatch(repository, /const directoryStatus = "circle_visible"/);
   assert.match(repository, /directory_status: directoryStatus/);
+  assert.doesNotMatch(profileEditor, /accountability_partner|Accountability partner/);
+  assert.doesNotMatch(profileApi, /accountability_partner/);
 });
 
 test("Future Letter navigation waits for the durable marker and never submits its text", () => {

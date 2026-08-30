@@ -19,6 +19,17 @@ const migrations = [
   "../db/migrations/20260826_membership_operating_spine_03_community_experiences.sql",
   "../db/migrations/20260826_membership_operating_spine_04_foundations_automation.sql",
   "../db/migrations/20260826_membership_operating_spine_05_content_operations.sql",
+  "../db/migrations/20260828_first_coin_artifact_template.sql",
+  "../db/migrations/20260828_operator_experience_management.sql",
+  "../db/migrations/20260828_circle_shaper_resources.sql",
+  "../db/migrations/20260828_operator_academy.sql",
+  "../db/migrations/20260828_operator_artifact_fulfillment.sql",
+  "../db/migrations/20260828_operator_artifact_hardening.sql",
+  "../db/migrations/20260828_operator_notification_hardening.sql",
+  "../db/migrations/20260829_operator_google_calendar_sync.sql",
+  "../db/migrations/20260829_operator_google_calendar_sync_hardening.sql",
+  "../db/migrations/20260829_operator_google_calendar_meet_url_constraint.sql",
+  "../db/migrations/20260829_operator_access_management.sql",
 ];
 
 function migrationBody(migration, migrationName) {

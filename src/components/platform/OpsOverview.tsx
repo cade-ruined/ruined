@@ -96,7 +96,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
 
   return (
     <OperatorPageFrame title="Overview">
-      <nav className="mt-14 grid grid-cols-2 bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
+      <nav className="mt-14 grid grid-cols-2 overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
         {snapshot.map((item, index) => (
           <Link
             className={`group min-h-24 px-5 py-5 transition-colors hover:bg-white/[0.055] sm:px-6 ${index === snapshot.length - 1 ? "col-span-2 lg:col-span-1" : ""}`}
@@ -136,7 +136,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
                         <time className="text-xs tabular-nums text-black/35" dateTime={item.occurredAt}>{formatTime(item.occurredAt)}</time>
                       </>
                     );
-                    const className = "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-4 bg-black/[0.025] px-4 py-4 transition-colors hover:bg-black/[0.055] sm:px-5";
+                    const className = "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-4 rounded-[4px] bg-black/[0.025] px-4 py-4 transition-colors hover:bg-black/[0.055] sm:px-5";
                     return item.href ? (
                       <Link className={className} href={item.href} key={item.activityId}>{content}</Link>
                     ) : (
@@ -147,13 +147,13 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
               </div>
             ))}
             {data.activity.length === 0 ? (
-              <p className="bg-black/[0.025] px-5 py-8 text-sm text-black/48">No recent activity is visible.</p>
+              <p className="rounded-[4px] bg-black/[0.025] px-5 py-8 text-sm text-black/48">No recent activity is visible.</p>
             ) : null}
           </div>
         </section>
 
         <aside className="grid content-start gap-8">
-          <section className="bg-[var(--color-surface)] p-5 sm:p-6" aria-labelledby="priority-work-heading">
+          <section className="rounded-[4px] bg-[var(--color-surface)] p-5 sm:p-6" aria-labelledby="priority-work-heading">
             <div className="flex items-baseline justify-between gap-4">
               <h2 className="font-[var(--font-display)] text-2xl" id="priority-work-heading">Needs a decision</h2>
               <Link className="text-sm text-black/45 underline decoration-black/25 underline-offset-4 hover:text-black" href="/ops/work">All work</Link>
@@ -172,14 +172,14 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
             </div>
           </section>
 
-          <section className="bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6" aria-labelledby="upcoming-heading">
+          <section className="rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6" aria-labelledby="upcoming-heading">
             <div className="flex items-baseline justify-between gap-4">
               <h2 className="font-[var(--font-display)] text-2xl" id="upcoming-heading">Next</h2>
               <Link className="text-sm text-white/45 underline decoration-white/25 underline-offset-4 hover:text-white" href="/ops/experiences">Experiences</Link>
             </div>
             <div className="mt-5 grid gap-5">
               {data.upcomingExperiences.map((experience) => (
-                <Link className="group" href={`/ops/experiences#experience-${experience.experienceId}`} key={experience.experienceId}>
+                <Link className="group" href={`/ops/experiences/${experience.experienceId}`} key={experience.experienceId}>
                   <span className="block font-[var(--font-display)] text-xl leading-tight group-hover:text-[var(--color-poster)]">{experience.title}</span>
                   <span className="mt-2 block text-xs text-white/42">{formatExperienceDate(experience.startsAt)}</span>
                 </Link>
@@ -189,7 +189,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
           </section>
 
           {data.canPlaceMembers ? (
-            <Link className="bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white transition-colors hover:bg-[#080605]" href="/ops/members?filter=unassigned">
+            <Link className="rounded-[4px] bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white shadow-[5px_5px_0_#080605] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-[#080605] hover:shadow-[2px_2px_0_#080605]" href="/ops/members?filter=unassigned">
               Place {data.counts.eligibleWithoutCircle} eligible member{data.counts.eligibleWithoutCircle === 1 ? "" : "s"} into a Circle →
             </Link>
           ) : null}

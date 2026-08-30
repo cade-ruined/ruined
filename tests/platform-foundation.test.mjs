@@ -167,7 +167,11 @@ test("passwordless OTP endpoints enforce origin, audience, and generic delivery 
   assert.match(authRequestRoute, /if \(eligibility === "none"\) return response/);
   assert.match(
     authRequestRoute,
-    /audience === "member" && eligibility === "invited"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
+    /eligibility === "invited"[\s\S]*audience === "member"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
+  );
+  assert.match(
+    authRequestRoute,
+    /eligibility === "invited"[\s\S]*else \{[\s\S]*options = \{ shouldCreateUser: true \}/,
   );
   assert.match(authRequestRoute, /let options: [\s\S]*shouldCreateUser: false/);
   assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*email,[\s\S]*options,[\s\S]*\}\)/);

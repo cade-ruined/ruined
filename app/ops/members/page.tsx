@@ -108,9 +108,9 @@ export default async function OperationsMembersPage({
     <OperatorPageFrame title="Members">
       <OperatorMemberDirectory directory={directory} />
       {actions ? (
-        <details className="group mt-10 bg-[var(--color-surface)]">
+        <details className="group mt-10 rounded-[4px] bg-[var(--color-surface)]">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
-            <span>Invite a member</span>
+            <span>Allow a member to join</span>
             <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
           </summary>
           <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>

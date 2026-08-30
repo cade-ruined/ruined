@@ -1,12 +1,19 @@
 import type {
   OpsAnnouncementSummary,
   OpsArtifactQueueItem,
+  OpsCircleCommunicationItem,
   OpsExperienceDirectoryItem,
   OpsMemberRecord,
   OpsOverviewData,
   OpsSystemHealth,
   OpsWorkQueue,
 } from "@/lib/platform/ops-model";
+import type { OpsArtifactControlData } from "@/lib/platform/ops-artifact-repository";
+import type { OpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
+import type {
+  OpsCircleManagementOptions,
+  OpsCircleSummary,
+} from "@/lib/platform/ops-repository";
 
 const PREVIEW_NOW = "2026-08-26T16:00:00.000Z";
 
@@ -27,9 +34,10 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
     access: {
       authUserId: "preview-operator",
       capabilities: [
-        "accountability.manage",
         "announcement.manage",
         "artifact.manage",
+        "circle.resource.manage",
+        "circle.shaper.manage",
         "experience.manage",
         "member.agreement_evidence.read",
         "member.billing_detail.read",
@@ -46,14 +54,6 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
       roles: ["ops_admin"],
     },
     community: {
-      accountabilityPartner: hasCircle
-        ? {
-            assignedAt: "2026-08-02T18:00:00.000Z",
-            assignmentId: "preview-accountability-01",
-            memberId: "preview-04",
-            preferredName: "Member 04",
-          }
-        : null,
       block: hasCircle
         ? { blockId: "preview-block-01", name: "Block 01", state: "active" }
         : null,
@@ -61,13 +61,13 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
         ? {
             circleId: "preview-circle-01",
             guides: ["Guide 01"],
-            leaderName: "Leader 01",
             members: [
               { memberId: "preview-01", preferredName: "Member 01" },
               { memberId: "preview-02", preferredName: "Member 02" },
               { memberId: "preview-04", preferredName: "Member 04" },
             ],
             name: "Circle 01",
+            shaperName: "Shaper 01",
             state: "active",
           }
         : null,
@@ -159,9 +159,6 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
         state: isComplete ? "completed" : isNew ? "not_started" : "in_progress",
         timelineCompletedAt: isComplete ? "2026-08-10T17:00:00.000Z" : null,
       },
-      progression: isComplete
-        ? { assignedAt: "2026-08-12T19:00:00.000Z", levelName: "Builder" }
-        : null,
     },
     membership: {
       agreement: {
@@ -292,11 +289,138 @@ export const PREVIEW_OPS_ARTIFACTS: OpsArtifactQueueItem[] = [
   },
 ];
 
+export const PREVIEW_OPS_ARTIFACT_CONTROLS: OpsArtifactControlData = {
+  members: [
+    { memberId: "11111111-1111-4111-8111-111111111101", name: "Member 01" },
+    { memberId: "11111111-1111-4111-8111-111111111104", name: "Member 04" },
+  ],
+  shipments: [
+    {
+      artifactJobId: "77777777-7777-4777-8777-777777777777",
+      carrier: "UPS",
+      createdAt: "2026-08-26T16:00:00.000Z",
+      memberName: "Member 04",
+      serviceLevel: "Ground",
+      shipmentId: "88888888-8888-4888-8888-888888888888",
+      status: "label_created",
+      trackingNumber: "1ZRUINEDPREVIEW",
+      trackingUrl: "https://www.ups.com/track?loc=en_US&tracknum=1ZRUINEDPREVIEW",
+      updatedAt: "2026-08-26T16:00:00.000Z",
+      version: 1,
+    },
+  ],
+  templates: [
+    {
+      bindingVerified: true,
+      description: "A hand-forged Artifact.",
+      livemode: true,
+      name: "The First Coin",
+      productGid: "gid://shopify/Product/10356658274625",
+      productHandle: "the-first-coin",
+      status: "active",
+      templateId: "21935b51-7cbf-4cad-9564-380662b75c1b",
+      templateSlug: "the-first-coin",
+      version: 1,
+      versionId: "2a1df4c5-7e44-4d50-a832-ec78c21de0ab",
+      versionStatus: "published",
+    },
+  ],
+};
+
+export const PREVIEW_OPS_CIRCLES: OpsCircleSummary[] = [
+  {
+    activeMembers: 3,
+    blockId: "11111111-1111-4111-8111-111111111120",
+    blockName: "Block 01",
+    blockStatus: "active",
+    capacity: 10,
+    id: "11111111-1111-4111-8111-111111111110",
+    name: "Circle 01",
+    resources: [
+      {
+        assignedAt: "2026-08-20T16:00:00.000Z",
+        assignmentId: "11111111-1111-4111-8111-111111111150",
+        isPinned: true,
+        resourceId: "11111111-1111-4111-8111-111111111140",
+        title: "Circle working agreement",
+        version: 1,
+        versionId: "11111111-1111-4111-8111-111111111141",
+      },
+    ],
+    shaper: {
+      assignedAt: "2026-08-19T16:00:00.000Z",
+      assignmentId: "11111111-1111-4111-8111-111111111130",
+      authUserId: "11111111-1111-4111-8111-111111111131",
+      name: "Shaper 01",
+    },
+    slug: "circle-01",
+    status: "active",
+  },
+];
+
+export const PREVIEW_OPS_CIRCLE_MANAGEMENT: OpsCircleManagementOptions = {
+  resources: [
+    {
+      resourceId: "11111111-1111-4111-8111-111111111142",
+      title: "September practice",
+      version: 2,
+      versionId: "11111111-1111-4111-8111-111111111143",
+    },
+  ],
+  shapers: [
+    { authUserId: "11111111-1111-4111-8111-111111111132", name: "Shaper 02" },
+  ],
+};
+
+export function getPreviewOpsMemberProfileSupport(memberId: string): OpsMemberProfileSupport {
+  const memberNumber = memberId.endsWith("04") ? "04" : memberId.endsWith("02") ? "02" : "01";
+  return {
+    accessibilityNotes: "Needs step-free access for longer gatherings.",
+    address: {
+      addressLine1: "125 Ruined Way",
+      addressLine2: null,
+      city: "Salt Lake City",
+      countryCode: "US",
+      postalCode: "84101",
+      region: "UT",
+    },
+    apparelTopSize: "M",
+    avatarStoragePath: null,
+    bio: "A builder making fewer, better things.",
+    buildingNow: "A more deliberate creative practice.",
+    directoryStatus: "circle_visible",
+    displayName: `Member ${memberNumber}`,
+    legalName: `Preview Member ${memberNumber}`,
+    location: "Alpine, Utah",
+    mobile: "+18015550199",
+    preferredName: `Member ${memberNumber}`,
+    timezone: "America/Denver",
+    version: "2026-08-26T16:00:00.000Z|2026-08-26T16:00:00.000Z",
+  };
+}
+
+export const PREVIEW_OPS_CIRCLE_COMMUNICATIONS: OpsCircleCommunicationItem[] = [
+  {
+    activeMembers: 3,
+    blockId: "preview-block-01",
+    blockName: "Block 01",
+    blockStatus: "active",
+    capacity: 10,
+    chatUrl: "https://chat.google.com/room/preview-circle-01",
+    googleCommunicationsConfigured: true,
+    id: "preview-circle-01",
+    name: "Circle 01",
+    status: "active",
+  },
+];
+
 export const PREVIEW_OPS_EXPERIENCES: OpsExperienceDirectoryItem[] = [
   {
     endsAt: "2026-09-04T03:00:00.000Z",
     experienceId: "preview-experience-circle-01",
+    googleCommunicationsConfigured: true,
     kind: "circle_meeting",
+    meetingUrl: "https://meet.google.com/abc-mnop-xyz",
     registeredCount: 8,
     scope: "Circle 01",
     startsAt: "2026-09-04T01:00:00.000Z",
@@ -306,7 +430,9 @@ export const PREVIEW_OPS_EXPERIENCES: OpsExperienceDirectoryItem[] = [
   {
     endsAt: "2026-09-20T03:00:00.000Z",
     experienceId: "preview-experience-02",
+    googleCommunicationsConfigured: true,
     kind: "academy",
+    meetingUrl: null,
     registeredCount: 31,
     scope: "All active members",
     startsAt: "2026-09-20T00:00:00.000Z",
@@ -409,6 +535,7 @@ export const PREVIEW_OPS_SYSTEM: OpsSystemHealth = {
     { detail: "Membership operating record", label: "Postgres", lastSucceededAt: PREVIEW_NOW, state: "connected" },
     { detail: "Read-only billing projection", label: "Stripe", lastSucceededAt: PREVIEW_NOW, state: "connected" },
     { detail: "Member email delivery", label: "Resend", lastSucceededAt: "2026-08-26T15:42:00.000Z", state: "attention" },
+    { detail: "Invitations organized by connect@theruinedproject.com", label: "Google Calendar", lastSucceededAt: PREVIEW_NOW, state: "connected" },
   ],
   workflowFailures: [
     {

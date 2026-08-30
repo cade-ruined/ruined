@@ -166,15 +166,12 @@ test("every profile Upcoming row opens its canonical event detail", () => {
   assert.doesNotMatch(upcoming, /href=\{experience\.registrationHref\}/);
 });
 
-test("experience index titles open canonical details and rows expose matching IDs", () => {
-  const row = section(
-    memberExperiences,
-    "function ExperienceRow",
-    "export default function MemberExperiences",
-  );
-  assert.match(row, /<li[^>]*\bid=\{`experience-\$\{experience\.id\}`\}/);
-  assert.match(
-    row,
-    /<h3[\s\S]*?<Link[^>]*href=\{experience\.detailHref\}[\s\S]*?\{experience\.title\}[\s\S]*?<\/Link>[\s\S]*?<\/h3>/,
-  );
+test("member calendar selects snapshot events and preserves canonical detail links", () => {
+  assert.match(memberExperiences, /data-experiences-calendar/);
+  assert.match(memberExperiences, /\.\.\.experiences\.upcoming, \.\.\.experiences\.past/);
+  assert.match(memberExperiences, /id=\{`experience-\$\{selected\.id\}`\}/);
+  assert.match(memberExperiences, /href=\{selected\.detailHref\}/);
+  assert.match(memberExperiences, /selected\.registrationHref/);
+  assert.match(memberExperiences, /window\.addEventListener\("hashchange", selectFromHash\)/);
+  assert.doesNotMatch(memberExperiences, /MemberPageHeader/);
 });

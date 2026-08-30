@@ -1,0 +1,1512 @@
+.root {
+  --timeline-ground: #ebe5da;
+  --timeline-panel: #0a0a09;
+  --timeline-ink: #0a0a09;
+  --timeline-rule: #bcb5a9;
+  --timeline-faint: #ddd7cc;
+  --timeline-muted: #6c675f;
+  --timeline-panel-rule: #635e56;
+  --timeline-panel-muted: #aaa398;
+  color-scheme: light;
+  width: 100%;
+  max-width: 88rem;
+  margin: 0 auto;
+  color: var(--timeline-ink);
+  font-family: var(--font-body);
+}
+
+.root * {
+  box-sizing: border-box;
+}
+
+.root button,
+.root input,
+.root textarea {
+  font: inherit;
+}
+
+.app {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.uiHeading,
+.toolTitle {
+  margin: 0;
+  font-family: var(--font-header) !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+.toolTitle {
+  font-size: clamp(2.65rem, 5vw, 4.8rem);
+  line-height: 0.8;
+}
+
+.uiHeading {
+  font-size: clamp(1.65rem, 3vw, 2.75rem);
+  line-height: 0.92;
+}
+
+.kicker,
+.status,
+.visualInstruction,
+.indexNumber,
+.indexDate,
+.indexReturn,
+.eventDate,
+.eventIndex,
+.roadLabel {
+  font-family: var(--font-header);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.kicker {
+  margin: 0 0 0.55rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.13em;
+}
+
+.handNote {
+  margin: 0 0 0.7rem;
+  color: var(--color-poster);
+  font-family: var(--font-handwritten);
+  font-size: 1.35rem;
+  line-height: 1;
+  transform: rotate(-1deg);
+}
+
+.button {
+  min-height: 44px;
+  appearance: none;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0.68rem 0.9rem;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-header);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.button:hover {
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.button:disabled,
+.textButton:disabled,
+.indexRevise:disabled,
+.undo button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.button:focus-visible,
+.textButton:focus-visible,
+.indexSelect:focus-visible,
+.indexRevise:focus-visible,
+.roadEvent:focus-visible,
+.reviseEvent:focus-visible,
+.undo button:focus-visible,
+.completionActions a:focus-visible,
+.formControl:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.primaryButton {
+  border-color: var(--timeline-ink);
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.primaryButton:hover {
+  background: transparent;
+  color: var(--timeline-ink);
+}
+
+.primaryButton:focus-visible {
+  outline-color: var(--timeline-ink);
+}
+
+.setup {
+  display: grid;
+  grid-template-columns: minmax(360px, 410px) minmax(0, 1fr);
+  align-items: stretch;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.editor {
+  position: relative;
+  z-index: 3;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border-right: 0;
+  background: var(--timeline-panel);
+  color: var(--timeline-ground);
+  color-scheme: dark;
+}
+
+.editorIntro {
+  margin-bottom: 2rem;
+}
+
+.editorIntro > p:last-child {
+  max-width: 30rem;
+  margin: 1rem 0 0;
+  color: var(--timeline-panel-muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.eventForm {
+  padding-top: 0;
+}
+
+.eventForm .uiHeading {
+  margin-bottom: 1.2rem;
+  font-size: clamp(1.75rem, 3vw, 2.45rem);
+}
+
+.field {
+  min-width: 0;
+  margin-bottom: 0.95rem;
+}
+
+.compactFields {
+  display: grid;
+  grid-template-columns: minmax(92px, 110px) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.formLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  margin-bottom: 0.32rem;
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.formLabel > span:first-child {
+  flex: 0 0 auto;
+  color: var(--timeline-panel-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+}
+
+.formLabel small {
+  margin-left: auto;
+  color: var(--timeline-panel-muted);
+  font-size: 0.53rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.formControl {
+  width: 100%;
+  min-height: 44px;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--timeline-panel-rule);
+  border-radius: 0;
+  padding: 0.58rem 0;
+  background: transparent;
+  color: var(--timeline-ground);
+  box-shadow: none;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+textarea.formControl {
+  min-height: 94px;
+  resize: vertical;
+}
+
+.formControl::placeholder {
+  color: #7e786f;
+  opacity: 1;
+}
+
+.formControl:focus {
+  border-bottom-color: var(--timeline-ground);
+  box-shadow: none;
+}
+
+.formControl[aria-invalid="true"] {
+  border-bottom-color: #f0a58f;
+}
+
+.characterCount {
+  margin: 0.35rem 0 0;
+  color: var(--timeline-panel-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.58rem;
+  text-align: right;
+}
+
+.error {
+  margin: 0.8rem 0 0;
+  color: #f0a58f;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+}
+
+.editor .primaryButton {
+  flex: 1 0 100%;
+  width: 100%;
+  border-color: var(--timeline-ground);
+  background: var(--timeline-ground);
+  color: var(--timeline-panel);
+}
+
+.editor .primaryButton:hover {
+  background: transparent;
+  color: var(--timeline-ground);
+}
+
+.editor .primaryButton:focus-visible {
+  outline-color: var(--timeline-ground);
+}
+
+.textButton {
+  min-height: 44px;
+  border: 0;
+  padding: 0.6rem 0.25rem;
+  background: transparent;
+  color: var(--timeline-panel-muted);
+  font-family: var(--font-header);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.textButton:hover {
+  color: var(--timeline-ground);
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+}
+
+.removeButton {
+  margin-left: auto;
+  color: #f0a58f;
+}
+
+.indexPanel {
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+}
+
+.indexHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.indexHeadingTools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.listToggle {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.55rem;
+  border: 0;
+  padding: 0.25rem 0 0.25rem 0.35rem;
+  background: transparent;
+  color: var(--timeline-muted);
+  font-family: var(--font-header);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.listToggleMark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgb(10 10 9 / 0.28);
+  border-radius: 3px;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.listToggle:hover .listToggleMark {
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.listToggle:focus-visible {
+  outline: 2px solid var(--timeline-ink);
+  outline-offset: 3px;
+}
+
+.indexActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.indexActions .button {
+  min-height: 38px;
+  padding: 0.6rem 0.78rem;
+}
+
+.status,
+.visualInstruction {
+  margin: 0;
+  color: var(--timeline-muted);
+  font-size: 0.56rem;
+  letter-spacing: 0.12em;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.status span {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+}
+
+.indexMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  color: var(--timeline-muted);
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.indexMeta p {
+  margin: 0;
+}
+
+.indexList {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.indexItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--timeline-ink);
+}
+
+.indexItemSelected {
+  margin-inline: -0.4rem;
+  padding-inline: 0.4rem;
+  border-radius: 3px;
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.indexContent,
+.indexRevise {
+  min-height: 64px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.indexContent {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(5.25rem, 0.58fr) minmax(0, 1.55fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.82rem 0;
+  text-align: left;
+}
+
+.indexRevise {
+  cursor: pointer;
+}
+
+.indexSelect:hover,
+.indexSelect:focus-visible {
+  background: rgb(10 10 9 / 0.055);
+}
+
+.indexItemSelected .indexSelect:hover,
+.indexItemSelected .indexSelect:focus-visible {
+  background: transparent;
+}
+
+.indexNumber,
+.indexDate,
+.indexReturn {
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+}
+
+.indexTitle {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-header);
+  font-size: 0.79rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.indexCopy {
+  min-width: 0;
+}
+
+.indexDetail {
+  display: -webkit-box;
+  max-width: 48ch;
+  margin-top: 0.28rem;
+  overflow: hidden;
+  color: var(--timeline-muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.indexReturn {
+  color: var(--timeline-muted);
+  text-align: right;
+}
+
+.indexReturn:empty {
+  display: none;
+}
+
+.indexItemSelected .indexReturn {
+  color: var(--timeline-panel-muted);
+}
+
+.indexRevise {
+  min-width: 72px;
+  border-left: 0;
+  padding: 0.75rem 0 0.75rem 0.8rem;
+  color: var(--timeline-muted);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.listFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.35rem;
+  border-radius: 0;
+  padding: 0.9rem 0 0;
+  background: transparent;
+}
+
+.listFooter p {
+  max-width: 29rem;
+  margin: 0;
+  color: var(--timeline-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.listFooter .kicker {
+  margin-bottom: 0.25rem;
+  color: var(--timeline-ink);
+}
+
+.listFooterActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.listFooterActions a {
+  color: var(--timeline-muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+  text-transform: uppercase;
+}
+
+.listFooterActions .button {
+  min-height: 40px;
+}
+
+.indexRevise:hover,
+.indexRevise:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.emptyIndex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 112px;
+  padding: 1rem 0;
+  color: var(--timeline-muted);
+  font-size: 0.82rem;
+}
+
+.emptyIndex p {
+  margin: 0;
+}
+
+.undo {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.8rem;
+  padding-top: 0.75rem;
+  color: var(--timeline-muted);
+  font-size: 0.72rem;
+}
+
+.undo button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--timeline-ink);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-decoration: underline;
+  text-underline-offset: 0.22rem;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.visual {
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+}
+
+.visualHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.visualHeading .uiHeading {
+  max-width: 42rem;
+}
+
+.visualInstruction {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.stage,
+.stageEmpty {
+  position: relative;
+  min-width: 0;
+  min-height: 560px;
+  overflow: hidden;
+  border-top: 1px solid var(--timeline-rule);
+  border-bottom: 1px solid var(--timeline-rule);
+  background-color: var(--timeline-ground);
+  background-image:
+    linear-gradient(rgb(229 224 213 / 0.18), rgb(229 224 213 / 0.18)),
+    url("/textures/ruined-timeline-paper.png");
+  background-position: center;
+  background-size: cover;
+  background-blend-mode: multiply;
+}
+
+.stageEmpty {
+  display: flex;
+  min-height: 400px;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--timeline-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.stageMark {
+  position: absolute;
+  z-index: 1;
+  top: 0.55rem;
+  right: 0;
+  color: var(--timeline-ink);
+  font-family: var(--font-header);
+  font-size: clamp(2.8rem, 7vw, 6rem);
+  font-weight: 900;
+  letter-spacing: -0.07em;
+  line-height: 1;
+  opacity: 0.055;
+  pointer-events: none;
+}
+
+.roadSvg,
+.roadEvents {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.roadEvents {
+  z-index: 2;
+  list-style: none;
+}
+
+.roadEventItem {
+  position: absolute;
+  margin: 0;
+}
+
+.eventActive {
+  z-index: 3;
+  border-radius: 3px;
+  background: var(--timeline-ink);
+}
+
+.roadEvent {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-top: 1px solid var(--timeline-rule);
+  border-radius: 0;
+  padding: 0.62rem 0;
+  background: transparent;
+  color: var(--timeline-ink);
+  box-shadow: none;
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.roadEvent:not(.roadEventSelected) .eventMeta {
+  opacity: 0.62;
+}
+
+.roadEvent:not(.roadEventSelected) .eventTitle {
+  opacity: 0.79;
+}
+
+.roadEvent:hover,
+.roadEvent:focus-visible {
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+.roadEventSelected,
+.roadEventSelected:hover,
+.roadEventSelected:focus-visible {
+  border-top-color: var(--timeline-ink);
+  border-radius: 3px 3px 0 0;
+  padding: 0.82rem 0.9rem 0.92rem;
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+  opacity: 1;
+  transform: none;
+}
+
+.eventMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.eventLeft .eventMeta {
+  flex-direction: row-reverse;
+}
+
+.eventRight {
+  text-align: left;
+}
+
+.eventDate,
+.eventIndex {
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+}
+
+.eventTitle,
+.eventDetail {
+  display: block;
+}
+
+.eventTitle {
+  margin-top: 0.42rem;
+  font-family: var(--font-header);
+  font-size: clamp(0.9rem, 1.35vw, 1.1rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  text-transform: uppercase;
+}
+
+.roadEventSelected .eventTitle {
+  font-size: clamp(1.02rem, 1.6vw, 1.28rem);
+}
+
+.eventDetail {
+  max-width: 30ch;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.42;
+  opacity: 0.72;
+  text-transform: none;
+  white-space: pre-line;
+}
+
+.reviseEvent {
+  display: block;
+  width: calc(100% - 1.8rem);
+  min-height: 44px;
+  margin: -0.15rem 0.9rem 0;
+  border: 0;
+  border-top: 1px solid rgb(233 227 215 / 0.3);
+  border-radius: 0 0 3px 3px;
+  padding: 0.68rem 0 0.78rem;
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-align: right;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.reviseEvent:hover,
+.reviseEvent:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.inkTrail,
+.inkTrail path,
+.inkSpecks,
+.inkBloom {
+  pointer-events: none;
+}
+
+.inkBleed,
+.inkBody,
+.inkCore,
+.inkPool {
+  stroke: none;
+  fill: var(--timeline-ink);
+}
+
+.inkBleed {
+  opacity: 0.2;
+}
+
+.inkBody {
+  opacity: 0.97;
+}
+
+.inkCore {
+  opacity: 0.23;
+}
+
+.inkDryCut {
+  fill: none;
+  stroke: var(--timeline-ground);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  opacity: 0.16;
+}
+
+.inkFallback {
+  display: none;
+  fill: none;
+  stroke: var(--timeline-ink);
+  stroke-linecap: round;
+  stroke-width: 42;
+}
+
+.inkPool {
+  opacity: 0.28;
+}
+
+.stageMobile .inkDryCut {
+  stroke-width: 0.95;
+}
+
+.stageMobile .inkFallback {
+  stroke-width: 28;
+}
+
+.connector {
+  fill: var(--timeline-ink);
+  opacity: 0.38;
+}
+
+.connectorSelected {
+  opacity: 0.9;
+}
+
+.node {
+  fill: var(--timeline-ground);
+  stroke: none;
+}
+
+.nodeSelected {
+  fill: var(--timeline-ground);
+  stroke: var(--timeline-ink);
+  stroke-width: 2;
+}
+
+.inkBloom {
+  fill: var(--timeline-ink);
+  opacity: 0.96;
+}
+
+.inkSpeck {
+  fill: var(--timeline-ink);
+  opacity: 0.92;
+}
+
+.exportStudio {
+  margin-top: 0;
+  padding: clamp(2.75rem, 6vw, 4.75rem) clamp(1.25rem, 3vw, 2.25rem) clamp(1.5rem, 3vw, 2.5rem);
+  border-radius: 0;
+  background: transparent;
+}
+
+.exportHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.exportHeading .handNote {
+  margin-bottom: 0.45rem;
+}
+
+.exportCopy {
+  max-width: 33rem;
+  margin: 0;
+  color: var(--timeline-muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.formatPicker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 1.35rem;
+}
+
+.formatOption {
+  min-height: 62px;
+  border: 0;
+  border-radius: 0;
+  padding: 0.72rem 0.35rem;
+  background: transparent;
+  color: var(--timeline-ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.formatOption:hover {
+  background: transparent;
+  color: var(--timeline-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.22rem;
+}
+
+.formatOption:active {
+  transform: translateY(1px);
+}
+
+.formatOption:focus-visible {
+  outline: 2px solid var(--timeline-ink);
+  outline-offset: 2px;
+}
+
+.formatOption span,
+.formatOption small {
+  display: block;
+}
+
+.formatOption span {
+  font-family: var(--font-header);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.formatOption small {
+  margin-top: 0.35rem;
+  color: var(--timeline-muted);
+  font-size: 0.56rem;
+  font-weight: 650;
+  letter-spacing: 0.035em;
+}
+
+.formatOptionSelected {
+  background: transparent;
+  color: var(--timeline-ink);
+}
+
+.formatOptionSelected:hover {
+  background: transparent;
+  color: var(--timeline-ink);
+  text-decoration: none;
+}
+
+.formatOptionSelected span {
+  width: fit-content;
+  padding: 0.28rem 0.4rem;
+  border-radius: 2px;
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.formatOptionSelected small {
+  color: var(--timeline-muted);
+}
+
+.exportWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 270px);
+  align-items: start;
+  gap: clamp(1rem, 2.4vw, 2rem);
+  margin-top: 1.15rem;
+}
+
+.artworkPreview {
+  position: relative;
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 3px;
+  padding: clamp(0.55rem, 1.5vw, 0.9rem);
+  background: #11100e;
+}
+
+.artworkPreview canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+
+.artworkPreview > p:not(.srOnly) {
+  position: absolute;
+  inset: auto 0.75rem 0.75rem;
+  margin: 0;
+  color: rgb(229 224 213 / 0.7);
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.exportRail {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 1.4rem;
+  border-radius: 0;
+  padding: 0.35rem 0 0.35rem 0.2rem;
+  background: transparent;
+  color: var(--timeline-ink);
+}
+
+.exportFormatName {
+  margin: 0;
+  font-family: var(--font-header) !important;
+  font-size: clamp(1.5rem, 3vw, 2.35rem);
+  font-weight: 850 !important;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.exportDimensions {
+  margin: 0.65rem 0 0;
+  color: var(--timeline-muted);
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
+.exportFlowNote {
+  margin: 0.7rem 0 0;
+  max-width: 17rem;
+  color: var(--timeline-muted);
+  font-family: var(--font-cadehandy2), cursive;
+  font-size: 1.05rem;
+  line-height: 1.05;
+}
+
+.pageControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--timeline-muted);
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pageControls p {
+  margin: 0;
+}
+
+.pageControls > div {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.pageControls button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgb(10 10 9 / 0.3);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--timeline-ink);
+  cursor: pointer;
+}
+
+.pageControls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.pageControls button:focus-visible {
+  outline: 2px solid var(--timeline-ink);
+  outline-offset: 2px;
+}
+
+.pageControls button:not(:disabled):hover {
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.exportActions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: auto;
+  padding-right: 4.75rem;
+}
+
+.exportRail .primaryButton {
+  width: 100%;
+  border-color: var(--timeline-ink);
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}
+
+.exportRail .primaryButton:hover {
+  background: transparent;
+  color: var(--timeline-ink);
+}
+
+.downloadArtwork {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  padding: 0.72rem 0.9rem;
+  background: var(--color-highlight);
+  color: #0a0a09;
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.downloadArtwork:hover {
+  background: #f3bd18;
+}
+
+.downloadArtwork:focus-visible {
+  outline: 2px solid var(--timeline-ink);
+  outline-offset: 3px;
+}
+
+.exportStatus {
+  margin: 0.2rem 0 0;
+  color: var(--timeline-muted);
+  font-family: var(--font-cadehandy2), cursive;
+  font-size: 1rem;
+  line-height: 1.05;
+}
+
+.exportStatus:empty {
+  display: none;
+}
+
+.roadLabel {
+  fill: var(--timeline-ink);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+
+.completionRail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.25rem clamp(1.25rem, 3vw, 2.25rem) 1.5rem;
+  background: rgb(10 10 9 / 0.035);
+}
+
+.completionRail p {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--timeline-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.completionRail .kicker {
+  margin-bottom: 0.35rem;
+  color: var(--color-poster);
+}
+
+.completionActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.completionActions a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--timeline-muted);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: underline;
+  text-underline-offset: 0.28rem;
+  text-transform: uppercase;
+}
+
+.completionActions a:hover {
+  color: var(--timeline-ink);
+}
+
+@media (max-width: 900px) {
+  .setup {
+    grid-template-columns: 1fr;
+  }
+
+  .editor {
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .visualHeading {
+    display: block;
+  }
+
+  .visualInstruction {
+    margin-top: 0.75rem;
+    text-align: left;
+  }
+
+  .exportHeading {
+    display: block;
+  }
+
+  .exportCopy {
+    margin-top: 0.8rem;
+    text-align: left;
+  }
+
+  .formatPicker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .exportWorkspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .editor .formActions {
+    padding-right: 4.75rem;
+  }
+
+  .indexHeading {
+    display: block;
+  }
+
+  .indexHeadingTools {
+    justify-content: space-between;
+    margin-top: 0.7rem;
+  }
+
+  .indexActions {
+    justify-content: space-between;
+    margin-top: 1rem;
+  }
+
+  .indexContent {
+    grid-template-columns: 2.1rem minmax(4.5rem, auto) minmax(0, 1fr);
+  }
+
+  .indexReturn {
+    grid-column: 3;
+  }
+
+  .indexItem {
+    grid-template-columns: 1fr;
+  }
+
+  .indexItem + .indexItem {
+    margin-top: 0.35rem;
+  }
+
+  .indexRevise {
+    grid-column: 1;
+    justify-self: end;
+    min-height: 44px;
+    border-top: 0;
+    border-left: 0;
+    padding: 0.4rem 0 0.4rem 0.8rem;
+    text-align: right;
+  }
+
+  .listFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .listFooterActions {
+    justify-content: space-between;
+  }
+
+  .completionRail {
+    display: block;
+  }
+
+  .exportStudio {
+    margin-right: 0;
+    margin-left: 0;
+    padding: 2.75rem 1rem 1.25rem;
+  }
+
+  .formatOption {
+    min-height: 58px;
+    padding: 0.65rem;
+  }
+
+  .artworkPreview {
+    min-height: 220px;
+  }
+
+  .completionActions {
+    justify-content: space-between;
+    margin-top: 1rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .editor,
+  .indexPanel,
+  .visual {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .toolTitle {
+    font-size: clamp(2.7rem, 14vw, 3.8rem);
+  }
+
+  .roadEventSelected,
+  .roadEventSelected:hover,
+  .roadEventSelected:focus-visible {
+    padding: 0.78rem;
+  }
+
+  .indexActions {
+    align-items: flex-end;
+  }
+
+  .status {
+    max-width: 8.5rem;
+    line-height: 1.35;
+  }
+
+  .indexMeta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .indexContent {
+    gap: 0.55rem;
+    padding-right: 0.35rem;
+    padding-left: 0.35rem;
+  }
+
+  .emptyIndex {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .completionActions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .completionRail {
+    padding-bottom: 5.75rem;
+  }
+
+  .completionActions .button,
+  .completionActions a {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+  .app,
+  .stage,
+  .stageEmpty {
+    background-image: none;
+  }
+
+  .inkBleed,
+  .inkCore,
+  .inkDryCut,
+  .inkSpecks,
+  .inkBloom,
+  .inkPools {
+    display: none;
+  }
+
+  .inkBody {
+    fill: CanvasText;
+    filter: none !important;
+  }
+
+  .inkFallback {
+    display: block;
+    stroke: CanvasText;
+  }
+}
+
+@media print {
+  .inkTrail *,
+  .inkBloom {
+    filter: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root *,
+  .root *::before,
+  .root *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -3,13 +3,15 @@ import { redirect } from "next/navigation";
 
 import MemberHome from "@/components/platform/MemberHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
+import { resolveMemberHomeArtifactProducts } from "@/lib/membership/artifact-products";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
 import { getMemberHome } from "@/lib/membership/repository";
+import { getProducts } from "@/lib/shopify";
 
 export const metadata: Metadata = {
   title: "Your Profile | Ruined",
-  description: "Your private Ruined member profile, progression, Circle, artifacts, and experiences.",
+  description: "Your private Ruined member profile, Circle, artifacts, and experiences.",
 };
 export const dynamic = "force-dynamic";
 
@@ -23,5 +25,6 @@ export default async function MyRuinedPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
 
-  return <MemberHome member={context.data} />;
+  const member = resolveMemberHomeArtifactProducts(context.data, await getProducts());
+  return <MemberHome member={member} />;
 }

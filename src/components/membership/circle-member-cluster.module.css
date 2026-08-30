@@ -1,0 +1,138 @@
+.cluster {
+  position: relative;
+  width: 100%;
+  max-width: 47rem;
+  aspect-ratio: 1.2;
+  margin-inline: auto;
+  isolation: isolate;
+}
+
+.member {
+  position: absolute;
+  top: var(--cluster-top);
+  left: var(--cluster-left);
+  width: var(--cluster-size);
+  aspect-ratio: 1;
+  z-index: 1;
+}
+
+.member:has(.memberButton[aria-pressed="true"]),
+.member:has(.memberButton:hover),
+.member:has(.memberButton:focus-visible) {
+  z-index: 4;
+}
+
+.memberButton {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #c8b49a;
+  box-shadow: 0 8px 22px rgb(32 25 17 / 0.2);
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.memberButton:hover {
+  transform: translateY(-4px) scale(1.035);
+  box-shadow: 0 13px 28px rgb(32 25 17 / 0.26);
+}
+
+.memberButton[aria-pressed="true"] {
+  transform: scale(1.045);
+  box-shadow:
+    0 0 0 4px var(--color-highlight),
+    0 13px 30px rgb(32 25 17 / 0.28);
+}
+
+.memberButton:focus-visible {
+  outline: 3px solid #d0312d;
+  outline-offset: 5px;
+}
+
+.photo,
+.previewPortrait {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.previewPortrait {
+  background-color: #c8b49a;
+  background-repeat: no-repeat;
+  filter: saturate(0.8) contrast(1.035);
+}
+
+.initials {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 68% 20%, rgb(255 255 255 / 0.28), transparent 35%),
+    #c8b49a;
+  color: rgb(24 21 17 / 0.76);
+  font-family: var(--font-body);
+  font-size: clamp(0.8rem, 2.2vw, 1.4rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.youBadge {
+  position: absolute;
+  right: 0;
+  bottom: 7%;
+  z-index: 2;
+  display: grid;
+  min-width: 2.6rem;
+  min-height: 1.7rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-highlight);
+  color: #15120f;
+  font-family: var(--font-body);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 10px rgb(32 25 17 / 0.2);
+}
+
+@media (max-width: 639px) {
+  .cluster {
+    width: calc(100% + 0.5rem);
+    margin-left: -0.25rem;
+    aspect-ratio: 1.08;
+  }
+
+  .youBadge {
+    right: -0.2rem;
+    min-width: 2.25rem;
+    min-height: 1.45rem;
+    font-size: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memberButton {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .memberButton {
+    border: 2px solid ButtonText;
+  }
+
+  .memberButton[aria-pressed="true"] {
+    outline: 3px solid Highlight;
+  }
+}

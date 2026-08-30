@@ -6,7 +6,10 @@ import {
   consumeMemberEmailConfirmationLocation,
   getMemberEmailConfirmationStatus,
 } from "../src/lib/auth/email-confirmation.ts";
-import { getMemberEmailConfirmationUrl } from "../src/lib/auth/request.ts";
+import {
+  getMemberEmailConfirmationUrl,
+  isTrustedPlatformOrigin,
+} from "../src/lib/auth/request.ts";
 
 const [confirmedPage, confirmationStatusComponent] = await Promise.all([
   readFile(new URL("../app/my/confirmed/page.tsx", import.meta.url), "utf8"),
@@ -18,6 +21,88 @@ const [confirmedPage, confirmationStatusComponent] = await Promise.all([
     "utf8",
   ),
 ]);
+
+test("local development accepts equivalent loopback origins only on the same port", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.NEXT_PUBLIC_SITE_URL = "https://theruinedproject.com";
+
+    assert.equal(
+      isTrustedPlatformOrigin(
+        new Request("http://localhost:3000/api/auth/otp/request", {
+          headers: { origin: "http://127.0.0.1:3000" },
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      isTrustedPlatformOrigin(
+        new Request("http://127.0.0.1:3000/api/auth/otp/request", {
+          headers: { origin: "http://localhost:3000" },
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      isTrustedPlatformOrigin(
+        new Request("http://localhost:3000/api/auth/otp/request", {
+          headers: { origin: "http://127.0.0.1:3001" },
+        }),
+      ),
+      false,
+    );
+    assert.equal(
+      isTrustedPlatformOrigin(
+        new Request("http://localhost:3000/api/auth/otp/request", {
+          headers: { origin: "http://attacker.example" },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+  }
+});
+
+test("production keeps loopback origins distinct", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.NEXT_PUBLIC_SITE_URL = "https://theruinedproject.com";
+
+    assert.equal(
+      isTrustedPlatformOrigin(
+        new Request("http://localhost:3000/api/auth/otp/request", {
+          headers: { origin: "http://127.0.0.1:3000" },
+        }),
+      ),
+      false,
+    );
+    assert.equal(
+      isTrustedPlatformOrigin(
+        new Request("https://theruinedproject.com/api/auth/otp/request", {
+          headers: { origin: "https://theruinedproject.com" },
+        }),
+      ),
+      true,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+  }
+});
 
 test("member signup confirmation uses only a configured secure site origin in production", () => {
   const previousNodeEnv = process.env.NODE_ENV;

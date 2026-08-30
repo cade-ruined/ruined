@@ -80,7 +80,7 @@ function Notice({ notice }: { notice: ActionNotice }) {
 const INPUT_CLASS = OPERATOR_FIELD_CLASS;
 const BUTTON_CLASS = OPERATOR_BUTTON_CLASS;
 const SECONDARY_BUTTON_CLASS =
-  "min-h-12 border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
+  "min-h-12 rounded-[4px] border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
 
 export function OpsInvitationActions() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -120,7 +120,7 @@ export function OpsInvitationActions() {
       }).format(new Date(result.invitation.expiresAt));
       setNotice({
         kind: "success",
-        text: `${result.invitation.reissued ? "Invitation reissued" : "Invitation recorded"} for ${result.invitation.email} through ${expiration}. No email was sent.`,
+          text: `${result.invitation.reissued ? "Access renewed" : "Access allowed"} for ${result.invitation.email} through ${expiration}. No email was sent.`,
       });
       formRef.current?.reset();
     } catch (error) {
@@ -135,8 +135,11 @@ export function OpsInvitationActions() {
 
   return (
     <section aria-labelledby="invite-member-heading">
-      <h2 className="sr-only" id="invite-member-heading">Invite a member</h2>
+      <h2 className="sr-only" id="invite-member-heading">Allow a member to join</h2>
       <form className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end" onSubmit={submitInvitation} ref={formRef}>
+          <p className="text-sm leading-relaxed text-black/52 sm:col-span-3">
+            This does not send an email. It allows this address to request a secure sign-in code and begin joining.
+          </p>
           <label className={`${OPERATOR_LABEL_CLASS} sm:col-span-3`} htmlFor="ops-invitation-email">
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Email</span>
             <input
@@ -152,10 +155,10 @@ export function OpsInvitationActions() {
             />
           </label>
           <button className={BUTTON_CLASS} disabled={pending} name="intent" type="submit" value="record">
-            {pending ? "Recording" : "Record invitation"}
+            {pending ? "Saving" : "Allow email"}
           </button>
-          <button className={SECONDARY_BUTTON_CLASS} disabled={pending} name="intent" type="submit" value="revoke">
-            Revoke live invite
+          <button aria-label="Revoke live invite" className={SECONDARY_BUTTON_CLASS} disabled={pending} name="intent" type="submit" value="revoke">
+            Remove allowance
           </button>
           <div className="sm:col-span-3"><Notice notice={notice} /></div>
       </form>
@@ -405,6 +408,8 @@ export function OpsCircleActions({
         </form>
       </div>
 
+      {circles.length > 0 ? (
+        <>
       <div>
         <h2 className="ui-heading text-xl font-semibold">Assign a member</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
@@ -515,6 +520,8 @@ export function OpsCircleActions({
           </form>
         </div>
       </div>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -753,6 +760,8 @@ export function OpsBlockActions({
         </form>
       </div>
 
+      {blocks.length > 0 ? (
+        <>
       <div>
         <h2 className="ui-heading text-xl font-semibold">Assign a Circle</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
@@ -821,6 +830,8 @@ export function OpsBlockActions({
           <Notice notice={endNotice} />
         </form>
       </div>
+        </>
+      ) : null}
     </section>
   );
 }

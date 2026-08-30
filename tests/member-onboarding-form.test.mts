@@ -75,7 +75,7 @@ test("member entry uses the friendly image-led form hierarchy", () => {
 
   assert.match(joinPage, /src="\/after-the-fear-hero\.webp"/);
   assert.match(joinPage, /Your place begins here\./);
-  assert.match(theme, /--color-highlight:\s*#FFCD35;/);
+  assert.match(theme, /--color-highlight:\s*#FFCA2C;/);
   assert.match(
     joinPage,
     /ui-heading[^"\n]*bg-\[var\(--color-highlight\)\][^"\n]*uppercase/,

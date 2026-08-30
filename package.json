@@ -14,6 +14,7 @@
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "db:migrate:platform": "node --env-file-if-exists=.env.local scripts/migrate-platform.mjs",
     "db:migrate:stripe": "node --env-file-if-exists=.env.local scripts/migrate-stripe.mjs",
+    "google:calendar:authorize": "node scripts/bootstrap-google-calendar-oauth.mjs",
     "assets:scenes": "node scripts/optimize-scenes.mjs",
     "assets:brand": "node scripts/gen-brand-assets.mjs",
     "sequences": "node scripts/build-mobile-sequences.mjs && node scripts/build-sequences.mjs"

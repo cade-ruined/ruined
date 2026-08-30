@@ -110,9 +110,9 @@ test("announcement creation stores the exact active-member audience contract", a
     source("src/lib/membership/repository.ts"),
   ]);
 
-  assert.match(component, /value="all_active_members">All active members/);
-  assert.match(opsRepository, /input\.targetKind !== "all_active_members"/);
-  assert.match(opsRepository, /'all_active_members'/);
+  assert.match(component, /value="all_active_members:">All active members/);
+  assert.match(opsRepository, /new Set\(\["all_active_members", "circle", "block", "member"\]\)\.has\(targetKind\)/);
+  assert.match(opsRepository, /targetKind === "all_active_members"[\s\S]*\? null/);
   assert.match(operationsMigration, /target_type in \('all_active_members', 'circle', 'block', 'progression', 'member'\)/);
   assert.match(memberRepository, /target\.target_type = 'all_active_members'/);
   assert.doesNotMatch(

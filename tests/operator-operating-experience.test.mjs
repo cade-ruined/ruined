@@ -45,7 +45,8 @@ test("the member directory opens one unified, server-projected operating record"
   assert.match(memberRecord, /OperatorTaskCreateAction/);
   assert.match(memberRecord, /OperatorNoteAction/);
   assert.match(memberRecord, /OperatorOverrideAction/);
-  assert.match(memberRecord, /OperatorAccountabilityAction/);
+  assert.doesNotMatch(memberRecord, /Accountability|OperatorAccountabilityAction/);
+  assert.match(memberRecord, /Shaper · \{community\.circle\.shaperName/);
 });
 
 test("operator navigation stays restrained while every working surface remains reachable", () => {
@@ -73,7 +74,7 @@ test("work, Artifact, Experience, announcement, and system routes fail closed an
   }
   assert.match(workPage, /getOpsWorkQueue/);
   assert.match(artifactPage, /getOpsArtifactQueue/);
-  assert.match(experiencePage, /getOpsExperienceDirectory/);
+  assert.match(experiencePage, /getOpsExperienceManagementDirectory/);
   assert.match(announcementPage, /getOpsAnnouncements/);
   assert.match(systemPage, /getOpsSystemHealth/);
 });

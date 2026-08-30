@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OperatorDashboardSnapshot } from "@/lib/platform/model";
@@ -37,10 +38,10 @@ export default function OpsBlocks({
 
   return (
     <OperatorPageFrame title="Blocks">
-      <section className="mt-14 grid gap-3" aria-label="Block hierarchy">
+      <section className="mt-2 grid gap-3" aria-label="Block hierarchy">
         {visibleBlocks.map((block) => (
           <article
-            className="grid gap-5 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.05] lg:grid-cols-[minmax(13rem,0.7fr)_8rem_minmax(18rem,1fr)] lg:items-start lg:px-6"
+            className="grid gap-5 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.05] lg:grid-cols-[minmax(13rem,0.7fr)_8rem_minmax(18rem,1fr)] lg:items-start lg:px-6"
             id={`block-${block.id}`}
             key={block.id}
           >
@@ -74,16 +75,24 @@ export default function OpsBlocks({
           </article>
         ))}
         {visibleBlocks.length === 0 ? (
-          <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
-            No Blocks have been created yet.
-          </p>
+          <OperatorEmptyState
+            actionHref={actions ? "#manage-blocks" : "/ops/circles"}
+            actionLabel={actions ? "Create first Block" : "View Circles"}
+            detail="A Block brings multiple Circles together. Create one when at least two Circles are ready to share a larger home."
+            eyebrow="Circle → Block"
+            title="No Blocks yet."
+          />
         ) : null}
       </section>
 
       {actions ? (
-        <details className="group mt-10 bg-[var(--color-surface)]">
+        <details
+          className={`group mt-10 rounded-[4px] bg-[var(--color-surface)] ${visibleBlocks.length === 0 ? "shadow-[5px_5px_0_var(--color-poster)]" : ""}`}
+          id="manage-blocks"
+          open={visibleBlocks.length === 0}
+        >
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
-            <span>Manage Blocks</span>
+            <span>{visibleBlocks.length === 0 ? "Create the first Block" : "Manage Blocks"}</span>
             <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
           </summary>
           <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>

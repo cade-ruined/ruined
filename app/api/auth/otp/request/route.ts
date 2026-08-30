@@ -60,15 +60,22 @@ export async function POST(request: NextRequest) {
     shouldCreateUser: false,
   };
 
-  if (audience === "member" && eligibility === "invited") {
-    const emailRedirectTo = getMemberEmailConfirmationUrl(request);
+  if (eligibility === "invited") {
+    if (audience === "member") {
+      const emailRedirectTo = getMemberEmailConfirmationUrl(request);
 
-    if (!emailRedirectTo) {
-      console.error("Member confirmation destination is not safely configured");
-      return response;
+      if (!emailRedirectTo) {
+        console.error("Member confirmation destination is not safely configured");
+        return response;
+      }
+
+      options = { emailRedirectTo, shouldCreateUser: true };
+    } else {
+      // The durable staff invitation is the authorization boundary. Supabase
+      // may create the authentication identity, but no operator access exists
+      // until the verified code claims that exact invitation below.
+      options = { shouldCreateUser: true };
     }
-
-    options = { emailRedirectTo, shouldCreateUser: true };
   }
 
   const { error } = await supabase.auth.signInWithOtp({

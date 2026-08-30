@@ -26,7 +26,7 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
     <OperatorPageFrame title="System">
       <dl
         aria-label="System snapshot"
-        className="grid gap-6 bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
+        className="grid gap-6 rounded-[4px] bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
       >
         {[
           ["Connected services", connectedServices, "text-[var(--color-verdigris)]"],
@@ -45,7 +45,7 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
       <section className="mt-8 space-y-3" aria-label="Connected services">
         {health.services.map((service) => (
           <article
-            className="grid gap-4 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:grid-cols-[minmax(12rem,0.6fr)_9rem_minmax(14rem,1fr)] sm:items-center sm:px-6"
+            className="grid gap-4 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:grid-cols-[minmax(12rem,0.6fr)_9rem_minmax(14rem,1fr)] sm:items-center sm:px-6"
             key={service.label}
           >
             <div>
@@ -73,7 +73,7 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
         <div className="mt-5 space-y-3">
           {health.workflowFailures.map((failure) => (
             <article
-              className="grid gap-5 bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_8rem_10rem_minmax(12rem,0.7fr)] lg:items-center"
+              className="grid gap-5 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_8rem_10rem_minmax(12rem,0.7fr)] lg:items-center"
               key={failure.actionId}
             >
               <div>
@@ -93,7 +93,7 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
             </article>
           ))}
           {health.workflowFailures.length === 0 ? (
-            <p className="bg-black/[0.025] px-5 py-10 text-sm text-black/50">
+            <p className="rounded-[4px] bg-black/[0.025] px-5 py-10 text-sm text-black/50">
               No failed automation actions.
             </p>
           ) : null}

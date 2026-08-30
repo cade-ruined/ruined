@@ -34,7 +34,6 @@ const LIMITED_CAPABILITIES = [
   "foundations.summary",
   "home.read",
   "profile.read",
-  "updates.read",
 ] as const satisfies readonly MemberCapability[];
 
 export function memberCan(
@@ -88,6 +87,21 @@ export function deriveMemberAccessPolicy(
     };
   }
 
+  if (
+    identity.billingState === "attention_required" ||
+    identity.billingState === "ended"
+  ) {
+    return {
+      accessEndsAt,
+      capabilities: LIMITED_CAPABILITIES,
+      mode: "limited",
+      reason:
+        identity.billingState === "attention_required"
+          ? "Membership billing needs attention."
+          : "This membership is no longer active.",
+    };
+  }
+
   if (identity.standingState === "cancellation_requested") {
     const effectiveAt = identity.cancellationEffectiveAt;
     const effectiveInFuture =
@@ -111,21 +125,6 @@ export function deriveMemberAccessPolicy(
       reason: `Membership access continues through ${new Intl.DateTimeFormat("en-US", {
         dateStyle: "medium",
       }).format(new Date(effectiveAt))}.`,
-    };
-  }
-
-  if (
-    identity.billingState === "attention_required" ||
-    identity.billingState === "ended"
-  ) {
-    return {
-      accessEndsAt,
-      capabilities: LIMITED_CAPABILITIES,
-      mode: "limited",
-      reason:
-        identity.billingState === "attention_required"
-          ? "Membership billing needs attention."
-          : "This membership is no longer active.",
     };
   }
 
