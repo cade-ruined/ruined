@@ -73,8 +73,22 @@ function errorResponse(error: unknown) {
   if (error instanceof MembershipAccessDeniedError) {
     return NextResponse.json({ error: error.message }, { status: 403 });
   }
+  const databaseError = error && typeof error === "object"
+    ? error as Record<string, unknown>
+    : null;
+  const constraint = databaseError?.constraint_name ?? databaseError?.constraint;
+  // Log only bounded schema metadata. PostgreSQL detail/message/query/parameters
+  // may contain the member's phone, name, address, or other private values.
   console.error("Member onboarding action failed", {
-    errorType: error instanceof Error ? error.name : "UnknownError",
+    errorType: error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,62}$/.test(error.name)
+      ? error.name
+      : "UnknownError",
+    sqlState: typeof databaseError?.code === "string" && /^[0-9A-Z]{5}$/.test(databaseError.code)
+      ? databaseError.code
+      : null,
+    constraint: typeof constraint === "string" && /^[a-z_][a-z0-9_]{0,62}$/.test(constraint)
+      ? constraint
+      : null,
   });
   return NextResponse.json({ error: "Membership entry could not be saved." }, { status: 500 });
 }
