@@ -35,6 +35,14 @@ and a nonempty `CRON_SECRET` for private scheduled endpoints. Store secrets only
 in the hosting environment. Google Calendar has separate `GOOGLE_CALENDAR_*`
 settings; the registration-Sheets override must not disable Calendar.
 
+Member photos require the server-only `SUPABASE_SECRET_KEY` from the same
+Supabase project. The `member-portraits` bucket must remain private, restricted
+to `image/webp` and 3 MiB per object. Uploads are authenticated, validated and
+re-encoded by the app. Portrait URLs are protected app routes, not public bucket
+URLs; Circle sharing and operator permissions are checked again when an image
+is requested. Never add a public Storage policy or expose this key with a
+`NEXT_PUBLIC_` prefix to make uploads work.
+
 ## Scheduled-work ownership
 
 | Work | Owner | Daily schedule (UTC) |

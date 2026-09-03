@@ -19,6 +19,7 @@ export const config = {
     "/ops/:path*",
     "/api/auth/:path*",
     "/api/my/:path*",
+    "/api/member-photos/:path*",
     "/api/ops/:path*",
     "/api/stripe/checkout/:path*",
     "/api/stripe/portal/:path*",

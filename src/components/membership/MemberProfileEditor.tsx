@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
 import MemberPageHeader from "@/components/membership/MemberPageHeader";
+import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import type { MemberProfileSnapshot } from "@/lib/membership/model";
 
 const fieldClass =
@@ -17,19 +18,22 @@ function scopeLabel(value: string) {
 
 export default function MemberProfileEditor({
   initialProfile,
+  photoStorageReady,
   writable,
 }: {
   initialProfile: MemberProfileSnapshot;
+  photoStorageReady: boolean;
   writable: boolean;
 }) {
   const [profile, setProfile] = useState(initialProfile);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [photoPending, setPhotoPending] = useState(false);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!writable || pending) return;
+    if (!writable || pending || photoPending) return;
     setPending(true);
     setError(null);
     setSaved(false);
@@ -103,13 +107,15 @@ export default function MemberProfileEditor({
             <p className="mt-6 max-w-md font-[var(--font-body)] text-sm leading-relaxed text-black/48">
               Your name is always part of the active Circle roster. Every other directory field follows the sharing choices below.
             </p>
-            <div className="mt-8 aspect-[4/3] border border-dashed border-black/20 bg-black/[0.025] p-5">
-              <p className="font-[var(--font-handwritten)] text-xl text-[var(--color-poster)]">member portrait</p>
-              <p className="mt-3 max-w-xs font-[var(--font-body)] text-xs leading-relaxed text-black/38">
-                {profile.directory.avatarUrl
-                  ? "A portrait is connected to your profile."
-                  : "Portrait upload will open when private member-photo storage is connected."}
-              </p>
+            <div className="mt-8">
+              <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">Profile photo</p>
+              <MemberPhotoUpload
+                avatarUrl={profile.directory.avatarUrl}
+                available={photoStorageReady}
+                enabled={writable && !pending}
+                onBusyChange={setPhotoPending}
+                onChange={(avatarUrl) => setProfile((current) => ({ ...current, directory: { ...current.directory, avatarUrl } }))}
+              />
             </div>
           </div>
 
@@ -217,7 +223,7 @@ export default function MemberProfileEditor({
             {error ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 font-[var(--font-body)] text-sm text-black/62">{error}</p> : null}
             {saved ? <p aria-live="polite" className="font-[var(--font-body)] text-sm text-black/48">Profile saved.</p> : null}
           </div>
-          <button className="min-h-12 border border-black bg-black px-7 font-[var(--font-body)] text-xs font-medium uppercase tracking-[0.15em] text-white transition-colors hover:bg-[var(--color-poster)] disabled:cursor-wait disabled:opacity-45" disabled={!writable || pending} type="submit">{pending ? "Saving" : "Save profile"}</button>
+          <button className="min-h-12 border border-black bg-black px-7 font-[var(--font-body)] text-xs font-medium uppercase tracking-[0.15em] text-white transition-colors hover:bg-[var(--color-poster)] disabled:cursor-wait disabled:opacity-45" disabled={!writable || pending || photoPending} type="submit">{pending ? "Saving" : "Save profile"}</button>
         </div>
       </form>
 

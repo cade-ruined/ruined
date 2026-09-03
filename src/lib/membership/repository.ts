@@ -13,6 +13,7 @@ import {
 } from "@/lib/google/communications";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { shopifyArtifactProductFromSpecification } from "@/lib/membership/artifact-products";
+import { safeMemberAvatarUrl } from "@/lib/membership/avatar-url";
 import { supportedShippingCountry } from "@/lib/membership/phone";
 import {
   markOpsExperienceCalendarPending,
@@ -274,7 +275,7 @@ export async function getMemberOnboarding(
     email: identity.email,
     profile: {
       apparelSizing: row.apparel_sizing,
-      avatarUrl: row.avatar_storage_path,
+      avatarUrl: safeMemberAvatarUrl(row.avatar_storage_path),
       birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : null,
       fulfillmentAddress: row.shipping_address,
       legalName: row.legal_name,
@@ -1079,11 +1080,6 @@ type ProfileRow = {
   timezone: string | null;
 };
 
-function safeAvatarUrl(value: string | null): string | null {
-  if (!value) return null;
-  return value.startsWith("/") || /^https:\/\//i.test(value) ? value : null;
-}
-
 export async function getMemberProfile(
   authUserId: string,
 ): Promise<MemberProfileSnapshot | null> {
@@ -1125,7 +1121,7 @@ export async function getMemberProfile(
   return {
     access,
     directory: {
-      avatarUrl: safeAvatarUrl(row.avatar_storage_path),
+      avatarUrl: safeMemberAvatarUrl(row.avatar_storage_path),
       bio: row.bio,
       buildingNow: row.building_now,
       displayName,
@@ -1423,7 +1419,7 @@ type DirectoryRow = {
 
 function directoryPerson(row: DirectoryRow): PrivacySafePersonSummary {
   return {
-    avatarUrl: safeAvatarUrl(row.avatar_storage_path),
+    avatarUrl: safeMemberAvatarUrl(row.avatar_storage_path),
     bio: row.bio,
     buildingNow: row.building_now,
     displayName: row.display_name?.trim() || "Member",

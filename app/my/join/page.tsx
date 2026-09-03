@@ -12,6 +12,7 @@ import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
 import { getMemberOnboarding } from "@/lib/membership/repository";
+import { isMemberPhotoStorageConfigured } from "@/lib/membership/photos";
 import { getStripePublishableKey } from "@/lib/platform/config";
 
 export const metadata: Metadata = {
@@ -88,6 +89,7 @@ export default async function JoinMyRuinedPage() {
             enabled={writable}
             initialOnboarding={context.data}
             minimumAge={context.configuration.minimumAge}
+            photoStorageReady={isMemberPhotoStorageConfigured()}
             publishableKey={publishableKey}
           />
         </section>

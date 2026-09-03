@@ -25,6 +25,10 @@ const joinPage = await readFile(
   new URL("../app/my/join/page.tsx", import.meta.url),
   "utf8",
 );
+const photoUpload = await readFile(
+  new URL("../src/components/membership/MemberPhotoUpload.tsx", import.meta.url),
+  "utf8",
+);
 const entryProgress = await readFile(
   new URL("../src/components/membership/MembershipEntryProgress.tsx", import.meta.url),
   "utf8",
@@ -94,7 +98,11 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.doesNotMatch(joinForm, />Street address<\/span>/);
   assert.match(joinForm, /const fieldClass =\s*\n\s*"[^"]*rounded-\[4px\]/);
   assert.match(joinForm, /fieldLabelTextClass[\s\S]*--font-cadehandy2/);
-  assert.match(joinForm, /Profile photo \/ Optional[\s\S]*aspect-square/);
+  assert.match(joinForm, /Profile photo \/ Optional[\s\S]*MemberPhotoUpload/);
+  assert.match(photoUpload, /aspect-square/);
+  assert.match(photoUpload, /unoptimized/);
+  assert.match(photoUpload, /type="file"/);
+  assert.doesNotMatch(joinForm, /Photo upload will open/);
 
   const progressIndex = joinPage.indexOf("<MembershipEntryProgress />");
   const heroIndex = joinPage.indexOf('<section className="relative isolate');

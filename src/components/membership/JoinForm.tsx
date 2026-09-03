@@ -13,6 +13,7 @@ import {
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 
 import { useMembershipEntryProgressStage } from "@/components/membership/MembershipEntryProgress";
+import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
 import {
@@ -121,6 +122,7 @@ export default function JoinForm({
   enabled,
   initialOnboarding,
   minimumAge,
+  photoStorageReady,
   publishableKey,
 }: {
   disabledReason: string | null;
@@ -129,6 +131,7 @@ export default function JoinForm({
   enabled: boolean;
   initialOnboarding: MemberOnboardingSnapshot;
   minimumAge: number;
+  photoStorageReady: boolean;
   publishableKey: string | null;
 }) {
   const checkoutAttempt = useRef<string | null>(null);
@@ -138,6 +141,7 @@ export default function JoinForm({
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [photoPending, setPhotoPending] = useState(false);
   const profileComplete = onboarding.requiredFieldsComplete;
   const agreementComplete = Boolean(acceptanceId);
   const stage = membershipEntryStage(profileComplete, agreementComplete);
@@ -186,6 +190,7 @@ export default function JoinForm({
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (photoPending) return;
     if (!enabled || submitting) return;
     setError(null);
     setSubmitting(true);
@@ -511,13 +516,17 @@ export default function JoinForm({
 
           <div>
             <p className={fieldLabelTextClass}>Profile photo / Optional</p>
-            <div className="mt-3 flex aspect-square w-full max-w-64 items-end overflow-hidden rounded-[4px] border border-dashed border-white/20 bg-white/[0.025] p-5">
-              <p className="max-w-48 font-[var(--font-body)] text-xs leading-relaxed text-white/42">Photo upload will open when private member storage is connected.</p>
-            </div>
+            <MemberPhotoUpload
+              avatarUrl={onboarding.profile.avatarUrl}
+              available={photoStorageReady}
+              enabled={enabled && !submitting}
+              onBusyChange={setPhotoPending}
+              onChange={(avatarUrl) => setOnboarding((current) => ({ ...current, profile: { ...current.profile, avatarUrl } }))}
+            />
           </div>
 
           {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/72">{error ?? disabledReason}</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting} type="submit">{submitting ? "Saving profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending} type="submit">{submitting ? "Saving profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
 
