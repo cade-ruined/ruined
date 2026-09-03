@@ -12,8 +12,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Request origin is not allowed." }, { status: 403 });
   }
 
-  const requestedNext = request.nextUrl.searchParams.get("next");
-  const next = requestedNext === "/ops/access" ? requestedNext : "/my/access";
+  const next = "/access";
   const response = NextResponse.redirect(new URL(next, request.url), 303);
   if (getPlatformConfiguration().mode !== "connected") return response;
 

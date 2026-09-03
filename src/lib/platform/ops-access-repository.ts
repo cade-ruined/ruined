@@ -317,7 +317,7 @@ export async function createOrReissueOperatorInvitation(input: {
       throw new OpsAccessRepositoryError("invalid_request", "Choose valid Circles.");
     }
 
-    await tx`select pg_advisory_xact_lock(hashtext(${email}), 2)`;
+    await tx`select pg_advisory_xact_lock(hashtext(${email}), 1)`;
 
     const identityRows = await tx<
       Array<{ auth_user_id: string; status: "active" | "disabled" | "invited" | "suspended" }>
@@ -503,7 +503,7 @@ export async function revokeOperatorInvitation(input: {
     if (email.length > MAX_EMAIL_LENGTH || !isPlausibleEmail(email)) {
       throw new OpsAccessRepositoryError("invalid_request", "Enter a valid email address.");
     }
-    await tx`select pg_advisory_xact_lock(hashtext(${email}), 2)`;
+    await tx`select pg_advisory_xact_lock(hashtext(${email}), 1)`;
     const revoked = await tx<Array<{ id: string }>>`
       update passwordless_account_invites
       set
@@ -622,7 +622,7 @@ export async function claimPlatformOperatorForViewer(input: {
   const sql = getBillingDatabase();
 
   return sql.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(hashtext(${email}), 2)`;
+    await tx`select pg_advisory_xact_lock(hashtext(${email}), 1)`;
 
     const existingRows = await tx<
       Array<{

@@ -35,19 +35,15 @@ function functionSource(sourceText, startMarker, endMarker) {
 }
 
 test("OTP delivery is generic and creates an Auth identity only for a current invitation", () => {
-  const eligibilityIndex = requestRoute.indexOf("getPasswordlessAccessEligibility(email, audience)");
+  const eligibilityIndex = requestRoute.indexOf("getUnifiedAccessEligibility(email)");
   const otpIndex = requestRoute.indexOf("supabase.auth.signInWithOtp");
 
   assert.ok(eligibilityIndex >= 0 && otpIndex > eligibilityIndex);
   assert.match(requestRoute, /const response = NextResponse\.json\(\{ ok: true \}\)/);
-  assert.match(requestRoute, /if \(eligibility === "none"\) return response/);
+  assert.match(requestRoute, /if \(!eligibility\.eligible\) return response/);
   assert.match(
     requestRoute,
-    /eligibility === "invited"[\s\S]*audience === "member"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
-  );
-  assert.match(
-    requestRoute,
-    /eligibility === "invited"[\s\S]*else \{[\s\S]*options = \{ shouldCreateUser: true \}/,
+    /eligibility\.shouldCreateUser[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
   );
   assert.match(requestRoute, /let options: [\s\S]*shouldCreateUser: false/);
   assert.doesNotMatch(requestRoute, /console\.(?:warn|error|log)\([^)]*email/);
@@ -118,22 +114,20 @@ test("member claim is serialized, invitation-bound, and never creates an uninvit
 });
 
 test("verification rechecks authorization and clears the verified session on denial", () => {
-  const eligibilityIndex = verifyRoute.indexOf("getPasswordlessAccessEligibility(email, audience)");
+  const eligibilityIndex = verifyRoute.indexOf("getUnifiedAccessEligibility(email)");
   const verifyIndex = verifyRoute.indexOf("supabase.auth.verifyOtp");
-  const claimIndex = verifyRoute.indexOf("claimPlatformMemberForViewer", verifyIndex);
-  const operatorClaimIndex = verifyRoute.indexOf("claimPlatformOperatorForViewer", verifyIndex);
+  const claimIndex = verifyRoute.indexOf("completePlatformSignIn", verifyIndex);
 
   assert.ok(
     eligibilityIndex >= 0 &&
       verifyIndex > eligibilityIndex &&
-      claimIndex > verifyIndex &&
-      operatorClaimIndex > verifyIndex,
+      claimIndex > verifyIndex,
   );
   assert.match(verifyRoute, /const verifiedEmail = data\.user\.email\?\.trim\(\)\.toLowerCase\(\)/);
   assert.match(verifyRoute, /verifiedEmail !== email/);
   assert.match(
     verifyRoute,
-    /audience === "member"[\s\S]*claimPlatformMemberForViewer[\s\S]*claimPlatformOperatorForViewer/,
+    /completePlatformSignIn\(\{ authUserId, email: verifiedEmail \}\)/,
   );
   assert.match(
     verifyRoute,

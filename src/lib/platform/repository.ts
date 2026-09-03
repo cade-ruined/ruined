@@ -475,6 +475,7 @@ export async function claimPlatformMemberForViewer(
         revoked_by_auth_user_id = ${viewer.authUserId}::uuid
       where email_normalized = ${emailNormalized}
         and id <> ${invitation.id}::bigint
+        and intended_user_type = 'member'
         and accepted_at is null
         and revoked_at is null
     `;

@@ -51,7 +51,7 @@ test("operator access migration is ordered, immutable, indexed, and server-only"
 test("operator invitations are admin-authorized, email-serialized, scoped, and audited", () => {
   assert.match(repository, /async function requireOpsAdmin/);
   assert.match(repository, /role_grant\.role_slug = 'ops_admin'/);
-  assert.match(repository, /pg_advisory_xact_lock\(hashtext\(\$\{email\}\), 2\)/);
+  assert.match(repository, /pg_advisory_xact_lock\(hashtext\(\$\{email\}\), 1\)/);
   assert.match(repository, /intended_user_type[\s\S]*'staff'/);
   assert.match(repository, /role_slug in \('ops_admin', 'circle_leader', 'guide'\)/);
   assert.match(repository, /Choose at least one Circle/);
@@ -64,8 +64,8 @@ test("operator invitations are admin-authorized, email-serialized, scoped, and a
 test("verified staff claims reuse the shared identity and apply role plus Circle scope", () => {
   assert.match(platformRepository, /intended_user_type = 'staff'/);
   assert.match(platformRepository, /return rows\[0\]\?\.has_invite \? "invited" : "none"/);
-  assert.match(otpRequest, /audience === "member"[\s\S]*options = \{ shouldCreateUser: true \}/);
-  assert.match(otpVerify, /claimPlatformOperatorForViewer/);
+  assert.match(otpRequest, /eligibility\.shouldCreateUser[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/);
+  assert.match(otpVerify, /completePlatformSignIn/);
   assert.match(repository, /ensurePersonForEmail/);
   assert.match(repository, /insert into platform_role_grants/);
   assert.match(repository, /insert into circle_staff_assignments/);

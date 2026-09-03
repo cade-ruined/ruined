@@ -8,7 +8,7 @@ async function source(relativePath) {
 
 const [
   platformConfig,
-  authRequestUtilities,
+  authAccess,
   pageData,
   authSession,
   authRequestRoute,
@@ -32,7 +32,7 @@ const [
   platformVisibility,
 ] = await Promise.all([
   source("src/lib/platform/config.ts"),
-  source("src/lib/auth/request.ts"),
+  source("src/lib/auth/platform-access.ts"),
   source("src/lib/platform/page-data.ts"),
   source("src/lib/auth/session.ts"),
   source("app/api/auth/otp/request/route.ts"),
@@ -154,7 +154,7 @@ test("operator dashboards reauthorize inside their own consistent read", () => {
   assert.doesNotMatch(pageData, /getOperatorRole\(/);
 });
 
-test("passwordless OTP endpoints enforce origin, audience, and generic delivery boundaries", () => {
+test("passwordless OTP endpoints enforce origin, shared eligibility, and generic delivery boundaries", () => {
   for (const route of [authRequestRoute, authVerifyRoute]) {
     assert.match(route, /isTrustedPlatformOrigin\(request\)/);
     assert.match(route, /status: 403/);
@@ -162,16 +162,12 @@ test("passwordless OTP endpoints enforce origin, audience, and generic delivery 
     assert.match(route, /status: 503/);
   }
 
-  assert.match(authRequestRoute, /body\?\.audience === "ops" \? "ops" : "member"/);
-  assert.match(authRequestRoute, /getPasswordlessAccessEligibility\(email, audience\)/);
-  assert.match(authRequestRoute, /if \(eligibility === "none"\) return response/);
+  assert.doesNotMatch(authRequestRoute, /body\?\.audience/);
+  assert.match(authRequestRoute, /getUnifiedAccessEligibility\(email\)/);
+  assert.match(authRequestRoute, /if \(!eligibility\.eligible\) return response/);
   assert.match(
     authRequestRoute,
-    /eligibility === "invited"[\s\S]*audience === "member"[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
-  );
-  assert.match(
-    authRequestRoute,
-    /eligibility === "invited"[\s\S]*else \{[\s\S]*options = \{ shouldCreateUser: true \}/,
+    /eligibility\.shouldCreateUser[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
   );
   assert.match(authRequestRoute, /let options: [\s\S]*shouldCreateUser: false/);
   assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*email,[\s\S]*options,[\s\S]*\}\)/);
@@ -180,21 +176,21 @@ test("passwordless OTP endpoints enforce origin, audience, and generic delivery 
   assert.doesNotMatch(authRequestRoute, /console\.(?:warn|error|log)\([^)]*email/);
 
   assert.match(authVerifyRoute, /const TOKEN_PATTERN = \/\^\\d\{6,10\}\$\//);
-  assert.match(authVerifyRoute, /safePlatformNextPath\(body\?\.next, audience\)/);
+  assert.doesNotMatch(authVerifyRoute, /body\?\.(?:next|audience)/);
   assert.match(authVerifyRoute, /verifyOtp\(\{ email, token, type: "email" \}\)/);
   assert.match(authVerifyRoute, /if \(error \|\| !data\.user\)/);
 });
 
 test("verified members enter membership checkout while paid states return home", () => {
   assert.match(
-    authRequestUtilities,
-    /safePlatformNextPath\([\s\S]*?\): "\/my\/join" \| "\/ops"/,
+    authAccess,
+    /Promise<\{ redirectTo: "\/my" \| "\/my\/join" \| "\/ops" \}>/,
   );
   assert.match(
-    authRequestUtilities,
-    /return audience === "ops" \? "\/ops" : "\/my\/join"/,
+    authAccess,
+    /access\.member === "invited" \? "\/my\/join" : "\/my"/,
   );
-  assert.match(authVerifyRoute, /const redirectTo = safePlatformNextPath\(body\?\.next, audience\)/);
+  assert.match(authVerifyRoute, /const \{ redirectTo \} = await completePlatformSignIn/);
 
   const completedRedirectIndex = memberJoinPage.indexOf('redirect("/my")');
   const checkoutEnabledIndex = memberJoinPage.indexOf("const checkoutEnabled =");

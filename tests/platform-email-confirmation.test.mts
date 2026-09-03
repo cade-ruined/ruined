@@ -250,7 +250,7 @@ test("the confirmation page and access link suppress referrer details", () => {
   assert.match(confirmedPage, /referrer: "no-referrer"/);
   assert.match(confirmedPage, /A place with your name on it\./);
   assert.match(confirmationStatusComponent, /Email confirmed\./);
-  assert.match(confirmationStatusComponent, /Continue to member access and request a one-time code\./);
-  assert.match(confirmationStatusComponent, /href="\/my\/access"/);
+  assert.match(confirmationStatusComponent, /Continue to Ruined access and request a one-time code\./);
+  assert.match(confirmationStatusComponent, /href="\/access"/);
   assert.match(confirmationStatusComponent, /referrerPolicy="no-referrer"/);
 });

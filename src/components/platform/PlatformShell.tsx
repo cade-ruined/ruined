@@ -36,6 +36,7 @@ const OPERATIONS_NAVIGATION: OperationsNavigationGroup[] = [
     adminOnly: true,
     label: "Manage",
     items: [
+      { href: "/ops/support", label: "Support" },
       { href: "/ops/academy", label: "Academy" },
       { href: "/ops/blocks", label: "Blocks" },
       { href: "/ops/artifacts", label: "Artifacts" },
@@ -81,12 +82,14 @@ function PlatformUtilityRail({
   configuration,
   dark,
   hideBrand,
+  operatorRole,
   surface,
   viewerLabel,
 }: {
   configuration: PlatformConfiguration;
   dark: boolean;
   hideBrand?: boolean;
+  operatorRole?: OperatorNavigationRole | null;
   surface: PlatformSurface;
   viewerLabel?: string | null;
 }) {
@@ -105,7 +108,7 @@ function PlatformUtilityRail({
           </p>
         ) : null}
 
-        <div className="flex min-w-0 items-center gap-3 text-[0.7rem] uppercase tracking-[0.1em]">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[0.7rem] uppercase tracking-[0.1em]">
           <span
             className={
               preview
@@ -132,9 +135,25 @@ function PlatformUtilityRail({
               {viewerLabel}
             </span>
           ) : null}
+          {surface === "member" && viewerLabel ? (
+            <Link
+              className="inline-flex min-h-11 items-center border-l border-current/20 pl-3 font-medium normal-case tracking-[-0.01em] opacity-65 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
+              href="/my/support"
+            >
+              Support
+            </Link>
+          ) : null}
+          {operatorRole ? (
+            <Link
+              className="inline-flex min-h-11 items-center border-l border-current/20 pl-3 font-medium normal-case tracking-[-0.01em] opacity-65 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
+              href="/ops"
+            >
+              Operations →
+            </Link>
+          ) : null}
           {viewerLabel && !preview ? (
             <form
-              action={`/api/auth/sign-out?next=${surface === "ops" ? "/ops/access" : "/my/access"}`}
+              action="/api/auth/sign-out?next=/access"
               className="border-l border-current/20 pl-3"
               method="post"
             >
@@ -383,11 +402,14 @@ function OperationsNavigation({
                   {preview ? "Preview workspace" : configuration.mode === "connected" ? "Operator access" : "Services unavailable"}
                 </p>
                 <div className="mt-4 space-y-1">
+                  <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href="/access" role="menuitem">
+                    My profile
+                  </Link>
                   <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href="/" role="menuitem">
                     Return to website ↗
                   </Link>
                   {viewerLabel && !preview ? (
-                    <form action="/api/auth/sign-out?next=/ops/access" method="post" role="none">
+                    <form action="/api/auth/sign-out?next=/access" method="post" role="none">
                       <button className="flex min-h-11 w-full items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" role="menuitem" type="submit">
                         Sign out
                       </button>
@@ -454,8 +476,9 @@ function OperationsNavigation({
                 state={configuration.mode === "connected" ? "connected" : "disconnected"}
               />
               {viewerLabel ? <p className="max-w-full truncate text-xs normal-case">{viewerLabel}</p> : null}
+              <Link className="inline-flex min-h-11 items-center hover:text-white" href="/access">My profile</Link>
               {viewerLabel && !preview ? (
-                <form action="/api/auth/sign-out?next=/ops/access" method="post">
+                <form action="/api/auth/sign-out?next=/access" method="post">
                   <button className="min-h-11 hover:text-white" type="submit">Sign out</button>
                 </form>
               ) : null}
@@ -502,13 +525,14 @@ export default function PlatformShell({
   const memberCircle = member && pathname.startsWith("/my/circle");
   const memberExperiences = member && pathname.startsWith("/my/experiences");
   const memberLearning = member && pathname.startsWith("/my/learn");
+  const memberSupport = member && pathname.startsWith("/my/support");
   const foundations = member && isMemberFoundations(pathname);
   const foundationsExperience = pathname.startsWith("/my/foundations/experience");
   const timeline = member && pathname === "/my/foundations/timeline";
-  const paperSurface = memberHome || memberCircle || memberExperiences || memberLearning || timeline;
+  const paperSurface = memberHome || memberCircle || memberExperiences || memberLearning || memberSupport || timeline;
   const paperClass = timeline
     ? "member-timeline-paper"
-    : memberHome || memberCircle || memberExperiences || memberLearning
+    : memberHome || memberCircle || memberExperiences || memberLearning || memberSupport
       ? "member-profile-paper"
       : "";
   const dark = !member || threshold || (foundations && !timeline);
@@ -529,6 +553,7 @@ export default function PlatformShell({
           configuration={configuration}
           dark={dark}
           hideBrand={paperSurface}
+          operatorRole={operatorRole}
           surface={surface}
           viewerLabel={viewerLabel}
         />

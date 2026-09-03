@@ -6,7 +6,7 @@ import {
   isTrustedPlatformOrigin,
 } from "@/lib/auth/request";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { getPasswordlessAccessEligibility } from "@/lib/platform/repository";
+import { getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
 import { createSupabaseCurrentResponseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -15,7 +15,6 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_LENGTH = 254;
 
 type RequestBody = {
-  audience?: unknown;
   email?: unknown;
 };
 
@@ -30,7 +29,6 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => null)) as RequestBody | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-  const audience = body?.audience === "ops" ? "ops" : "member";
 
   if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
@@ -43,10 +41,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Passwordless access is not configured yet." }, { status: 503 });
   }
 
-  let eligibility: Awaited<ReturnType<typeof getPasswordlessAccessEligibility>>;
+  let eligibility: Awaited<ReturnType<typeof getUnifiedAccessEligibility>>;
 
   try {
-    eligibility = await getPasswordlessAccessEligibility(email, audience);
+    eligibility = await getUnifiedAccessEligibility(email);
   } catch (error) {
     console.error("Passwordless access eligibility could not be checked", {
       errorType: error instanceof Error ? error.name : "UnknownError",
@@ -54,40 +52,38 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  if (eligibility === "none") return response;
+  if (!eligibility.eligible) return response;
 
   let options: { emailRedirectTo?: string; shouldCreateUser: boolean } = {
     shouldCreateUser: false,
   };
 
-  if (eligibility === "invited") {
-    if (audience === "member") {
-      const emailRedirectTo = getMemberEmailConfirmationUrl(request);
-
-      if (!emailRedirectTo) {
-        console.error("Member confirmation destination is not safely configured");
-        return response;
-      }
-
-      options = { emailRedirectTo, shouldCreateUser: true };
-    } else {
-      // The durable staff invitation is the authorization boundary. Supabase
-      // may create the authentication identity, but no operator access exists
-      // until the verified code claims that exact invitation below.
-      options = { shouldCreateUser: true };
+  if (eligibility.shouldCreateUser) {
+    const emailRedirectTo = getMemberEmailConfirmationUrl(request);
+    if (!emailRedirectTo) {
+      console.error("Email confirmation destination is not safely configured");
+      return response;
     }
+    // Either kind of durable invitation can create an authentication identity.
+    // The role is granted only after verification claims that invitation.
+    options = { emailRedirectTo, shouldCreateUser: true };
   }
 
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options,
-  });
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options,
+    });
 
-  if (error) {
+    if (error) {
+      console.warn("Supabase passwordless code request was not delivered", {
+        errorCode: error.code,
+        status: error.status,
+      });
+    }
+  } catch (error) {
     console.warn("Supabase passwordless code request was not delivered", {
-      audience,
-      errorCode: error.code,
-      status: error.status,
+      errorType: error instanceof Error ? error.name : "UnknownError",
     });
   }
 

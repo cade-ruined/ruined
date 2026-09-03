@@ -16,6 +16,7 @@ const MEMBER_DESTINATIONS = [
   { href: "/my/updates", label: "Updates" },
   { href: "/my/profile", label: "Edit profile" },
   { href: "/my/account", label: "Account" },
+  { href: "/my/support", label: "Support" },
 ] as const;
 
 function isCurrentPath(pathname: string, href: string): boolean {

@@ -164,7 +164,7 @@ test("profile, Circle, Experiences, Academy, and Timeline get light paper dossie
   assert.match(shell, /const memberExperiences = member && pathname\.startsWith\("\/my\/experiences"\)/);
   assert.match(shell, /const memberLearning = member && pathname\.startsWith\("\/my\/learn"\)/);
   assert.match(shell, /const timeline = member && pathname === "\/my\/foundations\/timeline"/);
-  assert.match(shell, /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| timeline/);
+  assert.match(shell, /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| memberSupport \|\| timeline/);
   assert.match(shell, /timeline[\s\S]*?"member-timeline-paper"/);
   assert.match(shell, /memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning[\s\S]*?"member-profile-paper"/);
   assert.match(shell, /const dark = !member \|\| threshold \|\| \(foundations && !timeline\)/);

@@ -34,7 +34,7 @@ export default function SiteHeader() {
   const isLanding = pathname.startsWith("/lp");
   const isFoundations = pathname === "/foundations";
   const isPlatform =
-    pathname.startsWith("/my") || pathname.startsWith("/ops");
+    pathname === "/access" || pathname.startsWith("/my") || pathname.startsWith("/ops");
   const isOperations = pathname.startsWith("/ops");
   const isAuth = pathname.startsWith("/auth");
   const isHome = pathname === "/";

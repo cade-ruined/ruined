@@ -15,7 +15,7 @@ const STATUS_COPY: Record<
   confirmed: {
     eyebrow: "Confirmation complete",
     message:
-      "Your email address is verified. Continue to member access and request a one-time code. Payment follows there only if your membership is not yet active.",
+      "Your email address is verified. Continue to Ruined access and request a one-time code.",
     title: "Email confirmed.",
   },
   error: {
@@ -64,7 +64,7 @@ export default function MemberEmailConfirmationStatus() {
       <p className="mt-5 text-sm leading-relaxed text-white/50">{copy.message}</p>
       <Link
         className="mt-10 inline-flex min-h-12 items-center border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white"
-        href="/my/access"
+        href="/access"
         referrerPolicy="no-referrer"
       >
         {status === "confirmed" ? "Continue to access" : "Return to access"}

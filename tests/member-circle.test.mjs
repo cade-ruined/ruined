@@ -115,7 +115,7 @@ test("profile preview, Circle cluster, and person dossier share one ID-based por
 
 test("Circle shares the profile paper shell and member home no longer invents a partner role", () => {
   assert.match(shell, /const memberCircle = member && pathname\.startsWith\("\/my\/circle"\)/);
-  assert.match(shell, /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| timeline/);
+  assert.match(shell, /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| memberSupport \|\| timeline/);
   assert.match(shell, /memberHome \|\| memberCircle[\s\S]*?"member-profile-paper"/);
   assert.doesNotMatch(home, />Accountability</i);
   assert.doesNotMatch(home, /member\.partner/);

@@ -21,7 +21,7 @@ const [migration, hardening, meetUrlConstraint, runner] = await Promise.all([
   source("scripts/migrate-platform.mjs"),
 ]);
 
-test("Google Calendar sync migrations are transaction-safe and ordered last", () => {
+test("Google Calendar sync migrations are transaction-safe and keep their dependency order", () => {
   assert.match(migration, /^begin;/);
   assert.match(migration, /set local lock_timeout = '10s'/);
   assert.match(migration, /set local statement_timeout = '60s'/);
@@ -56,10 +56,8 @@ test("Google Calendar sync migrations are transaction-safe and ordered last", ()
   assert.ok(calendarSync >= 0 && calendarSync < calendarHardening);
   assert.ok(calendarHardening >= 0 && calendarHardening < meetUrlRepair);
   assert.ok(meetUrlRepair >= 0 && migrationsEnd > meetUrlRepair);
-  assert.doesNotMatch(
-    runner.slice(meetUrlRepair, migrationsEnd),
-    /db\/migrations\/.+\.sql[\s\S]*db\/migrations\/.+\.sql/,
-  );
+  // Later features append migrations without changing the Calendar order.
+  assert.ok(meetUrlRepair < runner.indexOf("20260829_operator_access_management.sql"));
 });
 
 test("Meet URL repair accepts only Google Meet HTTPS paths without fragile regex escaping", () => {

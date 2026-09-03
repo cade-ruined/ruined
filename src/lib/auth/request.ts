@@ -64,10 +64,3 @@ export function getMemberEmailConfirmationUrl(request: Request): string | null {
 
   return trustedOrigin ? new URL("/my/confirmed", trustedOrigin).toString() : null;
 }
-
-export function safePlatformNextPath(
-  _value: unknown,
-  audience: "member" | "ops",
-): "/my/join" | "/ops" {
-  return audience === "ops" ? "/ops" : "/my/join";
-}

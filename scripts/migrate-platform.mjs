@@ -30,6 +30,7 @@ const migrations = [
   "../db/migrations/20260829_operator_google_calendar_sync_hardening.sql",
   "../db/migrations/20260829_operator_google_calendar_meet_url_constraint.sql",
   "../db/migrations/20260829_operator_access_management.sql",
+  "../db/migrations/20260903183622_support_ticketing.sql",
 ];
 
 function migrationBody(migration, migrationName) {
