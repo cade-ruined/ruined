@@ -226,7 +226,7 @@ export async function markWorkflowActionSucceeded(
         ${action.attempts},
         'succeeded',
         ${workerId},
-        ${JSON.stringify(evidence)}::jsonb
+        ${tx.json(JSON.parse(JSON.stringify(evidence)))}
       )
       on conflict (workflow_action_id, attempt_number, outcome) do nothing
     `;
@@ -664,7 +664,7 @@ async function sendNotification(action: WorkflowAction): Promise<Record<string, 
       ) values (
         ${rows[0].id}::uuid,
         'delivered',
-        ${JSON.stringify({ channel: "in_app", workflowActionId: action.id })}::jsonb,
+        ${tx.json({ channel: "in_app", workflowActionId: action.id })},
         ${`${action.idempotencyKey}:delivered`}
       )
       on conflict (dedupe_key) do nothing
@@ -761,7 +761,7 @@ async function createOperatorTask(action: WorkflowAction): Promise<Record<string
         'created',
         'system',
         null,
-        ${JSON.stringify({ workflowActionId: action.id })}::jsonb,
+        ${tx.json({ workflowActionId: action.id })},
         ${`${action.idempotencyKey}:created`}
       )
       on conflict (dedupe_key) do nothing

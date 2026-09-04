@@ -276,7 +276,7 @@ export async function getMemberOnboarding(
     profile: {
       apparelSizing: row.apparel_sizing,
       avatarUrl: safeMemberAvatarUrl(row.avatar_storage_path),
-      birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : null,
+      birthDate: toIso(row.birth_date)?.slice(0, 10) ?? null,
       fulfillmentAddress: row.shipping_address,
       legalName: row.legal_name,
       mobile: row.mobile_e164,
@@ -334,7 +334,12 @@ function validateOnboardingProfile(input: MemberOnboardingProfileInput) {
     throw new MembershipInputError("A valid birth date is required.");
   }
   const birthDate = new Date(`${input.birthDate}T00:00:00.000Z`);
-  if (Number.isNaN(birthDate.getTime()) || birthDate > new Date()) {
+  if (
+    Number.isNaN(birthDate.getTime()) ||
+    input.birthDate < "1900-01-01" ||
+    birthDate > new Date() ||
+    birthDate.toISOString().slice(0, 10) !== input.birthDate
+  ) {
     throw new MembershipInputError("A valid birth date is required.");
   }
 
@@ -388,8 +393,8 @@ export async function saveMemberOnboardingProfile(
         ${clean.legalName},
         ${clean.mobile},
         ${clean.birthDate}::date,
-        ${JSON.stringify(clean.shippingAddress)}::jsonb,
-        ${JSON.stringify({ top: clean.apparelTopSize })}::jsonb
+        ${tx.json(clean.shippingAddress)}::jsonb,
+        ${tx.json({ top: clean.apparelTopSize })}::jsonb
       )
       on conflict (person_id) do update
       set
@@ -412,7 +417,7 @@ export async function saveMemberOnboardingProfile(
         ${identity.memberId}::uuid,
         'in_progress',
         'membership-entry-v1',
-        ${JSON.stringify({
+        ${tx.json({
           agreement: true,
           apparelSizing: true,
           birthDate: true,
@@ -595,7 +600,7 @@ export async function acceptPublishedMembershipAgreement(
         statement_timestamp(),
         'member',
         ${authUserId}::uuid,
-        ${JSON.stringify({ minimumAge: input.minimumAge, source: "my_ruined" })}::jsonb,
+        ${tx.json({ minimumAge: input.minimumAge, source: "my_ruined" })}::jsonb,
         ${ageDedupeKey}
       )
       on conflict (dedupe_key) do nothing
@@ -659,7 +664,7 @@ export async function acceptPublishedMembershipAgreement(
         ${agreement.title},
         ${agreement.content_sha256},
         ${agreement.body_text},
-        ${JSON.stringify({
+        ${tx.json({
           channel: "my_ruined",
           origin: input.evidence.origin,
           userAgent: input.evidence.userAgent?.slice(0, 500) ?? null,
@@ -705,7 +710,7 @@ export async function acceptPublishedMembershipAgreement(
         ${identity.memberId}::uuid,
         'in_progress',
         'membership-entry-v1',
-        ${JSON.stringify({
+        ${tx.json({
           agreement: true,
           apparelSizing: true,
           birthDate: true,
@@ -714,7 +719,7 @@ export async function acceptPublishedMembershipAgreement(
           preferredName: true,
           shippingAddress: true,
         })}::jsonb,
-        ${acceptance.accepted_at},
+        (select accepted_at from membership_agreement_acceptances where id = ${acceptance.id}::uuid),
         statement_timestamp()
       )
       on conflict (member_id) do update

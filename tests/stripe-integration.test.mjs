@@ -99,7 +99,7 @@ test("billing persistence binds Stripe identity to the verified platform member"
 test("checkout consent evidence gives Postgres explicit JSON value types", () => {
   assert.match(
     membershipRepository,
-    /JSON\.stringify\(\{ minimumAge: input\.minimumAge, source: "my_ruined" \}\)\}::jsonb/,
+    /tx\.json\(\{ minimumAge: input\.minimumAge, source: "my_ruined" \}\)\}::jsonb/,
   );
   assert.match(
     membershipRepository,
@@ -107,7 +107,7 @@ test("checkout consent evidence gives Postgres explicit JSON value types", () =>
   );
   assert.match(
     membershipRepository,
-    /JSON\.stringify\(\{[\s\S]*channel: "my_ruined"[\s\S]*userAgent:[\s\S]*\}\)\}::jsonb/,
+    /tx\.json\(\{[\s\S]*channel: "my_ruined"[\s\S]*userAgent:[\s\S]*\}\)\}::jsonb/,
   );
 });
 
