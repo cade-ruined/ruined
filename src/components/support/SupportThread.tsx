@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import SupportDeliveryStatus from "@/components/support/SupportDeliveryStatus";
 import { SupportPreviewNotice, SupportStatusBadge, supportDate } from "@/components/support/SupportShared";
 import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
 import { SUPPORT_STATUSES, supportCategoryLabel, supportStatusLabel, type SupportStatus, type SupportTicket } from "@/lib/support/model";
@@ -15,7 +16,7 @@ export default function SupportThread({ initialTicket, writable, operator = fals
   const [ticket, setTicket] = useState(initialTicket);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<SupportStatus>(initialTicket.status);
-  const [pending, setPending] = useState<"reply" | "status" | null>(null);
+  const [pending, setPending] = useState<"reply" | "status" | "retry_email" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -84,6 +85,23 @@ export default function SupportThread({ initialTicket, writable, operator = fals
     }
   }
 
+  async function retryEmail(deliveryId: string) {
+    if (!writable || !operator || pending) return;
+    setPending("retry_email"); setError(""); setNotice("");
+    try {
+      const response = await fetch(endpoint, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "retry_email", deliveryId }),
+      });
+      const result = await response.json() as { ticket?: SupportTicket; error?: string };
+      if (!response.ok || !result.ticket) throw new Error(result.error || "The email retry could not be queued.");
+      setTicket(result.ticket); setStatus(result.ticket.status);
+      setNotice("Unsent email queued. Refresh email status to check the result.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The email retry could not be queued.");
+    } finally { setPending(null); }
+  }
+
   const content = (
     <div className="mx-auto max-w-[70rem] pb-16 [font-family:var(--font-body)]">
       {!writable ? <SupportPreviewNotice /> : null}
@@ -103,6 +121,7 @@ export default function SupportThread({ initialTicket, writable, operator = fals
             <p className="mt-2 text-xs leading-relaxed text-black/60" id="support-reply-guidance">{ticket.status === "resolved" && !operator ? "A new reply reopens this request. " : ""}Keep passwords, sign-in codes, and card details out of your message.</p>
             <button className={`${SUPPORT_ACTION_CLASS} mt-4`} disabled={!writable || pending !== null || !message.trim()} type="submit">{pending === "reply" ? "Sending…" : "Send reply"}<span aria-hidden="true">↗</span></button>
           </form>
+          {operator && ticket.emailDeliveries ? <SupportDeliveryStatus deliveries={ticket.emailDeliveries} writable={writable} pending={pending !== null} onRetry={retryEmail} onRefresh={() => router.refresh()} /> : null}
         </div>
         {operator ? <aside><form className="rounded-[4px] bg-black/[0.035] p-4 sm:p-5" onSubmit={updateStatus}><label><span className={SUPPORT_LABEL_CLASS}>Status</span><select className={SUPPORT_FIELD_CLASS} disabled={!writable || pending !== null} onChange={(event) => setStatus(event.target.value as SupportStatus)} value={status}>{SUPPORT_STATUSES.map((item) => <option key={item.value} value={item.value}>{supportStatusLabel(item.value, true)}</option>)}</select></label><button className={`${SUPPORT_ACTION_CLASS} mt-4 w-full`} disabled={!writable || pending !== null || status === ticket.status || conflict} type="submit">{pending === "status" ? "Saving…" : "Save status"}</button></form><dl className="mt-5 grid gap-3 text-xs text-black/60"><div><dt className="font-medium text-black/75">Opened</dt><dd className="mt-1"><time dateTime={ticket.createdAt}>{supportDate(ticket.createdAt, true)} MT</time></dd></div><div><dt className="font-medium text-black/75">Last activity</dt><dd className="mt-1"><time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt, true)} MT</time></dd></div></dl></aside> : null}
       </div>

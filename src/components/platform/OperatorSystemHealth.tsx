@@ -6,7 +6,7 @@ import StateLabel from "@/components/platform/StateLabel";
 import type { OpsSystemHealth } from "@/lib/platform/ops-model";
 
 function formatDate(value: string | null): string {
-  if (!value) return "No successful run recorded";
+  if (!value) return "Not recorded";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "No successful run recorded";
   return new Intl.DateTimeFormat("en-US", {
@@ -19,22 +19,23 @@ function formatDate(value: string | null): string {
 }
 
 export default function OperatorSystemHealth({ health, canRetry }: { health: OpsSystemHealth; canRetry: boolean }) {
-  const connectedServices = health.services.filter((service) => service.state === "connected").length;
-  const servicesNeedingAttention = health.services.length - connectedServices;
+  const verifiedChecks = health.services.filter((service) => service.state === "verified").length;
+  const servicesNeedingAttention = health.services.filter(service => ["failed", "delayed", "unavailable"].includes(service.state)).length;
+  const awaitingVerification = health.services.filter(service => service.state === "configured").length;
 
   return (
     <OperatorPageFrame title="System">
       <dl
         aria-label="System snapshot"
-        className="grid gap-6 rounded-[4px] bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-3 sm:px-8 sm:py-8"
+        className="grid grid-cols-3 gap-4 rounded-[4px] bg-[#080605] px-5 py-5 text-[var(--color-bone)] sm:gap-6 sm:px-8 sm:py-8"
       >
         {[
-          ["Connected services", connectedServices, "text-[var(--color-verdigris)]"],
-          ["Services needing attention", servicesNeedingAttention, servicesNeedingAttention > 0 ? "text-[var(--color-poster)]" : ""],
-          ["Failed actions", health.workflowFailures.length, health.workflowFailures.length > 0 ? "text-[var(--color-poster)]" : ""],
+          ["Verified now", verifiedChecks, ""],
+          ["Needs attention", servicesNeedingAttention, servicesNeedingAttention > 0 ? "text-[var(--color-signal)]" : ""],
+          ["Not live-checked", awaitingVerification, ""],
         ].map(([label, value, tone]) => (
           <div key={label}>
-            <dt className="text-sm text-white/48">{label}</dt>
+            <dt className="min-h-10 text-xs text-white/70 sm:min-h-0 sm:text-sm">{label}</dt>
             <dd className={`mt-2 font-[var(--font-display)] text-4xl leading-none tracking-[-0.03em] sm:text-5xl ${tone}`}>
               {value}
             </dd>
@@ -42,20 +43,27 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
         ))}
       </dl>
 
-      <section className="mt-8 space-y-3" aria-label="Connected services">
+      <p className="mt-5 text-sm text-black/55">A saved configuration is not a successful connection. Previous activity is shown separately from checks performed now.</p>
+      <section className="mt-6 space-y-3" aria-label="Service checks and delivery queues">
         {health.services.map((service) => (
           <article
-            className="grid gap-4 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:grid-cols-[minmax(12rem,0.6fr)_9rem_minmax(14rem,1fr)] sm:items-center sm:px-6"
+            className="grid gap-4 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] md:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)] md:items-center sm:px-6"
             key={service.label}
           >
             <div>
               <h2 className="ui-heading text-lg font-semibold">{service.label}</h2>
-              <p className="mt-2 text-sm text-black/45">{service.detail}</p>
+              {service.mode ? <p className={`mt-2 inline-block rounded-sm px-2 py-1 text-xs font-semibold ${service.mode === "test" ? "bg-[#FFCA2C] text-black" : "bg-black/5"}`}>{service.mode === "test" ? "Test mode" : "Live mode"}</p> : null}
+              <p className="mt-2 text-sm text-black/65">{service.detail}</p>
             </div>
-            <div className={service.state === "connected" ? "text-[var(--color-verdigris)]" : "text-[var(--color-poster)]"}>
-              <StateLabel state={service.state} />
+            <div className={service.state === "verified" ? "text-[var(--color-verdigris)]" : service.state === "configured" ? "text-black/55" : "text-[var(--color-poster)]"}>
+              <span className="text-sm font-medium">{{ configured: "Configured", verified: "Verified", delayed: "Delayed", failed: "Needs review", unavailable: "Not configured" }[service.state]}</span>
             </div>
-            <p className="text-sm text-black/50">Last success · {formatDate(service.lastSucceededAt)}</p>
+            <div className="space-y-2 text-sm text-black/55">
+              <p>{service.evidenceLabel} · {formatDate(service.lastSucceededAt)}</p>
+              {service.pendingCount || service.failureCount ? <p>{service.pendingCount} pending · {service.failureCount} need review</p> : null}
+              {service.oldestPendingAt ? <p>Oldest due · {formatDate(service.oldestPendingAt)}</p> : null}
+              {service.href ? <Link className="inline-block py-2 underline underline-offset-4 hover:text-black" href={service.href}>Open {service.label === "Support email" ? "support queue" : service.label === "Google Calendar" ? "Experiences" : "controls"} →</Link> : null}
+            </div>
           </article>
         ))}
       </section>

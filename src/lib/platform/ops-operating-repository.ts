@@ -6,6 +6,8 @@ import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
 import { getGoogleCalendarConfigurationStatus } from "@/lib/google/calendar";
+import { getSupportEmailConfiguration } from "@/lib/support/delivery";
+import { buildOpsHealthServices, readOpsDeliveryAttention, readOpsDeliveryHealth } from "@/lib/platform/ops-delivery-health";
 import {
   googleCommunicationLivemode,
   googleCommunicationUrlFromMetadata,
@@ -1977,8 +1979,10 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
       limit 3
     `;
 
+    const attention = await readOpsDeliveryAttention(tx, { authUserId: access.authUserId, isAdmin });
     const counts = countRows[0];
     return {
+      attention,
       activity: activityRows.map((row) => ({
         activityId: row.activity_id,
         href: row.href,
@@ -2554,31 +2558,14 @@ export async function getOpsSystemHealth(
   return sql.begin(async (tx) => {
     await tx`set transaction isolation level repeatable read read only`;
     await requireOperatorAccess(tx, actorAuthUserId, { requireAdmin: true });
-    const timestampRows = await tx<Array<{
-      calendar_attention_count: number | string;
-      database_checked_at: Date | string;
-      last_calendar_at: Date | string | null;
-      last_identity_at: Date | string | null;
-      last_notification_at: Date | string | null;
-      last_stripe_at: Date | string | null;
-    }>>`
-      select
-        statement_timestamp() as database_checked_at,
-        (select max(last_synced_at) from experience_calendar_links) as last_calendar_at,
-        (
-          (select count(*)
-           from experience_calendar_links
-           where status in ('failed', 'pending_create', 'pending_update', 'pending_cancel'))
-          +
-          (select count(*)
-           from experience_calendar_sync_requests
-           where status in ('queued', 'processing')
-             and updated_at < statement_timestamp() - interval '5 minutes')
-        ) as calendar_attention_count,
-        (select max(last_signed_in_at) from platform_users) as last_identity_at,
-        (select max(coalesce(delivered_at, sent_at)) from member_notifications) as last_notification_at,
-        (select max(processed_at) from stripe_webhook_events where status = 'processed') as last_stripe_at
-    `;
+    const secretMode = /^(?:sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "") ? true
+      : /^(?:sk|rk)_test_/.test(process.env.STRIPE_SECRET_KEY ?? "") ? false : null;
+    const publicMode = /^pk_live_/.test(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "") ? true
+      : /^pk_test_/.test(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "") ? false : null;
+    const stripeMode = secretMode === publicMode ? secretMode : null;
+    const calendarMode = process.env.GOOGLE_COMMUNICATIONS_LIVEMODE?.trim() === "true" ? true
+      : process.env.GOOGLE_COMMUNICATIONS_LIVEMODE?.trim() === "false" ? false : null;
+    const snapshot = await readOpsDeliveryHealth(tx, { stripe: stripeMode, calendar: calendarMode });
     const failureRows = await tx<Array<{
       action_id: string;
       action_type: string;
@@ -2606,49 +2593,13 @@ export async function getOpsSystemHealth(
       order by action.updated_at
       limit 200
     `;
-    const timestamps = timestampRows[0];
     const calendarConfiguration = getGoogleCalendarConfigurationStatus();
-    const services: OpsSystemHealth["services"] = [
-      {
-        detail: "Identity and passwordless access",
-        label: "Supabase",
-        lastSucceededAt: asIso(timestamps?.last_identity_at),
-        state: configuration.supabase === "connected" ? "connected" : "unavailable",
-      },
-      {
-        detail: "Membership operating record",
-        label: "Postgres",
-        lastSucceededAt: asIso(timestamps?.database_checked_at),
-        state: configuration.database === "connected" ? "connected" : "unavailable",
-      },
-      {
-        detail: "Read-only billing projection",
-        label: "Stripe",
-        lastSucceededAt: asIso(timestamps?.last_stripe_at),
-        state: configuration.stripe === "connected" ? "connected" : "unavailable",
-      },
-      {
-        detail: "Member notification delivery",
-        label: "Notifications",
-        lastSucceededAt: asIso(timestamps?.last_notification_at),
-        state: failureRows.some((row) => row.action_type === "send_notification") ? "attention" : "connected",
-      },
-      {
-        detail: calendarConfiguration.ready && timestamps?.last_calendar_at
-          ? `Invitations organized by ${calendarConfiguration.organizerEmail}`
-          : calendarConfiguration.ready
-            ? `Organizer configured for ${calendarConfiguration.organizerEmail}; private provider check required`
-          : "Workspace organizer connection required",
-        label: "Google Calendar",
-        lastSucceededAt: asIso(timestamps?.last_calendar_at),
-        state: !calendarConfiguration.ready
-          ? "unavailable"
-          : !timestamps?.last_calendar_at
-            || Number(timestamps?.calendar_attention_count ?? 0) > 0
-            ? "attention"
-            : "connected",
-      },
-    ];
+    const services = buildOpsHealthServices(snapshot, {
+      supabase: configuration.supabase === "connected",
+      stripe: configuration.stripe === "connected", stripeMode,
+      calendar: calendarConfiguration.ready, calendarMode,
+      support: getSupportEmailConfiguration().ready,
+    });
     return {
       canRetry: true,
       health: {

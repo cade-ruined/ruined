@@ -610,6 +610,7 @@ export const PREVIEW_MEMBER_ACCOUNT: MemberAccountSnapshot = {
 export const PREVIEW_MEMBER_TIMELINE: MemberTimelineSnapshot = {
   access,
   completedAt: "2026-08-24T16:00:00.000Z",
+  revision: "0",
   entries: [
     {
       details: "The ending that changed the direction of the work.",

@@ -12,6 +12,7 @@ import {
   googleCalendarConferenceStatus,
   googleCalendarEventIsRuinedOwned,
   googleCalendarEventMatchesAppliedUpdate,
+  googleCalendarEventMatchesBody,
   googleCalendarEventMatchesCreateRequest,
   googleCalendarMeetUrl,
   googleMeetRequestIdForEventState,
@@ -400,14 +401,29 @@ export async function getGoogleCalendarEvent(
   return toGoogleCalendarEventResult(event, configuration.organizerEmail);
 }
 
+/** Read-only verification for an explicit operator binding/recovery action. */
+export async function getRuinedOwnedGoogleCalendarEventResult(eventId: string): Promise<GoogleCalendarEventResult> {
+  const configuration = requireGoogleCalendarConfiguration();
+  return toGoogleCalendarEventResult(
+    await getRuinedOwnedGoogleCalendarEvent(configuration, eventId), configuration.organizerEmail,
+  );
+}
+
 export async function createGoogleCalendarEvent(
-  input: GoogleCalendarEventDraft,
+  input: GoogleCalendarEventDraft & { recoverExisting?: boolean },
 ): Promise<GoogleCalendarEventResult> {
   const configuration = requireGoogleCalendarConfiguration();
   const body = buildGoogleCalendarCreateBody(input, configuration.organizerEmail);
-  let event: GoogleCalendarApiEvent;
+  let event: GoogleCalendarApiEvent | undefined;
 
-  try {
+  if (input.recoverExisting && body.id) {
+    try { event = await getGoogleCalendarApiEvent(configuration, body.id); }
+    catch (error) {
+      if (!(error instanceof GoogleCalendarApiError) || error.status !== 404) throw error;
+    }
+  }
+
+  if (!event) try {
     event = await calendarRequest<GoogleCalendarApiEvent>(configuration, {
       data: body,
       method: "POST",
@@ -435,6 +451,11 @@ export async function createGoogleCalendarEvent(
   }
 
   event = await requireMatchingCreatedEvent(configuration, input, event);
+  // A deterministic ID proves identity, not freshness. An earlier ambiguous
+  // create may have different text or attendees; reconcile before saying synced.
+  if (!googleCalendarEventMatchesBody(event, body)) {
+    return updateGoogleCalendarEvent({ ...input, eventId: event.id!, expectedEtag: event.etag ?? null });
+  }
 
   return toGoogleCalendarEventResult(
     await waitForGoogleMeet(configuration, event),
@@ -541,7 +562,7 @@ export async function cancelGoogleCalendarEvent(eventId: string): Promise<void> 
       url: calendarEventUrl(configuration.calendarId, normalizedEventId),
     });
   } catch (error) {
-    if (error instanceof GoogleCalendarApiError && error.status === 404) return;
+    if (error instanceof GoogleCalendarApiError && (error.status === 404 || error.status === 410)) return;
     throw error;
   }
 }

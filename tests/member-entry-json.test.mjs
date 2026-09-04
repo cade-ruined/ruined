@@ -57,6 +57,7 @@ async function loadEntryRepository(database) {
     "@/lib/membership/artifact-products": {},
     "@/lib/platform/ops-calendar-repository": {},
     "@/lib/platform/calendar-audience-invalidation": { markCalendarAudiencesPendingForMember: async () => {} },
+    "@/lib/platform/experience-member-access": {},
   });
 }
 
@@ -180,7 +181,7 @@ function exactTable(source, name) {
   return definition;
 }
 
-test("entry saves, reloads, accepts the agreement and completes against actual isolated PostgreSQL constraints", { skip: !process.env.PGLITE_MODULE }, async () => {
+test("entry saves, reloads, accepts the agreement and completes against actual isolated PostgreSQL constraints", async () => {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   const identitySchema = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_01_person_identity.sql", import.meta.url), "utf8");

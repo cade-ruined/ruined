@@ -5,9 +5,10 @@ import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
 import type { PlatformViewer } from "@/lib/platform/model";
+import { supportDeliveryNeedsReview, supportDeliveryState } from "@/lib/support/delivery-policy";
 import {
   SupportError, supportCategory, supportStatus, supportText, supportUuid,
-  type SupportCategory, type SupportMessage, type SupportStatus,
+  type SupportCategory, type SupportMessage, type SupportStatus, type SupportEmailDelivery,
   type SupportTicket, type SupportTicketSummary,
 } from "@/lib/support/model";
 
@@ -77,7 +78,7 @@ async function loadTicket(tx: Tx, actor: Actor, id: string, operator: boolean, l
   return rows[0];
 }
 
-async function detail(tx: Tx, row: TicketRow): Promise<SupportTicket> {
+async function detail(tx: Tx, row: TicketRow, operator = false): Promise<SupportTicket> {
   const rows = await tx<Array<{ id: string; author_type: "member" | "operator"; body: string; created_at: Date }>>`
     select id, author_type, body, created_at from support_messages
     where ticket_id = ${row.id}::uuid order by created_at, id limit 500
@@ -86,7 +87,19 @@ async function detail(tx: Tx, row: TicketRow): Promise<SupportTicket> {
     id: message.id, authorType: message.author_type, body: message.body,
     createdAt: new Date(message.created_at).toISOString(),
   }));
-  return { ...summary(row), messages };
+  if (!operator) return { ...summary(row), messages };
+  const deliveries = await tx<Array<Omit<SupportEmailDelivery, "created_at" | "sent_at"> & { created_at: Date; sent_at: Date | null }>>`
+    select id, audience, status, attempts, first_attempt_at, available_at, locked_at, last_error, created_at, sent_at
+    from support_email_deliveries where ticket_id = ${row.id}::uuid order by created_at desc, id
+  `;
+  return { ...summary(row), messages, emailDeliveries: deliveries.map((delivery) => ({
+    ...delivery,
+    created_at: new Date(delivery.created_at).toISOString(),
+    sent_at: delivery.sent_at ? new Date(delivery.sent_at).toISOString() : null,
+    first_attempt_at: delivery.first_attempt_at ? new Date(delivery.first_attempt_at).toISOString() : null,
+    available_at: delivery.available_at ? new Date(delivery.available_at).toISOString() : null,
+    locked_at: delivery.locked_at ? new Date(delivery.locked_at).toISOString() : null,
+  })) };
 }
 
 export async function listSupportTickets(viewer: PlatformViewer, operator = false): Promise<SupportTicketSummary[]> {
@@ -99,7 +112,14 @@ export async function listSupportTickets(viewer: PlatformViewer, operator = fals
       ${operator ? tx`` : tx`where requester_auth_user_id = ${actor.auth_user_id}::uuid`}
       order by updated_at desc, id limit 200
     `;
-    return rows.map(summary);
+    if (!operator || !rows.length) return rows.map(summary);
+    const deliveries = await tx<Array<SupportEmailDelivery & { ticket_id: string }>>`
+      select ticket_id, status, attempts, first_attempt_at, available_at, locked_at, last_error
+      from support_email_deliveries
+      where ticket_id = any(${rows.map((row) => row.id)}::uuid[]) and status <> 'sent'
+    `;
+    return rows.map((row) => ({ ...summary(row), emailAttentionCount: deliveries.filter((delivery) =>
+      delivery.ticket_id === row.id && supportDeliveryNeedsReview(delivery)).length }));
   });
 }
 
@@ -108,7 +128,7 @@ export async function getSupportTicket(viewer: PlatformViewer, ticketId: string,
   return getApplicationDatabase().begin(async (tx) => {
     await tx`set transaction isolation level repeatable read read only`;
     const actor = await requireActor(tx, viewer, operator);
-    return detail(tx, await loadTicket(tx, actor, id, operator));
+    return detail(tx, await loadTicket(tx, actor, id, operator), operator);
   });
 }
 
@@ -185,7 +205,7 @@ export async function replySupportTicket(viewer: PlatformViewer, ticketId: strin
       if (existing[0].body !== body || existing[0].author_type !== (operator ? "operator" : "member")) {
         throw new SupportError(409, "This reply changed. Refresh before sending again.");
       }
-      return detail(tx, ticket);
+      return detail(tx, ticket, operator);
     }
     const counts = await tx<Array<{ recent: number; total: number }>>`
       select
@@ -218,7 +238,7 @@ export async function replySupportTicket(viewer: PlatformViewer, ticketId: strin
         on conflict (dedupe_key) do nothing
       `;
     }
-    return detail(tx, await loadTicket(tx, actor, id, operator));
+    return detail(tx, await loadTicket(tx, actor, id, operator), operator);
   });
 }
 
@@ -239,6 +259,30 @@ export async function updateSupportTicketStatus(viewer: PlatformViewer, ticketId
       await tx`update support_tickets set status = ${status}, updated_at = clock_timestamp() where id = ${id}::uuid`;
       await audit(tx, actor, id, "support.status_changed", { from: ticket.status, to: status });
     }
-    return detail(tx, await loadTicket(tx, actor, id, true));
+    return detail(tx, await loadTicket(tx, actor, id, true), true);
+  });
+}
+
+export async function retrySupportEmailDelivery(viewer: PlatformViewer, ticketId: string, deliveryId: unknown): Promise<SupportTicket> {
+  const id = supportUuid(ticketId);
+  const emailId = supportUuid(deliveryId);
+  return getApplicationDatabase().begin(async (tx) => {
+    const actor = await requireActor(tx, viewer, true, true);
+    const ticket = await loadTicket(tx, actor, id, true, true);
+    const [delivery] = await tx<SupportEmailDelivery[]>`
+      select id, status, attempts, first_attempt_at, available_at, locked_at, last_error
+      from support_email_deliveries where id = ${emailId}::uuid and ticket_id = ${id}::uuid for update
+    `;
+    if (!delivery) throw new SupportError(404, "That notification was not found.");
+    if (!supportDeliveryState(delivery).canRetry) {
+      throw new SupportError(409, "This email cannot be safely resent. Review its delivery in Resend before contacting the recipient again.");
+    }
+    await tx`
+      update support_email_deliveries set status = 'pending', attempts = 0, available_at = now(),
+        first_attempt_at = null, locked_at = null, locked_by = null
+      where id = ${emailId}::uuid
+    `;
+    await audit(tx, actor, id, "support.email_retry_queued", { deliveryId: emailId, previousStatus: delivery.status });
+    return detail(tx, ticket, true);
   });
 }

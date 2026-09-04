@@ -276,7 +276,7 @@ export async function completeResendContactSync(
     update communication_contacts
     set
       resend_contact_id = ${resendContactId},
-      resend_preferences_snapshot = ${JSON.stringify(topics)}::jsonb,
+      resend_preferences_snapshot = ${sql.json(topics)}::jsonb,
       resend_preferences_synced_at = case
         when resend_preferences_synced_at is null
           or resend_preferences_synced_at < ${completedAt}

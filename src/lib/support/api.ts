@@ -7,7 +7,7 @@ import { processSupportEmailBatch } from "@/lib/support/delivery";
 import { SupportError } from "@/lib/support/model";
 import {
   createSupportTicket, getSupportTicket, listSupportTickets,
-  replySupportTicket, updateSupportTicketStatus,
+  replySupportTicket, updateSupportTicketStatus, retrySupportEmailDelivery,
 } from "@/lib/support/repository";
 
 function json(body: unknown, status = 200) {
@@ -63,6 +63,14 @@ export async function handleSupportRequest(request: Request, options: { operator
     }
     const body = await readBody(request);
     if (request.method === "PATCH" && operator && ticketId) {
+      if (body.action === "retry_email") {
+        const ticket = await retrySupportEmailDelivery(viewer, ticketId, body.deliveryId);
+        after(async () => {
+          try { await processSupportEmailBatch(4); }
+          catch { console.error("Support notification delivery could not run."); }
+        });
+        return json({ ticket });
+      }
       const ticket = await updateSupportTicketStatus(viewer, ticketId, { status: body.status, expectedUpdatedAt: body.expectedUpdatedAt });
       return json({ ticket });
     }

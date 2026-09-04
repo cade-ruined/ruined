@@ -267,8 +267,9 @@ test("the Sheet worker route stays private without a second membership cron owne
     [
       { path: "/api/internal/communications/process", schedule: "0 12 * * *" },
       { path: "/api/internal/membership/process", schedule: "30 12 * * *" },
+      { path: "/api/internal/integrations/google-calendar/process", schedule: "45 12 * * *" },
     ],
-    "the public main project owns Sheets; membership owns support and membership recovery",
+    "the public main project owns Sheets; membership owns support, membership and Calendar recovery",
   );
 });
 

@@ -59,7 +59,7 @@ test("one retry-safe provider request creates, updates, or cancels outside its d
 
 test("an interrupted provider attempt is reclaimed without creating a second logical request", () => {
   assert.match(repository, /recoverStaleCalendarReservation/);
-  assert.match(repository, /last_attempt_at <= statement_timestamp\(\) - interval '2 minutes'/);
+  assert.match(repository, /last_attempt_at <= statement_timestamp\(\) - interval '10 minutes'/);
   assert.match(repository, /status = 'queued'/);
   assert.match(repository, /calendar_attempt_interrupted/);
   assert.match(repository, /'retry_scheduled'/);
@@ -118,8 +118,8 @@ test("the operator Experience makes publish, sync, open, and cancellation unders
   assert.match(panel, /Preview only — no invitations were sent/);
   assert.match(record, /Publish \+ send invite/);
   assert.match(record, /Manual Meet fallback/);
-  assert.match(record, /calendarRequest\(experience\.experienceId, "sync"\)/);
-  assert.match(record, /calendarRequest\(experience\.experienceId, "cancel"\)/);
+  assert.doesNotMatch(record, /await calendarRequest\(/);
+  assert.match(record, /Calendar delivery is durably queued/);
   assert.match(panel, /aria-busy=\{pending\}/);
   assert.match(panel, /!canManage \|\| !calendar\.configured/);
   assert.match(panel, /role=\{messageIsError \? "alert" : "status"\}/);

@@ -178,8 +178,12 @@ export async function checkSupportSchema(PGlite) {
 }
 
 export async function loadPGliteForSchemaChecks(modulePath = process.env.PGLITE_MODULE) {
-  if (!modulePath) throw new Error("Set PGLITE_MODULE to a locally installed @electric-sql/pglite/dist/index.js. This check never uses DATABASE_URL.");
-  const { PGlite } = await import(pathToFileURL(resolve(modulePath)).href);
+  // The pinned development dependency makes database checks mandatory in a
+  // clean checkout. An explicit local module override remains useful for
+  // engine comparisons; neither branch reads a database connection string.
+  const { PGlite } = modulePath?.trim()
+    ? await import(pathToFileURL(resolve(modulePath)).href)
+    : await import("@electric-sql/pglite");
   return PGlite;
 }
 

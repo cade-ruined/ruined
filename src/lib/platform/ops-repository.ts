@@ -442,6 +442,7 @@ export async function createOrReissueMemberInvitation({
         revoked_at = statement_timestamp(),
         revoked_by_auth_user_id = ${actorAuthUserId}::uuid
       where email_normalized = ${email}
+        and intended_user_type = 'member'
         and accepted_at is null
         and revoked_at is null
       returning id::text

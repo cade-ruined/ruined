@@ -14,6 +14,7 @@ export default function SupportTicketList({ tickets, operator = false, emptyMess
               <p className="mb-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-black/60"><span>{ticket.number}</span><span>{supportCategoryLabel(ticket.category)}</span></p>
               <h3 className="ui-heading break-words text-base font-semibold leading-snug tracking-[-0.025em] [overflow-wrap:anywhere] sm:text-lg">{ticket.subject}</h3>
               {operator ? <p className="mt-1 break-all text-xs text-black/60">{ticket.requesterName} · {ticket.requesterEmail}</p> : null}
+              {operator && (ticket.emailAttentionCount ?? 0) > 0 ? <p className="mt-2 text-xs text-[var(--color-poster)]">Email needs attention · {ticket.emailAttentionCount}</p> : null}
               <p className="mt-2 text-xs text-black/55">Updated <time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt)}</time></p>
             </div>
             <div className="flex items-center justify-between gap-4 sm:justify-end"><SupportStatusBadge operator={operator} status={ticket.status} /><span aria-hidden="true" className="text-xl transition-transform group-hover:translate-x-1">→</span></div>

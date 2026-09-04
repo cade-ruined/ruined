@@ -88,7 +88,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
 
   const snapshot = [
     { href: "/ops/members", label: "Active members", tone: "", value: data.counts.activeMembers },
-    { href: "/ops/members?filter=attention", label: "Needs attention", tone: "text-[var(--color-poster)]", value: data.counts.attentionRequired },
+    { href: "/ops/members?filter=attention", label: "Needs attention", tone: "text-[var(--color-signal)]", value: data.counts.attentionRequired },
     { href: "/ops/foundations", label: "Foundations moving", tone: "", value: data.counts.foundations.inProgress },
     { href: "/ops/members?filter=unassigned", label: "Without a Circle", tone: "", value: data.counts.eligibleWithoutCircle },
     { href: "/ops/work", label: "Open work", tone: "", value: openWork },
@@ -96,15 +96,25 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
 
   return (
     <OperatorPageFrame title="Overview">
-      <nav className="mt-14 grid grid-cols-2 overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
+      {data.attention.length > 0 ? (
+        <section className="mt-6 grid gap-3 sm:grid-cols-2" aria-label="Needs attention now">
+          {data.attention.map(item => (
+            <Link key={item.href} href={item.href} className="flex items-center justify-between gap-5 rounded-[4px] bg-[var(--color-signal)] p-5 text-black shadow-[4px_4px_0_#080605]">
+              <span><span className="block font-medium">{item.label}</span><span className="mt-1 block text-xs opacity-60">{item.oldestAt ? `Oldest · ${formatExperienceDate(item.oldestAt)}` : "Open queue"}</span></span>
+              <span className="font-[var(--font-display)] text-3xl">{item.count} <span aria-hidden="true">→</span></span>
+            </Link>
+          ))}
+        </section>
+      ) : null}
+      <nav className="mt-8 grid grid-cols-6 overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
         {snapshot.map((item, index) => (
           <Link
-            className={`group min-h-24 px-5 py-5 transition-colors hover:bg-white/[0.055] sm:px-6 ${index === snapshot.length - 1 ? "col-span-2 lg:col-span-1" : ""}`}
+            className={`group px-4 py-4 transition-colors hover:bg-white/[0.055] sm:px-6 sm:py-5 lg:col-span-1 ${index >= 3 ? "col-span-3" : "col-span-2"}`}
             href={item.href}
             key={item.label}
           >
-            <p className="text-sm text-white/48 transition-colors group-hover:text-white/70">{item.label}</p>
-            <p className={`mt-5 font-[var(--font-display)] text-5xl leading-none tracking-[-0.04em] ${item.tone}`}>
+            <p className="min-h-8 text-xs text-white/70 transition-colors group-hover:text-white sm:min-h-10 sm:text-sm">{item.label}</p>
+            <p className={`mt-2 font-[var(--font-display)] text-3xl leading-none tracking-[-0.04em] sm:text-5xl ${item.tone}`}>
               {item.value}
             </p>
           </Link>
@@ -112,7 +122,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
       </nav>
 
       <div className="mt-10 grid gap-10 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.55fr)]">
-        <section aria-labelledby="recent-activity-heading">
+        <section className="order-2 xl:order-1" aria-labelledby="recent-activity-heading">
           <div className="flex items-end justify-between gap-5">
             <h2 className="font-[var(--font-display)] text-3xl leading-none sm:text-4xl" id="recent-activity-heading">
               Recent activity
@@ -152,7 +162,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
           </div>
         </section>
 
-        <aside className="grid content-start gap-8">
+        <aside className="order-1 grid content-start gap-8 xl:order-2">
           <section className="rounded-[4px] bg-[var(--color-surface)] p-5 sm:p-6" aria-labelledby="priority-work-heading">
             <div className="flex items-baseline justify-between gap-4">
               <h2 className="font-[var(--font-display)] text-2xl" id="priority-work-heading">Needs a decision</h2>

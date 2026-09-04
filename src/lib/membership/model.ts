@@ -395,4 +395,5 @@ export type MemberTimelineSnapshot = {
   access: MemberAccessPolicy;
   completedAt: string | null;
   entries: MemberTimelineEntry[];
+  revision: string;
 };

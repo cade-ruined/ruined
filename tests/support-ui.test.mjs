@@ -101,3 +101,17 @@ test("support preview never loads an identity and a connected signed-out account
     assert.equal(identityReads, mode === "preview" ? 0 : 1);
   }
 });
+
+test("operator delivery status distinguishes safe retry from uncertain delivery and is never shown to members", () => {
+  const SupportThread = load("src/components/support/SupportThread.tsx").default;
+  const row = { id: "delivery", audience: "member", status: "dead_letter", attempts: 5, first_attempt_at: "2026-01-01T00:00:00Z", last_error: "not_sent:provider_http_429", created_at: "2026-01-01T00:00:00Z", sent_at: null };
+  const render = (delivery, operator = true) => renderToStaticMarkup(React.createElement(SupportThread, { initialTicket: { ...PREVIEW_SUPPORT_TICKETS[0], emailDeliveries: [delivery] }, operator, writable: true }));
+  assert.match(render(row), /Retry unsent email/);
+  const uncertain = { ...row, last_error: "uncertain:provider_timeout" };
+  assert.match(render(uncertain), /Review delivery/);
+  assert.match(render(uncertain), /Check Resend before contacting/);
+  assert.doesNotMatch(render(uncertain), /Retry unsent email/);
+  assert.doesNotMatch(render(row, false), /Email notifications|Retry unsent email/);
+  assert.match(render({ ...row, status: "sent", last_error: null }), /Accepted by email provider/);
+  assert.match(render({ ...row, status: "sent", last_error: null }), /not inbox delivery/);
+});

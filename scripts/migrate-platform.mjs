@@ -32,6 +32,7 @@ const migrations = [
   "../db/migrations/20260829_operator_access_management.sql",
   "../db/migrations/20260903183622_support_ticketing.sql",
   "../db/migrations/20260903225243_member_phone_e164_constraint.sql",
+  "../db/migrations/20260904225258_calendar_durable_reconciliation.sql",
 ];
 
 function migrationBody(migration, migrationName) {

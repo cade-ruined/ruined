@@ -316,7 +316,8 @@ test("Resend sync snapshots and recovery preserve consent ordering", async () =>
   assert.match(beginLease, /return \{ status: rows\[0\]\?\.exists \? "busy" : "missing" \}/);
   assert.match(beginLease, /return \{ status: "acquired", context: contact \}/);
 
-  assert.match(completeLease, /resend_preferences_snapshot = \$\{JSON\.stringify\(topics\)\}::jsonb/);
+  // JSONB round trips and lease completion run against the installed driver
+  // and isolated PostgreSQL in integration-json-persistence.test.mjs.
   assert.match(completeLease, /resend_preferences_synced_at = case[\s\S]*?resend_preferences_synced_at < \$\{completedAt\}[\s\S]*?then \$\{completedAt\}/);
   assert.match(completeLease, /resend_sync_started_at = null/);
   assert.match(completeLease, /resend_sync_locked_by = null/);

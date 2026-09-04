@@ -4,6 +4,7 @@ import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import {
   completeMemberFoundationRequirement,
+  getMemberTimeline,
   MembershipAccessDeniedError,
   MembershipConflictError,
   MembershipInputError,
@@ -16,7 +17,7 @@ export const runtime = "nodejs";
 
 type TimelineAction =
   | { action: "complete" }
-  | { action: "save"; entries: MemberTimelineInput };
+  | { action: "save"; entries: MemberTimelineInput; expectedRevision?: string };
 
 function isTimelineEntry(value: unknown): value is MemberTimelineInput[number] {
   if (!value || typeof value !== "object") return false;
@@ -40,7 +41,8 @@ function isTimelineAction(value: unknown): value is TimelineAction {
     candidate.action === "save" &&
     Array.isArray(candidate.entries) &&
     candidate.entries.every(isTimelineEntry) &&
-    Object.keys(candidate).every((key) => key === "action" || key === "entries")
+    (candidate.expectedRevision === undefined || typeof candidate.expectedRevision === "string") &&
+    Object.keys(candidate).every((key) => ["action", "entries", "expectedRevision"].includes(key))
   );
 }
 
@@ -58,6 +60,20 @@ function errorResponse(error: unknown) {
     errorType: error instanceof Error ? error.name : "UnknownError",
   });
   return NextResponse.json({ error: "Your Timeline could not be saved." }, { status: 500 });
+}
+
+export async function GET() {
+  if (getPlatformConfiguration().mode !== "connected") {
+    return NextResponse.json({ error: "The Timeline is not connected." }, { status: 503 });
+  }
+  const viewer = await getCurrentPlatformViewer();
+  if (!viewer) return NextResponse.json({ error: "Sign in to open your Timeline." }, { status: 401 });
+  try {
+    const timeline = await getMemberTimeline(viewer.authUserId);
+    return NextResponse.json({ timeline }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
 
 export async function POST(request: Request) {
@@ -95,7 +111,7 @@ export async function POST(request: Request) {
       );
       return NextResponse.json({ requirements }, { headers: { "Cache-Control": "no-store" } });
     }
-    const timeline = await saveMemberTimeline(viewer.authUserId, body.entries);
+    const timeline = await saveMemberTimeline(viewer.authUserId, body.entries, body.expectedRevision ?? "");
     return NextResponse.json({ timeline }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return errorResponse(error);

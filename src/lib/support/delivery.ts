@@ -6,9 +6,12 @@ import { Resend } from "resend";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { createSupportNotificationEmail } from "@/lib/support/email-model";
 import { SUPPORT_EMAIL } from "@/lib/support/model";
+import {
+  SUPPORT_EMAIL_MAX_ATTEMPTS as MAX_ATTEMPTS,
+  supportDeliveryMayHaveBeenSent, supportDeliveryReplayExpired,
+  type SupportDeliveryRow,
+} from "@/lib/support/delivery-policy";
 
-const MAX_ATTEMPTS = 5;
-const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const BATCH_BUDGET_MS = 15_000;
 const PROVIDER_TIMEOUT_MS = 6_000;
 
@@ -19,7 +22,9 @@ type ClaimedDelivery = {
   audience: "operator" | "member";
   attempts: number;
   previous_attempts: number;
-  first_attempt_at: Date | string;
+  first_attempt_at: Date | string | null;
+  previous_status: SupportDeliveryRow["status"];
+  previous_error: string | null;
 };
 
 type DeliveryContext = {
@@ -82,7 +87,7 @@ export function getSupportEmailConfiguration(): SupportEmailConfiguration {
 }
 
 class SafeDeliveryError extends Error {
-  constructor(public readonly label: string, public readonly terminal = false) {
+  constructor(public readonly label: string, public readonly terminal = false, public readonly rejected = false) {
     super(label);
   }
 }
@@ -126,7 +131,7 @@ export async function processSupportEmailBatch(requestedLimit = 10): Promise<Sup
     for (let index = 0; index < limit && Date.now() - startedAt < BATCH_BUDGET_MS; index += 1) {
       const [delivery] = await sql<ClaimedDelivery[]>`
         with next_delivery as (
-          select id, attempts from support_email_deliveries
+          select id, attempts, status, last_error from support_email_deliveries
           where (status in ('pending', 'failed') and available_at <= now())
             or (status = 'processing' and locked_at < now() - interval '5 minutes')
           order by created_at, id
@@ -134,23 +139,28 @@ export async function processSupportEmailBatch(requestedLimit = 10): Promise<Sup
         )
         update support_email_deliveries delivery
         set status = 'processing', attempts = least(delivery.attempts + 1, ${MAX_ATTEMPTS}),
-            locked_by = ${workerId}, locked_at = now(),
-            first_attempt_at = coalesce(first_attempt_at, now())
+            locked_by = ${workerId}, locked_at = now()
         from next_delivery
         where delivery.id = next_delivery.id
         returning delivery.id, delivery.ticket_id, delivery.message_id,
                   delivery.audience, delivery.attempts, delivery.first_attempt_at,
-                  next_delivery.attempts as previous_attempts
+                  next_delivery.attempts as previous_attempts,
+                  next_delivery.status as previous_status, next_delivery.last_error as previous_error
       `;
       if (!delivery) break;
       result.claimed += 1;
 
+      const previous: SupportDeliveryRow = {
+        status: delivery.previous_status, attempts: delivery.previous_attempts,
+        first_attempt_at: delivery.first_attempt_at, last_error: delivery.previous_error,
+      };
+      const previouslyUncertain = supportDeliveryMayHaveBeenSent(previous);
+      let providerCalled = false;
       try {
-        const firstAttempt = new Date(delivery.first_attempt_at).getTime();
-        if (delivery.previous_attempts >= MAX_ATTEMPTS || !Number.isFinite(firstAttempt)
-          || Date.now() - firstAttempt >= RETRY_WINDOW_MS) {
+        if (supportDeliveryReplayExpired(previous)) {
           throw new SafeDeliveryError("retry_window_exhausted_manual_review", true);
         }
+        if (delivery.previous_attempts >= MAX_ATTEMPTS) throw new SafeDeliveryError("attempts_exhausted", true);
 
         const [context] = await sql<DeliveryContext[]>`
           select ticket.id as ticket_id, ticket.ticket_number::text,
@@ -184,6 +194,18 @@ export async function processSupportEmailBatch(requestedLimit = 10): Promise<Sup
           ticketNumber: context.ticket_number,
           siteUrl,
         });
+        // Commit the uncertainty fence BEFORE any network request. A crash or
+        // lost acknowledgement is then never mistaken for a known rejection.
+        // Reset the replay clock only if all earlier attempts were proven unsent.
+        const fenced = await sql`
+          update support_email_deliveries
+          set last_error = 'uncertain:send_in_flight',
+              first_attempt_at = case when ${previouslyUncertain} then first_attempt_at else now() end
+          where id = ${delivery.id}::uuid and status = 'processing' and locked_by = ${workerId}
+          returning id
+        `;
+        if (!fenced.length) { result.deferred += 1; continue; }
+        providerCalled = true;
         const response = await sendWithTimeout(client, {
           from: environmentValue("RESEND_FROM_EMAIL"),
           to,
@@ -194,8 +216,11 @@ export async function processSupportEmailBatch(requestedLimit = 10): Promise<Sup
           const status = response.error?.statusCode;
           const retryable = !status || status === 408 || status === 429 || status >= 500
             || response.error?.name === "concurrent_idempotent_requests";
+          // A timeout, conflict, transport exception, or server error does not
+          // prove the original send was rejected. Never erase prior uncertainty.
+          const rejected = typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 409;
           // Never store provider messages: they may contain an address or secret.
-          throw new SafeDeliveryError(status ? `provider_http_${status}` : "provider_unavailable", !retryable);
+          throw new SafeDeliveryError(status ? `provider_http_${status}` : "provider_unavailable", !retryable, rejected);
         }
 
         const updated = await sql`
@@ -207,7 +232,9 @@ export async function processSupportEmailBatch(requestedLimit = 10): Promise<Sup
         if (updated.length) result.sent += 1;
         else result.deferred += 1;
       } catch (error) {
-        const label = error instanceof SafeDeliveryError ? error.label : "delivery_unavailable";
+        const reason = error instanceof SafeDeliveryError ? error.label : "delivery_unavailable";
+        const uncertain = previouslyUncertain || (providerCalled && !(error instanceof SafeDeliveryError && error.rejected));
+        const label = `${uncertain ? "uncertain" : "not_sent"}:${reason}`;
         const terminal = (error instanceof SafeDeliveryError && error.terminal) || delivery.attempts >= MAX_ATTEMPTS;
         const delaySeconds = Math.min(3600, 60 * 2 ** Math.min(delivery.attempts - 1, MAX_ATTEMPTS));
         const updated = await sql`
@@ -222,7 +249,7 @@ export async function processSupportEmailBatch(requestedLimit = 10): Promise<Sup
         else result.deferred += 1;
         // The original timed-out request may still settle. Stop this batch and
         // let a later worker reuse its key, safely inside the 23-hour window.
-        if (label === "provider_timeout") break;
+        if (reason === "provider_timeout") break;
       }
     }
   } catch (error) {

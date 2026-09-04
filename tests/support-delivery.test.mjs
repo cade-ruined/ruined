@@ -47,7 +47,7 @@ async function fixture({ deliveries, memberEmail = "member@example.com", author 
   let databaseCalls = 0;
   const pending = deliveries ?? [{
     id: ids.delivery, ticket_id: ids.ticket, message_id: ids.message,
-    audience: "operator", attempts: 1, previous_attempts: 0, first_attempt_at: new Date(),
+    audience: "operator", attempts: 1, previous_attempts: 0, first_attempt_at: null, previous_status: "pending", previous_error: null,
   }];
   const sql = async (strings, ...values) => {
     const query = strings.join("?").replace(/\s+/g, " ").trim();
@@ -74,6 +74,7 @@ async function fixture({ deliveries, memberEmail = "member@example.com", author 
     "@/lib/database/server": { getApplicationDatabase: () => { databaseCalls += 1; return sql; } },
     "@/lib/support/email-model": emailModel,
     "@/lib/support/model": { SUPPORT_EMAIL: "connect@theruinedproject.com" },
+    "@/lib/support/delivery-policy": await loadModule("../src/lib/support/delivery-policy.ts"),
   });
   return { ...worker, queries, sends, databaseCalls: () => databaseCalls };
 }
@@ -124,7 +125,8 @@ test("operator notifications reach only connect and work with marketing disabled
   const sql = worker.queries.map((entry) => entry.query).join("\n");
   assert.match(sql, /for update skip locked/);
   assert.match(sql, /locked_at < now\(\) - interval '5 minutes'/);
-  assert.match(sql, /first_attempt_at = coalesce\(first_attempt_at, now\(\)\)/);
+  assert.match(sql, /last_error = 'uncertain:send_in_flight'/);
+  assert.match(sql, /first_attempt_at = case when \? then first_attempt_at else now\(\) end/);
   assert.match(sql, /and locked_by = \?/);
   assert.doesNotMatch(sql, /message\.body|ticket\.subject|requester_name/);
 }));
@@ -132,7 +134,7 @@ test("operator notifications reach only connect and work with marketing disabled
 test("member replies require the current verified email and point to their private thread", async () => withEnvironment({}, async () => {
   const worker = await fixture({ author: "operator", deliveries: [{
     id: ids.delivery, ticket_id: ids.ticket, message_id: ids.message,
-    audience: "member", attempts: 1, previous_attempts: 0, first_attempt_at: new Date(),
+    audience: "member", attempts: 1, previous_attempts: 0, first_attempt_at: null, previous_status: "pending", previous_error: null,
   }] });
   const result = await worker.processSupportEmailBatch();
   assert.equal(result.sent, 1);
@@ -149,12 +151,12 @@ test("member replies require the current verified email and point to their priva
 test("changed or retired recipient email is not used and is held for manual review", async () => withEnvironment({}, async () => {
   const worker = await fixture({ memberEmail: null, deliveries: [{
     id: ids.delivery, ticket_id: ids.ticket, message_id: ids.message,
-    audience: "member", attempts: 1, previous_attempts: 0, first_attempt_at: new Date(),
+    audience: "member", attempts: 1, previous_attempts: 0, first_attempt_at: null, previous_status: "pending", previous_error: null,
   }] });
   const result = await worker.processSupportEmailBatch();
   assert.equal(result.deadLetter, 1);
   assert.equal(worker.sends.length, 0);
-  assert.ok(worker.queries.some(({ values }) => values.includes("recipient_unavailable_manual_review")));
+  assert.ok(worker.queries.some(({ values }) => values.includes("not_sent:recipient_unavailable_manual_review")));
 }));
 
 test("uncertain delivery does not retry outside the provider deduplication window", async () => withEnvironment({}, async () => {
@@ -165,7 +167,7 @@ test("uncertain delivery does not retry outside the provider deduplication windo
   const result = await worker.processSupportEmailBatch();
   assert.equal(result.deadLetter, 1);
   assert.equal(worker.sends.length, 0);
-  assert.ok(worker.queries.some(({ values }) => values.includes("retry_window_exhausted_manual_review")));
+  assert.ok(worker.queries.some(({ values }) => values.includes("uncertain:retry_window_exhausted_manual_review")));
 }));
 
 test("provider errors are retryable when appropriate and never persist PII", async () => withEnvironment({}, async () => {
@@ -173,7 +175,7 @@ test("provider errors are retryable when appropriate and never persist PII", asy
   const result = await worker.processSupportEmailBatch();
   assert.equal(result.failed, 1);
   assert.equal(result.deadLetter, 0);
-  assert.ok(worker.queries.some(({ values }) => values.includes("provider_http_429")));
+  assert.ok(worker.queries.some(({ values }) => values.includes("not_sent:provider_http_429")));
   assert.doesNotMatch(JSON.stringify(worker.queries), /private@example|secret-key/);
 }));
 

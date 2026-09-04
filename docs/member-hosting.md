@@ -51,22 +51,30 @@ is requested. Never add a public Storage policy or expose this key with a
 | BYOB registration Google Sheets sync and reconciliation | Public project | 12:15 |
 | Support email retries | Membership project | 12:00 |
 | Membership workflows | Membership project | 12:30 |
+| Google Calendar reconciliation | Membership project | 12:45 |
 
-The membership branch's `vercel.json` schedules only communications and
-membership processing. Its communications endpoint runs support independently;
+The membership branch's `vercel.json` schedules communications, membership,
+and Calendar processing. Its communications endpoint runs support independently;
 the disabled marketing worker returns without claiming public outbox events.
 The original `main` schedule remains unchanged. Do not schedule Sheets from both
 projects: its full reconciliation rewrites the shared spreadsheet.
 
 These daily schedules are recovery passes, not a promise of prompt retries.
 Normal member actions also trigger immediate bounded processing. Support
-deliveries that exceed their safe retry window require operator review.
+deliveries with an uncertain prior send that exceed their safe retry window
+require operator review; confirmed-unsent failures can safely retry later.
+
+Calendar changes are durable queued work, with explicit operator sync also
+available. One daily recovery invocation is not enough for a busy community:
+the Calendar worker deliberately claims only one event per invocation. See
+[the recovery activation checklist](worker-recovery-activation.md) before
+promising prompt unattended invitations.
 
 ## Release checks
 
 1. Build the approved membership commit in `ruined-members`, with production
    branch tracking set to `codex/my-ruined-foundation` and the configuration above.
-2. Verify the expected commit, successful deployment, and exactly two membership
+2. Verify the expected commit, successful deployment, and exactly three membership
    cron schedules. Verify the public project's deployment and cron ownership are
    unchanged; do not manually run a worker merely to test authentication.
 3. Move only `members.theruinedproject.com` to the new project's production

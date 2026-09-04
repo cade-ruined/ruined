@@ -101,3 +101,64 @@ organizer. Calendar credentials remain separate from
 
 Keep `GOOGLE_CALENDAR_ENABLED=false` until the organizer, OAuth grant, secrets,
 and a real test invitation have all been verified in that environment.
+
+## Durable delivery and recovery
+
+Explicitly publishing an event that has not ended records its first Calendar
+invitation in the same transaction as the Experience change, only when Calendar
+is configured and ready with an explicit test/live mode. Ordinary edits never
+create the first invitation for an older, already-published event. Edits,
+cancellations, and Circle/Block roster changes record desired revisions for an
+existing Calendar link. Closing the browser cannot discard that work. The
+explicit **Sync invitations** and **Send cancellation** controls remain
+available; a separate browser request is no longer required after save.
+
+If an event ends before an invitation or update is delivered, automatic delivery
+pauses and the Calendar panel shows **Review past event**. The worker does not
+claim or repeatedly retry that paused work. An operator can review it and choose
+an explicit Calendar action; cancellations continue to recover automatically,
+including for archived events with a recorded cancellation.
+
+The protected `/api/internal/integrations/google-calendar/process` endpoint
+accepts GET or POST with the configured `CRON_SECRET` bearer credential. It
+processes one invitation per call. Provider requests occur outside database
+transactions, with a ten-minute durable reservation lease and a five-minute
+maximum route execution window. Failed provider requests retry with exponential
+backoff from 30 seconds to one hour. An interrupted request is recoverable after
+its lease expires. Newer revisions supersede stale snapshots; recovered creates
+verify the deterministic provider identity and reconcile current contents before
+reporting success. A cancelled Experience still delivers its cancellation if it
+is archived before the worker runs.
+
+The Vercel schedule is only a daily fallback on the current Hobby plan. Timely
+automatic delivery requires activation of a supported frequent scheduler; see
+[`worker-recovery-activation.md`](worker-recovery-activation.md). This code change
+does not activate that scheduler or send a test invitation.
+
+## Verify older invitations after the delivery-mode migration
+
+Apply `20260904225258_calendar_durable_reconciliation.sql` before releasing code
+that reads its fields. It does not guess whether existing invitations are test
+or live. Unbound records are visible as **Verify delivery mode**, and cannot send.
+Disable or drain Calendar producers running older code before the migration and
+cutover, including other hosts sharing the database. The additive migration
+cannot impose the new mode checks on an old application or rollback deployment.
+
+1. An active administrator opens the Experience's Google Calendar panel.
+2. Confirm the selected organizer and explicitly configured test/live mode.
+3. Choose **Verify & bind to test** or **Verify & bind to live** and confirm.
+4. The app only reads Google, verifies the saved Ruined event and organizer,
+   rechecks administrator access and record version, and audits the binding.
+   It sends nothing and pauses background delivery for that record.
+5. Choose **Sync invitations** or **Send cancellation** to authorize the pending
+   delivery. A subsequent authorized Experience/roster edit also resumes delivery.
+
+The binding cannot later be changed to another mode. A missing event, changed
+organizer, unrelated provider event, or legacy record without a saved provider ID
+fails closed and requires owner review; the app does not create a replacement.
+Google Calendar has no email sandbox: **test** is an isolation label, and an
+explicit test send still emails its actual selected recipients.
+
+Verification for this change is isolated PostgreSQL plus mocked provider HTTP;
+production migration, legacy binding, scheduler activation, and real invitation
+smoke testing remain separate release steps.

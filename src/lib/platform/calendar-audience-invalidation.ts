@@ -25,7 +25,7 @@ async function markExperienceRowsPending(
 /**
  * A Circle roster change alters Circle-scoped invites and, while the Circle is
  * assigned to a Block, that Block's invites. This only dirties the durable
- * Calendar link; the provider is reconciled by the explicit sync boundary.
+ * Calendar link; the background worker reconciles it after this transaction.
  */
 export async function markCalendarAudiencesPendingForCircle(
   tx: postgres.TransactionSql,

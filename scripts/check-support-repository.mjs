@@ -12,7 +12,7 @@ const jsonMarker = Symbol("test-only JSON parameter");
 
 // Translate postgres.js's tagged-template subset into bound PGlite parameters.
 // Query text comes from the real repository; no SQL result is mocked here.
-function taggedDatabase(db) {
+export function taggedDatabase(db) {
   const tag = (transaction) => {
     const sql = (strings, ...values) => {
       const fragment = { [fragmentMarker]: true, strings, values };
@@ -35,7 +35,7 @@ function taggedDatabase(db) {
     sql.json = (value) => ({ [jsonMarker]: true, value });
     return sql;
   };
-  return { begin: (callback) => db.transaction((transaction) => callback(tag(transaction))) };
+  return Object.assign(tag(db), { begin: (callback) => db.transaction((transaction) => callback(tag(transaction))) });
 }
 
 async function loadTypescript(relativePath, dependencies = {}) {
@@ -96,6 +96,7 @@ export async function checkSupportRepository(PGlite) {
       "node:crypto": crypto,
       "@/lib/database/server": { getApplicationDatabase: () => taggedDatabase(db) },
       "@/lib/support/model": model,
+      "@/lib/support/delivery-policy": await loadTypescript("src/lib/support/delivery-policy.ts"),
     });
     const denied = (operation, status) => assert.rejects(operation, (error) => error instanceof model.SupportError && error.status === status);
     const input = { category: "circle", subject: "Circle placement", message: body, requestKey: randomUUID() };
@@ -151,8 +152,34 @@ export async function checkSupportRepository(PGlite) {
     assert.equal((await repository.updateSupportTicketStatus(admin, ticket.id, { status: "in_progress", expectedUpdatedAt: precise.updatedAt })).status, "in_progress");
     checks.push("Status writes reject stale or truncated versions; member replies reopen resolved requests.");
 
+    const email = (await db.query("select id from support_email_deliveries where ticket_id = $1 limit 1", [ticket.id])).rows[0];
+    await db.query("update support_email_deliveries set status='dead_letter', attempts=5, first_attempt_at=now()-interval '2 days', last_error='not_sent:provider_http_429' where id=$1", [email.id]);
+    assert.equal((await repository.getSupportTicket(member, ticket.id)).emailDeliveries, undefined);
+    assert.ok((await repository.getSupportTicket(admin, ticket.id, true)).emailDeliveries.length);
+    assert.equal((await repository.listSupportTickets(admin, true))[0].emailAttentionCount, 1);
+    assert.equal((await repository.listSupportTickets(member))[0].emailAttentionCount, undefined);
+    await denied(() => repository.retrySupportEmailDelivery(member, ticket.id, email.id), 403);
+    await denied(() => repository.retrySupportEmailDelivery(shaper, ticket.id, email.id), 403);
+    await denied(() => repository.retrySupportEmailDelivery(admin, ticket.id, randomUUID()), 404);
+    await denied(() => repository.retrySupportEmailDelivery(admin, randomUUID(), email.id), 404);
+    const otherTicket = await repository.createSupportTicket(other, { ...input, requestKey: randomUUID() });
+    await denied(() => repository.retrySupportEmailDelivery(admin, otherTicket.id, email.id), 404);
+    const retried = await repository.retrySupportEmailDelivery(admin, ticket.id, email.id);
+    const queued = retried.emailDeliveries.find((item) => item.id === email.id);
+    assert.equal(queued.status, "pending");
+    assert.equal(queued.attempts, 0);
+    assert.equal(queued.first_attempt_at, null);
+    assert.equal((await db.query("select metadata from operator_audit_events where action='support.email_retry_queued'")).rows[0].metadata.deliveryId, email.id);
+    await denied(() => repository.retrySupportEmailDelivery(admin, ticket.id, email.id), 409);
+    for (const lastError of [null, "provider_http_500", "uncertain:provider_timeout", "uncertain:retry_window_exhausted_manual_review"]) {
+      await db.query("update support_email_deliveries set status='dead_letter', attempts=2, first_attempt_at=now()-interval '2 days', last_error=$1 where id=$2", [lastError, email.id]);
+      await denied(() => repository.retrySupportEmailDelivery(admin, ticket.id, email.id), 409);
+    }
+    checks.push("Only admins can retry a confirmed-unsent notification bound to its ticket; ambiguous old sends are held and members never receive delivery diagnostics.");
+
     await db.query("update platform_role_grants set revoked_at = now() where auth_user_id = $1", [admin.authUserId]);
     await denied(() => repository.getSupportTicket(admin, ticket.id, true), 403);
+    await denied(() => repository.retrySupportEmailDelivery(admin, ticket.id, email.id), 403);
     await db.query("update person_email_addresses set verification_state = 'unverified' where email_normalized = $1", [member.email]);
     await denied(() => repository.getSupportTicket(member, ticket.id), 403);
     await db.query("update person_email_addresses set verification_state = 'verified' where email_normalized = $1", [member.email]);

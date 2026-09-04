@@ -9,6 +9,7 @@ import {
   googleCommunicationLivemode,
   googleCommunicationUrlFromMetadata,
 } from "@/lib/google/communications";
+import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
 import {
   OpsOperatingRepositoryError,
 } from "@/lib/platform/ops-operating-repository";
@@ -57,11 +58,15 @@ type EventOperatorAccess = {
 };
 
 type ExperienceAccessRow = {
+  block_id: string | null;
   circle_id: string | null;
+  ends_at: Date | string | null;
   id: string;
+  progression_level_slug: string | null;
   starts_at: Date | string;
   status: OpsExperienceLifecycleState;
   title: string;
+  visibility: OpsExperienceDraftInput["visibility"] | "progression";
 };
 
 function requireUuid(value: string, label: string): string {
@@ -286,23 +291,25 @@ async function hasAssignedCircle(
   access: EventOperatorAccess,
   circleId: string,
   roles: Array<"circle_leader" | "guide">,
+  lock = false,
 ): Promise<boolean> {
   if (access.isAdmin) return true;
-  const rows = await tx<Array<{ allowed: boolean }>>`
-    select exists (
-      select 1
-      from circle_staff_assignments assignment
-      join platform_role_grants role_grant
-        on role_grant.auth_user_id = assignment.auth_user_id
-       and role_grant.role_slug = assignment.role_slug
-       and role_grant.revoked_at is null
-      where assignment.circle_id = ${circleId}::uuid
-        and assignment.auth_user_id = ${access.authUserId}::uuid
-        and assignment.ended_at is null
-        and assignment.role_slug = any(${tx.array(roles)}::text[])
-    ) as allowed
+  const rows = await tx<Array<{ id: string }>>`
+    select assignment.id
+    from circle_staff_assignments assignment
+    join platform_role_grants role_grant
+      on role_grant.auth_user_id = assignment.auth_user_id
+      and role_grant.role_slug = assignment.role_slug
+      and role_grant.revoked_at is null
+    where assignment.circle_id = ${circleId}::uuid
+      and assignment.auth_user_id = ${access.authUserId}::uuid
+      and assignment.ended_at is null
+      and assignment.assigned_at <= statement_timestamp()
+      and assignment.role_slug = any(${tx.array(roles)}::text[])
+    limit 1
+    ${lock ? tx`for share of assignment` : tx``}
   `;
-  return Boolean(rows[0]?.allowed);
+  return rows.length > 0;
 }
 
 async function requireExperienceAccess(
@@ -312,7 +319,7 @@ async function requireExperienceAccess(
   intent: "define" | "read" | "roster",
 ): Promise<ExperienceAccessRow> {
   const rows = await tx<ExperienceAccessRow[]>`
-    select id, title, circle_id, starts_at, status
+    select id, title, circle_id, block_id, visibility, progression_level_slug, starts_at, ends_at, status
     from experiences
     where id = ${experienceId}::uuid
     for update
@@ -331,13 +338,26 @@ async function requireExperienceAccess(
   const allowedRoles: Array<"circle_leader" | "guide"> = intent === "define"
     ? ["circle_leader"]
     : ["circle_leader", "guide"];
-  if (!(await hasAssignedCircle(tx, access, experience.circle_id, allowedRoles))) {
+  if (!(await hasAssignedCircle(tx, access, experience.circle_id, allowedRoles, true))) {
     throw new OpsOperatingRepositoryError(
       "forbidden",
       "This Experience is outside the operator's current Circle assignment.",
     );
   }
   return experience;
+}
+
+async function requireEligibleExperienceMember(
+  tx: postgres.TransactionSql,
+  experience: ExperienceAccessRow,
+  memberId: string | null,
+): Promise<void> {
+  if (!(await memberEligibleForExperience(tx, experience, memberId))) {
+    throw new OpsOperatingRepositoryError(
+      "forbidden",
+      "This member does not currently have access to the Experience audience.",
+    );
+  }
 }
 
 async function writeOperatorAudit(
@@ -459,12 +479,20 @@ async function promoteWaitlist(
   actorAuthUserId: string | null,
 ): Promise<number> {
   const capacityRows = await tx<Array<{
+    block_id: string | null;
     capacity: number | null;
+    circle_id: string | null;
     registered_count: number;
+    progression_level_slug: string | null;
+    visibility: string;
     waitlisted_count: number;
   }>>`
     select
       experience.capacity,
+      experience.circle_id,
+      experience.block_id,
+      experience.visibility,
+      experience.progression_level_slug,
       count(registration.id) filter (where registration.status = 'registered')::int as registered_count,
       count(registration.id) filter (where registration.status = 'waitlisted')::int as waitlisted_count
     from experiences experience
@@ -481,32 +509,30 @@ async function promoteWaitlist(
     : Math.min(waitlistedCount, Math.max(0, capacity - registeredCount));
   if (available === 0) return 0;
 
-  const promoted = await tx<Array<{
+  const candidates = await tx<Array<{
     id: string;
+    member_id: string | null;
     person_id: string;
   }>>`
-    with next_waitlisted as (
-      select registration.id
-      from experience_registrations registration
-      where registration.experience_id = ${experienceId}::uuid
-        and registration.status = 'waitlisted'
-      order by registration.waitlisted_at, registration.registered_at, registration.id
-      limit ${available}
-      for update
-    )
-    update experience_registrations registration
-    set
-      status = 'registered',
-      promoted_at = statement_timestamp(),
-      cancelled_at = null,
-      cancellation_reason = null,
-      version = registration.version + 1,
-      updated_at = statement_timestamp()
-    from next_waitlisted
-    where registration.id = next_waitlisted.id
-    returning registration.id, registration.person_id
+    select registration.id, registration.member_id, registration.person_id
+    from experience_registrations registration
+    where registration.experience_id = ${experienceId}::uuid
+      and registration.status = 'waitlisted'
+    order by registration.waitlisted_at, registration.registered_at, registration.id
+    for update
   `;
-  for (const registration of promoted) {
+  let promoted = 0;
+  for (const registration of candidates) {
+    if (promoted >= available) break;
+    if (!(await memberEligibleForExperience(tx, capacityRows[0]!, registration.member_id))) continue;
+    await tx`
+      update experience_registrations registration
+      set status = 'registered', promoted_at = statement_timestamp(),
+        cancelled_at = null, cancellation_reason = null,
+        version = registration.version + 1, updated_at = statement_timestamp()
+      where registration.id = ${registration.id}::uuid
+        and registration.status = 'waitlisted'
+    `;
     await writeRegistrationEvent(tx, {
       actorAuthUserId,
       experienceId,
@@ -517,8 +543,9 @@ async function promoteWaitlist(
       registrationId: registration.id,
       source: "system",
     });
+    promoted += 1;
   }
-  return promoted.length;
+  return promoted;
 }
 
 export async function getOpsExperienceManagementDirectory(
@@ -1256,7 +1283,7 @@ export async function transitionOpsExperience(input: {
       await markOpsExperienceCalendarPending(tx, {
         actorAuthUserId: access.authUserId,
         experienceId,
-        reason: input.intent === "cancel" ? "cancel" : "experience",
+        reason: input.intent === "cancel" ? "cancel" : "publish",
       });
     }
     return { state };
@@ -1367,6 +1394,13 @@ export async function setOpsExperienceRegistration(input: {
     }
     if (input.action === "waitlist" && !config.waitlist_enabled) {
       throw new OpsOperatingRepositoryError("conflict", "This Experience does not use a waitlist.");
+    }
+    // Cancellation and reducing an existing confirmed place to the waitlist are
+    // cleanup, not new admission. Keep those available for stale registrations.
+    if (input.action === "register" || input.action === "promote" || (
+      input.action === "waitlist" && !["registered", "waitlisted"].includes(current?.status ?? "")
+    )) {
+      await requireEligibleExperienceMember(tx, experience, memberId ?? current?.member_id ?? null);
     }
 
     const countRows = await tx<Array<{ registered_count: number }>>`
@@ -1539,6 +1573,13 @@ export async function recordOpsExperienceAttendance(input: {
         "Attendance can be recorded only for a confirmed registration.",
       );
     }
+    const historical = new Date(experience.ends_at ?? experience.starts_at).getTime() <= Date.now();
+    if (!historical && ["checked_in", "attended", "credited"].includes(input.eventType)) {
+      await requireEligibleExperienceMember(tx, experience, registration.member_id);
+    }
+    // A later membership/Circle change must not prevent truthful attendance on
+    // an existing confirmed past-event registration. Revocation/no-show marks
+    // likewise remain available to an operator who still owns the event scope.
     const previousRows = await tx<Array<{ event_type: string }>>`
       select event_type
       from experience_attendance_events
@@ -1573,7 +1614,7 @@ export async function recordOpsExperienceAttendance(input: {
         ${input.eventType},
         'ops',
         ${access.authUserId}::uuid,
-        jsonb_build_object('reason', ${reason}),
+        jsonb_build_object('reason', ${reason}::text),
         ${randomUUID()}
       )
     `;

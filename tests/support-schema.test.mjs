@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { checkSupportSchema, loadPGliteForSchemaChecks, supportMigrationUrl } from "../scripts/check-support-schema.mjs";
 import { checkSupportRepository } from "../scripts/check-support-repository.mjs";
@@ -52,17 +53,17 @@ test("support ownership, conversation, and queue queries have supporting indexes
   assert.match(migration, /support_email_deliveries\(available_at, created_at\)[\s\S]*where status in \('pending', 'failed', 'processing'\)/);
 });
 
-test("isolated support schema verification refuses implicit or live database connections", async () => {
-  await assert.rejects(() => loadPGliteForSchemaChecks(""), /never uses DATABASE_URL/);
+test("isolated schema checks default to the installed engine without database credentials", async () => {
+  const { PGlite } = await import("@electric-sql/pglite");
+  assert.equal(await loadPGliteForSchemaChecks(""), PGlite);
+  assert.equal(await loadPGliteForSchemaChecks(fileURLToPath(import.meta.resolve("@electric-sql/pglite"))), PGlite);
 });
 
-if (process.env.PGLITE_MODULE) {
-  test("support migration enforces constraints and role permissions in isolated PostgreSQL", async () => {
-    const result = await checkSupportSchema(await loadPGliteForSchemaChecks());
-    assert.equal(result.checks.length, 6);
-  });
-  test("support repository enforces account ownership and administrator actions in isolated PostgreSQL", async () => {
-    const result = await checkSupportRepository(await loadPGliteForSchemaChecks());
-    assert.equal(result.checks.length, 5);
-  });
-}
+test("support migration enforces constraints and role permissions in isolated PostgreSQL", async () => {
+  const result = await checkSupportSchema(await loadPGliteForSchemaChecks());
+  assert.equal(result.checks.length, 6);
+});
+test("support repository enforces account ownership and administrator actions in isolated PostgreSQL", async () => {
+  const result = await checkSupportRepository(await loadPGliteForSchemaChecks());
+  assert.equal(result.checks.length, 6);
+});

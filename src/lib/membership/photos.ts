@@ -195,7 +195,9 @@ export async function getAuthorizedMemberPhoto(authUserId: string, memberId: str
     isOpsAdmin,
     circleCanRead,
     activeCircle: circle?.circle?.status === "active",
-    visibleCircleAvatarUrls: circle?.members.map((member) => member.avatarUrl) ?? [],
+    visibleCircleAvatarUrls: circle
+      ? [...circle.members.map((member) => member.avatarUrl), circle.shaper?.avatarUrl ?? null]
+      : [],
   })) return null;
 
   const { data, error } = await portraitStore().download(ownedMemberPhotoPath(memberId, requestedUrl)!);

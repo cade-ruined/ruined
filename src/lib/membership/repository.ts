@@ -1,6 +1,7 @@
 import "server-only";
 
 import parsePhoneNumber from "libphonenumber-js/min";
+import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
 import {
@@ -20,6 +21,7 @@ import {
   syncMemberExperienceCalendar,
 } from "@/lib/platform/ops-calendar-repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
+import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
 import type {
   MemberAccountSnapshot,
   MemberArtifactsSnapshot,
@@ -1308,8 +1310,8 @@ export async function saveMemberProfile(
         dedupe_key
       ) values (
         ${identity.memberId}::uuid,
-        ${JSON.stringify(previous)}::jsonb,
-        ${JSON.stringify(nextPreferences)}::jsonb,
+        ${tx.json(previous)}::jsonb,
+        ${tx.json(nextPreferences)}::jsonb,
         ${authUserId}::uuid,
         'member',
         ${`member-directory:${identity.memberId}:${crypto.randomUUID()}`}
@@ -1374,10 +1376,7 @@ function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
     : null;
   return {
     audienceLabel: row.audience_label ?? "Ruined Membership",
-    detailHref: communityHref
-      ?? (row.kind === "circle_meeting"
-        ? "/my/circle"
-        : `/my/experiences#experience-${row.id}`),
+    detailHref: communityHref ?? `/my/experiences#experience-${row.id}`,
     endsAt: toIso(row.ends_at),
     id: row.id,
     kind: row.kind,
@@ -1471,6 +1470,10 @@ export async function getMemberCircle(
       on membership_block.id = block_assignment.block_id
     where member_assignment.member_id = ${identity.memberId}::uuid
       and member_assignment.ended_at is null
+      and member_assignment.assigned_at <= statement_timestamp()
+      and circle.status in ('forming', 'active')
+      and (circle.status = 'forming' or circle.activated_at <= statement_timestamp())
+      and (circle.ends_at is null or circle.ends_at >= statement_timestamp())
     order by member_assignment.assigned_at desc
     limit 1
   `;
@@ -1492,7 +1495,7 @@ export async function getMemberCircle(
   const [directoryRows, shaperRows, meetingRows, resourceRows, chatLinkRows] = await Promise.all([
     sql<Array<DirectoryRow>>`
       select
-        assignment.id::text as directory_id,
+        'member:' || assignment.id::text as directory_id,
         target_member.id = ${identity.memberId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Member') as display_name,
         case
@@ -1546,26 +1549,59 @@ export async function getMemberCircle(
       ) primary_email on true
       where assignment.circle_id = ${circle.circle_id}::uuid
         and assignment.ended_at is null
+        and assignment.assigned_at <= statement_timestamp()
       order by assignment.assigned_at, assignment.id
     `,
     sql<Array<DirectoryRow>>`
       select
-        staff_assignment.id::text as directory_id,
-        false as is_self,
+        'shaper:' || staff_assignment.id::text as directory_id,
+        platform_user.auth_user_id = ${authUserId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Shaper') as display_name,
-        null::text as avatar_storage_path,
-        null::text as location_label,
-        null::text as bio,
-        null::text as building_now,
-        null::text as email,
-        null::text as phone
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or (preference.directory_status = 'circle_visible' and preference.avatar_visible)
+          then profile.avatar_storage_path end as avatar_storage_path,
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or (preference.directory_status = 'circle_visible' and preference.location_visible)
+          then profile.location_label end as location_label,
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or (preference.directory_status = 'circle_visible' and preference.bio_visible)
+          then profile.bio end as bio,
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or (preference.directory_status = 'circle_visible' and preference.building_visible)
+          then profile.building_now end as building_now,
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or (preference.directory_status = 'circle_visible' and preference.email_scope = 'circle')
+          then primary_email.email end as email,
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or (preference.directory_status = 'circle_visible' and preference.phone_scope = 'circle')
+          then private_profile.mobile_e164 end as phone
       from circle_staff_assignments staff_assignment
       join platform_users platform_user
         on platform_user.auth_user_id = staff_assignment.auth_user_id
+        and platform_user.status = 'active'
       left join person_profiles profile on profile.person_id = platform_user.person_id
+      left join person_private_profiles private_profile on private_profile.person_id = platform_user.person_id
+      left join ruined_members shaper_member on shaper_member.person_id = platform_user.person_id
+      left join member_directory_preferences preference on preference.member_id = shaper_member.id
+      left join lateral (
+        select email_address.email
+        from person_email_addresses email_address
+        where email_address.person_id = platform_user.person_id
+          and email_address.retired_at is null
+          and email_address.verification_state = 'verified'
+        order by email_address.is_primary desc, email_address.created_at
+        limit 1
+      ) primary_email on true
       where staff_assignment.circle_id = ${circle.circle_id}::uuid
         and staff_assignment.role_slug = 'circle_leader'
         and staff_assignment.ended_at is null
+        and staff_assignment.assigned_at <= statement_timestamp()
+        and exists (
+          select 1 from platform_role_grants shaper_grant
+          where shaper_grant.auth_user_id = platform_user.auth_user_id
+            and shaper_grant.role_slug = 'circle_leader'
+            and shaper_grant.revoked_at is null
+        )
       order by staff_assignment.assigned_at desc
       limit 1
     `,
@@ -1600,6 +1636,8 @@ export async function getMemberCircle(
         and meet_link.livemode = ${googleLivemode}
       where experience.circle_id = ${circle.circle_id}::uuid
         and experience.kind = 'circle_meeting'
+        and experience.visibility = 'circle'
+        and ${circle.circle_status === "active"}
         and experience.status in ('published', 'completed')
       order by experience.starts_at desc
       limit 12
@@ -1617,6 +1655,7 @@ export async function getMemberCircle(
         on resource.id = resource_version.learning_resource_id
       where circle_resource.circle_id = ${circle.circle_id}::uuid
         and circle_resource.ended_at is null
+        and ${circle.circle_status === "active"}
         and resource.status = 'published'
       order by circle_resource.is_pinned desc, circle_resource.position, circle_resource.created_at
     `,
@@ -1633,7 +1672,7 @@ export async function getMemberCircle(
   ]);
 
   const members = directoryRows.map(directoryPerson);
-  const chatReady = Boolean(
+  const chatReady = circle.circle_status === "active" && Boolean(
     googleCommunicationUrlFromMetadata("chat", chatLinkRows[0]?.metadata),
   );
   return {
@@ -1668,6 +1707,11 @@ export async function getMemberCircleChatDestination(
   const rows = await sql<Array<{ metadata: unknown }>>`
     select link.metadata
     from circle_member_assignments member_assignment
+    join circles circle
+      on circle.id = member_assignment.circle_id
+      and circle.status = 'active'
+      and circle.activated_at <= statement_timestamp()
+      and (circle.ends_at is null or circle.ends_at >= statement_timestamp())
     join integration_entity_links link
       on link.provider = 'google'
       and link.local_entity_type = 'circle'
@@ -1676,6 +1720,7 @@ export async function getMemberCircleChatDestination(
       and link.livemode = ${googleLivemode}
     where member_assignment.member_id = ${identity.memberId}::uuid
       and member_assignment.ended_at is null
+      and member_assignment.assigned_at <= statement_timestamp()
     order by member_assignment.assigned_at desc
     limit 1
   `;
@@ -1690,21 +1735,29 @@ export async function getMemberExperienceMeetingDestination(
     throw new MembershipInputError("That experience is not valid.");
   }
   const identity = await requireMemberIdentity(authUserId);
-  requireMemberCapability(identity, "experiences.member");
+  const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
+  const fullExperienceAccess = memberCan(access, "experiences.member");
+  if (!fullExperienceAccess && !memberCan(access, "circle.read")) throw new MembershipAccessDeniedError();
   const sql = getApplicationDatabase();
   const googleLivemode = googleCommunicationLivemode();
   const rows = await sql<Array<{ metadata: unknown }>>`
     with membership_scope as (
       select
-        member_assignment.circle_id,
+        active_circle.id as circle_id,
         block_assignment.block_id,
         lifecycle.current_progression_level_slug
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
         and member_assignment.ended_at is null
+        and member_assignment.assigned_at <= statement_timestamp()
+      left join circles active_circle
+        on active_circle.id = member_assignment.circle_id
+        and active_circle.status = 'active'
+        and active_circle.activated_at <= statement_timestamp()
+        and (active_circle.ends_at is null or active_circle.ends_at >= statement_timestamp())
       left join block_circle_assignments block_assignment
-        on block_assignment.circle_id = member_assignment.circle_id
+        on block_assignment.circle_id = active_circle.id
         and block_assignment.ended_at is null
       where lifecycle.member_id = ${identity.memberId}::uuid
       limit 1
@@ -1723,6 +1776,7 @@ export async function getMemberExperienceMeetingDestination(
     cross join membership_scope scope
     where experience.id = ${experienceId}::uuid
       and experience.status in ('published', 'completed')
+      and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id))
       and (
         experience.registration_mode = 'none'
         or registration.status = 'registered'
@@ -1751,7 +1805,8 @@ export async function getMemberExperiences(
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   const now = Date.now();
-  if (!memberCan(access, "experiences.member")) {
+  const fullExperienceAccess = memberCan(access, "experiences.member");
+  if (!fullExperienceAccess && !memberCan(access, "circle.read")) {
     return {
       access,
       past: [],
@@ -1763,15 +1818,21 @@ export async function getMemberExperiences(
   const rows = await sql<Array<ExperienceRow>>`
     with membership_scope as (
       select
-        member_assignment.circle_id,
+        active_circle.id as circle_id,
         block_assignment.block_id,
         lifecycle.current_progression_level_slug
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
         and member_assignment.ended_at is null
+        and member_assignment.assigned_at <= statement_timestamp()
+      left join circles active_circle
+        on active_circle.id = member_assignment.circle_id
+        and active_circle.status = 'active'
+        and active_circle.activated_at <= statement_timestamp()
+        and (active_circle.ends_at is null or active_circle.ends_at >= statement_timestamp())
       left join block_circle_assignments block_assignment
-        on block_assignment.circle_id = member_assignment.circle_id
+        on block_assignment.circle_id = active_circle.id
         and block_assignment.ended_at is null
       where lifecycle.member_id = ${identity.memberId}::uuid
       limit 1
@@ -1812,6 +1873,7 @@ export async function getMemberExperiences(
       and meet_link.livemode = ${googleLivemode}
     cross join membership_scope scope
     where experience.status in ('published', 'completed')
+      and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id))
       and (
         experience.visibility in ('public', 'all_members')
         or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
@@ -1852,36 +1914,51 @@ export async function setMemberExperienceRegistration(
   }
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
-  if (!memberCan(access, "experiences.member")) throw new MembershipAccessDeniedError();
+  const fullExperienceAccess = memberCan(access, "experiences.member");
+  if (!fullExperienceAccess && !memberCan(access, "circle.read")) throw new MembershipAccessDeniedError();
   const sql = getApplicationDatabase();
   const result = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${experienceId}), 48)`;
     const experienceRows = await tx<
       Array<{
+        block_id: string | null;
         capacity: number | null;
+        circle_id: string | null;
+        progression_level_slug: string | null;
         registration_closes_at: Date | string | null;
         registration_mode: "external" | "internal" | "none";
         registration_opens_at: Date | string | null;
         starts_at: Date | string;
+        visibility: string;
         waitlist_enabled: boolean;
       }>
     >`
       with membership_scope as (
         select
-          member_assignment.circle_id,
+          active_circle.id as circle_id,
           block_assignment.block_id,
           lifecycle.current_progression_level_slug
         from member_lifecycle lifecycle
         left join circle_member_assignments member_assignment
           on member_assignment.member_id = lifecycle.member_id
           and member_assignment.ended_at is null
+          and member_assignment.assigned_at <= statement_timestamp()
+        left join circles active_circle
+          on active_circle.id = member_assignment.circle_id
+          and active_circle.status = 'active'
+          and active_circle.activated_at <= statement_timestamp()
+          and (active_circle.ends_at is null or active_circle.ends_at >= statement_timestamp())
         left join block_circle_assignments block_assignment
-          on block_assignment.circle_id = member_assignment.circle_id
+          on block_assignment.circle_id = active_circle.id
           and block_assignment.ended_at is null
         where lifecycle.member_id = ${identity.memberId}::uuid
         limit 1
       )
       select
+        experience.visibility,
+        experience.circle_id,
+        experience.block_id,
+        experience.progression_level_slug,
         experience.registration_mode,
         experience.capacity,
         experience.waitlist_enabled,
@@ -1892,6 +1969,7 @@ export async function setMemberExperienceRegistration(
       cross join membership_scope scope
       where experience.id = ${experienceId}::uuid
         and experience.status = 'published'
+        and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id))
         and (
           experience.visibility in ('public', 'all_members')
           or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
@@ -1915,6 +1993,12 @@ export async function setMemberExperienceRegistration(
     `;
     const experience = experienceRows[0];
     if (!experience) throw new MembershipAccessDeniedError();
+    // Re-read and lock current grants, billing, and Circle evidence inside the
+    // admission transaction. The request's earlier identity snapshot may be stale.
+    // Releasing an existing place must not require a fresh admission grant.
+    if (action === "register" && !await memberEligibleForExperience(tx, experience, identity.memberId)) {
+      throw new MembershipAccessDeniedError();
+    }
     if (experience.registration_mode !== "internal") {
       throw new MembershipConflictError(
         experience.registration_mode === "external"
@@ -1976,29 +2060,27 @@ export async function setMemberExperienceRegistration(
         )
       `;
       if (current.status === "registered") {
-        const promotedRows = await tx<Array<{ id: string; person_id: string }>>`
-          with next_waitlisted as (
-            select id
-            from experience_registrations
-            where experience_id = ${experienceId}::uuid
-              and status = 'waitlisted'
-            order by waitlisted_at, registered_at, id
-            limit 1
-            for update
-          )
-          update experience_registrations registration
-          set
-            status = 'registered',
-            promoted_at = statement_timestamp(),
-            cancelled_at = null,
-            cancellation_reason = null,
-            version = registration.version + 1,
-            updated_at = statement_timestamp()
-          from next_waitlisted
-          where registration.id = next_waitlisted.id
-          returning registration.id, registration.person_id
+        const waiting = await tx<Array<{ id: string; person_id: string; member_id: string | null }>>`
+          select id, person_id, member_id
+          from experience_registrations
+          where experience_id = ${experienceId}::uuid and status = 'waitlisted'
+          order by waitlisted_at, registered_at, id
+          for update
         `;
-        const promoted = promotedRows[0];
+        let promoted: { id: string; person_id: string } | undefined;
+        for (const candidate of waiting) {
+          if (!await memberEligibleForExperience(tx, experience, candidate.member_id)) continue;
+          const promotedRows = await tx<Array<{ id: string; person_id: string }>>`
+            update experience_registrations registration
+            set status = 'registered', promoted_at = statement_timestamp(),
+              cancelled_at = null, cancellation_reason = null,
+              version = registration.version + 1, updated_at = statement_timestamp()
+            where registration.id = ${candidate.id}::uuid and registration.status = 'waitlisted'
+            returning registration.id, registration.person_id
+          `;
+          promoted = promotedRows[0];
+          if (promoted) break;
+        }
         if (promoted) {
           await tx`
             insert into experience_registration_events (
@@ -2273,15 +2355,21 @@ export async function getMemberLearning(
   const rows = await sql<Array<LearningRow>>`
     with membership_scope as (
       select
-        member_assignment.circle_id,
+        active_circle.id as circle_id,
         block_assignment.block_id,
         lifecycle.current_progression_level_slug
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
         and member_assignment.ended_at is null
+        and member_assignment.assigned_at <= statement_timestamp()
+      left join circles active_circle
+        on active_circle.id = member_assignment.circle_id
+        and active_circle.status = 'active'
+        and active_circle.activated_at <= statement_timestamp()
+        and (active_circle.ends_at is null or active_circle.ends_at >= statement_timestamp())
       left join block_circle_assignments block_assignment
-        on block_assignment.circle_id = member_assignment.circle_id
+        on block_assignment.circle_id = active_circle.id
         and block_assignment.ended_at is null
       where lifecycle.member_id = ${identity.memberId}::uuid
       limit 1
@@ -2374,7 +2462,9 @@ export async function getMemberLearningResource(
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return null;
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
-  if (!memberCan(access, "learn.read")) return null;
+  const fullLearningAccess = memberCan(access, "learn.read");
+  const circleLearningAccess = memberCan(access, "circle.read");
+  if (!fullLearningAccess && !circleLearningAccess) return null;
   const sql = getApplicationDatabase();
   const rows = await sql<
     Array<{
@@ -2394,15 +2484,21 @@ export async function getMemberLearningResource(
   >`
     with membership_scope as (
       select
-        member_assignment.circle_id,
+        active_circle.id as circle_id,
         block_assignment.block_id,
         lifecycle.current_progression_level_slug
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
         and member_assignment.ended_at is null
+        and member_assignment.assigned_at <= statement_timestamp()
+      left join circles active_circle
+        on active_circle.id = member_assignment.circle_id
+        and active_circle.status = 'active'
+        and active_circle.activated_at <= statement_timestamp()
+        and (active_circle.ends_at is null or active_circle.ends_at >= statement_timestamp())
       left join block_circle_assignments block_assignment
-        on block_assignment.circle_id = member_assignment.circle_id
+        on block_assignment.circle_id = active_circle.id
         and block_assignment.ended_at is null
       where lifecycle.member_id = ${identity.memberId}::uuid
       limit 1
@@ -2423,11 +2519,12 @@ export async function getMemberLearningResource(
     from learning_resources resource
     join learning_resource_versions resource_version
       on resource_version.id = resource.current_version_id
-    left join learning_collections collection on collection.id = resource.collection_id
+    left join learning_collections collection
+      on collection.id = resource.collection_id and collection.status = 'published'
     cross join membership_scope scope
     where resource.slug = ${slug}
       and resource.status = 'published'
-      and exists (
+      and ((${fullLearningAccess} and exists (
         select 1
         from learning_resource_targets target
         where target.learning_resource_id = resource.id
@@ -2440,7 +2537,15 @@ export async function getMemberLearningResource(
               and target.progression_level_slug = scope.current_progression_level_slug
             )
           )
-      )
+      )) or (${circleLearningAccess} and exists (
+        select 1
+        from circle_resources assigned_resource
+        join learning_resource_versions assigned_version
+          on assigned_version.id = assigned_resource.learning_resource_version_id
+        where assigned_resource.circle_id = scope.circle_id
+          and assigned_resource.ended_at is null
+          and assigned_version.learning_resource_id = resource.id
+      )))
     limit 1
   `;
   const row = rows[0];
@@ -2788,39 +2893,55 @@ export async function getMemberHome(
   };
 }
 
+async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, memberId: string) {
+  // Entries and revision share one database snapshot. Immutable version IDs
+  // advance for edits and deletions too, including an empty -> populated ->
+  // empty Timeline, so a stale tab cannot overwrite newer work.
+  const rows = await sql<Array<{
+    details: string | null;
+    entry_year: number;
+    id: string | null;
+    position: number;
+    revision: string;
+    title: string;
+  }>>`
+    with timeline_revision as (
+      select coalesce(max(id), 0)::text as revision
+      from member_timeline_entry_versions
+      where member_id = ${memberId}::uuid
+    )
+    select entry.id, entry.entry_year, entry.title, entry.details, entry.position,
+      timeline_revision.revision
+    from timeline_revision
+    left join member_timeline_entries entry
+      on entry.member_id = ${memberId}::uuid and entry.status = 'active'
+    order by entry.entry_year, entry.position, entry.created_at, entry.id
+  `;
+  return {
+    entries: rows.flatMap((row) => row.id ? [{
+      details: row.details, id: row.id, position: row.position,
+      title: row.title, year: row.entry_year,
+    }] : []),
+    revision: rows[0]?.revision ?? "0",
+  };
+}
+
 export async function getMemberTimeline(
   authUserId: string,
 ): Promise<MemberTimelineSnapshot | null> {
   const identity = await requireMemberIdentity(authUserId);
-  const access = requireMemberCapability(identity, "foundations.write");
-  const [requirements, rows] = await Promise.all([
+  const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
+  if (!memberCan(access, "foundations.write") && !memberCan(access, "foundations.revisit")) {
+    throw new MembershipAccessDeniedError();
+  }
+  const [requirements, record] = await Promise.all([
     getMemberFoundationRequirements(authUserId),
-    getApplicationDatabase()<
-      Array<{
-        details: string | null;
-        entry_year: number;
-        id: string;
-        position: number;
-        title: string;
-      }>
-    >`
-      select id, entry_year, title, details, position
-      from member_timeline_entries
-      where member_id = ${identity.memberId}::uuid
-        and status = 'active'
-      order by entry_year, position, created_at
-    `,
+    readTimelineRecord(getApplicationDatabase(), identity.memberId),
   ]);
   return {
     access,
     completedAt: requirements.timeline.completedAt,
-    entries: rows.map((row) => ({
-      details: row.details,
-      id: row.id,
-      position: row.position,
-      title: row.title,
-      year: row.entry_year,
-    })),
+    ...record,
   };
 }
 
@@ -2859,14 +2980,25 @@ function validateTimelineInput(input: MemberTimelineInput) {
 export async function saveMemberTimeline(
   authUserId: string,
   input: MemberTimelineInput,
+  expectedRevision: string,
 ): Promise<MemberTimelineSnapshot> {
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   if (!memberCan(access, "foundations.write")) throw new MembershipAccessDeniedError();
+  if (typeof expectedRevision !== "string" || !/^\d{1,20}$/.test(expectedRevision)) {
+    throw new MembershipConflictError("Load the latest saved events before saving. Your draft has not been changed.");
+  }
   const entries = validateTimelineInput(input);
+  // Resolve auxiliary metadata before writing. A failed follow-up read must
+  // not report a committed save as a failure to the member.
+  const requirements = await getMemberFoundationRequirements(authUserId);
   const sql = getApplicationDatabase();
-  await sql.begin(async (tx) => {
+  const record = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 45)`;
+    const current = await readTimelineRecord(tx, identity.memberId);
+    if (current.revision !== expectedRevision) {
+      throw new MembershipConflictError("Your Timeline changed in another tab. Your draft is still here. Load the latest saved events before trying again.");
+    }
     const currentRows = await tx<Array<{ id: string }>>`
       select id
       from member_timeline_entries
@@ -2929,10 +3061,10 @@ export async function saveMemberTimeline(
           and status = 'active'
       `;
     }
+    // Return this write's exact snapshot while the member lock is still held.
+    return readTimelineRecord(tx, identity.memberId);
   });
-  const timeline = await getMemberTimeline(authUserId);
-  if (!timeline) throw new Error("Saved Timeline could not be reloaded.");
-  return timeline;
+  return { access, completedAt: requirements.timeline.completedAt, ...record };
 }
 
 export async function completeMemberFoundationRequirement(
@@ -3003,7 +3135,7 @@ export async function completeMemberFoundationRequirement(
         ${completionVersion},
         ${authUserId}::uuid,
         'member',
-        ${JSON.stringify(evidence)}::jsonb,
+        ${tx.json(evidence)}::jsonb,
         ${`foundation-requirement:${enrollment.id}:${requirement}:v${completionVersion}`}
       )
     `;

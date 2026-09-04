@@ -296,8 +296,8 @@ async function createArtifactJob(action: WorkflowAction): Promise<Record<string,
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
     const awards = await tx<Array<{
-      address: Record<string, unknown> | null;
-      input: Record<string, unknown>;
+      address: postgres.JSONValue | null;
+      input: postgres.JSONValue;
       memberId: string;
       templateVersionId: string | null;
     }>>`
@@ -334,8 +334,8 @@ async function createArtifactJob(action: WorkflowAction): Promise<Record<string,
         ${award.templateVersionId}::uuid,
         ${awardId}::uuid,
         'requested',
-        ${JSON.stringify(award.input)}::jsonb,
-        ${award.address ? JSON.stringify(award.address) : null}::jsonb,
+        ${tx.json(award.input)}::jsonb,
+        ${award.address === null ? null : tx.json(award.address)}::jsonb,
         ${action.idempotencyKey}
       )
       on conflict (idempotency_key) do nothing

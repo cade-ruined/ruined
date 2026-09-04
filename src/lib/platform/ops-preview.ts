@@ -442,6 +442,10 @@ export const PREVIEW_OPS_EXPERIENCES: OpsExperienceDirectoryItem[] = [
 ];
 
 export const PREVIEW_OPS_OVERVIEW: OpsOverviewData = {
+  attention: [
+    { count: 2, href: "/ops/support", label: "Support needs a reply", oldestAt: "2026-08-26T15:45:00.000Z" },
+    { count: 1, href: "/ops/experiences", label: "Calendar updates need attention", oldestAt: PREVIEW_NOW },
+  ],
   activity: [
     {
       activityId: "preview-activity-billing-01",
@@ -531,11 +535,11 @@ export const PREVIEW_OPS_ANNOUNCEMENTS: OpsAnnouncementSummary[] = [
 
 export const PREVIEW_OPS_SYSTEM: OpsSystemHealth = {
   services: [
-    { detail: "Identity and passwordless access", label: "Supabase", lastSucceededAt: PREVIEW_NOW, state: "connected" },
-    { detail: "Membership operating record", label: "Postgres", lastSucceededAt: PREVIEW_NOW, state: "connected" },
-    { detail: "Read-only billing projection", label: "Stripe", lastSucceededAt: PREVIEW_NOW, state: "connected" },
-    { detail: "Member email delivery", label: "Resend", lastSucceededAt: "2026-08-26T15:42:00.000Z", state: "attention" },
-    { detail: "Invitations organized by connect@theruinedproject.com", label: "Google Calendar", lastSucceededAt: PREVIEW_NOW, state: "connected" },
+    { detail: "Saved configuration; email delivery has not been checked now.", label: "Member sign-in", lastSucceededAt: PREVIEW_NOW, state: "configured", evidenceLabel: "Last recorded sign-in", href: "/ops/operators", mode: null, pendingCount: 0, failureCount: 0, oldestPendingAt: null },
+    { detail: "Preview of a successful database read.", label: "Postgres", lastSucceededAt: PREVIEW_NOW, state: "verified", evidenceLabel: "Read verified", href: null, mode: null, pendingCount: 0, failureCount: 0, oldestPendingAt: null },
+    { detail: "No paid membership has been verified in this test environment.", label: "Stripe", lastSucceededAt: null, state: "configured", evidenceLabel: "Last processed webhook", href: "/ops/members?filter=attention", mode: "test", pendingCount: 0, failureCount: 0, oldestPendingAt: null },
+    { detail: "Provider acceptance does not prove inbox delivery.", label: "Support email", lastSucceededAt: "2026-08-26T15:42:00.000Z", state: "failed", evidenceLabel: "Last provider acceptance", href: "/ops/support", mode: null, pendingCount: 2, failureCount: 1, oldestPendingAt: "2026-08-26T15:45:00.000Z" },
+    { detail: "An invitation update is waiting for recovery.", label: "Google Calendar", lastSucceededAt: PREVIEW_NOW, state: "delayed", evidenceLabel: "Last recorded sync", href: "/ops/experiences", mode: "test", pendingCount: 1, failureCount: 0, oldestPendingAt: PREVIEW_NOW },
   ],
   workflowFailures: [
     {

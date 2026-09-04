@@ -60,7 +60,13 @@ test("Chat and Meet redirects reauthorize members and never cache destinations",
   assert.match(chatRoute, /getMemberCircleChatDestination\(viewer\.authUserId\)/);
   assert.match(meetRoute, /getMemberExperienceMeetingDestination\([\s\S]*viewer\.authUserId[\s\S]*experienceId/);
   assert.match(repository, /requireMemberCapability\(identity, "circle\.read"\)/);
-  assert.match(repository, /requireMemberCapability\(identity, "experiences\.member"\)/);
+  const meetingAccess = repository.slice(repository.indexOf("export async function getMemberExperienceMeetingDestination"), repository.indexOf("export async function getMemberExperiences"));
+  assert.match(meetingAccess, /const fullExperienceAccess = memberCan\(access, "experiences\.member"\)/);
+  assert.match(meetingAccess, /if \(!fullExperienceAccess && !memberCan\(access, "circle\.read"\)\) throw new MembershipAccessDeniedError/);
+  assert.match(meetingAccess, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\)/);
+  assert.match(meetingAccess, /active_circle\.status = 'active'/);
+  assert.match(meetingAccess, /member_assignment\.assigned_at <= statement_timestamp\(\)/);
+  assert.match(meetingAccess, /active_circle\.activated_at <= statement_timestamp\(\)/);
   assert.match(repository, /member_assignment\.ended_at is null/);
   assert.match(repository, /experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id/);
   assert.match(repository, /experience\.visibility = 'block' and experience\.block_id = scope\.block_id/);

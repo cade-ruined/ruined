@@ -25,6 +25,7 @@ import {
   type TimelineFormValue,
 } from "@/components/membership/timeline-model";
 import type { MemberTimelineSnapshot } from "@/lib/membership/model";
+import { createTimelinePersistenceAdapter, TimelineConflictError, TimelineSaveUncertainError } from "./timeline-persistence";
 
 import styles from "./ruined-timeline.module.css";
 
@@ -32,79 +33,6 @@ type TimelineMode = "examples" | "user";
 type PersistenceState = "error" | "saved" | "saving" | "session";
 type ErrorField = "details" | "title" | "year" | null;
 type UndoState = { entry: TimelineDraftEntry } | null;
-type TimelineSaveEntry = ReturnType<typeof toTimelineSaveEntries>[number];
-
-interface TimelinePersistenceAdapter {
-  complete(current: MemberTimelineSnapshot): Promise<MemberTimelineSnapshot>;
-  save(
-    entries: TimelineSaveEntry[],
-    current: MemberTimelineSnapshot,
-  ): Promise<MemberTimelineSnapshot>;
-}
-
-function createTimelinePersistenceAdapter({
-  preview,
-  writable,
-}: {
-  preview: boolean;
-  writable: boolean;
-}): TimelinePersistenceAdapter {
-  if (preview) {
-    return {
-      async complete(current) {
-        return { ...current, completedAt: new Date().toISOString() };
-      },
-      async save(entries, current) {
-        return {
-          ...current,
-          entries: entries.map((entry, index) => ({
-            details: entry.details,
-            id: entry.id ?? `preview-${crypto.randomUUID()}`,
-            position: index + 1,
-            title: entry.title,
-            year: entry.year,
-          })),
-        };
-      },
-    };
-  }
-
-  return {
-    async complete(current) {
-      if (!writable) throw new Error("This Timeline is read-only.");
-      const response = await fetch("/api/my/timeline", {
-        body: JSON.stringify({ action: "complete" }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        requirements?: { timeline?: { completedAt?: string | null } };
-      };
-      const completedAt = payload.requirements?.timeline?.completedAt ?? null;
-      if (!response.ok || !completedAt) {
-        throw new Error(payload.error || "Timeline completion could not be saved.");
-      }
-      return { ...current, completedAt };
-    },
-    async save(entries) {
-      if (!writable) throw new Error("This Timeline is read-only.");
-      const response = await fetch("/api/my/timeline", {
-        body: JSON.stringify({ action: "save", entries }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        timeline?: MemberTimelineSnapshot;
-      };
-      if (!response.ok || !payload.timeline) {
-        throw new Error(payload.error || "Your Timeline could not be saved.");
-      }
-      return payload.timeline;
-    },
-  };
-}
 
 function makeClientKey() {
   return crypto.randomUUID();
@@ -142,12 +70,14 @@ export default function RuinedTimeline({
   const [form, setForm] = useState<TimelineFormValue>(EMPTY_TIMELINE_FORM);
   const [baseline, setBaseline] = useState<TimelineFormValue>(EMPTY_TIMELINE_FORM);
   const [error, setError] = useState<string | null>(null);
+  const [conflicted, setConflicted] = useState(false);
+  const [uncertainSave, setUncertainSave] = useState(false);
   const [errorField, setErrorField] = useState<ErrorField>(null);
   const [liveMessage, setLiveMessage] = useState("");
   const [persistence, setPersistence] = useState<PersistenceState>(
     preview ? "session" : "saved",
   );
-  const [pending, setPending] = useState<"complete" | "save" | null>(null);
+  const [pending, setPending] = useState<"complete" | "reload" | "save" | null>(null);
   const [recentlySavedKey, setRecentlySavedKey] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoState>(null);
   const [listExpanded, setListExpanded] = useState(true);
@@ -164,7 +94,18 @@ export default function RuinedTimeline({
   );
   const sortedEntries = useMemo(() => sortTimelineEntries(entries), [entries]);
   const examples = mode === "examples";
-  const canInteract = writable || preview;
+  const needsReload = conflicted || uncertainSave;
+  const canInteract = (writable || preview) && !needsReload;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const protectDraft = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protectDraft);
+    return () => window.removeEventListener("beforeunload", protectDraft);
+  }, [dirty]);
 
   useEffect(() => {
     if (!undo) return;
@@ -325,12 +266,43 @@ export default function RuinedTimeline({
     } catch (requestError) {
       setEntries(previousEntries);
       setPersistence("error");
+      setConflicted(requestError instanceof TimelineConflictError);
+      setUncertainSave(requestError instanceof TimelineSaveUncertainError);
       setError(
         requestError instanceof Error
           ? requestError.message
           : "Your Timeline could not be saved.",
       );
       return null;
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function loadLatestEvents() {
+    if (pending) return;
+    const editedId = entries.find((entry) => entry.clientKey === editingKey)?.id;
+    setPending("reload");
+    try {
+      const latest = await adapter.load(timeline);
+      const latestEntries = sortTimelineEntries(fromMemberTimelineEntries(latest.entries));
+      const latestEdited = latestEntries.find((entry) => entry.id === editedId);
+      setTimeline(latest);
+      setEntries(latestEntries);
+      setMode("user");
+      // Keep the typed draft. If another tab removed its original event, it
+      // becomes a new-event draft; nothing is automatically merged or saved.
+      setEditingKey(latestEdited?.clientKey ?? null);
+      setBaseline(latestEdited ? formForTimelineEntry(latestEdited) : EMPTY_TIMELINE_FORM);
+      setUndo(null);
+      setConflicted(false);
+      setUncertainSave(false);
+      setError(null);
+      setPersistence("saved");
+      setLiveMessage("Latest events loaded. Your draft is still in the form. Review it before saving.");
+      focusYear();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The latest events could not be loaded.");
     } finally {
       setPending(null);
     }
@@ -438,7 +410,9 @@ export default function RuinedTimeline({
     }
   }
 
-  const status = examples
+  const status = uncertainSave
+    ? "SAVE NOT CONFIRMED"
+    : examples
     ? "EXAMPLE / NOT SAVED"
     : persistence === "saving"
       ? "SAVING / PRIVATE RECORD"
@@ -462,7 +436,7 @@ export default function RuinedTimeline({
               className={styles.eventForm}
               noValidate
               onKeyDown={(event) => {
-                if (event.key === "Escape" && (editingKey || dirty)) {
+                if (event.key === "Escape" && !pending && (editingKey || dirty)) {
                   event.preventDefault();
                   cancelForm();
                 }
@@ -501,6 +475,7 @@ export default function RuinedTimeline({
                       setErrorField(null);
                     }}
                     placeholder="2019"
+                    readOnly={Boolean(pending) || (!writable && !preview)}
                     ref={yearRef}
                     required
                     type="text"
@@ -527,6 +502,7 @@ export default function RuinedTimeline({
                       setErrorField(null);
                     }}
                     placeholder="What happened"
+                    readOnly={Boolean(pending) || (!writable && !preview)}
                     required
                     value={form.title}
                   />
@@ -550,6 +526,7 @@ export default function RuinedTimeline({
                     setErrorField(null);
                   }}
                   placeholder="What made this moment matter?"
+                  readOnly={Boolean(pending) || (!writable && !preview)}
                   rows={4}
                   value={form.details}
                 />
@@ -559,6 +536,15 @@ export default function RuinedTimeline({
               </div>
 
               {error ? <p className={styles.error} id={errorId} role="alert">{error}</p> : null}
+              {needsReload ? (
+                <div>
+                  <p className={styles.error}>{uncertainSave ? "The save may have completed. Review the saved events below before retrying this draft." : "Another tab saved changes. Your draft is still here."}</p>
+                  <button className={styles.button} disabled={Boolean(pending)} onClick={loadLatestEvents} type="button">
+                    {pending === "reload" ? "Loading latest events" : "Load latest saved events"}
+                  </button>
+                </div>
+              ) : null}
+              {!writable && !preview ? <p>Your Timeline is read-only. You can still view and export your events below.</p> : null}
 
               <div className={styles.formActions}>
                 <button
@@ -660,8 +646,8 @@ export default function RuinedTimeline({
                 </ol>
               ) : (
                 <div className={styles.emptyIndex}>
-                  <p>Add a year and title to begin.</p>
-                  <button className={styles.button} onClick={prepareNewEvent} type="button">Add first event</button>
+                  <p>{writable || preview ? "Add a year and title to begin." : "No events saved."}</p>
+                  {writable || preview ? <button className={styles.button} disabled={!canInteract || Boolean(pending)} onClick={prepareNewEvent} type="button">Add first event</button> : null}
                 </div>
               )}
 
@@ -677,9 +663,11 @@ export default function RuinedTimeline({
               <div>
                 <p className={styles.kicker}>FOUNDATIONS</p>
                 <p>
-                  {timeline.completedAt
-                    ? "Completion recorded. You can still edit your events."
-                    : "When the list feels true enough, mark it complete."}
+                  {!writable && !preview
+                    ? "Your saved Timeline is available to view and export."
+                    : timeline.completedAt
+                      ? "Completion recorded. You can still edit your events."
+                      : "When the list feels true enough, mark it complete."}
                 </p>
               </div>
               <div className={styles.listFooterActions}>

@@ -67,22 +67,6 @@ async function jsonRequest(url: string, body: unknown, method = "POST") {
   return payload;
 }
 
-async function calendarRequest(
-  experienceId: string,
-  intent: "cancel" | "create" | "sync",
-) {
-  const response = await fetch(`/api/ops/experiences/${experienceId}/calendar`, {
-    body: JSON.stringify({ intent }),
-    headers: {
-      "content-type": "application/json",
-      "idempotency-key": crypto.randomUUID(),
-    },
-    method: "POST",
-  });
-  const payload = (await response.json()) as { error?: string };
-  if (!response.ok) throw new Error(payload.error || "Calendar invitations could not be sent.");
-}
-
 function RosterRow({
   canManageAttendance,
   canManageRoster,
@@ -250,22 +234,9 @@ export default function OperatorExperienceRecord({
   );
   const availableMembers = experience.memberOptions.filter((member) => !registeredMemberIds.has(member.id));
 
-  async function changed(calendarChanged = false) {
-    if (
-      calendarChanged
-      && !preview
-      && experience.calendar.configured
-      && experience.calendar.googleEventId
-      && experience.state === "published"
-    ) {
-      try {
-        await calendarRequest(experience.experienceId, "sync");
-      } catch (requestError) {
-        setError(requestError instanceof Error
-          ? `The Experience changed, but ${requestError.message}`
-          : "The Experience changed, but its calendar invitations still need to be synced.");
-      }
-    }
+  async function changed() {
+    // Calendar delivery is durably queued by the save transaction. Closing this
+    // tab must not prevent it, and an independent provider retry is not a save failure.
     router.refresh();
   }
 
@@ -305,7 +276,7 @@ export default function OperatorExperienceRecord({
         visibility,
         waitlistEnabled: data.get("waitlistEnabled") === "on",
       }, "PATCH");
-      await changed(Boolean(experience.calendar.googleEventId));
+      await changed();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The Experience could not be saved.");
     } finally {
@@ -325,18 +296,6 @@ export default function OperatorExperienceRecord({
     try {
       await jsonRequest(`/api/ops/experiences/${experience.experienceId}/lifecycle`, { intent, reason });
       stateChanged = true;
-      if (
-        experience.calendar.configured
-        && intent === "publish"
-      ) {
-        await calendarRequest(experience.experienceId, "create");
-      } else if (
-        experience.calendar.configured
-        && intent === "cancel"
-        && experience.calendar.googleEventId
-      ) {
-        await calendarRequest(experience.experienceId, "cancel");
-      }
       await changed();
     } catch (requestError) {
       setError(requestError instanceof Error
@@ -370,7 +329,7 @@ export default function OperatorExperienceRecord({
         memberId,
       });
       form.reset();
-      await changed(true);
+      await changed();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The member could not be added.");
     } finally {
@@ -429,6 +388,7 @@ export default function OperatorExperienceRecord({
           <OperatorExperienceCalendar
             calendar={experience.calendar}
             canManage={experience.canManageCommunication}
+            canBind={experience.canManageGlobal}
             experienceId={experience.experienceId}
             experienceState={experience.state}
             preview={preview}

@@ -24,11 +24,13 @@ function formatDate(value: string | null) {
 }
 
 function statusCopy(calendar: OpsExperienceCalendarState) {
+  if (calendar.bindingRequired) return "Verify delivery mode";
+  if (calendar.automaticDeliveryPaused) return "Review past event";
   switch (calendar.status) {
     case "synced": return "Invitations are current";
-    case "pending_create": return "Ready to create";
-    case "pending_update": return "Changes need to be sent";
-    case "pending_cancel": return "Cancellation needs to be sent";
+    case "pending_create": return "Invitation queued";
+    case "pending_update": return "Update queued";
+    case "pending_cancel": return "Cancellation queued";
     case "failed": return "Needs attention";
     case "cancelled": return "Calendar event cancelled";
     default: return "Not sent";
@@ -42,6 +44,7 @@ function intentFor(calendar: OpsExperienceCalendarState) {
 export default function OperatorExperienceCalendar({
   calendar,
   canManage,
+  canBind = false,
   experienceId,
   experienceState,
   preview = false,
@@ -49,6 +52,7 @@ export default function OperatorExperienceCalendar({
 }: {
   calendar: OpsExperienceCalendarState;
   canManage: boolean;
+  canBind?: boolean;
   experienceId: string;
   experienceState: OpsExperienceLifecycleState;
   preview?: boolean;
@@ -58,6 +62,25 @@ export default function OperatorExperienceCalendar({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+
+  async function verifyBinding() {
+    if (pending || !canBind || !calendar.bindingMode) return;
+    if (preview) { setMessage("Preview only — nothing was bound or sent."); return; }
+    if (!window.confirm(`Verify this existing Google invitation and bind it to ${calendar.bindingMode.toUpperCase()}? This only reads Google. Use Sync invitations afterward to send changes.`)) return;
+    setPending(true); setMessage(null); setMessageIsError(false);
+    try {
+      const response = await fetch(`/api/ops/experiences/${experienceId}/calendar/binding`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ livemode: calendar.bindingMode === "live" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Calendar verification failed.");
+      setMessage(`Verified. Nothing was sent. Use ${calendar.canSendCancellation ? "Send cancellation" : "Sync invitations"} to send the pending changes.`);
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Calendar verification failed."); setMessageIsError(true);
+    } finally { setPending(false); }
+  }
 
   async function sync(intent: "cancel" | "create" | "sync") {
     if (pending) return;
@@ -117,7 +140,7 @@ export default function OperatorExperienceCalendar({
       {lastSynced ? <p className="mt-1 text-xs text-black/45">Last sent {lastSynced}</p> : null}
       {calendar.lastError ? <p className="mt-3 text-sm text-[var(--color-poster)]">{calendar.lastError}</p> : null}
 
-      {!calendar.configured ? (
+      {!calendar.configured && !calendar.bindingRequired ? (
         <p className="mt-4 rounded-[4px] bg-white/55 px-4 py-3 text-sm text-black/62">
           Connect the Ruined Workspace organizer to begin sending invitations.
         </p>
@@ -128,6 +151,11 @@ export default function OperatorExperienceCalendar({
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
+        {calendar.bindingRequired && canBind && calendar.bindingMode ? (
+          <button className={actionButton} disabled={pending} onClick={verifyBinding} type="button">
+            {pending ? "Verifying" : `Verify & bind to ${calendar.bindingMode}`}
+          </button>
+        ) : null}
         {experienceState === "published" && calendar.status !== "cancelled" ? (
           <button
             className={actionButton}
@@ -141,7 +169,7 @@ export default function OperatorExperienceCalendar({
         {calendar.googleEventUrl && calendar.status !== "cancelled" ? (
           <a className={quietButton} href={calendar.googleEventUrl} rel="noreferrer" target="_blank">Open calendar</a>
         ) : null}
-        {experienceState === "cancelled" && calendar.googleEventId && calendar.status !== "cancelled" ? (
+        {(experienceState === "cancelled" || calendar.canSendCancellation) && calendar.googleEventId && calendar.status !== "cancelled" ? (
           <button className={actionButton} disabled={!canManage || !calendar.configured || pending} onClick={() => sync("cancel")} type="button">
             {pending ? "Sending" : "Send cancellation"}
           </button>

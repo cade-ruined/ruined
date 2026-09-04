@@ -30,6 +30,7 @@ export type SupportTicketSummary = {
   requesterEmail: string;
   createdAt: string;
   updatedAt: string;
+  emailAttentionCount?: number;
 };
 export type SupportMessage = {
   id: string;
@@ -37,7 +38,13 @@ export type SupportMessage = {
   body: string;
   createdAt: string;
 };
-export type SupportTicket = SupportTicketSummary & { messages: SupportMessage[] };
+export type SupportEmailDelivery = SupportDeliveryRow & {
+  id: string;
+  audience: "operator" | "member";
+  created_at: string;
+  sent_at: string | null;
+};
+export type SupportTicket = SupportTicketSummary & { messages: SupportMessage[]; emailDeliveries?: SupportEmailDelivery[] };
 
 export class SupportError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -84,3 +91,4 @@ export function supportStatus(value: unknown): SupportStatus {
   }
   return value as SupportStatus;
 }
+import type { SupportDeliveryRow } from "@/lib/support/delivery-policy";

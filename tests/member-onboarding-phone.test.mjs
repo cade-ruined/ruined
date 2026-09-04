@@ -99,9 +99,7 @@ test("expected onboarding validation, conflict, and permission failures keep the
   }
 });
 
-if (process.env.PGLITE_MODULE) {
-  test("member phone constraint accepts valid international numbers and fails safely in isolated PostgreSQL", async () => {
-    const result = await checkMemberPhoneSchema(await loadPGliteForSchemaChecks());
-    assert.equal(result.checks.length, 4);
-  });
-}
+test("member phone constraint accepts valid international numbers and fails safely in isolated PostgreSQL", async () => {
+  const result = await checkMemberPhoneSchema(await loadPGliteForSchemaChecks());
+  assert.equal(result.checks.length, 4);
+});

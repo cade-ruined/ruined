@@ -251,7 +251,13 @@ export type OpsSystemHealth = {
     detail: string;
     label: string;
     lastSucceededAt: string | null;
-    state: "attention" | "connected" | "unavailable";
+    state: "configured" | "verified" | "delayed" | "failed" | "unavailable";
+    evidenceLabel: string;
+    href: string | null;
+    mode: "live" | "test" | null;
+    pendingCount: number;
+    failureCount: number;
+    oldestPendingAt: string | null;
   }>;
   workflowFailures: Array<{
     actionId: string;
@@ -355,6 +361,7 @@ export type OpsOverviewCounts = {
 
 export type OpsOverviewData = {
   activity: OpsOverviewActivityItem[];
+  attention: Array<{ count: number; href: string; label: string; oldestAt: string | null }>;
   canPlaceMembers: boolean;
   counts: OpsOverviewCounts;
   priorityWork: OpsWorkItem[];

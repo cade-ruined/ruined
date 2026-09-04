@@ -65,7 +65,8 @@ test("private member loaders stop before private queries when capability is abse
   assert.ok(updates.indexOf('memberCan(access, "updates.read")') < updates.indexOf("const sql = getApplicationDatabase()"));
 
   const timeline = section(repository, "export async function getMemberTimeline", "export type MemberTimelineInput");
-  assert.match(timeline, /requireMemberCapability\(identity, "foundations\.write"\)/);
+  assert.match(timeline, /!memberCan\(access, "foundations\.write"\) && !memberCan\(access, "foundations\.revisit"\)/);
+  assert.ok(timeline.indexOf("throw new MembershipAccessDeniedError") < timeline.indexOf("readTimelineRecord("));
 
   const requirements = section(repository, "export async function getMemberFoundationRequirements", "export async function getMemberHome");
   assert.match(requirements, /memberCan\(access, "foundations\.summary"\)/);

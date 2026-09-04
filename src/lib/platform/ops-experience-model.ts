@@ -58,6 +58,10 @@ export type OpsExperienceCalendarStatus =
   | "synced";
 
 export type OpsExperienceCalendarState = {
+  bindingRequired?: boolean;
+  bindingMode?: "live" | "test" | null;
+  canSendCancellation?: boolean;
+  automaticDeliveryPaused?: boolean;
   attendeeCount: number;
   configured: boolean;
   googleEventId: string | null;

@@ -100,7 +100,7 @@ test("public events merge into member upcoming events without weakening entitlem
   assert.match(repository, /mergeUpcomingPublicMemberExperiences/);
   assert.match(loader, /mergeUpcomingPublicMemberExperiences\s*\(/);
 
-  const capabilityGuard = loader.indexOf('if (!memberCan(access, "experiences.member"))');
+  const capabilityGuard = loader.indexOf('if (!fullExperienceAccess && !memberCan(access, "circle.read"))');
   const databaseRead = loader.indexOf("const sql = getApplicationDatabase()");
   assert.ok(capabilityGuard >= 0 && capabilityGuard < databaseRead);
   assert.match(
@@ -112,6 +112,10 @@ test("public events merge into member upcoming events without weakening entitlem
   // progression, and invite-only entitlements. Public registry events merge
   // only after those rows have been authorized and adapted.
   assert.match(loader, /with membership_scope as\s*\(/);
+  assert.match(loader, /const fullExperienceAccess = memberCan\(access, "experiences\.member"\)/);
+  assert.match(loader, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\)/);
+  assert.match(loader, /active_circle\.status = 'active'/);
+  assert.match(loader, /member_assignment\.assigned_at <= statement_timestamp\(\)/);
   assert.match(loader, /experience\.visibility in \('public', 'all_members'\)/);
   assert.match(loader, /experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id/);
   assert.match(loader, /experience\.visibility = 'block' and experience\.block_id = scope\.block_id/);

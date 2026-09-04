@@ -9,14 +9,16 @@ import {
   cancelGoogleCalendarEvent,
   createGoogleCalendarEvent,
   getGoogleCalendarConfigurationStatus,
+  getRuinedOwnedGoogleCalendarEventResult,
   GoogleCalendarApiError,
   GoogleCalendarConflictError,
   updateGoogleCalendarEvent,
 } from "@/lib/google/calendar";
-import type { GoogleCalendarEventResult } from "@/lib/google/calendar-model";
+import { googleCalendarEventIdForRequestKey, type GoogleCalendarEventResult } from "@/lib/google/calendar-model";
 import { googleCommunicationLivemode } from "@/lib/google/communications";
 import type { OpsExperienceCalendarState } from "@/lib/platform/ops-experience-model";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
+import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
 import { SITE_URL } from "@/lib/site";
 
 const UUID_PATTERN =
@@ -24,9 +26,10 @@ const UUID_PATTERN =
 const REQUEST_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._/-]{15,199}$/;
 
 type CalendarIntent = "cancel" | "create" | "sync";
-type CalendarPendingReason = "attendees" | "cancel" | "experience";
+type CalendarPendingReason = "attendees" | "cancel" | "experience" | "publish";
 
 type CalendarExperience = {
+  cancelled_at: Date | string | null;
   block_id: string | null;
   circle_id: string | null;
   details: string | null;
@@ -52,6 +55,9 @@ type CalendarAttendee = {
 };
 
 type CalendarLinkRow = {
+  livemode: boolean | null;
+  reconcile_attempt_count: number;
+  next_reconcile_at: Date | string;
   current_sync_request_id: string | null;
   desired_attendee_revision: number;
   desired_experience_version: number;
@@ -84,7 +90,12 @@ type CalendarSnapshot = {
 
 type ReservedSync = {
   action: "cancel" | "create" | "update";
-  actorKind: "member" | "operator";
+  actorKind: "member" | "operator" | "worker";
+  actorAuthUserId: string;
+  livemode: boolean;
+  organizerEmail: string;
+  calendarId: string;
+  recoverExistingCreate: boolean;
   attemptNumber: number;
   attendees: CalendarAttendee[];
   calendarLinkId: string;
@@ -271,6 +282,7 @@ async function getCalendarExperience(
           circle_id,
           block_id,
           status as state,
+          cancelled_at,
           version::int
         from experiences
         where id = ${experienceId}::uuid
@@ -290,6 +302,7 @@ async function getCalendarExperience(
           circle_id,
           block_id,
           status as state,
+          cancelled_at,
           version::int
         from experiences
         where id = ${experienceId}::uuid
@@ -406,7 +419,12 @@ async function resolveCalendarAttendees(
        or audience.email <> ${organizerEmail}
     order by audience.email, audience.member_id nulls last, audience.person_id
   `;
-  return rows.map((row) => ({
+  const eligible = [];
+  for (const row of rows) {
+    if (row.member_id && !(await memberEligibleForExperience(tx, experience, row.member_id))) continue;
+    eligible.push(row);
+  }
+  return eligible.map((row) => ({
     assignmentSource: row.assignment_source,
     displayName: row.display_name,
     email: row.email,
@@ -425,6 +443,9 @@ async function getCalendarLink(
     ? await tx<CalendarLinkRow[]>`
         select
           id,
+          livemode,
+          reconcile_attempt_count,
+          next_reconcile_at,
           current_sync_request_id,
           organizer_email,
           organizer_calendar_id,
@@ -448,6 +469,9 @@ async function getCalendarLink(
     : await tx<CalendarLinkRow[]>`
         select
           id,
+          livemode,
+          reconcile_attempt_count,
+          next_reconcile_at,
           current_sync_request_id,
           organizer_email,
           organizer_calendar_id,
@@ -485,13 +509,26 @@ export async function getOpsExperienceCalendarStateForTx(
     configuration.organizerEmail === link.organizer_email
     && configuration.calendarId === link.organizer_calendar_id
   );
+  const mode = googleCommunicationLivemode();
+  const modeMatches = mode !== null && (!link || link.livemode === mode);
+  const automaticDeliveryPaused = experience.state === "published"
+    && new Date(experience.ends_at).getTime() <= Date.now()
+    && Boolean(link && ["pending_create", "pending_update", "failed"].includes(link.status));
   return {
     attendeeCount: attendees.length,
-    configured: configuration.ready && organizerMatches,
+    configured: configuration.ready && organizerMatches && modeMatches,
+    bindingRequired: Boolean(link && link.livemode === null),
+    bindingMode: mode === null ? null : mode ? "live" : "test",
+    canSendCancellation: Boolean(experience.cancelled_at && ["cancelled", "archived"].includes(experience.state)),
+    automaticDeliveryPaused,
     googleEventId: link?.provider_event_id ?? null,
     googleEventUrl: link?.provider_html_url ?? null,
-    lastError: organizerMatches
-      ? safeFailureCopy(link?.last_failure_code ?? null)
+    lastError: !modeMatches
+      ? "Calendar delivery mode needs review. An administrator must verify the existing Google organizer and explicitly bind this invitation to test or live before it can send."
+      : organizerMatches
+      ? automaticDeliveryPaused
+        ? "This event has ended. Automatic Calendar delivery is paused; review the invitation before choosing an explicit Calendar action."
+        : safeFailureCopy(link?.last_failure_code ?? null)
       : "The configured Google organizer does not match this existing invitation.",
     lastSyncedAt: asIso(link?.last_synced_at),
     meetingUrl: link?.meet_url ?? null,
@@ -510,6 +547,23 @@ export async function markOpsExperienceCalendarPending(
 ): Promise<boolean> {
   const actorAuthUserId = requireUuid(input.actorAuthUserId, "Operator identity");
   const experienceId = requireUuid(input.experienceId, "Experience");
+  const configuration = getGoogleCalendarConfigurationStatus();
+  const mode = googleCommunicationLivemode();
+  // Publishing is the authorization to invite. Create the durable intent in
+  // this same transaction, not in a browser request after the save succeeds.
+  if (input.reason === "publish" && mode !== null && configuration.ready) {
+    await tx`
+      insert into experience_calendar_links (
+        experience_id, organizer_email, organizer_calendar_id, livemode,
+        desired_experience_version, created_by_auth_user_id, updated_by_auth_user_id
+      )
+      select id, ${configuration.organizerEmail}, ${configuration.calendarId}, ${mode},
+        version, ${actorAuthUserId}::uuid, ${actorAuthUserId}::uuid
+      from experiences where id = ${experienceId}::uuid and status = 'published'
+        and coalesce(ends_at, starts_at + interval '1 hour') > statement_timestamp()
+      on conflict (experience_id, provider) do nothing
+    `;
+  }
   const rows = await tx<Array<{ id: string }>>`
     update experience_calendar_links calendar_link
     set
@@ -522,6 +576,8 @@ export async function markOpsExperienceCalendarPending(
       desired_experience_version = experience.version,
       desired_attendee_revision = calendar_link.desired_attendee_revision
         + case when ${input.reason} = 'attendees' then 1 else 0 end,
+      reconcile_attempt_count = 0,
+      next_reconcile_at = statement_timestamp(),
       updated_by_auth_user_id = ${actorAuthUserId}::uuid,
       version = calendar_link.version + 1,
       updated_at = statement_timestamp()
@@ -639,7 +695,7 @@ async function recoverStaleCalendarReservation(
   tx: postgres.TransactionSql,
   input: {
     actorAuthUserId: string;
-    actorKind: "member" | "operator";
+    actorKind: "member" | "operator" | "worker";
     experienceId: string;
     intent: CalendarIntent;
     link: CalendarLinkRow;
@@ -667,10 +723,12 @@ async function recoverStaleCalendarReservation(
   const request = requestRows[0];
   if (!request || !["queued", "processing"].includes(request.status)) return null;
   if (
-    input.actorKind !== "operator"
+    (input.actorKind !== "operator" && input.actorKind !== "worker")
     || request.status !== "processing"
-    || request.action !== requestActionForIntent(input.intent)
-    || request.actor_auth_user_id !== input.actorAuthUserId
+    || (input.actorKind !== "worker" && (
+      request.action !== requestActionForIntent(input.intent)
+      || request.actor_auth_user_id !== input.actorAuthUserId
+    ))
   ) {
     throw new OpsOperatingRepositoryError(
       "conflict",
@@ -689,7 +747,7 @@ async function recoverStaleCalendarReservation(
       updated_at = statement_timestamp()
     where id = ${request.id}::uuid
       and status = 'processing'
-      and last_attempt_at <= statement_timestamp() - interval '2 minutes'
+      and last_attempt_at <= statement_timestamp() - interval '10 minutes'
     returning attempt_count::int
   `;
   if (!reclaimed[0]) {
@@ -699,6 +757,28 @@ async function recoverStaleCalendarReservation(
     );
   }
   const attemptNumber = reclaimed[0].attempt_count + 1;
+  // A cancellation supersedes an interrupted create/update. Cancel the same
+  // deterministic event ID; never retry a create just to cancel it afterward.
+  if (
+    (input.actorKind === "worker" && input.intent === "cancel" && request.action !== "cancel")
+    || input.link.desired_experience_version !== request.desired_experience_version
+    || input.link.desired_attendee_revision !== request.desired_attendee_revision
+  ) {
+    await tx`
+      update experience_calendar_sync_requests
+      set status = 'superseded', completed_at = statement_timestamp(), next_attempt_at = null,
+        version = version + 1, updated_at = statement_timestamp()
+      where id = ${request.id}::uuid and status = 'queued'
+    `;
+    await tx`
+      insert into experience_calendar_sync_events (sync_request_id, calendar_link_id, experience_id,
+        event_type, actor_auth_user_id, dedupe_key, metadata)
+      values (${request.id}::uuid, ${input.link.id}::uuid, ${input.experienceId}::uuid,
+        'superseded', ${input.actorAuthUserId}::uuid, ${`${request.id}:superseded`},
+        ${tx.json({ reason: "desired_state_changed", desiredExperienceVersion: input.link.desired_experience_version, desiredAttendeeRevision: input.link.desired_attendee_revision })})
+    `;
+    return null;
+  }
   await tx`
     insert into experience_calendar_sync_events (
       sync_request_id,
@@ -765,9 +845,21 @@ async function recoverStaleCalendarReservation(
   `;
 
   const snapshot = recoverableSnapshot(request.event_snapshot);
+  await tx`
+    update experience_calendar_links
+    set reconcile_attempt_count = reconcile_attempt_count + 1,
+      next_reconcile_at = statement_timestamp() + interval '10 minutes',
+      version = version + 1, updated_at = statement_timestamp()
+    where id = ${input.link.id}::uuid
+  `;
   return {
-    action: requestActionForIntent(input.intent),
+    action: request.action === "reconcile" ? "update" : request.action,
     actorKind: input.actorKind,
+    actorAuthUserId: request.actor_auth_user_id!,
+    livemode: input.link.livemode!,
+    organizerEmail: input.link.organizer_email,
+    calendarId: input.link.organizer_calendar_id,
+    recoverExistingCreate: request.action === "create",
     attemptNumber,
     attendees: snapshot.attendees,
     calendarLinkId: input.link.id,
@@ -776,7 +868,7 @@ async function recoverStaleCalendarReservation(
     expectedEtag: input.link.provider_event_etag,
     providerEventId: input.link.provider_event_id,
     providerRequestKey: request.conference_request_key ?? providerRequestKey(
-      requestActionForIntent(input.intent),
+      request.action === "reconcile" ? "update" : request.action,
       input.experienceId,
       request.desired_experience_version,
       request.desired_attendee_revision,
@@ -788,7 +880,7 @@ async function recoverStaleCalendarReservation(
 }
 
 async function reserveCalendarSync(input: {
-  actorKind: "member" | "operator";
+  actorKind: "member" | "operator" | "worker";
   actorAuthUserId: string;
   expectedRegistrationStatus?: "cancelled" | "registered";
   experienceId: string;
@@ -796,7 +888,8 @@ async function reserveCalendarSync(input: {
   requestKey: string;
 }): Promise<ReservedSync | OpsExperienceCalendarState> {
   const configuration = getGoogleCalendarConfigurationStatus();
-  if (!configuration.ready) {
+  const mode = googleCommunicationLivemode();
+  if (!configuration.ready || mode === null) {
     throw new OpsOperatingRepositoryError(
       "conflict",
       "Connect the Ruined Google Workspace organizer before sending invitations.",
@@ -805,7 +898,9 @@ async function reserveCalendarSync(input: {
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${input.experienceId}), 49)`;
-    const actorAuthUserId = input.actorKind === "operator"
+    const actorAuthUserId = input.actorKind === "worker"
+      ? requireUuid(input.actorAuthUserId, "Original Calendar actor")
+      : input.actorKind === "operator"
       ? await requireCalendarOperator(
           tx,
           input.actorAuthUserId,
@@ -826,11 +921,14 @@ async function reserveCalendarSync(input: {
       );
     }
     const experience = await getCalendarExperience(tx, input.experienceId, true);
-    if (input.intent === "cancel" && experience.state !== "cancelled") {
+    if (input.intent === "cancel" && experience.state !== "cancelled" && !(experience.state === "archived" && experience.cancelled_at)) {
       throw new OpsOperatingRepositoryError("conflict", "Cancel the Experience before sending its Calendar cancellation.");
     }
     if (input.intent !== "cancel" && experience.state !== "published") {
       throw new OpsOperatingRepositoryError("conflict", "Publish the Experience before sending invitations.");
+    }
+    if (input.actorKind !== "operator" && input.intent !== "cancel" && new Date(experience.ends_at).getTime() <= Date.now()) {
+      throw new OpsOperatingRepositoryError("conflict", "This event has ended. Automatic Calendar delivery is paused for operator review.");
     }
 
     const attendees = await resolveCalendarAttendees(tx, experience);
@@ -866,6 +964,17 @@ async function reserveCalendarSync(input: {
     }
 
     let link = await getCalendarLink(tx, input.experienceId, true);
+    if (link && (link.livemode !== mode
+      || link.organizer_email !== configuration.organizerEmail
+      || link.organizer_calendar_id !== configuration.calendarId)) {
+      throw new OpsOperatingRepositoryError("conflict", "This Calendar invitation needs verified delivery-mode and organizer binding before it can send. No new event was created.");
+    }
+    if (input.actorKind === "worker" && (!link || ["active", "cancelled"].includes(link.status))) {
+      return getOpsExperienceCalendarStateForTx(tx, input.experienceId);
+    }
+    if (input.actorKind === "worker" && link && new Date(link.next_reconcile_at).getTime() > Date.now()) {
+      throw new OpsOperatingRepositoryError("conflict", "Calendar reconciliation is waiting for its retry time.");
+    }
     if (
       input.actorKind === "member"
       && (!link?.provider_event_id || link.status === "cancelled")
@@ -886,6 +995,9 @@ async function reserveCalendarSync(input: {
       ? await previousCalendarAttendees(tx, link.id)
       : [];
     const action: ReservedSync["action"] = input.intent === "sync" ? "update" : input.intent;
+    if (action === "cancel" && link && !link.provider_event_id) {
+      link.provider_event_id = googleCalendarEventIdForRequestKey(providerRequestKey("create", input.experienceId, 1, 1));
+    }
     if (action === "create" && link?.provider_event_id) {
       throw new OpsOperatingRepositoryError("conflict", "This Experience already has a Google Calendar event. Sync it instead.");
     }
@@ -911,6 +1023,7 @@ async function reserveCalendarSync(input: {
           experience_id,
           organizer_email,
           organizer_calendar_id,
+          livemode,
           status,
           desired_experience_version,
           desired_attendee_revision,
@@ -920,6 +1033,7 @@ async function reserveCalendarSync(input: {
           ${input.experienceId}::uuid,
           ${configuration.organizerEmail},
           ${configuration.calendarId},
+          ${mode},
           'pending_create',
           ${experience.version},
           1,
@@ -928,6 +1042,9 @@ async function reserveCalendarSync(input: {
         )
         returning
           id,
+          livemode,
+          reconcile_attempt_count,
+          next_reconcile_at,
           current_sync_request_id,
           organizer_email,
           organizer_calendar_id,
@@ -956,13 +1073,19 @@ async function reserveCalendarSync(input: {
         update experience_calendar_links
         set
           status = ${nextStatus},
+          provider_event_id = ${link.provider_event_id},
           desired_experience_version = ${experience.version},
+          reconcile_attempt_count = reconcile_attempt_count + 1,
+          next_reconcile_at = statement_timestamp() + interval '10 minutes',
           updated_by_auth_user_id = ${actorAuthUserId}::uuid,
           version = version + 1,
           updated_at = statement_timestamp()
         where id = ${link.id}::uuid and version = ${link.version}
         returning
           id,
+          livemode,
+          reconcile_attempt_count,
+          next_reconcile_at,
           current_sync_request_id,
           organizer_email,
           organizer_calendar_id,
@@ -1121,6 +1244,11 @@ async function reserveCalendarSync(input: {
     return {
       action,
       actorKind: input.actorKind,
+      actorAuthUserId,
+      livemode: mode,
+      organizerEmail: configuration.organizerEmail!,
+      calendarId: configuration.calendarId!,
+      recoverExistingCreate: action === "create" && Boolean(previousCreateRows[0]?.exists),
       attemptNumber: 1,
       attendees,
       calendarLinkId: link.id,
@@ -1210,9 +1338,10 @@ async function finalizeCalendarSuccess(
     const actorAuthUserId = requireUuid(input.actorAuthUserId, "Calendar actor");
     const requestRows = await tx<Array<{
       actor_auth_user_id: string;
+      attempt_count: number;
       status: string;
     }>>`
-      select audit_event.actor_auth_user_id, sync_request.status
+      select audit_event.actor_auth_user_id, sync_request.status, sync_request.attempt_count::int
       from experience_calendar_sync_requests sync_request
       join operator_audit_events audit_event
         on audit_event.id = sync_request.operator_audit_event_id
@@ -1228,7 +1357,7 @@ async function finalizeCalendarSuccess(
     if (requestRows[0]?.status === "succeeded") {
       return getOpsExperienceCalendarStateForTx(tx, input.experienceId);
     }
-    if (requestRows[0]?.status !== "processing") {
+    if (requestRows[0]?.status !== "processing" || requestRows[0]?.attempt_count !== input.reservation.attemptNumber) {
       throw new OpsOperatingRepositoryError("conflict", "That Calendar request is no longer active.");
     }
     const link = await getCalendarLink(tx, input.experienceId, true);
@@ -1270,6 +1399,9 @@ async function finalizeCalendarSuccess(
         provider_conference_id = ${input.result?.conferenceId ?? conferenceId(input.result?.meetUrl ?? link.meet_url)},
         meet_url = ${input.result?.meetUrl ?? link.meet_url},
         status = ${linkStatus},
+        reconcile_attempt_count = case when ${isCurrent && conferenceReady} then 0 else reconcile_attempt_count end,
+        next_reconcile_at = statement_timestamp()
+          + case when ${isCurrent && !conferenceReady} then interval '1 minute' else interval '0 seconds' end,
         synced_experience_version = ${input.reservation.desiredExperienceVersion},
         synced_attendee_revision = ${input.reservation.desiredAttendeeRevision},
         last_synced_at = statement_timestamp(),
@@ -1365,7 +1497,7 @@ async function finalizeCalendarSuccess(
       `;
     }
 
-    const livemode = googleCommunicationLivemode();
+    const livemode = input.reservation.livemode;
     const meetUrl = input.result?.meetUrl ?? link.meet_url;
     if (livemode !== null && meetUrl && !cancelled) {
       await tx`
@@ -1467,13 +1599,13 @@ async function finalizeCalendarFailure(
     await tx`select pg_advisory_xact_lock(hashtext(${input.experienceId}), 49)`;
     const link = await getCalendarLink(tx, input.experienceId, true);
     if (!link || link.id !== input.reservation.calendarLinkId) return;
-    const requestRows = await tx<Array<{ status: string }>>`
-      select status
+    const requestRows = await tx<Array<{ status: string; attempt_count: number }>>`
+      select status, attempt_count::int
       from experience_calendar_sync_requests
       where id = ${input.reservation.requestId}::uuid
       for update
     `;
-    if (requestRows[0]?.status !== "processing") return;
+    if (requestRows[0]?.status !== "processing" || requestRows[0]?.attempt_count !== input.reservation.attemptNumber) return;
     const isCurrent =
       link.current_sync_request_id === input.reservation.requestId
       && link.desired_experience_version === input.reservation.desiredExperienceVersion
@@ -1485,6 +1617,8 @@ async function finalizeCalendarFailure(
           status = 'failed',
           last_failed_at = statement_timestamp(),
           last_failure_code = ${failure.code},
+          next_reconcile_at = statement_timestamp()
+            + make_interval(secs => least(3600, 30 * power(2, greatest(0, least(reconcile_attempt_count - 1, 7))))),
           updated_by_auth_user_id = ${input.actorAuthUserId}::uuid,
           version = version + 1,
           updated_at = statement_timestamp()
@@ -1577,15 +1711,22 @@ async function performReservedCalendarSync(input: {
   reservation: ReservedSync;
 }): Promise<OpsExperienceCalendarState> {
   const { reservation } = input;
+  const actorAuthUserId = reservation.actorAuthUserId;
   let result: GoogleCalendarEventResult | null;
   try {
+    const configuration = getGoogleCalendarConfigurationStatus();
+    if (googleCommunicationLivemode() !== reservation.livemode
+      || configuration.organizerEmail !== reservation.organizerEmail
+      || configuration.calendarId !== reservation.calendarId) {
+      throw new Error("Calendar delivery environment changed after reservation.");
+    }
     if (reservation.action === "cancel") {
       await cancelGoogleCalendarEvent(reservation.providerEventId!);
       result = null;
     } else {
       const draft = googleDraft(reservation);
       result = reservation.action === "create"
-        ? await createGoogleCalendarEvent(draft)
+        ? await createGoogleCalendarEvent({ ...draft, recoverExisting: reservation.recoverExistingCreate })
         : await updateGoogleCalendarEvent({
             ...draft,
             eventId: reservation.providerEventId!,
@@ -1594,7 +1735,7 @@ async function performReservedCalendarSync(input: {
     }
   } catch (error) {
     await finalizeCalendarFailure({
-      actorAuthUserId: input.actorAuthUserId,
+      actorAuthUserId,
       error,
       experienceId: input.experienceId,
       reservation,
@@ -1609,7 +1750,7 @@ async function performReservedCalendarSync(input: {
   // the stale-attempt recovery path can reconcile the deterministic provider
   // event; do not mislabel a local finalize failure as a provider rejection.
   return finalizeCalendarSuccess({
-    actorAuthUserId: input.actorAuthUserId,
+    actorAuthUserId,
     experienceId: input.experienceId,
     reservation,
     result,
@@ -1636,6 +1777,120 @@ export async function syncOpsExperienceCalendar(input: {
     experienceId,
     reservation,
   });
+}
+
+async function requireCalendarBindingAdmin(tx: postgres.TransactionSql, actor: string) {
+  const rows = await tx`
+    select account.auth_user_id from platform_users account
+    join platform_role_grants role_grant on role_grant.auth_user_id = account.auth_user_id
+    where account.auth_user_id = ${requireUuid(actor, "Operator")}::uuid
+      and account.status = 'active' and role_grant.role_slug = 'ops_admin'
+      and role_grant.revoked_at is null
+    for share of account, role_grant
+  `;
+  if (!rows.length) throw new OpsOperatingRepositoryError("forbidden", "An active administrator must verify the Calendar delivery mode.");
+}
+
+export async function bindLegacyExperienceCalendar(input: { actorAuthUserId: string; experienceId: string; livemode: boolean }) {
+  const id = requireUuid(input.experienceId, "Experience");
+  const configuration = getGoogleCalendarConfigurationStatus();
+  if (!configuration.ready || googleCommunicationLivemode() !== input.livemode) {
+    throw new OpsOperatingRepositoryError("conflict", "Choose the explicitly configured Calendar environment.");
+  }
+  const sql = getApplicationDatabase();
+  const before = await sql.begin(async (tx) => {
+    await requireCalendarBindingAdmin(tx, input.actorAuthUserId);
+    const link = await getCalendarLink(tx, id);
+    if (!link || link.livemode !== null || !link.provider_event_id
+      || link.organizer_email !== configuration.organizerEmail || link.organizer_calendar_id !== configuration.calendarId
+      || link.provider_event_id !== googleCalendarEventIdForRequestKey(providerRequestKey("create", id, 1, 1))) {
+      throw new OpsOperatingRepositoryError("conflict", "This legacy invitation has no verifiable saved Google event. No replacement was created; the owner must review its provider record.");
+    }
+    return link;
+  });
+  // Read-only provider verification, with no database locks held and no invite.
+  const verified = await getRuinedOwnedGoogleCalendarEventResult(before.provider_event_id!);
+  if (!verified.organizerVerified || verified.organizerEmail !== before.organizer_email
+    || verified.eventId !== before.provider_event_id || verified.status === "cancelled") {
+    throw new OpsOperatingRepositoryError("conflict", "Google did not verify the saved invitation and organizer. Nothing was bound or sent.");
+  }
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${id}), 49)`;
+    await requireCalendarBindingAdmin(tx, input.actorAuthUserId);
+    const link = await getCalendarLink(tx, id, true);
+    const current = getGoogleCalendarConfigurationStatus();
+    if (!link || link.version !== before.version || link.livemode !== null
+      || link.provider_event_id !== verified.eventId || !current.ready || googleCommunicationLivemode() !== input.livemode
+      || current.organizerEmail !== before.organizer_email || current.calendarId !== before.organizer_calendar_id) {
+      throw new OpsOperatingRepositoryError("conflict", "Calendar authorization or state changed during verification. Nothing was bound or sent.");
+    }
+    await tx`
+      update experience_calendar_links set livemode = ${input.livemode},
+        next_reconcile_at = 'infinity'::timestamptz,
+        updated_by_auth_user_id = ${input.actorAuthUserId}::uuid,
+        version = version + 1, updated_at = statement_timestamp()
+      where id = ${link.id}::uuid
+    `;
+    await tx`
+      insert into operator_audit_events (actor_auth_user_id, action, subject_type, subject_id, metadata, dedupe_key)
+      values (${input.actorAuthUserId}::uuid, 'experience.calendar_mode_verified', 'experience', ${id},
+        ${tx.json({ livemode: input.livemode, providerEventId: verified.eventId, organizerEmail: verified.organizerEmail, providerReadOnly: true })},
+        ${`calendar-mode:${link.id}`})
+    `;
+    return getOpsExperienceCalendarStateForTx(tx, id);
+  });
+}
+
+/** Server-only worker discovery. The durable request lease is claimed again
+ * under the same per-Experience lock used by manual sync before any HTTP call. */
+export async function getPendingCalendarReconciliations(limit: number) {
+  const configuration = getGoogleCalendarConfigurationStatus();
+  const mode = googleCommunicationLivemode();
+  if (!configuration.ready || mode === null) return [];
+  const sql = getApplicationDatabase();
+  return sql<Array<{ experience_id: string; actor_auth_user_id: string; intent: CalendarIntent }>>`
+    select link.experience_id,
+      coalesce(link.updated_by_auth_user_id, link.created_by_auth_user_id) as actor_auth_user_id,
+      case when experience.status = 'cancelled' or (experience.status = 'archived' and experience.cancelled_at is not null) then 'cancel'
+        when link.provider_event_id is null then 'create' else 'sync' end as intent
+    from experience_calendar_links link
+    join experiences experience on experience.id = link.experience_id
+    left join experience_calendar_sync_requests request on request.id = link.current_sync_request_id
+    where link.livemode = ${mode}
+      and link.organizer_email = ${configuration.organizerEmail}
+      and link.organizer_calendar_id = ${configuration.calendarId}
+      and link.status in ('pending_create', 'pending_update', 'pending_cancel', 'failed')
+      and (experience.status in ('published', 'cancelled') or (experience.status = 'archived' and experience.cancelled_at is not null))
+      and (experience.status <> 'published' or coalesce(experience.ends_at, experience.starts_at + interval '1 hour') > statement_timestamp())
+      and link.next_reconcile_at <= statement_timestamp()
+      and (request.id is null or request.status not in ('processing', 'queued')
+        or (request.status = 'processing' and request.last_attempt_at <= statement_timestamp() - interval '10 minutes'))
+    order by link.next_reconcile_at, link.id
+    limit ${Math.max(1, Math.min(3, Math.trunc(limit) || 1))}
+  `;
+}
+
+export async function reconcilePendingExperienceCalendar(input: {
+  actor_auth_user_id: string;
+  experience_id: string;
+  intent: CalendarIntent;
+}): Promise<boolean> {
+  // No browser can choose actorKind=worker. The protected worker obtains these
+  // IDs from already-authorized durable mutations, not from request bodies.
+  const reservation = await reserveCalendarSync({
+    actorAuthUserId: input.actor_auth_user_id,
+    actorKind: "worker",
+    experienceId: input.experience_id,
+    intent: input.intent,
+    requestKey: `calendar-worker:${randomUUID()}`,
+  });
+  if (!("requestId" in reservation)) return false;
+  await performReservedCalendarSync({
+    actorAuthUserId: reservation.actorAuthUserId,
+    experienceId: input.experience_id,
+    reservation,
+  });
+  return true;
 }
 
 /**

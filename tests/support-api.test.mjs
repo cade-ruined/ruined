@@ -26,7 +26,7 @@ const model = await load("src/lib/support/model.ts");
 async function fixture(options = {}) {
   const calls = [];
   const queued = [];
-  const repository = Object.fromEntries(["createSupportTicket", "replySupportTicket", "updateSupportTicketStatus", "getSupportTicket", "listSupportTickets"].map((name) => [name, async (...args) => {
+  const repository = Object.fromEntries(["createSupportTicket", "replySupportTicket", "updateSupportTicketStatus", "retrySupportEmailDelivery", "getSupportTicket", "listSupportTickets"].map((name) => [name, async (...args) => {
     calls.push({ name, args });
     if (options.denied) throw new model.SupportError(403, "Administrator access required.");
     return { id: ticketId };
@@ -117,6 +117,19 @@ test("oversized, malformed and wrong-content-type bodies are rejected before wri
     assert.equal((await api.handleSupportRequest(request(body, "POST", headers))).status, status);
     assert.deepEqual(api.calls, []);
     assert.deepEqual(api.queued, []);
+  }
+});
+
+test("email retry is operator-route-only and schedules sending only after authorized queueing", async () => {
+  const input = { action: "retry_email", deliveryId: requestKey, to: "injected@example.test" };
+  const memberApi = await fixture();
+  assert.equal((await memberApi.handleSupportRequest(request(input, "PATCH"), { ticketId })).status, 405);
+  assert.deepEqual(memberApi.calls, []);
+  for (const denied of [true, false]) {
+    const api = await fixture({ denied });
+    assert.equal((await api.handleSupportRequest(request(input, "PATCH"), { ticketId, operator: true })).status, denied ? 403 : 200);
+    assert.deepEqual(api.calls[0], { name: "retrySupportEmailDelivery", args: [viewer, ticketId, requestKey] });
+    assert.equal(api.queued.length, denied ? 0 : 1);
   }
 });
 

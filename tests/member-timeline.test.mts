@@ -88,18 +88,22 @@ test("approved examples remain presentation-only and in chronological order", ()
 });
 
 test("the production port uses the member API, accessible controls, and no iframe or local storage", async () => {
-  const [component, exportStudio, page, repository, timelineStyles] = await Promise.all([
+  const [component, exportStudio, page, repository, timelineStyles, persistence] = await Promise.all([
     readFile(new URL("../src/components/membership/RuinedTimeline.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/TimelineExportStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/ruined-timeline.module.css", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/membership/timeline-persistence.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(component, /fetch\("\/api\/my\/timeline"/);
+  assert.match(persistence, /fetch\("\/api\/my\/timeline"/);
   assert.match(component, /aria-live="polite"/);
   assert.match(component, /aria-describedby=\{errorField/);
   assert.match(component, /event\.key === "Escape"/);
+  assert.match(component, /event\.key === "Escape" && !pending/);
+  assert.equal((component.match(/readOnly=\{Boolean\(pending\) \|\| \(!writable && !preview\)\}/g) ?? []).length, 3,
+    "All draft fields must freeze during a pending save so its response cannot discard newer typing");
   assert.match(component, /7000/);
   assert.match(component, /<TimelineExportStudio entries=\{sortedEntries\} examples=\{examples\}/);
   assert.match(component, /Add an event/);
@@ -131,5 +135,5 @@ test("the production port uses the member API, accessible controls, and no ifram
   assert.match(timelineStyles, /\.exportStudio\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
   assert.match(timelineStyles, /\.exportRail\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
   assert.match(page, /preview=\{context\.state === "preview"\}/);
-  assert.match(repository, /order by entry_year, position, created_at/);
+  assert.match(repository, /order by entry\.entry_year, entry\.position, entry\.created_at, entry\.id/);
 });
