@@ -130,9 +130,35 @@
   pointer-events: none;
 }
 
+.presentationHeaderGroup,
 .presentationIdentity,
+.presentationReturn,
 .presentationStatus {
   pointer-events: auto;
+}
+
+.presentationHeaderGroup {
+  display: flex;
+  gap: clamp(0.8rem, 2vw, 1.75rem);
+  align-items: center;
+}
+
+.presentationReturn {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 2.75rem;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--foundation-label);
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.presentationReturn:hover,
+.presentationReturn:focus-visible {
+  opacity: 0.62;
 }
 
 .presentationIdentity {
@@ -158,6 +184,12 @@
   height: 1.5rem;
   background: currentColor;
   transform: rotate(18deg);
+}
+
+.presentationWordmark {
+  width: 4.4rem;
+  height: auto;
+  filter: invert(1);
 }
 
 .presentationStatus {
@@ -1833,6 +1865,16 @@
   font-style: italic;
 }
 
+.welcomeBody .memberCompletionError {
+  margin-top: 1.25rem;
+  color: #dba095;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--foundation-label);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .welcomeMoment > .cutButton {
   grid-column: auto;
   justify-self: start;
@@ -1842,6 +1884,11 @@
 .welcomeMoment > .cutButton:hover {
   color: var(--black);
   background: var(--white);
+}
+
+.welcomeMoment > .cutButton:disabled {
+  opacity: 0.45;
+  cursor: wait;
 }
 
 .finalOverview {
@@ -2378,6 +2425,19 @@
 
   .presentationHeader {
     padding-top: max(0.65rem, env(safe-area-inset-top));
+  }
+
+  .presentationHeaderGroup {
+    gap: 0.7rem;
+  }
+
+  .presentationReturn {
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+  }
+
+  .presentationReturn span:last-child {
+    display: none;
   }
 
   .presentationIdentity {

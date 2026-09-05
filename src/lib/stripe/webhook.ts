@@ -117,6 +117,9 @@ async function handleCheckoutSession(
   const checkoutAttemptId = session.metadata.ruined_checkout_attempt_id;
   if (isUuid(checkoutAttemptId)) {
     await reconcileCheckoutAttempt(tx, {
+      acceptanceId: isUuid(session.metadata.agreement_acceptance_id)
+        ? session.metadata.agreement_acceptance_id
+        : null,
       attemptId: checkoutAttemptId,
       expiresAt: new Date(session.expires_at * 1_000),
       sessionId: session.id,

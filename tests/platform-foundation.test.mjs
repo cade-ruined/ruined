@@ -8,6 +8,7 @@ async function source(relativePath) {
 
 const [
   platformConfig,
+  authAccess,
   pageData,
   authSession,
   authRequestRoute,
@@ -15,6 +16,7 @@ const [
   supabaseMiddleware,
   rootMiddleware,
   checkoutRoute,
+  memberJoinPage,
   billingRepository,
   platformMigration,
   platformModel,
@@ -22,12 +24,15 @@ const [
   memberFoundationsPage,
   memberCirclePage,
   memberArtifactsPage,
+  membershipPageContext,
+  membershipRepository,
   memberLayout,
   opsLayout,
   signOutRoute,
   platformVisibility,
 ] = await Promise.all([
   source("src/lib/platform/config.ts"),
+  source("src/lib/auth/platform-access.ts"),
   source("src/lib/platform/page-data.ts"),
   source("src/lib/auth/session.ts"),
   source("app/api/auth/otp/request/route.ts"),
@@ -35,6 +40,7 @@ const [
   source("src/lib/supabase/middleware.ts"),
   source("middleware.ts"),
   source("app/api/stripe/checkout/route.ts"),
+  source("app/my/join/page.tsx"),
   source("src/lib/stripe/billing-repository.ts"),
   source("db/migrations/20260819_platform_foundation.sql"),
   source("src/lib/platform/model.ts"),
@@ -42,13 +48,15 @@ const [
   source("app/my/foundations/page.tsx"),
   source("app/my/circle/page.tsx"),
   source("app/my/artifacts/page.tsx"),
+  source("src/lib/membership/page-context.ts"),
+  source("src/lib/membership/repository.ts"),
   source("app/my/layout.tsx"),
   source("app/ops/layout.tsx"),
   source("app/api/auth/sign-out/route.ts"),
   source("src/lib/platform/visibility.ts"),
 ]);
 
-test("My Ruined stays hidden in deployed environments until its release switch opens", () => {
+test("Ruined Membership stays hidden in deployed environments until its release switch opens", () => {
   assert.match(platformVisibility, /process\.env\.NODE_ENV !== "production"/);
   assert.match(
     platformVisibility,
@@ -97,16 +105,56 @@ test("paid active membership is a server-side boundary for private member areas"
     platformModel,
     /hasActiveMemberAccess[\s\S]*accountState === "active"[\s\S]*billingState === "active"[\s\S]*programState === "onboarding"/,
   );
-  assert.match(platformRepository, /existingLifecycle\?\.program_state \?\? "prospect"/);
+  assert.match(
+    platformRepository,
+    /insert into member_lifecycle \([\s\S]*member_id,[\s\S]*account_state,[\s\S]*billing_state,[\s\S]*program_state[\s\S]*'prospect'/,
+  );
 
-  for (const route of [memberFoundationsPage, memberCirclePage, memberArtifactsPage]) {
-    assert.match(route, /context\.state !== "preview"/);
-    assert.match(route, /!hasActiveMemberAccess\(context\.member\)/);
-    assert.match(route, /redirect\("\/my\/account"\)/);
+  assert.match(memberFoundationsPage, /context\.state !== "preview"/);
+  assert.match(memberFoundationsPage, /!hasActiveMemberAccess\(context\.member\)/);
+  assert.match(memberFoundationsPage, /redirect\("\/my\/account"\)/);
+
+  for (const route of [memberCirclePage, memberArtifactsPage]) {
+    assert.match(route, /getMembershipPageContext\(/);
+    assert.match(route, /if \(!context\.data\) return <PlatformUnavailable/);
   }
+  assert.match(membershipPageContext, /const data = await load\(viewer\.authUserId\)/);
+  assert.match(membershipPageContext, /error instanceof MembershipAccessDeniedError/);
+
+  const circleLoader = membershipRepository.slice(
+    membershipRepository.indexOf("export async function getMemberCircle"),
+    membershipRepository.indexOf("export async function getMemberExperiences"),
+  );
+  assert.match(circleLoader, /requireMemberIdentity\(authUserId\)/);
+  assert.match(circleLoader, /memberCan\(access, "circle\.read"\)/);
+  assert.match(circleLoader, /members: \[\]/);
+
+  const artifactLoader = membershipRepository.slice(
+    membershipRepository.indexOf("export async function getMemberArtifacts"),
+    membershipRepository.indexOf("export async function getMemberUpdates"),
+  );
+  assert.match(artifactLoader, /requireMemberIdentity\(authUserId\)/);
+  assert.match(artifactLoader, /memberCan\(access, "artifacts\.read"\)/);
+  assert.match(artifactLoader, /return \{ access, awards: \[\] \}/);
 });
 
-test("passwordless OTP endpoints enforce origin, audience, and generic delivery boundaries", () => {
+test("operator dashboards reauthorize inside their own consistent read", () => {
+  const dashboard = platformRepository.slice(
+    platformRepository.indexOf("export async function getOperatorDashboard"),
+  );
+
+  assert.match(dashboard, /isolation level repeatable read read only/);
+  assert.match(dashboard, /grant_row\.role_slug in \('ops_admin', 'circle_leader', 'guide'\)/);
+  assert.match(dashboard, /grant_row\.revoked_at is null/);
+  assert.match(dashboard, /join platform_users platform_user/);
+  assert.match(dashboard, /platform_user\.auth_user_id = grant_row\.auth_user_id/);
+  assert.match(dashboard, /platform_user\.status = 'active'/);
+  assert.doesNotMatch(dashboard, /authUserId: string,\s*role:/);
+  assert.match(pageData, /const access = await getOperatorDashboard\(viewer\.authUserId\)/);
+  assert.doesNotMatch(pageData, /getOperatorRole\(/);
+});
+
+test("passwordless OTP endpoints enforce origin, shared eligibility, and generic delivery boundaries", () => {
   for (const route of [authRequestRoute, authVerifyRoute]) {
     assert.match(route, /isTrustedPlatformOrigin\(request\)/);
     assert.match(route, /status: 403/);
@@ -114,16 +162,45 @@ test("passwordless OTP endpoints enforce origin, audience, and generic delivery 
     assert.match(route, /status: 503/);
   }
 
-  assert.match(authRequestRoute, /body\?\.audience === "ops" \? "ops" : "member"/);
-  assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*options: \{ shouldCreateUser: audience === "member" \}/);
+  assert.doesNotMatch(authRequestRoute, /body\?\.audience/);
+  assert.match(authRequestRoute, /getUnifiedAccessEligibility\(email\)/);
+  assert.match(authRequestRoute, /if \(!eligibility\.eligible\) return response/);
+  assert.match(
+    authRequestRoute,
+    /eligibility\.shouldCreateUser[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
+  );
+  assert.match(authRequestRoute, /let options: [\s\S]*shouldCreateUser: false/);
+  assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*email,[\s\S]*options,[\s\S]*\}\)/);
   assert.match(authRequestRoute, /const response = NextResponse\.json\(\{ ok: true \}\)/);
   assert.match(authRequestRoute, /if \(error\) \{[\s\S]*console\.warn[\s\S]*\}[\s\S]*return response/);
   assert.doesNotMatch(authRequestRoute, /console\.(?:warn|error|log)\([^)]*email/);
 
   assert.match(authVerifyRoute, /const TOKEN_PATTERN = \/\^\\d\{6,10\}\$\//);
-  assert.match(authVerifyRoute, /safePlatformNextPath\(body\?\.next, audience\)/);
+  assert.doesNotMatch(authVerifyRoute, /body\?\.(?:next|audience)/);
   assert.match(authVerifyRoute, /verifyOtp\(\{ email, token, type: "email" \}\)/);
   assert.match(authVerifyRoute, /if \(error \|\| !data\.user\)/);
+});
+
+test("verified members enter membership checkout while paid states return home", () => {
+  assert.match(
+    authAccess,
+    /Promise<\{ redirectTo: "\/my" \| "\/my\/join" \| "\/ops" \}>/,
+  );
+  assert.match(
+    authAccess,
+    /access\.member === "invited" \? "\/my\/join" : "\/my"/,
+  );
+  assert.match(authVerifyRoute, /const \{ redirectTo \} = await completePlatformSignIn/);
+
+  const completedRedirectIndex = memberJoinPage.indexOf('redirect("/my")');
+  const checkoutEnabledIndex = memberJoinPage.indexOf("const checkoutEnabled =");
+  assert.ok(completedRedirectIndex >= 0 && completedRedirectIndex < checkoutEnabledIndex);
+  assert.match(
+    memberJoinPage,
+    /context\.state === "authenticated" && context\.data\.state === "completed"[\s\S]*?redirect\("\/my"\)/,
+  );
+  assert.match(memberJoinPage, /getMembershipPageContext\([\s\S]*getMemberOnboarding/);
+  assert.match(memberJoinPage, /context\.configuration\.stripeCheckoutReady/);
 });
 
 test("middleware refreshes verified claims for every protected platform boundary", () => {
@@ -135,6 +212,8 @@ test("middleware refreshes verified claims for every protected platform boundary
     "/my/:path*",
     "/ops/:path*",
     "/api/auth/:path*",
+    "/api/my/:path*",
+    "/api/ops/:path*",
     "/api/stripe/checkout/:path*",
     "/api/stripe/portal/:path*",
   ]) {
@@ -148,7 +227,7 @@ test("Checkout derives identity from verified claims and keeps the offer server-
   assert.doesNotMatch(requestType, /email|price|amount|quantity/i);
   assert.match(checkoutRoute, /const viewer = await getCurrentPlatformViewer\(\)/);
   assert.match(checkoutRoute, /if \(!viewer\)[\s\S]*status: 401/);
-  assert.match(checkoutRoute, /ensurePlatformMemberForViewer\(viewer\)/);
+  assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
   assert.match(checkoutRoute, /normalizeEmail\(viewer\.email\)/);
   assert.match(checkoutRoute, /customer_email: email/);
   assert.doesNotMatch(checkoutRoute, /body\.(?:email|price|priceId|amount|quantity)/);
@@ -228,6 +307,18 @@ test("platform migration creates durable, independent, versioned state", () => {
   assert.match(platformMigration, /dedupe_key text not null unique/);
   assert.match(platformMigration, /integration_outbox_delivery_idx/);
   assert.match(platformMigration, /where status in \('pending', 'failed'\)/);
+});
+
+test("historical Circle capacity validation follows the live assignment lock order", () => {
+  const assignmentLock = platformMigration.indexOf(
+    "lock table public.circle_member_assignments in share row exclusive mode;",
+  );
+  const circleLock = platformMigration.indexOf(
+    "lock table public.circles in share row exclusive mode;",
+  );
+
+  assert.ok(assignmentLock >= 0);
+  assert.ok(circleLock > assignmentLock);
 });
 
 test("platform RLS defaults to self-read surfaces without client write policies", () => {

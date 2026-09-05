@@ -1,0 +1,62 @@
+import { redirect } from "next/navigation";
+
+import MemberFoundationsExperience from "@/components/foundations/MemberFoundationsExperience";
+import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
+import { PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/foundations/model";
+import { getMemberFoundationsState } from "@/lib/foundations/repository";
+import { getMemberFoundationRequirements } from "@/lib/membership/repository";
+import { hasActiveMemberAccess } from "@/lib/platform/model";
+import { getMemberPageContext } from "@/lib/platform/page-data";
+
+export const dynamic = "force-dynamic";
+
+export default async function MemberFoundationsExperiencePage() {
+  const context = await getMemberPageContext();
+  if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
+  if (
+    context.state !== "preview" &&
+    context.member &&
+    !hasActiveMemberAccess(context.member)
+  ) {
+    redirect("/my/account");
+  }
+
+  if (context.state === "preview") {
+    return (
+      <MemberFoundationsExperience
+        initialState={PREVIEW_MEMBER_FOUNDATIONS_STATE}
+        writable={false}
+      />
+    );
+  }
+
+  if (!context.member || !context.viewer) {
+    return <PlatformUnavailable accessHref="/my/access" />;
+  }
+
+  let foundations;
+  let requirements;
+  try {
+    [foundations, requirements] = await Promise.all([
+      getMemberFoundationsState(context.viewer.authUserId),
+      getMemberFoundationRequirements(context.viewer.authUserId),
+    ]);
+  } catch (error) {
+    console.error("Member Foundations experience could not be loaded", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+    return <PlatformUnavailable accessHref="/my/access" />;
+  }
+
+  if (!foundations) return <PlatformUnavailable accessHref="/my/access" />;
+  if (!foundations.enrollmentId && foundations.status === "not_started") {
+    redirect("/my/foundations");
+  }
+  return (
+    <MemberFoundationsExperience
+      initialState={{ ...foundations, requirements }}
+      writable
+    />
+  );
+}

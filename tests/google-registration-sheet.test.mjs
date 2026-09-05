@@ -245,7 +245,7 @@ test("reconciliation restores the exact canonical mirror and removes stale trail
   assert.match(reconcile, /clearGoogleSheetValues\([\s\S]*?rows\.length \+ 2[\s\S]*?existingRows\.length \+ 1/);
 });
 
-test("the Sheet worker route is private and participates in durable cron recovery", async () => {
+test("the Sheet worker route stays private without a second membership cron owner", async () => {
   const [route, vercel] = await Promise.all([
     source(paths.route),
     source(paths.vercel),
@@ -262,9 +262,14 @@ test("the Sheet worker route is private and participates in durable cron recover
   assert.match(route, /"Cache-Control":\s*"private, no-store"/);
   assert.match(route, /export async function GET/);
   assert.match(route, /export async function POST/);
-  assert.match(
-    vercel,
-    /"path":\s*"\/api\/internal\/integrations\/google-sheets\/process"/,
+  assert.deepEqual(
+    JSON.parse(vercel).crons,
+    [
+      { path: "/api/internal/communications/process", schedule: "0 12 * * *" },
+      { path: "/api/internal/membership/process", schedule: "30 12 * * *" },
+      { path: "/api/internal/integrations/google-calendar/process", schedule: "45 12 * * *" },
+    ],
+    "the public main project owns Sheets; membership owns support, membership and Calendar recovery",
   );
 });
 

@@ -3,18 +3,28 @@ import { redirect } from "next/navigation";
 
 import MemberHome from "@/components/platform/MemberHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getMemberPageContext } from "@/lib/platform/page-data";
+import { resolveMemberHomeArtifactProducts } from "@/lib/membership/artifact-products";
+import { getMembershipPageContext } from "@/lib/membership/page-context";
+import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
+import { getMemberHome } from "@/lib/membership/repository";
+import { getProducts } from "@/lib/shopify";
 
 export const metadata: Metadata = {
-  title: "My Ruined",
-  description: "The private Ruined member experience.",
+  title: "Your Profile | Ruined",
+  description: "Your private Ruined member profile, Circle, artifacts, and experiences.",
 };
 export const dynamic = "force-dynamic";
 
 export default async function MyRuinedPage() {
-  const context = await getMemberPageContext();
+  const context = await getMembershipPageContext(
+    PREVIEW_MEMBER_HOME,
+    getMemberHome,
+    "home",
+  );
   if (context.state === "signed_out") redirect("/my/access");
-  if (!context.member) return <PlatformUnavailable accessHref="/my/access" />;
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
+  if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
 
-  return <MemberHome configuration={context.configuration} member={context.member} />;
+  const member = resolveMemberHomeArtifactProducts(context.data, await getProducts());
+  return <MemberHome member={member} />;
 }

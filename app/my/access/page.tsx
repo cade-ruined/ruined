@@ -1,12 +1,7 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import AccessPage from "@/components/platform/AccessPage";
-import { getPlatformConfiguration } from "@/lib/platform/config";
-
-export const metadata: Metadata = { title: "Access My Ruined" };
 export const dynamic = "force-dynamic";
 
 export default function MyRuinedAccessPage() {
-  const configuration = getPlatformConfiguration();
-  return <AccessPage audience="member" enabled={configuration.mode === "connected"} />;
+  redirect("/access");
 }

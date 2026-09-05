@@ -9,6 +9,7 @@ import {
   type CSSProperties,
 } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   FOUNDATION_FINAL_OVERVIEW,
@@ -79,11 +80,42 @@ function chapterForMoment(index: number): FoundationChapterId | undefined {
   return "chapterId" in moment ? moment.chapterId : undefined;
 }
 
-export default function PresentationShell() {
+type MemberPresentationMode = {
+  completed: boolean;
+  error: string | null;
+  futureLetterCompleted: boolean;
+  hasActiveCircle: boolean;
+  maxMomentIndex: number;
+  onComplete: () => Promise<boolean>;
+  onFutureLetterComplete: () => Promise<boolean>;
+  onMomentChange: (index: number, momentId: string) => void;
+  onViewCircle: () => void;
+  pending: boolean;
+  progressLabel: string;
+  progressPercent: number;
+};
+
+export default function PresentationShell({
+  basePath = "/foundations",
+  initialMomentId,
+  member,
+  returnHref,
+}: {
+  basePath?: string;
+  initialMomentId?: string | null;
+  member?: MemberPresentationMode;
+  returnHref?: string;
+} = {}) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const momentRefs = useRef<(HTMLElement | null)[]>([]);
+  const initialPositionedRef = useRef(false);
   const reduceMotion = useReducedMotion();
-  const [activeMoment, setActiveMoment] = useState(0);
+  const [activeMoment, setActiveMoment] = useState(() => {
+    const index = FOUNDATION_MOMENTS.findIndex(
+      (moment) => moment.id === initialMomentId,
+    );
+    return Math.max(index, 0);
+  });
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [grainEnabled, setGrainEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -93,7 +125,9 @@ export default function PresentationShell() {
   const [responsibility, setResponsibility] = useState(50);
   const [cultureCommitted, setCultureCommitted] = useState(false);
   const [letterStep, setLetterStep] = useState(0);
-  const [letterComplete, setLetterComplete] = useState(false);
+  const [letterComplete, setLetterComplete] = useState(
+    () => member?.futureLetterCompleted ?? false,
+  );
   const [closingOverview, setClosingOverview] = useState(false);
   const [selectedDna, setSelectedDna] = useState("perspective");
   const [selectedArtifact, setSelectedArtifact] = useState("letter");
@@ -102,6 +136,26 @@ export default function PresentationShell() {
 
   const currentChapter = chapterForMoment(activeMoment);
   const activeLabel = FOUNDATION_MOMENTS[activeMoment]?.label ?? "";
+  const memberUpperMomentIndex = Math.max(
+    0,
+    Math.min(
+      member?.maxMomentIndex ?? FOUNDATION_MOMENTS.length - 1,
+      FOUNDATION_MOMENTS.length - 1,
+    ),
+  );
+  const letterMomentIndex = FOUNDATION_MOMENTS.findIndex(
+    (moment) => moment.kind === "letter",
+  );
+  const upperMomentIndex =
+    member && !letterComplete && letterMomentIndex >= 0
+      ? Math.min(memberUpperMomentIndex, letterMomentIndex)
+      : memberUpperMomentIndex;
+  const futureLetterBlocked =
+    Boolean(member) && activeMoment === letterMomentIndex && !letterComplete;
+
+  useEffect(() => {
+    if (member?.futureLetterCompleted) setLetterComplete(true);
+  }, [member?.futureLetterCompleted]);
 
   const symbolProgress = useMemo<RuinedMarkProgress>(() => {
     if (activeMoment >= 21 || letterComplete) return 4;
@@ -115,23 +169,24 @@ export default function PresentationShell() {
     (index: number) => {
       const clamped = Math.max(
         0,
-        Math.min(index, FOUNDATION_MOMENTS.length - 1)
+        Math.min(index, upperMomentIndex)
       );
       momentRefs.current[clamped]?.scrollIntoView({
         behavior: reduceMotion ? "auto" : "smooth",
         block: "start",
       });
     },
-    [reduceMotion]
+    [reduceMotion, upperMomentIndex]
   );
 
   const goNext = useCallback(() => {
+    if (futureLetterBlocked) return;
     if (activeMoment === FOUNDATION_MOMENTS.length - 1) {
-      setClosingOverview(true);
+      if (!member) setClosingOverview(true);
       return;
     }
     scrollToMoment(activeMoment + 1);
-  }, [activeMoment, scrollToMoment]);
+  }, [activeMoment, futureLetterBlocked, member, scrollToMoment]);
 
   const goPrevious = useCallback(() => {
     if (activeMoment === FOUNDATION_MOMENTS.length - 1 && closingOverview) {
@@ -152,7 +207,12 @@ export default function PresentationShell() {
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (!strongest) return;
         const index = Number((strongest.target as HTMLElement).dataset.index);
-        if (Number.isFinite(index)) setActiveMoment(index);
+        if (!Number.isFinite(index)) return;
+        if (index > upperMomentIndex) {
+          requestAnimationFrame(() => scrollToMoment(upperMomentIndex));
+          return;
+        }
+        setActiveMoment(index);
       },
       {
         root: scroller,
@@ -165,14 +225,28 @@ export default function PresentationShell() {
       if (node) observer.observe(node);
     });
     return () => observer.disconnect();
-  }, []);
+  }, [scrollToMoment, upperMomentIndex]);
 
   useEffect(() => {
+    if (initialPositionedRef.current) return;
+    initialPositionedRef.current = true;
+    const exactMomentIndex = FOUNDATION_MOMENTS.findIndex(
+      (moment) => moment.id === initialMomentId,
+    );
+    if (exactMomentIndex >= 0) {
+      requestAnimationFrame(() => scrollToMoment(exactMomentIndex));
+      return;
+    }
     const hash = window.location.hash.slice(1) as FoundationChapterId;
     const chapter = CHAPTER_STARTS.find((item) => item.id === hash);
     if (!chapter) return;
     requestAnimationFrame(() => scrollToMoment(chapter.momentIndex));
-  }, [scrollToMoment]);
+  }, [initialMomentId, scrollToMoment]);
+
+  useEffect(() => {
+    const active = FOUNDATION_MOMENTS[activeMoment];
+    if (active) member?.onMomentChange(activeMoment, active.id);
+  }, [activeMoment, member]);
 
   useEffect(() => {
     if (!currentChapter) return;
@@ -236,7 +310,7 @@ export default function PresentationShell() {
     setResponsibility(50);
     setCultureCommitted(false);
     setLetterStep(0);
-    setLetterComplete(false);
+    setLetterComplete(member?.futureLetterCompleted ?? false);
     setClosingOverview(false);
     setOverviewOpen(false);
     setGrainEnabled(true);
@@ -245,7 +319,7 @@ export default function PresentationShell() {
     setSelectedArtifact("letter");
     setSelectedResponses([]);
     setExperienceRevision((revision) => revision + 1);
-    window.history.replaceState(null, "", "/foundations");
+    window.history.replaceState(null, "", basePath);
     scrollToMoment(0);
   };
 
@@ -269,16 +343,31 @@ export default function PresentationShell() {
       <FilmGrain enabled={grainEnabled && !reduceMotion} />
 
       <header className={styles.presentationHeader}>
-        <button
-          type="button"
-          className={styles.presentationIdentity}
-          onClick={() => setOverviewOpen(true)}
-          aria-label="Open Foundations chapter overview"
-        >
-          <span>RUINED</span>
-          <i aria-hidden />
-          <span>FOUNDATIONS</span>
-        </button>
+        <div className={styles.presentationHeaderGroup}>
+          {returnHref ? (
+            <Link className={styles.presentationReturn} href={returnHref}>
+              <span aria-hidden>←</span>
+              <span>Membership</span>
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            className={styles.presentationIdentity}
+            onClick={() => setOverviewOpen(true)}
+            aria-label="Open Foundations chapter overview"
+          >
+            <Image
+              alt="Ruined"
+              className={styles.presentationWordmark}
+              height={30}
+              priority
+              src="/ruined-wordmark.svg"
+              width={100}
+            />
+            <i aria-hidden />
+            <span>FOUNDATIONS</span>
+          </button>
+        </div>
 
         <div className={styles.presentationStatus}>
           <RuinedMarkBuilder
@@ -289,7 +378,13 @@ export default function PresentationShell() {
             {String(activeMoment + 1).padStart(2, "0")} /{" "}
             {FOUNDATION_MOMENTS.length}
           </span>
-          <span>{soundEnabled ? "AMBIENT / ON" : "AMBIENT / OFF"}</span>
+          <span>
+            {member
+              ? `${member.progressLabel} / ${Math.round(member.progressPercent)}%`
+              : soundEnabled
+                ? "AMBIENT / ON"
+                : "AMBIENT / OFF"}
+          </span>
         </div>
       </header>
 
@@ -347,6 +442,7 @@ export default function PresentationShell() {
                 selectedResponses,
                 setSelectedResponses,
                 experienceRevision,
+                member,
                 jumpToChapter,
                 goNext,
               })}
@@ -372,7 +468,9 @@ export default function PresentationShell() {
           type="button"
           onClick={goNext}
           disabled={
-            activeMoment === FOUNDATION_MOMENTS.length - 1 && closingOverview
+            futureLetterBlocked ||
+            (activeMoment === FOUNDATION_MOMENTS.length - 1 &&
+              (closingOverview || Boolean(member)))
           }
           aria-label="Next presentation moment"
         >
@@ -391,7 +489,9 @@ export default function PresentationShell() {
         key={experienceRevision}
         canGoPrevious={activeMoment > 0 || closingOverview}
         canGoNext={
-          activeMoment < FOUNDATION_MOMENTS.length - 1 || !closingOverview
+          !futureLetterBlocked &&
+          (activeMoment < FOUNDATION_MOMENTS.length - 1 ||
+            (!closingOverview && !member))
         }
         grainEnabled={grainEnabled}
         soundEnabled={soundEnabled}
@@ -440,6 +540,7 @@ type RenderMomentProps = {
   selectedResponses: string[];
   setSelectedResponses: (value: string[]) => void;
   experienceRevision: number;
+  member?: MemberPresentationMode;
   jumpToChapter: (chapterId: FoundationChapterId) => void;
   goNext: () => void;
 };
@@ -740,7 +841,14 @@ function renderMoment(props: RenderMomentProps) {
           step={props.letterStep}
           onStepChange={props.setLetterStep}
           complete={props.letterComplete}
-          onComplete={() => {
+          pending={props.member?.pending ?? false}
+          onComplete={async () => {
+            if (
+              props.member &&
+              !(await props.member.onFutureLetterComplete())
+            ) {
+              return;
+            }
             props.setLetterComplete(true);
             window.setTimeout(props.goNext, 520);
           }}
@@ -753,7 +861,19 @@ function renderMoment(props: RenderMomentProps) {
         <ClosingMoment
           content={moment.content}
           showOverview={props.closingOverview}
-          onEnter={() => props.setClosingOverview(true)}
+          onEnter={async () => {
+            if (!props.member || props.member.completed) {
+              props.setClosingOverview(true);
+              return;
+            }
+            if (!props.member.hasActiveCircle) {
+              props.member.onViewCircle();
+              return;
+            }
+            if (await props.member.onComplete()) {
+              props.setClosingOverview(true);
+            }
+          }}
           selected={props.selectedResponses}
           onToggle={(id) =>
             props.setSelectedResponses(
@@ -763,6 +883,7 @@ function renderMoment(props: RenderMomentProps) {
             )
           }
           active={active}
+          member={props.member}
           reducedMotion={props.reducedMotion}
         />
       );
@@ -1213,6 +1334,7 @@ function FutureLetter({
   onStepChange,
   complete,
   onComplete,
+  pending,
   reducedMotion,
 }: {
   reflection: FoundationReflection;
@@ -1221,7 +1343,8 @@ function FutureLetter({
   step: number;
   onStepChange: (step: number) => void;
   complete: boolean;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
+  pending: boolean;
   reducedMotion: boolean;
 }) {
   const field = reflection.fields[step];
@@ -1281,9 +1404,14 @@ function FutureLetter({
             <button
               type="button"
               onClick={onComplete}
+              disabled={pending || complete}
               aria-pressed={complete}
             >
-              {complete ? "Letter complete" : reflection.actionLabel} ↗
+              {pending
+                ? "Recording completion"
+                : complete
+                  ? "Letter complete"
+                  : reflection.actionLabel} ↗
             </button>
           )}
         </div>
@@ -1300,6 +1428,7 @@ function ClosingMoment({
   selected,
   onToggle,
   active,
+  member,
   reducedMotion,
 }: {
   content: Extract<
@@ -1307,10 +1436,11 @@ function ClosingMoment({
     { kind: "welcome-and-overview" }
   >["content"];
   showOverview: boolean;
-  onEnter: () => void;
+  onEnter: () => void | Promise<void>;
   selected: string[];
   onToggle: (id: string) => void;
   active: boolean;
+  member?: MemberPresentationMode;
   reducedMotion: boolean;
 }) {
   return (
@@ -1330,7 +1460,9 @@ function ClosingMoment({
         >
           <RuinedMarkBuilder progress={4} className={styles.welcomeMark} />
           <div>
-            <h2>{content.welcome.title}</h2>
+            <h2>
+              {member && !member.completed ? "READY." : content.welcome.title}
+            </h2>
             <motion.h3
               initial={false}
               animate={
@@ -1338,16 +1470,49 @@ function ClosingMoment({
               }
               transition={revealFor(reducedMotion, 0.8, 0.7)}
             >
-              {content.welcome.secondaryTitle}
+              {member && !member.completed
+                ? member.hasActiveCircle
+                  ? "COMPLETE THE BEGINNING."
+                  : "COMPLETION BEGINS WITH A CIRCLE."
+                : content.welcome.secondaryTitle}
             </motion.h3>
           </div>
           <div className={styles.welcomeBody}>
-            {content.welcome.body.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
+            {member && !member.completed ? (
+              <>
+                <p>
+                  You have reached the final Foundations moment.
+                </p>
+                <p>
+                  {member.hasActiveCircle
+                    ? "Your active Circle is in place. Complete Foundations when you are ready."
+                    : "Your place remains saved. Join an active Circle before Foundations can be completed."}
+                </p>
+                {member.error ? (
+                  <p className={styles.memberCompletionError} role="alert">
+                    {member.error}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              content.welcome.body.map((line) => <p key={line}>{line}</p>)
+            )}
           </div>
-          <button type="button" className={styles.cutButton} onClick={onEnter}>
-            <span>{content.welcome.actionLabel}</span>
+          <button
+            type="button"
+            className={styles.cutButton}
+            disabled={member?.pending}
+            onClick={onEnter}
+          >
+            <span>
+              {member && !member.completed
+                ? member.pending
+                  ? "Completing"
+                  : member.hasActiveCircle
+                    ? "Complete Foundations"
+                    : "View Circle"
+                : content.welcome.actionLabel}
+            </span>
             <span aria-hidden>→</span>
           </button>
         </motion.div>

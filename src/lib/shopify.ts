@@ -230,6 +230,7 @@ function mapProduct(node: SFProductNode, index: number): Product {
   const defaultVariant = variants.find((variant) => variant.available) ?? variants[0];
   return {
     id: node.handle,
+    shopifyProductGid: node.id,
     code: meta.code ?? `RU—${String(index + 1).padStart(3, "0")}`,
     name: node.title,
     subtitle: meta.subtitle ?? "",

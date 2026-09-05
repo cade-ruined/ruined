@@ -34,13 +34,16 @@ export default function SiteHeader() {
   const isLanding = pathname.startsWith("/lp");
   const isFoundations = pathname === "/foundations";
   const isPlatform =
-    pathname.startsWith("/my") || pathname.startsWith("/ops") || pathname.startsWith("/auth");
+    pathname === "/access" || pathname.startsWith("/my") || pathname.startsWith("/ops");
+  const isOperations = pathname.startsWith("/ops");
+  const isAuth = pathname.startsWith("/auth");
   const isHome = pathname === "/";
   const isBag = pathname === SITE_ROUTES.bag.href;
   const usesDarkSurface =
     pathname.startsWith(SITE_ROUTES.store.href) ||
     isBag ||
-    pathname.startsWith(`${SITE_ROUTES.work.href}/`);
+    pathname.startsWith(`${SITE_ROUTES.work.href}/`) ||
+    isPlatform;
   const showMyRuined = isMyRuinedVisible();
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -197,7 +200,7 @@ export default function SiteHeader() {
     if (!window.dispatchEvent(request)) event.preventDefault();
   };
 
-  if (isLanding || isFoundations || isPlatform) return null;
+  if (isLanding || isFoundations || isAuth || isOperations) return null;
 
   const overlayOpen = menuOpen || searchOpen;
 
@@ -241,7 +244,7 @@ export default function SiteHeader() {
               {showMyRuined && (
                 <Link
                   href={SITE_ROUTES.my.href}
-                  aria-label="My Ruined"
+                  aria-label="Ruined Membership"
                   className="ruined-header-control ruined-header-person"
                 >
                   <PersonGlyph className="ruined-person-glyph" />
@@ -342,7 +345,7 @@ export default function SiteHeader() {
 
       <UniversalSearch open={searchOpen} onOpenChange={setSearchOpen} />
 
-      {!isHome && (
+      {!isHome && !isPlatform && (
         <div
           aria-hidden
           className={`${

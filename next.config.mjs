@@ -5,14 +5,25 @@ const checkoutOrigin =
   checkoutHostname && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(checkoutHostname)
     ? ` https://${checkoutHostname}`
     : "";
+const supabaseOrigin = (() => {
+  try {
+    const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+    if (!configuredUrl) return "";
+    const url = new URL(configuredUrl);
+    return url.protocol === "https:" ? ` ${url.origin}` : "";
+  } catch {
+    return "";
+  }
+})();
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://js.stripe.com https://*.js.stripe.com https://checkout.stripe.com`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://cdn.shopify.com",
-  "media-src 'self' blob:",
+  `img-src 'self' data: blob: https://cdn.shopify.com https://*.stripe.com https://*.link.com${supabaseOrigin}`,
+  `media-src 'self' blob:${supabaseOrigin}`,
   "font-src 'self' data:",
-  "connect-src 'self' https://*.myshopify.com https://cdn.shopify.com",
+  `connect-src 'self' https://*.myshopify.com https://cdn.shopify.com https://api.stripe.com https://checkout.stripe.com https://link.com https://*.link.com${supabaseOrigin}`,
+  "frame-src https://js.stripe.com https://*.js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://link.com https://*.link.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   `form-action 'self' https://*.myshopify.com https://shop.app${checkoutOrigin}`,

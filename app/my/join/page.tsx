@@ -1,59 +1,99 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 
 import JoinForm from "@/components/membership/JoinForm";
+import {
+  MembershipEntryProgress,
+  MembershipEntryProgressProvider,
+} from "@/components/membership/MembershipEntryProgress";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getMemberPageContext } from "@/lib/platform/page-data";
+import { getMembershipPageContext } from "@/lib/membership/page-context";
+import { membershipEntryStage } from "@/lib/membership/entry-stage";
+import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
+import { getMemberOnboarding } from "@/lib/membership/repository";
+import { isMemberPhotoStorageConfigured } from "@/lib/membership/photos";
+import { getStripePublishableKey } from "@/lib/platform/config";
 
 export const metadata: Metadata = {
-  title: "Join My Ruined",
-  description: "Start a Ruined membership through secure Stripe Checkout.",
+  title: "Enter Ruined Membership",
+  description: "Complete your Ruined Membership profile.",
 };
 export const dynamic = "force-dynamic";
 
 export default async function JoinMyRuinedPage() {
-  const context = await getMemberPageContext();
+  const context = await getMembershipPageContext(
+    PREVIEW_MEMBER_ONBOARDING,
+    getMemberOnboarding,
+    "entry",
+  );
   if (context.state === "signed_out") redirect("/my/access");
-  if (!context.member) return <PlatformUnavailable accessHref="/my/access" />;
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
+  if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
+  if (context.state === "authenticated" && context.data.state === "completed") {
+    redirect("/my");
+  }
 
-  const eligibleState =
-    context.member.billingState === "pending" || context.member.billingState === "ended";
-  const enabled =
-    context.state === "authenticated" &&
-    context.configuration.stripeCheckoutReady &&
-    eligibleState;
+  const publishableKey = getStripePublishableKey();
+  const writable = context.state === "authenticated";
+  const checkoutEnabled = writable && context.configuration.stripeCheckoutReady;
   const disabledReason =
     context.state === "preview"
-      ? "Preview only. Connect Supabase, Postgres, and Stripe to open Checkout."
-      : !eligibleState
-        ? "A new Checkout session is not available for this membership state."
-        : "Stripe membership Checkout is not fully configured yet.";
+      ? "Preview only. Member details and agreement acceptance are not saved."
+      : writable
+        ? null
+        : "Membership entry is temporarily unavailable.";
+  const checkoutDisabledReason = checkoutEnabled
+    ? null
+    : context.state === "preview"
+      ? "Preview only. Connect Supabase, Postgres, and Stripe to open payment."
+      : "Stripe membership payment is not fully configured yet.";
+  const initialStage = membershipEntryStage(
+    context.data.requiredFieldsComplete,
+    Boolean(context.data.agreement.acceptanceId),
+  );
 
   return (
-    <main className="grid min-h-[68vh] gap-14 border-t border-white/15 pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-24">
-      <div>
-        <div className="flex items-center justify-between gap-6 font-mono text-[0.58rem] uppercase tracking-[0.22em] text-white/40">
-          <span>My Ruined / Membership</span>
-          <span>Entry 01</span>
-        </div>
-        <h1 className="mt-16 max-w-4xl font-[var(--font-header)] text-[clamp(3.8rem,9vw,8.8rem)] font-bold uppercase leading-[0.78] tracking-[-0.065em]">
-          Enter on purpose.
-        </h1>
-      </div>
+    <main className="min-h-[72vh]">
+      <MembershipEntryProgressProvider initialStage={initialStage}>
+        <MembershipEntryProgress />
 
-      <section className="lg:pt-16" aria-labelledby="membership-entry-title">
-        <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--color-poster)]">Self-serve membership</p>
-        <h2 className="ui-heading mt-5 text-3xl font-semibold tracking-[-0.03em]" id="membership-entry-title">Membership entry</h2>
-        <p className="mt-5 text-sm leading-relaxed text-white/52">
-          Your verified account supplies the identity. Stripe remains responsible for the final recurring price, interval, tax, and payment details.
-        </p>
-        <JoinForm
-          disabledReason={enabled ? null : disabledReason}
-          email={context.member.email}
-          enabled={enabled}
-          minimumAge={context.configuration.minimumAge}
-        />
-      </section>
+        <section className="relative isolate min-h-[22rem] overflow-hidden sm:min-h-[26rem] lg:min-h-[28rem]">
+          <Image
+            alt="A figure moving through a monumental concrete passage toward the light."
+            className="object-cover object-center"
+            fill
+            priority
+            sizes="(min-width: 1536px) 1472px, calc(100vw - 2rem)"
+            src="/after-the-fear-hero.webp"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
+          <h1 className="absolute inset-x-5 bottom-7 max-w-6xl sm:inset-x-10 sm:bottom-10">
+            <span className="ui-heading inline-block max-w-full bg-[var(--color-highlight)] px-[0.3em] py-[0.2em] text-[clamp(2rem,5.2vw,4.75rem)] uppercase leading-[0.92] tracking-[-0.045em] text-[#080605]">
+              Your place begins here.
+            </span>
+          </h1>
+        </section>
+
+        <section className="mx-auto mt-14 w-full max-w-4xl sm:mt-20" aria-labelledby="membership-entry-title">
+          <h2 className="font-[var(--font-display)] text-4xl tracking-[-0.03em] sm:text-5xl" id="membership-entry-title">
+            Membership entry
+          </h2>
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/52">
+            These details stay private and never appear on your Circle profile.
+          </p>
+          <JoinForm
+            checkoutDisabledReason={checkoutDisabledReason}
+            checkoutEnabled={checkoutEnabled}
+            disabledReason={disabledReason}
+            enabled={writable}
+            initialOnboarding={context.data}
+            minimumAge={context.configuration.minimumAge}
+            photoStorageReady={isMemberPhotoStorageConfigured()}
+            publishableKey={publishableKey}
+          />
+        </section>
+      </MembershipEntryProgressProvider>
     </main>
   );
 }

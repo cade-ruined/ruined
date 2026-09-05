@@ -20,15 +20,17 @@ test("billing failures require attention without overriding a terminal cancellat
   );
 });
 
-test("only a paid invoice can activate a pending membership", () => {
-  assert.equal(
-    deriveMembershipState({
-      paidInvoice: false,
-      previousState: "pending",
-      subscriptionState: "active",
-    }),
-    "pending",
-  );
+test("Checkout or subscription completion without a paid invoice cannot activate membership", () => {
+  for (const subscriptionState of ["active", "trialing", "incomplete"] as const) {
+    assert.equal(
+      deriveMembershipState({
+        paidInvoice: false,
+        previousState: "pending",
+        subscriptionState,
+      }),
+      "pending",
+    );
+  }
 
   assert.equal(
     deriveMembershipState({

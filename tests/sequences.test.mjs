@@ -773,7 +773,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(header, /ruined-header-search-trigger/);
   assert.match(header, /const showMyRuined = isMyRuinedVisible\(\)/);
   assert.match(header, /href=\{SITE_ROUTES\.my\.href\}/);
-  assert.match(header, /aria-label="My Ruined"/);
+  assert.match(header, /aria-label="Ruined Membership"/);
   assert.match(header, /<PersonGlyph className="ruined-person-glyph"/);
   assert.match(header, /\{showMyRuined && \([\s\S]*href=\{SITE_ROUTES\.my\.href\}/);
   assert.doesNotMatch(header, /ruined-header-control-label">Search/);
@@ -851,7 +851,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(navigation, /SITE_ROUTES\.work/);
   assert.match(navigation, /SITE_ROUTES\.about/);
   assert.match(navigation, /SITE_ROUTES\.events/);
-  assert.match(navigation, /my: \{ id: "my", label: "My Ruined", href: "\/my" \}/);
+  assert.match(navigation, /my: \{ id: "my", label: "Membership", href: "\/my" \}/);
   assert.doesNotMatch(
     navigation.slice(
       navigation.indexOf("export const GLOBAL_NAV_ITEMS"),
@@ -998,7 +998,7 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
   assert.match(events, /image: isFirstEvent \? BYOB_01_FEATURE_IMAGE : "\/events\/byob-key-art\.png"/);
   assert.match(events, /status: isFirstEvent \? "Ended" : "Upcoming"/);
-  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MST"[\s\S]*?"Details to come"/);
+  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);
   assert.match(events, /\/events\/byob-01-recap-poster\.webp\?v=2/);

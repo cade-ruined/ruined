@@ -1,0 +1,39 @@
+.mediaFrame {
+  isolation: isolate;
+}
+
+.mediaFrame video {
+  display: block;
+  color-scheme: dark;
+  accent-color: var(--color-highlight);
+}
+
+.mediaFrame video:focus-visible {
+  outline: 3px solid var(--color-highlight);
+  outline-offset: -3px;
+}
+
+.relatedRail {
+  scrollbar-color: rgba(23, 20, 17, 0.34) transparent;
+  scrollbar-width: thin;
+}
+
+.relatedRail::-webkit-scrollbar {
+  width: 5px;
+}
+
+.relatedRail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.relatedRail::-webkit-scrollbar-thumb {
+  background: rgba(23, 20, 17, 0.34);
+  border-radius: 999px;
+}
+
+@media (forced-colors: active) {
+  .mediaFrame {
+    border: 1px solid CanvasText;
+    box-shadow: none !important;
+  }
+}

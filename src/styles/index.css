@@ -2,6 +2,14 @@
 @import './tailwind.css';
 @import './theme.css';
 
+.ops-navigation-rail {
+  scrollbar-width: none;
+}
+
+.ops-navigation-rail::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body {
   height: 100%;
@@ -197,10 +205,52 @@ html {
 }
 
 /* The shell stays conventional so the experience beneath it can be strange:
-   Menu + Search balance My Ruined + Bag around a mathematically centered
+   Menu + Search balance Membership + Bag around a mathematically centered
    wordmark on every route and input type. */
 :root {
   --ruined-header-height: calc(4rem + env(safe-area-inset-top, 0px));
+}
+
+/* The member home is a physical record inside the otherwise digital shell.
+   The layered, non-animated grain stays quiet enough to preserve type contrast. */
+.member-profile-paper {
+  background-color: #e8e1d5 !important;
+  background-image:
+    url("/textures/member-paper.svg"),
+    linear-gradient(105deg, rgb(255 255 255 / 0.14), transparent 28%, rgb(74 57 36 / 0.028) 72%, transparent);
+  background-size: 512px 512px, 100% 100%;
+}
+
+/* Operations belongs to the same physical Ruined world as the member record,
+   but the quieter grain keeps dense working screens legible. */
+.operator-paper {
+  background-color: var(--color-bone) !important;
+  background-image:
+    linear-gradient(112deg, rgb(255 255 255 / 0.1), transparent 34%, rgb(74 57 36 / 0.02) 76%, transparent),
+    url("/textures/member-paper.svg");
+  background-size: 100% 100%, 640px 640px;
+}
+
+.member-timeline-paper {
+  background-color: #f0ede7 !important;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.08), rgb(224 218 208 / 0.08)),
+    url("/textures/ruined-timeline-paper.png");
+  background-position: center top;
+  background-size: cover;
+}
+
+.member-profile-dossier {
+  background: transparent;
+}
+
+@media (forced-colors: active) {
+  .member-profile-paper,
+  .member-timeline-paper,
+  .member-profile-dossier,
+  .operator-paper {
+    background-image: none;
+  }
 }
 
 .ruined-global-header {

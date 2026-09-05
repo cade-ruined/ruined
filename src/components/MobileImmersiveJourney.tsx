@@ -823,7 +823,7 @@ export default function MobileImmersiveJourney({
         }
 
         .ruined-mobile-journey[data-stage-enabled]:focus-visible {
-          outline: 2px solid var(--color-signal, #e5a923);
+          outline: 2px solid var(--color-signal, #ffca2c);
           outline-offset: -2px;
         }
 

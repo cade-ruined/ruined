@@ -742,8 +742,8 @@ create trigger circles_capacity_guard
 before update of capacity on circles
 for each row execute function ruined_enforce_circle_capacity_change();
 
-lock table public.circles in share row exclusive mode;
 lock table public.circle_member_assignments in share row exclusive mode;
+lock table public.circles in share row exclusive mode;
 
 do $$
 begin
@@ -1272,15 +1272,101 @@ set search_path = ''
 as $$
   select platform_user.member_id
   from public.platform_users platform_user
+  join public.member_lifecycle lifecycle
+    on lifecycle.member_id = platform_user.member_id
   where platform_user.auth_user_id = private.ruined_current_auth_user_id()
+    and platform_user.user_type = 'member'
     and platform_user.status = 'active'
+    and lifecycle.account_state = 'active'
   limit 1
 $$;
 
+create or replace function private.ruined_current_active_access_member_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select platform_user.member_id
+  from public.platform_users platform_user
+  join public.member_lifecycle lifecycle
+    on lifecycle.member_id = platform_user.member_id
+  where platform_user.auth_user_id = private.ruined_current_auth_user_id()
+    and platform_user.user_type = 'member'
+    and platform_user.status = 'active'
+    and lifecycle.account_state = 'active'
+    and lifecycle.billing_state = 'active'
+    and lifecycle.program_state in ('onboarding', 'active')
+  limit 1
+$$;
+
+-- Lifecycle is canonical for account revocation. Keep its platform identity in
+-- sync inside the same transaction so server and Data API paths fail together.
+update public.platform_users platform_user
+set
+  status = case lifecycle.account_state
+    when 'suspended' then 'suspended'
+    else 'disabled'
+  end,
+  suspended_at = coalesce(platform_user.suspended_at, now()),
+  updated_at = now()
+from public.member_lifecycle lifecycle
+where lifecycle.member_id = platform_user.member_id
+  and platform_user.user_type = 'member'
+  and lifecycle.account_state in ('suspended', 'closed')
+  and platform_user.status is distinct from case lifecycle.account_state
+    when 'suspended' then 'suspended'
+    else 'disabled'
+  end;
+
+create or replace function private.ruined_sync_revoked_member_platform_access()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  projected_status text;
+begin
+  if new.account_state not in ('suspended', 'closed') then
+    return new;
+  end if;
+
+  projected_status := case new.account_state
+    when 'suspended' then 'suspended'
+    else 'disabled'
+  end;
+
+  update public.platform_users
+  set
+    status = projected_status,
+    suspended_at = coalesce(suspended_at, now()),
+    updated_at = now()
+  where member_id = new.member_id
+    and user_type = 'member'
+    and status is distinct from projected_status;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists member_lifecycle_00_sync_revoked_platform_access
+  on public.member_lifecycle;
+create trigger member_lifecycle_00_sync_revoked_platform_access
+after insert or update of account_state
+on public.member_lifecycle
+for each row execute function private.ruined_sync_revoked_member_platform_access();
+
 revoke all on function private.ruined_current_auth_user_id() from public, anon, authenticated;
 revoke all on function private.ruined_current_member_id() from public, anon, authenticated;
+revoke all on function private.ruined_current_active_access_member_id()
+  from public, anon, authenticated;
+revoke all on function private.ruined_sync_revoked_member_platform_access()
+  from public, anon, authenticated;
 grant execute on function private.ruined_current_auth_user_id() to authenticated;
 grant execute on function private.ruined_current_member_id() to authenticated;
+grant execute on function private.ruined_current_active_access_member_id() to authenticated;
 
 -- RLS defaults to server-only. Only explicitly listed self-read surfaces receive
 -- a SELECT policy; there are no client write policies in this foundation.
@@ -1410,7 +1496,7 @@ drop policy if exists circle_member_assignments_select_self on circle_member_ass
 create policy circle_member_assignments_select_self
 on circle_member_assignments for select
 to authenticated
-using (member_id = private.ruined_current_member_id());
+using (member_id = private.ruined_current_active_access_member_id());
 
 drop policy if exists circles_select_assigned on circles;
 create policy circles_select_assigned
@@ -1421,7 +1507,7 @@ using (
     select 1
     from circle_member_assignments assignment
     where assignment.circle_id = circles.id
-      and assignment.member_id = private.ruined_current_member_id()
+      and assignment.member_id = private.ruined_current_active_access_member_id()
       and assignment.ended_at is null
   )
 );
@@ -1430,7 +1516,7 @@ drop policy if exists foundation_enrollments_select_self on foundation_enrollmen
 create policy foundation_enrollments_select_self
 on foundation_enrollments for select
 to authenticated
-using (member_id = private.ruined_current_member_id());
+using (member_id = private.ruined_current_active_access_member_id());
 
 drop policy if exists foundation_versions_select_enrolled on foundation_versions;
 create policy foundation_versions_select_enrolled
@@ -1441,7 +1527,7 @@ using (
     select 1
     from foundation_enrollments enrollment
     where enrollment.foundation_version_id = foundation_versions.id
-      and enrollment.member_id = private.ruined_current_member_id()
+      and enrollment.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1456,7 +1542,7 @@ using (
     join foundation_enrollments enrollment
       on enrollment.foundation_version_id = version_record.id
     where version_record.foundation_program_id = foundation_programs.id
-      and enrollment.member_id = private.ruined_current_member_id()
+      and enrollment.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1469,7 +1555,7 @@ using (
     select 1
     from foundation_enrollments enrollment
     where enrollment.foundation_version_id = foundation_units.foundation_version_id
-      and enrollment.member_id = private.ruined_current_member_id()
+      and enrollment.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1482,7 +1568,7 @@ using (
     select 1
     from foundation_enrollments enrollment
     where enrollment.id = foundation_unit_progress.enrollment_id
-      and enrollment.member_id = private.ruined_current_member_id()
+      and enrollment.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1495,7 +1581,7 @@ using (
     select 1
     from foundation_enrollments enrollment
     where enrollment.id = foundation_submissions.enrollment_id
-      and enrollment.member_id = private.ruined_current_member_id()
+      and enrollment.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1510,7 +1596,7 @@ using (
     join foundation_enrollments enrollment
       on enrollment.id = submission.enrollment_id
     where submission.id = foundation_submission_reviews.foundation_submission_id
-      and enrollment.member_id = private.ruined_current_member_id()
+      and enrollment.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1518,7 +1604,7 @@ drop policy if exists artifact_jobs_select_self on artifact_jobs;
 create policy artifact_jobs_select_self
 on artifact_jobs for select
 to authenticated
-using (member_id = private.ruined_current_member_id());
+using (member_id = private.ruined_current_active_access_member_id());
 
 drop policy if exists artifact_assets_select_self on artifact_assets;
 create policy artifact_assets_select_self
@@ -1529,7 +1615,7 @@ using (
     select 1
     from artifact_jobs job
     where job.id = artifact_assets.artifact_job_id
-      and job.member_id = private.ruined_current_member_id()
+      and job.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1542,7 +1628,7 @@ using (
     select 1
     from artifact_jobs job
     where job.id = artifact_job_events.artifact_job_id
-      and job.member_id = private.ruined_current_member_id()
+      and job.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1555,7 +1641,7 @@ using (
     select 1
     from artifact_jobs job
     where job.artifact_template_version_id = artifact_template_versions.id
-      and job.member_id = private.ruined_current_member_id()
+      and job.member_id = private.ruined_current_active_access_member_id()
   )
 );
 
@@ -1570,7 +1656,7 @@ using (
     join artifact_jobs job
       on job.artifact_template_version_id = template_version.id
     where template_version.artifact_template_id = artifact_templates.id
-      and job.member_id = private.ruined_current_member_id()
+      and job.member_id = private.ruined_current_active_access_member_id()
   )
 );
 

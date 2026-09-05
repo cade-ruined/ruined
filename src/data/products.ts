@@ -40,6 +40,8 @@ export type ProductVariant = {
 
 export type Product = {
   id: string;
+  // Durable Shopify identity. `id` remains the route handle for compatibility.
+  shopifyProductGid?: string;
   code: string; // e.g. "RU—001"
   name: string; // e.g. "Field Coat"
   subtitle: string; // e.g. "FOR WEATHER"

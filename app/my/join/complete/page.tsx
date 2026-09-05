@@ -1,27 +1,42 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
+import { getMemberPageContext } from "@/lib/platform/page-data";
 
 export const metadata: Metadata = {
   title: "Payment confirmation",
   robots: { index: false, follow: false },
 };
 
-export default function MembershipCheckoutCompletePage() {
+export const dynamic = "force-dynamic";
+
+export default async function MembershipCheckoutCompletePage() {
+  const context = await getMemberPageContext();
+  if (context.state === "signed_out") redirect("/my/access");
+  if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/my/access" />;
+  if (context.member?.billingState === "active") redirect("/my");
+
   return (
-    <main className="min-h-screen bg-[#080605] px-5 pb-20 pt-[calc(var(--ruined-header-height)+4rem)] text-white sm:px-8 lg:px-12">
-      <div className="mx-auto max-w-3xl border-t border-white/20 pt-5">
-        <p className="font-mono text-[0.6rem] uppercase tracking-[0.24em] text-[var(--color-poster)]">
+    <main className="min-h-[70vh] text-white">
+      <div className="mx-auto max-w-4xl border-t border-white/20 pt-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">
           Confirmation in progress
         </p>
-        <h1 className="mt-12 font-[var(--font-header)] text-[clamp(3.7rem,10vw,8rem)] font-bold uppercase leading-[0.8] tracking-[-0.06em]">
-          Almost inside.
+        <h1 className="mt-12 font-[var(--font-display)] text-[clamp(3.7rem,10vw,8rem)] leading-[0.84] tracking-[-0.055em]">
+          The door is opening.
         </h1>
         <p className="mt-8 max-w-xl text-base leading-relaxed text-white/58">
-          Stripe is confirming the paid invoice now. Membership access opens only after that verified confirmation reaches Ruined—not from this page alone.
+          Stripe is confirming your payment now. Ruined Membership opens as soon as that secure confirmation reaches us.
         </p>
-        <Link className="mt-10 inline-flex border-b border-white/40 pb-1 font-mono text-[0.65rem] uppercase tracking-[0.22em] text-white" href="/my">
-          Return to My Ruined
+        <Link className="mt-10 inline-flex border-b border-white/40 pb-1 text-xs font-semibold uppercase tracking-[0.16em] text-white" href="/my">
+          Enter Ruined Membership
         </Link>
+        <p className="mt-6 max-w-lg text-xs leading-relaxed text-white/38">
+          If the membership home is not ready yet, wait a moment and open it again. The return screen never activates access by itself.
+        </p>
       </div>
     </main>
   );
