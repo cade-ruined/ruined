@@ -39,16 +39,16 @@ export function getPlatformConfiguration(): PlatformConfiguration {
       ? "connected"
       : "unavailable";
   const parsedMinimumAge = Number.parseInt(
-    process.env.MEMBERSHIP_MINIMUM_AGE?.trim() || "16",
+    process.env.MEMBERSHIP_MINIMUM_AGE?.trim() || "18",
     10,
   );
 
   return {
     database: databaseConfigured ? "connected" : "disconnected",
     minimumAge:
-      Number.isInteger(parsedMinimumAge) && parsedMinimumAge >= 16 && parsedMinimumAge <= 120
+      Number.isInteger(parsedMinimumAge) && parsedMinimumAge >= 18 && parsedMinimumAge <= 120
         ? parsedMinimumAge
-        : 16,
+        : 18,
     mode,
     stripe: stripeConfigured ? "connected" : "disconnected",
     stripeCheckoutReady:

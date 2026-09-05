@@ -13,6 +13,7 @@ import {
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 
 import { useMembershipEntryProgressStage } from "@/components/membership/MembershipEntryProgress";
+import AgreementText from "@/components/membership/AgreementText";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
@@ -145,6 +146,7 @@ export default function JoinForm({
   const profileComplete = onboarding.requiredFieldsComplete;
   const agreementComplete = Boolean(acceptanceId);
   const stage = membershipEntryStage(profileComplete, agreementComplete);
+  const testCheckout = publishableKey?.startsWith("pk_test_") ?? false;
   const previousStage = useRef(stage);
   const stageHeadingRef = useRef<HTMLHeadingElement>(null);
   useMembershipEntryProgressStage(stage);
@@ -538,8 +540,8 @@ export default function JoinForm({
             {onboarding.agreement.version ? <p className="mt-3 text-xs uppercase tracking-[0.13em] text-white/38">Version {onboarding.agreement.version}</p> : null}
           </div>
           {onboarding.agreement.body && onboarding.agreement.id ? (
-            <div className="max-h-[26rem] overflow-y-auto border border-white/18 bg-white/[0.025] p-5 sm:p-7" tabIndex={0}>
-              <p className="whitespace-pre-wrap font-[var(--font-body)] text-sm leading-7 text-white/68">{onboarding.agreement.body}</p>
+            <div aria-label="Published membership agreement" className="max-h-[26rem] overflow-y-auto rounded-[4px] bg-white/[0.035] p-5 sm:p-7" role="region" tabIndex={0}>
+              <AgreementText body={onboarding.agreement.body} />
             </div>
           ) : (
             <p className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/68">Ruined has not published the membership agreement yet. Entry remains closed until the approved copy is available.</p>
@@ -568,18 +570,25 @@ export default function JoinForm({
 
       {stage === "payment" ? (
         <section className="mt-9" aria-labelledby="secure-payment-title">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">Final / Secure payment</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">{testCheckout ? "Final / Test checkout" : "Final / Secure payment"}</p>
           <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4">
-            <h3 className="font-[var(--font-display)] text-4xl" id="secure-payment-title" ref={stageHeadingRef} tabIndex={-1}>Membership payment</h3>
+            <h3 className="font-[var(--font-display)] text-4xl" id="secure-payment-title" ref={stageHeadingRef} tabIndex={-1}>{testCheckout ? "Test checkout" : "Membership payment"}</h3>
             <span className="text-sm text-white/48">{onboarding.email}</span>
           </div>
-          <p className="mt-5 text-sm leading-relaxed text-white/52">Your profile and agreement are saved. Payment is the final step.</p>
+          <p className="mt-5 text-sm leading-relaxed text-white/72">{testCheckout ? "Your profile and agreement are saved. This is a test checkout—no real charge will occur. Do not enter a real payment card." : "Your profile and agreement are saved. Payment is the final step."}</p>
+          {testCheckout ? (
+            <dl className="mt-4 grid gap-2 text-sm leading-relaxed text-white/72">
+              <div><dt className="inline font-semibold text-white">Test card: </dt><dd className="inline font-mono [font-variant-numeric:tabular-nums]">4242 4242 4242 4242</dd></div>
+              <div><dt className="inline font-semibold text-white">Expiry: </dt><dd className="inline">Any future date</dd></div>
+              <div><dt className="inline font-semibold text-white">CVC: </dt><dd className="inline">Any 3-digit number</dd></div>
+            </dl>
+          ) : null}
           {error || checkoutDisabledReason ? <p aria-live="polite" className="mt-6 border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/72">{error ?? checkoutDisabledReason}</p> : null}
           {!clientSecret ? (
-            <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!checkoutEnabled || !publishableKey || submitting} onClick={openCheckout} type="button">{submitting ? "Preparing payment" : checkoutEnabled && publishableKey ? "Open secure payment" : "Payment not connected"}</button>
+            <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!checkoutEnabled || !publishableKey || submitting} onClick={openCheckout} type="button">{submitting ? testCheckout ? "Preparing test checkout" : "Preparing payment" : checkoutEnabled && publishableKey ? testCheckout ? "Open test checkout" : "Open secure payment" : "Payment not connected"}</button>
           ) : null}
           {clientSecret && publishableKey ? <EmbeddedCheckout clientSecret={clientSecret} publishableKey={publishableKey} setError={setError} /> : null}
-          <p className="mt-4 text-xs leading-relaxed text-white/40">Payment is handled securely by Stripe. Store purchases remain separate.</p>
+          <p className="mt-4 text-xs leading-relaxed text-white/40">{testCheckout ? "Test checkout is provided by Stripe. Store purchases remain separate." : "Payment is handled securely by Stripe. Store purchases remain separate."}</p>
         </section>
       ) : null}
 
