@@ -2,7 +2,8 @@ import "server-only";
 
 import { Buffer } from "node:buffer";
 
-import { GoogleAuth } from "google-auth-library";
+import { getVercelOidcToken } from "@vercel/oidc";
+import { GoogleAuth, IdentityPoolClient } from "google-auth-library";
 
 const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const GOOGLE_SHEETS_API_ROOT = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -105,8 +106,53 @@ function requireSpreadsheetId(): string {
   return spreadsheetId;
 }
 
+function getWorkloadIdentityConfiguration() {
+  const provider = process.env.GOOGLE_SHEETS_WORKLOAD_IDENTITY_PROVIDER?.trim() || "";
+  const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL?.trim() || "";
+  const requested = Boolean(provider || serviceAccountEmail);
+  const missing: string[] = [];
+
+  if (requested) {
+    if (!provider) {
+      missing.push("GOOGLE_SHEETS_WORKLOAD_IDENTITY_PROVIDER");
+    } else if (!/^projects\/[0-9]+\/locations\/global\/workloadIdentityPools\/[a-z0-9-]+\/providers\/[a-z0-9-]+$/.test(provider)) {
+      missing.push("GOOGLE_SHEETS_WORKLOAD_IDENTITY_PROVIDER (invalid)");
+    }
+    if (!serviceAccountEmail) {
+      missing.push("GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL");
+    } else if (!/^[a-z0-9][a-z0-9-]*@[a-z0-9][a-z0-9-]*\.iam\.gserviceaccount\.com$/.test(serviceAccountEmail)) {
+      missing.push("GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL (invalid)");
+    }
+  }
+
+  return { requested, provider, serviceAccountEmail, missing };
+}
+
 function getGoogleSheetsAuth(): GoogleAuth {
   if (globalThis.ruinedGoogleSheetsAuth) return globalThis.ruinedGoogleSheetsAuth;
+
+  const workloadIdentity = getWorkloadIdentityConfiguration();
+  if (workloadIdentity.requested) {
+    if (workloadIdentity.missing.length > 0) {
+      throw new Error("Google Sheets workload identity is not configured.");
+    }
+
+    const authClient = new IdentityPoolClient({
+      type: "external_account",
+      audience: `//iam.googleapis.com/${workloadIdentity.provider}`,
+      subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+      token_url: "https://sts.googleapis.com/v1/token",
+      service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${workloadIdentity.serviceAccountEmail}:generateAccessToken`,
+      scopes: [GOOGLE_SHEETS_SCOPE],
+      subject_token_supplier: {
+        // Resolve the current request token lazily, including deferred sync.
+        // Do not forward Google's context: its audience is not a Vercel option.
+        getSubjectToken: () => getVercelOidcToken(),
+      },
+    });
+    globalThis.ruinedGoogleSheetsAuth = new GoogleAuth({ authClient });
+    return globalThis.ruinedGoogleSheetsAuth;
+  }
 
   const encoded = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64?.trim();
   if (!encoded) {
@@ -152,16 +198,19 @@ export function getGoogleRegistrationSheetConfigurationStatus(): {
   const spreadsheetId = process.env.GOOGLE_REGISTRATION_SPREADSHEET_ID?.trim() || null;
   const encodedCredentials =
     process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64?.trim() || null;
+  const workloadIdentity = getWorkloadIdentityConfiguration();
   const missing = [
     ...(!enabled ? ["GOOGLE_REGISTRATION_SHEET_ENABLED"] : []),
     ...(!spreadsheetId ? ["GOOGLE_REGISTRATION_SPREADSHEET_ID"] : []),
-    ...(!encodedCredentials ? ["GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64"] : []),
+    ...(workloadIdentity.requested
+      ? workloadIdentity.missing
+      : !encodedCredentials ? ["GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64"] : []),
   ];
 
   if (spreadsheetId && !/^[A-Za-z0-9_-]+$/.test(spreadsheetId)) {
     missing.push("GOOGLE_REGISTRATION_SPREADSHEET_ID (invalid)");
   }
-  if (encodedCredentials) {
+  if (!workloadIdentity.requested && encodedCredentials) {
     try {
       parseServiceAccountCredentials(encodedCredentials);
     } catch {

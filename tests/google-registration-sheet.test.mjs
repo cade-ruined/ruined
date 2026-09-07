@@ -46,6 +46,8 @@ test("Google Sheet credentials and configuration stay server-only", async () => 
     "GOOGLE_REGISTRATION_SHEET_ENABLED",
     "GOOGLE_REGISTRATION_SPREADSHEET_ID",
     "GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64",
+    "GOOGLE_SHEETS_WORKLOAD_IDENTITY_PROVIDER",
+    "GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL",
   ]) {
     const defaultValue = name === "GOOGLE_REGISTRATION_SHEET_ENABLED" ? "false" : "";
     assert.match(environment, new RegExp(`(?:^|\\n)${name}=${defaultValue}(?:\\n|$)`));

@@ -48,12 +48,24 @@ To connect the mirror:
    Do not grant domain-wide delegation or unrelated Google Cloud roles.
 2. Share only the target spreadsheet with that service-account email as an
    Editor, and name its existing tab `Registrants`.
-3. Store the spreadsheet ID and base64-encoded service-account JSON in the
-   production environment variables documented in `.env.example`. Never expose
-   either value to the browser.
-4. Set `GOOGLE_REGISTRATION_SHEET_ENABLED=true` only after the sheet share and
-   production secrets are in place. `CRON_SECRET` protects both the scheduled
-   and manual worker route.
+3. On Vercel, use Workload Identity Federation with the team's OIDC issuer and
+   audience. Map `google.subject` to `assertion.sub`, restrict the provider to
+   the expected team ID, project ID, and `production` environment, and grant
+   the exact production subject `roles/iam.workloadIdentityUser` on the
+   dedicated service account. Enable the STS and IAM Service Account
+   Credentials APIs. This works without downloadable service-account keys.
+4. Set `GOOGLE_REGISTRATION_SPREADSHEET_ID`,
+   `GOOGLE_SHEETS_WORKLOAD_IDENTITY_PROVIDER` (the full
+   `projects/.../locations/global/workloadIdentityPools/.../providers/...`
+   resource name), and `GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL` in production.
+   The server exchanges the current Vercel request token for a short-lived
+   Google token scoped to Sheets. Both workload identity settings are required;
+   a partial configuration fails closed. Legacy service-account JSON remains
+   supported only when both workload identity settings are empty.
+5. Set `GOOGLE_REGISTRATION_SHEET_ENABLED=true` after access and production
+   configuration are in place, then deploy. `CRON_SECRET` protects both the
+   scheduled and manual worker route. Verify an authenticated worker run and
+   the resulting Sheet rows after deployment.
 
 The worker writes A:I with RAW values, hides the UUID column, and extends an
 existing native Google Sheets table when new rows fall outside its range. If
