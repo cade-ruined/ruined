@@ -6,6 +6,7 @@ import {
   OperatorTaskCreateAction,
 } from "@/components/platform/OperatorMemberActions";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorMemberSetup from "@/components/platform/OperatorMemberSetup";
 import OperatorProfileSupport from "@/components/platform/OperatorProfileSupport";
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import StateLabel from "@/components/platform/StateLabel";
@@ -54,6 +55,8 @@ export default function OperatorMemberRecord({
   const canManageTasks = access.capabilities.includes("task.manage");
   const canOverride = access.capabilities.includes("member.override.write");
   const canWriteNote = access.capabilities.includes("member.note.write");
+  const canManageSetup = access.roles.includes("ops_admin");
+  const circlePlacementHref = `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#assign-member`;
 
   const stateRows = [
     ["Admission", header.states.admission],
@@ -64,13 +67,20 @@ export default function OperatorMemberRecord({
     ["Foundations", header.states.foundations],
     ["Artifact", header.states.artifact],
   ];
-  const nextDecisionHref = !header.circleName
-    ? "/ops/circles#manage-circles"
-    : header.states.billing === "attention_required"
-      ? "#membership"
-      : header.states.foundations !== "completed"
-        ? "#journey"
-        : "#record";
+  const membershipNeedsReview = header.states.billing !== "active"
+    || header.states.administrativeOnboarding !== "completed"
+    || header.states.standing === "paused";
+  const nextDecisionHref = membershipNeedsReview
+    ? "#membership"
+    : !header.circleName
+      ? canManageSetup ? circlePlacementHref : "#community"
+      : community.circle?.state === "forming" && canManageSetup
+        ? `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#activate-circle`
+        : header.states.foundations !== "completed" ? "#journey" : "#record";
+  const nextDecisionLabel = membershipNeedsReview ? "Review membership"
+    : !header.circleName ? canManageSetup ? "Assign Circle" : "View Circle placement"
+      : community.circle?.state === "forming" && canManageSetup ? "Review Circle activation"
+        : header.states.foundations !== "completed" ? "Review Foundations" : "Review record";
 
   return (
     <OperatorPageFrame title={header.preferredName}>
@@ -87,11 +97,17 @@ export default function OperatorMemberRecord({
           </p>
         </div>
         <div>
-          <p className="font-[var(--font-display)] text-2xl leading-tight text-white/88">{header.nextDecision}</p>
+          <p className="font-[var(--font-display)] text-2xl leading-tight text-white/88">
+            {!membershipNeedsReview && community.circle?.state === "forming"
+              ? canManageSetup
+                ? "Circle placement is saved. Activate the Circle when it is ready to run."
+                : "Circle placement is saved. An Administrator can activate the Circle when it is ready."
+              : header.nextDecision}
+          </p>
           <p className="mt-5 text-sm text-white/48">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
           {header.primaryEmail ? <p className="mt-2 text-sm text-white/40">{header.primaryEmail}</p> : null}
           <Link className="ui-heading mt-5 inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-bone)] px-4 text-sm font-semibold text-black transition-colors hover:bg-[var(--color-highlight)]" href={nextDecisionHref}>
-            Take action →
+            {nextDecisionLabel} →
           </Link>
         </div>
       </div>
@@ -119,6 +135,7 @@ export default function OperatorMemberRecord({
 
       <section className="scroll-mt-36 pt-10" id="overview">
         <SectionHeading title="Overview" />
+        <OperatorMemberSetup record={record} />
         <div className="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {stateRows.map(([label, state]) => (
             <div
@@ -337,7 +354,16 @@ export default function OperatorMemberRecord({
                   <p>Guides · {community.circle.guides.join(", ") || "Not assigned"}</p>
                 </div>
               </>
-            ) : <EmptyRow>No current Circle assignment.</EmptyRow>}
+            ) : (
+              <>
+                <EmptyRow>No current Circle assignment.</EmptyRow>
+                {canManageSetup ? (
+                  <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
+                    Assign Circle →
+                  </Link>
+                ) : <p className="mt-3 text-sm text-black/50">An Administrator can place this member in a Circle.</p>}
+              </>
+            )}
           </div>
         </div>
 

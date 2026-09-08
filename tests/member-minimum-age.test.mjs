@@ -8,12 +8,12 @@ const output = ts.transpileModule(source, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
 } }).outputText;
 function minimumAge(value) {
-  const module = { exports: {} };
+  const testModule = { exports: {} };
   const env = value === undefined ? {} : { MEMBERSHIP_MINIMUM_AGE: value };
   new Function("require", "module", "exports", "process", output)((id) => {
     assert.equal(id, "server-only"); return {};
-  }, module, module.exports, { env });
-  return module.exports.getPlatformConfiguration().minimumAge;
+  }, testModule, testModule.exports, { env });
+  return testModule.exports.getPlatformConfiguration().minimumAge;
 }
 
 test("membership defaults to the approved adult-only minimum", () => {

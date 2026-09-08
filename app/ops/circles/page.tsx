@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { OpsCircleActions } from "@/components/platform/OpsActions";
+import OperatorCirclesManager from "@/components/platform/OperatorCirclesManager";
+import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
 import OpsCircleManagementActions from "@/components/platform/OpsCircleManagementActions";
 import OpsSection from "@/components/platform/OpsSection";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
@@ -13,14 +15,25 @@ import {
 } from "@/lib/platform/ops-preview";
 import {
   getOpsCircleManagementOptions,
+  getOpsCircleMemberAssignments,
   getOpsCircleSummaries,
+  type OpsCircleMemberAssignment,
   type OpsCircleManagementOptions,
   type OpsCircleSummary,
 } from "@/lib/platform/ops-repository";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorMemberDirectoryPage } from "@/lib/platform/repository";
 
 export const dynamic = "force-dynamic";
-export default async function OperationsCirclesPage() {
+export default async function OperationsCirclesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ memberId?: string | string[]; circleId?: string | string[]; memberQuery?: string | string[] }>;
+}) {
+  const parameters = await searchParams;
+  const initialMemberId = typeof parameters.memberId === "string" ? parameters.memberId : undefined;
+  const initialCircleId = typeof parameters.circleId === "string" ? parameters.circleId : undefined;
+  const memberQuery = typeof parameters.memberQuery === "string" ? parameters.memberQuery.trim().slice(0, 120) : "";
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
@@ -28,19 +41,45 @@ export default async function OperationsCirclesPage() {
 
   let circles: OpsCircleSummary[] | undefined;
   let managementOptions: OpsCircleManagementOptions | undefined;
+  let placementMembers = context.dashboard.members;
+  let candidateTotal = context.dashboard.unassignedMembers;
+  let assignments: OpsCircleMemberAssignment[] | undefined;
   let communicationCircles: OpsCircleCommunicationItem[] | undefined =
     context.state === "preview" ? PREVIEW_OPS_CIRCLE_COMMUNICATIONS : undefined;
   if (context.state === "preview") {
     circles = PREVIEW_OPS_CIRCLES;
     managementOptions = PREVIEW_OPS_CIRCLE_MANAGEMENT;
+    // Static preview fixtures only; connected rosters always resolve exact Circle IDs below.
+    assignments = circles.flatMap((circle) => context.dashboard!.members.filter((member) => member.circleName === circle.name).map((member) => ({
+      ...member, assignmentId: `preview-assignment-${member.memberId}`, assignedAt: "2026-08-01T00:00:00.000Z", circleId: circle.id,
+    })));
+    circles = circles.map((circle) => ({ ...circle, activeMembers: assignments!.filter((assignment) => assignment.circleId === circle.id).length }));
+    placementMembers = context.dashboard.members.filter((member) => member.memberId === initialMemberId || (!member.circleName && `${member.name} ${member.email}`.toLowerCase().includes(memberQuery.toLowerCase())));
+    candidateTotal = placementMembers.length;
   }
   if (context.role === "ops_admin" && context.viewer) {
     try {
-      [circles, managementOptions] = await Promise.all([
+      const [circleRows, options, roster, directory] = await Promise.all([
         getOpsCircleSummaries(context.viewer.authUserId),
         getOpsCircleManagementOptions(context.viewer.authUserId),
+        getOpsCircleMemberAssignments(context.viewer.authUserId),
+        getOperatorMemberDirectoryPage(context.viewer.authUserId, { filter: "unassigned", query: memberQuery }),
       ]);
+      if (!directory) throw new Error("Member directory unavailable");
+      circles = circleRows;
+      managementOptions = options;
+      assignments = roster;
+      placementMembers = directory.members;
+      candidateTotal = directory.totalResults;
+      if (initialMemberId && !placementMembers.some((member) => member.memberId === initialMemberId)) {
+        const selectedDirectory = await getOperatorMemberDirectoryPage(context.viewer.authUserId, { memberId: initialMemberId });
+        const selectedMember = selectedDirectory?.members.find((member) => member.memberId === initialMemberId);
+        if (selectedMember) placementMembers = [...placementMembers, selectedMember];
+      }
     } catch (error) {
+      circles = undefined;
+      assignments = undefined;
+      managementOptions = undefined;
       console.error("Operations Circle administration could not be loaded", {
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
@@ -58,40 +97,34 @@ export default async function OperationsCirclesPage() {
     }
   }
 
-  const actions = circles
-    ? (
-        <div className="grid gap-3">
-          <details className="group rounded-[4px] bg-black/[0.035]" open={circles.length === 0}>
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 marker:content-none">
-              <span><strong className="ui-heading block text-lg font-semibold">Members + Circle status</strong><span className="mt-1 block text-xs text-black/45">Create a Circle, place members, or change its active state.</span></span>
-              <span aria-hidden="true" className="text-2xl transition-transform group-open:rotate-45">+</span>
-            </summary>
-            <div className="px-5 pb-6">
-              <OpsCircleActions initialCircles={circles} members={context.dashboard.members} />
-            </div>
-          </details>
-          {managementOptions ? (
-            <details className="group rounded-[4px] bg-black/[0.035]">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 marker:content-none">
-                <span><strong className="ui-heading block text-lg font-semibold">Shapers + resources</strong><span className="mt-1 block text-xs text-black/45">Assign who holds the Circle and what the room can use.</span></span>
-                <span aria-hidden="true" className="text-2xl transition-transform group-open:rotate-45">+</span>
-              </summary>
-              <div className="px-5 pb-6">
-                <OpsCircleManagementActions
-                  initialCircles={circles}
-                  resources={managementOptions.resources}
-                  shapers={managementOptions.shapers}
-                />
-              </div>
-            </details>
-          ) : null}
-        </div>
-      )
-    : undefined;
+  if (context.role === "ops_admin") {
+    if (!circles || !assignments || !managementOptions) return <PlatformUnavailable accessHref="/ops/access" />;
+    return <OperatorPageFrame title="Circles">
+      <OperatorCirclesManager
+        key={`${initialMemberId ?? ""}:${initialCircleId ?? ""}:${memberQuery}`}
+        initialCircles={circles}
+        initialAssignments={assignments}
+        candidates={placementMembers}
+        candidateTotal={candidateTotal}
+        initialMemberId={initialMemberId}
+        initialCircleId={initialCircleId}
+        memberQuery={memberQuery}
+        preview={context.state === "preview"}
+      >
+        <OpsCircleManagementActions initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} />
+        {communicationCircles?.length ? <section className="mt-8" aria-label="Circle Google Chat links">
+          <h2 className="font-[var(--font-display)] text-3xl">Circle chat</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">{communicationCircles.map((circle) => <div key={circle.id}>
+            <h3 className="mb-2 text-sm font-semibold">{circle.name}</h3>
+            <OperatorGoogleCommunicationField configured={circle.googleCommunicationsConfigured} editable inline entityId={circle.id} entityType="circle" initialUrl={circle.chatUrl} kind="chat" preview={context.state === "preview"} />
+          </div>)}</div>
+        </section> : null}
+      </OperatorCirclesManager>
+    </OperatorPageFrame>;
+  }
 
   return (
     <OpsSection
-      actions={actions}
       canManageGoogleCommunications={context.state === "authenticated"}
       circles={communicationCircles ?? circles}
       configuration={context.configuration}

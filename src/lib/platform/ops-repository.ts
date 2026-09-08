@@ -12,6 +12,7 @@ import {
   markCalendarAudiencesPendingForBlock,
   markCalendarAudiencesPendingForCircle,
 } from "@/lib/platform/calendar-audience-invalidation";
+import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/stripe/membership-state";
 
@@ -68,6 +69,18 @@ export type OpsCircleShaperAssignment = {
   assignmentId: string;
   authUserId: string;
   name: string;
+};
+
+export type OpsCircleMemberAssignment = {
+  accountState: OperatorMemberSummary["accountState"] | null;
+  assignedAt: string;
+  assignmentId: string;
+  billingState: OperatorMemberSummary["billingState"] | null;
+  circleId: string;
+  email: string;
+  memberId: string;
+  name: string;
+  programState: OperatorMemberSummary["programState"] | null;
 };
 
 export type OpsShaperCandidate = {
@@ -688,6 +701,84 @@ export async function activateCircle({
       slug: circle.slug,
       status: "active",
     };
+  });
+}
+
+export async function getOpsCircleMemberAssignments(
+  actorAuthUserId: string,
+): Promise<OpsCircleMemberAssignment[]> {
+  if (!UUID_PATTERN.test(actorAuthUserId)) {
+    throw new OpsRepositoryError("invalid_request", "A valid operator account is required.");
+  }
+  const sql = getBillingDatabase();
+  return sql.begin("isolation level repeatable read read only", async (tx) => {
+    // Use the same live account/role boundary as Circle mutations, without
+    // their FOR UPDATE locks: loading a roster never changes account state.
+    const authorizedRows = await tx<Array<{ auth_user_id: string }>>`
+      select platform_user.auth_user_id
+      from platform_users platform_user
+      join platform_role_grants grant_row
+        on grant_row.auth_user_id = platform_user.auth_user_id
+      where platform_user.auth_user_id = ${actorAuthUserId}::uuid
+        and platform_user.status = 'active'
+        and grant_row.role_slug = 'ops_admin'
+        and grant_row.revoked_at is null
+      limit 1
+    `;
+    if (!authorizedRows[0]) {
+      throw new OpsRepositoryError("forbidden", "Operations administrator access is required.");
+    }
+
+    const rows = await tx<Array<{
+      account_state: OpsCircleMemberAssignment["accountState"];
+      assigned_at: Date | string;
+      assignment_id: string;
+      billing_state: OpsCircleMemberAssignment["billingState"];
+      circle_id: string;
+      email: string;
+      member_id: string;
+      name: string;
+      program_state: OpsCircleMemberAssignment["programState"];
+    }>>`
+      select
+        assignment.id::text as assignment_id,
+        assignment.assigned_at,
+        assignment.circle_id,
+        assignment.member_id,
+        member.email,
+        coalesce(
+          nullif(btrim(person_profile.preferred_name), ''),
+          nullif(btrim(person_profile.display_name), ''),
+          nullif(btrim(user_profile.display_name), ''),
+          nullif(split_part(member.email, '@', 1), ''),
+          'Member'
+        ) as name,
+        lifecycle.account_state,
+        lifecycle.billing_state,
+        lifecycle.program_state
+      from circle_member_assignments assignment
+      join ruined_members member on member.id = assignment.member_id
+      left join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      left join person_profiles person_profile on person_profile.person_id = member.person_id
+      left join platform_users platform_user on platform_user.person_id = member.person_id
+      left join user_profiles user_profile on user_profile.auth_user_id = platform_user.auth_user_id
+      where assignment.ended_at is null
+      order by assignment.circle_id, assignment.assigned_at, assignment.id
+    `;
+
+    // This is occupancy, not the eligible-member picker. Suspended or ended
+    // memberships still occupy their existing seats until explicitly removed.
+    return rows.map((row) => ({
+      accountState: row.account_state,
+      assignedAt: new Date(row.assigned_at).toISOString(),
+      assignmentId: row.assignment_id,
+      billingState: row.billing_state,
+      circleId: row.circle_id,
+      email: row.email,
+      memberId: row.member_id,
+      name: row.name,
+      programState: row.program_state,
+    }));
   });
 }
 
@@ -1850,9 +1941,11 @@ export async function assignMemberToCircle({
 
 export async function endMemberCircleAssignment({
   actorAuthUserId,
+  circleId,
   memberId,
 }: {
   actorAuthUserId: string;
+  circleId?: string;
   memberId: string;
 }): Promise<OpsCircleAssignmentEndResult> {
   const sql = getBillingDatabase();
@@ -1860,6 +1953,9 @@ export async function endMemberCircleAssignment({
     await requireOpsAdmin(tx, actorAuthUserId);
     if (!UUID_PATTERN.test(memberId)) {
       throw new OpsRepositoryError("invalid_request", "Choose a valid assigned member.");
+    }
+    if (circleId !== undefined && !UUID_PATTERN.test(circleId)) {
+      throw new OpsRepositoryError("invalid_request", "Choose a valid Circle.");
     }
 
     await tx`select pg_advisory_xact_lock(hashtext(${memberId}), 2)`;
@@ -1887,6 +1983,14 @@ export async function endMemberCircleAssignment({
     const assignment = assignmentRows[0];
     if (!assignment) {
       throw new OpsRepositoryError("not_found", "That member has no active Circle assignment.");
+    }
+    // Check the displayed Circle only after the member lock and current
+    // assignment row lock. A stale roster must never end a newer placement.
+    if (circleId !== undefined && assignment.circle_id !== circleId.toLowerCase()) {
+      throw new OpsRepositoryError(
+        "conflict",
+        "This member's Circle changed. Refresh the roster before removing them.",
+      );
     }
 
     const circleRows = await tx<Array<{ status: OpsCircleSummary["status"] }>>`

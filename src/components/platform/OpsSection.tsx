@@ -10,8 +10,10 @@ import type { PlatformConfiguration } from "@/lib/platform/config";
 import type { OperatorDashboardSnapshot } from "@/lib/platform/model";
 
 function FoundationMemberRow({
+  canPlaceMembers,
   member,
 }: {
+  canPlaceMembers: boolean;
   member: OperatorDashboardSnapshot["members"][number];
 }) {
   return (
@@ -29,7 +31,11 @@ function FoundationMemberRow({
           </Link>
         </h3>
         <p className={`mt-2 text-sm ${member.circleName ? "text-black/45" : "text-[var(--color-poster)]"}`}>
-          {member.circleName ?? "Circle needed before completion"}
+          {member.circleName ?? (canPlaceMembers ? (
+            <Link className="underline underline-offset-4" href={`/ops/circles?memberId=${encodeURIComponent(member.memberId)}#assign-member`}>
+              Choose a Circle before completion →
+            </Link>
+          ) : "An Administrator can place this member.")}
         </p>
       </div>
       <StateLabel state={member.foundationsState} />
@@ -44,6 +50,7 @@ type OpsSectionName = "access-billing" | "circles" | "foundations" | "members" |
 export default function OpsSection({
   actions,
   canManageGoogleCommunications = false,
+  canPlaceMembers = false,
   circles,
   configuration,
   dashboard,
@@ -51,6 +58,7 @@ export default function OpsSection({
 }: {
   actions?: React.ReactNode;
   canManageGoogleCommunications?: boolean;
+  canPlaceMembers?: boolean;
   circles?: Array<{
     activeMembers: number;
     blockId?: string | null;
@@ -133,8 +141,8 @@ export default function OpsSection({
                   <h2 className="font-[var(--font-display)] text-2xl leading-none" id={`foundations-${group.label.replaceAll(" ", "-").toLowerCase()}`}>
                     {group.label} <span className="text-black/35">{group.members.length}</span>
                   </h2>
-                  {group.action ? (
-                    <Link className="text-sm underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]" href="/ops/members?filter=unassigned">
+                  {group.action && canPlaceMembers ? (
+                    <Link className="text-sm underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]" href="/ops/circles#assign-member">
                       Place members →
                     </Link>
                   ) : null}
@@ -142,7 +150,7 @@ export default function OpsSection({
                 <div className="grid gap-2">
                   {[...group.members]
                     .sort((left, right) => left.foundationsProgress - right.foundationsProgress)
-                    .map((member) => <FoundationMemberRow key={member.memberId} member={member} />)}
+                    .map((member) => <FoundationMemberRow canPlaceMembers={canPlaceMembers} key={member.memberId} member={member} />)}
                 </div>
               </section>
             ) : null)}
@@ -160,7 +168,7 @@ export default function OpsSection({
                   <span aria-hidden="true" className="text-2xl transition-transform group-open:rotate-45">+</span>
                 </summary>
                 <div className="grid gap-2 px-3 pb-3">
-                  {completedFoundations.map((member) => <FoundationMemberRow key={member.memberId} member={member} />)}
+                  {completedFoundations.map((member) => <FoundationMemberRow canPlaceMembers={canPlaceMembers} key={member.memberId} member={member} />)}
                 </div>
               </details>
             ) : null}
@@ -172,7 +180,7 @@ export default function OpsSection({
         <section className="mt-2 grid gap-2" aria-label="Circle snapshot">
           {circleRows.length === 0 ? (
             <OperatorEmptyState
-              actionHref={actions ? "#manage-circles" : "/ops/members?filter=unassigned"}
+              actionHref={actions ? "#create-circle" : "/ops/members?filter=unassigned"}
               actionLabel={actions ? "Create first Circle" : "View unplaced members"}
               detail="A Circle holds up to ten members, their Shaper, shared resources, and communication link."
               eyebrow="Start here"
@@ -216,7 +224,11 @@ export default function OpsSection({
             <h2 className="font-[var(--font-display)] text-2xl leading-none">Without a Circle</h2>
             <StateLabel state="pending" />
             <p className="text-sm tabular-nums text-[var(--color-poster)]">{dashboard.unassignedMembers} members</p>
-            <Link className="text-sm underline decoration-black/25 underline-offset-4" href="/ops/members?filter=unassigned">Place members</Link>
+            {actions ? (
+              <Link className="text-sm underline decoration-black/25 underline-offset-4" href="#assign-member">Place members</Link>
+            ) : (
+              <p className="text-sm text-black/50">An Administrator can place members.</p>
+            )}
           </article>
         </section>
       ) : null}
@@ -246,14 +258,14 @@ export default function OpsSection({
         </section>
       ) : null}
 
-      {actions ? (
+      {actions && section === "circles" ? (
+        <div className="mt-8 scroll-mt-40" id="manage-circles">{actions}</div>
+      ) : actions ? (
         <details
-          className={`group mt-10 rounded-[4px] bg-[var(--color-surface)] ${section === "circles" && circleRows.length === 0 ? "shadow-[5px_5px_0_var(--color-poster)]" : ""}`}
-          id={section === "circles" ? "manage-circles" : undefined}
-          open={section === "circles" && circleRows.length === 0}
+          className="group mt-10 rounded-[4px] bg-[var(--color-surface)]"
         >
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
-            <span>{section === "circles" && circleRows.length === 0 ? "Create the first Circle" : `Manage ${title}`}</span>
+            <span>{`Manage ${title}`}</span>
             <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
           </summary>
           <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>

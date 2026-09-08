@@ -131,8 +131,8 @@ test("Circle activation is an explicit server-owned transition before Foundation
   assert.match(repository, /status = 'active'/);
   assert.match(repository, /starts_at = coalesce\(starts_at, statement_timestamp\(\)\)/);
   assert.match(repository, /activated_by_auth_user_id = \$\{actorAuthUserId\}::uuid/);
-  assert.match(actions, /Activation is deliberate/);
-  assert.match(actions, /allows assigned members to complete Foundations/);
+  assert.match(actions, /At least one member must be assigned first/);
+  assert.match(actions, /Activation then allows those members to complete Foundations/);
   assert.match(actions, /"\/api\/ops\/circles", \{ circleId \}, "PATCH"/);
 });
 

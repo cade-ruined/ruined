@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
-import OperatorAccessManager from "@/components/platform/OperatorAccessManager";
+import OperatorAccessManager, { type OperatorAccessSelectedMember } from "@/components/platform/OperatorAccessManager";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import {
   getOperatorAccessDirectory,
   type OperatorAccessEntry,
 } from "@/lib/platform/ops-access-repository";
-import { PREVIEW_OPS_CIRCLES } from "@/lib/platform/ops-preview";
+import { getPreviewOpsMemberRecord, PREVIEW_OPS_CIRCLES } from "@/lib/platform/ops-preview";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
 import { getOpsCircleSummaries } from "@/lib/platform/ops-repository";
+import { getOpsMemberOperatingRecord } from "@/lib/platform/ops-operating-repository";
 
 export const metadata: Metadata = { title: "Operators" };
 export const dynamic = "force-dynamic";
@@ -51,7 +52,9 @@ const PREVIEW_OPERATORS: OperatorAccessEntry[] = [
   },
 ];
 
-export default async function OperationsOperatorsPage() {
+export default async function OperationsOperatorsPage({ searchParams }: {
+  searchParams?: Promise<{ memberId?: string | string[] }>;
+}) {
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
@@ -59,6 +62,13 @@ export default async function OperationsOperatorsPage() {
   if (context.role !== "ops_admin") return <PlatformUnavailable reason="operator_access" />;
 
   const preview = context.state === "preview";
+  const memberId = (await searchParams)?.memberId;
+  if (memberId !== undefined && (
+    typeof memberId !== "string"
+    || !(preview ? /^preview-0[1-4]$/ : /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i).test(memberId)
+  )) notFound();
+  let selectedMember: OperatorAccessSelectedMember | null = null;
+  let memberRecord = preview && memberId ? getPreviewOpsMemberRecord(memberId) : null;
   let operators = preview ? PREVIEW_OPERATORS : null;
   let circles = preview
     ? PREVIEW_OPS_CIRCLES
@@ -68,10 +78,12 @@ export default async function OperationsOperatorsPage() {
 
   if (!preview && context.viewer) {
     try {
-      const [directory, circleRows] = await Promise.all([
+      const [directory, circleRows, selectedRecord] = await Promise.all([
         getOperatorAccessDirectory(context.viewer.authUserId),
         getOpsCircleSummaries(context.viewer.authUserId),
+        memberId ? getOpsMemberOperatingRecord(context.viewer.authUserId, memberId) : null,
       ]);
+      memberRecord = selectedRecord;
       operators = directory;
       circles = circleRows
         .filter((circle) => circle.status === "forming" || circle.status === "active")
@@ -84,14 +96,24 @@ export default async function OperationsOperatorsPage() {
   }
 
   if (!operators || !circles) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (memberId && !memberRecord) notFound();
+  if (memberRecord) {
+    selectedMember = {
+      displayName: memberRecord.membership.contact.legalName || memberRecord.header.preferredName,
+      email: memberRecord.header.primaryEmail,
+      memberId: memberRecord.header.memberId,
+    };
+  }
 
   return (
     <OperatorPageFrame title="Operators">
       <OperatorAccessManager
+        key={selectedMember?.memberId ?? "directory"}
         circles={circles}
         currentViewerAuthUserId={context.viewer?.authUserId ?? PREVIEW_OPERATORS[0].authUserId}
         initialOperators={operators}
         preview={preview}
+        selectedMember={selectedMember}
       />
     </OperatorPageFrame>
   );

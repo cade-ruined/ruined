@@ -96,10 +96,12 @@ export async function PATCH(request: Request) {
 
   const body = (await request.json().catch(() => null)) as CircleAssignmentRequestBody | null;
   const memberId = typeof body?.memberId === "string" ? body.memberId : "";
+  const circleId = body?.circleId === undefined ? undefined : typeof body.circleId === "string" ? body.circleId : "";
 
   try {
     const assignment = await endMemberCircleAssignment({
       actorAuthUserId: viewer.authUserId,
+      circleId,
       memberId,
     });
     return json({ assignment });

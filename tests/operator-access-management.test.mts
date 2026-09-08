@@ -106,7 +106,7 @@ test("operator UI uses a low-training list and focused add task", () => {
   assert.match(manager, /role="dialog"/);
   assert.match(manager, /keepFocusInside/);
   assert.match(manager, /event\.key === "Escape"/);
-  assert.match(manager, /readOnly=\{Boolean\(resendEmail\)\}/);
+  assert.match(manager, /readOnly=\{Boolean\(resendEmail \|\| reviewedMember\)\}/);
   assert.match(manager, /Revoke it first to use a different email/);
   assert.match(manager, /Administrator[\s\S]*Shaper[\s\S]*Guide|Guide[\s\S]*Shaper[\s\S]*Administrator/);
   assert.match(manager, /Invitation pending/);

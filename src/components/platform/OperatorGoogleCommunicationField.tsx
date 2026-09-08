@@ -21,6 +21,7 @@ export default function OperatorGoogleCommunicationField({
   entityType,
   initialUrl,
   kind,
+  inline = false,
   preview = false,
 }: {
   configured: boolean;
@@ -29,6 +30,7 @@ export default function OperatorGoogleCommunicationField({
   entityType: CommunicationEntityType;
   initialUrl: string | null;
   kind: CommunicationKind;
+  inline?: boolean;
   preview?: boolean;
 }) {
   const router = useRouter();
@@ -39,6 +41,7 @@ export default function OperatorGoogleCommunicationField({
   const [error, setError] = useState(false);
   const connected = Boolean(url);
   const name = kind === "chat" ? "Google Chat" : "Google Meet";
+  const LinkContainer = inline ? "div" : "details";
   const label = kind === "chat" ? "Chat space link" : "Meet room link";
   const placeholder = kind === "chat"
     ? "https://chat.google.com/room/…"
@@ -124,10 +127,10 @@ export default function OperatorGoogleCommunicationField({
           Choose test or live Google mode before adding links.
         </p>
       ) : editable ? (
-        <details className="group mt-2">
-          <summary className="w-fit cursor-pointer list-none text-xs font-medium text-black/58 underline decoration-black/25 underline-offset-4 marker:content-none hover:text-black">
+        <LinkContainer className="group mt-2">
+          {!inline ? <summary className="w-fit cursor-pointer list-none text-xs font-medium text-black/58 underline decoration-black/25 underline-offset-4 marker:content-none hover:text-black">
             {connected ? "Change link" : "Add link"}
-          </summary>
+          </summary> : null}
           <form className="mt-3 grid gap-3" onSubmit={submit}>
             <label htmlFor={`${kind}-${entityId}-url`}>
               <span className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--color-poster)]">
@@ -166,7 +169,7 @@ export default function OperatorGoogleCommunicationField({
               ) : null}
             </div>
           </form>
-        </details>
+        </LinkContainer>
       ) : null}
 
       <p

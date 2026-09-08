@@ -71,10 +71,12 @@ export default function OpsCircleManagementActions({
   initialCircles,
   resources,
   shapers,
+  preview = false,
 }: {
   initialCircles: CircleOption[];
   resources: Array<{ resourceId: string; title: string; version: number; versionId: string }>;
   shapers: Array<{ authUserId: string; name: string }>;
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [circles, setCircles] = useState(initialCircles);
@@ -95,6 +97,7 @@ export default function OpsCircleManagementActions({
 
   async function assignShaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Shaper was not changed." }); return; }
     setPending("shaper-assign");
     setShaperNotice(null);
     const form = event.currentTarget;
@@ -133,6 +136,7 @@ export default function OpsCircleManagementActions({
 
   async function endShaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Shaper was not changed." }); return; }
     setPending("shaper-end");
     setShaperNotice(null);
     const form = event.currentTarget;
@@ -155,6 +159,7 @@ export default function OpsCircleManagementActions({
 
   async function assignResource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setResourceNotice({ kind: "success", text: "Preview only. Circle resources were not changed." }); return; }
     setPending("resource-assign");
     setResourceNotice(null);
     const form = event.currentTarget;
@@ -207,6 +212,7 @@ export default function OpsCircleManagementActions({
 
   async function endResource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setResourceNotice({ kind: "success", text: "Preview only. Circle resources were not changed." }); return; }
     setPending("resource-end");
     setResourceNotice(null);
     const form = event.currentTarget;

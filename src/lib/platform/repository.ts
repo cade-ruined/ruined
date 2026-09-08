@@ -701,11 +701,15 @@ export async function getOperatorMemberDirectoryPage(
   authUserId: string,
   input: {
     filter?: string;
+    memberId?: string;
     page?: number;
     query?: string;
   } = {},
 ): Promise<OperatorMemberDirectoryPage | null> {
   const sql = getBillingDatabase();
+  // A malformed exact lookup must never silently fall back to the full directory.
+  if (input.memberId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.memberId)) return null;
+  const memberId = input.memberId ?? null;
   const filter = normalizeOperatorMemberDirectoryFilter(input.filter);
   const query = (input.query ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   const requestedPage = normalizeOperatorMemberDirectoryPage(input.page);
@@ -762,6 +766,7 @@ export async function getOperatorMemberDirectoryPage(
             and staff_assignment.ended_at is null
         )
       )
+        and (${memberId}::uuid is null or member.id = ${memberId}::uuid)
         and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
@@ -852,6 +857,7 @@ export async function getOperatorMemberDirectoryPage(
             and staff_assignment.ended_at is null
         )
       )
+        and (${memberId}::uuid is null or member.id = ${memberId}::uuid)
         and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0

@@ -18,6 +18,7 @@ export default async function OperationsFoundationsPage() {
 
   return (
     <OpsSection
+      canPlaceMembers={context.role === "ops_admin"}
       configuration={context.configuration}
       dashboard={context.dashboard}
       section="foundations"

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -17,6 +18,12 @@ import type {
 } from "@/lib/platform/ops-access-repository";
 
 type Notice = { kind: "error" | "success"; text: string } | null;
+
+export type OperatorAccessSelectedMember = {
+  displayName: string;
+  email: string | null;
+  memberId: string;
+};
 
 const ROLE_COPY: Record<OperatorAccessRole, { label: string; summary: string }> = {
   guide: {
@@ -98,14 +105,17 @@ export default function OperatorAccessManager({
   currentViewerAuthUserId,
   initialOperators,
   preview,
+  selectedMember = null,
 }: {
   circles: OperatorAccessCircle[];
   currentViewerAuthUserId: string | null;
   initialOperators: OperatorAccessEntry[];
   preview: boolean;
+  selectedMember?: OperatorAccessSelectedMember | null;
 }) {
   const router = useRouter();
   const addButtonRef = useRef<HTMLButtonElement>(null);
+  const addTriggerRef = useRef<HTMLButtonElement | null>(null);
   const addDialogRef = useRef<HTMLElement>(null);
   const confirmCancelRef = useRef<HTMLButtonElement>(null);
   const confirmDialogRef = useRef<HTMLElement>(null);
@@ -121,6 +131,8 @@ export default function OperatorAccessManager({
   const [roleFilter, setRoleFilter] = useState<"all" | OperatorAccessRole>("all");
   const [role, setRole] = useState<OperatorAccessRole>("guide");
   const [resendEmail, setResendEmail] = useState<string | null>(null);
+  const [reviewedMember, setReviewedMember] = useState<OperatorAccessSelectedMember | null>(null);
+  const [prefill, setPrefill] = useState<{ displayName: string; email: string } | null>(null);
   const [selectedCircleIds, setSelectedCircleIds] = useState<string[]>([]);
   const [adminConfirmed, setAdminConfirmed] = useState(false);
   const [confirming, setConfirming] = useState<OperatorAccessEntry | null>(null);
@@ -134,7 +146,7 @@ export default function OperatorAccessManager({
       if (event.key === "Escape") {
         setAddOpen(false);
         setNotice(null);
-        window.setTimeout(() => addButtonRef.current?.focus(), 0);
+        window.setTimeout(() => (addTriggerRef.current ?? addButtonRef.current)?.focus(), 0);
         return;
       }
       keepFocusInside(event, addDialogRef.current);
@@ -185,29 +197,28 @@ export default function OperatorAccessManager({
     });
   }, [operators, query, roleFilter]);
 
+  const selectedOperator = selectedMember?.email
+    ? operators.find((entry) => entry.email.trim().toLowerCase() === selectedMember.email?.trim().toLowerCase())
+    : null;
+
   function closeAddOperator() {
     setAddOpen(false);
     setResendEmail(null);
+    setReviewedMember(null);
+    setPrefill(null);
     setNotice(null);
-    window.setTimeout(() => addButtonRef.current?.focus(), 0);
+    window.setTimeout(() => (addTriggerRef.current ?? addButtonRef.current)?.focus(), 0);
   }
 
-  function openAddOperator(entry?: OperatorAccessEntry) {
+  function openAddOperator(entry?: OperatorAccessEntry, member?: OperatorAccessSelectedMember) {
     setRole(entry?.role ?? "guide");
     setResendEmail(entry?.email ?? null);
     setSelectedCircleIds(entry?.circles.map((circle) => circle.id) ?? []);
-    setAdminConfirmed(entry?.role === "ops_admin");
+    setAdminConfirmed(false);
+    setReviewedMember(member ?? null);
+    setPrefill(entry ?? (member?.email ? { displayName: member.displayName, email: member.email } : null));
     setNotice(null);
     setAddOpen(true);
-    window.setTimeout(() => {
-      const form = formRef.current;
-      if (form && entry) {
-        const name = form.elements.namedItem("displayName");
-        const email = form.elements.namedItem("email");
-        if (name instanceof HTMLInputElement) name.value = entry.displayName;
-        if (email instanceof HTMLInputElement) email.value = entry.email;
-      }
-    }, 0);
   }
 
   async function submitOperator(event: FormEvent<HTMLFormElement>) {
@@ -272,8 +283,8 @@ export default function OperatorAccessManager({
         text: payload.delivery === "sent"
           ? preview
             ? `Preview invitation created for ${payload.invitation.entry.email}. No email was sent.`
-            : `Invitation sent to ${payload.invitation.entry.email}.`
-          : `${payload.invitation.entry.displayName} was added, but the email was not delivered. Use Send again from their row.`,
+            : `Invitation sent to ${payload.invitation.entry.email}. Access is pending until they return to /access and verify their code, or continue with their existing signed-in account.`
+          : `Invitation saved for ${payload.invitation.entry.displayName}, but the email was not delivered. Access is still pending. Use Send again from their row.`,
       });
       formRef.current?.reset();
       setSelectedCircleIds([]);
@@ -333,13 +344,63 @@ export default function OperatorAccessManager({
         </div>
         <button
           className={OPERATOR_BUTTON_CLASS}
-          onClick={() => openAddOperator()}
+          onClick={(event) => {
+            addTriggerRef.current = event.currentTarget;
+            openAddOperator();
+          }}
           ref={addButtonRef}
           type="button"
         >
           Add operator
         </button>
       </header>
+
+      {selectedMember ? (
+        <section aria-labelledby="selected-operator-member" className="mt-6 rounded-[4px] bg-[var(--color-shop)]/35 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className={OPERATOR_LABEL_TEXT_CLASS}>From member record</p>
+              <h3 className="ui-heading mt-2 text-xl font-semibold" id="selected-operator-member">{selectedMember.displayName}</h3>
+              <p className="mt-1 break-all text-sm text-black/60">{selectedMember.email ?? "No email saved"}</p>
+            </div>
+            <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={`/ops/members/${encodeURIComponent(selectedMember.memberId)}`}>
+              Back to member
+            </Link>
+          </div>
+          {selectedOperator ? (
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <OperatorStatus status={selectedOperator.status} />
+              <span className="text-sm">{roleLabel(selectedOperator.role)}</span>
+              <button className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={() => {
+                setQuery(selectedOperator.email);
+                setRoleFilter("all");
+                window.setTimeout(() => {
+                  const row = document.getElementById(`operator-row-${selectedOperator.id}`);
+                  row?.scrollIntoView({ block: "nearest", behavior: "instant" });
+                  row?.focus({ preventScroll: true });
+                }, 0);
+              }} type="button">Find operator record</button>
+              <p className="basis-full text-sm text-black/60">
+                {selectedOperator.status === "active"
+                  ? "This member already has operator access. Their member Circle placement is separate."
+                  : selectedOperator.authUserId
+                    ? "This account has suspended operator access. Review the existing record before making a new invitation."
+                    : "An invitation already exists. Use its row to review or send it again; a second invitation is not needed."}
+              </p>
+            </div>
+          ) : selectedMember.email ? (
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              <button className={OPERATOR_BUTTON_CLASS} onClick={(event) => {
+                addTriggerRef.current = event.currentTarget;
+                openAddOperator(undefined, selectedMember);
+              }} type="button">Review operator access</button>
+              <p className="max-w-xl text-sm text-black/60">Choose a responsibility, then send an invitation. Operator access starts only after you send it and they accept.</p>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-[var(--color-poster)]">Add an email on this member’s record before inviting them as an operator.</p>
+          )}
+        </section>
+      ) : null}
 
       <dl aria-label="Operator access snapshot" className="mt-8 grid grid-cols-2 gap-2 lg:grid-cols-4">
         {[
@@ -405,7 +466,9 @@ export default function OperatorAccessManager({
             <article
               className="grid gap-4 rounded-[4px] bg-black/[0.035] px-4 py-5 transition-colors hover:bg-black/[0.06] md:grid-cols-2 xl:grid-cols-[minmax(12rem,1.25fr)_10rem_minmax(11rem,0.9fr)_11rem_7rem] xl:items-center"
               key={entry.id}
+              id={`operator-row-${entry.id}`}
               role="listitem"
+              tabIndex={-1}
             >
               <div className="min-w-0 md:col-span-2 xl:col-span-1">
                 <h2 className="ui-heading truncate text-base font-semibold">{entry.displayName}</h2>
@@ -429,7 +492,10 @@ export default function OperatorAccessManager({
                 {!entry.authUserId ? (
                   <button
                     className="min-h-11 text-sm font-medium underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]"
-                    onClick={() => openAddOperator(entry)}
+                    onClick={(event) => {
+                      addTriggerRef.current = event.currentTarget;
+                      openAddOperator(entry);
+                    }}
                     type="button"
                   >
                     Send again
@@ -475,7 +541,7 @@ export default function OperatorAccessManager({
               <div>
                 <p className="font-[var(--font-cadehandy2)] text-2xl leading-none text-[var(--color-poster)] [transform:rotate(-2deg)]">Team access</p>
                 <h2 className="mt-2 font-[var(--font-display)] text-4xl leading-none" id="add-operator-title">
-                  {resendEmail ? "Send again" : "Add operator"}
+                  {resendEmail ? "Send again" : reviewedMember ? "Review access" : "Add operator"}
                 </h2>
               </div>
               <button
@@ -488,6 +554,10 @@ export default function OperatorAccessManager({
               </button>
             </div>
 
+            <p className="mt-5 text-sm leading-relaxed text-black/60">
+              Choose the person, responsibility, and any Circle scope. Send the invitation; they return to /access and verify the newest code to become Active. If already signed in with that email, opening /access can accept it directly.
+            </p>
+
             <form className="mt-8 space-y-7" onSubmit={submitOperator} ref={formRef}>
               <label className={OPERATOR_LABEL_CLASS} htmlFor="operator-display-name">
                 <span className={OPERATOR_LABEL_TEXT_CLASS}>Full name</span>
@@ -495,10 +565,12 @@ export default function OperatorAccessManager({
                   autoComplete="name"
                   className={OPERATOR_FIELD_CLASS}
                   disabled={pending}
+                  defaultValue={prefill?.displayName ?? ""}
                   id="operator-display-name"
                   maxLength={120}
                   name="displayName"
                   ref={firstFieldRef}
+                  readOnly={Boolean(reviewedMember)}
                   required
                   type="text"
                 />
@@ -507,20 +579,26 @@ export default function OperatorAccessManager({
               <label className={OPERATOR_LABEL_CLASS} htmlFor="operator-email">
                 <span className={OPERATOR_LABEL_TEXT_CLASS}>Email</span>
                 <input
-                  aria-describedby={resendEmail ? "operator-email-resend-note" : undefined}
+                  aria-describedby={resendEmail ? "operator-email-resend-note" : reviewedMember ? "operator-member-note" : undefined}
                   autoComplete="email"
                   className={`${OPERATOR_FIELD_CLASS} ${resendEmail ? "cursor-not-allowed bg-black/[0.05]" : ""}`}
                   disabled={pending}
+                  defaultValue={prefill?.email ?? ""}
                   id="operator-email"
                   maxLength={254}
                   name="email"
-                  readOnly={Boolean(resendEmail)}
+                  readOnly={Boolean(resendEmail || reviewedMember)}
                   required
                   type="email"
                 />
                 {resendEmail ? (
                   <span className="mt-2 block text-xs leading-relaxed text-black/48" id="operator-email-resend-note">
                     The address is locked so the original invitation cannot stay active. Revoke it first to use a different email.
+                  </span>
+                ) : null}
+                {reviewedMember ? (
+                  <span className="mt-2 block text-xs leading-relaxed text-black/55" id="operator-member-note">
+                    Using this member’s existing account. Their profile and member Circle stay unchanged.
                   </span>
                 ) : null}
               </label>
@@ -560,8 +638,9 @@ export default function OperatorAccessManager({
 
               {role !== "ops_admin" ? (
                 <fieldset>
-                  <legend className={OPERATOR_LABEL_TEXT_CLASS}>Assigned Circles</legend>
-                  <p className="mt-2 text-sm text-black/50">Choose every Circle this person should be able to open.</p>
+                  <legend className={OPERATOR_LABEL_TEXT_CLASS}>Assigned Circles · operator scope</legend>
+                  <p className="mt-2 text-sm text-black/50">Choose the Circles they will help run. This does not place them in a Circle as a member.</p>
+                  {role === "circle_leader" ? <p className="mt-2 text-sm text-black/50">Each Circle can have one active or invited Shaper.</p> : null}
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {circles.map((circle) => {
                       const checked = selectedCircleIds.includes(circle.id);
@@ -586,7 +665,7 @@ export default function OperatorAccessManager({
                   </div>
                   {circles.length === 0 ? (
                     <p className="mt-3 rounded-[4px] bg-[var(--color-poster)]/[0.08] px-4 py-4 text-sm text-[var(--color-poster)]">
-                      Create a Circle before adding a Shaper or Guide.
+                      A Shaper or Guide needs a forming or active Circle. <Link className="underline underline-offset-4" href="/ops/circles">Open Circles</Link> to create one. Administrators do not need a Circle.
                     </p>
                   ) : null}
                 </fieldset>
@@ -599,7 +678,7 @@ export default function OperatorAccessManager({
                     onChange={(event) => setAdminConfirmed(event.target.checked)}
                     type="checkbox"
                   />
-                  <span>I understand this grants full access, including the ability to add or remove other operators.</span>
+                  <span>I understand this grants full access, including the ability to add or remove other operators. No Circle assignment is required.</span>
                 </label>
               )}
 
