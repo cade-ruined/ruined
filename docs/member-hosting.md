@@ -81,7 +81,10 @@ promising prompt unattended invitations.
    deployment. Confirm its required DNS target and HTTPS certificate.
 4. Confirm anonymous `/access` loads without Vercel sign-in and `/ops/operators`,
    `/my`, and support pages still enforce Ruined access. Share `/access` as the
-   sign-in entry point; the root route retains the public site experience.
+   sign-in entry point; the bare members-domain root redirects to `/access`.
+   Signed-in viewers continue to their permitted member/operator destination.
+   Public navigation and “Return to website” leave the member host for
+   `theruinedproject.com`; the public homepage and local previews remain intact.
 5. Confirm Supabase allows `https://members.theruinedproject.com/my/confirmed`,
    email links use the members domain, and a permitted operator can sign in and
    access Operators. Test a new external invitation with an approved recipient.

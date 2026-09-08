@@ -24,6 +24,7 @@ import {
   type ExploreRoom,
 } from "@/data/navigation";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
+import { publicWebsiteHref } from "@/lib/site";
 import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 
 const MENU_ID = "site-navigation-menu";
@@ -307,7 +308,7 @@ export default function SiteHeader() {
                       <Link
                         key={item.id}
                         ref={index === 0 ? firstMenuItemRef : undefined}
-                        href={item.href}
+                        href={publicWebsiteHref(item.href)}
                         aria-current={active ? "page" : undefined}
                         onClick={(event) => handleWalkLink(event, item)}
                         className={active ? "is-active" : undefined}
@@ -328,7 +329,7 @@ export default function SiteHeader() {
                 </nav>
 
                 <div className="ruined-site-menu-secondary">
-                  <Link href={SITE_ROUTES.contact.href} onClick={closeMenuForNavigation}>
+                  <Link href={publicWebsiteHref(SITE_ROUTES.contact.href)} onClick={closeMenuForNavigation}>
                     Contact
                   </Link>
                 </div>
@@ -366,7 +367,7 @@ function BrandHomeLink({
 }) {
   return (
     <Link
-      href="/#top"
+      href={publicWebsiteHref("/#top")}
       aria-label="Ruined — explore the walk"
       onClick={isHome ? onHomeClick : undefined}
       className="ruined-header-brand"

@@ -782,7 +782,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(header, /role="dialog"/);
   assert.match(header, /aria-modal="true"/);
   assert.match(header, /aria-haspopup="dialog"/);
-  assert.match(header, /href=\{item\.href\}/);
+  assert.match(header, /href=\{publicWebsiteHref\(item\.href\)\}/);
   assert.match(header, /handleWalkLink\(event, item\)/);
   assert.doesNotMatch(
     header,

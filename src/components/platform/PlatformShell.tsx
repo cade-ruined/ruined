@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import MemberNavigationFab from "@/components/platform/MemberNavigationFab";
 import { keepFocusInside } from "@/lib/accessibility/focus";
 import type { PlatformConfiguration } from "@/lib/platform/config";
+import { publicWebsiteHref } from "@/lib/site";
 
 type PlatformSurface = "member" | "ops";
 
@@ -405,7 +406,7 @@ function OperationsNavigation({
                   <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href="/access" role="menuitem">
                     My profile
                   </Link>
-                  <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href="/" role="menuitem">
+                  <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href={publicWebsiteHref("/")} role="menuitem">
                     Return to website ↗
                   </Link>
                   {viewerLabel && !preview ? (
@@ -482,7 +483,7 @@ function OperationsNavigation({
                   <button className="min-h-11 hover:text-white" type="submit">Sign out</button>
                 </form>
               ) : null}
-              <Link className="inline-flex min-h-11 items-center hover:text-white" href="/">Return to website ↗</Link>
+              <Link className="inline-flex min-h-11 items-center hover:text-white" href={publicWebsiteHref("/")}>Return to website ↗</Link>
             </div>
           </aside>
         </div>
