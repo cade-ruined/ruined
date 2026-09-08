@@ -83,15 +83,21 @@ const BUTTON_CLASS = OPERATOR_BUTTON_CLASS;
 const SECONDARY_BUTTON_CLASS =
   "min-h-12 rounded-[4px] border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
 
-export function OpsInvitationActions() {
+export function OpsInvitationActions({ preview = false }: { preview?: boolean } = {}) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<ActionNotice>(null);
+  const [allowedEmail, setAllowedEmail] = useState<string | null>(null);
 
   async function submitInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) {
+      setNotice({ kind: "error", text: "Preview — email allowances are not changed and no invitation is sent." });
+      return;
+    }
     setPending(true);
     setNotice(null);
+    setAllowedEmail(null);
 
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "");
@@ -123,6 +129,7 @@ export function OpsInvitationActions() {
         kind: "success",
           text: `${result.invitation.reissued ? "Access renewed" : "Access allowed"} for ${result.invitation.email} through ${expiration}. No email was sent.`,
       });
+      setAllowedEmail(result.invitation.email);
       formRef.current?.reset();
     } catch (error) {
       setNotice({
@@ -139,8 +146,9 @@ export function OpsInvitationActions() {
       <h2 className="sr-only" id="invite-member-heading">Allow a member to join</h2>
       <form className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end" onSubmit={submitInvitation} ref={formRef}>
           <p className="text-sm leading-relaxed text-black/52 sm:col-span-3">
-            This does not send an email. It allows this address to request a secure sign-in code and begin joining.
+            Allow the email, then give the person the sign-in address below. This does not send an email, create their sign-in account, or grant operator access.
           </p>
+          {preview ? <p className="text-sm text-black/60 sm:col-span-3">Preview — email allowances are not changed and no invitation is sent.</p> : null}
           <label className={`${OPERATOR_LABEL_CLASS} sm:col-span-3`} htmlFor="ops-invitation-email">
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Email</span>
             <input
@@ -155,14 +163,19 @@ export function OpsInvitationActions() {
               type="email"
             />
           </label>
-          <button className={BUTTON_CLASS} disabled={pending} name="intent" type="submit" value="record">
+          <button className={BUTTON_CLASS} disabled={preview || pending} name="intent" type="submit" value="record">
             {pending ? "Saving" : "Allow email"}
           </button>
-          <button aria-label="Revoke live invite" className={SECONDARY_BUTTON_CLASS} disabled={pending} name="intent" type="submit" value="revoke">
+          <button aria-label="Revoke live invite" className={SECONDARY_BUTTON_CLASS} disabled={preview || pending} name="intent" type="submit" value="revoke">
             Remove allowance
           </button>
           <div className="sm:col-span-3"><Notice notice={notice} /></div>
       </form>
+      <div className="mt-4 text-sm leading-relaxed text-black/60">
+        <p>{allowedEmail ? `Next: give ${allowedEmail} this sign-in address. They request their own code and complete joining.` : "Member sign-in address to share after allowing their email:"}</p>
+        <a className="mt-1 inline-flex min-h-11 items-center underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a>
+        <p className="text-xs">Removing an allowance revokes a pending invitation, not an existing member account.</p>
+      </div>
     </section>
   );
 }
@@ -594,9 +607,11 @@ export function OpsCircleActions({
 export function OpsBlockActions({
   circles: initialCircles,
   initialBlocks,
+  preview = false,
 }: {
   circles: OpsActionCircle[];
   initialBlocks: OpsActionBlock[];
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [blocks, setBlocks] = useState(initialBlocks);
@@ -626,6 +641,7 @@ export function OpsBlockActions({
 
   async function submitBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setCreateNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("create");
     setCreateNotice(null);
     const formElement = event.currentTarget;
@@ -650,6 +666,7 @@ export function OpsBlockActions({
 
   async function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setAssignmentNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("assign");
     setAssignmentNotice(null);
     const formElement = event.currentTarget;
@@ -708,6 +725,7 @@ export function OpsBlockActions({
 
   async function submitActivation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setActivationNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("activate");
     setActivationNotice(null);
     const formElement = event.currentTarget;
@@ -745,6 +763,7 @@ export function OpsBlockActions({
 
   async function submitEndAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setEndNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("end");
     setEndNotice(null);
     const formElement = event.currentTarget;
@@ -796,11 +815,11 @@ export function OpsBlockActions({
   }
 
   return (
-    <section className="grid gap-10 lg:grid-cols-2" aria-label="Block administration">
-      <div>
-        <h2 className="ui-heading text-xl font-semibold">Create a Block</h2>
+    <section className="grid gap-5 lg:grid-cols-2" aria-label="Block administration">
+      <section className="scroll-mt-28 rounded-[4px] bg-[var(--color-shop)]/25 p-5" id="create-block" aria-labelledby="create-block-title">
+        <h2 className="font-[var(--font-display)] text-2xl" id="create-block-title">1. Create a Block</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-          Create the larger group first. Its stable slug and forming state remain server-owned.
+          Start with a name, then add at least two Circles before activation.
         </p>
         <form className="mt-5 grid gap-3" onSubmit={submitBlock}>
           <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-block-name">
@@ -823,12 +842,12 @@ export function OpsBlockActions({
           </div>
           <Notice notice={createNotice} />
         </form>
-      </div>
+      </section>
 
       {blocks.length > 0 ? (
         <>
-      <div>
-        <h2 className="ui-heading text-xl font-semibold">Assign a Circle</h2>
+      <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] p-5" id="assign-block-circle" aria-labelledby="assign-block-circle-title">
+        <h2 className="font-[var(--font-display)] text-2xl" id="assign-block-circle-title">2. Assign a Circle</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           A Circle can have one current Block. Reassignment begins by ending its current relationship.
         </p>
@@ -854,12 +873,12 @@ export function OpsBlockActions({
           </button>
           <Notice notice={assignmentNotice} />
         </form>
-      </div>
+      </section>
 
-      <div>
-        <h2 className="ui-heading text-xl font-semibold">Activate a Block</h2>
+      <section className="rounded-[4px] bg-black/[0.035] p-5" aria-labelledby="activate-block-title">
+        <h2 className="font-[var(--font-display)] text-2xl" id="activate-block-title">3. Activate a Block</h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-          At least two current Circles are required. Block activation does not add a Foundations gate.
+          At least two current Circles are required. Activate when the group is ready to run; this does not change Foundations requirements.
         </p>
         <form className="mt-6 grid gap-3" onSubmit={submitActivation}>
           <label className={OPERATOR_LABEL_CLASS}>
@@ -874,10 +893,10 @@ export function OpsBlockActions({
           </button>
           <Notice notice={activationNotice} />
         </form>
-      </div>
+      </section>
 
-      <div>
-        <h2 className="ui-heading text-xl font-semibold">End a Block assignment</h2>
+      <details className="self-start rounded-[4px] bg-black/[0.035] p-5">
+        <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">End a Block assignment</summary>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
           End only the current relationship. If fewer than two current Circles remain, the Block closes while its full history stays intact.
         </p>
@@ -894,7 +913,7 @@ export function OpsBlockActions({
           </button>
           <Notice notice={endNotice} />
         </form>
-      </div>
+      </details>
         </>
       ) : null}
     </section>

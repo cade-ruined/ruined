@@ -2,7 +2,7 @@
 
 **For:** Administrators who operate the Ruined member experience
 
-**Version:** 1.3
+**Version:** 1.4
 
 **Last reviewed:** 8 September 2026
 
@@ -19,6 +19,15 @@ The operator side answers seven questions:
 7. **Work and System:** What needs an operator to act?
 
 Start on **Overview**. Move into a person, Circle, Experience, or work item only when the snapshot gives you a reason.
+
+### Where to click first
+
+- **Members:** search first, then **Open member record**. **Allow member email** is a separate action for someone new; it does not send an invitation email or create their sign-in account. Share the sign-in address after allowing it.
+- **Inside a member record:** use **Create task**, **Add internal note**, or **Correct profile detail** near the top. The linked forms are visible in the record; there is no extra “manage” drawer to find.
+- **Operators:** **Choose existing member** keeps one person on one account. **Add operator** is for a new invitation; a saved invitation stays pending until the person accepts through `/access`.
+- **Announcements:** **Write announcement** opens the visible draft form. Save first, then use **Review & publish** on the draft and verify the audience before selecting **Publish**.
+- **Notifications:** check **Recent delivery**, then **Write notification → Review notification → Send notification**. Choose the audience explicitly. Notifications are in-app, not email or text.
+- **Support:** open a request, then use **Reply to member**, **Update status**, or **Find member record**. Sending a reply and changing status are separate actions.
 
 ### One person, two separate actions
 
@@ -189,7 +198,7 @@ Open a member from **Members**. Their record is organized into five parts:
 | **Membership** | Administrative onboarding, contact details, agreement evidence, Stripe billing state, cancellation state, and Profile support controls |
 | **Journey** | Foundations progress, earned Artifacts, and Experience participation |
 | **Community** | Current Circle, Block, Shaper, meetings, and shared resources |
-| **Record** | Internal tasks, notes, operating history, and the Manage member record controls for audited state corrections |
+| **Record** | Internal tasks, notes, visible task/note forms, audited state corrections, and operating history |
 
 ### How to support a member safely
 

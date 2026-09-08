@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import {
@@ -22,13 +25,21 @@ export default function OperatorAnnouncements({
   announcements,
   audienceOptions,
   canManage,
+  preview = false,
 }: {
   announcements: OpsAnnouncementSummary[];
   audienceOptions: OpsAnnouncementAudienceOptions;
   canManage: boolean;
+  preview?: boolean;
 }) {
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   return (
     <OperatorPageFrame title="Announcements">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-black/60">Save a draft, review its audience, then publish to the member app.</p>
+        {canManage ? <a className="ui-heading inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href="#new-announcement">Write announcement</a> : null}
+      </header>
+      {preview ? <p className="mb-4 text-sm text-black/60" role="status">Preview — drafts are not saved and announcements are not published.</p> : null}
       <section className="space-y-3" aria-label="Recent announcements">
         {announcements.map((announcement) => (
           <article
@@ -47,7 +58,15 @@ export default function OperatorAnnouncements({
               <p className="text-sm text-black/45">Audience</p>
               <p className="mt-2 text-sm text-black/62">{announcement.targetLabel}</p>
               {canManage && announcement.state === "draft" ? (
-                <div className="mt-5"><OperatorAnnouncementPublishAction announcementId={announcement.announcementId} /></div>
+                <div className="mt-4">
+                  {reviewingId === announcement.announcementId ? (
+                    <div className="rounded-[4px] bg-[var(--color-highlight)]/30 p-3" role="group" aria-label={`Review publishing ${announcement.title}`}>
+                      <p className="mb-3 text-sm leading-relaxed">Publish to <strong>{announcement.targetLabel}</strong>? Members will see this exact draft. Published announcements cannot be edited or retracted here.</p>
+                      <OperatorAnnouncementPublishAction announcementId={announcement.announcementId} preview={preview} />
+                      <button className="mt-2 min-h-11 text-sm underline underline-offset-4" onClick={() => setReviewingId(null)} type="button">Cancel review</button>
+                    </div>
+                  ) : <button className="min-h-11 text-sm font-semibold underline underline-offset-4" onClick={() => setReviewingId(announcement.announcementId)} type="button">Review & publish</button>}
+                </div>
               ) : null}
             </div>
           </article>
@@ -64,26 +83,15 @@ export default function OperatorAnnouncements({
       </section>
 
       {canManage ? (
-        <details
-          className={`group mt-8 rounded-[4px] bg-black/[0.025] ${announcements.length === 0 ? "shadow-[5px_5px_0_var(--color-poster)]" : ""}`}
+        <section
+          className="mt-8 scroll-mt-32 rounded-[4px] bg-black/[0.025] p-5 sm:p-6"
+          aria-label="Write announcement draft"
           id="new-announcement"
-          open={announcements.length === 0}
         >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-6 px-5 py-5 transition-colors hover:bg-black/[0.04] sm:px-6 [&::-webkit-details-marker]:hidden">
-            <span className="font-[var(--font-display)] text-2xl leading-none tracking-[-0.02em]">
-              New announcement
-            </span>
-            <span
-              aria-hidden="true"
-              className="text-2xl leading-none transition-transform group-open:rotate-45"
-            >
-              +
-            </span>
-          </summary>
-          <div className="px-5 pb-5 sm:px-6 [&>form]:border-0 [&>form]:py-0">
-            <OperatorAnnouncementCreateAction audienceOptions={audienceOptions} />
+          <div className="[&>form]:border-0 [&>form]:py-0">
+            <OperatorAnnouncementCreateAction audienceOptions={audienceOptions} preview={preview} />
           </div>
-        </details>
+        </section>
       ) : null}
     </OperatorPageFrame>
   );

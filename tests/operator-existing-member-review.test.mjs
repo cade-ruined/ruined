@@ -208,3 +208,20 @@ test("missing member email cannot open a review and reissued Administrator invit
   assert.equal(consent.props.checked, false);
   assert.equal(nodes(tree).find((node) => node.type === "button" && node.props.type === "submit").props.disabled, true);
 });
+
+test("the generic Add operator form cannot accidentally replace an existing email invitation", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async () => { requests++; throw new Error("Must not request"); });
+  t.mock.method(globalThis, "FormData", function() { return { get: (key) => key === "email" ? " MEMBER@example.test " : "Example Member" }; });
+  for (const status of ["active", "invited", "expired", "suspended"]) {
+    const fixture = managerFixture({ selectedMember: null, initialOperators: [{
+      id: `operator:${status}`, authUserId: status === "active" || status === "suspended" ? "existing-operator" : null,
+      circles: [circle], displayName: member.displayName, email: "member@example.test", role: "guide",
+      status, invitedAt: null, lastSignedInAt: null,
+    }] });
+    fixture.click("Add operator");
+    await nodes(fixture.draw()).find((node) => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} });
+    assert.match(text(fixture.draw()), /already has an operator record/);
+  }
+  assert.equal(requests, 0);
+});

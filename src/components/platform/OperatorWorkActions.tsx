@@ -23,12 +23,13 @@ async function actionRequest(url: string, body: unknown, method = "POST") {
   }
 }
 
-export function OperatorTaskAction({ state, taskId }: { state: string; taskId: string }) {
+export function OperatorTaskAction({ state, taskId, preview = false }: { state: string; taskId: string; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function act(action: "claim" | "complete" | "reopen") {
+    if (preview) { setMessage("Preview only — the task was not changed."); return; }
     setSubmitting(true);
     setMessage("");
     try {
@@ -58,12 +59,13 @@ export function OperatorTaskAction({ state, taskId }: { state: string; taskId: s
   );
 }
 
-export function OperatorWorkflowRetryAction({ workflowActionId }: { workflowActionId: string }) {
+export function OperatorWorkflowRetryAction({ workflowActionId, preview = false }: { workflowActionId: string; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function retry() {
+    if (preview) { setMessage("Preview only — no retry was queued."); return; }
     setSubmitting(true);
     setMessage("");
     try {
@@ -96,7 +98,7 @@ const ARTIFACT_TRANSITIONS: Record<string, string[]> = {
   review: ["ready", "in_production", "canceled"],
 };
 
-export function OperatorArtifactAction({ artifactJobId, state }: { artifactJobId: string; state: string }) {
+export function OperatorArtifactAction({ artifactJobId, state, preview = false }: { artifactJobId: string; state: string; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -105,6 +107,7 @@ export function OperatorArtifactAction({ artifactJobId, state }: { artifactJobId
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — production was not changed."); return; }
     setSubmitting(true);
     setMessage("");
     const data = new FormData(event.currentTarget);
@@ -145,8 +148,10 @@ export function OperatorArtifactAction({ artifactJobId, state }: { artifactJobId
 
 export function OperatorAnnouncementCreateAction({
   audienceOptions,
+  preview = false,
 }: {
   audienceOptions: OpsAnnouncementAudienceOptions;
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -154,6 +159,7 @@ export function OperatorAnnouncementCreateAction({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview — announcement drafts are not saved."); return; }
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -206,18 +212,19 @@ export function OperatorAnnouncementCreateAction({
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <span aria-live="polite" className="text-xs text-black/42">{message}</span>
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">{submitting ? "Creating" : "Create draft"}</button>
+        <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Creating" : "Create draft"}</button>
       </div>
     </form>
   );
 }
 
-export function OperatorAnnouncementPublishAction({ announcementId }: { announcementId: string }) {
+export function OperatorAnnouncementPublishAction({ announcementId, preview = false }: { announcementId: string; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function publish() {
+    if (preview) { setMessage("Preview — announcements are not published."); return; }
     setSubmitting(true);
     setMessage("");
     try {
@@ -234,7 +241,7 @@ export function OperatorAnnouncementPublishAction({ announcementId }: { announce
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
       <span aria-live="polite" className="text-xs text-black/42">{message}</span>
-      <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={publish} type="button">{submitting ? "Publishing" : "Publish"}</button>
+      <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} onClick={publish} type="button">{submitting ? "Publishing" : "Publish"}</button>
     </div>
   );
 }

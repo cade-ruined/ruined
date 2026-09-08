@@ -227,6 +227,11 @@ export default function OperatorAccessManager({
     const displayName = String(form.get("displayName") ?? "").trim();
     const email = String(form.get("email") ?? "").trim();
 
+    if (!resendEmail && operators.some((entry) => entry.email.trim().toLowerCase() === email.toLowerCase())) {
+      setNotice({ kind: "error", text: "This email already has an operator record. Close this review and find their record; use Send again only to replace a pending invitation." });
+      return;
+    }
+
     if (role !== "ops_admin" && selectedCircleIds.length === 0) {
       setNotice({ kind: "error", text: "Choose at least one Circle." });
       return;
@@ -342,6 +347,8 @@ export default function OperatorAccessManager({
             Operators
           </h2>
         </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/members">Choose existing member</Link>
         <button
           className={OPERATOR_BUTTON_CLASS}
           onClick={(event) => {
@@ -353,6 +360,7 @@ export default function OperatorAccessManager({
         >
           Add operator
         </button>
+        </div>
       </header>
 
       {selectedMember ? (

@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 
 import {
   OperatorAcademyCollectionActions,
@@ -8,6 +11,7 @@ import {
 import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
+import { OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_LABEL_TEXT_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import type {
   OpsAcademyReferenceOptions,
   OpsAcademySnapshot,
@@ -16,12 +20,25 @@ import type {
 export default function OperatorAcademy({
   academy,
   options,
+  preview = false,
 }: {
   academy: OpsAcademySnapshot;
   options: OpsAcademyReferenceOptions;
+  preview?: boolean;
 }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const resources = academy.resources.filter((resource) =>
+    (status === "all" || resource.status === status)
+    && `${resource.title} ${resource.collectionName ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
   return (
     <OperatorPageFrame title="Academy">
+      <nav aria-label="Academy tasks" className="mb-4 flex flex-wrap items-center gap-3">
+        {academy.canManage ? <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#new-lesson">+ New lesson</a> : null}
+        <a className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="#academy-collections">Collections</a>
+        {academy.canManage ? <a className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="#new-collection">+ New collection</a> : null}
+      </nav>
       <dl
         aria-label="Academy snapshot"
         className="grid gap-5 rounded-[4px] bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-4 sm:px-8 sm:py-8"
@@ -39,24 +56,13 @@ export default function OperatorAcademy({
         ))}
       </dl>
 
-      {academy.canManage ? (
-        <details
-          className={`group mt-6 rounded-[4px] bg-[var(--color-highlight)] ${academy.resources.length === 0 ? "shadow-[5px_5px_0_#080605]" : ""}`}
-          id="new-lesson"
-          open={academy.resources.length === 0}
-        >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 font-[var(--font-display)] text-2xl tracking-[-0.02em] marker:content-none sm:px-6">
-            New lesson
-            <span aria-hidden="true" className="text-3xl transition-transform group-open:rotate-45">+</span>
-          </summary>
-          <div className="bg-white/45 px-5 py-6 sm:px-6">
-            <OperatorAcademyCreateResource options={options} />
-          </div>
-        </details>
-      ) : null}
-
       <section aria-label="Academy lessons" className="mt-8 space-y-3">
-        {academy.resources.map((resource) => (
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+          <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Find a lesson</span><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Search title or collection" type="search" value={query} /></label>
+          <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Show</span><select className={OPERATOR_FIELD_CLASS} onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All lessons</option><option value="draft">Drafts</option><option value="published">Published</option><option value="unpublished">Unpublished</option><option value="retired">Retired</option></select></label>
+        </div>
+        <p className="py-2 text-sm text-black/50" aria-live="polite">{resources.length} of {academy.resources.length} lessons</p>
+        {resources.map((resource) => (
           <Link
             className="group grid gap-5 rounded-[4px] bg-black/[0.03] px-5 py-5 transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-black/[0.065] sm:grid-cols-[5.5rem_minmax(0,1fr)_9rem_8rem] sm:items-center sm:px-6"
             href={`/ops/academy/${resource.resourceId}`}
@@ -87,16 +93,27 @@ export default function OperatorAcademy({
             </span>
           </Link>
         ))}
+        {academy.resources.length > 0 && resources.length === 0 ? <p className="rounded-[4px] bg-black/[0.035] p-5 text-sm text-black/55">No matches. Try another title or show all lessons.</p> : null}
         {!academy.resources.length ? (
           <OperatorEmptyState
-            detail="Create a lesson, add it to a collection when useful, then choose exactly who can see it before publishing."
-            eyebrow="The first lesson"
-            title="Build the Academy one useful resource at a time."
+            actionHref={academy.canManage ? "#new-lesson" : undefined}
+            actionLabel={academy.canManage ? "Create first lesson" : undefined}
+            detail={academy.canManage ? "Add a video or resource, choose its audience, then publish when ready." : "Published lessons will appear here when they are available to you."}
+            eyebrow="Lessons"
+            title="No lessons yet."
           />
         ) : null}
       </section>
 
-      <section aria-labelledby="academy-collections" className="mt-12">
+      {academy.canManage ? (
+        <section className="mt-8 scroll-mt-28 rounded-[4px] bg-[var(--color-shop)]/25 p-5 sm:p-6" id="new-lesson" aria-labelledby="new-lesson-title">
+          <h2 className="font-[var(--font-display)] text-3xl" id="new-lesson-title">New lesson</h2>
+          <p className="mb-5 mt-2 text-sm text-black/60">Save a draft first. Members only see it after you publish.</p>
+          <OperatorAcademyCreateResource options={options} preview={preview} />
+        </section>
+      ) : null}
+
+      <section aria-labelledby="academy-collections" className="mt-8 scroll-mt-28">
         <h2 className="font-[var(--font-display)] text-4xl leading-none tracking-[-0.035em]" id="academy-collections">Collections</h2>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {academy.collections.map((collection) => (
@@ -109,17 +126,15 @@ export default function OperatorAcademy({
                 <StateLabel state={collection.status} />
               </div>
               {collection.summary ? <p className="mt-4 text-sm leading-relaxed text-black/52">{collection.summary}</p> : null}
-              {academy.canManage ? <OperatorAcademyCollectionActions collection={collection} /> : null}
+              {academy.canManage ? <OperatorAcademyCollectionActions collection={collection} preview={preview} /> : null}
             </article>
           ))}
         </div>
         {academy.canManage ? (
-          <details className="group mt-5 rounded-[4px] bg-black/[0.03]" open={academy.collections.length === 0}>
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 font-[var(--font-display)] text-2xl marker:content-none">
-              New collection <span aria-hidden="true" className="text-3xl transition-transform group-open:rotate-45">+</span>
-            </summary>
-            <div className="px-5 pb-6"><OperatorAcademyCollectionCreate /></div>
-          </details>
+          <section className="mt-5 scroll-mt-28 rounded-[4px] bg-black/[0.03] p-5" id="new-collection" aria-labelledby="new-collection-title">
+            <h3 className="mb-5 font-[var(--font-display)] text-2xl" id="new-collection-title">New collection</h3>
+            <OperatorAcademyCollectionCreate preview={preview} />
+          </section>
         ) : null}
       </section>
     </OperatorPageFrame>

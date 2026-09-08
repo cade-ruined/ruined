@@ -178,9 +178,9 @@ function RosterRow({
         ) : <span />}
       </div>
       {canManageRoster && item.status !== "cancelled" ? (
-        <details className="mt-3">
+        <details className="mt-3" open={item.status === "waitlisted"}>
           <summary className="min-h-11 w-fit cursor-pointer py-3 text-xs font-bold text-black/55 hover:text-black">
-            Manage place
+            {item.status === "waitlisted" ? "Confirm a place or remove from waitlist" : "Change registration"}
           </summary>
           <div className="grid gap-3 rounded-[4px] bg-black/[0.035] p-3 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-end">
             <FormField label="Reason when needed">
@@ -192,7 +192,7 @@ function RosterRow({
             </FormField>
             <div className="flex flex-wrap gap-2">
               {item.status === "waitlisted" ? (
-                <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => roster("promote")} type="button">Promote</button>
+                <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => roster("promote")} type="button">Confirm place</button>
               ) : null}
               {item.status === "registered" ? (
                 <button className={quietButton} disabled={pending} onClick={() => roster("waitlist")} type="button">Move to waitlist</button>
@@ -341,10 +341,10 @@ export default function OperatorExperienceRecord({
     <OperatorPageFrame title={experience.title}>
       <div className="mx-auto max-w-[92rem] pb-20">
       <Link className="text-sm text-black/50 hover:text-black" href="/ops/experiences">← Experiences</Link>
-      <header className="mt-5 grid gap-5 rounded-[4px] bg-[#080605] px-6 py-7 text-[var(--color-bone)] sm:px-8 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-end">
+      <header className="mt-4 grid gap-5 rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-end">
         <div>
           <p className="text-sm capitalize text-white/45">{experience.kind.replaceAll("_", " ")} · {experience.scope}</p>
-          <h1 className="mt-3 max-w-[18ch] font-[var(--font-display)] text-[clamp(2.4rem,5vw,4.75rem)] leading-[0.88] tracking-[-0.04em]">{experience.title}</h1>
+          <h1 className="mt-3 font-[var(--font-display)] text-3xl leading-tight sm:text-4xl">{experience.title}</h1>
           <p className="mt-5 text-sm text-white/55">{formatDate(experience.startsAt, experience.timezone)}{experience.locationLabel ? ` · ${experience.locationLabel}` : ""}</p>
         </div>
         <div className="grid gap-3">
@@ -353,8 +353,15 @@ export default function OperatorExperienceRecord({
         </div>
       </header>
 
+      <nav className="mt-3 flex flex-wrap gap-4 text-sm" aria-label="Experience record tasks">
+        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-roster">Roster & attendance</a>
+        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-calendar">Calendar invitations</a>
+        {experience.canEdit && ["draft", "published"].includes(experience.state) ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#edit-experience">Edit details</a> : null}
+        {experience.canEdit ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-actions">{experience.state === "draft" ? "Review & publish" : "Event status"}</a> : null}
+      </nav>
+
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
-        <section className="rounded-[4px] bg-black/[0.035] px-5 py-5 sm:px-6" aria-labelledby="roster-title">
+        <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-5 sm:px-6" id="experience-roster" aria-labelledby="roster-title">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div><p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">People</p><h2 className="font-[var(--font-display)] text-3xl" id="roster-title">Roster</h2></div>
             {experience.canManageRoster && experience.registrationMode === "internal" && availableMembers.length > 0 ? (
@@ -364,7 +371,7 @@ export default function OperatorExperienceRecord({
                   <option disabled value="">Choose member</option>
                   {availableMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
                 </select>
-                <button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="submit">Add</button>
+                <button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="submit">Add member</button>
               </form>
             ) : null}
           </div>
@@ -381,10 +388,10 @@ export default function OperatorExperienceRecord({
               />
             ))}
           </ul>
-          {experience.roster.length === 0 ? <p className="mt-5 rounded-[4px] bg-white/50 px-4 py-8 text-sm text-black/48">No one is on this roster yet.</p> : null}
+          {experience.roster.length === 0 ? <p className="mt-5 rounded-[4px] bg-white/50 px-4 py-5 text-sm text-black/55">{experience.registrationMode !== "internal" ? "Registration is not managed here for this Experience." : availableMembers.length && experience.canManageRoster ? "No reservations yet. Choose a member above to add a place." : "No reservations yet. Eligible members can register once this Experience is published and registration opens."}</p> : null}
         </section>
 
-        <aside className="order-first space-y-4 lg:order-none">
+        <aside className="space-y-4">
           <OperatorExperienceCalendar
             calendar={experience.calendar}
             canManage={experience.canManageCommunication}
@@ -409,8 +416,9 @@ export default function OperatorExperienceRecord({
             </div>
           </details>
           {experience.canEdit ? (
-            <section className="rounded-[4px] bg-black/[0.035] px-5 py-5" aria-label="Experience actions">
-              <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">State</p>
+            <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-5" id="experience-actions" aria-label="Experience actions">
+              <h2 className="font-[var(--font-display)] text-2xl">{experience.state === "draft" ? "Review & publish" : "Event status"}</h2>
+              {experience.state === "draft" ? <p className="mt-2 text-sm text-black/60">Check the date, audience, and registration settings before publishing{experience.calendar.configured ? " and sending invitations" : ""}.</p> : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {experience.state === "draft" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{experience.calendar.configured ? "Publish + send invite" : "Publish"}</button> : null}
                 {experience.state === "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("complete")} type="button">Complete</button> : null}
@@ -435,8 +443,8 @@ export default function OperatorExperienceRecord({
       </div>
 
       {experience.canEdit && ["draft", "published"].includes(experience.state) ? (
-        <details className="mt-5 rounded-[4px] bg-black/[0.035] px-5 py-4 sm:px-6">
-          <summary className="min-h-11 cursor-pointer py-3 font-[var(--font-display)] text-2xl">Edit Experience</summary>
+        <section className="mt-5 scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-4 sm:px-6" id="edit-experience" aria-labelledby="edit-experience-title">
+          <h2 className="py-3 font-[var(--font-display)] text-2xl" id="edit-experience-title">Edit details</h2>
           <form className="grid gap-4 pb-3 pt-5 sm:grid-cols-2 lg:grid-cols-4" onSubmit={save}>
             <FormField className="sm:col-span-2" label="Title">
               <input className={OPERATOR_FIELD_CLASS} defaultValue={experience.title} maxLength={200} name="title" required />
@@ -543,7 +551,7 @@ export default function OperatorExperienceRecord({
             </FormField>
             <button className={`${OPERATOR_BUTTON_CLASS} sm:col-span-2`} disabled={pending} type="submit">{pending ? "Saving" : "Save changes"}</button>
           </form>
-        </details>
+        </section>
       ) : null}
 
       <section className="mt-5 rounded-[4px] bg-black/[0.025] px-5 py-5 sm:px-6" aria-labelledby="history-title">

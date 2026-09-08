@@ -60,6 +60,13 @@ const elements = (node) => [node, ...(node.childNodes ?? []).flatMap(elements)].
 const byId = (node, id) => elements(node).find((item) => attr(item, "id") === id);
 const visibleText = (node) => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(visibleText).join("");
 const render = (props = {}) => parseFragment(renderToStaticMarkup(React.createElement(Manager, { ...defaults, ...props })));
+
+test("a selected member outside search results is labeled without inflating match counts", () => {
+  const tree = render({ initialCircleId: firstCircle.id, initialMemberId: candidate.memberId, pinnedMemberId: candidate.memberId, candidateTotal: 0, memberQuery: "unmatched" });
+  assert.match(visibleText(tree), /0 matches for “unmatched” · Selected member also shown/);
+  assert.match(visibleText(tree), /Selected from member profile/);
+  assert.ok(elements(tree).some((node) => node.tagName === "button" && attr(node, "aria-label") === `Add ${candidate.name} to ${firstCircle.name}`));
+});
 function nodes(element) {
   if (!element || typeof element !== "object") return [];
   if (Array.isArray(element)) return element.flatMap(nodes);
@@ -131,7 +138,7 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
     draw, button, click, addForm, calls, refreshes: () => refreshes,
     update(changes) { props = { ...props, ...changes }; return draw(); },
     open(circle) { return click(`Manage members — ${circle.name}`); },
-    select(memberId, circle = firstCircle) { nodes(addForm(circle)).find((node) => node.type === "select").props.onChange({ target: { value: memberId } }); },
+    select(memberId, circle = firstCircle) { assert.equal(addForm(circle).props["data-member-id"], memberId, "the visible result's form is bound to its own member, without another selector"); },
     submitAdd(circle = firstCircle) { return addForm(circle).props.onSubmit({ preventDefault() {} }); },
     create(name) {
       const form = nodes(draw()).find((node) => node.type === "form" && nodes(node).some((child) => child.type === "input" && child.props.name === "name"));
@@ -147,6 +154,9 @@ test("cards keep their own complete roster, explicit controls, and visible creat
   assert.equal(new Set(ids).size, ids.length);
   for (const [circle, included, excluded] of [[firstCircle, firstAssignment, secondAssignment], [secondCircle, secondAssignment, firstAssignment]]) {
     const card = byId(page, `circle-${circle.id}`);
+    const memberSearch = byId(card, `member-search-${circle.id}`);
+    assert.ok(memberSearch);
+    assert.match(attr(memberSearch, "class"), /scroll-mt-/);
     assert.match(visibleText(card), new RegExp(included.name));
     assert.doesNotMatch(visibleText(card), new RegExp(excluded.name));
     const toggle = elements(card).find((node) => attr(node, "aria-label") === `Manage members — ${circle.name}`);
@@ -156,6 +166,7 @@ test("cards keep their own complete roster, explicit controls, and visible creat
     assert.ok(elements(card).some((node) => attr(node, "href") === `/ops/members/${included.memberId}`));
   }
   assert.equal(elements(page).some((node) => attr(node, "role") === "dialog"), false);
+  assert.ok(byId(page, "assign-member"), "existing external member-placement anchors remain available");
   for (let node = byId(page, "create-circle"); node; node = node.parentNode) assert.notEqual(node.tagName, "details");
   assert.match(visibleText(page), /Shaper One|Block 01/);
 });
@@ -187,21 +198,66 @@ test("search preserves the exact Circle and warns when candidates extend beyond 
   const page = render({ initialCircleId: secondCircle.id, candidateTotal: 101, memberQuery: "Find this member" });
   const roster = byId(page, `roster-${secondCircle.id}`);
   const search = elements(roster).find((node) => node.tagName === "form" && attr(node, "method") === "get");
-  assert.equal(attr(search, "action"), "/ops/circles#assign-member");
+  assert.equal(attr(search, "action"), `/ops/circles#member-search-${secondCircle.id}`);
+  const searchTarget = byId(roster, `member-search-${secondCircle.id}`);
+  assert.ok(searchTarget, "search lands inside the selected Circle, beside its results");
+  assert.equal(attr(roster, "hidden"), undefined, "the targeted Circle is open on arrival");
   assert.equal(attr(elements(search).find((node) => attr(node, "name") === "circleId"), "value"), secondCircle.id);
   assert.equal(attr(elements(search).find((node) => attr(node, "name") === "memberQuery"), "value"), "Find this member");
   assert.match(visibleText(roster), /beyond these first results/);
 });
 
+test("search results are visible people with direct Add actions, never hidden inside a second dropdown", () => {
+  const page = render({ initialCircleId: firstCircle.id, memberQuery: "new" });
+  const roster = byId(page, `roster-${firstCircle.id}`);
+  assert.equal(elements(roster).some((node) => node.tagName === "select"), false);
+  const resultList = elements(roster).find((node) => attr(node, "aria-label") === `Member results for ${firstCircle.name}`);
+  assert.match(visibleText(resultList), /New Member.*new@example.test.*Add to Circle/s);
+  const action = elements(resultList).find((node) => node.tagName === "button");
+  assert.equal(attr(action, "disabled"), undefined);
+  assert.equal(attr(action, "aria-label"), `Add ${candidate.name} to ${firstCircle.name}`);
+});
+
+test("assigned and inactive search matches explain their status instead of vanishing", async () => {
+  const assigned = { ...candidate, memberId: secondAssignment.memberId, circleName: secondCircle.name };
+  const page = render({ initialCircleId: firstCircle.id, memberQuery: "new", candidates: [assigned] });
+  const roster = byId(page, `roster-${firstCircle.id}`);
+  assert.match(visibleText(roster), /Already in Circle 02/);
+  assert.ok(elements(roster).some((node) => attr(node, "href")?.includes(`circleId=${secondCircle.id}`)));
+  const fixture = harness({ initialCircleId: firstCircle.id, candidates: [{ ...candidate, membershipState: "paused" }] });
+  assert.match(text(fixture.draw()), /Membership is paused/);
+  await fixture.submitAdd();
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("result pagination and clear search retain the chosen Circle with encoded search text", () => {
+  const page = render({ initialCircleId: firstCircle.id, memberQuery: "A & B", candidateTotal: 80, candidatePage: 2, candidatePageCount: 4 });
+  const roster = byId(page, `roster-${firstCircle.id}`);
+  const links = elements(roster).filter((node) => node.tagName === "a");
+  const next = links.find((node) => visibleText(node) === "Next members");
+  const target = new URL(attr(next, "href"), "https://example.test");
+  assert.equal(target.searchParams.get("circleId"), firstCircle.id);
+  assert.equal(target.searchParams.get("memberQuery"), "A & B");
+  assert.equal(target.searchParams.get("memberPage"), "3");
+  assert.equal(target.hash, `#member-search-${firstCircle.id}`);
+  const previous = new URL(attr(links.find((node) => visibleText(node) === "Previous members"), "href"), "https://example.test");
+  assert.equal(previous.searchParams.get("memberPage"), null);
+  assert.equal(previous.hash, `#member-search-${firstCircle.id}`);
+  const clear = new URL(attr(links.find((node) => visibleText(node) === "Clear search"), "href"), "https://example.test");
+  assert.equal(clear.searchParams.get("circleId"), firstCircle.id);
+  assert.equal(clear.searchParams.has("memberQuery"), false);
+  assert.equal(clear.hash, `#member-search-${firstCircle.id}`);
+});
+
 test("only eligible unassigned members can be added and occupied or closed Circles have no add form", async () => {
   for (const changes of [{ accountState: "suspended" }, { billingState: "pending" }, { programState: "paused" }, { circleName: "Elsewhere" }]) {
     const fixture = harness({ initialCircleId: firstCircle.id, initialMemberId: candidate.memberId, candidates: [{ ...candidate, ...changes }] });
-    assert.equal(fixture.button(`Add to ${firstCircle.name}`).props.disabled, true);
+    assert.equal(fixture.button(`Add ${candidate.name} to ${firstCircle.name}`).props.disabled, true);
     await fixture.submitAdd();
     assert.deepEqual(fixture.calls, []);
   }
   const occupied = harness({ candidates: [{ ...candidate, memberId: firstAssignment.memberId }], initialMemberId: firstAssignment.memberId });
-  assert.equal(occupied.button(`Add to ${firstCircle.name}`).props.disabled, true);
+  assert.equal(occupied.button(`Add ${candidate.name} to ${firstCircle.name}`).props.disabled, true);
   await occupied.submitAdd();
   assert.deepEqual(occupied.calls, []);
   for (const circle of [{ ...firstCircle, activeMembers: 10 }, { ...firstCircle, status: "archived" }, { ...firstCircle, status: "completed" }]) {
@@ -280,10 +336,10 @@ test("incomplete or mismatched add responses leave the roster and selected membe
     fixture.select(candidate.memberId);
     await fixture.submitAdd();
     const tree = fixture.draw();
-    assert.equal(nodes(tree).some((node) => node.props?.href === `/ops/members/${candidate.memberId}`), false);
+    assert.equal(nodes(tree).some((node) => node.type === "button" && node.props["aria-label"] === `Remove ${candidate.name} from ${firstCircle.name}`), false);
     assert.ok(nodes(tree).some((node) => node.props?.role === "alert"));
     assert.match(text(tree), /Refresh.*before repeating/s);
-    assert.equal(nodes(fixture.addForm(firstCircle)).find((node) => node.type === "select").props.value, candidate.memberId);
+    assert.equal(fixture.addForm(firstCircle).props["data-member-id"], candidate.memberId);
     assert.equal(fixture.refreshes(), 0);
   }
 });
@@ -360,7 +416,7 @@ test("preview interactions never fetch, refresh, or change rosters, Circle statu
   assert.equal(fixture.refreshes(), 0);
   assert.equal(nodes(tree).filter((node) => node.type === "article").length, 2);
   assert.ok(nodes(tree).some((node) => node.props?.href === `/ops/members/${firstAssignment.memberId}`));
-  assert.equal(nodes(tree).some((node) => node.props?.href === `/ops/members/${candidate.memberId}`), false);
+  assert.equal(nodes(tree).some((node) => node.type === "button" && node.props["aria-label"] === `Remove ${candidate.name} from ${firstCircle.name}`), false);
   assert.match(text(tree), /Preview only/);
 });
 

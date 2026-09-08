@@ -54,6 +54,12 @@ export default function OperatorExperienceDirectory({
   preview?: boolean;
 }) {
   const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
+  const visibleExperiences = directory.experiences.filter((experience) =>
+    (stateFilter === "all" || experience.state === stateFilter)
+    && `${experience.title} ${experience.scope} ${experience.kind}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [newRegistrationMode, setNewRegistrationMode] = useState<"external" | "internal" | "none">("internal");
@@ -133,6 +139,10 @@ export default function OperatorExperienceDirectory({
 
   return (
     <OperatorPageFrame title="Experiences">
+      <nav aria-label="Experience tasks" className="mb-4 flex flex-wrap items-center gap-3">
+        {directory.canCreate ? <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#new-experience">+ New Experience</a> : null}
+        <Link className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="/ops/circles">Circles</Link>
+      </nav>
       <dl
         aria-label="Experience snapshot"
         className="grid gap-6 rounded-[4px] bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-4 sm:px-8 sm:py-8"
@@ -152,16 +162,64 @@ export default function OperatorExperienceDirectory({
         ))}
       </dl>
 
+
+      <section className="mt-6 space-y-3" aria-label="Experience directory">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+          <FormField label="Find an Experience"><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Search title or audience" type="search" value={query} /></FormField>
+          <FormField label="Show"><select className={OPERATOR_FIELD_CLASS} onChange={(event) => setStateFilter(event.target.value)} value={stateFilter}><option value="all">All Experiences</option>{["draft", "published", "completed", "cancelled", "archived"].map((state) => <option key={state} value={state}>{state[0].toUpperCase() + state.slice(1)}</option>)}</select></FormField>
+        </div>
+        <p className="py-2 text-sm text-black/50" aria-live="polite">{visibleExperiences.length} of {directory.experiences.length} Experiences</p>
+        {visibleExperiences.map((experience) => (
+          <article
+            className="grid gap-5 rounded-[4px] bg-black/[0.035] px-5 py-6 transition-colors hover:bg-black/[0.06] sm:px-6 xl:grid-cols-[minmax(15rem,1fr)_12rem_9rem_7rem] xl:items-center min-[1400px]:grid-cols-[minmax(15rem,1fr)_12rem_9rem_7rem_minmax(14rem,0.8fr)]"
+            id={`experience-${experience.experienceId}`}
+            key={experience.experienceId}
+          >
+            <div>
+              <p className="text-sm capitalize text-black/45">
+                {experience.kind.replaceAll("_", " ")} · {experience.scope}
+              </p>
+              <h2 className="mt-2 text-3xl leading-none tracking-[-0.025em]">
+                <Link className="hover:text-[var(--color-poster)]" href={`/ops/experiences/${experience.experienceId}`}>
+                  {experience.title}
+                </Link>
+              </h2>
+            </div>
+            <div className="text-sm leading-relaxed text-black/55">
+              <p>{formatDate(experience.startsAt)}</p>
+              {experience.endsAt ? <p className="mt-1 text-black/38">Ends {formatDate(experience.endsAt)}</p> : null}
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-2xl tabular-nums">{experience.registeredCount}</p><p className="text-black/42">Confirmed</p></div>
+              <div><p className="text-2xl tabular-nums">{experience.waitlistedCount}</p><p className="text-black/42">Waiting</p></div>
+              {experience.capacity ? <p className="col-span-2 text-xs text-black/42">Capacity {experience.capacity}</p> : null}
+            </div>
+            <StateLabel state={experience.state} />
+            <div className="xl:col-span-4 min-[1400px]:col-span-1">
+              <OperatorGoogleCommunicationField
+                configured={experience.googleCommunicationsConfigured}
+                editable
+                entityId={experience.experienceId}
+                entityType="experience"
+                initialUrl={experience.meetingUrl}
+                kind="meet"
+                preview={preview}
+              />
+            </div>
+          </article>
+        ))}
+        {visibleExperiences.length === 0 ? (
+          <p className="rounded-[4px] bg-black/[0.035] px-5 py-10 text-sm text-black/50">
+            {directory.experiences.length ? "No matches. Try another title or show all Experiences." : directory.canCreate ? "No Experiences yet. Create a draft to set the time, audience, and registration." : "No Experiences are available in your assigned scope."}
+          </p>
+        ) : null}
+      </section>
+
       {directory.canCreate ? (
-        <details
-          className={`group mt-6 rounded-[4px] bg-[var(--color-highlight)] ${directory.experiences.length === 0 ? "shadow-[5px_5px_0_#080605]" : ""}`}
-          open={directory.experiences.length === 0}
-        >
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 marker:content-none sm:px-6">
-            <span className="font-[var(--font-display)] text-2xl leading-none">Add an Experience</span>
-            <span aria-hidden="true" className="text-2xl transition-transform group-open:rotate-45">+</span>
-          </summary>
-          <form className="grid gap-4 bg-white/35 px-5 pb-6 pt-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4" onSubmit={createExperience}>
+        <section className="mt-8 scroll-mt-28 rounded-[4px] bg-[var(--color-shop)]/25 p-5 sm:p-6" id="new-experience" aria-labelledby="new-experience-title">
+          <h2 className="font-[var(--font-display)] text-3xl" id="new-experience-title">New Experience</h2>
+          <p className="mt-2 text-sm text-black/60">Save a draft first. Publishing is a separate action that can send invitations.</p>
+          <form className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" onSubmit={createExperience}>
             <FormField className="sm:col-span-2" label="Title">
               <input className={OPERATOR_FIELD_CLASS} maxLength={200} name="title" required />
             </FormField>
@@ -272,55 +330,9 @@ export default function OperatorExperienceDirectory({
               {error ? <p aria-live="assertive" className="text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
             </div>
           </form>
-        </details>
+        </section>
       ) : null}
 
-      <section className="mt-8 space-y-3" aria-label="Experience directory">
-        {directory.experiences.map((experience) => (
-          <article
-            className="grid gap-5 rounded-[4px] bg-black/[0.035] px-5 py-6 transition-colors hover:bg-black/[0.06] sm:px-6 xl:grid-cols-[minmax(15rem,1fr)_12rem_9rem_7rem] xl:items-center min-[1400px]:grid-cols-[minmax(15rem,1fr)_12rem_9rem_7rem_minmax(14rem,0.8fr)]"
-            id={`experience-${experience.experienceId}`}
-            key={experience.experienceId}
-          >
-            <div>
-              <p className="text-sm capitalize text-black/45">
-                {experience.kind.replaceAll("_", " ")} · {experience.scope}
-              </p>
-              <h2 className="mt-2 text-3xl leading-none tracking-[-0.025em]">
-                <Link className="hover:text-[var(--color-poster)]" href={`/ops/experiences/${experience.experienceId}`}>
-                  {experience.title}
-                </Link>
-              </h2>
-            </div>
-            <div className="text-sm leading-relaxed text-black/55">
-              <p>{formatDate(experience.startsAt)}</p>
-              {experience.endsAt ? <p className="mt-1 text-black/38">Ends {formatDate(experience.endsAt)}</p> : null}
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><p className="text-2xl tabular-nums">{experience.registeredCount}</p><p className="text-black/42">Confirmed</p></div>
-              <div><p className="text-2xl tabular-nums">{experience.waitlistedCount}</p><p className="text-black/42">Waiting</p></div>
-              {experience.capacity ? <p className="col-span-2 text-xs text-black/42">Capacity {experience.capacity}</p> : null}
-            </div>
-            <StateLabel state={experience.state} />
-            <div className="xl:col-span-4 min-[1400px]:col-span-1">
-              <OperatorGoogleCommunicationField
-                configured={experience.googleCommunicationsConfigured}
-                editable
-                entityId={experience.experienceId}
-                entityType="experience"
-                initialUrl={experience.meetingUrl}
-                kind="meet"
-                preview={preview}
-              />
-            </div>
-          </article>
-        ))}
-        {directory.experiences.length === 0 ? (
-          <p className="rounded-[4px] bg-black/[0.035] px-5 py-10 text-sm text-black/50">
-            No Experiences are visible to this operator.
-          </p>
-        ) : null}
-      </section>
     </OperatorPageFrame>
   );
 }

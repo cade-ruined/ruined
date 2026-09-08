@@ -4,6 +4,7 @@ import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { OperatorArtifactAction } from "@/components/platform/OperatorWorkActions";
 import StateLabel from "@/components/platform/StateLabel";
+import { OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import type { OpsArtifactQueueItem } from "@/lib/platform/ops-model";
 
 function formatDate(value: string | null): string {
@@ -20,14 +21,20 @@ function formatDate(value: string | null): string {
 export default function OperatorArtifactQueue({
   artifacts,
   controls,
+  preview = false,
 }: {
   artifacts: OpsArtifactQueueItem[];
   controls?: React.ReactNode;
+  preview?: boolean;
 }) {
   return (
     <OperatorPageFrame title="Artifacts">
-      {controls}
-      <section className="space-y-3" aria-label="Artifact production queue">
+      {controls ? <nav aria-label="Artifact tasks" className="mb-5 flex flex-wrap items-center gap-3">
+        <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#award-artifact">Award an Artifact</a>
+        <a className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="#artifact-fulfillment">Shipping & tracking</a>
+        <a className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="#artifact-templates">Templates & Shopify</a>
+      </nav> : null}
+      <section className="space-y-3" aria-label="Artifact production queue" id="artifact-production">
         {artifacts.length ? <h2 className="font-[var(--font-display)] text-3xl leading-none">Production queue</h2> : null}
         {artifacts.map((artifact) => (
           <article
@@ -56,7 +63,7 @@ export default function OperatorArtifactQueue({
             </div>
             {artifact.artifactJobId ? (
               <div className="mt-6 rounded-[4px] bg-white/35 p-4 sm:p-5">
-                <OperatorArtifactAction artifactJobId={artifact.artifactJobId} state={artifact.state} />
+                <OperatorArtifactAction artifactJobId={artifact.artifactJobId} state={artifact.state} preview={preview} />
               </div>
             ) : (
               <p className="mt-6 rounded-[4px] bg-white/35 px-4 py-3 text-sm text-black/45">
@@ -67,12 +74,15 @@ export default function OperatorArtifactQueue({
         ))}
         {artifacts.length === 0 ? (
           <OperatorEmptyState
+            actionHref={controls ? "#award-artifact" : undefined}
+            actionLabel={controls ? "Award an Artifact" : undefined}
             detail="New production work will appear here as soon as an Artifact is awarded."
             eyebrow="Queue clear"
             title="No Artifact work is open."
           />
         ) : null}
       </section>
+      {controls}
     </OperatorPageFrame>
   );
 }

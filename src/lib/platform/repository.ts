@@ -632,6 +632,7 @@ export async function getOperatorRole(authUserId: string): Promise<OperatorRole 
 }
 
 type OperatorMemberRow = {
+  membership_state?: string;
   account_state: AccountState;
   artifact_state: ArtifactState;
   billing_state: BillingState;
@@ -655,6 +656,7 @@ function operatorMemberSummary(
 ): OperatorMemberSummary {
   const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
   return {
+    ...(row.membership_state ? { membershipState: row.membership_state } : {}),
     accountState: row.account_state,
     artifactState: row.artifact_state,
     billingState: row.billing_state,
@@ -740,6 +742,9 @@ export async function getOperatorMemberDirectoryPage(
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
       left join platform_users platform_user on platform_user.member_id = member.id
       left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
+      left join person_profiles person_profile on person_profile.person_id = member.person_id
+      left join person_private_profiles private_profile
+        on private_profile.person_id = member.person_id and ${role} = 'ops_admin'
       left join lateral (
         select assignment.circle_id
         from circle_member_assignments assignment
@@ -770,6 +775,9 @@ export async function getOperatorMemberDirectoryPage(
         and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(person_profile.preferred_name, '')), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(person_profile.display_name, '')), lower(${query}::text)) > 0
+          or (${role} = 'ops_admin' and strpos(lower(coalesce(private_profile.legal_name, '')), lower(${query}::text)) > 0)
           or (${role} = 'ops_admin' and strpos(lower(member.email), lower(${query}::text)) > 0)
           or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
           or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
@@ -791,7 +799,7 @@ export async function getOperatorMemberDirectoryPage(
             and lifecycle.billing_state = 'active'
             and lifecycle.standing_state = 'active'
             and lifecycle.program_state in ('onboarding', 'active')
-            and (active_circle.circle_id is null or circle.status <> 'active')
+            and active_circle.circle_id is null
           )
         )
     `;
@@ -804,7 +812,8 @@ export async function getOperatorMemberDirectoryPage(
       select
         member.id as member_id,
         member.email,
-        profile.display_name,
+        member.membership_state,
+        coalesce(nullif(btrim(person_profile.preferred_name), ''), nullif(btrim(person_profile.display_name), ''), nullif(btrim(profile.display_name), '')) as display_name,
         lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.program_state,
@@ -819,6 +828,9 @@ export async function getOperatorMemberDirectoryPage(
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
       left join platform_users platform_user on platform_user.member_id = member.id
       left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
+      left join person_profiles person_profile on person_profile.person_id = member.person_id
+      left join person_private_profiles private_profile
+        on private_profile.person_id = member.person_id and ${role} = 'ops_admin'
       left join lateral (
         select assignment.circle_id
         from circle_member_assignments assignment
@@ -861,6 +873,9 @@ export async function getOperatorMemberDirectoryPage(
         and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(person_profile.preferred_name, '')), lower(${query}::text)) > 0
+          or strpos(lower(coalesce(person_profile.display_name, '')), lower(${query}::text)) > 0
+          or (${role} = 'ops_admin' and strpos(lower(coalesce(private_profile.legal_name, '')), lower(${query}::text)) > 0)
           or (${role} = 'ops_admin' and strpos(lower(member.email), lower(${query}::text)) > 0)
           or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
           or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
@@ -882,7 +897,7 @@ export async function getOperatorMemberDirectoryPage(
             and lifecycle.billing_state = 'active'
             and lifecycle.standing_state = 'active'
             and lifecycle.program_state in ('onboarding', 'active')
-            and (active_circle.circle_id is null or circle.status <> 'active')
+            and active_circle.circle_id is null
           )
         )
       order by

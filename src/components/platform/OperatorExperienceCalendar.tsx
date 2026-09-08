@@ -120,8 +120,8 @@ export default function OperatorExperienceCalendar({
     : `${calendar.attendeeCount} people will receive the invitation`;
 
   return (
-    <section aria-busy={pending} className="rounded-[4px] bg-[#d9d6cf] px-5 py-5" aria-labelledby="experience-calendar-title">
-      <div className="flex items-start justify-between gap-4">
+    <section id="experience-calendar" aria-busy={pending} className="scroll-mt-28 rounded-[4px] bg-[#d9d6cf] px-5 py-5" aria-labelledby="experience-calendar-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">Invite</p>
           <h2 className="font-[var(--font-display)] text-3xl" id="experience-calendar-title">Google Calendar</h2>

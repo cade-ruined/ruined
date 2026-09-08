@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { SupportPreviewNotice } from "@/components/support/SupportShared";
@@ -23,7 +24,7 @@ export default function OperatorSupport({ tickets, writable, emailReady = false 
     <OperatorPageFrame title="Support">
       <div className="mx-auto max-w-[78rem] [font-family:var(--font-body)]">
         {!writable ? <SupportPreviewNotice /> : null}
-        {writable && !emailReady ? <p className="mb-6 rounded-[4px] bg-[var(--color-signal)]/40 px-4 py-3 text-sm text-black/80" role="status">Requests are saved here. Email notifications to connect@ are not enabled yet.</p> : null}
+        {writable && !emailReady ? <p className="mb-6 rounded-[4px] bg-[var(--color-signal)]/40 px-4 py-3 text-sm text-black/80" role="status">Requests are saved here. Email notifications to connect@ are not enabled yet. <Link className="underline underline-offset-4" href="/ops/system">Check email setup</Link></p> : null}
         <section aria-label="Support snapshot" className="grid grid-cols-3 gap-2 sm:gap-3">
           {[
             { label: "New", value: "open", color: "bg-[var(--color-faded)] text-[var(--color-bone)]" },
@@ -37,7 +38,7 @@ export default function OperatorSupport({ tickets, writable, emailReady = false 
           <label><span className={SUPPORT_LABEL_CLASS}>Status</span><select className={SUPPORT_FIELD_CLASS} onChange={(event) => setStatus(event.target.value)} value={status}><option value="unresolved">All unresolved</option><option value="all">All statuses</option><option value="email_attention">Email needs attention</option>{SUPPORT_STATUSES.map((item) => <option key={item.value} value={item.value}>{supportStatusLabel(item.value, true)}</option>)}</select></label>
           <label><span className={SUPPORT_LABEL_CLASS}>Help topic</span><select className={SUPPORT_FIELD_CLASS} onChange={(event) => setCategory(event.target.value)} value={category}><option value="all">All topics</option>{SUPPORT_CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
         </div>
-        <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-3xl text-[var(--color-poster)]"><span className="[font-family:var(--font-cadehandy2)]">Requests</span></h2><p aria-live="polite" className="text-sm text-black/60">{filtered.length} shown</p></div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-3xl text-[var(--color-poster)]"><span className="[font-family:var(--font-cadehandy2)]">Requests</span></h2><div className="flex items-center gap-4"><p aria-live="polite" className="text-sm text-black/60">{filtered.length} shown</p>{query || category !== "all" || status !== "unresolved" ? <button className="min-h-11 text-sm underline underline-offset-4" onClick={() => { setQuery(""); setCategory("all"); setStatus("unresolved"); }} type="button">Clear filters</button> : null}</div></div>
         <SupportTicketList emptyMessage="No requests match these filters." operator tickets={filtered} />
         {tickets.length >= 200 ? <p className="mt-3 text-xs text-black/60">Showing the 200 most recently updated requests. Counts and filters apply to these requests.</p> : null}
       </div>

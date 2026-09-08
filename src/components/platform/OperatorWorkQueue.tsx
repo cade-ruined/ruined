@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 
 import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
@@ -36,7 +39,9 @@ function urgencyLabel(item: OpsWorkQueue["items"][number]): string {
   return "Open";
 }
 
-export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
+export default function OperatorWorkQueue({ queue, preview = false }: { queue: OpsWorkQueue; preview?: boolean }) {
+  const [kind, setKind] = useState("all");
+  const items = queue.items.filter((item) => kind === "all" || item.kind === kind);
   return (
     <OperatorPageFrame title="Work">
       <dl
@@ -57,8 +62,15 @@ export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
         ))}
       </dl>
 
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter work">
+          {[["all", "All work"], ["task", "Tasks"], ["artifact", "Artifacts"], ["workflow_failure", "Failed actions"]].map(([value, label]) => <button className={`min-h-11 rounded-[4px] px-4 text-sm ${kind === value ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "bg-black/5 text-black/65"}`} aria-pressed={kind === value} key={value} onClick={() => setKind(value)} type="button">{label}</button>)}
+        </div>
+        <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/members">Find a member to create a task →</Link>
+      </div>
+
       <section className="mt-8 space-y-3" aria-label="Prioritized operator work">
-        {queue.items.map((item) => (
+        {items.map((item) => (
           <article
             className="grid gap-5 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[8rem_minmax(13rem,1fr)_10rem_minmax(13rem,0.75fr)] lg:items-center"
             key={`${item.kind}-${item.workId}`}
@@ -86,12 +98,12 @@ export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
               <p className="mt-2 text-xs text-black/42">{formatDate(item.dueAt)}</p>
             </div>
             {item.kind === "task" ? (
-              <OperatorTaskAction state={item.state} taskId={item.workId} />
+              <OperatorTaskAction state={item.state} taskId={item.workId} preview={preview} />
             ) : item.kind === "workflow_failure" ? (
               item.state === "failed" ? (
-                <OperatorWorkflowRetryAction workflowActionId={item.workId} />
+                <OperatorWorkflowRetryAction workflowActionId={item.workId} preview={preview} />
               ) : (
-                <p className="text-sm text-black/48 lg:text-right">Retry allowance exhausted. Create a new task.</p>
+                <p className="text-sm text-black/48 lg:text-right">Retry limit reached. Review the failure with an Administrator before taking further action.</p>
               )
             ) : (
               <Link
@@ -103,6 +115,7 @@ export default function OperatorWorkQueue({ queue }: { queue: OpsWorkQueue }) {
             )}
           </article>
         ))}
+        {queue.items.length > 0 && items.length === 0 ? <p className="rounded-[4px] bg-black/[0.025] p-5 text-sm text-black/55" role="status">No work in this category. Choose All work to see the remaining items.</p> : null}
         {queue.items.length === 0 ? (
           <div className="grid gap-3">
             <OperatorEmptyState

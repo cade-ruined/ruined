@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { createContext, type FormEvent, useContext, useMemo, useRef, useState } from "react";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -13,6 +13,8 @@ import {
 import type { OpsArtifactQueueItem } from "@/lib/platform/ops-model";
 import { isLiveAwardableArtifactTemplate } from "@/lib/platform/artifact-invariants";
 import type { OpsArtifactControlData } from "@/lib/platform/ops-artifact-repository";
+
+const ArtifactPreviewContext = createContext(false);
 
 async function actionRequest<Result = unknown>(url: string, body: unknown, method = "POST"): Promise<Result> {
   const response = await fetch(url, {
@@ -32,12 +34,14 @@ function Notice({ message }: { message: string }) {
 }
 
 function TemplateCreateForm() {
+  const preview = useContext(ArtifactPreviewContext);
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Artifact or shipment was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -108,12 +112,14 @@ function ShopifyBindingForm({
   productHandle: string | null;
   templateId: string;
 }) {
+  const preview = useContext(ArtifactPreviewContext);
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Artifact or shipment was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const data = new FormData(event.currentTarget);
@@ -154,6 +160,7 @@ function ShopifyBindingForm({
 }
 
 function ArtifactAwardForm({ data }: { data: OpsArtifactControlData }) {
+  const preview = useContext(ArtifactPreviewContext);
   const router = useRouter();
   const requestKey = useRef("");
   const [message, setMessage] = useState("");
@@ -162,6 +169,7 @@ function ArtifactAwardForm({ data }: { data: OpsArtifactControlData }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Artifact or shipment was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -225,6 +233,7 @@ function ArtifactAwardForm({ data }: { data: OpsArtifactControlData }) {
 }
 
 function ShipmentCreateForm({ artifacts }: { artifacts: OpsArtifactQueueItem[] }) {
+  const preview = useContext(ArtifactPreviewContext);
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -232,6 +241,7 @@ function ShipmentCreateForm({ artifacts }: { artifacts: OpsArtifactQueueItem[] }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Artifact or shipment was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -311,11 +321,13 @@ const SHIPMENT_STATUS_OPTIONS: Record<string, Array<{ label: string; value: stri
 };
 
 function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["shipments"][number] }) {
+  const preview = useContext(ArtifactPreviewContext);
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function update(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Artifact or shipment was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const data = new FormData(event.currentTarget);
@@ -378,9 +390,11 @@ function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["sh
 export default function OperatorArtifactAdmin({
   artifacts,
   data,
+  preview = false,
 }: {
   artifacts: OpsArtifactQueueItem[];
   data: OpsArtifactControlData;
+  preview?: boolean;
 }) {
   const counts = useMemo(() => ({
     shipments: data.shipments.filter((shipment) => !["delivered", "cancelled", "returned"].includes(shipment.status)).length,
@@ -389,26 +403,22 @@ export default function OperatorArtifactAdmin({
   }), [data]);
 
   return (
-    <section className="mb-10 space-y-6" aria-label="Artifact controls">
+    <ArtifactPreviewContext.Provider value={preview}>
+    <section className="mt-8 space-y-6" aria-label="Artifact controls">
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-[4px] bg-black px-4 py-5 text-[var(--color-bone)]"><strong className="block text-3xl">{counts.templates}</strong><span className="text-[0.62rem] uppercase tracking-[0.12em] text-white/55">Templates</span></div>
         <div className="rounded-[4px] bg-[var(--color-shop)] px-4 py-5"><strong className="block text-3xl">{counts.unbound}</strong><span className="text-[0.62rem] uppercase tracking-[0.12em] text-black/55">Unbound</span></div>
         <div className="rounded-[4px] bg-[var(--color-workwear)] px-4 py-5"><strong className="block text-3xl">{counts.shipments}</strong><span className="text-[0.62rem] uppercase tracking-[0.12em] text-black/55">In motion</span></div>
       </div>
 
-      <details className="group rounded-[4px] bg-[var(--color-highlight)] shadow-[5px_5px_0_#080605]">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 marker:hidden sm:px-6">
-          <span><strong className="block font-[var(--font-display)] text-2xl leading-none">Award an Artifact</strong><span className="mt-2 block text-xs text-black/55">Choose the member, the Artifact, and the reason it was earned.</span></span>
-          <span aria-hidden="true" className="text-2xl transition-transform group-open:rotate-45">＋</span>
-        </summary>
-        <div className="bg-white/35 px-5 py-6 sm:px-6"><ArtifactAwardForm data={data} /></div>
-      </details>
+      <section className="scroll-mt-28 rounded-[4px] bg-[var(--color-shop)]/25 p-5 sm:p-6" id="award-artifact" aria-labelledby="award-artifact-title">
+        <h2 className="font-[var(--font-display)] text-3xl" id="award-artifact-title">Award an Artifact</h2>
+        <p className="mb-5 mt-2 text-sm text-black/60">Choose the member, Artifact, and reason it was earned.</p>
+        <ArtifactAwardForm data={data} />
+      </section>
 
-      <details className="group rounded-[4px] bg-black/[0.035]">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 marker:hidden sm:px-6">
-          <span><strong className="ui-heading block text-xl font-semibold">Templates + Shopify</strong><span className="mt-1 block text-xs text-black/45">Bind the physical product members receive.</span></span>
-          <span aria-hidden="true" className="text-2xl text-black/40 transition-transform group-open:rotate-45">＋</span>
-        </summary>
+      <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035]" id="artifact-templates" aria-labelledby="artifact-templates-title">
+        <div className="p-5 sm:p-6"><h2 className="font-[var(--font-display)] text-3xl" id="artifact-templates-title">Templates & Shopify</h2><p className="mt-2 text-sm text-black/60">Connect the product members receive.</p><a className="mt-2 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="#new-artifact-template">+ New template</a></div>
         <div className="space-y-3 px-5 pb-6 sm:px-6">
           {data.templates.map((template) => (
             <article className="rounded-[4px] bg-white/35 p-4" key={template.templateId}>
@@ -419,15 +429,12 @@ export default function OperatorArtifactAdmin({
               <ShopifyBindingForm livemode={template.livemode} productGid={template.productGid} productHandle={template.productHandle} templateId={template.templateId} />
             </article>
           ))}
-          <details className="rounded-[4px] bg-white/35 p-4"><summary className="cursor-pointer ui-heading text-sm font-semibold uppercase tracking-[0.1em]">New template</summary><div className="mt-5"><TemplateCreateForm /></div></details>
+          <section className="scroll-mt-28 rounded-[4px] bg-white/35 p-4" id="new-artifact-template" aria-labelledby="new-template-title"><h3 className="mb-5 font-[var(--font-display)] text-2xl" id="new-template-title">New template</h3><TemplateCreateForm /></section>
         </div>
-      </details>
+      </section>
 
-      <details className="group rounded-[4px] bg-black/[0.035]">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 marker:hidden sm:px-6">
-          <span><strong className="ui-heading block text-xl font-semibold">Fulfillment + tracking</strong><span className="mt-1 block text-xs text-black/45">Add shipping evidence and update delivery status.</span></span>
-          <span aria-hidden="true" className="text-2xl text-black/40 transition-transform group-open:rotate-45">＋</span>
-        </summary>
+      <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035]" id="artifact-fulfillment" aria-labelledby="artifact-fulfillment-title">
+        <div className="p-5 sm:p-6"><h2 className="font-[var(--font-display)] text-3xl" id="artifact-fulfillment-title">Shipping & tracking</h2><p className="mt-2 text-sm text-black/60">Record a shipment or update its delivery status.</p></div>
         <div className="space-y-4 px-5 pb-6 sm:px-6">
           <ShipmentCreateForm artifacts={artifacts} />
           {data.shipments.map((shipment) => (
@@ -437,7 +444,8 @@ export default function OperatorArtifactAdmin({
             </article>
           ))}
         </div>
-      </details>
+      </section>
     </section>
+    </ArtifactPreviewContext.Provider>
   );
 }

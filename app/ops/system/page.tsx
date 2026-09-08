@@ -16,7 +16,7 @@ export default async function OperationsSystemPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
-  if (context.state === "preview") return <OperatorSystemHealth health={PREVIEW_OPS_SYSTEM} canRetry />;
+  if (context.state === "preview") return <OperatorSystemHealth health={PREVIEW_OPS_SYSTEM} canRetry preview />;
   if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
 
   try {

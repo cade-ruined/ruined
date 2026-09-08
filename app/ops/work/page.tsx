@@ -16,7 +16,7 @@ export default async function OperationsWorkPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
-  if (context.state === "preview") return <OperatorWorkQueue queue={PREVIEW_OPS_WORK_QUEUE} />;
+  if (context.state === "preview") return <OperatorWorkQueue queue={PREVIEW_OPS_WORK_QUEUE} preview />;
   if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
 
   try {

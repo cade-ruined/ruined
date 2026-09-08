@@ -17,6 +17,7 @@ const [
   page,
   manager,
   shell,
+  navigation,
 ] = await Promise.all([
   source("db/migrations/20260829_operator_access_management.sql"),
   source("scripts/migrate-platform.mjs"),
@@ -28,6 +29,7 @@ const [
   source("app/ops/operators/page.tsx"),
   source("src/components/platform/OperatorAccessManager.tsx"),
   source("src/components/platform/PlatformShell.tsx"),
+  source("src/lib/platform/operations-navigation.ts"),
 ]);
 
 test("operator access migration is ordered, immutable, indexed, and server-only", () => {
@@ -114,17 +116,15 @@ test("operator UI uses a low-training list and focused add task", () => {
 });
 
 test("operator navigation is grouped, responsive, and capability-aware", () => {
-  const dailyWork = shell.slice(shell.indexOf('label: "Daily work"'), shell.indexOf('label: "Manage"'));
-  const manage = shell.slice(shell.indexOf('label: "Manage"'), shell.indexOf('label: "Administration"'));
-  assert.match(shell, /Daily work/);
-  assert.match(shell, /Administration/);
-  assert.match(shell, /\/ops\/operators/);
-  assert.doesNotMatch(dailyWork, /\/ops\/academy/);
-  assert.match(manage, /\/ops\/academy/);
-  assert.match(shell, /operatorRole === "ops_admin"/);
-  assert.match(shell, /aria-haspopup="dialog"/);
-  assert.match(shell, /Close operations menu/);
-  assert.match(shell, /mobileDialogRef/);
-  assert.match(shell, /keepFocusInside/);
+  assert.match(navigation, /label: "People"/);
+  assert.match(navigation, /label: "Learning & events"/);
+  assert.match(navigation, /label: "Messages"/);
+  assert.match(navigation, /label: "Tasks & tools"/);
+  assert.match(navigation, /href: "\/ops\/operators"[^\n]*adminOnly: true/);
+  assert.match(navigation, /href: "\/ops\/academy"[^\n]*adminOnly: true/);
+  assert.match(navigation, /!item\.adminOnly \|\| role === "ops_admin"/);
+  assert.match(shell, /getOperationsNavigation\(operatorRole\)/);
+  assert.match(shell, /aria-label="Operations sections" className="flex flex-wrap/);
+  assert.doesNotMatch(shell, /Close operations menu|mobileDialogRef|aria-haspopup="dialog"/);
   assert.match(shell, /aria-current=\{current \? "page" : undefined\}/);
 });

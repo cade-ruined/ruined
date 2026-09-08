@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 
 export default function OperatorEmptyState({
   actionHref,
   actionLabel,
   detail,
-  eyebrow = "Ready when you are",
+  eyebrow,
   title,
 }: {
   actionHref?: string;
@@ -14,19 +15,19 @@ export default function OperatorEmptyState({
   title: string;
 }) {
   return (
-    <article className="grid gap-6 rounded-[4px] bg-black/[0.035] px-5 py-7 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:px-7 sm:py-8">
+    <article className="grid gap-4 rounded-[4px] bg-black/[0.035] px-5 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6 sm:py-6">
       <div>
-        <p className="w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none text-[var(--color-poster)] [transform:rotate(-3deg)]">
+        {eyebrow ? <p className="mb-2 w-fit [font-family:var(--font-cadehandy2)] text-xl leading-none text-[var(--color-poster)]">
           {eyebrow}
-        </p>
-        <h2 className="mt-3 max-w-2xl font-[var(--font-display)] text-3xl leading-[0.95] tracking-[-0.03em] sm:text-4xl">
+        </p> : null}
+        <h2 className="max-w-2xl font-[var(--font-display)] text-2xl leading-tight sm:text-3xl">
           {title}
         </h2>
-        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-black/55">{detail}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/60">{detail}</p>
       </div>
       {actionHref && actionLabel ? (
         <Link
-          className="ui-heading inline-flex min-h-12 items-center justify-center rounded-[4px] border border-black bg-black px-5 py-3 text-[0.62rem] uppercase tracking-[0.16em] text-[var(--color-bone)] shadow-[4px_4px_0_var(--color-poster)] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-[var(--color-poster)] hover:shadow-[2px_2px_0_var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+          className={OPERATOR_PRIMARY_ACTION_CLASS}
           href={actionHref}
         >
           {actionLabel} →

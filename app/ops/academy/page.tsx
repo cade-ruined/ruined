@@ -19,7 +19,7 @@ export default async function OperationsAcademyPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
   if (context.state === "preview") {
-    return <OperatorAcademy academy={PREVIEW_OPS_ACADEMY} options={PREVIEW_OPS_ACADEMY_EDITOR.options} />;
+    return <OperatorAcademy academy={PREVIEW_OPS_ACADEMY} options={PREVIEW_OPS_ACADEMY_EDITOR.options} preview />;
   }
   if (!context.viewer || context.role !== "ops_admin") {
     return <PlatformUnavailable reason="operator_access" />;

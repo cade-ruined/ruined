@@ -47,9 +47,11 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
 export default function OperatorMemberRecord({
   profileSupport,
   record,
+  preview = false,
 }: {
   profileSupport?: OpsMemberProfileSupport | null;
   record: OpsMemberRecord;
+  preview?: boolean;
 }) {
   const { access, community, header, journey, membership, operational } = record;
   const canManageTasks = access.capabilities.includes("task.manage");
@@ -105,12 +107,20 @@ export default function OperatorMemberRecord({
               : header.nextDecision}
           </p>
           <p className="mt-5 text-sm text-white/48">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
-          {header.primaryEmail ? <p className="mt-2 text-sm text-white/40">{header.primaryEmail}</p> : null}
+          {header.primaryEmail ? <p className="mt-2 break-all text-sm text-white/55">{header.primaryEmail}</p> : null}
           <Link className="ui-heading mt-5 inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-bone)] px-4 text-sm font-semibold text-black transition-colors hover:bg-[var(--color-highlight)]" href={nextDecisionHref}>
             {nextDecisionLabel} →
           </Link>
         </div>
       </div>
+
+      {canManageTasks || canWriteNote || profileSupport ? (
+        <nav aria-label="Member actions" className="flex flex-wrap gap-x-6 gap-y-1 py-3 text-sm">
+          {canManageTasks ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#new-member-task">Create task</a> : null}
+          {canWriteNote ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#new-member-note">Add internal note</a> : null}
+          {profileSupport ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#profile-support">Correct profile detail</a> : null}
+        </nav>
+      ) : null}
 
       <nav
         aria-label="Member record sections"
@@ -194,7 +204,7 @@ export default function OperatorMemberRecord({
           </div>
         </div>
 
-        {profileSupport ? <OperatorProfileSupport memberId={header.memberId} profile={profileSupport} /> : null}
+        {profileSupport ? <OperatorProfileSupport memberId={header.memberId} profile={profileSupport} preview={preview} /> : null}
 
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
@@ -436,7 +446,15 @@ export default function OperatorMemberRecord({
           </div>
         </div>
 
-        <div className="mt-14">
+        {canManageTasks || canWriteNote || canOverride ? (
+          <section aria-label="Member record actions" className="mt-8 grid gap-6 lg:grid-cols-2">
+            {canManageTasks ? <div className="scroll-mt-36 rounded-[4px] bg-black/[0.025] p-5" id="new-member-task"><OperatorTaskCreateAction memberId={header.memberId} preview={preview} /></div> : null}
+            {canWriteNote ? <div className="scroll-mt-36 rounded-[4px] bg-black/[0.025] p-5" id="new-member-note"><OperatorNoteAction memberId={header.memberId} preview={preview} /></div> : null}
+            {canOverride ? <div className="rounded-[4px] bg-black/[0.025] p-5 lg:col-span-2"><OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} preview={preview} /></div> : null}
+          </section>
+        ) : null}
+
+        <div className="mt-10">
           <h3 className="ui-heading text-xl font-semibold">History</h3>
           <div className="mt-5 grid gap-2">
             {operational.history.map((event) => (
@@ -450,19 +468,6 @@ export default function OperatorMemberRecord({
           </div>
         </div>
 
-        {canManageTasks || canWriteNote || canOverride ? (
-          <details className="group mt-12 rounded-[4px] bg-[var(--color-surface)]">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
-              <span>Manage member record</span>
-              <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
-            </summary>
-            <div className="grid gap-12 border-t border-black/10 px-5 pb-6 pt-5 sm:px-6 lg:grid-cols-2">
-              {canManageTasks ? <OperatorTaskCreateAction memberId={header.memberId} /> : null}
-              {canWriteNote ? <OperatorNoteAction memberId={header.memberId} /> : null}
-              {canOverride ? <OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} /> : null}
-            </div>
-          </details>
-        ) : null}
       </section>
     </OperatorPageFrame>
   );

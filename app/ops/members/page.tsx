@@ -100,21 +100,19 @@ export default async function OperationsMembersPage({
   }
   if (!directory) return <PlatformUnavailable accessHref="/ops/access" />;
 
-  const actions = context.role === "ops_admin" && context.viewer
-    ? <OpsInvitationActions />
+  const actions = context.role === "ops_admin" && (context.state === "preview" || context.viewer)
+    ? <OpsInvitationActions preview={context.state === "preview"} />
     : undefined;
 
   return (
     <OperatorPageFrame title="Members">
+      {actions ? <nav aria-label="Member directory actions" className="mb-4 flex flex-wrap gap-4"><a className="ui-heading inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href="#allow-member-email">Allow member email</a></nav> : null}
       <OperatorMemberDirectory directory={directory} />
       {actions ? (
-        <details className="group mt-10 rounded-[4px] bg-[var(--color-surface)]">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
-            <span>Allow a member to join</span>
-            <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
-          </summary>
-          <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>
-        </details>
+        <section aria-labelledby="allow-member-email-heading" className="mt-8 scroll-mt-32 rounded-[4px] bg-[var(--color-surface)] p-5 sm:p-6" id="allow-member-email">
+          <h2 className="ui-heading mb-4 text-2xl font-semibold" id="allow-member-email-heading">Allow a member to join</h2>
+          {actions}
+        </section>
       ) : null}
     </OperatorPageFrame>
   );

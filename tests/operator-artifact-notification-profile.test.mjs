@@ -21,7 +21,7 @@ const [
   profileRepository,
   profileRoute,
   profileComponent,
-  shell,
+  navigation,
 ] = await Promise.all([
   source("db/migrations/20260828_operator_artifact_fulfillment.sql"),
   source("src/lib/platform/ops-artifact-repository.ts"),
@@ -37,7 +37,7 @@ const [
   source("src/lib/platform/ops-profile-repository.ts"),
   source("app/api/ops/members/[memberId]/profile/route.ts"),
   source("src/components/platform/OperatorProfileSupport.tsx"),
-  source("src/components/platform/PlatformShell.tsx"),
+  source("src/lib/platform/operations-navigation.ts"),
 ]);
 
 test("Artifact fulfillment keeps current shipment state and append-only evidence behind RLS", () => {
@@ -82,7 +82,7 @@ test("notification center sends only server-authorized, targeted in-app records 
   assert.match(notificationRoute, /requireOpsMutationRequest\(request\)/);
   assert.match(notificationPage, /context\.state === "signed_out"/);
   assert.match(notificationPage, /getOpsNotificationCenter/);
-  assert.match(shell, /href: "\/ops\/notifications"/);
+  assert.match(navigation, /href: "\/ops\/notifications"[^\n]*adminOnly: true/);
 });
 
 test("published communications can be aimed at everyone, one Circle, one Block, or one member", () => {
@@ -116,7 +116,7 @@ test("operator profile support is targeted, concurrency-safe, and audits private
   assert.match(profileRoute, /actorAuthUserId: access\.viewer\.authUserId/);
   assert.match(profileRoute, /optionalStringValue/);
   assert.match(profileRoute, /expectedVersion: requiredStringValue/);
-  assert.match(profileComponent, /directory sharing stays under member control/);
+  assert.match(profileComponent, /The member still controls directory sharing/);
   assert.match(profileComponent, /Object\.fromEntries/);
   assert.match(profileComponent, /Make a profile change before saving/);
   assert.match(profileComponent, /expectedVersion: profile\.version/);

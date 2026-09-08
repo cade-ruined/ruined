@@ -25,7 +25,8 @@ export default async function OperationsArtifactsPage() {
     return (
       <OperatorArtifactQueue
         artifacts={PREVIEW_OPS_ARTIFACTS}
-        controls={<OperatorArtifactAdmin artifacts={PREVIEW_OPS_ARTIFACTS} data={PREVIEW_OPS_ARTIFACT_CONTROLS} />}
+        controls={<OperatorArtifactAdmin artifacts={PREVIEW_OPS_ARTIFACTS} data={PREVIEW_OPS_ARTIFACT_CONTROLS} preview />}
+        preview
       />
     );
   }

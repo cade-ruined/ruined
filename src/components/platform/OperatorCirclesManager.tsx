@@ -24,7 +24,7 @@ async function request<T>(path: string, method: "POST" | "PATCH", body: Record<s
 
 export default function OperatorCirclesManager({
   initialCircles, initialAssignments, candidates, initialMemberId, initialCircleId,
-  memberQuery = "", candidateTotal, preview, children,
+  memberQuery = "", candidateTotal, candidatePage = 1, candidatePageCount = 1, pinnedMemberId, preview, children,
 }: {
   initialCircles: OpsCircleSummary[];
   initialAssignments: OpsCircleMemberAssignment[];
@@ -33,6 +33,9 @@ export default function OperatorCirclesManager({
   initialCircleId?: string;
   memberQuery?: string;
   candidateTotal: number;
+  candidatePage?: number;
+  candidatePageCount?: number;
+  pinnedMemberId?: string;
   preview: boolean;
   children?: ReactNode;
 }) {
@@ -41,7 +44,6 @@ export default function OperatorCirclesManager({
   const [assignments, setAssignments] = useState(initialAssignments);
   const memberCircle = initialAssignments.find((assignment) => assignment.memberId === initialMemberId)?.circleId;
   const [openCircleId, setOpenCircleId] = useState(initialCircles.some((circle) => circle.id === initialCircleId) ? initialCircleId : memberCircle);
-  const [selectedMemberId, setSelectedMemberId] = useState(initialMemberId ?? "");
   const [pending, setPending] = useState(false);
   const requestInFlight = useRef(false);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
@@ -51,12 +53,21 @@ export default function OperatorCirclesManager({
   useEffect(() => setCircles(initialCircles), [initialCircles]);
   useEffect(() => setAssignments(initialAssignments), [initialAssignments]);
 
-  const selectedMember = candidates.find((member) => member.memberId === selectedMemberId);
   const initialMember = candidates.find((member) => member.memberId === initialMemberId);
-  const eligibleMembers = candidates.filter((member) => !getCirclePlacementIssue(member) && !assignments.some((assignment) => assignment.memberId === member.memberId));
-  const selectedIssue = selectedMember ? getCirclePlacementIssue(selectedMember) : null;
-  const blockedMatches = candidates.filter((member) => member.memberId !== selectedMemberId && !member.circleName && getCirclePlacementIssue(member)).slice(0, 3);
+  function placementIssue(member: OperatorMemberSummary) {
+    const assignment = assignments.find((item) => item.memberId === member.memberId);
+    if (assignment) return `Already in ${circles.find((item) => item.id === assignment.circleId)?.name ?? member.circleName ?? "a Circle"}.`;
+    if (member.membershipState && member.membershipState !== "active") return `Membership is ${member.membershipState.replaceAll("_", " ")}. Review membership before adding this person.`;
+    return getCirclePlacementIssue(member);
+  }
+  const eligibleMembers = candidates.filter((member) => !placementIssue(member));
   const available = (circle: OpsCircleSummary) => (circle.status === "forming" || circle.status === "active") && circle.activeMembers < circle.capacity;
+  function searchHref(circleId: string, page = 1, query = memberQuery) {
+    const params = new URLSearchParams({ circleId });
+    if (query) params.set("memberQuery", query);
+    if (page > 1) params.set("memberPage", String(page));
+    return `/ops/circles?${params.toString()}#member-search-${circleId}`;
+  }
 
   function notice(key: string) {
     const item = notices[key];
@@ -85,9 +96,9 @@ export default function OperatorCirclesManager({
     }
   }
 
-  async function addMember(event: FormEvent<HTMLFormElement>, circle: OpsCircleSummary) {
+  async function addMember(event: FormEvent<HTMLFormElement>, circle: OpsCircleSummary, memberId: string) {
     event.preventDefault();
-    const member = eligibleMembers.find((candidate) => candidate.memberId === selectedMemberId);
+    const member = eligibleMembers.find((candidate) => candidate.memberId === memberId);
     if (!member || !available(circle)) return;
     await change(circle.id, async () => {
       const result = await request<{ assignment: { created: boolean; id: string; assignedAt: string; memberId: string; circleId: string } }>("/api/ops/circle-assignments", "POST", { memberId: member.memberId, circleId: circle.id });
@@ -102,7 +113,6 @@ export default function OperatorCirclesManager({
         accountState: member.accountState, billingState: member.billingState, programState: member.programState,
       }]);
       if (result.assignment.created) setCircles((current) => current.map((item) => item.id === circle.id ? { ...item, activeMembers: item.activeMembers + 1 } : item));
-      setSelectedMemberId("");
       return `${member.name} ${result.assignment.created ? "added to" : "is already in"} ${circle.name}.${circle.status === "forming" ? " Activate this Circle when it is ready." : ""} Review affected Experiences and sync their invitations.`;
     });
   }
@@ -191,24 +201,33 @@ export default function OperatorCirclesManager({
                       <button type="button" className={`${SECONDARY} shrink-0 text-[var(--color-poster)]`} disabled={pending} aria-label={`Remove ${member.name} from ${circle.name}`} onClick={() => setConfirmation({ kind: "remove", circleId: circle.id, memberId: member.memberId, assignmentId: member.assignmentId })}>Remove</button>
                     </div>{confirmPanel(circle, member)}</li>)}</ul> : <p className="text-sm text-black/60">No members yet. Add the first person here.</p>}
                   </div>
-                  <div><h3 className="mb-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Add a member</span></h3>
+                  <div id={`member-search-${circle.id}`} className="scroll-mt-28"><h3 className="mb-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Add a member</span></h3>
                     {available(circle) ? <>
-                      <form action="/ops/circles#assign-member" method="get" className="mb-4 flex flex-wrap gap-2">
+                      <form action={`/ops/circles#member-search-${circle.id}`} method="get" className="mb-4 flex flex-wrap gap-2">
                         <input type="hidden" name="circleId" value={circle.id} />
                         <label className="min-w-0 flex-1"><span className="sr-only">Find a member for {circle.name}</span><input className={OPERATOR_FIELD_CLASS} defaultValue={memberQuery} name="memberQuery" placeholder="Search name or email" type="search" maxLength={120} disabled={pending} /></label>
                         <button className={SECONDARY} type="submit" disabled={pending}>Search</button>
                       </form>
-                      <form onSubmit={(event) => addMember(event, circle)} className="grid gap-3">
-                        <label><span className="sr-only">Member to add to {circle.name}</span><select className={OPERATOR_FIELD_CLASS} value={selectedMember?.memberId ?? ""} onChange={(event) => setSelectedMemberId(event.target.value)} disabled={pending || !eligibleMembers.length} required aria-describedby={`member-help-${circle.id}`}>
-                          <option value="" disabled>Choose member</option>
-                          {selectedMember && !eligibleMembers.some((member) => member.memberId === selectedMember.memberId) ? <option value={selectedMember.memberId} disabled>{selectedMember.name} · not available</option> : null}
-                          {eligibleMembers.map((member) => <option key={member.memberId} value={member.memberId}>{member.name} · {member.email}</option>)}
-                        </select></label>
-                        <p id={`member-help-${circle.id}`} className="text-xs leading-relaxed text-black/60">{selectedIssue ?? (!eligibleMembers.length ? "No eligible members in these results. Search for another person or review their membership." : candidateTotal > candidates.length ? "Search by name or email to find people beyond these first results." : "Only unassigned members with an active account, active billing, and an onboarding or active program can be added.")}</p>
-                        {selectedMember && selectedIssue ? <Link className="text-sm underline underline-offset-4" href={`/ops/members/${encodeURIComponent(selectedMember.memberId)}#membership`}>Review {selectedMember.name}’s membership →</Link> : null}
-                        <button className={`${BUTTON} w-fit`} type="submit" disabled={pending || !eligibleMembers.some((member) => member.memberId === selectedMemberId)}>Add to {circle.name}</button>
-                      </form>
-                      {(memberQuery || !eligibleMembers.length) && blockedMatches.length ? <ul aria-label="Members needing attention before placement" className="mt-4 grid gap-3">{blockedMatches.map((member) => <li className="text-xs leading-relaxed text-black/60" key={member.memberId}><Link className="text-sm font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>{member.name} — review membership</Link><p className="mt-1">{getCirclePlacementIssue(member)}</p></li>)}</ul> : null}
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-black/60">
+                        <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members ready for placement"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
+                        {memberQuery ? <Link className="underline underline-offset-4" href={searchHref(circle.id, 1, "")}>Clear search</Link> : null}
+                      </div>
+                      <ul aria-label={`Member results for ${circle.name}`} className="grid gap-3">
+                        {candidates.map((member) => {
+                          const issue = placementIssue(member);
+                          const assignment = assignments.find((item) => item.memberId === member.memberId);
+                          return <li key={member.memberId} className="rounded-[4px] bg-white/30 p-3">
+                            {member.memberId === pinnedMemberId ? <p className="mb-2 text-xs font-semibold text-black/60">Selected from member profile</p> : null}
+                            <form aria-label={`Add ${member.name} to ${circle.name}`} data-member-id={member.memberId} onSubmit={(event) => addMember(event, circle, member.memberId)} className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0 flex-1"><Link className="text-sm font-semibold underline decoration-black/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="break-all text-xs text-black/55">{member.email}</p></div>
+                              <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : "Add to Circle"}</button>
+                            </form>
+                            {issue ? <div className="mt-2 text-xs leading-relaxed text-black/60"><p>{issue}</p>{assignment ? assignment.circleId !== circle.id ? <Link className="mt-1 inline-flex min-h-9 items-center font-semibold underline underline-offset-4" href={searchHref(assignment.circleId)}>Open their Circle →</Link> : null : <Link className="mt-1 inline-flex min-h-9 items-center font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership →</Link>}</div> : null}
+                          </li>;
+                        })}
+                      </ul>
+                      {!candidates.length ? <p className="py-2 text-sm leading-relaxed text-black/60">{memberQuery ? "No members match this search. Try their name or email, or check the member directory." : "No members are ready to add here. Search by name to check someone’s status, or allow a new member email."} <Link className="inline-flex min-h-9 items-center font-semibold underline underline-offset-4" href="/ops/members">Go to Members →</Link></p> : null}
+                      {candidatePageCount > 1 ? <nav aria-label={`Member result pages for ${circle.name}`} className="mt-4 flex items-center justify-between gap-3 text-sm"><span>Page {candidatePage} of {candidatePageCount}</span><div className="flex gap-3">{candidatePage > 1 ? <Link className={SECONDARY} href={searchHref(circle.id, candidatePage - 1)}>Previous members</Link> : null}{candidatePage < candidatePageCount ? <Link className={SECONDARY} href={searchHref(circle.id, candidatePage + 1)}>Next members</Link> : null}</div></nav> : candidateTotal > candidates.length ? <p className="mt-3 text-xs text-black/60">Search by name or email to find people beyond these first results.</p> : null}
                     </> : <p className="text-sm text-black/60">{circle.activeMembers >= circle.capacity ? "This Circle is full. Remove a member only if their placement should end, or create another Circle below." : "This Circle is closed to new members."}</p>}
                   </div>
                 </div>

@@ -76,21 +76,26 @@ function profileAddress(profile: OpsMemberProfileSupport): string {
 export default function OperatorProfileSupport({
   memberId,
   profile,
+  preview = false,
 }: {
   memberId: string;
   profile: OpsMemberProfileSupport;
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [field, setField] = useState<CorrectionField>("preferredName");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [failed, setFailed] = useState(false);
   const values = profileValues(profile);
   const fieldLabel = CORRECTION_FIELDS.find(([value]) => value === field)?.[1] ?? "Detail";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview — profile details are not changed."); return; }
     setSubmitting(true);
     setMessage("");
+    setFailed(false);
     const data = new FormData(event.currentTarget);
     const nextValue = String(data.get("value") ?? "").trim();
     if (nextValue === values[field]) {
@@ -101,35 +106,35 @@ export default function OperatorProfileSupport({
     const changes = Object.fromEntries([
       [field, field === "countryCode" ? nextValue.toUpperCase() : nextValue],
     ]);
-    const response = await fetch(`/api/ops/members/${memberId}/profile`, {
-      body: JSON.stringify({
-        ...changes,
-        expectedVersion: profile.version,
-        reason: String(data.get("reason") ?? ""),
-      }),
-      headers: { "Content-Type": "application/json" },
-      method: "PATCH",
-    });
-    const result = (await response.json().catch(() => null)) as { error?: unknown } | null;
-    if (!response.ok) {
-      setMessage(typeof result?.error === "string" ? result.error : "The profile could not be updated.");
+    try {
+      const response = await fetch(`/api/ops/members/${memberId}/profile`, {
+        body: JSON.stringify({
+          ...changes,
+          expectedVersion: profile.version,
+          reason: String(data.get("reason") ?? ""),
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      const result = (await response.json().catch(() => null)) as { error?: unknown } | null;
+      if (!response.ok) throw new Error(typeof result?.error === "string" ? result.error : "The profile could not be updated.");
+      setMessage(`${fieldLabel} corrected and recorded.`);
+      router.refresh();
+    } catch (error) {
+      setFailed(true);
+      setMessage(error instanceof Error ? error.message : "The profile update could not be confirmed. Your correction is still here.");
+    } finally {
       setSubmitting(false);
-      return;
     }
-    setMessage(`${fieldLabel} corrected and recorded.`);
-    setSubmitting(false);
-    router.refresh();
   }
 
   return (
-    <details className="group mt-3 rounded-[4px] bg-black/[0.025]">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-6 px-5 py-5 marker:hidden sm:px-6">
-        <span>
-          <strong className="ui-heading block text-xl font-semibold">Profile support</strong>
-          <span className="mt-1 block text-xs text-black/42">Administrator only · directory sharing stays under member control · correct one verified detail at a time</span>
-        </span>
-        <span aria-hidden="true" className="text-xl transition-transform group-open:rotate-45">＋</span>
-      </summary>
+    <section aria-labelledby="profile-support-heading" className="mt-3 scroll-mt-36 rounded-[4px] bg-black/[0.025]" id="profile-support">
+      <header className="px-5 py-5 sm:px-6">
+        <h3 className="ui-heading text-xl font-semibold" id="profile-support-heading">Profile support</h3>
+        <p className="mt-2 text-sm text-black/60">Correct one verified detail and record why. The member still controls directory sharing.</p>
+        {preview ? <p className="mt-2 text-sm text-black/60">Preview — profile details are not changed.</p> : null}
+      </header>
       <div className="px-5 pb-6 sm:px-6">
         <dl className="grid gap-3 rounded-[4px] bg-black/[0.035] p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
           {[
@@ -145,7 +150,8 @@ export default function OperatorProfileSupport({
           ))}
         </dl>
 
-        <form className="mt-6 grid gap-5 sm:grid-cols-2" onSubmit={submit}>
+        <form className="mt-6" onSubmit={submit}>
+          <fieldset className="grid gap-5 sm:grid-cols-2" disabled={submitting}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Detail to correct</span>
             <select
@@ -191,13 +197,17 @@ export default function OperatorProfileSupport({
             <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} maxLength={1000} minLength={3} name="reason" required />
           </label>
           <div className="flex flex-wrap items-center justify-between gap-4 sm:col-span-2">
-            <span aria-live="polite" className="text-sm text-black/48">{message}</span>
-            <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={submitting} type="submit">
+            <div className={`text-sm ${failed ? "text-[var(--color-poster)]" : "text-black/60"}`} role={failed ? "alert" : "status"}>
+              <p>{message}</p>
+              {failed ? <button className="mt-2 min-h-11 underline underline-offset-4" onClick={() => router.refresh()} type="button">Reload saved profile before retrying</button> : null}
+            </div>
+            <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} type="submit">
               {submitting ? "Saving" : `Correct ${fieldLabel}`}
             </button>
           </div>
+          </fieldset>
         </form>
       </div>
-    </details>
+    </section>
   );
 }

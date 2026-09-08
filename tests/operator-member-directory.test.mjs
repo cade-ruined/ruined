@@ -57,7 +57,8 @@ test("the Members page owns URL-backed search while preserving access and admin 
     membersPage,
     /getOperatorMemberDirectoryPage\(context\.viewer\.authUserId, input\)/,
   );
-  assert.match(membersPage, /context\.role === "ops_admin" && context\.viewer/);
+  assert.match(membersPage, /context\.role === "ops_admin" && \(context\.state === "preview" \|\| context\.viewer\)/);
+  assert.match(membersPage, /OpsInvitationActions preview=\{context\.state === "preview"\}/);
   assert.match(membersPage, /context\.state === "preview"[\s\S]*previewDirectory/);
   assert.match(membersPage, /<OperatorMemberDirectory directory=\{directory\}/);
 });

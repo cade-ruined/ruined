@@ -28,12 +28,13 @@ export const dynamic = "force-dynamic";
 export default async function OperationsCirclesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ memberId?: string | string[]; circleId?: string | string[]; memberQuery?: string | string[] }>;
+  searchParams: Promise<{ memberId?: string | string[]; circleId?: string | string[]; memberQuery?: string | string[]; memberPage?: string | string[] }>;
 }) {
   const parameters = await searchParams;
   const initialMemberId = typeof parameters.memberId === "string" ? parameters.memberId : undefined;
   const initialCircleId = typeof parameters.circleId === "string" ? parameters.circleId : undefined;
   const memberQuery = typeof parameters.memberQuery === "string" ? parameters.memberQuery.trim().slice(0, 120) : "";
+  const requestedMemberPage = typeof parameters.memberPage === "string" ? Number(parameters.memberPage) : 1;
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
@@ -43,6 +44,9 @@ export default async function OperationsCirclesPage({
   let managementOptions: OpsCircleManagementOptions | undefined;
   let placementMembers = context.dashboard.members;
   let candidateTotal = context.dashboard.unassignedMembers;
+  let candidatePage = 1;
+  let candidatePageCount = 1;
+  let pinnedMemberId: string | undefined;
   let assignments: OpsCircleMemberAssignment[] | undefined;
   let communicationCircles: OpsCircleCommunicationItem[] | undefined =
     context.state === "preview" ? PREVIEW_OPS_CIRCLE_COMMUNICATIONS : undefined;
@@ -54,8 +58,13 @@ export default async function OperationsCirclesPage({
       ...member, assignmentId: `preview-assignment-${member.memberId}`, assignedAt: "2026-08-01T00:00:00.000Z", circleId: circle.id,
     })));
     circles = circles.map((circle) => ({ ...circle, activeMembers: assignments!.filter((assignment) => assignment.circleId === circle.id).length }));
-    placementMembers = context.dashboard.members.filter((member) => member.memberId === initialMemberId || (!member.circleName && `${member.name} ${member.email}`.toLowerCase().includes(memberQuery.toLowerCase())));
+    placementMembers = context.dashboard.members.filter((member) => memberQuery ? `${member.name} ${member.email}`.toLowerCase().includes(memberQuery.toLowerCase()) : !member.circleName);
     candidateTotal = placementMembers.length;
+    const selectedMember = context.dashboard.members.find((member) => member.memberId === initialMemberId);
+    if (selectedMember && !placementMembers.some((member) => member.memberId === selectedMember.memberId)) {
+      placementMembers = [...placementMembers, selectedMember];
+      pinnedMemberId = selectedMember.memberId;
+    }
   }
   if (context.role === "ops_admin" && context.viewer) {
     try {
@@ -63,7 +72,8 @@ export default async function OperationsCirclesPage({
         getOpsCircleSummaries(context.viewer.authUserId),
         getOpsCircleManagementOptions(context.viewer.authUserId),
         getOpsCircleMemberAssignments(context.viewer.authUserId),
-        getOperatorMemberDirectoryPage(context.viewer.authUserId, { filter: "unassigned", query: memberQuery }),
+        // Search should find people, not silently hide them because they need setup or already have a Circle.
+        getOperatorMemberDirectoryPage(context.viewer.authUserId, { filter: memberQuery ? "all" : "unassigned", query: memberQuery, page: requestedMemberPage }),
       ]);
       if (!directory) throw new Error("Member directory unavailable");
       circles = circleRows;
@@ -71,10 +81,15 @@ export default async function OperationsCirclesPage({
       assignments = roster;
       placementMembers = directory.members;
       candidateTotal = directory.totalResults;
+      candidatePage = directory.page;
+      candidatePageCount = directory.pageCount;
       if (initialMemberId && !placementMembers.some((member) => member.memberId === initialMemberId)) {
         const selectedDirectory = await getOperatorMemberDirectoryPage(context.viewer.authUserId, { memberId: initialMemberId });
         const selectedMember = selectedDirectory?.members.find((member) => member.memberId === initialMemberId);
-        if (selectedMember) placementMembers = [...placementMembers, selectedMember];
+        if (selectedMember) {
+          placementMembers = [...placementMembers, selectedMember];
+          pinnedMemberId = selectedMember.memberId;
+        }
       }
     } catch (error) {
       circles = undefined;
@@ -106,6 +121,9 @@ export default async function OperationsCirclesPage({
         initialAssignments={assignments}
         candidates={placementMembers}
         candidateTotal={candidateTotal}
+        candidatePage={candidatePage}
+        candidatePageCount={candidatePageCount}
+        pinnedMemberId={pinnedMemberId}
         initialMemberId={initialMemberId}
         initialCircleId={initialCircleId}
         memberQuery={memberQuery}

@@ -69,10 +69,11 @@ test("operator navigation and member records avoid stacked utility rails and div
   assert.match(siteHeader, /isAuth \|\| isOperations/);
   assert.match(shell, /aria-label="Ruined Operations overview"/);
   assert.match(shell, /Return to website/);
-  assert.match(shell, /xl:flex/);
+  assert.match(shell, /aria-label="Operations sections" className="flex flex-wrap/);
   assert.doesNotMatch(shell, /fixed bottom-0 left-0|lg:pl-64/);
   assert.doesNotMatch(shell, /className=\{`border-b font-\[var\(--font-body\)\]/);
   assert.doesNotMatch(memberRecord, /divide-y|border-y/);
   assert.doesNotMatch(memberRecord, /uppercase tracking-\[0\.1/);
-  assert.match(memberRecord, /Manage member record/);
+  assert.match(memberRecord, /Member record actions/);
+  assert.doesNotMatch(memberRecord, /<details/);
 });

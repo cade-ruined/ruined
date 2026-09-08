@@ -17,7 +17,7 @@ export default async function OperationsAnnouncementsPage() {
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
   if (context.state === "preview") {
-    return <OperatorAnnouncements announcements={PREVIEW_OPS_ANNOUNCEMENTS} audienceOptions={{ blocks: [], circles: [], members: [] }} canManage />;
+    return <OperatorAnnouncements announcements={PREVIEW_OPS_ANNOUNCEMENTS} audienceOptions={{ blocks: [], circles: [], members: [] }} canManage preview />;
   }
   if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
 

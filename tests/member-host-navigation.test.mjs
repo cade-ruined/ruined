@@ -93,7 +93,7 @@ test("website exits use public destinations while membership and operator naviga
   assert.match(header, /href=\{SITE_ROUTES\.my\.href\}/);
   assert.match(footer, /href=\{publicWebsiteHref\("\/contact"\)\}/);
   assert.match(footer, /href=\{publicWebsiteHref\(href\)\}/);
-  assert.equal(platform.match(/href=\{publicWebsiteHref\("\/"\)\}/g)?.length, 2);
-  assert.match(platform, /href="\/access"/);
+  assert.equal(platform.match(/href=\{publicWebsiteHref\("\/"\)\}/g)?.length, 1);
+  assert.match(platform, /href="\/my">My profile/);
   assert.match(platform, /href=\{item\.href\}/);
 });

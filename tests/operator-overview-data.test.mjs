@@ -129,8 +129,9 @@ test("Overview decisions link to member filters with the same eligibility rules"
     assert.match(overview, condition);
     assert.match(memberRepository, condition);
   }
-  assert.match(overview, /circle_state <> 'active'/);
-  assert.match(memberRepository, /circle\.status <> 'active'/);
+  assert.match(overview, /and circle_id is null\s*\) as eligible_without_circle/);
+  assert.match(memberRepository, /and active_circle\.circle_id is null/);
+  assert.doesNotMatch(overview, /circle_state <> 'active'/);
 });
 
 test("Overview authorizes directly and only offers Circle placement to admins", () => {

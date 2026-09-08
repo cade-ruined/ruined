@@ -33,6 +33,7 @@ export default async function OperationsMemberRecordPage({
       <OperatorMemberRecord
         profileSupport={getPreviewOpsMemberProfileSupport(memberId)}
         record={getPreviewOpsMemberRecord(memberId)}
+        preview
       />
     );
   }

@@ -302,7 +302,7 @@ function circlePageFixture(overrides = {}) {
   } };
 }
 
-test("Circle route passes exact roster IDs and bounded unassigned search into the new manager", async () => {
+test("Circle route passes exact roster IDs and searches all member states so unavailable matches remain explainable", async () => {
   const fixture = circlePageFixture({ totalResults: 33 });
   const { manager } = await fixture.draw({ memberId: member.memberId, circleId: circle.id, memberQuery: "  Example  " });
   assert.ok(manager);
@@ -316,7 +316,7 @@ test("Circle route passes exact roster IDs and bounded unassigned search into th
   assert.equal(manager.props.memberQuery, "Example");
   assert.equal(manager.props.preview, false);
   assert.equal(manager.key, `${member.memberId}:${circle.id}:Example`);
-  assert.deepEqual(fixture.reads.find(({ name }) => name === "directory").input, { filter: "unassigned", query: "Example" });
+  assert.deepEqual(fixture.reads.find(({ name }) => name === "directory").input, { filter: "all", query: "Example", page: 1 });
   assert.equal(fixture.reads.some(({ name }) => name === "selected-member"), false, "an already-loaded exact member is not fetched twice");
 });
 
@@ -342,11 +342,12 @@ test("Circle route resolves a selected member outside the candidate page without
   const fixture = circlePageFixture({ dashboard: absentDashboard, candidates, totalResults: 75 });
   let { manager } = await fixture.draw({ memberId: member.memberId });
   assert.deepEqual(fixture.reads.filter(({ name }) => name === "directory" || name === "selected-member").map(({ input }) => input), [
-    { filter: "unassigned", query: "" }, { memberId: member.memberId },
+    { filter: "unassigned", query: "", page: 1 }, { memberId: member.memberId },
   ]);
   assert.equal(manager.props.candidates.length, 26);
   assert.deepEqual(manager.props.candidates.at(-1), member);
   assert.equal(manager.props.candidateTotal, 75, "targeted merge does not alter the server's candidate total");
+  assert.equal(manager.props.pinnedMemberId, member.memberId, "the extra selected person is labeled separately from search matches");
   assert.equal(candidates.length, 25);
   assert.equal(absentDashboard.members.length, 100);
   fixture.state.selectedMembers = [{ ...member, accountState: "suspended", programState: "paused" }];

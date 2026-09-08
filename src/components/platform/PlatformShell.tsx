@@ -3,63 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import MemberNavigationFab from "@/components/platform/MemberNavigationFab";
-import { keepFocusInside } from "@/lib/accessibility/focus";
 import type { PlatformConfiguration } from "@/lib/platform/config";
+import {
+  getOperationsLocation,
+  getOperationsNavigation,
+  isOperationsPathCurrent,
+  type OperatorNavigationRole,
+} from "@/lib/platform/operations-navigation";
 import { publicWebsiteHref } from "@/lib/site";
 
 type PlatformSurface = "member" | "ops";
-
-type OperatorNavigationRole = "circle_leader" | "guide" | "ops_admin";
-
-type OperationsNavigationGroup = {
-  adminOnly: boolean;
-  items: Array<{ href: string; label: string }>;
-  label: string;
-};
-
-const OPERATIONS_NAVIGATION: OperationsNavigationGroup[] = [
-  {
-    adminOnly: false,
-    label: "Daily work",
-    items: [
-      { href: "/ops", label: "Overview" },
-      { href: "/ops/members", label: "Members" },
-      { href: "/ops/circles", label: "Circles" },
-      { href: "/ops/foundations", label: "Foundations" },
-      { href: "/ops/experiences", label: "Experiences" },
-      { href: "/ops/work", label: "Work" },
-    ],
-  },
-  {
-    adminOnly: true,
-    label: "Manage",
-    items: [
-      { href: "/ops/support", label: "Support" },
-      { href: "/ops/academy", label: "Academy" },
-      { href: "/ops/blocks", label: "Blocks" },
-      { href: "/ops/artifacts", label: "Artifacts" },
-      { href: "/ops/announcements", label: "Announcements" },
-      { href: "/ops/notifications", label: "Notifications" },
-    ],
-  },
-  {
-    adminOnly: true,
-    label: "Administration",
-    items: [
-      { href: "/ops/operators", label: "Operators" },
-      { href: "/ops/system", label: "System" },
-    ],
-  },
-];
-
-function isCurrentPath(pathname: string, href: string): boolean {
-  if (pathname === href) return true;
-  if (href === "/ops") return false;
-  return pathname.startsWith(`${href}/`);
-}
 
 function ConnectionMark({
   label,
@@ -172,7 +128,7 @@ function PlatformUtilityRail({
   );
 }
 
-function OperationsNavigation({
+export function OperationsNavigation({
   configuration,
   operatorRole,
   pathname,
@@ -183,60 +139,32 @@ function OperationsNavigation({
   pathname: string;
   viewerLabel?: string | null;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [desktopMenu, setDesktopMenu] = useState<string | null>(null);
-  const desktopHeaderRef = useRef<HTMLElement>(null);
-  const desktopTriggerRef = useRef<HTMLButtonElement>(null);
-  const mobileCloseRef = useRef<HTMLButtonElement>(null);
-  const mobileDialogRef = useRef<HTMLElement>(null);
-  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+  const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const preview = configuration.mode === "preview";
-  const groups = OPERATIONS_NAVIGATION.filter((group) => !group.adminOnly || operatorRole === "ops_admin");
-  const primaryGroup = groups.find((group) => group.label === "Daily work");
-  const secondaryGroups = groups.filter((group) => group.label !== "Daily work");
-  const activeItem = groups
-    .flatMap((group) => group.items)
-    .find((item) => isCurrentPath(pathname, item.href));
+  const groups = getOperationsNavigation(operatorRole);
+  const location = getOperationsLocation(pathname, groups);
 
-  const closeMobileNavigation = useCallback(() => {
-    setMobileOpen(false);
-    window.setTimeout(() => mobileTriggerRef.current?.focus(), 0);
-  }, []);
+  function showNavigation() {
+    // Header destinations start above the page content. Next's default focus
+    // can scroll the focusable main past these rails, even from the page top.
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }
 
   useEffect(() => {
-    setMobileOpen(false);
-    setDesktopMenu(null);
-  }, [pathname]);
+    setAccountOpen(false);
+  }, [operatorRole, pathname]);
 
   useEffect(() => {
-    if (!mobileOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const timeout = window.setTimeout(() => mobileCloseRef.current?.focus(), 0);
-    const manageDialogKeyboard = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeMobileNavigation();
-        return;
-      }
-      keepFocusInside(event, mobileDialogRef.current);
-    };
-    document.addEventListener("keydown", manageDialogKeyboard);
-    return () => {
-      window.clearTimeout(timeout);
-      document.removeEventListener("keydown", manageDialogKeyboard);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [closeMobileNavigation, mobileOpen]);
-
-  useEffect(() => {
-    if (!desktopMenu) return;
+    if (!accountOpen) return;
     const closeOnOutsidePress = (event: PointerEvent) => {
-      if (!desktopHeaderRef.current?.contains(event.target as Node)) setDesktopMenu(null);
+      if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setDesktopMenu(null);
-      window.setTimeout(() => desktopTriggerRef.current?.focus(), 0);
+      setAccountOpen(false);
+      accountTriggerRef.current?.focus();
     };
     document.addEventListener("pointerdown", closeOnOutsidePress);
     document.addEventListener("keydown", closeOnEscape);
@@ -244,248 +172,76 @@ function OperationsNavigation({
       document.removeEventListener("pointerdown", closeOnOutsidePress);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [desktopMenu]);
-
-  const mobileNavigation = (
-    <nav aria-label="Operations" className="space-y-7">
-      {groups.map((group) => (
-        <section aria-labelledby={`ops-nav-mobile-${group.label.replaceAll(" ", "-")}`} key={group.label}>
-          <h2
-            className="px-3 font-cadehandy2 text-xl leading-none text-[var(--color-poster)]"
-            id={`ops-nav-mobile-${group.label.replaceAll(" ", "-")}`}
-          >
-            {group.label}
-          </h2>
-          <div className="mt-2 space-y-1">
-            {group.items.map((item) => {
-              const current = isCurrentPath(pathname, item.href);
-              return (
-                <Link
-                  aria-current={current ? "page" : undefined}
-                  className={`flex min-h-11 items-center rounded-[4px] border-l-2 px-3 text-sm font-medium transition-colors ${
-                    current
-                      ? "border-[var(--color-poster)] bg-[var(--color-bone)] text-[#171310]"
-                      : "border-transparent text-white/48 hover:bg-white/[0.045] hover:text-white/82"
-                  }`}
-                  href={item.href}
-                  key={item.href}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </nav>
-  );
-
-  const desktopLinkClass = (current: boolean) =>
-    `relative inline-flex min-h-[var(--ruined-header-height)] items-center px-2 text-[0.72rem] font-medium transition-colors after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:transition-colors ${
-      current
-        ? "text-white after:bg-[var(--color-poster)]"
-        : "text-white/48 after:bg-transparent hover:text-white/85"
-    }`;
-
-  const toggleDesktopMenu = (label: string, trigger: HTMLButtonElement) => {
-    desktopTriggerRef.current = trigger;
-    setDesktopMenu((open) => (open === label ? null : label));
-  };
+  }, [accountOpen]);
 
   return (
     <>
-      <header
-        className="fixed inset-x-0 top-0 z-[90] border-b border-white/12 bg-[#080605] font-[var(--font-body)] text-white shadow-[0_8px_28px_rgba(0,0,0,0.18)]"
-        ref={desktopHeaderRef}
-      >
-        <div className="mx-auto flex min-h-[var(--ruined-header-height)] max-w-[100rem] items-stretch px-4 sm:px-6 xl:px-8">
-          <Link
-            aria-label="Ruined Operations overview"
-            className="flex shrink-0 items-center gap-3 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--color-poster)]"
-            href="/ops"
-          >
-            <Image
-              alt="Ruined"
-              className="h-7 w-auto brightness-0 invert"
-              draggable={false}
-              height={300}
-              priority
-              src="/ruined-wordmark.svg"
-              width={1000}
-            />
-            <span aria-hidden="true" className="h-5 w-px bg-white/20" />
-            <span className="text-[0.73rem] font-medium text-white/62">Operations</span>
+      <header className="fixed inset-x-0 top-0 z-[90] bg-[#080605] font-[var(--font-body)] text-white">
+        <a className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-10 focus:rounded-[4px] focus:bg-[var(--color-signal)] focus:px-4 focus:py-3 focus:text-black" href="#operator-content">Skip to page content</a>
+        <div className="mx-auto flex min-h-[var(--ruined-header-height)] max-w-[100rem] items-center justify-between gap-3 px-4 sm:px-6 lg:px-10">
+          <Link aria-label="Ruined Operations overview" className="flex shrink-0 items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]" href="/ops" scroll={false} onNavigate={showNavigation}>
+            <Image alt="Ruined" className="h-6 w-auto brightness-0 invert sm:h-7" draggable={false} height={300} priority src="/ruined-wordmark.svg" width={1000} />
+            <span className="[font-family:var(--font-cadehandy2)] text-xl text-white/75 sm:text-2xl">Operations</span>
           </Link>
-
-          <nav aria-label="Operations" className="ml-7 hidden min-w-0 flex-1 items-stretch justify-center gap-1 xl:flex">
-            {primaryGroup?.items.map((item) => {
-              const current = isCurrentPath(pathname, item.href);
-              return (
-                <Link
-                  aria-current={current ? "page" : undefined}
-                  className={desktopLinkClass(current)}
-                  href={item.href}
-                  key={item.href}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-
-            {secondaryGroups.map((group) => {
-              const current = group.items.some((item) => isCurrentPath(pathname, item.href));
-              const open = desktopMenu === group.label;
-              const menuId = `ops-desktop-${group.label.toLowerCase()}`;
-              return (
-                <div className="relative flex" key={group.label}>
-                  <button
-                    aria-controls={menuId}
-                    aria-expanded={open}
-                    aria-haspopup="menu"
-                    className={`${desktopLinkClass(current)} gap-1.5`}
-                    onClick={(event) => toggleDesktopMenu(group.label, event.currentTarget)}
-                    type="button"
-                  >
-                    {group.label === "Administration" ? "Admin" : group.label}
-                    <span aria-hidden="true" className={`text-[0.55rem] transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
-                  </button>
-                  {open ? (
-                    <div
-                      className="absolute right-0 top-[calc(100%-0.35rem)] z-20 min-w-56 rounded-[4px] bg-[var(--color-bone)] p-2 text-[#171310] shadow-[5px_5px_0_var(--color-poster)]"
-                      id={menuId}
-                      role="menu"
-                    >
-                      {group.items.map((item) => {
-                        const itemCurrent = isCurrentPath(pathname, item.href);
-                        return (
-                          <Link
-                            aria-current={itemCurrent ? "page" : undefined}
-                            className={`flex min-h-11 items-center rounded-[3px] px-3 text-sm transition-colors ${
-                              itemCurrent
-                                ? "bg-[#171310] text-white"
-                                : "hover:bg-black/[0.06]"
-                            }`}
-                            href={item.href}
-                            key={item.href}
-                            role="menuitem"
-                          >
-                            {item.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </nav>
-
-          <div className="ml-auto hidden shrink-0 items-stretch pl-4 xl:flex">
+          <div className="relative min-w-0" ref={accountRef}>
             <button
-              aria-controls="ops-desktop-account"
-              aria-expanded={desktopMenu === "Account"}
-              aria-haspopup="menu"
-              className="flex min-h-[var(--ruined-header-height)] max-w-52 items-center gap-2.5 px-2 text-left text-xs text-white/50 transition-colors hover:text-white/85"
-              onClick={(event) => toggleDesktopMenu("Account", event.currentTarget)}
+              aria-controls="ops-account"
+              aria-expanded={accountOpen}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[4px] px-2 text-sm text-white/75 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+              onClick={() => setAccountOpen((open) => !open)}
+              ref={accountTriggerRef}
               type="button"
             >
-              <span aria-hidden="true" className={`size-2 ${configuration.mode === "connected" ? "bg-[var(--color-verdigris)]" : "bg-[var(--color-poster)]"}`} />
-              <span className="max-w-36 truncate">{viewerLabel ?? "Operator"}</span>
+              <span className="hidden max-w-48 truncate lg:block">{viewerLabel ?? "Operator"}</span>
+              <span>Account</span>
+              <span aria-hidden="true" className={accountOpen ? "rotate-180" : undefined}>⌄</span>
             </button>
-            {desktopMenu === "Account" ? (
-              <div
-                className="absolute right-8 top-[calc(100%-0.35rem)] z-20 w-64 rounded-[4px] bg-[var(--color-bone)] p-4 text-[#171310] shadow-[5px_5px_0_var(--color-poster)]"
-                id="ops-desktop-account"
-                role="menu"
-              >
-                <p className="truncate text-sm font-medium">{viewerLabel ?? "Operator"}</p>
-                <p className="mt-1 text-xs text-black/48">
-                  {preview ? "Preview workspace" : configuration.mode === "connected" ? "Operator access" : "Services unavailable"}
-                </p>
-                <div className="mt-4 space-y-1">
-                  <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href="/access" role="menuitem">
-                    My profile
-                  </Link>
-                  <Link className="flex min-h-11 items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" href={publicWebsiteHref("/")} role="menuitem">
-                    Return to website ↗
-                  </Link>
-                  {viewerLabel && !preview ? (
-                    <form action="/api/auth/sign-out?next=/access" method="post" role="none">
-                      <button className="flex min-h-11 w-full items-center rounded-[3px] px-2 text-sm hover:bg-black/[0.06]" role="menuitem" type="submit">
-                        Sign out
-                      </button>
-                    </form>
-                  ) : null}
-                </div>
+            {accountOpen ? (
+              <div aria-label="Operator account" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-2rem)] rounded-[4px] bg-[var(--color-bone)] p-3 text-[var(--color-faded)] shadow-[4px_4px_0_var(--color-poster)]" id="ops-account" role="region">
+                <p className="break-words px-2 py-1 text-sm font-medium">{viewerLabel ?? "Operator"}</p>
+                <p className="px-2 pb-3 text-xs text-black/55">{preview ? "Preview workspace" : configuration.mode === "connected" ? "Signed in" : "Services unavailable"}</p>
+                <Link className="flex min-h-11 items-center rounded-[4px] px-2 text-sm hover:bg-black/[0.06]" href="/my">My profile</Link>
+                <Link className="flex min-h-11 items-center rounded-[4px] px-2 text-sm hover:bg-black/[0.06]" href={publicWebsiteHref("/")}>Return to website ↗</Link>
+                {viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post">
+                  <button className="flex min-h-11 w-full items-center rounded-[4px] px-2 text-sm hover:bg-black/[0.06]" type="submit">Sign out</button>
+                </form> : null}
               </div>
             ) : null}
           </div>
-
-          <button
-            aria-expanded={mobileOpen}
-            aria-haspopup="dialog"
-            aria-label="Open operations menu"
-            className="ml-auto inline-flex min-h-[var(--ruined-header-height)] items-center gap-2.5 px-1 text-sm font-medium text-white xl:hidden"
-            onClick={() => setMobileOpen(true)}
-            ref={mobileTriggerRef}
-            type="button"
-          >
-            <span aria-hidden="true" className="grid gap-1">
-              <span className="h-px w-4 bg-current" />
-              <span className="h-px w-4 bg-current" />
-              <span className="h-px w-4 bg-current" />
-            </span>
-            <span>Menu</span>
-          </button>
         </div>
       </header>
 
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-[180] bg-black/65 xl:hidden" role="presentation" onMouseDown={(event) => {
-          if (event.currentTarget === event.target) closeMobileNavigation();
-        }}>
-          <aside
-            aria-labelledby="operations-mobile-menu-title"
-            aria-modal="true"
-            className="ml-auto h-full w-[min(92vw,24rem)] overflow-y-auto bg-[#080605] px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(1.5rem+env(safe-area-inset-top,0px))] text-white shadow-[-10px_0_0_rgba(208,49,45,0.8)]"
-            ref={mobileDialogRef}
-            role="dialog"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <Image alt="Ruined" className="h-7 w-auto brightness-0 invert" draggable={false} height={300} src="/ruined-wordmark.svg" width={1000} />
-                  <span aria-hidden="true" className="h-5 w-px bg-white/20" />
-                  <p className="text-sm font-medium text-white/65" id="operations-mobile-menu-title">Operations</p>
-                </div>
-                <p className="mt-3 text-xs text-white/38">{activeItem?.label ?? "Access"}</p>
-              </div>
-              <button
-                aria-label="Close operations menu"
-                className="inline-flex size-12 items-center justify-center rounded-full border border-white/20 text-2xl"
-                onClick={closeMobileNavigation}
-                ref={mobileCloseRef}
-                type="button"
-              >
-                ×
-              </button>
-            </div>
-            <div className="mt-8">{mobileNavigation}</div>
-            <div className="mt-8 flex flex-col items-start gap-3 border-t border-white/10 pt-5 text-sm text-white/45">
-              <ConnectionMark
-                label={preview ? "Preview" : configuration.mode === "connected" ? "Live" : "Unavailable"}
-                state={configuration.mode === "connected" ? "connected" : "disconnected"}
-              />
-              {viewerLabel ? <p className="max-w-full truncate text-xs normal-case">{viewerLabel}</p> : null}
-              <Link className="inline-flex min-h-11 items-center hover:text-white" href="/access">My profile</Link>
-              {viewerLabel && !preview ? (
-                <form action="/api/auth/sign-out?next=/access" method="post">
-                  <button className="min-h-11 hover:text-white" type="submit">Sign out</button>
-                </form>
-              ) : null}
-              <Link className="inline-flex min-h-11 items-center hover:text-white" href={publicWebsiteHref("/")}>Return to website ↗</Link>
-            </div>
-          </aside>
+      {groups.length ? (
+        <div className="bg-[var(--color-bone)] px-4 pb-3 pt-3 font-[var(--font-body)] text-[var(--color-faded)] sm:px-6 lg:px-10" data-operator-navigation>
+          <div className="mx-auto max-w-[96rem]">
+            <nav aria-label="Operations sections" className="flex flex-wrap gap-1 sm:gap-2">
+              {groups.map((group) => (
+                <Link
+                  aria-current={location?.group.id === group.id ? group.items.length === 1 ? "page" : "location" : undefined}
+                  className={`inline-flex min-h-11 shrink-0 items-center rounded-[4px] px-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] sm:px-4 ${location?.group.id === group.id ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "text-black/60 hover:bg-black/[0.06] hover:text-black"}`}
+                  href={group.items[0].href}
+                  key={group.id}
+                  scroll={false}
+                  onNavigate={showNavigation}
+                >{group.label}</Link>
+              ))}
+            </nav>
+            {location && location.group.items.length > 1 ? (
+              <nav aria-label={`${location.group.label} pages`} className="mt-1 flex flex-wrap gap-x-4 sm:gap-x-6">
+                {location.group.items.map((item) => {
+                  const current = isOperationsPathCurrent(pathname, item.href);
+                  return <Link
+                    aria-current={current ? "page" : undefined}
+                    className={`inline-flex min-h-11 shrink-0 items-center border-b-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] ${current ? "border-[var(--color-poster)] font-semibold text-[var(--color-faded)]" : "border-transparent text-black/55 hover:border-black/20 hover:text-black"}`}
+                    href={item.href}
+                    key={item.href}
+                    scroll={false}
+                    onNavigate={showNavigation}
+                  >{item.label}</Link>;
+                })}
+              </nav>
+            ) : !location ? <p className="py-3 text-sm text-black/55">Choose a section to continue.</p> : null}
+          </div>
         </div>
       ) : null}
     </>

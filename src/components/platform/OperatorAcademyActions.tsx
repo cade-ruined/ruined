@@ -188,12 +188,13 @@ function ResourceFields({
   );
 }
 
-export function OperatorAcademyCreateResource({ options }: { options: OpsAcademyReferenceOptions }) {
+export function OperatorAcademyCreateResource({ options, preview = false }: { options: OpsAcademyReferenceOptions; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setMessage("");
     setSubmitting(true);
     try {
@@ -225,15 +226,18 @@ export function OperatorAcademyCreateResource({ options }: { options: OpsAcademy
 export function OperatorAcademyEditorForm({
   options,
   resource,
+  preview = false,
 }: {
   options: OpsAcademyReferenceOptions;
   resource: OpsAcademyResourceDraft;
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setMessage("");
     setSubmitting(true);
     try {
@@ -263,15 +267,18 @@ export function OperatorAcademyResourceStateActions({
   resourceId,
   revision,
   status,
+  preview = false,
 }: {
   resourceId: string;
   revision: number;
   status: OpsAcademyStatus;
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function change(action: "publish" | "retire" | "unpublish") {
+    if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setSubmitting(true);
     setMessage("");
     try {
@@ -300,12 +307,13 @@ export function OperatorAcademyResourceStateActions({
   );
 }
 
-export function OperatorAcademyCollectionCreate() {
+export function OperatorAcademyCollectionCreate({ preview = false }: { preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -352,12 +360,13 @@ export function OperatorAcademyCollectionCreate() {
   );
 }
 
-export function OperatorAcademyCollectionActions({ collection }: { collection: OpsAcademyCollection }) {
+export function OperatorAcademyCollectionActions({ collection, preview = false }: { collection: OpsAcademyCollection; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setSubmitting(true);
     setMessage("");
     const data = new FormData(event.currentTarget);
@@ -378,6 +387,7 @@ export function OperatorAcademyCollectionActions({ collection }: { collection: O
     }
   }
   async function change(action: "publish" | "retire" | "unpublish") {
+    if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setSubmitting(true);
     setMessage("");
     try {
@@ -395,7 +405,7 @@ export function OperatorAcademyCollectionActions({ collection }: { collection: O
   if (collection.status === "retired") return null;
   return (
     <details className="group mt-4">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center text-xs uppercase tracking-[0.1em] text-black/48 marker:content-none">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-black/60 marker:content-none">
         Edit collection <span aria-hidden="true" className="ml-2 transition-transform group-open:rotate-45">+</span>
       </summary>
       <form className="grid gap-3 pt-3" onSubmit={save}>

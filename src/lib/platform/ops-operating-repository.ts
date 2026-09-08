@@ -1469,7 +1469,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
             and billing_state = 'active'
             and standing_state = 'active'
             and program_state in ('onboarding', 'active')
-            and (circle_id is null or circle_state <> 'active')
+            and circle_id is null
         ) as eligible_without_circle,
         count(*) filter (where foundations_state = 'not_started') as foundations_not_started,
         count(*) filter (where foundations_state = 'in_progress') as foundations_in_progress,

@@ -177,8 +177,12 @@ test("active Circle assignments can be ended without deleting historical proof",
   assert.match(actions, /Completed Foundations keeps its historical Circle proof/);
 });
 
-test("mutating controls are connected-only and remain absent for non-admin operators", () => {
-  assert.match(membersPage, /context\.role === "ops_admin" && context\.viewer/);
+test("live mutating controls require an admin viewer and preview member allowance stays inert", () => {
+  assert.match(membersPage, /context\.role === "ops_admin" && \(context\.state === "preview" \|\| context\.viewer\)/);
+  assert.match(membersPage, /OpsInvitationActions preview=\{context\.state === "preview"\}/);
+  const allowanceAction = actions.slice(actions.indexOf("export function OpsInvitationActions"), actions.indexOf("export function getCirclePlacementIssue"));
+  assert.match(allowanceAction, /if \(preview\) \{[\s\S]*return;[\s\S]*new FormData/);
+  assert.match(allowanceAction, /disabled=\{preview \|\| pending\}/);
   assert.match(circlesPage, /context\.role === "ops_admin" && context\.viewer/);
   assert.match(circlesPage, /getOpsCircleSummaries\(context\.viewer\.authUserId\)/);
   assert.match(actions, /export function OpsInvitationActions/);

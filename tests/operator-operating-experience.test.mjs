@@ -10,7 +10,7 @@ const [
   memberPage,
   memberRecord,
   directory,
-  shell,
+  navigation,
   workPage,
   artifactPage,
   experiencePage,
@@ -21,7 +21,7 @@ const [
   source("app/ops/members/[memberId]/page.tsx"),
   source("src/components/platform/OperatorMemberRecord.tsx"),
   source("src/components/platform/OperatorMemberDirectory.tsx"),
-  source("src/components/platform/PlatformShell.tsx"),
+  source("src/lib/platform/operations-navigation.ts"),
   source("app/ops/work/page.tsx"),
   source("app/ops/artifacts/page.tsx"),
   source("app/ops/experiences/page.tsx"),
@@ -41,7 +41,8 @@ test("the member directory opens one unified, server-projected operating record"
     assert.match(memberRecord, new RegExp(`"#${section}"`));
   }
   assert.doesNotMatch(memberRecord, /divide-y|border-y|uppercase tracking-\[0\.1/);
-  assert.match(memberRecord, /Manage member record/);
+  assert.match(memberRecord, /Member record actions/);
+  assert.doesNotMatch(memberRecord, /<details/);
   assert.match(memberRecord, /OperatorTaskCreateAction/);
   assert.match(memberRecord, /OperatorNoteAction/);
   assert.match(memberRecord, /OperatorOverrideAction/);
@@ -58,9 +59,9 @@ test("operator navigation stays restrained while every working surface remains r
     "/ops/experiences",
     "/ops/work",
   ]) {
-    assert.match(shell, new RegExp(route.replaceAll("/", "\\/")));
+    assert.match(navigation, new RegExp(route.replaceAll("/", "\\/")));
   }
-  assert.doesNotMatch(shell, /href: "\/ops\/access-billing"/);
+  assert.doesNotMatch(navigation, /href: "\/ops\/access-billing"/);
   assert.match(oldAccessBillingPage, /redirect\("\/ops\/system"\)/);
 });
 

@@ -14,7 +14,7 @@ export default async function OperationsNotificationsPage() {
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (context.state === "preview") {
-    return <OperatorNotificationCenter data={{ blocks: [], circles: [], history: [], members: [] }} />;
+    return <OperatorNotificationCenter data={{ blocks: [], circles: [], history: [], members: [] }} preview />;
   }
   if (!context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
   try {

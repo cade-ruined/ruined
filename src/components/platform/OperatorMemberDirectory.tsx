@@ -126,6 +126,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
           <Link
             className="grid gap-4 rounded-[4px] bg-black/[0.025] px-4 py-4 transition-[background-color,transform] hover:-translate-y-px hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black xl:grid-cols-[minmax(13rem,1.2fr)_minmax(10rem,0.8fr)_10rem_minmax(11rem,1fr)] xl:items-center xl:px-5"
             href={`/ops/members/${member.memberId}`}
+            aria-label={`Open ${member.name}’s member record`}
             key={member.memberId}
           >
             <div className="min-w-0">
@@ -147,7 +148,8 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             </div>
             <p className="text-sm leading-relaxed text-black/58">
               <span className="mb-1 block text-[0.62rem] font-medium uppercase tracking-[0.12em] text-black/38 xl:sr-only">Next action</span>
-              {member.nextAction} →
+              {member.nextAction}
+              <span className="mt-2 block font-semibold text-black underline decoration-black/25 underline-offset-4">Open member record <span aria-hidden="true">→</span></span>
             </p>
           </Link>
         ))}

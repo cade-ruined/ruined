@@ -30,6 +30,8 @@ export type MemberPlatformSnapshot = {
 };
 
 export type OperatorMemberSummary = {
+  /** Current membership standing, when supplied by the full operator directory. */
+  membershipState?: string;
   accountState: AccountState;
   artifactState: ArtifactState;
   billingState: BillingState;

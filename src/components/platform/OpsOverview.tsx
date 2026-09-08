@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
+import { getOperationsNavigation } from "@/lib/platform/operations-navigation";
 import type {
   OpsOverviewActivityItem,
   OpsOverviewData,
@@ -85,6 +86,20 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
   const openWork = data.counts.work.artifacts
     + data.counts.work.failures
     + data.counts.work.tasks;
+  // The server sets canPlaceMembers only for ops_admin. Keep task shortcuts
+  // within the same visibility boundary as the shared operations navigation.
+  const taskGroups = getOperationsNavigation(data.canPlaceMembers ? "ops_admin" : "guide")
+    .filter((group) => group.id !== "overview")
+    .map((group) => ({
+      ...group,
+      items: group.id === "people" && data.canPlaceMembers ? [
+        group.items[0],
+        { href: "/ops/members#allow-member-email", label: "Allow member email", task: "Allow member email" },
+        group.items[1],
+        { href: "/ops/circles#create-circle", label: "Create a Circle", task: "Create a Circle" },
+        ...group.items.slice(2),
+      ] : group.items,
+    }));
 
   const snapshot = [
     { href: "/ops/members", label: "Active members", tone: "", value: data.counts.activeMembers },
@@ -106,7 +121,21 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
           ))}
         </section>
       ) : null}
-      <nav className="mt-8 grid grid-cols-6 overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
+      <nav aria-label="Operator tasks" className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {taskGroups.map((group) => (
+          <section className="rounded-[4px] bg-black/[0.035] px-5 py-4" aria-labelledby={`operator-tasks-${group.id}`} key={group.id}>
+            <h2 className="text-2xl leading-none text-[var(--color-poster)]" id={`operator-tasks-${group.id}`}><span className="[font-family:var(--font-cadehandy2)]">{group.label}</span></h2>
+            <ul className="mt-2 grid">
+              {group.items.map((item) => <li key={item.href}>
+                <Link className="group flex min-h-11 items-center justify-between gap-3 py-2 text-sm font-medium leading-snug text-black/75 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]" href={item.href}>
+                  <span>{item.task}</span><span aria-hidden="true" className="text-black/40 transition-transform group-hover:translate-x-0.5">→</span>
+                </Link>
+              </li>)}
+            </ul>
+          </section>
+        ))}
+      </nav>
+      <nav className="mt-6 grid grid-cols-6 overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
         {snapshot.map((item, index) => (
           <Link
             className={`group px-4 py-4 transition-colors hover:bg-white/[0.055] sm:px-6 sm:py-5 lg:col-span-1 ${index >= 3 ? "col-span-3" : "col-span-2"}`}
@@ -121,7 +150,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
         ))}
       </nav>
 
-      <div className="mt-10 grid gap-10 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.55fr)]">
+      <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.55fr)]">
         <section className="order-2 xl:order-1" aria-labelledby="recent-activity-heading">
           <div className="flex items-end justify-between gap-5">
             <h2 className="font-[var(--font-display)] text-3xl leading-none sm:text-4xl" id="recent-activity-heading">
@@ -157,7 +186,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
               </div>
             ))}
             {data.activity.length === 0 ? (
-              <p className="rounded-[4px] bg-black/[0.025] px-5 py-8 text-sm text-black/48">No recent activity is visible.</p>
+              <p className="rounded-[4px] bg-black/[0.025] px-5 py-5 text-sm text-black/55">No activity recorded in the last 90 days.</p>
             ) : null}
           </div>
         </section>
@@ -184,7 +213,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
 
           <section className="rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6" aria-labelledby="upcoming-heading">
             <div className="flex items-baseline justify-between gap-4">
-              <h2 className="font-[var(--font-display)] text-2xl" id="upcoming-heading">Next</h2>
+              <h2 className="font-[var(--font-display)] text-2xl" id="upcoming-heading">Upcoming</h2>
               <Link className="text-sm text-white/45 underline decoration-white/25 underline-offset-4 hover:text-white" href="/ops/experiences">Experiences</Link>
             </div>
             <div className="mt-5 grid gap-5">
@@ -199,7 +228,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
           </section>
 
           {data.canPlaceMembers ? (
-            <Link className="rounded-[4px] bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white shadow-[5px_5px_0_#080605] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-[#080605] hover:shadow-[2px_2px_0_#080605]" href="/ops/members?filter=unassigned">
+            <Link className="rounded-[4px] bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white shadow-[5px_5px_0_#080605] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-[#080605] hover:shadow-[2px_2px_0_#080605]" href="/ops/circles#assign-member">
               Place {data.counts.eligibleWithoutCircle} eligible member{data.counts.eligibleWithoutCircle === 1 ? "" : "s"} into a Circle →
             </Link>
           ) : null}

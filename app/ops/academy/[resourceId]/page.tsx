@@ -19,7 +19,7 @@ export default async function OperationsAcademyEditorPage({
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
-  if (context.state === "preview") return <OperatorAcademyEditor editor={PREVIEW_OPS_ACADEMY_EDITOR} />;
+  if (context.state === "preview") return <OperatorAcademyEditor editor={PREVIEW_OPS_ACADEMY_EDITOR} preview />;
   if (!context.viewer || context.role !== "ops_admin") {
     return <PlatformUnavailable reason="operator_access" />;
   }

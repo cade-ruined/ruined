@@ -18,7 +18,7 @@ function ActionNotice({ notice }: { notice: Notice }) {
       className={`min-h-5 text-xs leading-relaxed ${
         notice?.kind === "error" ? "text-[var(--color-poster)]" : "text-black/48"
       }`}
-      role="status"
+      role={notice?.kind === "error" ? "alert" : "status"}
     >
       {notice?.text ?? ""}
     </p>
@@ -38,13 +38,14 @@ async function sendJson(url: string, body: unknown, method = "POST") {
   return result;
 }
 
-export function OperatorNoteAction({ memberId }: { memberId: string }) {
+export function OperatorNoteAction({ memberId, preview = false }: { memberId: string; preview?: boolean }) {
   const router = useRouter();
   const [notice, setNotice] = useState<Notice>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setNotice({ kind: "error", text: "Preview — notes are not saved." }); return; }
     setSubmitting(true);
     setNotice(null);
     const form = event.currentTarget;
@@ -69,11 +70,12 @@ export function OperatorNoteAction({ memberId }: { memberId: string }) {
   }
 
   return (
-    <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
+    <form className="grid gap-4" onSubmit={submit}>
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="ui-heading text-xl font-semibold">Add a note</h3>
+        <h3 className="ui-heading text-xl font-semibold">Add internal note</h3>
         <span className="text-xs text-black/38">Internal only</span>
       </div>
+      {preview ? <p className="text-sm text-black/60">Preview — notes are not saved.</p> : null}
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Category</span>
         <select className={OPERATOR_FIELD_CLASS} defaultValue="general" name="category">
@@ -97,7 +99,7 @@ export function OperatorNoteAction({ memberId }: { memberId: string }) {
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">
           {submitting ? "Adding note" : "Add note"}
         </button>
       </div>
@@ -105,13 +107,14 @@ export function OperatorNoteAction({ memberId }: { memberId: string }) {
   );
 }
 
-export function OperatorTaskCreateAction({ memberId }: { memberId: string }) {
+export function OperatorTaskCreateAction({ memberId, preview = false }: { memberId: string; preview?: boolean }) {
   const router = useRouter();
   const [notice, setNotice] = useState<Notice>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setNotice({ kind: "error", text: "Preview — tasks are not created." }); return; }
     setSubmitting(true);
     setNotice(null);
     const form = event.currentTarget;
@@ -138,8 +141,9 @@ export function OperatorTaskCreateAction({ memberId }: { memberId: string }) {
   }
 
   return (
-    <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
+    <form className="grid gap-4" onSubmit={submit}>
       <h3 className="ui-heading text-xl font-semibold">Create a task</h3>
+      {preview ? <p className="text-sm text-black/60">Preview — tasks are not created.</p> : null}
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
         <input className={OPERATOR_FIELD_CLASS} maxLength={200} minLength={3} name="title" required />
@@ -165,7 +169,7 @@ export function OperatorTaskCreateAction({ memberId }: { memberId: string }) {
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">
           {submitting ? "Creating" : "Create task"}
         </button>
       </div>
@@ -213,9 +217,11 @@ const OVERRIDE_STATES: Record<string, Array<{ label: string; value: string }>> =
 export function OperatorOverrideAction({
   lifecycleVersion,
   memberId,
+  preview = false,
 }: {
   lifecycleVersion: number;
   memberId: string;
+  preview?: boolean;
 }) {
   const router = useRouter();
   const [dimension, setDimension] = useState("standing");
@@ -224,6 +230,7 @@ export function OperatorOverrideAction({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) { setNotice({ kind: "error", text: "Preview — member states are not changed." }); return; }
     setSubmitting(true);
     setNotice(null);
     const form = event.currentTarget;
@@ -251,9 +258,10 @@ export function OperatorOverrideAction({
   }
 
   return (
-    <form className="grid gap-4 border-t border-black/20 pt-6" onSubmit={submit}>
+    <form className="grid gap-4" onSubmit={submit}>
       <div>
         <h3 className="ui-heading text-xl font-semibold">Record a state correction</h3>
+        {preview ? <p className="mt-2 text-sm text-black/60">Preview — member states are not changed.</p> : null}
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-black/48">
           Payment, agreements, and Foundations completion cannot be overridden here. Every correction keeps its actor, reason, and prior state.
         </p>
@@ -305,7 +313,7 @@ export function OperatorOverrideAction({
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <ActionNotice notice={notice} />
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">
           {submitting ? "Recording" : "Record correction"}
         </button>
       </div>

@@ -129,7 +129,8 @@ test("operator pages and JSON boundaries expose creation, roster, waitlist, atte
   assert.match(directoryPage, /getOpsExperienceManagementDirectory/);
   assert.match(recordPage, /getOpsExperienceRecord/);
   assert.match(recordPage, /notFound\(\)/);
-  assert.match(directory, /Add an Experience/);
+  assert.match(directory, /href="#new-experience">\+ New Experience/);
+  assert.match(directory, /id="new-experience"/);
   assert.match(record, /Roster/);
   assert.match(record, /Move to waitlist/);
   assert.match(record, /Check in/);
@@ -159,9 +160,11 @@ test("Experience forms stay timezone-safe and reveal only relevant scope and reg
   assert.match(record, /editRegistrationMode === "internal"/);
   assert.match(record, /editRegistrationMode === "external"/);
   assert.match(`${directory}\n${record}`, /OPERATOR_FIELD_CLASS/);
-  assert.match(record, /Manage place/);
+  assert.match(record, /Change registration/);
+  assert.match(record, /Confirm place/);
   assert.match(record, /value="revoked">Not marked/);
-  assert.match(record, /clamp\(2\.4rem,5vw,4\.75rem\)/);
+  assert.match(record, /text-3xl leading-tight sm:text-4xl/);
+  assert.match(record, /id="edit-experience"/);
 });
 
 test("member registration is idempotent, respects windows, promotes the queue, and guards Meet", () => {

@@ -18,10 +18,12 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
-export default function OperatorSystemHealth({ health, canRetry }: { health: OpsSystemHealth; canRetry: boolean }) {
+export default function OperatorSystemHealth({ health, canRetry, preview = false }: { health: OpsSystemHealth; canRetry: boolean; preview?: boolean }) {
   const verifiedChecks = health.services.filter((service) => service.state === "verified").length;
   const servicesNeedingAttention = health.services.filter(service => ["failed", "delayed", "unavailable"].includes(service.state)).length;
   const awaitingVerification = health.services.filter(service => service.state === "configured").length;
+  const attentionStates = ["failed", "delayed", "unavailable", "configured", "verified"];
+  const services = [...health.services].sort((left, right) => attentionStates.indexOf(left.state) - attentionStates.indexOf(right.state));
 
   return (
     <OperatorPageFrame title="System">
@@ -43,9 +45,14 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
         ))}
       </dl>
 
-      <p className="mt-5 text-sm text-black/55">A saved configuration is not a successful connection. Previous activity is shown separately from checks performed now.</p>
-      <section className="mt-6 space-y-3" aria-label="Service checks and delivery queues">
-        {health.services.map((service) => (
+      <nav aria-label="System tasks" className="mt-4 flex flex-wrap gap-4 text-sm">
+        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#service-checks">Review services</a>
+        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#failed-actions">Failed actions · {health.workflowFailures.length}</a>
+        <Link className="inline-flex min-h-11 items-center underline underline-offset-4" href="/ops/work">Open work queue →</Link>
+      </nav>
+      <p className="mt-3 text-sm text-black/55">Review the services needing attention first. A saved configuration is not a successful connection; previous activity is separate from checks performed now.</p>
+      <section className="mt-6 scroll-mt-28 space-y-3" id="service-checks" aria-label="Service checks and delivery queues">
+        {services.map((service) => (
           <article
             className="grid gap-4 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] md:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)] md:items-center sm:px-6"
             key={service.label}
@@ -68,7 +75,7 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
         ))}
       </section>
 
-      <section className="mt-10" aria-label="Failed automation actions">
+      <section className="mt-8 scroll-mt-28" id="failed-actions" aria-label="Failed automation actions">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="text-sm text-black/45">Automation</p>
@@ -94,9 +101,9 @@ export default function OperatorSystemHealth({ health, canRetry }: { health: Ops
                 <p className="mt-2 text-xs text-black/42">{formatDate(failure.failedAt)}</p>
               </div>
               {canRetry && failure.state === "failed" ? (
-                <OperatorWorkflowRetryAction workflowActionId={failure.actionId} />
+                <OperatorWorkflowRetryAction workflowActionId={failure.actionId} preview={preview} />
               ) : (
-                <p className="text-sm text-black/45 lg:text-right">Create a new operator task.</p>
+                <p className="text-sm text-black/45 lg:text-right">{canRetry ? "Retry limit reached. Review the failure before taking further action." : "Ask an Administrator to review this failure."}</p>
               )}
             </article>
           ))}
