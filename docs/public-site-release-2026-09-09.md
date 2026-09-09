@@ -30,3 +30,9 @@ Shopify sender authentication also requires DNS changes. The following CNAME nam
 DMARC is also absent and should be planned separately so existing mail services are not disrupted. No DNS records, mail routing, or credentials were changed during these checks. Shopify's sender fallback does not imply the website's separate Resend contact delivery is broken.
 
 This file records pre-publication checks, not proof of a completed deployment or purchase. Final deployment and live-browser results belong in the task handoff.
+
+## Post-deployment homepage catalog correction
+
+Live checks after release `d568677` found that the Store loaded Shopify's BYOB Tank at $48 and checkout worked, but the optional homepage cache reported an unavailable catalog. Production logs showed its catalog callback failing during background revalidation. The precise production-only cache interaction was not established; the installed Shopify SDK and Next patched fetch worked together in an isolated cache-context reproduction.
+
+The correction removes the separate homepage cache and uses the same fresh catalog read as the Store. This supersedes the 60-second homepage revalidation statement above. Missing configuration, confirmed empty catalogs, provider failures, and the five-second cancellation limit retain their distinct behavior; failures cannot preserve stale prices or block a later successful request. Regression tests exercise the actual homepage adapter, Shopify mapper, and installed SDK with only upstream HTTP mocked. No Shopify data, credentials, or checkout behavior is changed by this correction.
