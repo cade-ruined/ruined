@@ -181,7 +181,7 @@ export function OpsInvitationActions({ preview = false }: { preview?: boolean } 
 }
 
 export function getCirclePlacementIssue(member: OperatorMemberSummary): string | null {
-  if (member.circleName) return `Already assigned to ${member.circleName}. End that assignment before choosing another Circle.`;
+  if (member.circleName) return `Already assigned to ${member.circleName}. Open their Circle and choose Move to switch Circles.`;
   const missing: string[] = [];
   if (member.accountState !== "active") missing.push(`an active account (currently ${member.accountState})`);
   if (member.billingState !== "active") missing.push(`active billing (currently ${member.billingState.replaceAll("_", " ")})`);

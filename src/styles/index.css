@@ -231,6 +231,13 @@ html {
   background-size: 100% 100%, 640px 640px;
 }
 
+/* The section rails stay below the brand header. Hash links, browser focus
+   scrolling and the skip link must clear both, including wrapped mobile rails. */
+[data-platform-surface="ops"] .operator-paper,
+[data-platform-surface="ops"] .operator-paper :is([id], a, button, input, select, textarea, summary, [tabindex]) {
+  scroll-margin-top: calc(var(--ruined-header-height) + var(--operator-navigation-height, 10rem) + 1rem);
+}
+
 .member-timeline-paper {
   background-color: #f0ede7 !important;
   background-image:

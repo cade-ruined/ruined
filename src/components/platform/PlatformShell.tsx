@@ -142,9 +142,26 @@ export function OperationsNavigation({
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
+  const navigationRef = useRef<HTMLDivElement>(null);
   const preview = configuration.mode === "preview";
   const groups = getOperationsNavigation(operatorRole);
   const location = getOperationsLocation(pathname, groups);
+
+  useEffect(() => {
+    const navigation = navigationRef.current;
+    const shell = navigation?.closest<HTMLElement>('[data-platform-surface="ops"]');
+    if (!navigation || !shell) return;
+    // Both rails can wrap as the viewport, text size, role or section changes.
+    // Keep anchor and keyboard targets below their actual combined height.
+    const measure = () => shell.style.setProperty("--operator-navigation-height", `${navigation.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(navigation);
+    return () => {
+      observer.disconnect();
+      shell.style.removeProperty("--operator-navigation-height");
+    };
+  }, [operatorRole]);
 
   function showNavigation() {
     // Header destinations start above the page content. Next's default focus
@@ -212,7 +229,7 @@ export function OperationsNavigation({
       </header>
 
       {groups.length ? (
-        <div className="bg-[var(--color-bone)] px-4 pb-3 pt-3 font-[var(--font-body)] text-[var(--color-faded)] sm:px-6 lg:px-10" data-operator-navigation>
+        <div className="sticky top-[var(--ruined-header-height)] z-[80] bg-[var(--color-bone)] px-4 pb-3 pt-3 font-[var(--font-body)] text-[var(--color-faded)] sm:px-6 lg:px-10" data-operator-navigation ref={navigationRef}>
           <div className="mx-auto max-w-[96rem]">
             <nav aria-label="Operations sections" className="flex flex-wrap gap-1 sm:gap-2">
               {groups.map((group) => (

@@ -448,3 +448,253 @@ test("all four Shaper and resource preview submissions return before form reads 
   assert.strictEqual(state[0], props.initialCircles);
   assert.ok(nodes(draw()).filter((node) => node.props?.notice).every((node) => /Preview only/.test(node.props.notice.text)));
 });
+
+const movableAssignment = { ...firstAssignment, accountState: "active", billingState: "active", programState: "onboarding" };
+const movedResponse = { transfer: {
+  id: "201", previousAssignmentId: movableAssignment.assignmentId, assignedAt: "2026-09-08T12:00:00Z",
+  memberId: movableAssignment.memberId, fromCircleId: firstCircle.id, circleId: secondCircle.id,
+  fromCircleStatus: "forming", fromBlockId: firstCircle.blockId, fromBlockStatus: "forming",
+} };
+function moveFixture(overrides = {}, request) {
+  return harness({ initialCircleId: firstCircle.id, initialAssignments: [movableAssignment, secondAssignment], ...overrides }, request);
+}
+function destinationControl(fixture) {
+  const control = nodes(fixture.draw()).find((node) => node.type === "select" && node.props["aria-label"] === `New Circle for ${movableAssignment.name}`);
+  assert.ok(control, "Move review has a labeled destination selector");
+  return control;
+}
+function selectDestination(fixture, id = secondCircle.id) {
+  destinationControl(fixture).props.onChange({ target: { value: id } });
+}
+function namedCircle(fixture, circle) {
+  return nodes(fixture.draw()).find((node) => node.props?.id === `circle-${circle.id}`);
+}
+function typeCircleName(fixture, value) {
+  const input = nodes(fixture.draw()).find((node) => node.type === "input" && node.props["aria-label"] === "Circle name to confirm");
+  assert.ok(input);
+  input.props.onChange({ target: { value } });
+}
+
+test("roster Move requires choosing another Circle, then posts its exact current assignment atomically", async () => {
+  let resolve;
+  const fixture = moveFixture({}, () => new Promise((done) => { resolve = done; }));
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(destinationControl(fixture).props.value, "");
+  assert.equal(fixture.button("Confirm move").props.disabled, true);
+  assert.match(text(fixture.draw()), /First Member.*Circle 01/s);
+  selectDestination(fixture);
+  const confirmationButton = fixture.button("Confirm move");
+  const moving = confirmationButton.props.onClick();
+  await confirmationButton.props.onClick();
+  assert.equal(fixture.calls.length, 1, "double clicks before rerender cannot launch two transfers");
+  assert.deepEqual(fixture.calls[0], { url: "/api/ops/circle-transfers", method: "POST", body: {
+    memberId: movableAssignment.memberId, fromCircleId: firstCircle.id,
+    assignmentId: movableAssignment.assignmentId, toCircleId: secondCircle.id,
+  } });
+  resolve(ok(movedResponse));
+  await moving;
+  assert.equal(nodes(namedCircle(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"), false);
+  assert.ok(nodes(namedCircle(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"));
+  assert.match(text(namedCircle(fixture, firstCircle)), /0\/10 members/);
+  assert.match(text(namedCircle(fixture, secondCircle)), /2\/10 members/);
+  assert.match(text(fixture.draw()), /First Member moved from Circle 01 to Circle 02/);
+  assert.equal(fixture.refreshes(), 1);
+});
+
+test("Move here from an assigned search result preselects the viewed destination, not the person's source", async () => {
+  const match = { ...candidate, memberId: movableAssignment.memberId, name: movableAssignment.name,
+    email: movableAssignment.email, circleName: firstCircle.name, membershipState: "active" };
+  const fixture = moveFixture({ initialCircleId: secondCircle.id, candidates: [match], memberQuery: "First" }, async () => ok(movedResponse));
+  fixture.click(`Move ${match.name} to ${secondCircle.name}`);
+  assert.equal(destinationControl(fixture).props.value, secondCircle.id);
+  assert.match(text(fixture.draw()), /Move First Member from Circle 01/);
+  assert.deepEqual(fixture.calls, []);
+  await fixture.click("Confirm move");
+  assert.deepEqual(fixture.calls[0].body, { memberId: match.memberId, fromCircleId: firstCircle.id, assignmentId: "101", toCircleId: secondCircle.id });
+});
+
+test("failed, ambiguous, or mismatched transfer results keep the original roster and review intact", async () => {
+  const failures = [
+    { ok: false, json: async () => ({ error: "The destination Circle is full. Choose a Circle with an open place." }) },
+    ok({}),
+    ...[{ id: "101" }, { memberId: candidate.memberId }, { previousAssignmentId: "wrong" },
+      { fromCircleId: secondCircle.id }, { circleId: firstCircle.id }, { assignedAt: "bad" },
+      { fromCircleStatus: "unknown" }].map((change) => ok({ transfer: { ...movedResponse.transfer, ...change } })),
+  ];
+  for (const response of failures) {
+    const fixture = moveFixture({}, async () => response);
+    fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+    selectDestination(fixture);
+    await fixture.click("Confirm move");
+    assert.ok(nodes(namedCircle(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"));
+    assert.equal(nodes(namedCircle(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"), false);
+    assert.ok(nodes(fixture.draw()).some((node) => node.props?.role === "alert"));
+    assert.equal(fixture.button("Confirm move").props.disabled, false);
+    assert.equal(fixture.refreshes(), 0);
+  }
+});
+
+test("transfer blockers have direct next steps and no available destination means no request", async () => {
+  for (const change of [{ activeMembers: 10 }, { status: "archived" }, { status: "completed" }]) {
+    const fixture = moveFixture({ initialCircles: [firstCircle, { ...secondCircle, ...change }] });
+    fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+    assert.equal(fixture.button("Confirm move").props.disabled, true);
+    assert.match(text(fixture.draw()), /No other Circles have an open place/);
+    assert.ok(nodes(fixture.draw()).some((node) => node.props?.href === "#create-circle"));
+    await fixture.click("Confirm move");
+    assert.deepEqual(fixture.calls, []);
+  }
+  const inactive = moveFixture({ initialAssignments: [{ ...movableAssignment, billingState: "ended" }, secondAssignment] });
+  inactive.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  assert.equal(inactive.button("Confirm move").props.disabled, true);
+  assert.ok(nodes(inactive.draw()).some((node) => node.props?.href === `/ops/members/${movableAssignment.memberId}#membership`));
+  await inactive.click("Confirm move");
+  assert.deepEqual(inactive.calls, []);
+});
+
+test("changed assignment or newly full destination invalidates transfer before submitting", async () => {
+  const fixture = moveFixture();
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  selectDestination(fixture);
+  fixture.update({ initialAssignments: [{ ...movableAssignment, assignmentId: "202" }, secondAssignment] });
+  assert.equal(nodes(fixture.draw()).some((node) => node.type === "button" && text(node) === "Confirm move"), false);
+  assert.deepEqual(fixture.calls, []);
+  const full = moveFixture();
+  full.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  selectDestination(full);
+  full.update({ initialCircles: [firstCircle, { ...secondCircle, activeMembers: 10 }] });
+  assert.equal(full.button("Confirm move").props.disabled, true);
+  await full.click("Confirm move");
+  assert.deepEqual(full.calls, []);
+});
+
+test("move review explains last-member archiving and forming-destination Foundations requirements", () => {
+  const fixture = moveFixture({ initialCircles: [{ ...firstCircle, status: "active" }, { ...secondCircle, status: "forming" }] });
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  selectDestination(fixture);
+  assert.match(text(fixture.draw()), /activated before they can finish Foundations/);
+  assert.match(text(fixture.draw()), /Moving the last member archives the old Circle; its Block may also be archived/);
+});
+
+test("cancel and switching viewed Circles clear a move destination without changing membership", () => {
+  const fixture = moveFixture();
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  selectDestination(fixture);
+  fixture.click("Cancel");
+  assert.equal(nodes(fixture.draw()).some((node) => node.type === "button" && text(node) === "Confirm move"), false);
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  assert.equal(destinationControl(fixture).props.value, "");
+  fixture.open(secondCircle);
+  assert.equal(nodes(fixture.draw()).some((node) => node.type === "button" && text(node) === "Confirm move"), false);
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("occupied Circles cannot be deleted or archived even if disabled controls are invoked directly", async () => {
+  for (const [action, confirm] of [["Delete", "Permanently delete Circle"], ["Archive", "Confirm archive"]]) {
+    const fixture = harness();
+    assert.equal(fixture.button(`${action} ${firstCircle.name}`).props.disabled, true);
+    fixture.click(`${action} ${firstCircle.name}`);
+    typeCircleName(fixture, firstCircle.name);
+    assert.equal(fixture.button(confirm).props.disabled, true);
+    await fixture.click(confirm);
+    assert.deepEqual(fixture.calls, []);
+  }
+});
+
+test("empty Circle deletion and archive require exact name confirmation and validate the returned outcome", async () => {
+  const empty = { ...firstCircle, activeMembers: 0 };
+  for (const [action, confirm, method, outcome] of [["Delete", "Permanently delete Circle", "DELETE", "deleted"], ["Archive", "Confirm archive", "PATCH", "archived"]]) {
+    const fixture = harness({ initialCircles: [empty], initialAssignments: [] }, async () => ok({ circle: { id: empty.id, name: empty.name, outcome } }));
+    fixture.click(`${action} ${empty.name}`);
+    assert.deepEqual(fixture.calls, []);
+    assert.equal(fixture.button(confirm).props.disabled, true);
+    typeCircleName(fixture, "Wrong Circle");
+    await fixture.click(confirm);
+    assert.deepEqual(fixture.calls, []);
+    typeCircleName(fixture, empty.name);
+    assert.equal(fixture.button(confirm).props.disabled, false);
+    await fixture.click(confirm);
+    assert.deepEqual(fixture.calls, [{ url: `/api/ops/circles/${empty.id}`, method,
+      body: { confirmationName: empty.name, ...(outcome === "archived" ? { action: "archive" } : {}) } }]);
+    assert.equal(fixture.refreshes(), 1);
+    if (outcome === "deleted") assert.equal(namedCircle(fixture, empty), undefined);
+    else assert.ok(namedCircle(fixture, empty));
+  }
+});
+
+test("failed deletion keeps the exact Circle, shows the blocker, and keeps archive available", async () => {
+  const empty = { ...firstCircle, activeMembers: 0 };
+  for (const response of [
+    { ok: false, json: async () => ({ error: "This Circle has history. Archive it instead." }) },
+    ok({ circle: { id: secondCircle.id, name: empty.name, outcome: "deleted" } }),
+    ok({ circle: { id: empty.id, name: "Changed name", outcome: "deleted" } }),
+    ok({ circle: { id: empty.id, name: empty.name, outcome: "archived" } }),
+  ]) {
+    const fixture = harness({ initialCircles: [empty], initialAssignments: [] }, async () => response);
+    fixture.click(`Delete ${empty.name}`);
+    typeCircleName(fixture, empty.name);
+    await fixture.click("Permanently delete Circle");
+    assert.ok(namedCircle(fixture, empty));
+    assert.ok(nodes(fixture.draw()).some((node) => node.props?.role === "alert"));
+    assert.equal(fixture.button(`Archive ${empty.name}`).props.disabled, false);
+    assert.equal(fixture.refreshes(), 0);
+  }
+});
+
+test("cancelling deletion or switching Circles discards confirmation; a new name must be entered", () => {
+  const empty = { ...firstCircle, activeMembers: 0 };
+  const fixture = harness({ initialCircles: [empty, secondCircle], initialAssignments: [secondAssignment] });
+  fixture.click(`Delete ${empty.name}`);
+  typeCircleName(fixture, empty.name);
+  fixture.click("Cancel");
+  assert.equal(nodes(fixture.draw()).some((node) => node.props?.["aria-label"] === "Confirm Circle deletion"), false);
+  fixture.click(`Delete ${empty.name}`);
+  assert.equal(fixture.button("Permanently delete Circle").props.disabled, true);
+  typeCircleName(fixture, empty.name);
+  fixture.open(secondCircle);
+  assert.equal(nodes(fixture.draw()).some((node) => node.props?.["aria-label"] === "Confirm Circle deletion"), false);
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("preview transfer, delete and archive never call APIs or change the displayed rosters", async () => {
+  const fixture = moveFixture({ preview: true });
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  selectDestination(fixture);
+  await fixture.click("Confirm move");
+  assert.ok(nodes(namedCircle(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"));
+  assert.deepEqual(fixture.calls, []);
+  for (const [action, confirm] of [["Delete", "Permanently delete Circle"], ["Archive", "Confirm archive"]]) {
+    const empty = { ...firstCircle, activeMembers: 0 };
+    const preview = harness({ preview: true, initialCircles: [empty], initialAssignments: [] });
+    preview.click(`${action} ${empty.name}`);
+    typeCircleName(preview, empty.name);
+    await preview.click(confirm);
+    assert.deepEqual(preview.calls, []);
+    assert.equal(preview.refreshes(), 0);
+    assert.ok(namedCircle(preview, empty));
+    assert.match(text(preview.draw()), /Preview only/);
+  }
+});
+
+test("retirement offers only valid lifecycle actions and opens confirmation beside the footer, not a hidden roster", () => {
+  for (const status of ["forming", "active", "completed", "archived"]) {
+    const circle = { ...firstCircle, activeMembers: 0, status };
+    const fixture = harness({ initialCircles: [circle], initialAssignments: [] });
+    const tree = fixture.draw();
+    const buttons = nodes(tree).filter((node) => node.type === "button");
+    assert.equal(buttons.some((node) => node.props["aria-label"] === `Delete ${circle.name}`), status === "forming");
+    assert.equal(buttons.some((node) => node.props["aria-label"] === `Archive ${circle.name}`), status !== "archived");
+    if (status === "archived") {
+      assert.match(text(tree), /Archived\. History retained\./);
+      continue;
+    }
+    fixture.click(`Archive ${circle.name}`);
+    const updated = fixture.draw();
+    const roster = nodes(updated).find((node) => node.props?.id === `roster-${circle.id}`);
+    assert.equal(roster.props.hidden, true, "retirement does not force open member management");
+    assert.equal(nodes(roster).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"), false);
+    assert.ok(nodes(updated).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"));
+    assert.deepEqual(fixture.calls, []);
+  }
+});

@@ -356,6 +356,32 @@ export const PREVIEW_OPS_CIRCLES: OpsCircleSummary[] = [
     slug: "circle-01",
     status: "active",
   },
+  {
+    activeMembers: 0,
+    blockId: null,
+    blockName: null,
+    blockStatus: null,
+    capacity: 10,
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "Circle 02",
+    resources: [],
+    shaper: null,
+    slug: "circle-02",
+    status: "forming",
+  },
+  {
+    activeMembers: 0,
+    blockId: null,
+    blockName: null,
+    blockStatus: null,
+    capacity: 10,
+    id: "11111111-1111-4111-8111-111111111112",
+    name: "Circle 03",
+    resources: [],
+    shaper: null,
+    slug: "circle-03",
+    status: "forming",
+  },
 ];
 
 export const PREVIEW_OPS_CIRCLE_MANAGEMENT: OpsCircleManagementOptions = {

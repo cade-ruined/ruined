@@ -13,9 +13,13 @@ import type { OpsCircleMemberAssignment, OpsCircleSummary } from "@/lib/platform
 const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-[4px] bg-[var(--color-faded)] px-4 py-2 text-sm font-semibold text-[var(--color-bone)] hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)] disabled:cursor-not-allowed disabled:opacity-40";
 const SECONDARY = "inline-flex min-h-11 items-center justify-center rounded-[4px] px-3 py-2 text-sm font-medium underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40";
 type Notice = { error: boolean; text: string } | null;
-type Confirmation = { kind: "remove"; circleId: string; memberId: string; assignmentId: string } | { kind: "activate"; circleId: string } | null;
+type Confirmation =
+  | { kind: "remove"; circleId: string; memberId: string; assignmentId: string }
+  | { kind: "move"; circleId: string; memberId: string; assignmentId: string; toCircleId: string }
+  | { kind: "activate" | "delete" | "archive"; circleId: string }
+  | null;
 
-async function request<T>(path: string, method: "POST" | "PATCH", body: Record<string, string>): Promise<T> {
+async function request<T>(path: string, method: "POST" | "PATCH" | "DELETE", body: Record<string, string>): Promise<T> {
   const response = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload) throw new Error(typeof payload?.error === "string" ? payload.error : "The change could not be saved. Refresh the Circle and try again.");
@@ -49,9 +53,22 @@ export default function OperatorCirclesManager({
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [notices, setNotices] = useState<Record<string, Notice>>({});
   const [circleName, setCircleName] = useState("");
+  const [confirmationName, setConfirmationName] = useState("");
+  const confirmationFieldRef = useRef<HTMLInputElement>(null);
+  const destinationFieldRef = useRef<HTMLSelectElement>(null);
+  const confirmationTarget = confirmation ? `${confirmation.kind}:${confirmation.circleId}:${"assignmentId" in confirmation ? confirmation.assignmentId : ""}` : null;
 
   useEffect(() => setCircles(initialCircles), [initialCircles]);
   useEffect(() => setAssignments(initialAssignments), [initialAssignments]);
+  useEffect(() => {
+    const field = confirmationFieldRef.current ?? destinationFieldRef.current;
+    if (!field) return;
+    const trigger = document.activeElement;
+    field.focus();
+    return () => {
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, [confirmationTarget]);
 
   const initialMember = candidates.find((member) => member.memberId === initialMemberId);
   function placementIssue(member: OperatorMemberSummary) {
@@ -62,6 +79,16 @@ export default function OperatorCirclesManager({
   }
   const eligibleMembers = candidates.filter((member) => !placementIssue(member));
   const available = (circle: OpsCircleSummary) => (circle.status === "forming" || circle.status === "active") && circle.activeMembers < circle.capacity;
+  function transferIssue(member: OpsCircleMemberAssignment) {
+    const saved = candidates.find((candidate) => candidate.memberId === member.memberId);
+    if (saved?.membershipState && saved.membershipState !== "active") return "Review this person’s membership before moving them.";
+    return member.accountState === "active" && member.billingState === "active" && (member.programState === "onboarding" || member.programState === "active")
+      ? null : "An active account, active billing and an onboarding or active program are required to move Circles.";
+  }
+
+  function beginMove(member: OpsCircleMemberAssignment, panelCircleId: string, toCircleId = "") {
+    setConfirmation({ kind: "move", circleId: panelCircleId, memberId: member.memberId, assignmentId: member.assignmentId, toCircleId });
+  }
   function searchHref(circleId: string, page = 1, query = memberQuery) {
     const params = new URLSearchParams({ circleId });
     if (query) params.set("memberQuery", query);
@@ -113,7 +140,7 @@ export default function OperatorCirclesManager({
         accountState: member.accountState, billingState: member.billingState, programState: member.programState,
       }]);
       if (result.assignment.created) setCircles((current) => current.map((item) => item.id === circle.id ? { ...item, activeMembers: item.activeMembers + 1 } : item));
-      return `${member.name} ${result.assignment.created ? "added to" : "is already in"} ${circle.name}.${circle.status === "forming" ? " Activate this Circle when it is ready." : ""} Review affected Experiences and sync their invitations.`;
+      return `${member.name} ${result.assignment.created ? "added to" : "is already in"} ${circle.name}.${circle.status === "forming" ? " Activate this Circle when it is ready." : ""} Connected Calendar changes are queued; check affected Experiences for their sync status.`;
     });
   }
 
@@ -128,7 +155,44 @@ export default function OperatorCirclesManager({
         setCircles((current) => current.map((item) => item.id === circle.id ? { ...item, status: result.circle.status, activeMembers: result.circle.activeMembers } : item));
         return `${circle.name} is active. Its members can now complete Foundations once their other requirements are met.`;
       });
-    } else {
+    } else if (currentConfirmation.kind === "move") {
+      const member = assignments.find((item) => item.assignmentId === currentConfirmation.assignmentId && item.memberId === currentConfirmation.memberId);
+      const destination = circles.find((item) => item.id === currentConfirmation.toCircleId);
+      const source = circles.find((item) => item.id === member?.circleId);
+      if (!member || !source || !destination || source.id === destination.id || !available(destination) || transferIssue(member)) return;
+      await change(circle.id, async () => {
+        const result = await request<{ transfer: { id: string; previousAssignmentId: string; assignedAt: string; memberId: string; fromCircleId: string; circleId: string; fromCircleStatus: OpsCircleSummary["status"]; fromBlockId: string | null; fromBlockStatus: OpsCircleSummary["blockStatus"] } }>("/api/ops/circle-transfers", "POST", {
+          memberId: member.memberId, fromCircleId: source.id, assignmentId: member.assignmentId, toCircleId: destination.id,
+        });
+        const moved = result.transfer;
+        if (!moved || typeof moved.id !== "string" || !moved.id || moved.id === member.assignmentId
+          || moved.previousAssignmentId !== member.assignmentId || moved.memberId !== member.memberId
+          || moved.fromCircleId !== source.id || moved.circleId !== destination.id
+          || !Number.isFinite(Date.parse(moved.assignedAt)) || !["active", "forming", "archived", "completed"].includes(moved.fromCircleStatus)) {
+          throw new Error("The response could not be verified. Refresh both rosters to confirm the move before repeating it.");
+        }
+        setAssignments((current) => current.map((item) => item.assignmentId === member.assignmentId ? { ...item, assignmentId: moved.id, circleId: moved.circleId, assignedAt: moved.assignedAt } : item));
+        setCircles((current) => current.map((item) => ({ ...item,
+          ...(item.id === source.id ? { activeMembers: Math.max(0, item.activeMembers - 1), status: moved.fromCircleStatus } : {}),
+          ...(item.id === destination.id ? { activeMembers: item.activeMembers + 1 } : {}),
+          ...(moved.fromBlockId && item.blockId === moved.fromBlockId ? { blockStatus: moved.fromBlockStatus } : {}),
+        })));
+        return `${member.name} moved from ${source.name} to ${destination.name}. Their history is preserved.${moved.fromCircleStatus === "archived" ? " The empty source Circle is now archived." : ""}${moved.fromBlockStatus === "archived" ? " Its Block is also archived." : ""} Connected Calendar changes are queued; check affected Experiences for their sync status.`;
+      });
+    } else if (currentConfirmation.kind === "delete" || currentConfirmation.kind === "archive") {
+      if (circle.activeMembers || confirmationName.trim() !== circle.name) return;
+      const deleting = currentConfirmation.kind === "delete";
+      await change("circle-removal", async () => {
+        const result = await request<{ circle: { id: string; name: string; outcome: "deleted" | "archived"; blockId?: string | null; blockStatus?: OpsCircleSummary["blockStatus"] } }>(`/api/ops/circles/${encodeURIComponent(circle.id)}`, deleting ? "DELETE" : "PATCH", { confirmationName: confirmationName.trim(), ...(deleting ? {} : { action: "archive" }) });
+        if (!result.circle || result.circle.id !== circle.id || result.circle.name !== circle.name || result.circle.outcome !== (deleting ? "deleted" : "archived")) throw new Error("The response could not be verified. Refresh the Circle list before repeating this action.");
+        setCircles((current) => deleting ? current.filter((item) => item.id !== circle.id) : current.map((item) => ({ ...item,
+          ...(item.id === circle.id ? { status: "archived" as const } : {}),
+          ...(result.circle.blockId && item.blockId === result.circle.blockId && result.circle.blockStatus ? { blockStatus: result.circle.blockStatus } : {}),
+        })));
+        setConfirmationName("");
+        return deleting ? `${circle.name} deleted. No member records were removed.` : `${circle.name} archived. Its history is preserved.${result.circle.blockStatus === "archived" ? " Its Block is also archived." : ""} Existing Experiences and invitations are unchanged; review any future meetings.`;
+      });
+    } else if (currentConfirmation.kind === "remove") {
       const member = assignments.find((assignment) => assignment.assignmentId === currentConfirmation.assignmentId && assignment.memberId === currentConfirmation.memberId && assignment.circleId === circle.id);
       if (!member) { setConfirmation(null); return; }
       await change(circle.id, async () => {
@@ -139,7 +203,7 @@ export default function OperatorCirclesManager({
           ...(item.id === circle.id ? { activeMembers: Math.max(0, item.activeMembers - 1), status: result.assignment.circleStatus } : {}),
           ...(result.assignment.blockId && item.blockId === result.assignment.blockId ? { blockStatus: result.assignment.blockStatus } : {}),
         })));
-        return `${member.name} removed from ${circle.name}. Their account and history are unchanged.${result.assignment.circleStatus === "archived" ? " The empty Circle is now archived." : ""}${result.assignment.blockStatus === "archived" ? " Its Block is also archived." : ""} Review affected Experiences and sync their invitations.`;
+        return `${member.name} removed from ${circle.name}. Their account and history are unchanged.${result.assignment.circleStatus === "archived" ? " The empty Circle is now archived." : ""}${result.assignment.blockStatus === "archived" ? " Its Block is also archived." : ""} Connected Calendar changes are queued; check affected Experiences for their sync status.`;
       });
     }
   }
@@ -162,6 +226,33 @@ export default function OperatorCirclesManager({
 
   function confirmPanel(circle: OpsCircleSummary, member?: OpsCircleMemberAssignment) {
     if (!confirmation || confirmation.circleId !== circle.id) return null;
+    if (confirmation.kind === "move") {
+      if (!member || member.assignmentId !== confirmation.assignmentId) return null;
+      const source = circles.find((item) => item.id === member.circleId);
+      const destination = circles.find((item) => item.id === confirmation.toCircleId);
+      const destinations = circles.filter((item) => item.id !== member.circleId && available(item));
+      const issue = transferIssue(member);
+      return <div className="mt-3 rounded-[4px] bg-[var(--color-shop)]/35 p-4" role="group" aria-label={`Move ${member.name} to another Circle`}>
+        <p className="text-sm">Move <strong>{member.name}</strong> from <strong>{source?.name ?? "their Circle"}</strong>.</p>
+        {issue ? <p className="mt-2 text-sm text-[var(--color-poster)]">{issue} <Link className="underline" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership</Link></p> : destinations.length ? <>
+          <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Move to</span><select ref={destinationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label={`New Circle for ${member.name}`} value={confirmation.toCircleId} disabled={pending} onChange={(event) => setConfirmation({ ...confirmation, toCircleId: event.target.value })}>
+            <option value="">Choose a Circle</option>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.capacity - item.activeMembers} places · {item.status}</option>)}
+          </select></label>
+          <p className="mt-3 text-xs leading-relaxed text-black/65">Their membership and history stay intact. The move only happens if the new Circle has room.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
+        </> : <p className="mt-3 text-sm">No other Circles have an open place. <a className="underline" href="#create-circle">Create a Circle</a> first.</p>}
+        <div className="mt-3 flex flex-wrap gap-2"><button className={BUTTON} disabled={pending || !!issue || !destination || !available(destination) || destination.id === member.circleId} onClick={() => confirmChange(circle)} type="button">{pending ? "Moving…" : "Confirm move"}</button><button className={SECONDARY} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
+      </div>;
+    }
+    if (confirmation.kind === "delete" || confirmation.kind === "archive") {
+      if (member) return null;
+      const deleting = confirmation.kind === "delete";
+      return <div className="mt-4 rounded-[4px] bg-[var(--color-poster)]/[0.06] p-4" role="group" aria-label={deleting ? "Confirm Circle deletion" : "Confirm Circle archive"}>
+        <p className="text-sm leading-relaxed">{deleting ? <>Permanently delete <strong>{circle.name}</strong>? Only an unused Circle can be deleted. If it has a history, archive it instead. This cannot be undone.</> : <>Archive <strong>{circle.name}</strong>? It will stop accepting members and cannot be reopened. Its records and history stay intact. Existing events and invitations will not be cancelled.{circle.blockStatus === "active" ? " Its Block may also be archived if fewer than two Circles remain." : ""}</>}</p>
+        <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Type {circle.name} to confirm</span><input ref={confirmationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label="Circle name to confirm" value={confirmationName} onChange={(event) => setConfirmationName(event.target.value)} autoComplete="off" disabled={pending} /></label>
+        <div className="mt-3 flex flex-wrap gap-2"><button className={`${BUTTON} bg-[var(--color-poster)]`} disabled={pending || circle.activeMembers > 0 || confirmationName.trim() !== circle.name} onClick={() => confirmChange(circle)} type="button">{pending ? "Saving…" : deleting ? "Permanently delete Circle" : "Confirm archive"}</button><button className={SECONDARY} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
+        {notice("circle-removal")}
+      </div>;
+    }
     if (confirmation.kind === "remove" && (!member || member.assignmentId !== confirmation.assignmentId)) return null;
     if (confirmation.kind === "activate" && member) return null;
     return <div className="mt-3 rounded-[4px] bg-[var(--color-highlight)]/30 p-4" role="group" aria-label={confirmation.kind === "remove" ? "Confirm member removal" : "Confirm Circle activation"}>
@@ -176,6 +267,7 @@ export default function OperatorCirclesManager({
         <p className="text-black/60">{circles.length} {circles.length === 1 ? "Circle" : "Circles"} · choose one to manage its members</p>
         <nav aria-label="Circle setup" className="flex gap-4"><a className={SECONDARY} href="#create-circle">+ Create a Circle</a><a className={SECONDARY} href="#circle-resources">Shapers & resources</a></nav>
       </div>
+      {!confirmation || (confirmation.kind !== "delete" && confirmation.kind !== "archive") ? notice("circle-removal") : null}
       <section id="assign-member" className="scroll-mt-28" aria-label="Circles and members">
         {initialMemberId ? <p className="mb-4 rounded-[4px] bg-[var(--color-shop)]/35 p-4 text-sm leading-relaxed">
           {initialMember ? <>For <strong>{initialMember.name}</strong>, choose a Circle and select Manage members.{getCirclePlacementIssue(initialMember) ? ` ${getCirclePlacementIssue(initialMember)}` : ""} <Link className="underline underline-offset-4" href={`/ops/members/${encodeURIComponent(initialMember.memberId)}`}>Back to member</Link></> : memberCircle ? "This member’s Circle is open below." : "The selected member is unavailable. Search for a member inside a Circle, or review their member record."}
@@ -198,7 +290,10 @@ export default function OperatorCirclesManager({
                   <div><h3 className="mb-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Members</span></h3>
                     {roster.length ? <ul className="grid gap-2">{roster.map((member) => <li key={member.assignmentId} className="rounded-[4px] bg-black/[0.025] px-3 py-2"><div className="flex items-center justify-between gap-3">
                       <div className="min-w-0"><Link className="text-sm font-semibold underline decoration-black/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="break-all text-xs text-black/55">{member.email}</p></div>
-                      <button type="button" className={`${SECONDARY} shrink-0 text-[var(--color-poster)]`} disabled={pending} aria-label={`Remove ${member.name} from ${circle.name}`} onClick={() => setConfirmation({ kind: "remove", circleId: circle.id, memberId: member.memberId, assignmentId: member.assignmentId })}>Remove</button>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                        <button type="button" className={SECONDARY} disabled={pending} aria-label={`Move ${member.name} from ${circle.name}`} onClick={() => beginMove(member, circle.id)}>Move</button>
+                        <button type="button" className={`${SECONDARY} text-[var(--color-poster)]`} disabled={pending} aria-label={`Remove ${member.name} from ${circle.name}`} onClick={() => setConfirmation({ kind: "remove", circleId: circle.id, memberId: member.memberId, assignmentId: member.assignmentId })}>Remove</button>
+                      </div>
                     </div>{confirmPanel(circle, member)}</li>)}</ul> : <p className="text-sm text-black/60">No members yet. Add the first person here.</p>}
                   </div>
                   <div id={`member-search-${circle.id}`} className="scroll-mt-28"><h3 className="mb-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Add a member</span></h3>
@@ -220,9 +315,10 @@ export default function OperatorCirclesManager({
                             {member.memberId === pinnedMemberId ? <p className="mb-2 text-xs font-semibold text-black/60">Selected from member profile</p> : null}
                             <form aria-label={`Add ${member.name} to ${circle.name}`} data-member-id={member.memberId} onSubmit={(event) => addMember(event, circle, member.memberId)} className="flex flex-wrap items-center justify-between gap-3">
                               <div className="min-w-0 flex-1"><Link className="text-sm font-semibold underline decoration-black/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="break-all text-xs text-black/55">{member.email}</p></div>
-                              <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : "Add to Circle"}</button>
+                              {assignment && assignment.circleId !== circle.id ? <button className={`${BUTTON} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : "Add to Circle"}</button>}
                             </form>
-                            {issue ? <div className="mt-2 text-xs leading-relaxed text-black/60"><p>{issue}</p>{assignment ? assignment.circleId !== circle.id ? <Link className="mt-1 inline-flex min-h-9 items-center font-semibold underline underline-offset-4" href={searchHref(assignment.circleId)}>Open their Circle →</Link> : null : <Link className="mt-1 inline-flex min-h-9 items-center font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership →</Link>}</div> : null}
+                            {issue ? <div className="mt-2 text-xs leading-relaxed text-black/60"><p>{issue}</p>{assignment ? assignment.circleId !== circle.id ? <Link className="mt-1 inline-flex min-h-9 items-center underline underline-offset-4" href={searchHref(assignment.circleId)}>Open their Circle →</Link> : null : <Link className="mt-1 inline-flex min-h-9 items-center font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership →</Link>}</div> : null}
+                            {assignment && assignment.circleId !== circle.id ? confirmPanel(circle, assignment) : null}
                           </li>;
                         })}
                       </ul>
@@ -232,9 +328,17 @@ export default function OperatorCirclesManager({
                   </div>
                 </div>
                 {circle.status === "forming" ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-sm text-black/60">{circle.activeMembers ? "Activate when the Shaper, members, and first meeting are ready. Members need an active Circle to finish Foundations." : "Add the first member before activating this Circle."}</p><button className={SECONDARY} type="button" disabled={pending || !circle.activeMembers} onClick={() => setConfirmation({ kind: "activate", circleId: circle.id })}>Activate {circle.name}</button></div> : null}
-                {confirmPanel(circle)}
+                {confirmation?.kind === "activate" ? confirmPanel(circle) : null}
                 {notice(circle.id)}
               </section>
+              <div className="px-5 pb-4 sm:px-6">
+                <div className="flex flex-wrap items-center gap-x-3">
+                  {circle.status !== "archived" ? <button className={SECONDARY} type="button" disabled={pending || circle.activeMembers > 0} aria-label={`Archive ${circle.name}`} onClick={() => { setConfirmationName(""); setNotices((current) => ({ ...current, "circle-removal": null })); setConfirmation({ kind: "archive", circleId: circle.id }); }}>Archive Circle</button> : null}
+                  {circle.status === "forming" ? <button className={`${SECONDARY} text-[var(--color-poster)]`} type="button" disabled={pending || circle.activeMembers > 0} aria-label={`Delete ${circle.name}`} onClick={() => { setConfirmationName(""); setNotices((current) => ({ ...current, "circle-removal": null })); setConfirmation({ kind: "delete", circleId: circle.id }); }}>Delete Circle</button> : null}
+                  <p className="text-xs text-black/55">{circle.status === "archived" ? "Archived. History retained." : circle.activeMembers > 0 ? "Move members out before archiving or deleting." : circle.status === "forming" ? "Archive keeps history. Delete is for unused Circles only." : "Archive this Circle to keep its history."}</p>
+                </div>
+                {confirmation?.kind === "delete" || confirmation?.kind === "archive" ? confirmPanel(circle) : null}
+              </div>
             </article>;
           })}
         </div>

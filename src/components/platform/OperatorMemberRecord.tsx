@@ -124,7 +124,7 @@ export default function OperatorMemberRecord({
 
       <nav
         aria-label="Member record sections"
-        className="sticky top-[var(--ruined-header-height)] z-20 -mx-4 flex overflow-x-auto border-b border-black/20 bg-[var(--color-bone)]/95 px-4 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10"
+        className="-mx-4 flex overflow-x-auto border-b border-black/20 bg-[var(--color-bone)] px-4 sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10"
       >
         {[
           ["Overview", "#overview"],

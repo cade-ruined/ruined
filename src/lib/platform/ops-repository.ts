@@ -165,6 +165,18 @@ export type OpsCircleAssignmentEndResult = {
   memberId: string;
 };
 
+export type OpsCircleTransferResult = {
+  assignedAt: string;
+  circleId: string;
+  fromBlockId: string | null;
+  fromBlockStatus: OpsBlockStatus | null;
+  fromCircleId: string;
+  fromCircleStatus: OpsCircleSummary["status"];
+  id: string;
+  memberId: string;
+  previousAssignmentId: string;
+};
+
 export type OpsCircleActivationResult = OpsCircleSummary & {
   activated: boolean;
 };
@@ -1936,6 +1948,132 @@ export async function assignMemberToCircle({
       id: assignment.id,
       memberId: assignment.member_id,
     };
+  });
+}
+
+export async function transferMemberToCircle({
+  actorAuthUserId,
+  assignmentId,
+  fromCircleId,
+  memberId,
+  toCircleId,
+}: {
+  actorAuthUserId: string;
+  assignmentId: string;
+  fromCircleId: string;
+  memberId: string;
+  toCircleId: string;
+}): Promise<OpsCircleTransferResult> {
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    await requireOpsAdmin(tx, actorAuthUserId);
+    if (![memberId, fromCircleId, toCircleId].every((id) => UUID_PATTERN.test(id))
+      || !/^[1-9][0-9]{0,18}$/.test(assignmentId)
+      || BigInt(assignmentId) > 9223372036854775807n) {
+      throw new OpsRepositoryError("invalid_request", "Choose a valid member, current placement, and destination Circle.");
+    }
+    const sourceId = fromCircleId.toLowerCase();
+    const destinationId = toCircleId.toLowerCase();
+    const normalizedMemberId = memberId.toLowerCase();
+    if (sourceId === destinationId) throw new OpsRepositoryError("invalid_request", "Choose a different Circle for this transfer.");
+
+    // Match assignment/removal writers: member lock before assignment and Circle
+    // locks. Both Circles are then locked in UUID order for opposite-direction moves.
+    await tx`select pg_advisory_xact_lock(hashtext(${normalizedMemberId}), 2)`;
+    const memberRows = await tx<Array<{
+      account_state: string; billing_state: string; membership_state: string; program_state: string;
+    }>>`
+      select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, member.membership_state
+      from ruined_members member
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      where member.id = ${normalizedMemberId}::uuid
+      for update of member, lifecycle
+    `;
+    const member = memberRows[0];
+    if (!member) throw new OpsRepositoryError("not_found", "That member could not be found.");
+    if (member.account_state !== "active" || member.billing_state !== "active" || member.membership_state !== "active"
+      || !["onboarding", "active"].includes(member.program_state)) {
+      throw new OpsRepositoryError("conflict", "Review this member's membership before transferring them. An active account, active billing, and an onboarding or active program are required.");
+    }
+    const assignmentRows = await tx<Array<{ id: string; circle_id: string }>>`
+      select id::text, circle_id from circle_member_assignments
+      where member_id = ${normalizedMemberId}::uuid and ended_at is null
+      for update
+    `;
+    const previous = assignmentRows[0];
+    if (assignmentRows.length !== 1 || previous.id !== assignmentId || previous.circle_id !== sourceId) {
+      throw new OpsRepositoryError("conflict", "This member's placement changed. Refresh the Circle before transferring them.");
+    }
+    const circleRows = await tx<Array<{ id: string; status: OpsCircleSummary["status"]; capacity: number }>>`
+      select id, status, capacity from circles
+      where id in (${sourceId}::uuid, ${destinationId}::uuid)
+      order by id
+      for update
+    `;
+    const source = circleRows.find((circle) => circle.id === sourceId);
+    const destination = circleRows.find((circle) => circle.id === destinationId);
+    if (!source || !destination) throw new OpsRepositoryError("not_found", "One of these Circles could not be found. Refresh before transferring.");
+    if (destination.status !== "forming" && destination.status !== "active") {
+      throw new OpsRepositoryError("conflict", "The destination Circle is not accepting members.");
+    }
+    const countRows = await tx<Array<{ circle_id: string; active_members: number | string }>>`
+      select circle_id, count(*) as active_members from circle_member_assignments
+      where circle_id in (${sourceId}::uuid, ${destinationId}::uuid) and ended_at is null
+      group by circle_id
+    `;
+    const destinationCount = Number(countRows.find((row) => row.circle_id === destinationId)?.active_members ?? 0);
+    if (destinationCount >= Number(destination.capacity)) {
+      throw new OpsRepositoryError("conflict", "The destination Circle is full. Choose a Circle with an open place.");
+    }
+    const sourceCount = Number(countRows.find((row) => row.circle_id === sourceId)?.active_members ?? 0);
+    const endedRows = await tx<Array<{ id: string }>>`
+      update circle_member_assignments
+      set ended_at = statement_timestamp(), end_reason = 'ops_transferred_assignment', ended_by_auth_user_id = ${actorAuthUserId}::uuid
+      where id = ${assignmentId}::bigint and member_id = ${normalizedMemberId}::uuid
+        and circle_id = ${sourceId}::uuid and ended_at is null
+      returning id::text
+    `;
+    if (!endedRows[0]) throw new OpsRepositoryError("conflict", "This placement is no longer current. Refresh before transferring.");
+    // End and start share the exact database timestamp, including sub-millisecond
+    // precision. Never rewrite the old assignment's Circle or completion proof.
+    const newRows = await tx<Array<{ id: string; assigned_at: Date }>>`
+      insert into circle_member_assignments (member_id, circle_id, assigned_by_auth_user_id, assigned_at)
+      values (${normalizedMemberId}::uuid, ${destinationId}::uuid, ${actorAuthUserId}::uuid,
+        (select ended_at from circle_member_assignments where id = ${assignmentId}::bigint))
+      returning id::text, assigned_at
+    `;
+    const assignment = newRows[0];
+    if (!assignment) throw new Error("The transfer could not be saved.");
+    const archiveSource = source.status === "active" && sourceCount === 1;
+    if (archiveSource) {
+      // Preserve existing empty-source/Block reconciliation, with Circle then
+      // Block locks before any Calendar queue locks are acquired.
+      await tx`
+        update circles set status = 'archived', ends_at = statement_timestamp(), updated_at = statement_timestamp()
+        where id = ${sourceId}::uuid and status = 'active'
+      `;
+    }
+    const blockRows = await tx<Array<{ block_id: string; block_status: OpsBlockStatus }>>`
+      select assignment.block_id, membership_block.status as block_status
+      from block_circle_assignments assignment
+      join membership_blocks membership_block on membership_block.id = assignment.block_id
+      where assignment.circle_id = ${sourceId}::uuid and assignment.ended_at is null
+      limit 1
+    `;
+    const result: OpsCircleTransferResult = {
+      assignedAt: assignment.assigned_at.toISOString(), circleId: destinationId,
+      fromBlockId: blockRows[0]?.block_id ?? null, fromBlockStatus: blockRows[0]?.block_status ?? null,
+      fromCircleId: sourceId, fromCircleStatus: archiveSource ? "archived" : source.status,
+      id: assignment.id, memberId: normalizedMemberId, previousAssignmentId: assignmentId,
+    };
+    for (const circle of circleRows) {
+      await markCalendarAudiencesPendingForCircle(tx, { actorAuthUserId, circleId: circle.id });
+    }
+    await writeOpsAudit(tx, {
+      action: "circle.member_transferred", actorAuthUserId, subjectType: "member", subjectId: normalizedMemberId,
+      before: { assignmentId, circleId: sourceId }, after: result,
+    });
+    return result;
   });
 }
 
