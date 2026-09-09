@@ -14,6 +14,7 @@ import {
   type SearchGroup,
   type SearchResponse,
 } from "@/data/search-contract";
+import { publicSearchHref, shouldRestoreLinkFocus } from "@/lib/navigation-link";
 import styles from "./UniversalSearch.module.css";
 
 const GROUP_LABELS: Record<SearchGroup, string> = {
@@ -98,8 +99,8 @@ export default function UniversalSearch({
   if (!open) return null;
 
   const close = () => onOpenChange(false);
-  const closeForNavigation = () => {
-    restoreFocusOnCloseRef.current = false;
+  const closeForNavigation = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    restoreFocusOnCloseRef.current = shouldRestoreLinkFocus(event, window.location.href);
     onOpenChange(false);
   };
   const hasResults = Boolean(response?.total);
@@ -206,7 +207,7 @@ export default function UniversalSearch({
           {failed ? (
             <div className={styles.empty}>
               <p>Search is temporarily unavailable.</p>
-              <Link href="/store" onClick={closeForNavigation}>Browse the shop instead →</Link>
+              <Link href={publicSearchHref("/store")} onClick={closeForNavigation}>Browse the shop instead →</Link>
             </div>
           ) : !response && loading ? (
             <div className={styles.loading} aria-hidden="true">
@@ -229,7 +230,7 @@ export default function UniversalSearch({
                       <Link
                         data-search-result
                         key={`${group}-${item.id}`}
-                        href={item.href}
+                        href={publicSearchHref(item.href)}
                         className={styles.result}
                         onClick={closeForNavigation}
                       >

@@ -1,20 +1,23 @@
 import ImmersiveParallax from "@/components/ImmersiveParallax";
 import MobileImmersiveJourney from "@/components/MobileImmersiveJourney";
-import { getProducts } from "@/lib/shopify";
+import { getHomepageCatalog } from "@/lib/store/homepage-catalog";
 
 // The portrait journey is the resilient server-rendered homepage. Fine-pointer
 // desktops progressively upgrade to the scroll-scrubbed dive; touch devices
 // keep a lightweight, single-viewport swipe journey.
-export const revalidate = 3600;
+// Cache successful catalog teasers briefly, but never cache a failed page read.
+export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const products = await getProducts();
+  const catalog = await getHomepageCatalog();
+  const products = catalog.products;
 
   return (
     <>
       <ImmersiveParallax
         products={products}
-        fallback={<MobileImmersiveJourney products={products} />}
+        catalogStatus={catalog.status}
+        fallback={<MobileImmersiveJourney products={products} catalogStatus={catalog.status} />}
       />
     </>
   );

@@ -1,11 +1,14 @@
 import ContactForm from "@/components/ContactForm";
+import type { ContactTopic } from "@/lib/contact-topic";
 
 export default function ContactSurface({
   modal = false,
   titleId,
+  initialTopic = "general",
 }: {
   modal?: boolean;
   titleId?: string;
+  initialTopic?: ContactTopic;
 }) {
   const Heading = modal ? "h2" : "h1";
 
@@ -31,7 +34,7 @@ export default function ContactSurface({
       </div>
 
       <div className="md:col-span-6 md:col-start-7 md:pt-2">
-        <ContactForm />
+        <ContactForm key={initialTopic} initialTopic={initialTopic} />
       </div>
     </section>
   );

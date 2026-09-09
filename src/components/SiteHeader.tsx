@@ -18,12 +18,15 @@ import BagLink from "@/components/store/BagLink";
 import {
   EXPLORE_ROOMS,
   SITE_ROUTES,
-  WALK_MENU_ITEMS,
+  GLOBAL_MENU_ITEMS,
   activeGlobalNavigationId,
   sectionLocatorForPathname,
   type ExploreRoom,
 } from "@/data/navigation";
+import { MEMBERSHIP_LINKS } from "@/data/public-membership";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
+import { publicWebsiteHref } from "@/lib/site";
+import { shouldRestoreLinkFocus } from "@/lib/navigation-link";
 import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 
 const MENU_ID = "site-navigation-menu";
@@ -140,8 +143,8 @@ export default function SiteHeader() {
     restoreMenuFocusRef.current = true;
     setMenuOpen(false);
   };
-  const closeMenuForNavigation = () => {
-    restoreMenuFocusRef.current = false;
+  const closeMenuForNavigation = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    restoreMenuFocusRef.current = shouldRestoreLinkFocus(event, window.location.href);
     setMenuOpen(false);
   };
   const openSearch = () => {
@@ -178,7 +181,7 @@ export default function SiteHeader() {
     room: ExploreRoom = EXPLORE_ROOMS[0]
   ) => {
     if (isHome) closeMenu();
-    else closeMenuForNavigation();
+    else closeMenuForNavigation(event);
     if (
       !isHome ||
       event.button !== 0 ||
@@ -240,8 +243,8 @@ export default function SiteHeader() {
               {!showMyRuined && <SearchControl open={searchOpen} onOpen={openSearch} />}
               {showMyRuined && (
                 <Link
-                  href={SITE_ROUTES.my.href}
-                  aria-label="My Ruined"
+                  href={isPlatform ? SITE_ROUTES.my.href : MEMBERSHIP_LINKS.signIn}
+                  aria-label={isPlatform ? "My profile" : "Member sign-in"}
                   className="ruined-header-control ruined-header-person"
                 >
                   <PersonGlyph className="ruined-person-glyph" />
@@ -296,17 +299,17 @@ export default function SiteHeader() {
 
               <div className="ruined-site-menu-content">
                 <nav aria-label="Site destinations" className="ruined-site-menu-nav">
-                  {WALK_MENU_ITEMS.map((item, index) => {
+                  {GLOBAL_MENU_ITEMS.map((item, index) => {
                     const active = isHome
-                      ? homeSceneIndex === item.sceneIndex
+                      ? homeSceneIndex === index
                       : activeGlobalId === item.id;
                     return (
                       <Link
                         key={item.id}
                         ref={index === 0 ? firstMenuItemRef : undefined}
-                        href={item.href}
+                        href={publicWebsiteHref(item.href)}
                         aria-current={active ? "page" : undefined}
-                        onClick={(event) => handleWalkLink(event, item)}
+                        onClick={item.id === "home" ? handleWalkLink : closeMenuForNavigation}
                         className={active ? "is-active" : undefined}
                       >
                         <span className="ruined-site-menu-number" aria-hidden="true">
@@ -325,9 +328,12 @@ export default function SiteHeader() {
                 </nav>
 
                 <div className="ruined-site-menu-secondary">
-                  <Link href={SITE_ROUTES.contact.href} onClick={closeMenuForNavigation}>
+                  <Link href={publicWebsiteHref(SITE_ROUTES.contact.href)} onClick={closeMenuForNavigation}>
                     Contact
                   </Link>
+                  <a href={isPlatform ? SITE_ROUTES.my.href : MEMBERSHIP_LINKS.signIn} onClick={closeMenuForNavigation}>
+                    {isPlatform ? "My profile" : "Member sign-in"}
+                  </a>
                 </div>
               </div>
 
@@ -363,7 +369,7 @@ function BrandHomeLink({
 }) {
   return (
     <Link
-      href="/#top"
+      href={publicWebsiteHref("/#top")}
       aria-label="Ruined — explore the walk"
       onClick={isHome ? onHomeClick : undefined}
       className="ruined-header-brand"

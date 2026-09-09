@@ -21,10 +21,11 @@ import {
   JourneyLobbyIndex,
   JourneyStoreIndex,
 } from "@/components/sequence/JourneyIndexes";
-import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
+import JourneyMembersPreview from "@/components/sequence/JourneyMembersPreview";
 import { EVENTS } from "@/data/events";
 import type { Product } from "@/data/products";
+import type { CatalogStatus } from "@/lib/store/catalog";
 import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
   MOBILE_ARRIVAL_FRAME_PATHS,
@@ -60,12 +61,12 @@ const MOBILE_SCENES = [
     heading: EXPLORE_ROOMS[1].label,
   },
   {
-    id: "work",
+    id: "about",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[2]),
     heading: EXPLORE_ROOMS[2].label,
   },
   {
-    id: "about",
+    id: "members",
     image: versionSequenceAsset(MOBILE_ARRIVAL_FRAME_PATHS[3]),
     heading: EXPLORE_ROOMS[3].label,
   },
@@ -336,8 +337,10 @@ function MobileFiresideVideo({
 
 export default function MobileImmersiveJourney({
   products,
+  catalogStatus,
 }: {
   products: Product[];
+  catalogStatus?: CatalogStatus;
 }) {
   const journeyRef = useRef<HTMLElement>(null);
   const walkRef = useRef<MobileWalkTransitionHandle>(null);
@@ -667,11 +670,14 @@ export default function MobileImmersiveJourney({
       events={EVENTS}
       products={products}
     />,
-    <JourneyStoreIndex key="store-selections" products={products} />,
-    <JourneyComingSoon key="work-selections" section="artifacts" />,
+    <JourneyStoreIndex key="store-selections" products={products} catalogStatus={catalogStatus} />,
     <JourneyAboutStatement
       key="about-statement"
       headingId="mobile-journey-about-statement-heading"
+    />,
+    <JourneyMembersPreview
+      key="members-preview"
+      headingId="mobile-journey-members-heading"
     />,
   ];
 
@@ -823,7 +829,7 @@ export default function MobileImmersiveJourney({
         }
 
         .ruined-mobile-journey[data-stage-enabled]:focus-visible {
-          outline: 2px solid var(--color-signal, #e5a923);
+          outline: 2px solid var(--color-signal, #ffca2c);
           outline-offset: -2px;
         }
 

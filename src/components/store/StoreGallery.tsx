@@ -2,9 +2,17 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
+import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 
-export default function StoreGallery({ products }: { products: Product[] }) {
+export default function StoreGallery({
+  products,
+  catalogStatus = products.length ? "ready" : "unavailable",
+}: {
+  products: Product[];
+  catalogStatus?: CatalogStatus;
+}) {
   if (!products.length) {
+    const notice = catalogNotice(catalogStatus);
     return (
       <main className="min-h-screen bg-black px-5 pb-24 pt-12 text-[var(--color-bone)] sm:px-10 sm:pt-14">
         <div className="mx-auto max-w-[96rem]">
@@ -14,16 +22,29 @@ export default function StoreGallery({ products }: { products: Product[] }) {
           >
             ← Return to the walk
           </Link>
-          <div className="mt-16 max-w-3xl border-t border-white/15 pt-8 sm:mt-24">
+          <div className="mt-16 max-w-3xl sm:mt-24" data-catalog-status={catalogStatus}>
             <p className="font-mono text-[0.64rem] uppercase tracking-[0.26em] text-[var(--color-poster)]">
               Store
             </p>
             <h1 className="display mt-5 text-[clamp(3.5rem,10vw,8rem)] leading-[0.82]">
-              The catalogue is closed.
+              {notice.heading}
             </h1>
             <p className="mt-7 max-w-xl text-sm leading-relaxed text-white/55 sm:text-base">
-              The next piece is being prepared. Return soon.
+              {notice.detail}
             </p>
+            <div className="mt-7 flex flex-wrap items-center gap-6">
+              {notice.retry && (
+                // A document reload deliberately bypasses a cached client route
+                // after a failed read; a same-route Link may do nothing.
+                // eslint-disable-next-line @next/next/no-html-link-for-pages
+                <a href="/store" className="ui-heading inline-flex min-h-11 items-center rounded-sm bg-[var(--color-signal)] px-5 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+                  Try again
+                </a>
+              )}
+              <Link href="/contact" className="ui-heading inline-flex min-h-11 items-center gap-2 text-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+                Contact Ruined <span aria-hidden="true">→</span>
+              </Link>
+            </div>
           </div>
         </div>
       </main>

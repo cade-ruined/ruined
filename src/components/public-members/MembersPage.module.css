@@ -1,0 +1,153 @@
+.page {
+  color: var(--color-faded);
+  background: var(--color-bone) url("/textures/member-paper.svg") repeat;
+  padding: 1.5rem 1.15rem 2rem;
+  font-family: var(--font-body);
+}
+
+.content { max-width: 88rem; margin: 0 auto; }
+.page figure, .page p { margin: 0; }
+.page section[id] { scroll-margin-top: calc(var(--ruined-header-height, 4rem) + 1.5rem); }
+.page a:focus-visible { outline: 3px solid var(--color-poster); outline-offset: 5px; }
+.page a { -webkit-tap-highlight-color: transparent; }
+.hero { display: grid; gap: 2rem; }
+.heroCopy { min-width: 0; padding-top: .5rem; }
+.page .handwritten {
+  color: var(--color-poster);
+  font-family: var(--font-cadehandy2), var(--font-handwritten);
+  font-size: 1.65rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.heroTitle {
+  margin: 1.25rem 0 1.4rem;
+  max-width: 9ch;
+  font-size: clamp(3.15rem, 8.8vw, 4.2rem);
+  line-height: .87;
+  letter-spacing: -.065em;
+  text-transform: uppercase;
+}
+.heroTitle em {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin-top: .2em;
+  padding: .09em .12em .14em;
+  background: var(--color-highlight);
+  font-size: .79em;
+  line-height: .94;
+  letter-spacing: -.05em;
+  text-transform: none;
+}
+.page .heroDescription { max-width: 29rem; font-size: 1rem; line-height: 1.65; }
+.heroActions { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1.5rem; margin-top: 1.5rem; }
+.inquiry {
+  display: inline-flex;
+  min-height: 3.15rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: .9rem 1.1rem;
+  border-radius: 4px;
+  background: var(--color-faded);
+  color: var(--color-bone);
+  box-shadow: 4px 4px 0 var(--color-poster);
+  font-size: .76rem;
+  font-weight: 750;
+  line-height: 1.25;
+  text-decoration: none;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.inquiry:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--color-poster); }
+.inquiry span { font-size: 1.3rem; font-weight: 400; }
+.signIn, .textLink { display: inline-flex; min-height: 2.75rem; align-items: center; gap: .8rem; font-size: .75rem; font-weight: 600; text-decoration: underline; text-underline-offset: .3em; }
+.signIn:hover, .textLink:hover { color: var(--color-poster); }
+.heroFigure { align-self: start; min-width: 0; }
+.heroImage, .foundationImage, .circleImage, .academyImage, .experiencesImage { position: relative; overflow: hidden; border-radius: 4px; background: var(--color-faded); }
+.heroImage { aspect-ratio: 5 / 4; }
+.image { object-fit: cover; }
+.heroImage .image { object-position: 28% center; }
+.imageCaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem 1rem; padding-top: .6rem; color: #58544e; font-size: .62rem; line-height: 1.4; }
+.imageCaption span { color: #6b665e; }
+.introduction { display: grid; gap: 1.2rem; margin: 3.7rem 0 3rem; }
+.statement { margin: 0; max-width: 34rem; font-size: clamp(1.85rem, 3.2vw, 3.1rem); line-height: 1.12; letter-spacing: -.035em; }
+.pillarIndex { display: flex; flex-wrap: wrap; gap: .3rem 1.25rem; margin-top: 1.1rem; }
+.pillarIndex a { display: inline-flex; min-height: 2.75rem; align-items: center; gap: .65rem; font-size: .73rem; font-weight: 650; text-decoration: none; }
+.pillarIndex a:hover { text-decoration: underline; text-underline-offset: .35em; }
+.pillarIndex span { color: var(--color-poster); }
+.foundations { display: grid; gap: 1.6rem; align-items: center; }
+.foundationImage { aspect-ratio: 5 / 4; }
+.foundationCopy { max-width: 33rem; }
+.sectionTitle { margin: .7rem 0 1.15rem; font-size: clamp(2.15rem, 4.5vw, 4.4rem); line-height: .92; letter-spacing: -.06em; text-transform: uppercase; overflow-wrap: anywhere; }
+.page .summary { max-width: 34rem; font-size: 1.05rem; line-height: 1.6; }
+.page .bodyCopy { margin-top: 1rem; font-size: .89rem; line-height: 1.7; color: #56524b; }
+.page .detailNote { margin-top: 1.2rem; max-width: 26rem; font-size: .72rem; line-height: 1.6; color: #625d55; }
+.circle { display: grid; margin-top: 3.75rem; }
+.circleCopy { padding: 1.75rem 1.5rem 2.1rem; border-radius: 4px 4px 0 0; background: var(--color-shop); }
+.circleNote { display: block; margin-top: 1.5rem; font-family: var(--font-cadehandy2), var(--font-handwritten); font-size: 1.5rem; line-height: 1.15; }
+.circleImage { aspect-ratio: 5 / 4; border-radius: 0 0 4px 4px; }
+.circleImage .image { object-position: center 65%; }
+.continuing { display: grid; gap: 3.25rem; margin-top: 3.75rem; }
+.sectionHeading { min-width: 0; }
+.academyImage { aspect-ratio: 5 / 4; }
+.academyImage .image { object-position: center 67%; }
+.experiencesImage { aspect-ratio: 5 / 4; }
+.experiencesImage .image { object-position: center 63%; }
+.imageLabel { position: absolute; left: 1rem; bottom: 1rem; max-width: calc(100% - 2rem); padding: .4rem .65rem .5rem; background: var(--color-highlight); color: var(--color-faded); font-family: var(--font-cadehandy2), var(--font-handwritten); font-size: 1.55rem; line-height: 1; }
+.continuing .summary { margin-top: 1.1rem; }
+.textLink { margin-top: .6rem; }
+.artifactNote { display: grid; gap: .7rem; max-width: 47rem; margin: 3.25rem 0; }
+.artifactNote > p:last-child { font-size: .82rem; line-height: 1.65; color: #625d55; }
+.invitation { display: grid; gap: 2rem; padding: 2rem 1.5rem; border-radius: 4px; background: var(--color-verdigris); color: var(--color-bone); }
+.invitation .handwritten { color: var(--color-highlight); }
+.invitationTitle { margin: .9rem 0 0; font-size: clamp(2.25rem, 4.5vw, 4.1rem); line-height: .95; letter-spacing: -.055em; text-transform: uppercase; }
+.invitationTitle em { display: inline-block; margin-top: .13em; font-size: .9em; text-transform: none; }
+.invitationCopy { align-self: center; min-width: 0; }
+.invitationCopy > p:first-child { max-width: 26rem; font-size: .95rem; line-height: 1.6; }
+.inquiryLight { margin-top: 1.25rem; background: var(--color-bone); color: var(--color-faded); box-shadow: 4px 4px 0 #1e3a2f; }
+.inquiryLight:hover { box-shadow: 2px 2px 0 #1e3a2f; }
+.page .invitationNote { max-width: 25rem; margin-top: 1.2rem; font-size: .73rem; line-height: 1.6; }
+.invitation .signIn { margin-top: .45rem; }
+.invitation .signIn:hover { color: var(--color-highlight); }
+.invitation a:focus-visible { outline-color: var(--color-highlight); }
+
+@media (min-width: 760px) {
+  .page { padding: 2rem 2rem 3rem; }
+  .hero { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 3rem; align-items: center; }
+  .heroTitle { font-size: clamp(4rem, 7.5vw, 7rem); }
+  .heroImage { aspect-ratio: 4 / 5; max-height: clamp(28rem, 58vh, 36rem); }
+  .heroCopy { padding: 0 0 1.5rem; }
+  .page .heroDescription { font-size: 1.02rem; }
+  .heroActions { margin-top: 1.75rem; }
+  .introduction { grid-template-columns: minmax(0, .5fr) minmax(0, 1fr); gap: 2.5rem; align-items: start; margin: 5rem 0 4rem; }
+  .introduction .handwritten { padding-top: .35rem; }
+  .foundations { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 3.5rem; }
+  .foundationImage { aspect-ratio: 5 / 4; }
+  .sectionTitle { font-size: clamp(2.25rem, 4vw, 4rem); }
+  .circle { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: start; margin-top: 5rem; }
+  .circleCopy { display: flex; min-height: 100%; flex-direction: column; justify-content: center; padding: 2.3rem; border-radius: 4px 0 0 4px; }
+  .circleFigure { padding-top: 2rem; padding-bottom: 2rem; }
+  .circleImage { aspect-ratio: 5 / 4; border-radius: 0 4px 4px 0; }
+  .circle .imageCaption { padding-left: 1rem; }
+  .continuing { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3.5rem; margin-top: 5rem; }
+  .experiences { padding-top: 3.25rem; }
+  .academyImage { aspect-ratio: 4 / 3; }
+  .experiencesImage { aspect-ratio: 4 / 3; }
+  .artifactNote { grid-template-columns: 8rem minmax(0, 1fr); gap: 2rem; align-items: start; margin: 4rem 0; }
+  .invitation { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 3rem; padding: 3rem; }
+}
+
+@media (min-width: 1200px) {
+  .page { padding-right: 3rem; padding-left: 3rem; }
+  .hero { gap: 4rem; }
+  .heroActions { gap: 1rem 1.6rem; }
+  .page .heroDescription { font-size: 1.1rem; }
+  .circleCopy { padding: 3.5rem; }
+  .invitation { padding: 3.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inquiry { transition: none; }
+  .inquiry:hover { transform: none; }
+}

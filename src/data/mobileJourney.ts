@@ -17,7 +17,9 @@ export const MOBILE_SCENE_IDS = EXPLORE_ROOM_IDS;
 export type MobileSceneId = (typeof MOBILE_SCENE_IDS)[number];
 
 export function mobileSceneIndexFromHash(hash: string) {
-  const id = hash.replace(/^#/, "") || "top";
+  // Older links called the Record Room “work”; its physical destination is
+  // unchanged, but it now introduces About.
+  const id = hash === "#work" ? "about" : hash.replace(/^#/, "") || "top";
   const index = MOBILE_SCENE_IDS.indexOf(id as MobileSceneId);
   return index < 0 ? 0 : index;
 }

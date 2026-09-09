@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Resend, type ErrorResponse, type WebhookEventPayload } from "resend";
+import type { ContactTopic } from "@/lib/contact-topic";
 
 import { createGeneralUpdatesConfirmationEmail } from "@/lib/communications/general-updates-confirmation-email";
 import {
@@ -56,6 +57,7 @@ export type SendContactSubmissionInput = {
   idempotencyKey: string;
   message: string;
   name: string;
+  topic?: ContactTopic;
 };
 
 export type SendContactSubmissionResult = {
@@ -272,9 +274,10 @@ export async function sendContactSubmission(
       from,
       to,
       replyTo: email,
-      subject: "New contact message",
+      subject: input.topic === "membership" ? "Membership inquiry" : "New contact message",
       text: [
         "New contact message for The Ruined Project",
+        `Topic: ${input.topic === "membership" ? "Membership" : "General question"}`,
         "",
         `Name: ${name}`,
         `Email: ${email}`,

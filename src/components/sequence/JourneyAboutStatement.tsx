@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function JourneyAboutStatement({
   headingId,
 }: {
@@ -7,18 +9,18 @@ export default function JourneyAboutStatement({
     <section
       aria-labelledby={headingId}
       data-journey-about-statement
-      className="border border-white/25 bg-black/88 p-4 text-white shadow-[7px_8px_0_rgba(0,0,0,0.5)] backdrop-blur-sm sm:p-6"
+      className="rounded-[5px] bg-black/88 p-5 text-[var(--color-bone)] shadow-[7px_8px_0_rgba(0,0,0,0.5)] backdrop-blur-sm sm:p-7"
     >
       <div className="grid gap-4 sm:grid-cols-[minmax(11rem,0.58fr)_minmax(0,1.42fr)] sm:gap-8">
         <header>
-          <p className="ui-heading text-xs text-[var(--color-poster)]">
-            About
+          <p style={{ fontFamily: "var(--font-handwritten)" }} className="text-[1.6rem] leading-none text-[var(--color-signal)]">
+            About us
           </p>
           <h2
             id={headingId}
-            className="display mt-2 text-[clamp(1.75rem,4vw,3.5rem)] leading-[0.92]"
+            className="ui-heading mt-3 text-[clamp(1.9rem,4vw,3.5rem)] uppercase leading-[0.94] tracking-[-0.05em]"
           >
-            About Ruined.
+            Refine what matters.
           </h2>
         </header>
 
@@ -31,12 +33,9 @@ export default function JourneyAboutStatement({
             Different outputs, same philosophy: remove what’s unnecessary,
             refine what matters, and create what deserves to exist.
           </p>
-          <p>
-            This site is still being built. But like most things Ruined, we
-            think you should see the process, not just the finished product. So
-            come in. Look around. Consider this a walk through a small piece of
-            our world while we’re still making it.
-          </p>
+          <Link href="/about" className="inline-flex min-h-11 items-center gap-5 font-[var(--font-header)] font-semibold text-[var(--color-bone)] underline decoration-white/35 underline-offset-4 hover:decoration-white">
+            About Ruined <span aria-hidden="true">→</span>
+          </Link>
         </div>
       </div>
     </section>

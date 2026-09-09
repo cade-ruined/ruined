@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef } from "react";
 
 import ContactSurface from "@/components/contact/ContactSurface";
+import type { ContactTopic } from "@/lib/contact-topic";
 
-export default function ContactModal() {
+export default function ContactModal({ initialTopic = "general" }: { initialTopic?: ContactTopic }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -71,12 +72,12 @@ export default function ContactModal() {
             onClick={returnToRoom}
             className="min-h-11 border border-black/35 px-4 font-mono text-[0.55rem] uppercase tracking-[0.18em] transition-colors hover:border-black hover:bg-black hover:text-[var(--color-bone)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           >
-            Return to room
+            Back
           </button>
         </header>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain px-5 py-10 sm:px-8 sm:py-12 lg:px-12 lg:py-14">
-          <ContactSurface modal titleId={titleId} />
+          <ContactSurface modal titleId={titleId} initialTopic={initialTopic} />
         </div>
       </div>
     </dialog>

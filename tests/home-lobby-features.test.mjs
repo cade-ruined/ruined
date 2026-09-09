@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("the home marquee keeps the tank first and turns the BYOB group image into Nº 02 registration", async () => {
+test("the home marquee places the live tank before BYOB registration and preserves the event image", async () => {
   const [indexSource, eventsSource, gallerySource] = await Promise.all([
     fs.readFile(
       path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
@@ -54,8 +54,8 @@ test("the home marquee keeps the tank first and turns the BYOB group image into 
     eventsSource,
     /registration: isRegistrationEvent[\s\S]*?href: "\/community\/byob-02\/register"[\s\S]*?label: "Register"[\s\S]*?status: "Open"/
   );
-  assert.match(indexSource, /title:\s*tank\?\.name \?\? BYOB_TANK_FEATURE_FALLBACK\.title/);
-  assert.match(indexSource, /href:\s*tank \? `\/store\/\$\{tank\.id\}` : undefined/);
+  assert.match(indexSource, /title:\s*tank\.name/);
+  assert.match(indexSource, /href:\s*`\/store\/\$\{tank\.id\}`/);
   assert.match(indexSource, /tank\?\.images\?\.find\(\(image\) => image\.url\.includes\("BYOB_Tee_Product\.png"\)\)[\s\S]*?\?\?\s*tank\?\.image/);
   assert.match(indexSource, /href: "#about"/);
   assert.match(indexSource, /priority=\{index === 0\}/);
@@ -65,7 +65,7 @@ test("the home marquee keeps the tank first and turns the BYOB group image into 
   );
 });
 
-test("the BYOB Tank stays in the home rail without Shopify and prefers live product data", async () => {
+test("the BYOB Tank promotion requires a live product and never invents a price or shipping date", async () => {
   const indexSource = await fs.readFile(
     path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
     "utf8"
@@ -74,35 +74,26 @@ test("the BYOB Tank stays in the home rail without Shopify and prefers live prod
     indexSource.indexOf("export function JourneyLobbyIndex"),
     indexSource.indexOf("export function JourneyStoreIndex")
   );
-  const fallback = indexSource.match(
-    /const BYOB_TANK_FEATURE_FALLBACK[^=]*=\s*\{([\s\S]*?)\n\} as const;/
-  )?.[1];
-
-  assert.ok(fallback, "the tank needs an editorial fallback when Shopify returns no products");
-  assert.match(fallback, /id:\s*"byob-tank"/);
-  assert.match(fallback, /title:\s*"BYOB Tank"/);
-  assert.match(fallback, /meta:\s*"(?:\$32 · )?Preorder · Ships September"/);
-  assert.match(fallback, /BYOB_Tee_Product\.png/);
-
+  assert.doesNotMatch(indexSource, /BYOB_TANK_FEATURE_FALLBACK|\$32|Ships September/);
   assert.match(
     lobbyIndex,
     /products\.find\([\s\S]*?candidate\.id === (?:"byob-tank"|BYOB_TANK_FEATURE_FALLBACK\.id)[\s\S]*?\)/
   );
-  assert.match(lobbyIndex, /title:\s*tank\?\.name \?\? BYOB_TANK_FEATURE_FALLBACK\.title/);
+  assert.match(lobbyIndex, /title:\s*tank\.name/);
   assert.match(
     lobbyIndex,
-    /href:\s*tank \? `\/store\/\$\{tank\.id\}` : undefined/
+    /href:\s*`\/store\/\$\{tank\.id\}`/
   );
   assert.match(
     lobbyIndex,
-    /meta:\s*tank\?\.expectedShipDate[\s\S]*?tank\.price[\s\S]*?formatJourneyShipDate\(tank\.expectedShipDate\)[\s\S]*?:\s*tank\?\.price \?\? BYOB_TANK_FEATURE_FALLBACK\.meta/
+    /meta:\s*tank\.available === false[\s\S]*?Sold out[\s\S]*?tank\.expectedShipDate[\s\S]*?formatJourneyShipDate\(tank\.expectedShipDate\)/
   );
-  assert.match(lobbyIndex, /image:\s*tankImage\?\.url \?\? BYOB_TANK_FEATURE_FALLBACK\.image\.url/);
-  assert.match(lobbyIndex, /alt:\s*tankImage\?\.alt \?\? BYOB_TANK_FEATURE_FALLBACK\.image\.alt/);
-  assert.doesNotMatch(
+  assert.match(lobbyIndex, /image:\s*tankImage\?\.url/);
+  assert.match(lobbyIndex, /alt:\s*tankImage\?\.alt \?\? tank\.name/);
+  assert.match(
     lobbyIndex,
     /\.\.\.\(tank\s*\?/,
-    "the fallback card must not disappear when the products array is empty"
+    "only a real product may supply a tank promotion"
   );
 });
 

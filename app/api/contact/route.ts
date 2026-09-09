@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
+import { parseContactTopic } from "@/lib/contact-topic";
 import {
   isContactDeliveryConfigured,
   sendContactSubmission,
@@ -82,10 +83,12 @@ export async function POST(request: Request) {
   const name = rawName.replace(/\s+/g, " ");
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const message = typeof body.message === "string" ? body.message.trim() : "";
+  const topic = parseContactTopic(body.topic);
   const suppliedSubmissionId =
     typeof body.submissionId === "string" ? body.submissionId.trim() : "";
 
   if (
+    topic === null ||
     !name ||
     rawName.length > 100 ||
     email.length > 254 ||
@@ -109,6 +112,7 @@ export async function POST(request: Request) {
       name,
       email,
       message,
+      topic,
       idempotencyKey: `contact-${submissionId}`,
     }));
     return json({ ok: true });

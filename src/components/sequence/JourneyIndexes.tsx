@@ -8,6 +8,8 @@ import type { Product } from "@/data/products";
 import type { Project } from "@/data/projects";
 import type { StudioEvent } from "@/data/events";
 import { EXPLORE_ROOMS, type ExploreRoom } from "@/data/navigation";
+import { MEMBERSHIP_INTRO } from "@/data/public-membership";
+import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 
 const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
@@ -20,15 +22,6 @@ const JOURNEY_RAIL_CARD_CLASS =
 const HOME_MARQUEE_SPEED_PX_PER_SECOND = 20;
 const HOME_MARQUEE_MAX_FRAME_MS = 48;
 const HOME_MARQUEE_RESUME_DELAY_MS = 12000;
-const BYOB_TANK_FEATURE_FALLBACK = {
-  id: "byob-tank",
-  title: "BYOB Tank",
-  meta: "$32 · Preorder · Ships September",
-  image: {
-    url: "https://cdn.shopify.com/s/files/1/1001/4077/7793/files/BYOB_Tee_Product.png?v=1787271453",
-    alt: "Black BYOB Tank shown front and back on dark earth among yellow wildflowers.",
-  },
-} as const;
 
 function formatJourneyShipDate(value: string): string {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -129,7 +122,7 @@ type LobbySelection = {
   key: string;
   href?: string;
   external?: boolean;
-  realm: "About" | "Social" | "Community" | "Store";
+  realm: "About" | "Members" | "Social" | "Community" | "Store";
   title: string;
   meta: string;
   image?: string;
@@ -148,7 +141,7 @@ export function JourneyLobbyIndex({
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
   const byobTwo = events.find((candidate) => candidate.id === "byob-02");
   const tank = products.find(
-    (candidate) => candidate.id === BYOB_TANK_FEATURE_FALLBACK.id
+    (candidate) => candidate.id === "byob-tank"
   );
   const tankImage =
     tank?.images?.find((image) => image.url.includes("BYOB_Tee_Product.png")) ??
@@ -156,16 +149,27 @@ export function JourneyLobbyIndex({
   const selections: LobbySelection[] = [
     // The marquee is newest-first. Add future features above the current lead.
     {
-      key: "byob-tank",
-      href: tank ? `/store/${tank.id}` : undefined,
-      realm: "Store",
-      title: tank?.name ?? BYOB_TANK_FEATURE_FALLBACK.title,
-      meta: tank?.expectedShipDate
-        ? `${tank.price.replace(/^([£$€])\s+/, "$1")} · Preorder · Ships ${formatJourneyShipDate(tank.expectedShipDate)}`
-        : tank?.price ?? BYOB_TANK_FEATURE_FALLBACK.meta,
-      image: tankImage?.url ?? BYOB_TANK_FEATURE_FALLBACK.image.url,
-      alt: tankImage?.alt ?? BYOB_TANK_FEATURE_FALLBACK.image.alt,
+      key: "members-introduction",
+      href: "#members",
+      realm: "Members",
+      title: "Good company. Real work.",
+      meta: "Explore membership",
+      image: MEMBERSHIP_INTRO.image,
+      alt: MEMBERSHIP_INTRO.alt,
     },
+    ...(tank ? [{
+      key: "byob-tank",
+      href: `/store/${tank.id}`,
+      realm: "Store" as const,
+      title: tank.name,
+      meta: tank.available === false
+        ? `${tank.price.replace(/^([£$€])\s+/, "$1")} · Sold out`
+        : tank.expectedShipDate
+          ? `${tank.price.replace(/^([£$€])\s+/, "$1")} · Preorder · Ships ${formatJourneyShipDate(tank.expectedShipDate)}`
+          : tank.price,
+      image: tankImage?.url,
+      alt: tankImage?.alt ?? tank.name,
+    }] : []),
     ...(byobOne && byobTwo?.registration
       ? [
           {
@@ -418,9 +422,16 @@ export function JourneyLobbyIndex({
   );
 }
 
-export function JourneyStoreIndex({ products }: { products: Product[] }) {
+export function JourneyStoreIndex({
+  products,
+  catalogStatus = products.length ? "ready" : "unavailable",
+}: {
+  products: Product[];
+  catalogStatus?: CatalogStatus;
+}) {
   const featuredProducts = products.slice(0, 3);
   const productCount = featuredProducts.length;
+  const notice = catalogNotice(catalogStatus);
   const shelfWidthClass =
     productCount <= 1
       ? "mx-auto max-w-[18rem]"
@@ -430,6 +441,15 @@ export function JourneyStoreIndex({ products }: { products: Product[] }) {
 
   return (
     <div data-journey-store-index className="w-full">
+      {productCount === 0 && (
+        <div data-catalog-status={catalogStatus} className="mx-auto max-w-sm rounded-sm bg-black/80 px-5 py-4 text-[var(--color-bone)]">
+          <p className="ui-heading text-base">{notice.heading}</p>
+          <p className="mt-2 text-xs leading-relaxed text-white/65">{notice.detail}</p>
+          <Link href="/contact" className="mt-2 inline-flex min-h-11 items-center text-xs underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+            Contact Ruined
+          </Link>
+        </div>
+      )}
       {productCount > 0 && (
         <div
           className={`${JOURNEY_GRID_CLASS} ${shelfWidthClass}`}
@@ -485,7 +505,7 @@ export function JourneyStoreIndex({ products }: { products: Product[] }) {
           href="/store"
           className="ui-heading inline-flex items-center gap-3 border-b border-white/35 pb-1 text-[0.58rem] text-white transition-colors hover:border-[var(--color-poster)] hover:text-[var(--color-poster)] sm:text-[0.62rem]"
         >
-          <span>View catalogue</span>
+          <span>{productCount === 0 && notice.retry ? "Try the catalog again" : "View catalogue"}</span>
           <span aria-hidden="true">→</span>
         </Link>
       </div>

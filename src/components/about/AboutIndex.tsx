@@ -28,7 +28,7 @@ export default function AboutIndex() {
               </h1>
             </div>
             <p className="max-w-md text-sm leading-relaxed text-white/65 md:col-span-3 sm:text-base">
-              {EXPLORE_ROOMS[3].description}
+              {EXPLORE_ROOMS.find((room) => room.id === "about")?.description}
             </p>
           </div>
         </div>

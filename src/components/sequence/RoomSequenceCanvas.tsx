@@ -1,11 +1,21 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 import { scrollState } from "@/utils/scrollState";
 import {
   sequenceAssetFocalX,
   sequenceCoverRect,
+  sequenceFocalMediaStyle,
 } from "@/utils/sequenceFraming";
+import {
+  frameLoadReady,
+  nextFrameLoadFailure,
+  sequenceFallbackForFrame,
+  sequenceFallbackSpans,
+  withSequenceLoadDeadline,
+  type FrameLoadFailure,
+} from "@/utils/sequenceRecovery";
 
 // Paints a scroll-scrubbed frame sequence onto a full-screen canvas. Frames are
 // decoded on demand into a bounded LRU of ImageBitmaps (with forward prefetch),
@@ -18,11 +28,59 @@ export default function RoomSequenceCanvas({
   frames: string[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fallbackRef = useRef<HTMLDivElement>(null);
+  const fallbackImageRef = useRef<HTMLImageElement>(null);
+  const recoveryRef = useRef<HTMLDivElement>(null);
+  const retryRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!frames.length) return;
     const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d", { desynchronized: true })!;
+    const ctx = canvas.getContext("2d", { desynchronized: true });
+    const fallback = fallbackRef.current!;
+    const fallbackImage = fallbackImageRef.current!;
+    const recovery = recoveryRef.current!;
+    const fallbackSpans = sequenceFallbackSpans(frames);
+    let fallbackSource: string | undefined;
+    let fallbackImageFailure: FrameLoadFailure | undefined;
+    let waitingSince: number | null = null;
+    const showFallback = (target: number) => {
+      canvas.style.visibility = "hidden";
+      fallback.hidden = false;
+      waitingSince ??= Date.now();
+      recovery.hidden = Date.now() - waitingSince < 1_500;
+      const source = sequenceFallbackForFrame(fallbackSpans, target);
+      const retryImage = fallbackImageFailure && frameLoadReady(fallbackImageFailure, Date.now());
+      if (source && (source !== fallbackSource || retryImage)) {
+        const previousFailure = source === fallbackSource ? fallbackImageFailure : undefined;
+        // Clear the elapsed failure while this request is pending; otherwise
+        // each animation tick would restart the same native image request.
+        fallbackImageFailure = undefined;
+        fallbackSource = source;
+        // Hide the outgoing image before changing its URL. Even if the next
+        // request stalls, a previous room must never show at this destination.
+        fallbackImage.style.visibility = "hidden";
+        Object.assign(fallbackImage.style, sequenceFocalMediaStyle(sequenceAssetFocalX(source)));
+        fallbackImage.onload = () => {
+          fallbackImageFailure = undefined;
+          fallbackImage.style.visibility = "visible";
+        };
+        fallbackImage.onerror = () => {
+          fallbackImageFailure = nextFrameLoadFailure(previousFailure, Date.now());
+        };
+        fallbackImage.src = source;
+      }
+    };
+    const initialTarget = Math.round(Math.min(1, Math.max(0, scrollState.progress)) * (frames.length - 1));
+    showFallback(initialTarget);
+    if (!ctx) {
+      recovery.hidden = false;
+      retryRef.current = () => window.location.reload();
+      return () => {
+        fallbackImage.onload = null;
+        fallbackImage.onerror = null;
+      };
+    }
     const n = frames.length;
     // Nearest-frame fallback may bridge small decode gaps, but it must never
     // cross a room boundary and flash a different scene at the seam.
@@ -37,7 +95,7 @@ export default function RoomSequenceCanvas({
     const queued = new Set<number>();
     const urgentQueued = new Set<number>();
     let queue: number[] = [];
-    const failures = new Map<number, { count: number; retryAt: number }>();
+    const failures = new Map<number, FrameLoadFailure>();
     // Each decoded 1920 × 1080 frame costs roughly 7.9 MiB. Keep the working set
     // tight enough to avoid memory-pressure pauses while still covering a
     // normal wheel/trackpad burst in both directions.
@@ -54,7 +112,6 @@ export default function RoomSequenceCanvas({
     let previousTarget = -1;
     let direction = 1;
     let lastDrawn: ImageBitmap | null = null;
-    let lastDrawnGroup: string | null = null;
     let raf = 0;
     let disposed = false;
     let hasPaintedExactTarget = false;
@@ -73,22 +130,33 @@ export default function RoomSequenceCanvas({
     };
 
     const decode = async (i: number, controller: AbortController) => {
-      const failed = failures.get(i);
-      if (
-        disposed ||
-        i < 0 ||
-        i >= n ||
-        cache.has(i) ||
-        (failed && (failed.count >= 3 || Date.now() < failed.retryAt))
-      ) return;
+      let timeout: number | undefined;
+      let timedOut = false;
       try {
+        if (
+          disposed || i < 0 || i >= n || cache.has(i) ||
+          !frameLoadReady(failures.get(i), Date.now())
+        ) return;
+        timeout = window.setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, 12_000);
         const res = await fetch(frames[i], {
           cache: "force-cache",
           signal: controller.signal,
         });
         if (!res.ok) throw new Error(`Frame ${i} returned ${res.status}`);
         const blob = await res.blob();
-        const bmp = await createImageBitmap(blob);
+        const bitmap = createImageBitmap(blob).then((decoded) => {
+          // Decoding cannot itself be cancelled. Release a result that arrives
+          // after its request deadline instead of leaking an orphaned bitmap.
+          if (disposed || controller.signal.aborted) {
+            decoded.close?.();
+            throw new DOMException("Frame decoding cancelled", "AbortError");
+          }
+          return decoded;
+        });
+        const bmp = await withSequenceLoadDeadline(bitmap, controller.signal, 12_000);
         if (disposed || controller.signal.aborted) {
           bmp.close?.();
           return;
@@ -98,14 +166,15 @@ export default function RoomSequenceCanvas({
         evict(current);
       } catch (error: unknown) {
         if (
-          controller.signal.aborted ||
-          (error instanceof DOMException && error.name === "AbortError")
+          disposed ||
+          (!timedOut && controller.signal.aborted) ||
+          (!timedOut && error instanceof DOMException && error.name === "AbortError")
         ) {
           return;
         }
-        const count = (failures.get(i)?.count ?? 0) + 1;
-        failures.set(i, { count, retryAt: Date.now() + 500 * 2 ** (count - 1) });
+        failures.set(i, nextFrameLoadFailure(failures.get(i), Date.now()));
       } finally {
+        if (timeout !== undefined) window.clearTimeout(timeout);
         if (inflight.get(i) === controller) {
           inflight.delete(i);
           urgentInflight.delete(i);
@@ -129,7 +198,7 @@ export default function RoomSequenceCanvas({
         if (i === undefined) break;
         const urgent = urgentQueued.delete(i);
         queued.delete(i);
-        if (cache.has(i) || inflight.has(i)) continue;
+        if (cache.has(i) || inflight.has(i) || !frameLoadReady(failures.get(i), Date.now())) continue;
         const controller = new AbortController();
         inflight.set(i, controller);
         if (urgent) urgentInflight.add(i);
@@ -152,7 +221,7 @@ export default function RoomSequenceCanvas({
       }
       if (
         cache.has(i) ||
-        (failed && (failed.count >= 3 || Date.now() < failed.retryAt))
+        !frameLoadReady(failed, Date.now())
       ) return;
       if (inflight.has(i)) {
         // A prefetched frame that becomes the exact target is already doing the
@@ -222,10 +291,9 @@ export default function RoomSequenceCanvas({
       canvas.height = Math.round(window.innerHeight * dpr);
       ctx.globalCompositeOperation = "copy";
       lastDrawn = null;
-      lastDrawnGroup = null;
     };
 
-    const draw = (bmp: ImageBitmap, group: string, frameIndex: number) => {
+    const draw = (bmp: ImageBitmap, frameIndex: number) => {
       const cw = canvas.width;
       const ch = canvas.height;
       const rect = sequenceCoverRect(
@@ -237,16 +305,6 @@ export default function RoomSequenceCanvas({
       );
       ctx.drawImage(bmp, rect.x, rect.y, rect.width, rect.height);
       lastDrawn = bmp;
-      lastDrawnGroup = group;
-    };
-
-    const blankForGroup = (group: string) => {
-      // A transparent clear would expose the lobby poster underneath. Paint an
-      // opaque neutral frame so a previous room can never linger at a seam.
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      lastDrawn = null;
-      lastDrawnGroup = group;
     };
 
     const loop = () => {
@@ -267,29 +325,47 @@ export default function RoomSequenceCanvas({
       // canvas until the exact requested target is available. A neighbouring
       // decode must never win the opening race and create a visible frame jump.
       const bmp = hasPaintedExactTarget ? nearest(target) : cache.get(target);
-      const targetGroup = frameGroups[target];
-      if (bmp && bmp !== lastDrawn) {
-        draw(bmp, targetGroup, target);
+      if (bmp) {
+        if (bmp !== lastDrawn) draw(bmp, target);
+        canvas.style.visibility = "visible";
+        fallback.hidden = true;
+        recovery.hidden = true;
+        waitingSince = null;
         hasPaintedExactTarget = true;
-      } else if (
-        hasPaintedExactTarget &&
-        !bmp &&
-        lastDrawnGroup !== targetGroup
-      ) {
-        blankForGroup(targetGroup);
+      } else {
+        showFallback(target);
       }
       previousTarget = target;
       raf = requestAnimationFrame(loop);
     };
 
     resize();
+    const retry = () => {
+      inflight.forEach((controller) => controller.abort());
+      inflight.clear();
+      urgentInflight.clear();
+      queue = [];
+      queued.clear();
+      urgentQueued.clear();
+      failures.clear();
+      fallbackImageFailure = undefined;
+      fallbackSource = undefined;
+      previousTarget = -1;
+      schedule(current, true);
+    };
+    retryRef.current = retry;
     window.addEventListener("resize", resize);
+    window.addEventListener("online", retry);
     loop();
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("online", retry);
+      fallbackImage.onload = null;
+      fallbackImage.onerror = null;
+      retryRef.current = () => {};
       inflight.forEach((controller) => controller.abort());
       inflight.clear();
       urgentInflight.clear();
@@ -303,9 +379,25 @@ export default function RoomSequenceCanvas({
   }, [frames]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 h-full w-full [contain:strict]"
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full [contain:strict]"
+      />
+      <div ref={fallbackRef} hidden data-sequence-loading-fallback className="absolute inset-0 overflow-hidden bg-[var(--color-bone)]">
+        {/* A native image is intentional: its URL follows the canvas target
+            without a React render on every scroll frame. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img ref={fallbackImageRef} alt="" aria-hidden="true" draggable={false} style={{ visibility: "hidden" }} />
+        <div ref={recoveryRef} hidden className="absolute left-4 top-[calc(var(--ruined-header-height,4.5rem)+1rem)] rounded bg-[var(--color-bone)] px-4 py-3 text-[var(--color-faded)] shadow-[3px_3px_0_#2a2a2a]">
+          <p role="status" className="text-sm">The walk is taking a moment.</p>
+          <nav aria-label="While the walk loads" className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-semibold">
+            <button type="button" className="underline underline-offset-4" onClick={() => retryRef.current()}>Retry</button>
+            <Link href="/store" prefetch={false} className="underline underline-offset-4">Store</Link>
+            <Link href="/members" prefetch={false} className="underline underline-offset-4">Members</Link>
+          </nav>
+        </div>
+      </div>
+    </>
   );
 }

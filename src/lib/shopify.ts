@@ -9,6 +9,8 @@ import {
   type ProductTone,
 } from "@/data/products";
 import { normalizeExpectedShipDateLanguage } from "@/lib/store/product-copy.js";
+import { loadCatalog } from "@/lib/store/catalog-loader";
+import type { CatalogResult } from "@/lib/store/catalog";
 
 // ─── Storefront API client ──────────────────────────────────────────────────
 // Server-only (this module imports `server-only`, so it can never be bundled
@@ -18,8 +20,8 @@ import { normalizeExpectedShipDateLanguage } from "@/lib/store/product-copy.js";
 //   SHOPIFY_STOREFRONT_ACCESS_TOKEN=...          (public Storefront token)
 //   SHOPIFY_API_VERSION=2024-10                  (optional)
 //
-// With no creds the helpers gracefully fall back to the local catalogue so the
-// app builds and renders everywhere (CI, previews, first clone).
+// Without credentials the public catalog reports that it is unavailable; it
+// never advertises local placeholder products or prices.
 
 const domain = process.env.SHOPIFY_STORE_DOMAIN;
 const publicAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
@@ -253,24 +255,24 @@ function mapProduct(node: SFProductNode, index: number): Product {
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * The full drop catalogue. Pulls live from Shopify when configured; otherwise
- * returns the local fallback. Safe to call from server components / route
- * handlers — pair with `export const revalidate = N` (ISR) on the page.
+ * Status-aware public catalog read. Only a successful empty response means
+ * there are no listed pieces; failures and missing configuration stay distinct.
  */
+export async function getCatalog(): Promise<CatalogResult> {
+  return loadCatalog<SFProductNode>(
+    client
+      ? (signal) => client.request<SFProductsResponse>(PRODUCTS_QUERY, {
+          variables: { first: 50 },
+          signal,
+        })
+      : null,
+    mapProduct,
+  );
+}
+
+/** Compatibility for consumers that require only available product records. */
 export async function getProducts(): Promise<Product[]> {
-  if (!client) return [];
-  try {
-    const { data, errors } = await client.request<SFProductsResponse>(
-      PRODUCTS_QUERY,
-      { variables: { first: 50 } }
-    );
-    const nodes = data?.products?.nodes;
-    if (errors || !nodes?.length) return [];
-    return nodes.map(mapProduct);
-  } catch {
-    // Network/credential issues should never blank the store.
-    return [];
-  }
+  return (await getCatalog()).products;
 }
 
 /**

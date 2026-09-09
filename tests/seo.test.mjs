@@ -18,7 +18,11 @@ test("production metadata uses the brand domain and restrained positioning", asy
 
   assert.match(site, /https:\/\/theruinedproject\.com/);
   assert.match(site, /SITE_URL = PRODUCTION_SITE_URL/);
-  assert.doesNotMatch(site, /VERCEL_PROJECT_PRODUCTION_URL|NEXT_PUBLIC_SITE_URL/);
+  // Public navigation may read deployment configuration; canonical metadata
+  // must still be assigned directly to the fixed brand origin.
+  assert.match(site, /export const PRODUCTION_SITE_URL = "https:\/\/theruinedproject\.com";/);
+  assert.match(site, /export const SITE_URL = PRODUCTION_SITE_URL;/);
+  assert.doesNotMatch(site, /VERCEL_PROJECT_PRODUCTION_URL/);
   assert.match(env, /NEXT_PUBLIC_SITE_URL=https:\/\/theruinedproject\.com/);
   assert.match(layout, /A Creative Company in Alpine, Utah/);
   assert.match(layout, /Ruined refines potential into identity/);
@@ -112,11 +116,12 @@ test("the live Store catalogue and commerce routes remain internally connected",
     read("src/data/search.ts"),
   ]);
 
-  assert.match(storePage, /getProducts\(\)/);
-  assert.match(storePage, /<StoreGallery products=\{products\}/);
+  assert.match(storePage, /getCatalog\(\)/);
+  assert.match(storePage, /<StoreGallery products=\{catalog\.products\} catalogStatus=\{catalog\.status\}/);
   assert.doesNotMatch(storePage, /redirect\(/);
   assert.match(storeGallery, /if \(!products\.length\)/);
-  assert.match(storeGallery, /The catalogue is closed\./);
+  assert.match(storeGallery, /catalogNotice\(catalogStatus\)/);
+  assert.doesNotMatch(storeGallery, /The catalogue is closed\./);
   for (const source of [bagPage, bagClient, productPage]) {
     assert.match(source, /href="\/store"/);
     assert.doesNotMatch(source, /href="\/#store"/);

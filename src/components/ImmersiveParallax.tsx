@@ -8,10 +8,12 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
+import Link from "next/link";
 import { EVENTS } from "@/data/events";
 import type { Product } from "@/data/products";
+import type { CatalogStatus } from "@/lib/store/catalog";
 import { JourneyLobbyIndex } from "@/components/sequence/JourneyIndexes";
-import { EXPLORE_ROOMS } from "@/data/navigation";
+import { EXPLORE_ROOMS, GLOBAL_NAV_ITEMS } from "@/data/navigation";
 import {
   SEQUENCE_OPENING_FRAME,
   type SequenceManifest,
@@ -26,16 +28,19 @@ import {
   immersiveExperienceMediaQueries,
   isDesktopImmersiveExperience,
 } from "@/utils/immersiveExperience";
+import {
+  desktopJourneyRetryDelay,
+  withSequenceLoadDeadline,
+} from "@/utils/sequenceRecovery";
 
-const DESKTOP_JOURNEY_RETRY_BASE_MS = 400;
-const DESKTOP_JOURNEY_RETRY_MAX_MS = 4_000;
-const HOME_HASHES = new Set(["#top", "#store", "#work", "#about", "#events"]);
+const HOME_HASHES = new Set(["#top", "#store", "#work", "#about", "#members", "#events"]);
 const OPENING_FOCAL_X = sequenceAssetFocalX(SEQUENCE_OPENING_FRAME);
 const OPENING_FOCAL_GEOMETRY = sequenceFocalBoxGeometry(OPENING_FOCAL_X);
 
 type DesktopJourneyProps = {
   manifest: SequenceManifest;
   products: Product[];
+  catalogStatus?: CatalogStatus;
 };
 
 type ReadyDesktopJourney = {
@@ -88,9 +93,11 @@ function isSequenceManifest(value: unknown): value is SequenceManifest {
 export default function ImmersiveParallax({
   fallback,
   products,
+  catalogStatus,
 }: {
   fallback: ReactNode;
   products: Product[];
+  catalogStatus?: CatalogStatus;
 }) {
   const desktopEligible = useSyncExternalStore(
     subscribeToDesktopExperience,
@@ -100,15 +107,16 @@ export default function ImmersiveParallax({
   const [desktopJourney, setDesktopJourney] =
     useState<ReadyDesktopJourney | null>(null);
   const [desktopLoadAttempt, setDesktopLoadAttempt] = useState(0);
+  const [desktopLoadFailed, setDesktopLoadFailed] = useState(false);
 
   useEffect(() => {
-    if (!desktopEligible || desktopJourney) return;
+    if (!desktopEligible || desktopJourney || desktopLoadFailed) return;
 
     const controller = new AbortController();
     let active = true;
     let retryTimer: number | undefined;
 
-    void Promise.all([
+    void withSequenceLoadDeadline(Promise.all([
       import("@/components/DesktopImmersiveParallax").then(
         (module) => module.default
       ),
@@ -128,7 +136,7 @@ export default function ImmersiveParallax({
           }
           return manifest;
         }),
-    ])
+    ]), controller.signal)
       .then(([Component, manifest]) => {
         if (active) {
           setDesktopLoadAttempt(0);
@@ -146,10 +154,14 @@ export default function ImmersiveParallax({
               error
             );
           }
-          const retryDelay = Math.min(
-            DESKTOP_JOURNEY_RETRY_BASE_MS * 2 ** desktopLoadAttempt,
-            DESKTOP_JOURNEY_RETRY_MAX_MS
-          );
+          controller.abort();
+          // DESKTOP_JOURNEY_RETRY_BASE_MS / DESKTOP_JOURNEY_RETRY_MAX_MS
+          // and the attempt limit live in the shared, behavior-tested policy.
+          const retryDelay = desktopJourneyRetryDelay(desktopLoadAttempt);
+          if (retryDelay === null) {
+            setDesktopLoadFailed(true);
+            return;
+          }
           retryTimer = window.setTimeout(() => {
             if (active) {
               setDesktopLoadAttempt((attempt) => attempt + 1);
@@ -163,7 +175,17 @@ export default function ImmersiveParallax({
       controller.abort();
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [desktopEligible, desktopJourney, desktopLoadAttempt]);
+  }, [desktopEligible, desktopJourney, desktopLoadAttempt, desktopLoadFailed]);
+
+  useEffect(() => {
+    if (!desktopEligible || !desktopLoadFailed) return;
+    const reconnect = () => {
+      setDesktopLoadAttempt(0);
+      setDesktopLoadFailed(false);
+    };
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
+  }, [desktopEligible, desktopLoadFailed]);
 
   const showDesktop = desktopEligible && desktopJourney !== null;
 
@@ -180,13 +202,13 @@ export default function ImmersiveParallax({
       root.style.scrollBehavior = previousInlineBehavior;
     }
 
-  }, [showDesktop]);
+  }, [showDesktop, desktopLoadFailed]);
 
   useEffect(() => {
     // SiteHeader subscribes in a passive effect, so announce the server-rendered
     // mobile anchors (and any later desktop replacement) from the same phase.
     window.dispatchEvent(new Event("ruined:home-anchors-ready"));
-  }, [showDesktop]);
+  }, [showDesktop, desktopLoadFailed]);
 
   if (!showDesktop) {
     return (
@@ -198,11 +220,11 @@ export default function ImmersiveParallax({
 
           @media ${DESKTOP_EXPERIENCE_QUERY} {
             .ruined-responsive-static-journey {
-              display: none;
+              display: ${desktopLoadFailed ? "block" : "none"};
             }
 
             .ruined-desktop-sequence-bootstrap {
-              display: block;
+              display: ${desktopLoadFailed ? "none" : "block"};
               position: relative;
               overflow: hidden;
               width: 100%;
@@ -251,6 +273,20 @@ export default function ImmersiveParallax({
             }
           }
         `}</style>
+        {desktopEligible && desktopLoadFailed && (
+          <section aria-label="Walk loading options" className="sticky top-[var(--ruined-header-height,4.5rem)] z-30 bg-[var(--color-bone)] px-5 py-4 text-[var(--color-faded)]">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+              <p role="status" className="text-sm">The animated walk couldn’t load. You can still explore below.</p>
+              <button type="button" className="rounded bg-[var(--color-faded)] px-4 py-2 text-sm font-semibold text-[var(--color-bone)]" onClick={() => {
+                setDesktopLoadAttempt(0);
+                setDesktopLoadFailed(false);
+              }}>Retry the walk</button>
+              <nav aria-label="Explore Ruined directly" className="flex w-full flex-wrap gap-x-6 gap-y-3 text-sm font-semibold">
+                {GLOBAL_NAV_ITEMS.map((item) => <Link key={item.id} href={item.href} className="underline underline-offset-4">{item.label}</Link>)}
+              </nav>
+            </div>
+          </section>
+        )}
         <div className="ruined-responsive-static-journey">{fallback}</div>
         <section
           aria-label="Hero"
@@ -273,5 +309,5 @@ export default function ImmersiveParallax({
   }
 
   const { Component, manifest } = desktopJourney;
-  return <Component manifest={manifest} products={products} />;
+  return <Component manifest={manifest} products={products} catalogStatus={catalogStatus} />;
 }

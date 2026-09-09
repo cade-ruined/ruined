@@ -18,6 +18,7 @@ import {
 } from "motion/react";
 import { EVENTS } from "@/data/events";
 import type { Product } from "@/data/products";
+import type { CatalogStatus } from "@/lib/store/catalog";
 import {
   EXPLORE_ROOMS,
   FOOTER_INDEX_ITEMS,
@@ -28,8 +29,8 @@ import {
   JourneyLobbyIndex,
   JourneyStoreIndex,
 } from "@/components/sequence/JourneyIndexes";
-import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
+import JourneyMembersPreview from "@/components/sequence/JourneyMembersPreview";
 import RoomSequenceCanvas from "@/components/sequence/RoomSequenceCanvas";
 import SequenceFrameImage from "@/components/sequence/SequenceFrameImage";
 import {
@@ -198,9 +199,20 @@ function RoomOverlay({
   );
   const y = useTransform(opacity, (o) => (1 - o) * 26);
   const pointer = useTransform(opacity, (o) => (o > 0.6 ? "auto" : "none"));
+  const [interactive, setInteractive] = useState(() => opacity.get() > 0.6);
+  useEffect(() => {
+    const sync = (value: number) => {
+      const next = value > 0.6;
+      setInteractive((current) => current === next ? current : next);
+    };
+    sync(opacity.get());
+    return opacity.on("change", sync);
+  }, [opacity]);
 
   return (
     <motion.div
+      aria-hidden={!interactive}
+      inert={!interactive}
       style={{
         opacity,
         ...(placement === "above-fire"
@@ -265,6 +277,12 @@ function LobbyOpeningOverlay({
   const [withinOpening, setWithinOpening] = useState(
     () => progress.get() <= clearEnd
   );
+  const [interactive, setInteractive] = useState(() => opacity.get() > 0.6);
+  useEffect(() => {
+    const sync = (value: number) => setInteractive(value > 0.6);
+    sync(opacity.get());
+    return opacity.on("change", sync);
+  }, [opacity]);
 
   useEffect(() => {
     const sync = (value: number) => {
@@ -279,6 +297,8 @@ function LobbyOpeningOverlay({
 
   return (
     <motion.div
+      aria-hidden={!interactive}
+      inert={!interactive}
       style={{
         opacity,
         bottom: "calc(env(safe-area-inset-bottom, 0px) + 3.5rem)",
@@ -333,6 +353,12 @@ function AfterTheFear({
   // walking through them.
   const footerOpacity = useTransform(progress, [at(0.62), at(0.9)], [0, 1]);
   const footerY = useTransform(progress, [at(0.62), at(0.9)], [10, 0]);
+  const [footerInteractive, setFooterInteractive] = useState(() => footerOpacity.get() > 0.6);
+  useEffect(() => {
+    const sync = (value: number) => setFooterInteractive(value > 0.6);
+    sync(footerOpacity.get());
+    return footerOpacity.on("change", sync);
+  }, [footerOpacity]);
 
   return (
     <div
@@ -359,6 +385,8 @@ function AfterTheFear({
 
       {/* technical streetwear colophon — pinned to the bottom, clear of the couch */}
       <motion.div
+        aria-hidden={!footerInteractive}
+        inert={!footerInteractive}
         style={{
           opacity: footerOpacity,
           y: footerY,
@@ -551,9 +579,11 @@ function useDesktopJourneyScene({
 export default function DesktopImmersiveParallax({
   manifest,
   products,
+  catalogStatus,
 }: {
   manifest: SequenceManifest;
   products: Product[];
+  catalogStatus?: CatalogStatus;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
@@ -622,11 +652,12 @@ export default function DesktopImmersiveParallax({
 
   // Folder names describe where each move starts; the final frame is the next
   // destination. Panels and deep links therefore attach to these arrival holds:
-  // Lobby → Store, Store → Records, Records → Lounge, Lounge → Fireside.
+  // Lobby → Store → About (Record Room) → Members (Lounge) → Community.
+  // Keep the physical sequence folders and their arrival frames unchanged.
   const lobbyDepartureB = bands["lobby"];
   const storeArrivalB = bands["lobby"];
-  const worksArrivalB = bands["store"];
-  const aboutArrivalB = bands["records"];
+  const aboutArrivalB = bands["store"];
+  const membersArrivalB = bands["records"];
   const eventsArrivalB = FIRESIDE_EVENT_BAND;
   const journeyRoomStops = useMemo<JourneyRoomStop[]>(
     () => [
@@ -664,8 +695,10 @@ export default function DesktopImmersiveParallax({
   // Scrub waypoints for contextual "Return to the walk" links.
   const waypoints: { id: string; band?: Band }[] = [
     { id: "store", band: storeArrivalB },
-    { id: "work", band: worksArrivalB },
+    // Preserve old Record Room deep links without adding a sixth room.
+    { id: "work", band: aboutArrivalB },
     { id: "about", band: aboutArrivalB },
+    { id: "members", band: membersArrivalB },
     { id: "events", band: eventsArrivalB },
   ];
 
@@ -767,27 +800,27 @@ export default function DesktopImmersiveParallax({
           room={EXPLORE_ROOMS[1]}
           wide
         >
-          <JourneyStoreIndex products={products} />
-        </RoomOverlay>
-      )}
-      {!prefersReducedMotion && worksArrivalB && worksArrivalB.count > 0 && (
-        <RoomOverlay
-          progress={p}
-          band={worksArrivalB}
-          room={EXPLORE_ROOMS[2]}
-          wide
-        >
-          <JourneyComingSoon section="artifacts" />
+          <JourneyStoreIndex products={products} catalogStatus={catalogStatus} />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && aboutArrivalB && aboutArrivalB.count > 0 && (
         <RoomOverlay
           progress={p}
           band={aboutArrivalB}
-          room={EXPLORE_ROOMS[3]}
+          room={EXPLORE_ROOMS[2]}
           wide
         >
           <JourneyAboutStatement headingId="desktop-journey-about-heading" />
+        </RoomOverlay>
+      )}
+      {!prefersReducedMotion && membersArrivalB && membersArrivalB.count > 0 && (
+        <RoomOverlay
+          progress={p}
+          band={membersArrivalB}
+          room={EXPLORE_ROOMS[3]}
+          wide
+        >
+          <JourneyMembersPreview headingId="desktop-journey-members-heading" />
         </RoomOverlay>
       )}
       {!prefersReducedMotion && eventsArrivalB && eventsArrivalB.count > 0 && (
