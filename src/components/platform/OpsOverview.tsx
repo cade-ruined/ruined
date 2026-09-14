@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
-import { getOperationsNavigation } from "@/lib/platform/operations-navigation";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_LABEL_TEXT_CLASS } from "@/components/platform/operatorStyles";
 import type {
   OpsOverviewActivityItem,
   OpsOverviewData,
@@ -86,34 +86,32 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
   const openWork = data.counts.work.artifacts
     + data.counts.work.failures
     + data.counts.work.tasks;
-  // The server sets canPlaceMembers only for ops_admin. Keep task shortcuts
-  // within the same visibility boundary as the shared operations navigation.
-  const taskGroups = getOperationsNavigation(data.canPlaceMembers ? "ops_admin" : "guide")
-    .filter((group) => group.id !== "overview")
-    .map((group) => ({
-      ...group,
-      items: group.id === "people" && data.canPlaceMembers ? [
-        group.items[0],
-        { href: "/ops/members#allow-member-email", label: "Allow member email", task: "Allow member email" },
-        group.items[1],
-        { href: "/ops/circles#create-circle", label: "Create a Circle", task: "Create a Circle" },
-        ...group.items.slice(2),
-      ] : group.items,
-    }));
+  // This server-owned flag is Administrator-only. These are starting points,
+  // not a second copy of every destination in the navigation above.
+  const quickTasks = data.canPlaceMembers ? [
+    { href: "/ops/members#allow-member-email", label: "Add a member", detail: "Allow their email, then share joining instructions." },
+    { href: "/ops/circles", label: "Manage Circles", detail: "Place or move members. Set up a new Circle." },
+    { href: "/ops/operators?add=1", label: "Add an operator", detail: "Choose what they can manage, then send an invitation." },
+  ] : [
+    { href: "/ops/circles", label: "Your Circles", detail: "See the people and resources in your Circles." },
+    { href: "/ops/foundations", label: "Review Foundations", detail: "See who needs your help with their progress." },
+    { href: "/ops/experiences", label: "Events & attendance", detail: "Open an event and manage its roster." },
+  ];
+  const attention = data.attention.filter((item) => item.count > 0);
 
   const snapshot = [
     { href: "/ops/members", label: "Active members", tone: "", value: data.counts.activeMembers },
     { href: "/ops/members?filter=attention", label: "Needs attention", tone: "text-[var(--color-signal)]", value: data.counts.attentionRequired },
     { href: "/ops/foundations", label: "Foundations moving", tone: "", value: data.counts.foundations.inProgress },
-    { href: "/ops/members?filter=unassigned", label: "Without a Circle", tone: "", value: data.counts.eligibleWithoutCircle },
+    ...(data.canPlaceMembers ? [{ href: "/ops/circles#assign-member", label: "Ready for a Circle", tone: "", value: data.counts.eligibleWithoutCircle }] : []),
     { href: "/ops/work", label: "Open work", tone: "", value: openWork },
   ];
 
   return (
     <OperatorPageFrame title="Overview">
-      {data.attention.length > 0 ? (
+      {attention.length > 0 ? (
         <section className="mt-6 grid gap-3 sm:grid-cols-2" aria-label="Needs attention now">
-          {data.attention.map(item => (
+          {attention.map(item => (
             <Link key={item.href} href={item.href} className="flex items-center justify-between gap-5 rounded-[4px] bg-[var(--color-signal)] p-5 text-black shadow-[4px_4px_0_#080605]">
               <span><span className="block font-medium">{item.label}</span><span className="mt-1 block text-xs opacity-60">{item.oldestAt ? `Oldest · ${formatExperienceDate(item.oldestAt)}` : "Open queue"}</span></span>
               <span className="font-[var(--font-display)] text-3xl">{item.count} <span aria-hidden="true">→</span></span>
@@ -121,24 +119,25 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
           ))}
         </section>
       ) : null}
-      <nav aria-label="Operator tasks" className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {taskGroups.map((group) => (
-          <section className="rounded-[4px] bg-black/[0.035] px-5 py-4" aria-labelledby={`operator-tasks-${group.id}`} key={group.id}>
-            <h2 className="text-2xl leading-none text-[var(--color-poster)]" id={`operator-tasks-${group.id}`}><span className="[font-family:var(--font-cadehandy2)]">{group.label}</span></h2>
-            <ul className="mt-2 grid">
-              {group.items.map((item) => <li key={item.href}>
-                <Link className="group flex min-h-11 items-center justify-between gap-3 py-2 text-sm font-medium leading-snug text-black/75 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]" href={item.href}>
-                  <span>{item.task}</span><span aria-hidden="true" className="text-black/40 transition-transform group-hover:translate-x-0.5">→</span>
-                </Link>
-              </li>)}
-            </ul>
-          </section>
+      <form action="/ops/members" method="get" role="search" aria-label="Find a member" className="mt-6 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <label className="min-w-0" htmlFor="overview-member-search">
+          <span className={OPERATOR_LABEL_TEXT_CLASS}>Find a member</span>
+          <input className={OPERATOR_FIELD_CLASS} id="overview-member-search" name="q" type="search" placeholder={data.canPlaceMembers ? "Name or email" : "Name"} maxLength={120} />
+        </label>
+        <button className={OPERATOR_BUTTON_CLASS} type="submit">Find member</button>
+      </form>
+      <nav aria-label="Operator tasks" className="mt-4 grid gap-3 sm:grid-cols-3">
+        {quickTasks.map((item) => (
+          <Link className="group rounded-[4px] bg-black/[0.035] px-5 py-4 transition-colors hover:bg-black/[0.065] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black" href={item.href} key={item.href}>
+            <span className="flex items-center justify-between gap-3 text-base font-semibold"><span>{item.label}</span><span aria-hidden="true">→</span></span>
+            <span className="mt-2 block text-sm leading-relaxed text-black/60">{item.detail}</span>
+          </Link>
         ))}
       </nav>
-      <nav className="mt-6 grid grid-cols-6 overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] lg:grid-cols-5" aria-label="Current membership snapshot">
+      <nav className={`mt-6 grid overflow-hidden rounded-[4px] bg-[#080605] text-[var(--color-bone)] ${data.canPlaceMembers ? "grid-cols-6 lg:grid-cols-5" : "grid-cols-2 lg:grid-cols-4"}`} aria-label="Current membership snapshot">
         {snapshot.map((item, index) => (
           <Link
-            className={`group px-4 py-4 transition-colors hover:bg-white/[0.055] sm:px-6 sm:py-5 lg:col-span-1 ${index >= 3 ? "col-span-3" : "col-span-2"}`}
+            className={`group px-4 py-4 transition-colors hover:bg-white/[0.055] sm:px-6 sm:py-5 lg:col-span-1 ${data.canPlaceMembers ? (index >= 3 ? "col-span-3" : "col-span-2") : "col-span-1"}`}
             href={item.href}
             key={item.label}
           >
@@ -227,7 +226,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
             </div>
           </section>
 
-          {data.canPlaceMembers ? (
+          {data.canPlaceMembers && data.counts.eligibleWithoutCircle > 0 ? (
             <Link className="rounded-[4px] bg-[var(--color-poster)] px-5 py-5 text-sm font-medium text-white shadow-[5px_5px_0_#080605] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-[#080605] hover:shadow-[2px_2px_0_#080605]" href="/ops/circles#assign-member">
               Place {data.counts.eligibleWithoutCircle} eligible member{data.counts.eligibleWithoutCircle === 1 ? "" : "s"} into a Circle →
             </Link>

@@ -67,30 +67,38 @@ function AudienceFields({
   audiences?: OpsAcademyAudience[];
   options: OpsAcademyReferenceOptions;
 }) {
-  const allMembers = audiences.some((audience) => audience.kind === "all_members");
-  const circleIds = new Set(audiences.filter((audience) => audience.kind === "circle").map((audience) => audience.id));
-  const blockIds = new Set(audiences.filter((audience) => audience.kind === "block").map((audience) => audience.id));
+  const [allMembers, setAllMembers] = useState(() => audiences.some((audience) => audience.kind === "all_members"));
+  const [circleIds, setCircleIds] = useState(() => new Set(audiences.flatMap((audience) => audience.kind === "circle" && audience.id ? [audience.id] : [])));
+  const [blockIds, setBlockIds] = useState(() => new Set(audiences.flatMap((audience) => audience.kind === "block" && audience.id ? [audience.id] : [])));
+  const groups = [
+    { label: "Circles", name: "circleIds", options: options.circles, selected: circleIds, setSelected: setCircleIds },
+    { label: "Blocks", name: "blockIds", options: options.blocks, selected: blockIds, setSelected: setBlockIds },
+  ];
   return (
     <fieldset className="grid gap-3 rounded-[4px] bg-black/[0.035] p-4 sm:grid-cols-2">
       <legend className="px-1 font-[var(--font-display)] text-xl tracking-[-0.02em]">Audience</legend>
       <label className="flex min-h-11 items-center gap-3 text-sm sm:col-span-2">
-        <input defaultChecked={allMembers} name="audienceAll" type="checkbox" value="yes" />
+        <input checked={allMembers} className="size-4 shrink-0 accent-[var(--color-faded)]" name="audienceAll" onChange={(event) => setAllMembers(event.target.checked)} type="checkbox" value="yes" />
         All active members
       </label>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Circles</span>
-        <select className={`${OPERATOR_FIELD_CLASS} min-h-28`} defaultValue={[...circleIds].filter(Boolean) as string[]} multiple name="circleIds">
-          {options.circles.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-        </select>
-      </label>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Blocks</span>
-        <select className={`${OPERATOR_FIELD_CLASS} min-h-28`} defaultValue={[...blockIds].filter(Boolean) as string[]} multiple name="blockIds">
-          {options.blocks.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-        </select>
-      </label>
+      {groups.map((group) => <fieldset className="min-w-0" key={group.name}>
+        <legend className={OPERATOR_LABEL_TEXT_CLASS}>{group.label}</legend>
+        <div className={`mt-2 max-h-52 overflow-y-auto rounded-[4px] bg-[var(--color-bone)]/60 p-2 ${allMembers ? "opacity-50" : ""}`}>
+          {group.options.length ? group.options.map((option) => <label className="flex min-h-11 items-center gap-3 rounded-[3px] px-2 text-sm" key={option.id}>
+            <input checked={group.selected.has(option.id)} className="size-4 shrink-0 accent-[var(--color-faded)]" disabled={allMembers} name={group.name} onChange={(event) => {
+              const checked = event.target.checked;
+              group.setSelected((current) => {
+                const next = new Set(current);
+                if (checked) next.add(option.id); else next.delete(option.id);
+                return next;
+              });
+            }} type="checkbox" value={option.id} />
+            <span className="min-w-0 break-words">{option.label}</span>
+          </label>) : <p className="px-2 py-3 text-sm text-black/50">No {group.label.toLowerCase()} available.</p>}
+        </div>
+      </fieldset>)}
       <p className="text-xs leading-relaxed text-black/45 sm:col-span-2">
-        All members is exclusive. Otherwise use Command or Control to choose more than one Circle or Block.
+        {allMembers ? "Circle and Block choices are paused while All active members is selected." : "Choose one or more Circles and Blocks, or share with all active members."}
       </p>
     </fieldset>
   );
@@ -267,16 +275,19 @@ export function OperatorAcademyResourceStateActions({
   resourceId,
   revision,
   status,
+  hasUnpublishedChanges = false,
   preview = false,
 }: {
   resourceId: string;
   revision: number;
   status: OpsAcademyStatus;
+  hasUnpublishedChanges?: boolean;
   preview?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmRetirement, setConfirmRetirement] = useState(false);
   async function change(action: "publish" | "retire" | "unpublish") {
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
     setSubmitting(true);
@@ -294,14 +305,14 @@ export function OperatorAcademyResourceStateActions({
   if (status === "retired") return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {status !== "published" ? (
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("publish")} type="button">Publish</button>
-      ) : (
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
-      )}
-      {status !== "draft" ? (
-        <button className={`${OPERATOR_BUTTON_CLASS} border-[var(--color-poster)] text-[var(--color-poster)]`} disabled={submitting} onClick={() => change("retire")} type="button">Retire</button>
+      {status !== "published" || hasUnpublishedChanges ? (
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("publish")} type="button">{status === "published" ? "Publish latest changes" : "Publish"}</button>
       ) : null}
+      {status === "published" ? (
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
+      ) : null}
+      <button className={`${OPERATOR_BUTTON_CLASS} border-[var(--color-poster)] text-[var(--color-poster)]`} disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{status === "draft" ? "Discard draft" : "Retire"}</button>
+      {confirmRetirement ? <div className="basis-full rounded-[4px] bg-white p-4 text-black" role="group" aria-label="Confirm lesson retirement"><p className="text-sm">{status === "draft" ? "Discard this unused lesson draft?" : "Retire this lesson and remove it from the Academy?"} Its history is retained. This cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">{status === "draft" ? "Confirm discard" : "Confirm retirement"}</button><button className="min-h-11 text-sm underline" disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep lesson</button></div></div> : null}
       <span aria-live="polite" className="text-xs text-black/48">{message}</span>
     </div>
   );
@@ -364,6 +375,7 @@ export function OperatorAcademyCollectionActions({ collection, preview = false }
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmRetirement, setConfirmRetirement] = useState(false);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
@@ -433,10 +445,9 @@ export function OperatorAcademyCollectionActions({ collection, preview = false }
           ) : (
             <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
           )}
-          {collection.status !== "draft" ? (
-            <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">Retire</button>
-          ) : null}
+          <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{collection.status === "draft" ? "Discard draft" : "Retire"}</button>
         </div>
+        {confirmRetirement ? <div className="rounded-[4px] bg-white p-3" role="group" aria-label="Confirm collection retirement"><p className="text-sm">Retire this collection? Move its remaining lessons first. Its history is retained and this cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">Confirm retirement</button><button className="min-h-11 text-sm underline" disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep collection</button></div></div> : null}
         <span aria-live="polite" className="text-xs text-black/48">{message}</span>
       </form>
     </details>

@@ -19,11 +19,14 @@ test("preview Experiences expose creation with Circle and Block choices", () => 
   assert.match(fixtures, /PREVIEW_OPS_EXPERIENCE_DIRECTORY/);
   assert.match(fixtures, /canCreate: true/);
   assert.match(fixtures, /canManageGlobal: true/);
-  assert.match(fixtures, /preview-circle-01/);
+  assert.match(fixtures, /const circles = PREVIEW_OPS_CIRCLES\.filter/);
+  assert.match(fixtures, /const firstCircleId = PREVIEW_OPS_CIRCLES\[0\]\.id/);
+  assert.match(fixtures, /circleId: firstCircleId/);
+  assert.doesNotMatch(fixtures, /"preview-circle-\d+"/);
   assert.match(fixtures, /preview-block-01/);
   assert.match(directoryPage, /directory=\{PREVIEW_OPS_EXPERIENCE_DIRECTORY\}/);
   assert.match(directoryPage, /preview/);
-  assert.match(directory, /href="#new-experience">\+ New Experience/);
+  assert.match(directory, /href="#new-experience">\{selectedCircle \? "\+ Schedule a meeting" : "\+ New Experience"\}/);
   assert.match(directory, /id="new-experience"/);
 });
 
@@ -50,5 +53,6 @@ test("all preview Experience controls stop before their live request", () => {
   assert.match(record, /if \(preview\) \{[\s\S]*member was not added[\s\S]*return;/);
   assert.match(googleField, /if \(preview\) \{[\s\S]*link was not changed[\s\S]*return;/);
   assert.match(record, /preview=\{preview\}/);
-  assert.match(directory, /preview=\{preview\}/);
+  assert.match(directory, /#meeting-setup/);
+  assert.doesNotMatch(directory, /OperatorGoogleCommunicationField/);
 });

@@ -86,7 +86,7 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
   let calendarInvalidations = 0;
   const repository = await loadModule("src/lib/platform/ops-experience-repository.ts", {
     "@/lib/database/server": { getApplicationDatabase: () => sqlBridge(db) },
-    "@/lib/google/communications": {},
+    "@/lib/google/communications": { googleCommunicationLivemode: () => null },
     "@/lib/platform/experience-member-access": eligibility,
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError },
     "@/lib/platform/ops-calendar-repository": {
@@ -143,7 +143,7 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
 
   try {
     await db.exec(`
-      create role anon; create role authenticated;
+      create role anon; create role authenticated; create schema private;
       create table people (id uuid primary key, status text not null);
       create table ruined_members (id uuid primary key, person_id uuid references people(id), unique(id,person_id));
       create table platform_users (auth_user_id uuid primary key, member_id uuid, person_id uuid, status text, email_normalized text);
@@ -151,8 +151,9 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       create table member_lifecycle (member_id uuid primary key references ruined_members(id), account_state text default 'active',
         administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz,
         foundations_state text default 'completed', program_state text default 'active', standing_state text default 'active', current_progression_level_slug text);
-      create table circles (id uuid primary key, status text, activated_at timestamptz, ends_at timestamptz);
-      create table membership_blocks (id uuid primary key, status text, activated_at timestamptz, ends_at timestamptz);
+      create table circles (id uuid primary key, name text default 'Same Circle name', status text, activated_at timestamptz, ends_at timestamptz);
+      create table membership_blocks (id uuid primary key, name text default 'Block', status text, activated_at timestamptz, ends_at timestamptz);
+      create table integration_entity_links (provider text, local_entity_type text, local_entity_id text, external_entity_type text, livemode boolean, metadata jsonb);
       create table circle_member_assignments (id bigint generated always as identity primary key, member_id uuid references ruined_members(id), circle_id uuid references circles(id), ended_at timestamptz, assigned_at timestamptz default now());
       create table circle_staff_assignments (id bigint generated always as identity primary key, auth_user_id uuid references platform_users(auth_user_id), circle_id uuid references circles(id), role_slug text, ended_at timestamptz, assigned_at timestamptz default now());
       create table block_circle_assignments (id bigint generated always as identity primary key, block_id uuid references membership_blocks(id), circle_id uuid references circles(id), ended_at timestamptz, assigned_at timestamptz default now());
@@ -167,6 +168,55 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       ${rejectMutation}
     `);
     await db.exec(eventMigration);
+    const fundingMigration = await readFile(new URL("../db/migrations/20260914181653_operator_complimentary_membership.sql", import.meta.url), "utf8");
+    for (const name of ["private.ruined_member_has_operator_funding", "private.ruined_lock_member_operator_funding"]) {
+      const start = fundingMigration.indexOf(`create or replace function ${name}(`);
+      const end = fundingMigration.indexOf("\n$$;", start);
+      assert.ok(start >= 0 && end > start);
+      await db.exec(fundingMigration.slice(start, end + 4));
+    }
+
+    await t.test("meeting directory exposes exact Circle IDs and only current authorized scheduling choices", async () => {
+      await reset("ops_admin");
+      const adminDirectory = await repository.getOpsExperienceManagementDirectory(ids.operator);
+      assert.deepEqual(new Set(adminDirectory.circles.map((circle) => circle.id)), new Set([ids.circle, ids.otherCircle]));
+      assert.equal(new Set(adminDirectory.circles.map((circle) => circle.name)).size, 1, "duplicate display names never determine scope");
+      assert.deepEqual(new Map(adminDirectory.experiences.map((event) => [event.experienceId, event.circleId])), new Map([[ids.event, ids.circle], [ids.otherEvent, ids.otherCircle]]));
+      await reset("circle_leader");
+      const scoped = await repository.getOpsExperienceManagementDirectory(ids.operator);
+      assert.deepEqual(scoped.circles.map((circle) => circle.id), [ids.circle]);
+      assert.deepEqual(scoped.experiences.map((event) => event.circleId), [ids.circle]);
+      await db.query("update circle_staff_assignments set assigned_at=now()+interval '1 day' where auth_user_id=$1", [ids.operator]);
+      const future = await repository.getOpsExperienceManagementDirectory(ids.operator);
+      assert.deepEqual(future.circles, []);
+      assert.deepEqual(future.experiences, []);
+      await db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [ids.operator]);
+      await deny(() => repository.getOpsExperienceManagementDirectory(ids.operator));
+    });
+
+    await t.test("complimentary Circle admission requires current funding and completed unrestricted entry", async () => {
+      await reset("ops_admin");
+      await db.query("update member_lifecycle set billing_state='pending',program_state='onboarding',foundations_state='in_progress' where member_id=$1", [ids.member]);
+      await deny(() => roster({ memberId: ids.member }));
+      await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'guide')", [ids.memberAuth]);
+      for (const [restrict, restore, subject] of [
+        ["update member_lifecycle set account_state='suspended' where member_id=$1", "update member_lifecycle set account_state='active' where member_id=$1", ids.member],
+        ["update member_lifecycle set administrative_onboarding_state='in_progress' where member_id=$1", "update member_lifecycle set administrative_onboarding_state='completed' where member_id=$1", ids.member],
+        ["update platform_users set status='suspended' where auth_user_id=$1", "update platform_users set status='active' where auth_user_id=$1", ids.memberAuth],
+        ["update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='guide'", "update platform_role_grants set revoked_at=null where auth_user_id=$1 and role_slug='guide'", ids.memberAuth],
+      ]) {
+        await db.query(restrict, [subject]);
+        await deny(() => roster({ memberId: ids.member }));
+        await db.query(restore, [subject]);
+      }
+      await deny(() => roster({ experienceId: ids.otherEvent, memberId: ids.member }));
+      assert.equal((await db.query("select count(*)::int as total from experience_registrations")).rows[0].total, 0);
+      assert.equal((await db.query("select count(*)::int as total from operator_audit_events")).rows[0].total, 0);
+      assert.equal(calendarInvalidations, 0);
+      assert.equal((await roster({ memberId: ids.member })).status, "registered");
+      assert.equal(calendarInvalidations, 1);
+      assert.equal((await db.query("select billing_state from member_lifecycle where member_id=$1", [ids.member])).rows[0].billing_state, "pending");
+    });
 
     await t.test("all operator roles can admit an entitled member, but cannot bypass the Circle audience", async () => {
       for (const role of ["circle_leader", "guide", "ops_admin"]) {

@@ -250,6 +250,10 @@ const rosterAssignment = {
   billingState: "active", circleId: circle.id, email: "roster@example.test",
   memberId: "33333333-3333-4333-8333-333333333333", name: "Roster Member", programState: "active",
 };
+const CircleCommunicationPanel = load("src/components/platform/OperatorCircleCommunicationPanel.tsx", {
+  ...styles,
+  "@/components/platform/OperatorGoogleCommunicationField": stub,
+}).default;
 
 function circlePageFixture(overrides = {}) {
   const state = {
@@ -267,15 +271,20 @@ function circlePageFixture(overrides = {}) {
   const Page = load("app/ops/circles/page.tsx", {
     "@/components/platform/OperatorCirclesManager": { __esModule: true, default: Manager },
     "@/components/platform/OperatorPageFrame": stub,
-    "@/components/platform/OperatorGoogleCommunicationField": stub,
+    "@/components/platform/OperatorCircleCommunicationPanel": { __esModule: true, default: CircleCommunicationPanel },
     "@/components/platform/OpsCircleManagementActions": stub,
-    "@/components/platform/OpsSection": { __esModule: true, default: OpsSection },
+    "@/components/platform/StateLabel": stub,
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: Unavailable },
     "@/lib/platform/ops-operating-repository": { getOpsCircleCommunicationDirectory: async (actor) => {
       read("communications", actor);
       return [{ ...circle, googleCommunicationsConfigured: false, chatUrl: null }];
     } },
     "@/lib/platform/ops-preview": {},
+    "@/lib/platform/ops-experience-preview": {},
+    "@/lib/platform/ops-experience-repository": { getOpsExperienceManagementDirectory: async (actor) => {
+      read("meetings", actor);
+      return { blocks: [], circles: [{ id: circle.id, name: circle.name }], canCreate: true, canManageGlobal: state.role === "ops_admin", experiences: [] };
+    } },
     "@/lib/platform/ops-repository": {
       getOpsCircleSummaries: async (actor) => { read("circles", actor); return [circle]; },
       getOpsCircleManagementOptions: async (actor) => { read("options", actor); return { resources: [], shapers: [] }; },
@@ -315,6 +324,9 @@ test("Circle route passes exact roster IDs and searches all member states so una
   assert.equal(manager.props.initialCircleId, circle.id);
   assert.equal(manager.props.memberQuery, "Example");
   assert.equal(manager.props.preview, false);
+  assert.equal(manager.props.communications.type, CircleCommunicationPanel);
+  assert.equal(manager.props.communications.props.circle.id, circle.id);
+  assert.equal(manager.props.communications.props.communication.id, circle.id);
   assert.equal(manager.key, `${member.memberId}:${circle.id}:Example`);
   assert.deepEqual(fixture.reads.find(({ name }) => name === "directory").input, { filter: "all", query: "Example", page: 1 });
   assert.equal(fixture.reads.some(({ name }) => name === "selected-member"), false, "an already-loaded exact member is not fetched twice");
@@ -377,8 +389,12 @@ test("Shapers and Guides get a scoped Circle snapshot without manager, full rost
     const fixture = circlePageFixture({ role });
     const { manager, tree } = await fixture.draw({ memberId: member.memberId, circleId: circle.id, memberQuery: "Example" });
     assert.equal(manager, undefined);
-    assert.deepEqual(fixture.reads.map(({ name }) => name), ["communications"]);
-    assert.match(text(tree), /An Administrator can place members/);
+    assert.deepEqual(fixture.reads.map(({ name }) => name), ["communications", "meetings"]);
+    assert.ok(find(tree, "section", (node) => attr(node, "aria-label") === `${circle.name} chat and meetings`));
+    assert.deepEqual(elements(tree).filter((node) => node.tagName === "article").map((node) => attr(node, "id")), [`circle-${circle.id}`]);
+    assert.equal(find(tree, "form"), undefined, "scoped communications do not expose member placement or roster forms");
+    assert.equal(byId(tree, "assign-member"), undefined);
+    assert.doesNotMatch(text(tree), /Roster Member|roster@example\.test/);
     assert.equal(find(tree, "a", (node) => text(node) === "Place members"), undefined);
   }
 });

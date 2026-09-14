@@ -48,7 +48,7 @@ export function useMembershipEntryProgressStage(stage: MembershipEntryStage) {
   }, [setStage, stage]);
 }
 
-export function MembershipEntryProgress() {
+export function MembershipEntryProgress({ complimentary = false }: { complimentary?: boolean }) {
   const stage = useContext(EntryProgressContext)?.stage ?? "profile";
   const currentIndex = MEMBERSHIP_ENTRY_STAGES.findIndex((item) => item.id === stage);
   const current = MEMBERSHIP_ENTRY_STAGES[currentIndex];
@@ -68,7 +68,7 @@ export function MembershipEntryProgress() {
           className="text-[0.68rem] font-medium uppercase tracking-[0.05em] text-white/76"
           id="membership-entry-progress-label"
         >
-          {current.label}
+          {complimentary && current.id === "payment" ? "Activation" : current.label}
         </p>
         <p className="text-[0.66rem] uppercase tracking-[0.05em] text-white/38">
           Step {currentIndex + 1} of 3
@@ -90,7 +90,7 @@ export function MembershipEntryProgress() {
               key={item.id}
             >
               <span className="sr-only">
-                Step {index + 1}: {item.label} — {status}
+                Step {index + 1}: {complimentary && item.id === "payment" ? "Activation" : item.label} — {status}
               </span>
               <span
                 aria-hidden="true"

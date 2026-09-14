@@ -116,8 +116,11 @@ test("the operator Experience makes publish, sync, open, and cancellation unders
   assert.match(panel, /Send cancellation/);
   assert.match(panel, /Waitlisted and cancelled places are excluded/);
   assert.match(panel, /Preview only — no invitations were sent/);
-  assert.match(record, /Publish \+ send invite/);
-  assert.match(record, /Manual Meet fallback/);
+  assert.match(record, /Publish \+ queue invitations/);
+  assert.match(record, /id="meeting-setup"/);
+  assert.match(record, /Google Calendar manages this meeting link/);
+  assert.doesNotMatch(record, /Manual Meet fallback|Publish \+ send invite/);
+  assert.match(panel, /publishing alone does not confirm delivery/);
   assert.doesNotMatch(record, /await calendarRequest\(/);
   assert.match(record, /Calendar delivery is durably queued/);
   assert.match(panel, /aria-busy=\{pending\}/);
@@ -126,7 +129,8 @@ test("the operator Experience makes publish, sync, open, and cancellation unders
 });
 
 test("operator documentation states the exact assignment and credential boundaries", () => {
-  assert.match(docs, /Publish \+ send invite/);
+  assert.match(docs, /Publish \+ queue invitations/);
+  assert.match(docs, /a queued request is not evidence of delivery/);
   assert.match(docs, /Circle and Block Experiences resolve current, eligible members/);
   assert.match(docs, /Public and[\s\S]*invite-only Experiences invite only confirmed registrations/);
   assert.match(docs, /only a verified primary email/);

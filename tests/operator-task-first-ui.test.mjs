@@ -22,6 +22,7 @@ function load(path, dependencies = {}) {
     if (name === "react") return React;
     if (name === "next/link") return Link;
     if (name === "@/components/platform/OperatorPageFrame") return Frame;
+    if (name === "@/components/platform/OperatorMessagesTabs") return load("src/components/platform/OperatorMessagesTabs.tsx");
     if (name === "@/components/platform/operatorStyles") return styles;
     throw new Error(`Unexpected task-first UI dependency: ${name}`);
   }, cjsModule, cjsModule.exports);
@@ -141,19 +142,19 @@ test("announcements expose their draft form and require an explicit audience rev
   const Create = () => null;
   const Publish = () => null;
   const f = hookFixture("src/components/platform/OperatorAnnouncements.tsx", {
-    announcements: [{ announcementId: "draft-one", title: "For this Circle", body: "Details", state: "draft", publishedAt: null, targetLabel: "Circle One" }],
+    announcements: [{ announcementId: "draft-one", version: 1, title: "For this Circle", body: "Details", state: "draft", publishedAt: null, targetLabel: "Circle One" }],
     audienceOptions: data, canManage: true, preview: true,
   }, {
     "@/components/platform/OperatorEmptyState": { __esModule: true, default: () => null },
     "@/components/platform/StateLabel": { __esModule: true, default: () => null },
-    "@/components/platform/OperatorWorkActions": { OperatorAnnouncementCreateAction: Create, OperatorAnnouncementPublishAction: Publish },
+    "@/components/platform/OperatorWorkActions": { OperatorAnnouncementCreateAction: Create, OperatorAnnouncementPublishAction: Publish, OperatorAnnouncementCloseAction: () => null },
   });
   assert.equal(nodes(f.draw()).some((node) => node.type === "details"), false);
   assert.equal(nodes(f.draw()).some((node) => node.type === Publish), false);
   assert.equal(nodes(f.draw()).find((node) => node.type === Create).props.preview, true);
   f.button("Review & publish").props.onClick();
   assert.match(text(f.draw()), /Publish to Circle One/);
-  assert.match(text(f.draw()), /cannot be edited or retracted/);
+  assert.match(text(f.draw()), /You can retract it later/);
   assert.equal(nodes(f.draw()).find((node) => node.type === Publish).props.preview, true);
   f.button("Cancel review").props.onClick();
   assert.equal(nodes(f.draw()).some((node) => node.type === Publish), false);
@@ -174,6 +175,45 @@ test("all preview member corrections, notes, tasks, and announcement handlers st
     assert.match(text(f.draw()), /Preview/);
   }
   assert.deepEqual(requests, []);
+});
+
+test("published Academy revisions have a direct publish control; unused draft retirement requires review", async (t) => {
+  const requests = captureRequests(t, () => Response.json({ resource: {} }));
+  const props = { resourceId: "lesson-one", revision: 3, status: "published", hasUnpublishedChanges: true };
+  const live = hookFixture("src/components/platform/OperatorAcademyActions.tsx", props, {}, "OperatorAcademyResourceStateActions");
+  await live.button("Publish latest changes").props.onClick();
+  assert.deepEqual(JSON.parse(requests[0].body), { action: "publish", expectedRevision: 3 });
+  assert.equal(requests.length, 1, "No unpublish request is necessary");
+  const draft = hookFixture("src/components/platform/OperatorAcademyActions.tsx", { ...props, status: "draft", preview: true }, {}, "OperatorAcademyResourceStateActions");
+  draft.button("Discard draft").props.onClick();
+  assert.match(text(draft.draw()), /history is retained/);
+  await draft.button("Confirm discard").props.onClick();
+  assert.equal(requests.length, 1, "Preview retirement never writes");
+});
+
+test("editing an announcement preserves its audience unless explicitly changed and sends the reviewed version", async (t) => {
+  const requests = captureRequests(t, () => Response.json({ announcement: {} }));
+  const announcement = { announcementId: "one", version: 4, title: "Old title", body: "Old body", targetLabel: "Circle One", state: "draft" };
+  const f = hookFixture("src/components/platform/OperatorWorkActions.tsx", { announcement, audienceOptions: data }, {}, "OperatorAnnouncementCreateAction");
+  await nodes(f.draw()).find((node) => node.type === "form").props.onSubmit(event({ title: "New title", body: "New body", audience: "keep:" }));
+  assert.equal(requests[0].method, "PATCH");
+  assert.deepEqual(JSON.parse(requests[0].body), { action: "edit", expectedVersion: 4, title: "New title", body: "New body" });
+});
+
+test("announcement retraction needs confirmation and a reason; preview confirmation never sends", async (t) => {
+  const requests = captureRequests(t, () => Response.json({ announcement: {} }));
+  const announcement = { announcementId: "one", version: 4, title: "Published", body: "Body", state: "published" };
+  const f = hookFixture("src/components/platform/OperatorWorkActions.tsx", { announcement }, {}, "OperatorAnnouncementCloseAction");
+  f.button("Retract post").props.onClick();
+  assert.equal(requests.length, 0);
+  assert.equal(f.button("Confirm retraction").props.disabled, true);
+  nodes(f.draw()).find((node) => node.type === "textarea").props.onChange({ target: { value: "Wrong event date" } });
+  await f.button("Confirm retraction").props.onClick();
+  assert.deepEqual(JSON.parse(requests[0].body), { action: "retract", expectedVersion: 4, reason: "Wrong event date" });
+  const preview = hookFixture("src/components/platform/OperatorWorkActions.tsx", { announcement, preview: true }, {}, "OperatorAnnouncementCloseAction");
+  preview.button("Retract post").props.onClick();
+  await preview.button("Confirm retraction").props.onClick();
+  assert.equal(requests.length, 1);
 });
 
 test("profile correction is visible, stops preview writes, and recovers from a failed transport", async (t) => {
@@ -197,6 +237,8 @@ test("member record action anchors have visible authorized destinations and neve
   const record = preview.getPreviewOpsMemberRecord("preview-01");
   const component = () => null;
   const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
+    "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
+    "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
     "@/components/platform/OperatorMemberSetup": { __esModule: true, default: component },
     "@/components/platform/OperatorProfileSupport": { __esModule: true, default: component },
@@ -229,16 +271,20 @@ test("operator guide distinguishes email allowance, acceptance, member placement
   assert.doesNotMatch(memberPage, /<details/);
 });
 
-test("admin-preview member allowance is visible but both removal and admission are inert", async (t) => {
+test("admin-preview allowance demonstrates sample joining and removal without identity reads or network", async (t) => {
   const requests = captureRequests(t);
   const fixture = hookFixture("src/components/platform/OpsActions.tsx", { preview: true }, {}, "OpsInvitationActions");
   const tree = fixture.draw();
-  assert.match(text(tree), /email allowances are not changed/);
-  assert.equal(fixture.button("Allow email").props.disabled, true);
-  assert.equal(fixture.button("Remove allowance").props.disabled, true);
+  assert.match(text(tree), /email allowances are not changed/i);
+  assert.equal(fixture.button("Add member").props.disabled, false);
+  assert.equal(nodes(tree).find((node) => node.props?.id === "ops-invitation-email").props.readOnly, true);
   await nodes(tree).find((node) => node.type === "form").props.onSubmit({
     preventDefault() {},
     get currentTarget() { throw new Error("Preview must return before reading submitted identity"); },
   });
+  assert.match(nodes(fixture.draw()).find((node) => node.props?.id === "member-share-message").props.value, /^PREVIEW — SAMPLE ONLY/);
+  assert.equal(fixture.button("Copy message").props.disabled, false);
+  fixture.button("Remove a pending allowance").props.onClick();
+  fixture.button("Confirm removal").props.onClick();
   assert.equal(requests.length, 0);
 });

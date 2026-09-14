@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import BYOBRegistrationForm from "@/components/events/BYOBRegistrationForm";
-import { EVENTS } from "@/data/events";
+import { getPublicCommunityEvents } from "@/lib/events/community-event-repository";
 import { BYOB_02_EVENT_KEY } from "@/lib/events/byob-registration-model";
 
 const description =
@@ -22,8 +22,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function BYOB02RegistrationPage() {
-  const event = EVENTS.find((candidate) => candidate.id === BYOB_02_EVENT_KEY);
+export const dynamic = "force-dynamic";
+export default async function BYOB02RegistrationPage() {
+  const events = await getPublicCommunityEvents();
+  const event = events.find((candidate) => candidate.id === BYOB_02_EVENT_KEY);
   if (!event) notFound();
 
   return (
@@ -40,7 +42,7 @@ export default function BYOB02RegistrationPage() {
           <div className="mt-3 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,0.48fr)] lg:items-end lg:gap-12">
             <div>
               <p className="ui-heading text-[0.58rem] uppercase tracking-[0.16em] text-[var(--color-poster)]">
-                Registration open
+                {event.registration?.status === "Open" && event.status !== "Ended" ? "Registration open" : "Registration closed"}
               </p>
               <h1 className="display mt-2 text-[clamp(3.7rem,8vw,7.25rem)] leading-[0.82]">
                 {event.title}
@@ -72,7 +74,7 @@ export default function BYOB02RegistrationPage() {
           </div>
         </header>
 
-        <BYOBRegistrationForm />
+        {event.registration?.status === "Open" && event.status !== "Ended" ? <BYOBRegistrationForm /> : <p className="py-8">Registration is closed for this event.</p>}
       </div>
     </main>
   );

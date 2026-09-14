@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
@@ -24,10 +25,12 @@ test("member search uses saved names, visible statuses and paginated results wit
   const db = new PGlite();
   t.after(() => db.close());
   await db.exec(`
-    create table platform_users (auth_user_id uuid primary key, member_id uuid, status text);
-    create table platform_role_grants (auth_user_id uuid, role_slug text, revoked_at timestamptz);
+    create schema private;
+    create table people (id uuid primary key, status text default 'active');
+    create table platform_users (auth_user_id uuid primary key, member_id uuid, status text, person_id uuid);
+    create table platform_role_grants (auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
     create table ruined_members (id uuid primary key, person_id uuid, email text, membership_state text, created_at timestamptz default now());
-    create table member_lifecycle (member_id uuid primary key, account_state text, billing_state text, standing_state text, program_state text, foundations_state text, artifact_state text);
+    create table member_lifecycle (member_id uuid primary key, account_state text, billing_state text, standing_state text, program_state text, foundations_state text, artifact_state text, administrative_onboarding_state text default 'completed', cancellation_effective_at timestamptz);
     create table user_profiles (auth_user_id uuid primary key, display_name text);
     create table person_profiles (person_id uuid primary key, preferred_name text, display_name text);
     create table person_private_profiles (person_id uuid primary key, legal_name text);
@@ -41,6 +44,7 @@ test("member search uses saved names, visible statuses and paginated results wit
     create table foundation_enrollments (member_id uuid, foundation_version_id uuid, progress_percent numeric, created_at timestamptz);
   `);
   await db.query("insert into platform_users (auth_user_id,status) values ($1,'active'),($2,'active')", [admin, guide]);
+  await installOperatorFundingFunctions(db);
   await db.query("insert into platform_role_grants values ($1,'ops_admin',null),($2,'guide',null)", [admin, guide]);
   await db.query("insert into circles values ($1,'Circle 01','active')", [circle]);
   for (let n = 1; n <= 30; n++) {

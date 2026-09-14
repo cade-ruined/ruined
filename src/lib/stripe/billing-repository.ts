@@ -155,9 +155,11 @@ export async function reserveMembershipCheckout({
         membership_state: MembershipState;
         person_id: string;
         stripe_customer_id: string | null;
+        operator_funded: boolean;
       }>
     >`
-      select member.id, member.membership_state, member.person_id, member.stripe_customer_id
+      select member.id, member.membership_state, member.person_id, member.stripe_customer_id,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded
       from platform_users platform_user
       join platform_role_grants member_grant
         on member_grant.auth_user_id = platform_user.auth_user_id
@@ -174,7 +176,7 @@ export async function reserveMembershipCheckout({
     `;
     const member = memberRows[0];
 
-    if (member?.membership_state === "active" || member?.membership_state === "attention_required") {
+    if (member?.operator_funded || member?.membership_state === "active" || member?.membership_state === "attention_required") {
       throw new MembershipCheckoutConflictError();
     }
 

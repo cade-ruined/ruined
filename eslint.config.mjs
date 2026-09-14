@@ -6,6 +6,7 @@ const eslintConfig = [
   {
     ignores: [
       ".next/**",
+      ".next-ops-build-check/**",
       ".next-stale-*/**",
       ".seq-backup-*/**",
       "node_modules/**",

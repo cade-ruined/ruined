@@ -340,7 +340,7 @@ export default function OperatorExperienceRecord({
   return (
     <OperatorPageFrame title={experience.title}>
       <div className="mx-auto max-w-[92rem] pb-20">
-      <Link className="text-sm text-black/50 hover:text-black" href="/ops/experiences">← Experiences</Link>
+      <div className="flex flex-wrap gap-5 text-sm"><Link className="text-black/50 hover:text-black" href="/ops/experiences">← Experiences</Link>{experience.circleId ? <Link className="font-semibold underline underline-offset-4" href={`/ops/circles?circleId=${encodeURIComponent(experience.circleId)}#circle-communications`}>← Circle chat & meetings</Link> : null}</div>
       <header className="mt-4 grid gap-5 rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-end">
         <div>
           <p className="text-sm capitalize text-white/45">{experience.kind.replaceAll("_", " ")} · {experience.scope}</p>
@@ -354,6 +354,7 @@ export default function OperatorExperienceRecord({
       </header>
 
       <nav className="mt-3 flex flex-wrap gap-4 text-sm" aria-label="Experience record tasks">
+        <a className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href="#meeting-setup">Set meeting link</a>
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-roster">Roster & attendance</a>
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-calendar">Calendar invitations</a>
         {experience.canEdit && ["draft", "published"].includes(experience.state) ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#edit-experience">Edit details</a> : null}
@@ -391,7 +392,26 @@ export default function OperatorExperienceRecord({
           {experience.roster.length === 0 ? <p className="mt-5 rounded-[4px] bg-white/50 px-4 py-5 text-sm text-black/55">{experience.registrationMode !== "internal" ? "Registration is not managed here for this Experience." : availableMembers.length && experience.canManageRoster ? "No reservations yet. Choose a member above to add a place." : "No reservations yet. Eligible members can register once this Experience is published and registration opens."}</p> : null}
         </section>
 
-        <aside className="space-y-4">
+        <aside className="order-first space-y-4 lg:order-last">
+          <section id="meeting-setup" className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-4" aria-labelledby="meeting-setup-title">
+            <h2 id="meeting-setup-title" className="font-[var(--font-display)] text-2xl">Meeting link</h2>
+            <p className="mt-2 text-sm leading-relaxed text-black/65">For {experience.scope}. Members use this link to join the meeting after it is published.</p>
+            <div className="pt-3">
+              <OperatorGoogleCommunicationField
+                configured={experience.googleCommunicationsConfigured}
+                editable={experience.canManageCommunication && !experience.calendar.googleEventId && !["pending_create", "pending_update"].includes(experience.calendar.status)}
+                entityId={experience.experienceId}
+                entityType="experience"
+                initialUrl={experience.meetingUrl}
+                kind="meet"
+                inline
+                preview={preview}
+              />
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-black/60">{experience.calendar.googleEventId || ["pending_create", "pending_update"].includes(experience.calendar.status)
+              ? "Google Calendar manages this meeting link. Use the invitation controls below to update it."
+              : "Have a room already? Save its Google Meet link here. Sending Calendar invitations below creates Google's own Meet link and replaces this one."}</p>
+          </section>
           <OperatorExperienceCalendar
             calendar={experience.calendar}
             canManage={experience.canManageCommunication}
@@ -401,26 +421,12 @@ export default function OperatorExperienceRecord({
             preview={preview}
             scope={experience.scope}
           />
-          <details className="rounded-[4px] bg-black/[0.035] px-5 py-4">
-            <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-black/60">Manual Meet fallback</summary>
-            <div className="pt-3">
-              <OperatorGoogleCommunicationField
-                configured={experience.googleCommunicationsConfigured}
-                editable={experience.canManageCommunication}
-                entityId={experience.experienceId}
-                entityType="experience"
-                initialUrl={experience.meetingUrl}
-                kind="meet"
-                preview={preview}
-              />
-            </div>
-          </details>
           {experience.canEdit ? (
             <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-5" id="experience-actions" aria-label="Experience actions">
               <h2 className="font-[var(--font-display)] text-2xl">{experience.state === "draft" ? "Review & publish" : "Event status"}</h2>
-              {experience.state === "draft" ? <p className="mt-2 text-sm text-black/60">Check the date, audience, and registration settings before publishing{experience.calendar.configured ? " and sending invitations" : ""}.</p> : null}
+              {experience.state === "draft" ? <p className="mt-2 text-sm text-black/60">Check the date, audience, and registration settings before publishing{experience.calendar.configured ? ". Google invitations will be queued; check Calendar invitations for delivery status" : ""}.</p> : null}
               <div className="mt-3 flex flex-wrap gap-2">
-                {experience.state === "draft" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{experience.calendar.configured ? "Publish + send invite" : "Publish"}</button> : null}
+                {experience.state === "draft" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{experience.calendar.configured ? "Publish + queue invitations" : "Publish"}</button> : null}
                 {experience.state === "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("complete")} type="button">Complete</button> : null}
                 {["draft", "cancelled", "completed"].includes(experience.state) ? <button className={quietButton} disabled={pending} onClick={() => lifecycle("archive")} type="button">Archive</button> : null}
               </div>

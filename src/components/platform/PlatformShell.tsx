@@ -146,6 +146,8 @@ export function OperationsNavigation({
   const preview = configuration.mode === "preview";
   const groups = getOperationsNavigation(operatorRole);
   const location = getOperationsLocation(pathname, groups);
+  const [expandedSection, setExpandedSection] = useState<{ pathname: string; id: string } | null>(null);
+  const expandedGroup = groups.find((group) => group.id === (expandedSection?.pathname === pathname ? expandedSection.id : location?.group.id));
 
   useEffect(() => {
     const navigation = navigationRef.current;
@@ -232,20 +234,34 @@ export function OperationsNavigation({
         <div className="sticky top-[var(--ruined-header-height)] z-[80] bg-[var(--color-bone)] px-4 pb-3 pt-3 font-[var(--font-body)] text-[var(--color-faded)] sm:px-6 lg:px-10" data-operator-navigation ref={navigationRef}>
           <div className="mx-auto max-w-[96rem]">
             <nav aria-label="Operations sections" className="flex flex-wrap gap-1 sm:gap-2">
-              {groups.map((group) => (
-                <Link
-                  aria-current={location?.group.id === group.id ? group.items.length === 1 ? "page" : "location" : undefined}
-                  className={`inline-flex min-h-11 shrink-0 items-center rounded-[4px] px-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] sm:px-4 ${location?.group.id === group.id ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "text-black/60 hover:bg-black/[0.06] hover:text-black"}`}
+              {groups.map((group) => {
+                const className = `inline-flex min-h-11 shrink-0 items-center rounded-[4px] px-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] sm:px-4 ${expandedGroup?.id === group.id ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "text-black/60 hover:bg-black/[0.06] hover:text-black"}`;
+                return group.items.length > 1 ? <button
+                  aria-controls="operator-section-pages"
+                  aria-expanded={expandedGroup?.id === group.id}
+                  aria-current={location?.group.id === group.id ? "location" : undefined}
+                  className={className}
+                  id={`operator-section-${group.id}`}
+                  key={group.id}
+                  onClick={() => setExpandedSection({ pathname, id: group.id })}
+                  type="button"
+                >{group.label}</button> : <Link
+                  aria-current={location?.group.id === group.id ? "page" : undefined}
+                  className={className}
                   href={group.items[0].href}
                   key={group.id}
                   scroll={false}
                   onNavigate={showNavigation}
-                >{group.label}</Link>
-              ))}
+                >{group.label}</Link>;
+              })}
             </nav>
-            {location && location.group.items.length > 1 ? (
-              <nav aria-label={`${location.group.label} pages`} className="mt-1 flex flex-wrap gap-x-4 sm:gap-x-6">
-                {location.group.items.map((item) => {
+            {expandedGroup && expandedGroup.items.length > 1 ? (
+              <nav aria-label={`${expandedGroup.label} pages`} className="mt-1 flex flex-wrap gap-x-4 sm:gap-x-6" id="operator-section-pages" onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                document.getElementById(`operator-section-${expandedGroup.id}`)?.focus();
+                setExpandedSection(null);
+              }}>
+                {expandedGroup.items.map((item) => {
                   const current = isOperationsPathCurrent(pathname, item.href);
                   return <Link
                     aria-current={current ? "page" : undefined}
@@ -257,7 +273,7 @@ export function OperationsNavigation({
                   >{item.label}</Link>;
                 })}
               </nav>
-            ) : !location ? <p className="py-3 text-sm text-black/55">Choose a section to continue.</p> : null}
+            ) : !expandedGroup ? <p className="py-3 text-sm text-black/55">Choose a section to continue.</p> : null}
           </div>
         </div>
       ) : null}
@@ -300,13 +316,14 @@ export default function PlatformShell({
   const memberExperiences = member && pathname.startsWith("/my/experiences");
   const memberLearning = member && pathname.startsWith("/my/learn");
   const memberSupport = member && pathname.startsWith("/my/support");
+  const memberSettings = member && (pathname === "/my/account" || pathname === "/my/profile");
   const foundations = member && isMemberFoundations(pathname);
   const foundationsExperience = pathname.startsWith("/my/foundations/experience");
   const timeline = member && pathname === "/my/foundations/timeline";
-  const paperSurface = memberHome || memberCircle || memberExperiences || memberLearning || memberSupport || timeline;
+  const paperSurface = memberHome || memberCircle || memberExperiences || memberLearning || memberSupport || memberSettings || timeline;
   const paperClass = timeline
     ? "member-timeline-paper"
-    : memberHome || memberCircle || memberExperiences || memberLearning || memberSupport
+    : memberHome || memberCircle || memberExperiences || memberLearning || memberSupport || memberSettings
       ? "member-profile-paper"
       : "";
   const dark = !member || threshold || (foundations && !timeline);

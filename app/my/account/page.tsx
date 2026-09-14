@@ -15,5 +15,5 @@ export default async function MyAccountPage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  return <MemberAccount account={context.data} billingConnected={context.configuration.stripe === "connected" && context.state === "authenticated"} />;
+  return <MemberAccount account={context.data} preview={context.state === "preview"} billingConnected={context.configuration.stripe === "connected" && context.state === "authenticated"} />;
 }

@@ -144,9 +144,9 @@ test("reflection content remains ephemeral while resume position is persisted", 
 
 test("member Foundations pages keep paid access gates and preview writes disabled", () => {
   for (const page of [memberPage, experiencePage]) {
-    assert.match(page, /context\.state !== "preview"/);
-    assert.match(page, /!hasActiveMemberAccess\(context\.member\)/);
-    assert.match(page, /redirect\("\/my\/account"\)/);
+    assert.match(page, /context\.state === "preview"/);
+    assert.match(page, /!memberCan\(access, "foundations\.write"\)/);
+    assert.match(page, /return <MemberAccessNotice access=\{access\}/);
     assert.match(page, /writable=\{false\}/);
   }
   assert.match(experiencePage, /!foundations\.enrollmentId/);

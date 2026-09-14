@@ -5,6 +5,7 @@ import {
 } from "@/lib/platform/ops-api";
 import { bindOpsArtifactTemplate } from "@/lib/platform/ops-artifact-repository";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
+import { verifyArtifactShopifySelection } from "@/lib/platform/ops-artifact-products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +21,12 @@ export async function PATCH(
   const body = (await request.json().catch(() => null)) as BindingBody | null;
   const { templateId } = await params;
   try {
+    const product = await verifyArtifactShopifySelection(access.viewer.authUserId, body?.productGid, body?.productHandle);
     const binding = await bindOpsArtifactTemplate({
       actorAuthUserId: access.viewer.authUserId,
       livemode: body?.livemode === true,
-      productGid: typeof body?.productGid === "string" ? body.productGid : "",
-      productHandle: typeof body?.productHandle === "string" ? body.productHandle : "",
+      productGid: product.id,
+      productHandle: product.handle,
       templateId,
     });
     return opsJson({ binding });

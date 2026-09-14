@@ -511,6 +511,8 @@ export async function claimPlatformMemberForViewer(
 }
 
 type MemberSnapshotRow = {
+  operator_funded: boolean;
+  administrative_onboarding_state: string;
   account_state: AccountState;
   artifact_state: ArtifactState;
   billing_state: BillingState;
@@ -534,6 +536,8 @@ export async function getMemberPlatformSnapshot(
     select
       member.id as member_id,
       member.email,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      lifecycle.administrative_onboarding_state,
       profile.display_name,
       lifecycle.account_state,
       lifecycle.billing_state,
@@ -603,6 +607,8 @@ export async function getMemberPlatformSnapshot(
     nextAction: nextMemberAction({
       artifactState: row.artifact_state,
       billingState: row.billing_state,
+      membershipFunding: row.operator_funded ? "operator" : "self",
+      administrativeOnboardingState: row.administrative_onboarding_state,
       foundationsState: row.foundations_state,
       hasCircle: row.circle_status === "active",
     }),
@@ -632,6 +638,10 @@ export async function getOperatorRole(authUserId: string): Promise<OperatorRole 
 }
 
 type OperatorMemberRow = {
+  operator_funded?: boolean;
+  administrative_onboarding_state?: OperatorMemberSummary["administrativeOnboardingState"];
+  standing_state?: string;
+  cancellation_effective_at?: Date | string | null;
   membership_state?: string;
   account_state: AccountState;
   artifact_state: ArtifactState;
@@ -657,6 +667,10 @@ function operatorMemberSummary(
   const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
   return {
     ...(row.membership_state ? { membershipState: row.membership_state } : {}),
+    membershipFunding: row.operator_funded ? "operator" : "self",
+    administrativeOnboardingState: row.administrative_onboarding_state,
+    standingState: row.standing_state,
+    cancellationEffectiveAt: row.cancellation_effective_at ? new Date(row.cancellation_effective_at).toISOString() : null,
     accountState: row.account_state,
     artifactState: row.artifact_state,
     billingState: row.billing_state,
@@ -674,6 +688,8 @@ function operatorMemberSummary(
     nextAction: nextMemberAction({
       artifactState: row.artifact_state,
       billingState: row.billing_state,
+      membershipFunding: row.operator_funded ? "operator" : "self",
+      administrativeOnboardingState: row.administrative_onboarding_state,
       foundationsState: row.foundations_state,
       hasCircle: row.circle_status === "active",
     }),
@@ -796,8 +812,9 @@ export async function getOperatorMemberDirectoryPage(
           or (
             ${filter}::text = 'unassigned'
             and lifecycle.account_state = 'active'
-            and lifecycle.billing_state = 'active'
-            and lifecycle.standing_state = 'active'
+            and lifecycle.administrative_onboarding_state = 'completed'
+            and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
+            and (lifecycle.standing_state = 'active' or (lifecycle.standing_state = 'cancellation_requested' and lifecycle.cancellation_effective_at > now()))
             and lifecycle.program_state in ('onboarding', 'active')
             and active_circle.circle_id is null
           )
@@ -813,6 +830,10 @@ export async function getOperatorMemberDirectoryPage(
         member.id as member_id,
         member.email,
         member.membership_state,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        lifecycle.administrative_onboarding_state,
+        lifecycle.standing_state,
+        lifecycle.cancellation_effective_at,
         coalesce(nullif(btrim(person_profile.preferred_name), ''), nullif(btrim(person_profile.display_name), ''), nullif(btrim(profile.display_name), '')) as display_name,
         lifecycle.account_state,
         lifecycle.billing_state,
@@ -894,8 +915,9 @@ export async function getOperatorMemberDirectoryPage(
           or (
             ${filter}::text = 'unassigned'
             and lifecycle.account_state = 'active'
-            and lifecycle.billing_state = 'active'
-            and lifecycle.standing_state = 'active'
+            and lifecycle.administrative_onboarding_state = 'completed'
+            and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
+            and (lifecycle.standing_state = 'active' or (lifecycle.standing_state = 'cancellation_requested' and lifecycle.cancellation_effective_at > now()))
             and lifecycle.program_state in ('onboarding', 'active')
             and active_circle.circle_id is null
           )
@@ -948,6 +970,10 @@ export async function getOperatorDashboard(
     select
       member.id as member_id,
       member.email,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      lifecycle.administrative_onboarding_state,
+      lifecycle.standing_state,
+      lifecycle.cancellation_effective_at,
       profile.display_name,
       lifecycle.account_state,
       lifecycle.billing_state,
@@ -1016,6 +1042,10 @@ export async function getOperatorDashboard(
     with scoped_members as (
       select
         member.id,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        lifecycle.administrative_onboarding_state,
+        lifecycle.standing_state,
+        lifecycle.cancellation_effective_at,
         lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.program_state
@@ -1036,8 +1066,10 @@ export async function getOperatorDashboard(
     select
       count(*) as total_members,
       count(*) filter (
-        where scoped_member.billing_state = 'active'
+        where (scoped_member.billing_state = 'active' or scoped_member.operator_funded)
           and scoped_member.account_state = 'active'
+          and scoped_member.administrative_onboarding_state = 'completed'
+          and (scoped_member.standing_state = 'active' or (scoped_member.standing_state = 'cancellation_requested' and scoped_member.cancellation_effective_at > now()))
           and scoped_member.program_state in ('onboarding', 'active')
       ) as active_members,
       count(*) filter (
@@ -1045,7 +1077,9 @@ export async function getOperatorDashboard(
       ) as attention_required,
       count(*) filter (
         where scoped_member.account_state = 'active'
-          and scoped_member.billing_state = 'active'
+          and scoped_member.administrative_onboarding_state = 'completed'
+          and (scoped_member.billing_state = 'active' or scoped_member.operator_funded)
+          and (scoped_member.standing_state = 'active' or (scoped_member.standing_state = 'cancellation_requested' and scoped_member.cancellation_effective_at > now()))
           and scoped_member.program_state in ('onboarding', 'active')
           and not exists (
           select 1

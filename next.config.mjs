@@ -39,6 +39,8 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  // Keep a release check from overwriting the active local development cache.
+  distDir: process.env.RUINED_BUILD_CHECK === "true" ? ".next-ops-build-check" : ".next",
   reactStrictMode: true,
   async redirects() {
     return [

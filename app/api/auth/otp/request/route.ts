@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
-  const response = NextResponse.json({ ok: true });
+  const requestId = crypto.randomUUID();
+  const response = NextResponse.json({ ok: true, requestId });
+  response.headers.set("Cache-Control", "private, no-store");
   const supabase = createSupabaseCurrentResponseClient({ request, response });
 
   if (!supabase) {
@@ -47,12 +49,16 @@ export async function POST(request: NextRequest) {
     eligibility = await getUnifiedAccessEligibility(email);
   } catch (error) {
     console.error("Passwordless access eligibility could not be checked", {
+      requestId,
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
     return response;
   }
 
-  if (!eligibility.eligible) return response;
+  if (!eligibility.eligible) {
+    console.info("Passwordless access request needs an active account or invitation", { requestId });
+    return response;
+  }
 
   let options: { emailRedirectTo?: string; shouldCreateUser: boolean } = {
     shouldCreateUser: false,
@@ -61,7 +67,7 @@ export async function POST(request: NextRequest) {
   if (eligibility.shouldCreateUser) {
     const emailRedirectTo = getMemberEmailConfirmationUrl(request);
     if (!emailRedirectTo) {
-      console.error("Email confirmation destination is not safely configured");
+      console.error("Email confirmation destination is not safely configured", { requestId });
       return response;
     }
     // Either kind of durable invitation can create an authentication identity.
@@ -77,12 +83,17 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.warn("Supabase passwordless code request was not delivered", {
+        requestId,
         errorCode: error.code,
         status: error.status,
       });
+    } else {
+      // Provider acceptance is not proof of inbox delivery. Do not log codes or email addresses.
+      console.info("Passwordless code request accepted by email provider", { requestId });
     }
   } catch (error) {
     console.warn("Supabase passwordless code request was not delivered", {
+      requestId,
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
   }

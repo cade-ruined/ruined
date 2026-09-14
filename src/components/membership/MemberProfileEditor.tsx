@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
-import MemberPageHeader from "@/components/membership/MemberPageHeader";
+import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
+import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
 import type { MemberProfileSnapshot } from "@/lib/membership/model";
 
-const fieldClass =
-  "mt-2 min-h-12 w-full border border-black/20 bg-transparent px-3 py-3 font-[var(--font-body)] text-sm text-black outline-none transition-colors placeholder:text-black/28 focus:border-[var(--color-poster)]";
+const fieldClass = SUPPORT_FIELD_CLASS;
 
 function scopeLabel(value: string) {
   return value === "none"
@@ -20,10 +20,12 @@ export default function MemberProfileEditor({
   initialProfile,
   photoStorageReady,
   writable,
+  preview = false,
 }: {
   initialProfile: MemberProfileSnapshot;
   photoStorageReady: boolean;
   writable: boolean;
+  preview?: boolean;
 }) {
   const [profile, setProfile] = useState(initialProfile);
   const [pending, setPending] = useState(false);
@@ -85,29 +87,17 @@ export default function MemberProfileEditor({
   }
 
   return (
-    <main>
-      <MemberPageHeader
-        eyebrow="Ruined Membership / Profile"
-        imageIntent="A direct, unpolished member portrait against a quiet wall. Window light. No performance."
-        imageSequence="07"
-        note="be known without being exposed"
-        summary="Your public member identity and private administrative record are deliberately separate. You decide what the Circle can see."
-        title="Your place, in your words."
-      />
+    <main className="mx-auto max-w-[78rem] pb-24 font-[var(--font-body)] text-[var(--color-faded)]">
+      <MemberSettingsHeader title="Edit profile" />
+      {!writable ? <p className="mb-6 rounded-[4px] bg-black/[0.045] p-4 text-base leading-relaxed" role="status">{preview ? "Preview only. Profile changes are not saved." : profile.access.reason ?? "Your profile is read only. Contact support if you need to update it."} {!preview ? <Link className="underline underline-offset-4" href="/my/support">Get help</Link> : null}</p> : null}
 
-      <form className="mt-20" onSubmit={save}>
-        <section className="grid gap-10 border-y border-black/20 py-10 lg:grid-cols-[minmax(17rem,0.62fr)_minmax(0,1.38fr)] lg:gap-20 lg:py-14">
+      <form onSubmit={save}>
+        <fieldset className="m-0 min-w-0 space-y-8 border-0 p-0" disabled={!writable || pending}>
+        <legend className="sr-only">Profile details and sharing preferences</legend>
+        <section className="grid items-start gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
           <div>
-            <p className="font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.16em] text-[var(--color-poster)]">
-              Directory identity
-            </p>
-            <h2 className="mt-5 font-[var(--font-display)] text-5xl leading-[0.92] tracking-[-0.04em]">
-              How you appear in the room.
-            </h2>
-            <p className="mt-6 max-w-md font-[var(--font-body)] text-sm leading-relaxed text-black/48">
-              Your name is always part of the active Circle roster. Every other directory field follows the sharing choices below.
-            </p>
-            <div className="mt-8">
+            <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Profile</h2>
+            <div className="mt-4 max-w-64">
               <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">Profile photo</p>
               <MemberPhotoUpload
                 avatarUrl={profile.directory.avatarUrl}
@@ -120,47 +110,42 @@ export default function MemberProfileEditor({
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
-            <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+            <label className={SUPPORT_LABEL_CLASS}>
               Display name
               <input className={fieldClass} defaultValue={profile.directory.displayName} maxLength={120} name="display-name" required />
             </label>
-            <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+            <label className={SUPPORT_LABEL_CLASS}>
               Preferred name
               <input className={fieldClass} defaultValue={profile.directory.preferredName ?? ""} maxLength={120} name="preferred-name" required />
             </label>
-            <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+            <label className={SUPPORT_LABEL_CLASS}>
               Location
               <input className={fieldClass} defaultValue={profile.directory.location ?? ""} maxLength={160} name="location" placeholder="City, region" />
             </label>
-            <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+            <label className={SUPPORT_LABEL_CLASS}>
               Timezone
               <input className={fieldClass} defaultValue={profile.directory.timezone ?? "America/Denver"} maxLength={100} name="timezone" />
             </label>
-            <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52 sm:col-span-2">
+            <label className={SUPPORT_LABEL_CLASS + " sm:col-span-2"}>
               What are you building now?
               <textarea className={fieldClass} defaultValue={profile.directory.buildingNow ?? ""} maxLength={500} name="building-now" rows={4} />
             </label>
-            <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52 sm:col-span-2">
+            <label className={SUPPORT_LABEL_CLASS + " sm:col-span-2"}>
               Short biography
               <textarea className={fieldClass} defaultValue={profile.directory.bio ?? ""} maxLength={1200} name="bio" rows={5} />
             </label>
           </div>
         </section>
 
-        <section className="grid gap-10 border-b border-black/20 py-10 lg:grid-cols-[minmax(17rem,0.62fr)_minmax(0,1.38fr)] lg:gap-20 lg:py-14">
+        <section className="grid gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
           <div>
-            <p className="font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.16em] text-[var(--color-poster)]">
-              Circle visibility
-            </p>
-            <h2 className="mt-5 font-[var(--font-display)] text-5xl leading-[0.92] tracking-[-0.04em]">
-              Share by choice.
-            </h2>
-            <p className="mt-6 max-w-md font-[var(--font-body)] text-sm leading-relaxed text-black/48">
+            <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Circle visibility</h2>
+            <p className="mt-3 max-w-md text-base leading-relaxed text-black/65">
               Legal name, birth date, shipping address, sizing, and accessibility notes never enter the member directory.
             </p>
           </div>
           <div>
-            <label className="mb-6 flex items-start gap-4 border border-black/20 p-5 sm:p-6">
+            <label className="mb-4 flex items-start gap-4 rounded-[4px] bg-black/[0.045] p-4">
               <input
                 className="mt-1 size-4 shrink-0 accent-[var(--color-poster)]"
                 defaultChecked={profile.preferences.directoryStatus === "circle_visible"}
@@ -183,20 +168,20 @@ export default function MemberProfileEditor({
                 ["building-visible", "Show what I am building", profile.preferences.buildingVisible],
                 ["bio-visible", "Show my biography", profile.preferences.bioVisible],
               ].map(([name, label, checked]) => (
-                <label className="flex min-h-14 items-center gap-3 border border-black/15 px-4 font-[var(--font-body)] text-sm text-black/62" key={String(name)}>
+                <label className="flex min-h-12 items-center gap-3 rounded-[4px] bg-black/[0.035] px-4 text-base text-black/70" key={String(name)}>
                   <input className="size-4 accent-[var(--color-poster)]" defaultChecked={Boolean(checked)} name={String(name)} type="checkbox" />
                   {String(label)}
                 </label>
               ))}
             </div>
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
-              <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+              <label className={SUPPORT_LABEL_CLASS}>
                 Email sharing
                 <select className={fieldClass} defaultValue={profile.preferences.emailScope} name="email-scope">
                   {["none", "circle"].map((scope) => <option key={scope} value={scope}>{scopeLabel(scope)}</option>)}
                 </select>
               </label>
-              <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+              <label className={SUPPORT_LABEL_CLASS}>
                 Phone sharing
                 <select className={fieldClass} defaultValue={profile.preferences.phoneScope} name="phone-scope">
                   {["none", "circle"].map((scope) => <option key={scope} value={scope}>{scopeLabel(scope)}</option>)}
@@ -206,34 +191,33 @@ export default function MemberProfileEditor({
           </div>
         </section>
 
-        <section className="grid gap-10 border-b border-black/20 py-10 lg:grid-cols-[minmax(17rem,0.62fr)_minmax(0,1.38fr)] lg:gap-20 lg:py-14">
+        <section className="grid gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
           <div>
-            <p className="font-[var(--font-body)] text-[0.64rem] font-medium uppercase tracking-[0.16em] text-[var(--color-poster)]">Private support</p>
-            <h2 className="mt-5 font-[var(--font-display)] text-4xl leading-[0.94] tracking-[-0.035em]">What Ruined should know.</h2>
-            <p className="mt-6 max-w-md font-[var(--font-body)] text-sm leading-relaxed text-black/48">This note is for access and support planning. It is never shown to your Circle.</p>
+            <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Private notes</h2>
+            <p className="mt-3 max-w-md text-base leading-relaxed text-black/65">For Ruined’s access and support planning. Never shown to your Circle.</p>
           </div>
-          <label className="font-[var(--font-body)] text-xs uppercase tracking-[0.12em] text-black/52">
+          <label className={SUPPORT_LABEL_CLASS}>
             Accessibility notes / Optional
-            <textarea className={fieldClass} defaultValue={profile.privateProfile.accessibilityNotes ?? ""} maxLength={2000} name="accessibility-notes" rows={7} />
+            <textarea className={fieldClass} defaultValue={profile.privateProfile.accessibilityNotes ?? ""} maxLength={2000} name="accessibility-notes" rows={4} />
           </label>
         </section>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-5">
+        </fieldset>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-5">
           <div>
             {error ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 font-[var(--font-body)] text-sm text-black/62">{error}</p> : null}
             {saved ? <p aria-live="polite" className="font-[var(--font-body)] text-sm text-black/48">Profile saved.</p> : null}
           </div>
-          <button className="min-h-12 border border-black bg-black px-7 font-[var(--font-body)] text-xs font-medium uppercase tracking-[0.15em] text-white transition-colors hover:bg-[var(--color-poster)] disabled:cursor-wait disabled:opacity-45" disabled={!writable || pending || photoPending} type="submit">{pending ? "Saving" : "Save profile"}</button>
+          <button className={SUPPORT_ACTION_CLASS} disabled={!writable || pending || photoPending} type="submit">{pending ? "Saving…" : writable ? "Save profile" : "Read only"}</button>
         </div>
       </form>
 
-      <section className="mt-20 grid gap-8 bg-[#080605] px-6 py-10 text-[var(--color-bone)] sm:px-10 lg:grid-cols-[1fr_auto] lg:items-end lg:px-14 lg:py-14">
+      <section className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-[4px] bg-black/[0.045] p-5">
         <div>
-          <p className="font-[var(--font-body)] text-[0.64rem] uppercase tracking-[0.16em] text-[var(--color-poster)]">Administrative record</p>
-          <h2 className="mt-4 font-[var(--font-display)] text-4xl leading-none tracking-[-0.035em]">Private membership details.</h2>
-          <p className="mt-5 max-w-2xl font-[var(--font-body)] text-sm leading-relaxed text-white/46">Legal identity, mobile, birth date, address, and apparel sizing are changed through membership entry so the required record stays complete.</p>
+          <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Private membership details</h2>
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-black/65">Full name, phone, birth date, shipping address, and apparel sizing.</p>
         </div>
-        <Link className="font-[var(--font-body)] text-xs uppercase tracking-[0.14em] text-white/62 underline decoration-white/25 underline-offset-8 hover:text-white" href="/my/join">Review entry details</Link>
+        <Link className={SUPPORT_LINK_CLASS} href="/my/support">Request a details update</Link>
       </section>
     </main>
   );

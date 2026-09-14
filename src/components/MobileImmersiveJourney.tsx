@@ -23,7 +23,7 @@ import {
 } from "@/components/sequence/JourneyIndexes";
 import JourneyComingSoon from "@/components/sequence/JourneyComingSoon";
 import JourneyAboutStatement from "@/components/sequence/JourneyAboutStatement";
-import { EVENTS } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 import type { Product } from "@/data/products";
 import { EXPLORE_ROOMS } from "@/data/navigation";
 import {
@@ -339,6 +339,7 @@ export default function MobileImmersiveJourney({
 }: {
   products: Product[];
 }) {
+  const EVENTS = usePublicEvents();
   const journeyRef = useRef<HTMLElement>(null);
   const walkRef = useRef<MobileWalkTransitionHandle>(null);
   const activeIndexRef = useRef(0);

@@ -28,7 +28,7 @@ async function request<T>(path: string, method: "POST" | "PATCH" | "DELETE", bod
 
 export default function OperatorCirclesManager({
   initialCircles, initialAssignments, candidates, initialMemberId, initialCircleId,
-  memberQuery = "", candidateTotal, candidatePage = 1, candidatePageCount = 1, pinnedMemberId, preview, children,
+  memberQuery = "", candidateTotal, candidatePage = 1, candidatePageCount = 1, pinnedMemberId, preview, children, communications,
 }: {
   initialCircles: OpsCircleSummary[];
   initialAssignments: OpsCircleMemberAssignment[];
@@ -42,6 +42,7 @@ export default function OperatorCirclesManager({
   pinnedMemberId?: string;
   preview: boolean;
   children?: ReactNode;
+  communications?: ReactNode;
 }) {
   const router = useRouter();
   const [circles, setCircles] = useState(initialCircles);
@@ -53,6 +54,8 @@ export default function OperatorCirclesManager({
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [notices, setNotices] = useState<Record<string, Notice>>({});
   const [circleName, setCircleName] = useState("");
+  const [circleQuery, setCircleQuery] = useState("");
+  const [circleFilter, setCircleFilter] = useState("current");
   const [confirmationName, setConfirmationName] = useState("");
   const confirmationFieldRef = useRef<HTMLInputElement>(null);
   const destinationFieldRef = useRef<HTMLSelectElement>(null);
@@ -71,18 +74,32 @@ export default function OperatorCirclesManager({
   }, [confirmationTarget]);
 
   const initialMember = candidates.find((member) => member.memberId === initialMemberId);
+  const visibleCircles = circles.filter((circle) => circle.id === openCircleId || (
+    (circleFilter === "all" || circleFilter === "current" && (circle.status === "forming" || circle.status === "active") || circle.status === circleFilter)
+    && `${circle.name} ${circle.shaper?.name ?? ""} ${circle.blockName ?? ""}`.toLowerCase().includes(circleQuery.trim().toLowerCase())
+  ));
+  function openWorkspace(circleId: string) {
+    setOpenCircleId(circleId);
+    setConfirmation(null);
+    const params = new URLSearchParams({ circleId });
+    if (initialMemberId) params.set("memberId", initialMemberId);
+    if (memberQuery) params.set("memberQuery", memberQuery);
+    router.push(`/ops/circles?${params.toString()}#circle-${circleId}`, { scroll: false });
+  }
   function placementIssue(member: OperatorMemberSummary) {
     const assignment = assignments.find((item) => item.memberId === member.memberId);
     if (assignment) return `Already in ${circles.find((item) => item.id === assignment.circleId)?.name ?? member.circleName ?? "a Circle"}.`;
-    if (member.membershipState && member.membershipState !== "active") return `Membership is ${member.membershipState.replaceAll("_", " ")}. Review membership before adding this person.`;
+    if (member.membershipFunding !== "operator" && member.membershipState && member.membershipState !== "active") return `Membership is ${member.membershipState.replaceAll("_", " ")}. Review membership before adding this person.`;
     return getCirclePlacementIssue(member);
   }
   const eligibleMembers = candidates.filter((member) => !placementIssue(member));
   const available = (circle: OpsCircleSummary) => (circle.status === "forming" || circle.status === "active") && circle.activeMembers < circle.capacity;
   function transferIssue(member: OpsCircleMemberAssignment) {
     const saved = candidates.find((candidate) => candidate.memberId === member.memberId);
-    if (saved?.membershipState && saved.membershipState !== "active") return "Review this person’s membership before moving them.";
-    return member.accountState === "active" && member.billingState === "active" && (member.programState === "onboarding" || member.programState === "active")
+    if (member.membershipFunding !== "operator" && saved?.membershipState && saved.membershipState !== "active") return "Review this person’s membership before moving them.";
+    if (member.administrativeOnboardingState && member.administrativeOnboardingState !== "completed") return "Complete this person’s profile and agreement before moving them.";
+    if (member.standingState && member.standingState !== "active" && !(member.standingState === "cancellation_requested" && member.cancellationEffectiveAt && new Date(member.cancellationEffectiveAt).getTime() > Date.now())) return "Review this person’s membership standing before moving them.";
+    return member.accountState === "active" && (member.membershipFunding === "operator" || member.billingState === "active") && (member.programState === "onboarding" || member.programState === "active")
       ? null : "An active account, active billing and an onboarding or active program are required to move Circles.";
   }
 
@@ -265,7 +282,11 @@ export default function OperatorCirclesManager({
     <div className="grid gap-8">
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <p className="text-black/60">{circles.length} {circles.length === 1 ? "Circle" : "Circles"} · choose one to manage its members</p>
-        <nav aria-label="Circle setup" className="flex gap-4"><a className={SECONDARY} href="#create-circle">+ Create a Circle</a><a className={SECONDARY} href="#circle-resources">Shapers & resources</a></nav>
+        <a className={SECONDARY} href="#create-circle">+ Create a Circle</a>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
+        <label><span className={OPERATOR_LABEL_TEXT_CLASS}>Find a Circle</span><input className={`${OPERATOR_FIELD_CLASS} mt-2`} type="search" placeholder="Circle, Shaper, or Block" value={circleQuery} onChange={(event) => setCircleQuery(event.target.value)} /></label>
+        <label><span className={OPERATOR_LABEL_TEXT_CLASS}>Show</span><select className={`${OPERATOR_FIELD_CLASS} mt-2`} value={circleFilter} onChange={(event) => setCircleFilter(event.target.value)}><option value="current">Active & forming</option><option value="active">Active</option><option value="forming">Forming</option><option value="completed">Completed</option><option value="archived">Archived</option><option value="all">All Circles</option></select></label>
       </div>
       {!confirmation || (confirmation.kind !== "delete" && confirmation.kind !== "archive") ? notice("circle-removal") : null}
       <section id="assign-member" className="scroll-mt-28" aria-label="Circles and members">
@@ -274,7 +295,7 @@ export default function OperatorCirclesManager({
         </p> : null}
         <span id="activate-circle" className="block scroll-mt-28" />
         <div className="grid gap-4">
-          {circles.length === 0 ? <p className="py-8 text-black/60">No Circles yet. Create the first one below, then add its members.</p> : circles.map((circle) => {
+          {circles.length === 0 ? <p className="py-8 text-black/60">No Circles yet. Create the first one below, then add its members.</p> : !visibleCircles.length ? <p className="py-4 text-sm text-black/60" role="status">No Circles match. Try another name or choose All Circles.</p> : visibleCircles.map((circle) => {
             const roster = assignments.filter((assignment) => assignment.circleId === circle.id);
             const open = openCircleId === circle.id;
             return <article id={`circle-${circle.id}`} key={circle.id} className="scroll-mt-28 overflow-hidden rounded-[5px] bg-black/[0.035]">
@@ -283,9 +304,16 @@ export default function OperatorCirclesManager({
                   <p className="mt-3 text-sm text-black/60">{circle.activeMembers}/{circle.capacity} members · {Math.max(0, circle.capacity - circle.activeMembers)} open places</p>
                   <p className="mt-1 text-sm text-black/60">Shaper: {circle.shaper?.name ?? "Not assigned"}{circle.blockName ? ` · ${circle.blockName}` : ""}</p>
                 </div>
-                <button className={`${BUTTON} ${open ? "bg-[var(--color-verdigris)]" : ""}`} aria-expanded={open} aria-controls={`roster-${circle.id}`} aria-label={`Manage members — ${circle.name}`} disabled={pending} onClick={() => { setOpenCircleId(open ? undefined : circle.id); setConfirmation(null); }} type="button">{open ? "Close members" : "Manage members"}<span aria-hidden="true" className="ml-3">{open ? "−" : "+"}</span></button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link className={SECONDARY} href={`/ops/circles?circleId=${encodeURIComponent(circle.id)}#circle-communications`} aria-label={`Chat & meetings — ${circle.name}`}>Chat & meetings</Link>
+                  <button className={`${BUTTON} ${open ? "bg-[var(--color-verdigris)]" : ""}`} aria-expanded={open} aria-controls={`roster-${circle.id}`} aria-label={`Manage members — ${circle.name}`} disabled={pending} onClick={() => { if (open) { setOpenCircleId(undefined); setConfirmation(null); } else openWorkspace(circle.id); }} type="button">{open ? "Close Circle" : "Manage members"}<span aria-hidden="true" className="ml-3">{open ? "−" : "+"}</span></button>
+                </div>
               </header>
               <section id={`roster-${circle.id}`} aria-label={`${circle.name} members`} hidden={!open} className="px-5 pb-5 sm:px-6 sm:pb-6">
+                {open && initialCircleId === circle.id && communications ? <section id="circle-communications" aria-label={`${circle.name} chat and meetings`} className="mb-7 scroll-mt-28">
+                  <h2 className="ui-heading mb-4 text-xl font-semibold">Chat & meetings <span className="text-black/50">/ {circle.name}</span></h2>
+                  {communications}
+                </section> : null}
                 <div className="grid gap-6 rounded-[4px] bg-[var(--color-bone)]/60 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
                   <div><h3 className="mb-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Members</span></h3>
                     {roster.length ? <ul className="grid gap-2">{roster.map((member) => <li key={member.assignmentId} className="rounded-[4px] bg-black/[0.025] px-3 py-2"><div className="flex items-center justify-between gap-3">
@@ -304,7 +332,7 @@ export default function OperatorCirclesManager({
                         <button className={SECONDARY} type="submit" disabled={pending}>Search</button>
                       </form>
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-black/60">
-                        <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members ready for placement"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
+                        <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members without a Circle"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
                         {memberQuery ? <Link className="underline underline-offset-4" href={searchHref(circle.id, 1, "")}>Clear search</Link> : null}
                       </div>
                       <ul aria-label={`Member results for ${circle.name}`} className="grid gap-3">
@@ -330,8 +358,9 @@ export default function OperatorCirclesManager({
                 {circle.status === "forming" ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-sm text-black/60">{circle.activeMembers ? "Activate when the Shaper, members, and first meeting are ready. Members need an active Circle to finish Foundations." : "Add the first member before activating this Circle."}</p><button className={SECONDARY} type="button" disabled={pending || !circle.activeMembers} onClick={() => setConfirmation({ kind: "activate", circleId: circle.id })}>Activate {circle.name}</button></div> : null}
                 {confirmation?.kind === "activate" ? confirmPanel(circle) : null}
                 {notice(circle.id)}
+                {open && initialCircleId === circle.id && (circle.status === "forming" || circle.status === "active") ? <section id="circle-resources" aria-label={`${circle.name} Shaper and resources`} className="mt-6 scroll-mt-28">{children}</section> : open && initialCircleId !== circle.id && (circle.status === "forming" || circle.status === "active") ? <Link className={SECONDARY} href={`/ops/circles?circleId=${encodeURIComponent(circle.id)}#circle-resources`}>Open Shaper & resources for {circle.name} →</Link> : null}
               </section>
-              <div className="px-5 pb-4 sm:px-6">
+              <div className="px-5 pb-4 sm:px-6" hidden={!open}>
                 <div className="flex flex-wrap items-center gap-x-3">
                   {circle.status !== "archived" ? <button className={SECONDARY} type="button" disabled={pending || circle.activeMembers > 0} aria-label={`Archive ${circle.name}`} onClick={() => { setConfirmationName(""); setNotices((current) => ({ ...current, "circle-removal": null })); setConfirmation({ kind: "archive", circleId: circle.id }); }}>Archive Circle</button> : null}
                   {circle.status === "forming" ? <button className={`${SECONDARY} text-[var(--color-poster)]`} type="button" disabled={pending || circle.activeMembers > 0} aria-label={`Delete ${circle.name}`} onClick={() => { setConfirmationName(""); setNotices((current) => ({ ...current, "circle-removal": null })); setConfirmation({ kind: "delete", circleId: circle.id }); }}>Delete Circle</button> : null}
@@ -349,7 +378,6 @@ export default function OperatorCirclesManager({
         <form onSubmit={createCircle} className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1"><span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span><input className={`${OPERATOR_FIELD_CLASS} mt-2`} name="name" minLength={2} maxLength={80} required placeholder="Circle 02" value={circleName} onChange={(event) => setCircleName(event.target.value)} disabled={pending} /></label><button className={BUTTON} disabled={pending} type="submit">Create Circle</button></form>
         {notice("create")}
       </section>
-      <section id="circle-resources" aria-label="Shapers and resources" className="scroll-mt-28">{children}</section>
     </div>
   );
 }

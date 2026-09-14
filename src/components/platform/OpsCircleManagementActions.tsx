@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
 
 import {
@@ -65,45 +66,97 @@ function ActionNotice({ notice }: { notice: Notice }) {
 }
 
 const SECONDARY_BUTTON_CLASS =
-  "min-h-12 rounded-[4px] border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
+  "min-h-12 rounded-[4px] border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-sm font-medium text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
 
 export default function OpsCircleManagementActions({
   initialCircles,
+  initialCircleId,
   resources,
   shapers,
   preview = false,
 }: {
   initialCircles: CircleOption[];
+  initialCircleId?: string;
   resources: Array<{ resourceId: string; title: string; version: number; versionId: string }>;
   shapers: Array<{ authUserId: string; name: string }>;
   preview?: boolean;
 }) {
   const router = useRouter();
-  const [circles, setCircles] = useState(initialCircles);
+  const [storedCircles, setCircles] = useState(initialCircles);
+  const [circleSource, setCircleSource] = useState(initialCircles);
   const [pending, setPending] = useState<"resource-assign" | "resource-end" | "shaper-assign" | "shaper-end" | null>(null);
   const [resourceNotice, setResourceNotice] = useState<Notice>(null);
   const [shaperNotice, setShaperNotice] = useState<Notice>(null);
 
-  useEffect(() => setCircles(initialCircles), [initialCircles]);
+  useEffect(() => { setCircles(initialCircles); setCircleSource(initialCircles); }, [initialCircles]);
 
-  const currentCircles = circles.filter((circle) => circle.status === "forming" || circle.status === "active");
+  // A server refresh is authoritative immediately, even before effects run.
+  const circles = circleSource === initialCircles ? storedCircles : initialCircles;
+  const contextKey = initialCircleId ?? "";
+  const contextCircle = contextKey ? circles.find((circle) => circle.id === contextKey) : undefined;
+  const invalidContext = Boolean(contextKey && (!contextCircle || !["forming", "active"].includes(contextCircle.status)));
+  const currentCircles = circles.filter((circle) =>
+    (circle.status === "forming" || circle.status === "active") && (!contextKey || circle.id === contextKey),
+  );
   const circlesWithoutShaper = currentCircles.filter((circle) => !circle.shaper);
-  const currentShaperAssignments = circles.flatMap((circle) =>
+  const currentShaperAssignments = currentCircles.flatMap((circle) =>
     circle.shaper ? [{ circleId: circle.id, circleName: circle.name, ...circle.shaper }] : [],
   );
-  const currentResourceAssignments = circles.flatMap((circle) =>
+  const currentResourceAssignments = currentCircles.flatMap((circle) =>
     circle.resources.map((resource) => ({ circleId: circle.id, circleName: circle.name, ...resource })),
   );
+
+  const initialShaperCircle = circlesWithoutShaper.some((circle) => circle.id === contextKey) ? contextKey : "";
+  const initialResourceCircle = currentCircles.some((circle) => circle.id === contextKey) ? contextKey : "";
+  const [selectionContext, setSelectionContext] = useState(contextKey);
+  const [shaperCircleId, setShaperCircleId] = useState(initialShaperCircle);
+  const [shaperId, setShaperId] = useState("");
+  const [shaperAssignmentId, setShaperAssignmentId] = useState("");
+  const [resourceCircleId, setResourceCircleId] = useState(initialResourceCircle);
+  const [resourceId, setResourceId] = useState("");
+  const [resourceVersionId, setResourceVersionId] = useState("");
+  const [resourceAssignmentId, setResourceAssignmentId] = useState("");
+  const [pinned, setPinned] = useState(false);
+  const sameContext = selectionContext === contextKey;
+  const selectedShaperCircle = sameContext
+    ? circlesWithoutShaper.some((circle) => circle.id === shaperCircleId) ? shaperCircleId : ""
+    : initialShaperCircle;
+  const selectedResourceCircle = sameContext
+    ? currentCircles.some((circle) => circle.id === resourceCircleId) ? resourceCircleId : ""
+    : initialResourceCircle;
+  const selectedShaper = !invalidContext && sameContext && shapers.some((shaper) => shaper.authUserId === shaperId) ? shaperId : "";
+  const selectedShaperAssignment = !invalidContext && sameContext && currentShaperAssignments.some((assignment) => assignment.assignmentId === shaperAssignmentId) ? shaperAssignmentId : "";
+  const selectedResource = !invalidContext && sameContext && resources.some((resource) => resource.resourceId === resourceId && resource.versionId === resourceVersionId) ? resourceId : "";
+  const selectedResourceAssignment = !invalidContext && sameContext && currentResourceAssignments.some((assignment) => assignment.assignmentId === resourceAssignmentId) ? resourceAssignmentId : "";
+  const selectedPinned = !invalidContext && sameContext && pinned;
+
+  // Never let the browser fall through to the next option after a refresh, or
+  // resurrect a removed choice if it later becomes available again.
+  useEffect(() => {
+    setSelectionContext(contextKey);
+    setShaperCircleId(selectedShaperCircle);
+    setShaperId(selectedShaper);
+    setShaperAssignmentId(selectedShaperAssignment);
+    setResourceCircleId(selectedResourceCircle);
+    setResourceId(selectedResource);
+    if (!selectedResource) setResourceVersionId("");
+    setResourceAssignmentId(selectedResourceAssignment);
+    setPinned(selectedPinned);
+  }, [contextKey, selectedShaperCircle, selectedShaper, selectedShaperAssignment, selectedResourceCircle, selectedResource, selectedResourceAssignment, selectedPinned]);
 
   async function assignShaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Shaper was not changed." }); return; }
-    setPending("shaper-assign");
-    setShaperNotice(null);
+    if (pending !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const circleId = String(data.get("circleId") ?? "");
     const shaperAuthUserId = String(data.get("shaperAuthUserId") ?? "");
+    if (invalidContext || !selectedShaperCircle || circleId !== selectedShaperCircle || !selectedShaper || shaperAuthUserId !== selectedShaper) {
+      setShaperNotice({ kind: "error", text: "Choose a current Circle and active Shaper again. Nothing was changed." }); return;
+    }
+    setPending("shaper-assign");
+    setShaperNotice(null);
     try {
       const assignment = await mutate(
         "/api/ops/circle-shaper-assignments",
@@ -125,7 +178,9 @@ export default function OpsCircleManagementActions({
           : circle,
       ));
       form.reset();
-      setShaperNotice({ kind: "success", text: `${shaper?.name ?? "Shaper"} is assigned to the Circle.` });
+      setShaperId("");
+      setShaperCircleId("");
+      setShaperNotice({ kind: "success", text: `${shaper?.name ?? "Shaper"} is assigned to ${currentCircles.find((circle) => circle.id === circleId)?.name ?? "the selected Circle"}.` });
       router.refresh();
     } catch (error) {
       setShaperNotice({ kind: "error", text: error instanceof Error ? error.message : "The Shaper could not be assigned." });
@@ -137,18 +192,23 @@ export default function OpsCircleManagementActions({
   async function endShaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Shaper was not changed." }); return; }
-    setPending("shaper-end");
-    setShaperNotice(null);
+    if (pending !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const assignmentId = String(data.get("assignmentId") ?? "");
+    if (invalidContext || !selectedShaperAssignment || assignmentId !== selectedShaperAssignment) {
+      setShaperNotice({ kind: "error", text: "Choose a current Shaper assignment again. Nothing was changed." }); return;
+    }
+    setPending("shaper-end");
+    setShaperNotice(null);
     try {
       await mutate("/api/ops/circle-shaper-assignments", { assignmentId }, "PATCH");
       setCircles((current) => current.map((circle) =>
         circle.shaper?.assignmentId === assignmentId ? { ...circle, shaper: null } : circle,
       ));
       form.reset();
-      setShaperNotice({ kind: "success", text: "The Shaper assignment ended. Its history remains recorded." });
+      setShaperAssignmentId("");
+      setShaperNotice({ kind: "success", text: `The Shaper assignment for ${currentShaperAssignments.find((assignment) => assignment.assignmentId === assignmentId)?.circleName ?? "the selected Circle"} ended. Its history remains recorded.` });
       router.refresh();
     } catch (error) {
       setShaperNotice({ kind: "error", text: error instanceof Error ? error.message : "The Shaper assignment could not be ended." });
@@ -160,13 +220,17 @@ export default function OpsCircleManagementActions({
   async function assignResource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) { setResourceNotice({ kind: "success", text: "Preview only. Circle resources were not changed." }); return; }
-    setPending("resource-assign");
-    setResourceNotice(null);
+    if (pending !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const circleId = String(data.get("circleId") ?? "");
     const resourceId = String(data.get("resourceId") ?? "");
     const isPinned = data.get("isPinned") === "on";
+    if (invalidContext || !selectedResourceCircle || circleId !== selectedResourceCircle || !selectedResource || resourceId !== selectedResource) {
+      setResourceNotice({ kind: "error", text: "Choose a current Circle and published resource again. Nothing was changed." }); return;
+    }
+    setPending("resource-assign");
+    setResourceNotice(null);
     try {
       const assignment = await mutate(
         "/api/ops/circle-resources",
@@ -186,9 +250,9 @@ export default function OpsCircleManagementActions({
                     assignmentId: String(assignment.assignmentId ?? ""),
                     isPinned,
                     resourceId,
-                    title: resource?.title ?? "Circle resource",
-                    version: Number(resource?.version ?? 1),
-                    versionId: String(resource?.versionId ?? ""),
+                    title: String(assignment.title ?? resource?.title ?? "Circle resource"),
+                    version: Number(assignment.version ?? resource?.version ?? 1),
+                    versionId: String(assignment.versionId ?? resource?.versionId ?? ""),
                   },
                 ],
               }
@@ -196,11 +260,14 @@ export default function OpsCircleManagementActions({
         ));
       }
       form.reset();
+      setResourceId("");
+      setResourceVersionId("");
+      setPinned(false);
       setResourceNotice({
         kind: "success",
         text: assignment.created === false
           ? "That exact resource is already active for the Circle."
-          : `${resource?.title ?? "Resource"} was assigned as an exact version.`,
+          : `${resource?.title ?? "Resource"} was assigned to ${currentCircles.find((circle) => circle.id === circleId)?.name ?? "the selected Circle"} as an exact version.`,
       });
       router.refresh();
     } catch (error) {
@@ -213,11 +280,15 @@ export default function OpsCircleManagementActions({
   async function endResource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) { setResourceNotice({ kind: "success", text: "Preview only. Circle resources were not changed." }); return; }
-    setPending("resource-end");
-    setResourceNotice(null);
+    if (pending !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const assignmentId = String(data.get("assignmentId") ?? "");
+    if (invalidContext || !selectedResourceAssignment || assignmentId !== selectedResourceAssignment) {
+      setResourceNotice({ kind: "error", text: "Choose a current resource assignment again. Nothing was changed." }); return;
+    }
+    setPending("resource-end");
+    setResourceNotice(null);
     try {
       await mutate("/api/ops/circle-resources", { assignmentId }, "PATCH");
       setCircles((current) => current.map((circle) => ({
@@ -225,7 +296,8 @@ export default function OpsCircleManagementActions({
         resources: circle.resources.filter((resource) => resource.assignmentId !== assignmentId),
       })));
       form.reset();
-      setResourceNotice({ kind: "success", text: "The resource is no longer active for the Circle. Its version history remains recorded." });
+      setResourceAssignmentId("");
+      setResourceNotice({ kind: "success", text: `The resource is no longer active for ${currentResourceAssignments.find((assignment) => assignment.assignmentId === assignmentId)?.circleName ?? "the selected Circle"}. Its version history remains recorded.` });
       router.refresh();
     } catch (error) {
       setResourceNotice({ kind: "error", text: error instanceof Error ? error.message : "The resource assignment could not be ended." });
@@ -234,91 +306,102 @@ export default function OpsCircleManagementActions({
     }
   }
 
+  if (invalidContext) return (
+    <section aria-label="Shaper and Circle resource administration" className="pt-4">
+      <p className="text-sm leading-relaxed text-black/65">This Circle is no longer available for Shaper or resource changes. Nothing has been selected in another Circle.</p>
+      <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/circles">View all Circles</Link>
+    </section>
+  );
+
   return (
     <section aria-label="Shaper and Circle resource administration" className="grid gap-12 pt-4 lg:grid-cols-2">
+      {contextCircle ? <header className="flex flex-wrap items-center justify-between gap-3 lg:col-span-2">
+        <p className="text-sm text-black/65">Managing <strong>{contextCircle.name}</strong> only</p>
+        <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/circles">View all Circles</Link>
+      </header> : null}
       <div>
         <div>
-          <p className="[font-family:var(--font-cadehandy2)] text-xl text-[var(--color-poster)]">Circle role</p>
           <h2 className="ui-heading mt-1 text-2xl font-black uppercase tracking-[-0.035em]">Shaper</h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-            One active Shaper can hold a Circle. Ending an assignment never erases its history.
+            The Shaper leads the Circle. Choose someone with active Shaper access.
           </p>
         </div>
         <form className="mt-6 grid gap-3" onSubmit={assignShaper}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={OPERATOR_LABEL_CLASS}>
-              <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle without a Shaper</span>
-              <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={pending !== null || circlesWithoutShaper.length === 0} name="circleId" required>
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
+              <select className={OPERATOR_FIELD_CLASS} value={selectedShaperCircle} onChange={(event) => setShaperCircleId(event.target.value)} disabled={pending !== null || circlesWithoutShaper.length === 0} name="circleId" required>
                 <option disabled value="">Choose Circle</option>
                 {circlesWithoutShaper.map((circle) => <option key={circle.id} value={circle.id}>{circle.name}</option>)}
               </select>
             </label>
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Active Shaper</span>
-              <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={pending !== null || shapers.length === 0} name="shaperAuthUserId" required>
+              <select className={OPERATOR_FIELD_CLASS} value={selectedShaper} onChange={(event) => setShaperId(event.target.value)} disabled={pending !== null || shapers.length === 0} name="shaperAuthUserId" required>
                 <option disabled value="">Choose Shaper</option>
                 {shapers.map((shaper) => <option key={shaper.authUserId} value={shaper.authUserId}>{shaper.name}</option>)}
               </select>
             </label>
           </div>
-          <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || circlesWithoutShaper.length === 0 || shapers.length === 0} type="submit">
+          <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper} type="submit">
             {pending === "shaper-assign" ? "Assigning" : "Assign Shaper"}
           </button>
         </form>
-        <form className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={endShaper}>
+        {shapers.length === 0 ? <p className="mt-3 text-sm text-black/60">No active Shapers yet. <Link className="underline underline-offset-4" href="/ops/operators?add=1">Invite someone as a Shaper</Link> and choose their Circle in the invitation. Their assignment is created when they accept; there is no need to assign them again here.</p> : null}
+        {currentShaperAssignments.length ? <form className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={endShaper}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Current assignment</span>
-            <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={pending !== null || currentShaperAssignments.length === 0} name="assignmentId" required>
+            <select className={OPERATOR_FIELD_CLASS} value={selectedShaperAssignment} onChange={(event) => setShaperAssignmentId(event.target.value)} disabled={pending !== null || currentShaperAssignments.length === 0} name="assignmentId" required>
               <option disabled value="">Choose assignment</option>
               {currentShaperAssignments.map((assignment) => (
                 <option key={assignment.assignmentId} value={assignment.assignmentId}>{assignment.circleName} · {assignment.name}</option>
               ))}
             </select>
           </label>
-          <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || currentShaperAssignments.length === 0} type="submit">
-            {pending === "shaper-end" ? "Ending" : "End assignment"}
+          <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || !selectedShaperAssignment} type="submit">
+            {pending === "shaper-end" ? "Removing" : "Remove Shaper"}
           </button>
-        </form>
+        </form> : <p className="mt-4 text-sm text-black/60">No Shaper assigned yet.</p>}
         <ActionNotice notice={shaperNotice} />
       </div>
 
       <div>
         <div>
-          <p className="[font-family:var(--font-cadehandy2)] text-xl text-[var(--color-poster)]">For the room</p>
           <h2 className="ui-heading mt-1 text-2xl font-black uppercase tracking-[-0.035em]">Circle resources</h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-            A Circle receives the exact published version selected now. Newer versions require a deliberate reassignment.
+            Share a published lesson or document. Members receive the version shown here.
           </p>
         </div>
         <form className="mt-6 grid gap-3" onSubmit={assignResource}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
-              <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={pending !== null || currentCircles.length === 0} name="circleId" required>
+              <select className={OPERATOR_FIELD_CLASS} value={selectedResourceCircle} onChange={(event) => setResourceCircleId(event.target.value)} disabled={pending !== null || currentCircles.length === 0} name="circleId" required>
                 <option disabled value="">Choose Circle</option>
                 {currentCircles.map((circle) => <option key={circle.id} value={circle.id}>{circle.name}</option>)}
               </select>
             </label>
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Published resource</span>
-              <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={pending !== null || resources.length === 0} name="resourceId" required>
+              <select className={OPERATOR_FIELD_CLASS} value={selectedResource} onChange={(event) => { setResourceId(event.target.value); setResourceVersionId(resources.find((resource) => resource.resourceId === event.target.value)?.versionId ?? ""); }} disabled={pending !== null || resources.length === 0} name="resourceId" required>
                 <option disabled value="">Choose resource</option>
                 {resources.map((resource) => <option key={resource.resourceId} value={resource.resourceId}>{resource.title} · v{resource.version}</option>)}
               </select>
             </label>
           </div>
           <label className="flex w-fit items-center gap-3 text-sm text-black/62">
-            <input className="size-4 accent-[var(--color-poster)]" name="isPinned" type="checkbox" />
+            <input className="size-4 accent-[var(--color-poster)]" checked={selectedPinned} onChange={(event) => setPinned(event.target.checked)} name="isPinned" type="checkbox" />
             Pin this resource first
           </label>
-          <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || currentCircles.length === 0 || resources.length === 0} type="submit">
-            {pending === "resource-assign" ? "Assigning" : "Assign exact version"}
+          <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedResourceCircle || !selectedResource} type="submit">
+            {pending === "resource-assign" ? "Adding" : "Add resource"}
           </button>
         </form>
-        <form className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={endResource}>
+        {resources.length === 0 ? <p className="mt-3 text-sm text-black/60">No published resources yet. <Link className="underline underline-offset-4" href="/ops/academy">Open Academy</Link> to prepare and publish one.</p> : null}
+        {currentResourceAssignments.length ? <form className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={endResource}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Active Circle resource</span>
-            <select className={OPERATOR_FIELD_CLASS} defaultValue="" disabled={pending !== null || currentResourceAssignments.length === 0} name="assignmentId" required>
+            <select className={OPERATOR_FIELD_CLASS} value={selectedResourceAssignment} onChange={(event) => setResourceAssignmentId(event.target.value)} disabled={pending !== null || currentResourceAssignments.length === 0} name="assignmentId" required>
               <option disabled value="">Choose resource</option>
               {currentResourceAssignments.map((assignment) => (
                 <option key={assignment.assignmentId} value={assignment.assignmentId}>
@@ -327,10 +410,10 @@ export default function OpsCircleManagementActions({
               ))}
             </select>
           </label>
-          <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || currentResourceAssignments.length === 0} type="submit">
-            {pending === "resource-end" ? "Ending" : "End assignment"}
+          <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || !selectedResourceAssignment} type="submit">
+            {pending === "resource-end" ? "Removing" : "Remove resource"}
           </button>
-        </form>
+        </form> : <p className="mt-4 text-sm text-black/60">No resources shared yet.</p>}
         <ActionNotice notice={resourceNotice} />
       </div>
     </section>

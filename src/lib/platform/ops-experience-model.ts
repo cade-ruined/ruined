@@ -7,6 +7,7 @@ export type OpsExperienceLifecycleState =
 
 export type OpsExperienceDirectoryItem = {
   capacity: number | null;
+  circleId: string | null;
   endsAt: string | null;
   experienceId: string;
   googleCommunicationsConfigured: boolean;
@@ -84,7 +85,6 @@ export type OpsExperienceRecord = OpsExperienceDirectoryItem & {
   calendar: OpsExperienceCalendarState;
   cancellationReason: string | null;
   cancelledAt: string | null;
-  circleId: string | null;
   completedAt: string | null;
   details: string | null;
   externalRegistrationUrl: string | null;

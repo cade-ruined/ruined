@@ -36,7 +36,8 @@ test("public member experiences are derived from the canonical event registry", 
   assert.match(adapter, /import\s+\{[\s\S]*\bEVENTS\b[\s\S]*\}\s+from\s+"@\/data\/events"/);
   assert.match(adapter, /export function memberExperienceFromStudioEvent\s*\(/);
   assert.match(adapter, /export function getUpcomingPublicMemberExperiences\s*\(/);
-  assert.match(adapter, /EVENTS\s*\.filter\s*\(/);
+  assert.match(adapter, /events: StudioEvent\[\] = EVENTS/);
+  assert.match(adapter, /return events\s*\.filter\s*\(/);
 
   const summary = section(
     model,
@@ -105,8 +106,9 @@ test("public events merge into member upcoming events without weakening entitlem
   assert.ok(capabilityGuard >= 0 && capabilityGuard < databaseRead);
   assert.match(
     loader.slice(capabilityGuard, databaseRead),
-    /upcoming:\s*mergeUpcomingPublicMemberExperiences\(\[\], now\)/,
+    /upcoming:\s*mergeUpcomingPublicMemberExperiences\(\[\], now, publicEvents\)/,
   );
+  assert.match(loader, /const publicEvents = await getPublicCommunityEvents\(\)/);
 
   // The database query remains the authority for member, Circle, Block,
   // progression, and invite-only entitlements. Public registry events merge

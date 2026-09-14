@@ -1,4 +1,6 @@
 import "server-only";
+import { cookies } from "next/headers";
+import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberPreviewSnapshot } from "@/lib/membership/preview-scenarios";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import {
@@ -46,7 +48,8 @@ export async function getMembershipPageContext<T>(
   const configuration = getPlatformConfiguration();
 
   if (configuration.mode === "preview") {
-    return { configuration, data: preview, state: "preview", viewer: null };
+    const scenario = memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value);
+    return { configuration, data: memberPreviewSnapshot(preview, scenario), state: "preview", viewer: null };
   }
   if (configuration.mode === "unavailable") {
     return { configuration, data: null, state: "unavailable", viewer: null };

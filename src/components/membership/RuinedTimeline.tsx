@@ -447,7 +447,7 @@ export default function RuinedTimeline({
               <p className={styles.kicker}>
                 {editingKey
                   ? `EDITING / EVENT ${String(sortedEntries.findIndex((entry) => entry.clientKey === editingKey) + 1).padStart(2, "0")}`
-                  : "ADD EVENT"}
+                  : "My Timeline"}
               </p>
               <h1 className={styles.uiHeading} id={`${rawId}-title`}>
                 {editingKey ? "Edit event" : "Add an event"}

@@ -40,8 +40,8 @@ test("every member page context handles denied before its unavailable fallback",
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
   const pages = [...modernPages, ...legacyPages];
 
-  assert.equal(modernPages.length, 11);
-  assert.equal(legacyPages.length, 3);
+  assert.equal(modernPages.length, 13);
+  assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
     const deniedFallback = contents.indexOf('reason="member_access"');
@@ -52,10 +52,13 @@ test("every member page context handles denied before its unavailable fallback",
 });
 
 test("every operator page context uses operator permission copy for denied accounts", async () => {
-  const pages = await contextPages("app/ops", "getOperatorPageContext(");
+  const pages = [
+    ...await contextPages("app/ops", "getOperatorPageContext("),
+    ...await contextPages("app/ops", "getOperatorAccessContext("),
+  ];
   const overview = await readFile(new URL("../app/ops/page.tsx", import.meta.url), "utf8");
 
-  assert.equal(pages.length, 15);
+  assert.equal(pages.length, 16);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
     const deniedFallback = contents.indexOf('reason="operator_access"');

@@ -48,27 +48,3 @@ export type MemberFoundationsState = {
   version: number;
   versionTitle: string;
 };
-
-export const PREVIEW_MEMBER_FOUNDATIONS_STATE: MemberFoundationsState = {
-  activeCircleName: null,
-  activeCircleStatus: null,
-  completedUnits: 5,
-  completionAvailable: false,
-  enrollmentId: "preview-foundations-enrollment",
-  nextMomentId: "story-founder",
-  progressPercent: 22.73,
-  readyForCircle: false,
-  requirements: {
-    futureLetter: { completed: false, completedAt: null },
-    timeline: {
-      completed: true,
-      completedAt: "2026-08-25T18:00:00.000Z",
-      entryCount: 4,
-    },
-  },
-  status: "in_progress",
-  totalUnits: 22,
-  units: [],
-  version: 1,
-  versionTitle: "Founding Foundations",
-};

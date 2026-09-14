@@ -4,7 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { EVENTS, type StudioEvent } from "@/data/events";
+import type { StudioEvent } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 import type {
   MemberExperienceSummary,
   MemberExperiencesSnapshot,
@@ -137,10 +138,10 @@ function calendarDateLabel(day: CalendarDay) {
   }).format(new Date(Date.UTC(day.year, day.month, day.day)));
 }
 
-function publicEventFor(experience: MemberExperienceSummary): StudioEvent | null {
+function publicEventFor(experience: MemberExperienceSummary, events: StudioEvent[]): StudioEvent | null {
   if (!experience.detailHref.startsWith("/community#")) return null;
   const id = decodeURIComponent(experience.detailHref.slice("/community#".length));
-  return EVENTS.find((event) => event.id === id) ?? null;
+  return events.find((event) => event.id === id) ?? null;
 }
 
 function markerClass(experience: MemberExperienceSummary) {
@@ -170,7 +171,8 @@ function registrationLabel(state: MemberExperienceSummary["registrationState"]) 
 }
 
 function EventArtwork({ experience }: { experience: MemberExperienceSummary }) {
-  const publicEvent = publicEventFor(experience);
+  const events = usePublicEvents();
+  const publicEvent = publicEventFor(experience, events);
   const parts = dateParts(experience.startsAt, experience.timezone);
   const stamp = new Intl.DateTimeFormat("en-US", {
     day: "2-digit",

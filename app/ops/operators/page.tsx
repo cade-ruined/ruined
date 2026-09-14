@@ -12,6 +12,7 @@ import { getPreviewOpsMemberRecord, PREVIEW_OPS_CIRCLES } from "@/lib/platform/o
 import { getOperatorPageContext } from "@/lib/platform/page-data";
 import { getOpsCircleSummaries } from "@/lib/platform/ops-repository";
 import { getOpsMemberOperatingRecord } from "@/lib/platform/ops-operating-repository";
+import { getOperatorMemberDirectoryPage, type OperatorMemberDirectoryPage } from "@/lib/platform/repository";
 
 export const metadata: Metadata = { title: "Operators" };
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ const PREVIEW_OPERATORS: OperatorAccessEntry[] = [
   },
   {
     authUserId: "00000000-0000-4000-8000-000000000002",
-    circles: [{ id: "preview-circle-01", name: "Circle 01" }],
+    circles: PREVIEW_OPS_CIRCLES.filter((circle) => circle.slug === "circle-01").map(({ id, name }) => ({ id, name })),
     displayName: "Tyler Bastian",
     email: "tyler@ruined.local",
     id: "operator:preview-shaper",
@@ -41,7 +42,7 @@ const PREVIEW_OPERATORS: OperatorAccessEntry[] = [
   },
   {
     authUserId: null,
-    circles: [{ id: "preview-circle-02", name: "Circle 02" }],
+    circles: PREVIEW_OPS_CIRCLES.filter((circle) => circle.slug === "circle-02").map(({ id, name }) => ({ id, name })),
     displayName: "Jordan Lee",
     email: "jordan@ruined.local",
     id: "invitation:preview-guide",
@@ -53,7 +54,13 @@ const PREVIEW_OPERATORS: OperatorAccessEntry[] = [
 ];
 
 export default async function OperationsOperatorsPage({ searchParams }: {
-  searchParams?: Promise<{ memberId?: string | string[] }>;
+  searchParams?: Promise<{
+    memberId?: string | string[];
+    memberQuery?: string | string[];
+    memberPage?: string | string[];
+    chooseMember?: string | string[];
+    add?: string | string[];
+  }>;
 }) {
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
@@ -62,7 +69,12 @@ export default async function OperationsOperatorsPage({ searchParams }: {
   if (context.role !== "ops_admin") return <PlatformUnavailable reason="operator_access" />;
 
   const preview = context.state === "preview";
-  const memberId = (await searchParams)?.memberId;
+  const params = await searchParams;
+  const memberId = params?.memberId;
+  const memberQuery = (typeof params?.memberQuery === "string" ? params.memberQuery : "")
+    .trim().replace(/\s+/g, " ").slice(0, 120);
+  const requestedPage = typeof params?.memberPage === "string" ? Number(params.memberPage) : 1;
+  const memberPage = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   if (memberId !== undefined && (
     typeof memberId !== "string"
     || !(preview ? /^preview-0[1-4]$/ : /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i).test(memberId)
@@ -70,6 +82,17 @@ export default async function OperationsOperatorsPage({ searchParams }: {
   let selectedMember: OperatorAccessSelectedMember | null = null;
   let memberRecord = preview && memberId ? getPreviewOpsMemberRecord(memberId) : null;
   let operators = preview ? PREVIEW_OPERATORS : null;
+  let memberDirectory: OperatorMemberDirectoryPage | null = null;
+  if (preview) {
+    const members = context.dashboard.members.filter((member) => [member.name, member.email]
+      .some((value) => value.toLowerCase().includes(memberQuery.toLowerCase())));
+    const pageCount = Math.max(1, Math.ceil(members.length / 25));
+    const page = Math.min(memberPage, pageCount);
+    memberDirectory = {
+      filter: "all", members: members.slice((page - 1) * 25, page * 25),
+      page, pageCount, pageSize: 25, query: memberQuery, totalResults: members.length,
+    };
+  }
   let circles = preview
     ? PREVIEW_OPS_CIRCLES
         .filter((circle) => circle.status === "forming" || circle.status === "active")
@@ -78,13 +101,15 @@ export default async function OperationsOperatorsPage({ searchParams }: {
 
   if (!preview && context.viewer) {
     try {
-      const [directory, circleRows, selectedRecord] = await Promise.all([
+      const [directory, circleRows, selectedRecord, memberRows] = await Promise.all([
         getOperatorAccessDirectory(context.viewer.authUserId),
         getOpsCircleSummaries(context.viewer.authUserId),
         memberId ? getOpsMemberOperatingRecord(context.viewer.authUserId, memberId) : null,
+        getOperatorMemberDirectoryPage(context.viewer.authUserId, { filter: "all", query: memberQuery, page: memberPage }),
       ]);
       memberRecord = selectedRecord;
       operators = directory;
+      memberDirectory = memberRows;
       circles = circleRows
         .filter((circle) => circle.status === "forming" || circle.status === "active")
         .map((circle) => ({ id: circle.id, name: circle.name }));
@@ -95,7 +120,7 @@ export default async function OperationsOperatorsPage({ searchParams }: {
     }
   }
 
-  if (!operators || !circles) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (!operators || !circles || !memberDirectory) return <PlatformUnavailable accessHref="/ops/access" />;
   if (memberId && !memberRecord) notFound();
   if (memberRecord) {
     selectedMember = {
@@ -108,10 +133,19 @@ export default async function OperationsOperatorsPage({ searchParams }: {
   return (
     <OperatorPageFrame title="Operators">
       <OperatorAccessManager
-        key={selectedMember?.memberId ?? "directory"}
+        key={selectedMember?.memberId ?? `directory:${memberDirectory.query}:${memberDirectory.page}:${params?.add === "1"}:${params?.chooseMember === "1"}`}
         circles={circles}
         currentViewerAuthUserId={context.viewer?.authUserId ?? PREVIEW_OPERATORS[0].authUserId}
         initialOperators={operators}
+        initialAddOpen={params?.add === "1"}
+        initialMemberPickerOpen={params?.chooseMember === "1" || params?.memberQuery !== undefined || params?.memberPage !== undefined}
+        memberSearch={{
+          members: memberDirectory.members.map((member) => ({ memberId: member.memberId, displayName: member.name, email: member.email || null })),
+          page: memberDirectory.page,
+          pageCount: memberDirectory.pageCount,
+          query: memberDirectory.query,
+          totalResults: memberDirectory.totalResults,
+        }}
         preview={preview}
         selectedMember={selectedMember}
       />

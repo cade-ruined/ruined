@@ -36,7 +36,8 @@ export default async function JoinMyRuinedPage() {
 
   const publishableKey = getStripePublishableKey();
   const writable = context.state === "authenticated";
-  const checkoutEnabled = writable && context.configuration.stripeCheckoutReady;
+  const complimentary = context.data.membershipFunding === "operator";
+  const checkoutEnabled = writable && !complimentary && context.configuration.stripeCheckoutReady;
   const disabledReason =
     context.state === "preview"
       ? "Preview only. Member details and agreement acceptance are not saved."
@@ -56,7 +57,7 @@ export default async function JoinMyRuinedPage() {
   return (
     <main className="min-h-[72vh]">
       <MembershipEntryProgressProvider initialStage={initialStage}>
-        <MembershipEntryProgress />
+        <MembershipEntryProgress complimentary={complimentary} />
 
         <section className="relative isolate min-h-[22rem] overflow-hidden sm:min-h-[26rem] lg:min-h-[28rem]">
           <Image

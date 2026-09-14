@@ -32,6 +32,7 @@ export default function OperatorAcademyEditor({ editor, preview = false }: { edi
             resourceId={resource.resourceId}
             revision={resource.revision}
             status={resource.status}
+            hasUnpublishedChanges={resource.hasUnpublishedChanges}
             preview={preview}
           />
         ) : null}

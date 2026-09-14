@@ -53,12 +53,15 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
   const blocks = await source("db/migrations/20260826_membership_blocks_hardening.sql");
   const automation = await source("db/migrations/20260826_membership_operating_spine_04_foundations_automation.sql");
   const retirement = await source("db/migrations/20260908234300_circle_retirement.sql");
+  const funding = await source("db/migrations/20260914181653_operator_complimentary_membership.sql");
   await db.exec(`
     create schema private;
-    create table platform_users (auth_user_id uuid primary key, status text);
-    create table platform_role_grants (auth_user_id uuid, role_slug text, revoked_at timestamptz);
+    create table people (id uuid primary key, status text);
+    create table platform_users (auth_user_id uuid primary key, status text, member_id uuid, person_id uuid);
+    create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, revoked_at timestamptz);
     create table ruined_members (id uuid primary key, person_id uuid, membership_state text, updated_at timestamptz default now());
-    create table member_lifecycle (member_id uuid primary key references ruined_members(id), account_state text, billing_state text, program_state text);
+    create table member_lifecycle (member_id uuid primary key references ruined_members(id), account_state text, billing_state text, program_state text,
+      administrative_onboarding_state text default 'completed', standing_state text default 'active', cancellation_effective_at timestamptz);
     create table circles (id uuid primary key, status text, capacity integer, starts_at timestamptz, ends_at timestamptz,
       activated_at timestamptz, activated_by_auth_user_id uuid, updated_at timestamptz default now());
     create table circle_member_assignments (id bigint generated always as identity primary key,
@@ -85,6 +88,8 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
     create table experience_calendar_links (experience_id uuid references experiences(id), provider text, status text);
     create table test_calendar_pending (experience_id uuid primary key, actor_auth_user_id uuid, reason text, marks integer default 1);
     ${shippedFunction(foundation, "ruined_enforce_circle_capacity")}
+    ${shippedFunction(funding, "private.ruined_member_has_operator_funding")}
+    ${shippedFunction(funding, "private.ruined_lock_member_operator_funding")}
     ${shippedFunction(gate, "private.ruined_guard_circle_assignment_foundation_proof")}
     ${shippedFunction(gate, "private.ruined_guard_circle_activation_audit")}
     ${shippedFunction(retirement, "private.ruined_guard_circle_activation_audit")}
@@ -102,10 +107,10 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
     create trigger circles_active_block_reconcile after update of status
       on circles for each row execute function private.ruined_reconcile_block_circle_status();
   `);
-  await db.query("insert into platform_users values ($1,'active')", [ids.admin]);
-  await db.query("insert into platform_role_grants values ($1,'ops_admin',null)", [ids.admin]);
+  await db.query("insert into platform_users (auth_user_id,status) values ($1,'active')", [ids.admin]);
+  await db.query("insert into platform_role_grants (auth_user_id,role_slug,revoked_at) values ($1,'ops_admin',null)", [ids.admin]);
   await db.query("insert into ruined_members (id,person_id,membership_state) values ($1,$1,'active'),($2,$2,'active')", [ids.member, ids.other]);
-  await db.exec("insert into member_lifecycle select id,'active','active','onboarding' from ruined_members");
+  await db.exec("insert into member_lifecycle (member_id,account_state,billing_state,program_state) select id,'active','active','onboarding' from ruined_members");
   await db.query("insert into circles (id,status,capacity) values ($1,'forming',10),($2,'forming',10)", [ids.circleA, ids.circleB]);
   const placement = (await db.query("insert into circle_member_assignments (member_id,circle_id,assigned_by_auth_user_id) values ($1,$2,$3) returning id::text", [ids.member, ids.circleA, ids.admin])).rows[0].id;
   if (sourceMembers === 2) await db.query("insert into circle_member_assignments (member_id,circle_id,assigned_by_auth_user_id) values ($1,$2,$3)", [ids.other, ids.circleA, ids.admin]);
@@ -346,4 +351,33 @@ test("transfer API enforces origin/session/JSON, uses verified actor, maps domai
   const unexpected = await route.POST(request());
   assert.equal(unexpected.status, 503);
   assert.doesNotMatch(JSON.stringify(await unexpected.json()), /Private provider/);
+});
+
+test("complimentary Circle transfer requires current funding and completed unrestricted entry", async (t) => {
+  const f = await fixture(t);
+  await f.db.query("insert into people values ($1,'active')", [ids.member]);
+  await f.db.query("insert into platform_users (auth_user_id,status,member_id,person_id) values ($1,'active',$1,$1)", [ids.member]);
+  await f.db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'member')", [ids.member]);
+  await f.db.query("update ruined_members set membership_state='pending' where id=$1", [ids.member]);
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [ids.member]);
+  const before = await f.snapshot();
+  await assert.rejects(f.transfer(), (error) => error.code === "conflict");
+  assert.deepEqual(await f.snapshot(), before, "Pending payment alone cannot authorize transfer");
+  await f.db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'guide')", [ids.member]);
+  for (const [restrict, restore] of [
+    ["update member_lifecycle set account_state='suspended' where member_id=$1", "update member_lifecycle set account_state='active' where member_id=$1"],
+    ["update member_lifecycle set administrative_onboarding_state='in_progress' where member_id=$1", "update member_lifecycle set administrative_onboarding_state='completed' where member_id=$1"],
+    ["update platform_users set status='suspended' where auth_user_id=$1", "update platform_users set status='active' where auth_user_id=$1"],
+    ["update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='guide'", "update platform_role_grants set revoked_at=null where auth_user_id=$1 and role_slug='guide'"],
+  ]) {
+    await f.db.query(restrict, [ids.member]);
+    await assert.rejects(f.transfer(), (error) => error.code === "conflict", restrict);
+    assert.deepEqual(await f.snapshot(), before, "Denied transfer preserves placements, audit and queued work");
+    await f.db.query(restore, [ids.member]);
+  }
+  const result = await f.transfer();
+  assert.equal(result.circleId, ids.circleB);
+  assert.equal(result.previousAssignmentId, f.placement);
+  const state = (await f.db.query("select member.membership_state,lifecycle.billing_state from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id=member.id where member.id=$1", [ids.member])).rows[0];
+  assert.deepEqual(state, { membership_state: "pending", billing_state: "pending" });
 });

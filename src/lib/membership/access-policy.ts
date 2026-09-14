@@ -43,8 +43,25 @@ export function memberCan(
   return access.capabilities.includes(capability);
 }
 
+export type MemberAccessIdentity = Pick<MemberIdentity,
+  "accountState" | "administrativeOnboardingState" | "billingState" |
+  "cancellationEffectiveAt" | "programState" | "standingState"
+> & Partial<MemberIdentity>;
+
 export function deriveMemberAccessPolicy(
-  identity: MemberIdentity,
+  identity: MemberAccessIdentity,
+  accessEndsAt: string | null = null,
+): MemberAccessPolicy {
+  const access = deriveBaseMemberAccessPolicy(identity, accessEndsAt);
+  // Progress can only be written while the member is participating. Revisit
+  // and account access remain separate capabilities after participation ends.
+  return identity.programState === "onboarding" || identity.programState === "active"
+    ? access
+    : { ...access, capabilities: access.capabilities.filter((capability) => capability !== "foundations.write") };
+}
+
+function deriveBaseMemberAccessPolicy(
+  identity: MemberAccessIdentity,
   accessEndsAt: string | null = null,
 ): MemberAccessPolicy {
   if (identity.accountState === "suspended") {
@@ -70,12 +87,12 @@ export function deriveMemberAccessPolicy(
       accessEndsAt,
       capabilities: ENTRY_CAPABILITIES,
       mode: "entry",
-      reason: "Complete the administrative side of membership to continue.",
+      reason: "Finish your profile, agreement, and membership activation to continue.",
     };
   }
 
   if (
-    identity.billingState === "pending" ||
+    (identity.billingState === "pending" && identity.membershipFunding !== "operator") ||
     identity.administrativeOnboardingState !== "completed" ||
     identity.standingState === "pre_active"
   ) {
@@ -83,13 +100,15 @@ export function deriveMemberAccessPolicy(
       accessEndsAt,
       capabilities: ENTRY_CAPABILITIES,
       mode: "entry",
-      reason: "Complete the administrative side of membership to continue.",
+      reason: "Finish your profile, agreement, and membership activation to continue.",
     };
   }
 
   if (
-    identity.billingState === "attention_required" ||
-    identity.billingState === "ended"
+    identity.membershipFunding !== "operator" && (
+      identity.billingState === "attention_required" ||
+      identity.billingState === "ended"
+    )
   ) {
     return {
       accessEndsAt,

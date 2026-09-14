@@ -53,6 +53,7 @@ async function loadEntryRepository(database) {
     "@/lib/membership/phone": { supportedShippingCountry: (country) => country === "US" ? "US" : null },
     "@/lib/membership/avatar-url": { safeMemberAvatarUrl: (url) => url },
     "@/lib/events/member-experiences": {},
+    "@/lib/events/community-event-repository": {},
     "@/lib/google/communications": {},
     "@/lib/membership/artifact-products": {},
     "@/lib/platform/ops-calendar-repository": {},
@@ -181,7 +182,7 @@ function exactTable(source, name) {
   return definition;
 }
 
-test("entry saves, reloads, accepts the agreement and completes against actual isolated PostgreSQL constraints", async () => {
+for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts the agreement and completes against actual isolated PostgreSQL constraints (${funding})`, async () => {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   const identitySchema = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_01_person_identity.sql", import.meta.url), "utf8");
@@ -205,10 +206,11 @@ test("entry saves, reloads, accepts the agreement and completes against actual i
   };
   try {
     await db.exec(`
-      create table people (id uuid primary key);
+      create role anon; create role authenticated;
+      create table people (id uuid primary key, status text default 'active');
       create table ruined_members (id uuid primary key, person_id uuid not null references people(id), email text, unique(id,person_id));
-      create table platform_users (auth_user_id uuid primary key, person_id uuid, status text);
-      create table platform_role_grants (auth_user_id uuid, role_slug text, revoked_at timestamptz);
+      create table platform_users (auth_user_id uuid primary key, person_id uuid, status text, member_id uuid);
+      create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, revoked_at timestamptz);
       create table person_email_addresses (person_id uuid, email text, verification_state text, retired_at timestamptz, is_primary boolean, created_at timestamptz);
       create table member_lifecycle (member_id uuid primary key, account_state text, billing_state text, program_state text,
         foundations_state text, administrative_onboarding_state text, standing_state text, cancellation_effective_at timestamptz,
@@ -228,6 +230,8 @@ test("entry saves, reloads, accepts the agreement and completes against actual i
     const guardEnd = lifecycleSchema.indexOf("create or replace function private.ruined_validate_lifecycle_onboarding_projection()", guardStart);
     assert.ok(guardStart >= 0 && guardEnd > guardStart);
     await db.exec(`create schema private; ${lifecycleSchema.slice(guardStart, guardEnd)}`);
+    await db.exec(`create function private.ruined_current_auth_user_id() returns uuid language sql as $$ select null::uuid $$`);
+    await db.exec(await readFile(new URL("../db/migrations/20260914181653_operator_complimentary_membership.sql", import.meta.url), "utf8"));
     // Ensure sub-millisecond precision in this isolated fixture rather than
     // making the regression probabilistic on the database clock.
     await db.exec(`
@@ -241,10 +245,10 @@ test("entry saves, reloads, accepts the agreement and completes against actual i
       for each row execute function private.fixture_acceptance_precision();
     `);
     await db.exec(phoneMigration);
-    await db.query("insert into people values ($1)", [ids.person]);
+    await db.query("insert into people (id) values ($1)", [ids.person]);
     await db.query("insert into ruined_members values ($1,$2,$3)", [ids.member, ids.person, "member@example.test"]);
-    await db.query("insert into platform_users values ($1,$2,'active')", [ids.auth, ids.person]);
-    await db.query("insert into platform_role_grants values ($1,'member',null)", [ids.auth]);
+    await db.query("insert into platform_users (auth_user_id,person_id,status,member_id) values ($1,$2,'active',$3)", [ids.auth, ids.person, ids.member]);
+    await db.query("insert into platform_role_grants (auth_user_id,role_slug,revoked_at) values ($1,'member',null)", [ids.auth]);
     await db.query("insert into person_email_addresses values ($1,'member@example.test','verified',null,true,now())", [ids.person]);
     await db.query("insert into member_lifecycle (member_id,account_state,billing_state,program_state,foundations_state,administrative_onboarding_state,standing_state) values ($1,'active','active','prospect','not_started','in_progress','pre_active')", [ids.member]);
     await db.query("insert into membership_agreement_versions (id,agreement_key,version,title,body_text,content_sha256,status,published_at) values ($1,'ruined_membership',1,'Test agreement','Fictional agreement',$2,'published',now())", [ids.agreement, "a".repeat(64)]);
@@ -255,6 +259,10 @@ test("entry saves, reloads, accepts the agreement and completes against actual i
     assert.equal((await db.query("select jsonb_typeof($1::jsonb) as type", [oldWire])).rows[0].type, "string");
     await assert.rejects(() => db.query("insert into person_private_profiles (person_id,apparel_sizing) values ($1,$2::jsonb)", [ids.person, oldWire]), { code: "23514" });
 
+    if (funding === "operator") {
+      await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'ops_admin')", [ids.auth]);
+      await db.exec("update member_lifecycle set billing_state='pending'");
+    }
     const repository = await loadEntryRepository(wrap(db));
     const saved = await repository.saveMemberOnboardingProfile(ids.auth, profileInput);
     assert.equal(saved.requiredFieldsComplete, true);
@@ -284,6 +292,12 @@ test("entry saves, reloads, accepts the agreement and completes against actual i
     const completed = await repository.completeMemberAdministrativeOnboarding(ids.auth);
     assert.equal(completed.state, "completed");
     assert.equal(completed.requiredFieldsComplete, true);
+    assert.equal(completed.membershipFunding, funding);
+    if (funding === "operator") {
+      assert.equal((await db.query("select billing_state from member_lifecycle")).rows[0].billing_state, "pending");
+      assert.equal((await db.query("select billing_confirmed_at from member_onboardings")).rows[0].billing_confirmed_at, null);
+      assert.equal((await db.query("select completion_evidence->>'funding' as funding from member_onboardings")).rows[0].funding, "operator");
+    }
     const stored = (await db.query("select jsonb_typeof(default_fulfillment_address) as address_type, jsonb_typeof(apparel_sizing) as sizing_type from person_private_profiles")).rows[0];
     assert.deepEqual(stored, { address_type: "object", sizing_type: "object" });
     assert.equal((await db.query("select jsonb_typeof(requirements_snapshot) as type from member_onboardings")).rows[0].type, "object");

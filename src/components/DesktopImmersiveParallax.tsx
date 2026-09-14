@@ -16,7 +16,7 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import { EVENTS } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 import type { Product } from "@/data/products";
 import {
   EXPLORE_ROOMS,
@@ -555,6 +555,7 @@ export default function DesktopImmersiveParallax({
   manifest: SequenceManifest;
   products: Product[];
 }) {
+  const EVENTS = usePublicEvents();
   const containerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
 

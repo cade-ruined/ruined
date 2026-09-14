@@ -110,9 +110,9 @@ test("paid active membership is a server-side boundary for private member areas"
     /insert into member_lifecycle \([\s\S]*member_id,[\s\S]*account_state,[\s\S]*billing_state,[\s\S]*program_state[\s\S]*'prospect'/,
   );
 
-  assert.match(memberFoundationsPage, /context\.state !== "preview"/);
-  assert.match(memberFoundationsPage, /!hasActiveMemberAccess\(context\.member\)/);
-  assert.match(memberFoundationsPage, /redirect\("\/my\/account"\)/);
+  assert.match(memberFoundationsPage, /context\.state === "preview"/);
+  assert.match(memberFoundationsPage, /!memberCan\(access, "foundations\.write"\)/);
+  assert.match(memberFoundationsPage, /return <MemberAccessNotice access=\{access\}/);
 
   for (const route of [memberCirclePage, memberArtifactsPage]) {
     assert.match(route, /getMembershipPageContext\(/);
@@ -150,8 +150,9 @@ test("operator dashboards reauthorize inside their own consistent read", () => {
   assert.match(dashboard, /platform_user\.auth_user_id = grant_row\.auth_user_id/);
   assert.match(dashboard, /platform_user\.status = 'active'/);
   assert.doesNotMatch(dashboard, /authUserId: string,\s*role:/);
-  assert.match(pageData, /const access = await getOperatorDashboard\(viewer\.authUserId\)/);
-  assert.doesNotMatch(pageData, /getOperatorRole\(/);
+  const dashboardContext = pageData.slice(pageData.indexOf("export async function getOperatorPageContext"));
+  assert.match(dashboardContext, /const access = await getOperatorDashboard\(viewer\.authUserId\)/);
+  assert.doesNotMatch(dashboardContext, /getOperatorRole\(/);
 });
 
 test("passwordless OTP endpoints enforce origin, shared eligibility, and generic delivery boundaries", () => {
@@ -164,14 +165,14 @@ test("passwordless OTP endpoints enforce origin, shared eligibility, and generic
 
   assert.doesNotMatch(authRequestRoute, /body\?\.audience/);
   assert.match(authRequestRoute, /getUnifiedAccessEligibility\(email\)/);
-  assert.match(authRequestRoute, /if \(!eligibility\.eligible\) return response/);
+  assert.match(authRequestRoute, /if \(!eligibility\.eligible\) \{[\s\S]*?return response;/);
   assert.match(
     authRequestRoute,
     /eligibility\.shouldCreateUser[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,
   );
   assert.match(authRequestRoute, /let options: [\s\S]*shouldCreateUser: false/);
   assert.match(authRequestRoute, /signInWithOtp\(\{[\s\S]*email,[\s\S]*options,[\s\S]*\}\)/);
-  assert.match(authRequestRoute, /const response = NextResponse\.json\(\{ ok: true \}\)/);
+  assert.match(authRequestRoute, /const response = NextResponse\.json\(\{ ok: true, requestId \}\)/);
   assert.match(authRequestRoute, /if \(error\) \{[\s\S]*console\.warn[\s\S]*\}[\s\S]*return response/);
   assert.doesNotMatch(authRequestRoute, /console\.(?:warn|error|log)\([^)]*email/);
 

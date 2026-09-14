@@ -9,7 +9,7 @@ import {
   OPERATOR_LABEL_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
 } from "@/components/platform/operatorStyles";
-import type { OpsAnnouncementAudienceOptions } from "@/lib/platform/ops-model";
+import type { OpsAnnouncementAudienceOptions, OpsAnnouncementSummary } from "@/lib/platform/ops-model";
 
 async function actionRequest(url: string, body: unknown, method = "POST") {
   const response = await fetch(url, {
@@ -148,9 +148,15 @@ export function OperatorArtifactAction({ artifactJobId, state, preview = false }
 
 export function OperatorAnnouncementCreateAction({
   audienceOptions,
+  announcement,
+  onSaved,
+  onCancel,
   preview = false,
 }: {
   audienceOptions: OpsAnnouncementAudienceOptions;
+  announcement?: OpsAnnouncementSummary;
+  onSaved?: () => void;
+  onCancel?: () => void;
   preview?: boolean;
 }) {
   const router = useRouter();
@@ -164,16 +170,17 @@ export function OperatorAnnouncementCreateAction({
     setMessage("");
     const form = event.currentTarget;
     const data = new FormData(form);
-    const [targetKind, targetId = ""] = String(data.get("audience") ?? "all_active_members:").split(":");
+    const [targetKind, targetId = ""] = String(data.get("audience") ?? "").split(":");
     try {
-      await actionRequest("/api/ops/announcements", {
+      await actionRequest(announcement ? `/api/ops/announcements/${announcement.announcementId}` : "/api/ops/announcements", {
+        ...(announcement ? { action: "edit", expectedVersion: announcement.version } : {}),
         body: String(data.get("body") ?? ""),
-        targetId,
-        targetKind,
+        ...(targetKind === "keep" ? {} : { targetId, targetKind }),
         title: String(data.get("title") ?? ""),
-      });
+      }, announcement ? "PATCH" : "POST");
       form.reset();
-      setMessage("Draft announcement created.");
+      setMessage(announcement ? "Draft saved. Review it before publishing." : "Draft announcement created.");
+      onSaved?.();
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The announcement could not be created.");
@@ -184,15 +191,16 @@ export function OperatorAnnouncementCreateAction({
 
   return (
     <form className="grid gap-4 border-y border-black/25 py-6" onSubmit={submit}>
-      <h2 className="ui-heading text-2xl font-semibold">Create a draft</h2>
+      <h2 className="ui-heading text-2xl font-semibold">{announcement ? "Edit draft" : "Create a draft"}</h2>
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,0.4fr)]">
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
-          <input className={OPERATOR_FIELD_CLASS} maxLength={120} minLength={3} name="title" required />
+          <input className={OPERATOR_FIELD_CLASS} defaultValue={announcement?.title} maxLength={200} minLength={3} name="title" required />
         </label>
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Audience</span>
-          <select className={OPERATOR_FIELD_CLASS} defaultValue="all_active_members:" name="audience">
+          <select className={OPERATOR_FIELD_CLASS} defaultValue={announcement ? "keep:" : ""} name="audience" required>
+            {announcement ? <option value="keep:">Keep: {announcement.targetLabel}</option> : <option disabled value="">Choose audience</option>}
             <option value="all_active_members:">All active members</option>
             <optgroup label="Circles">
               {audienceOptions.circles.map((circle) => <option key={circle.id} value={`circle:${circle.id}`}>{circle.label}</option>)}
@@ -208,17 +216,18 @@ export function OperatorAnnouncementCreateAction({
       </div>
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Announcement</span>
-        <textarea className={`${OPERATOR_FIELD_CLASS} min-h-32 resize-y`} maxLength={4000} minLength={3} name="body" required />
+        <textarea className={`${OPERATOR_FIELD_CLASS} min-h-32 resize-y`} defaultValue={announcement?.body} maxLength={10000} minLength={3} name="body" required />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <span aria-live="polite" className="text-xs text-black/42">{message}</span>
-        <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Creating" : "Create draft"}</button>
+        {onCancel ? <button className="min-h-11 text-sm underline" disabled={submitting} onClick={onCancel} type="button">Cancel editing</button> : null}
+        <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Saving" : announcement ? "Save draft" : "Create draft"}</button>
       </div>
     </form>
   );
 }
 
-export function OperatorAnnouncementPublishAction({ announcementId, preview = false }: { announcementId: string; preview?: boolean }) {
+export function OperatorAnnouncementPublishAction({ announcementId, expectedVersion, preview = false }: { announcementId: string; expectedVersion: number; preview?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -228,7 +237,7 @@ export function OperatorAnnouncementPublishAction({ announcementId, preview = fa
     setSubmitting(true);
     setMessage("");
     try {
-      await actionRequest(`/api/ops/announcements/${announcementId}/publish`, {});
+      await actionRequest(`/api/ops/announcements/${announcementId}/publish`, { expectedVersion });
       setMessage("Published.");
       router.refresh();
     } catch (error) {
@@ -244,4 +253,30 @@ export function OperatorAnnouncementPublishAction({ announcementId, preview = fa
       <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} onClick={publish} type="button">{submitting ? "Publishing" : "Publish"}</button>
     </div>
   );
+}
+
+export function OperatorAnnouncementCloseAction({ announcement, preview = false }: { announcement: OpsAnnouncementSummary; preview?: boolean }) {
+  const router = useRouter();
+  const [reviewing, setReviewing] = useState(false);
+  const [reason, setReason] = useState("");
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+  const retract = announcement.state === "published";
+  async function close() {
+    if (preview) { setMessage("Preview — nothing was changed."); return; }
+    setPending(true); setMessage("");
+    try {
+      await actionRequest(`/api/ops/announcements/${announcement.announcementId}`, { action: retract ? "retract" : "discard", expectedVersion: announcement.version, ...(retract ? { reason } : {}) }, "PATCH");
+      setReviewing(false); router.refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "The announcement could not be changed."); }
+    finally { setPending(false); }
+  }
+  return <div className="mt-3">
+    {reviewing ? <div className="rounded-[4px] bg-black/5 p-3" role="group" aria-label={retract ? "Confirm retraction" : "Confirm discard"}>
+      <p className="text-sm">{retract ? "Remove this post and its related alerts from the member app? Members may already have read it." : "Discard this draft? It will remain in history and cannot be published."}</p>
+      {retract ? <label className={`${OPERATOR_LABEL_CLASS} mt-3`}><span className={OPERATOR_LABEL_TEXT_CLASS}>Reason</span><textarea className={OPERATOR_FIELD_CLASS} maxLength={1000} minLength={3} onChange={(event) => setReason(event.target.value)} value={reason} /></label> : null}
+      <div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={preview || pending || (retract && reason.trim().length < 3)} onClick={close} type="button">{pending ? "Saving" : retract ? "Confirm retraction" : "Confirm discard"}</button><button className="min-h-11 text-sm underline" disabled={pending} onClick={() => setReviewing(false)} type="button">Keep {retract ? "post" : "draft"}</button></div>
+    </div> : <button className="min-h-11 text-sm text-[var(--color-poster)] underline underline-offset-4" onClick={() => setReviewing(true)} type="button">{retract ? "Retract post" : "Discard draft"}</button>}
+    <p className="mt-2 text-sm text-[var(--color-poster)]" role="status">{message}</p>
+  </div>;
 }

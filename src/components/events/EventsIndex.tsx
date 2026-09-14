@@ -4,19 +4,20 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import EventGallery from "@/components/events/EventGallery";
-import { EVENTS, type StudioEvent } from "@/data/events";
+import type { StudioEvent } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 
-const NEXT_AVAILABLE = EVENTS.find((event) => event.status === "Upcoming");
-const ARCHIVE_EVENTS = EVENTS.filter((event) => event.status === "Ended");
-const UPCOMING_EVENTS = EVENTS.filter((event) => event.status !== "Ended");
-
-function eventState(event: StudioEvent) {
+function eventState(event: StudioEvent, nextAvailableId?: string) {
   if (event.status === "Ended") return "Archive";
-  if (event.id === NEXT_AVAILABLE?.id) return "Next available";
+  if (event.id === nextAvailableId) return "Next available";
   return event.status === "Ongoing" ? "Ongoing" : "Scheduled";
 }
 
-export default function EventsIndex() {
+export default function EventsIndex({ initialEvents = [] }: { initialEvents?: StudioEvent[] }) {
+  const EVENTS = usePublicEvents(initialEvents);
+  const NEXT_AVAILABLE = EVENTS.find((event) => event.status === "Upcoming");
+  const ARCHIVE_EVENTS = EVENTS.filter((event) => event.status === "Ended");
+  const UPCOMING_EVENTS = EVENTS.filter((event) => event.status !== "Ended");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId
     ? EVENTS.find((event) => event.id === selectedId)
@@ -36,7 +37,7 @@ export default function EventsIndex() {
       window.removeEventListener("hashchange", selectFromHash);
       window.removeEventListener("popstate", selectFromHash);
     };
-  }, []);
+  }, [EVENTS]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -57,10 +58,10 @@ export default function EventsIndex() {
   }
 
   if (!selected) {
-    return <EventsOverview onSelect={(event) => setSelectedId(event.id)} />;
+    return <EventsOverview events={EVENTS} onSelect={(event) => setSelectedId(event.id)} />;
   }
 
-  const selectedState = eventState(selected);
+  const selectedState = eventState(selected, NEXT_AVAILABLE?.id);
   const statusClasses =
     selected.status === "Ended"
       ? "bg-[var(--color-poster)] text-white"
@@ -283,10 +284,14 @@ export default function EventsIndex() {
 }
 
 function EventsOverview({
+  events,
   onSelect,
 }: {
+  events: StudioEvent[];
   onSelect: (event: StudioEvent) => void;
 }) {
+  const ARCHIVE_EVENTS = events.filter((event) => event.status === "Ended");
+  const UPCOMING_EVENTS = events.filter((event) => event.status !== "Ended");
   return (
     <main className="-mt-[3.25rem] min-h-screen bg-black text-[var(--color-bone)] sm:-mt-[3.5rem]">
       <h1 className="sr-only">Community</h1>
@@ -362,6 +367,7 @@ function EventGroup({
             key={event.id}
             event={event}
             featured={index === 0}
+            index={index}
             onSelect={onSelect}
           />
         ))}
@@ -373,10 +379,12 @@ function EventGroup({
 function EventCard({
   event,
   featured,
+  index,
   onSelect,
 }: {
   event: StudioEvent;
   featured: boolean;
+  index: number;
   onSelect: (event: StudioEvent) => void;
 }) {
   return (
@@ -422,7 +430,7 @@ function EventCard({
         ) : null}
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
         <span className="absolute inset-x-2 top-2 flex items-center justify-between font-sans text-[0.44rem] uppercase tracking-[0.16em] text-white/70 sm:inset-x-3 sm:top-3">
-          <span>{String(EVENTS.indexOf(event) + 1).padStart(2, "0")}</span>
+          <span>{String(index + 1).padStart(2, "0")}</span>
           <span>{eventState(event)}</span>
         </span>
         <span className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center border border-white/40 bg-black/30 text-white transition-colors group-hover:bg-[var(--color-poster)] sm:bottom-3 sm:right-3">

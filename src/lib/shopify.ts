@@ -38,6 +38,48 @@ const client = isShopifyConfigured
 
 // ─── GraphQL ────────────────────────────────────────────────────────────────
 
+export type ArtifactShopifyProduct = {
+  id: string;
+  handle: string;
+  title: string;
+  featuredImage: { url: string; altText: string | null } | null;
+};
+
+function isArtifactShopifyProduct(value: unknown): value is ArtifactShopifyProduct {
+  if (!value || typeof value !== "object") return false;
+  const product = value as Partial<ArtifactShopifyProduct>;
+  return typeof product.id === "string" && /^gid:\/\/shopify\/Product\/[1-9][0-9]*$/.test(product.id)
+    && typeof product.handle === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(product.handle)
+    && typeof product.title === "string" && product.title.trim().length > 0
+    && (product.featuredImage === null || (typeof product.featuredImage === "object" && typeof product.featuredImage?.url === "string"));
+}
+
+/** Only products actually published to this storefront can be bound as member artifacts. */
+export async function searchArtifactShopifyProducts(query: string): Promise<{ products: ArtifactShopifyProduct[]; hasMore: boolean }> {
+  if (!client) throw new Error("Shopify catalog is not connected.");
+  // Operators type a product name, not Shopify's advanced search language.
+  const terms = query.trim().slice(0, 100).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const response = await client.request<{ products: { nodes: ArtifactShopifyProduct[]; pageInfo: { hasNextPage: boolean } } }>(
+    `query ArtifactProducts($query: String!) { products(first: 20, query: $query, sortKey: TITLE) { nodes { id handle title featuredImage { url altText } } pageInfo { hasNextPage } } }`,
+    { variables: { query: terms.map((term) => `title:${term}*`).join(" AND ") }, signal: AbortSignal.timeout(8000) },
+  );
+  if (response.errors || !Array.isArray(response.data?.products?.nodes)
+    || !response.data.products.nodes.every(isArtifactShopifyProduct)
+    || typeof response.data.products.pageInfo?.hasNextPage !== "boolean") throw new Error("Shopify catalog could not be loaded.");
+  return { products: response.data.products.nodes, hasMore: response.data.products.pageInfo.hasNextPage };
+}
+
+export async function getArtifactShopifyProduct(id: string): Promise<ArtifactShopifyProduct | null> {
+  if (!client) throw new Error("Shopify catalog is not connected.");
+  const response = await client.request<{ product: ArtifactShopifyProduct | null }>(
+    `query ArtifactProduct($id: ID!) { product(id: $id) { id handle title featuredImage { url altText } } }`,
+    { variables: { id }, signal: AbortSignal.timeout(8000) },
+  );
+  if (response.errors || !response.data || !("product" in response.data)
+    || (response.data.product !== null && !isArtifactShopifyProduct(response.data.product))) throw new Error("Shopify product could not be verified.");
+  return response.data.product;
+}
+
 const PRODUCTS_QUERY = `#graphql
   query Products($first: Int!) {
     products(first: $first, sortKey: CREATED_AT, reverse: true) {

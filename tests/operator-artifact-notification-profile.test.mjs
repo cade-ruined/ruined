@@ -82,13 +82,13 @@ test("notification center sends only server-authorized, targeted in-app records 
   assert.match(notificationRoute, /requireOpsMutationRequest\(request\)/);
   assert.match(notificationPage, /context\.state === "signed_out"/);
   assert.match(notificationPage, /getOpsNotificationCenter/);
-  assert.match(navigation, /href: "\/ops\/notifications"[^\n]*adminOnly: true/);
+  assert.match(navigation, /href: "\/ops\/messages"[^\n]*adminOnly: true/);
 });
 
 test("published communications can be aimed at everyone, one Circle, one Block, or one member", () => {
   const announcementMutation = operatingRepository.slice(
     operatingRepository.indexOf("export async function createOpsAnnouncement"),
-    operatingRepository.indexOf("export async function publishOpsAnnouncement"),
+    operatingRepository.indexOf("function requireAnnouncementVersion"),
   );
   for (const target of ["all_active_members", "circle", "block", "member"]) {
     assert.match(announcementMutation, new RegExp(`"${target}"`));

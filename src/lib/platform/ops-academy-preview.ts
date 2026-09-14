@@ -110,3 +110,22 @@ export const PREVIEW_OPS_ACADEMY_EDITOR: OpsAcademyEditorData = {
     videoUrl: "https://example.com/welcome.mp4",
   },
 };
+
+export function getPreviewOpsAcademyEditor(resourceId: string): OpsAcademyEditorData | null {
+  const resource = PREVIEW_OPS_ACADEMY.resources.find((item) => item.resourceId === resourceId);
+  if (!resource) return null;
+  return {
+    canManage: true,
+    options: PREVIEW_OPS_ACADEMY_EDITOR.options,
+    resource: resourceId === PREVIEW_OPS_ACADEMY_EDITOR.resource.resourceId ? { ...PREVIEW_OPS_ACADEMY_EDITOR.resource } : {
+      ...resource,
+      bodyText: resource.contentType === "article" ? resource.summary : null,
+      captionsUrl: null,
+      durationLabel: null,
+      externalUrl: null,
+      featured: false,
+      presenter: null,
+      videoUrl: null,
+    },
+  };
+}

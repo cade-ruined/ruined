@@ -839,10 +839,10 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(searchStyles, /animation: search-dialog-expand/);
   assert.match(searchData, /productDocuments/);
   assert.match(searchData, /PROJECT_DOCUMENTS/);
-  assert.match(searchData, /EVENT_DOCUMENTS/);
+  assert.match(searchData, /eventDocuments\(events\)/);
   assert.match(searchData, /const PAGES/);
   assert.match(searchRoute, /getProducts\(\)/);
-  assert.match(searchRoute, /searchSite\(products, query\)/);
+  assert.match(searchRoute, /searchSite\(products, query, events\)/);
   assert.match(navigation, /export const GLOBAL_NAV_ITEMS/);
   assert.match(navigation, /export const GLOBAL_MENU_ITEMS/);
   assert.match(navigation, /export const WALK_MENU_ITEMS = EXPLORE_ROOMS/);

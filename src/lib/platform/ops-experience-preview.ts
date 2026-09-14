@@ -3,12 +3,11 @@ import type {
   OpsExperienceRecord,
   OpsExperienceRosterItem,
 } from "@/lib/platform/ops-experience-model";
-import { PREVIEW_OPS_EXPERIENCES } from "@/lib/platform/ops-preview";
+import { PREVIEW_OPS_CIRCLES, PREVIEW_OPS_EXPERIENCES } from "@/lib/platform/ops-preview";
 
-const circles = [
-  { id: "preview-circle-01", name: "Circle 01" },
-  { id: "preview-circle-02", name: "Circle 02" },
-];
+const circles = PREVIEW_OPS_CIRCLES.filter((circle) => circle.status === "active" || circle.status === "forming")
+  .map(({ id, name }) => ({ id, name }));
+const firstCircleId = PREVIEW_OPS_CIRCLES[0].id;
 
 const blocks = [
   { id: "preview-block-01", name: "Block 01" },
@@ -111,6 +110,7 @@ export const PREVIEW_OPS_EXPERIENCE_DIRECTORY: OpsExperienceDirectory = {
   experiences: PREVIEW_OPS_EXPERIENCES.map((experience, index) => ({
     ...experience,
     capacity: index === 0 ? 8 : 32,
+    circleId: experience.experienceId === "preview-experience-circle-01" ? firstCircleId : null,
     googleCommunicationsConfigured: experience.googleCommunicationsConfigured ?? true,
     meetingUrl: experience.meetingUrl ?? null,
     startsAt: experience.startsAt ?? "2026-09-04T01:00:00.000Z",
@@ -125,7 +125,7 @@ export const PREVIEW_OPS_EXPERIENCE_RECORDS: Record<string, OpsExperienceRecord>
     calendar,
     blockId: "preview-block-01",
     capacity: 8,
-    circleId: "preview-circle-01",
+    circleId: firstCircleId,
     details: "A monthly working session for Circle 01. Arrive ready to name what moved, what stalled, and what needs the Circle next.",
     endsAt: "2026-09-04T03:00:00.000Z",
     experienceId: "preview-experience-circle-01",

@@ -157,11 +157,33 @@ async function routeModule(kind, options = {}) {
 
 test("OTP delivery cannot be steered by a forged audience and stays generic for unknown addresses", async () => {
   const unknown = await routeModule("request", { eligible: false });
-  assert.deepEqual(await (await unknown.POST(request("request", { email: viewer.email, audience: "ops" }))).json(), { ok: true });
+  const response = await unknown.POST(request("request", { email: viewer.email, audience: "ops" }));
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.match(result.requestId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(Object.keys(result).sort(), ["ok", "requestId"]);
+  assert.match(response.headers.get("cache-control"), /no-store/);
   assert.deepEqual(unknown.calls, ["eligibility"]);
   const invited = await routeModule("request", { newIdentity: true });
   assert.equal((await invited.POST(request("request", { email: viewer.email, audience: "member" }))).status, 200);
   assert.deepEqual(invited.calls[1], { email: viewer.email, options: { shouldCreateUser: true, emailRedirectTo: "https://ruined.example/my/confirmed" } });
+});
+
+test("added and returning users request a code with email alone, without an invitation link", async () => {
+  for (const newIdentity of [true, false]) {
+    const api = await routeModule("request", { newIdentity });
+    const response = await api.POST(request("request", { email: ` ${viewer.email.toUpperCase()} ` }));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).ok, true);
+    assert.equal(api.calls[0], "eligibility");
+    assert.deepEqual(api.calls[1], {
+      email: viewer.email,
+      options: newIdentity
+        ? { shouldCreateUser: true, emailRedirectTo: "https://ruined.example/my/confirmed" }
+        : { shouldCreateUser: false },
+    });
+    assert.equal(api.calls.length, 2, "Requesting a code must not claim roles before email verification");
+  }
 });
 
 test("verification ignores client roles/destinations and carries verified cookies only after the claim", async () => {

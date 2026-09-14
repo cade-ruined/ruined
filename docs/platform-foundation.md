@@ -130,11 +130,17 @@ Ruined remains the member and operator home. Google Chat owns Circle
 conversation, and Google Meet owns live gatherings; the portal does not iframe
 either product or copy Chat messages into Postgres.
 
-Operators connect a private Chat space to a Circle. An Experience can also use a
-manually supplied Meet room as a fallback, but the normal workflow is now
-Calendar-owned: **Publish + send invite** creates one private Google Calendar
-event, one unique Meet conference, and attendee invitations from the configured
-Ruined Workspace organizer. Editing the Experience or changing its roster marks
+Operators open **Circles → Chat & meetings** to connect an existing private Chat
+space or schedule a meeting with that Circle preselected. Existing meeting links
+are edited in the Experience's visible **Meeting link** section. Saving a link
+does not send invitations or manage Google Chat participants.
+
+An Experience can use a manually supplied Meet room, but the normal invitation
+workflow is Calendar-owned: **Publish + queue invitations** queues processing
+that creates one private Google Calendar event, one unique Meet conference, and
+attendee invitations from the configured Ruined Workspace organizer. The
+Calendar-created link replaces any manually supplied room. Check Calendar status
+after publishing; a queued request is not evidence of delivery. Editing the Experience or changing its roster marks
 that same event for reconciliation. A member registration, cancellation, or
 automatic waitlist promotion commits in Ruined first and then reconciles that
 same invitation; if Google is unavailable, the member's place remains correct

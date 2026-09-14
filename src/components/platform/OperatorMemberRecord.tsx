@@ -11,7 +11,9 @@ import OperatorProfileSupport from "@/components/platform/OperatorProfileSupport
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
+import { guidanceForMemberRecord, memberGuidanceAction } from "@/lib/platform/operator-member-guidance";
 import type { OpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
+import { operatorMemberReturnLocation } from "@/lib/platform/operator-return-location";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not recorded";
@@ -48,17 +50,21 @@ export default function OperatorMemberRecord({
   profileSupport,
   record,
   preview = false,
+  returnTo,
 }: {
   profileSupport?: OpsMemberProfileSupport | null;
   record: OpsMemberRecord;
   preview?: boolean;
+  returnTo?: string;
 }) {
   const { access, community, header, journey, membership, operational } = record;
   const canManageTasks = access.capabilities.includes("task.manage");
   const canOverride = access.capabilities.includes("member.override.write");
   const canWriteNote = access.capabilities.includes("member.note.write");
   const canManageSetup = access.roles.includes("ops_admin");
-  const circlePlacementHref = `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#assign-member`;
+  const next = guidanceForMemberRecord(record);
+  const nextAction = memberGuidanceAction(next, header.memberId, canManageSetup);
+  const circlePlacementHref = next.key === "ongoing-review" ? "#journey" : next.placement === "blocked" ? "#membership" : `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#assign-member`;
 
   const stateRows = [
     ["Admission", header.states.admission],
@@ -69,49 +75,31 @@ export default function OperatorMemberRecord({
     ["Foundations", header.states.foundations],
     ["Artifact", header.states.artifact],
   ];
-  const membershipNeedsReview = header.states.billing !== "active"
-    || header.states.administrativeOnboarding !== "completed"
-    || header.states.standing === "paused";
-  const nextDecisionHref = membershipNeedsReview
-    ? "#membership"
-    : !header.circleName
-      ? canManageSetup ? circlePlacementHref : "#community"
-      : community.circle?.state === "forming" && canManageSetup
-        ? `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#activate-circle`
-        : header.states.foundations !== "completed" ? "#journey" : "#record";
-  const nextDecisionLabel = membershipNeedsReview ? "Review membership"
-    : !header.circleName ? canManageSetup ? "Assign Circle" : "View Circle placement"
-      : community.circle?.state === "forming" && canManageSetup ? "Review Circle activation"
-        : header.states.foundations !== "completed" ? "Review Foundations" : "Review record";
 
   return (
     <OperatorPageFrame title={header.preferredName}>
       <div className="mt-2 grid gap-7 rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.45fr)] lg:items-end">
         <div>
-          <Link className="text-sm text-white/48 transition-colors hover:text-white" href="/ops/members">
-            ← All members
+          <Link className="text-sm text-white/48 transition-colors hover:text-white" href={operatorMemberReturnLocation(returnTo)}>
+            ← Back to members
           </Link>
-          <h2 className="mt-8 font-[var(--font-display)] text-[clamp(2.8rem,6vw,5.5rem)] leading-[0.86] tracking-[-0.04em]">
+          <h2 className="mt-5 font-[var(--font-display)] text-[clamp(2.5rem,5vw,4.5rem)] leading-[0.95] tracking-[-0.04em]">
             {header.preferredName}
           </h2>
-          <p className="mt-5 text-sm text-white/52">
+          <p className="mt-4 text-sm text-white/60">
             {header.circleName ?? "No Circle"}{header.blockName ? ` · ${header.blockName}` : ""}
           </p>
+          {header.primaryEmail ? <p className="mt-2 break-all text-sm text-white/60">{header.primaryEmail}</p> : null}
+          <p className="mt-2 text-sm text-white/60">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
         </div>
-        <div>
-          <p className="font-[var(--font-display)] text-2xl leading-tight text-white/88">
-            {!membershipNeedsReview && community.circle?.state === "forming"
-              ? canManageSetup
-                ? "Circle placement is saved. Activate the Circle when it is ready to run."
-                : "Circle placement is saved. An Administrator can activate the Circle when it is ready."
-              : header.nextDecision}
-          </p>
-          <p className="mt-5 text-sm text-white/48">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
-          {header.primaryEmail ? <p className="mt-2 break-all text-sm text-white/55">{header.primaryEmail}</p> : null}
-          <Link className="ui-heading mt-5 inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-bone)] px-4 text-sm font-semibold text-black transition-colors hover:bg-[var(--color-highlight)]" href={nextDecisionHref}>
-            {nextDecisionLabel} →
+        <section aria-label="Next member step">
+          <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-highlight)]">{next.status} · {next.actor}</p>
+          <h3 className="ui-heading mt-2 text-xl font-semibold leading-tight">{next.title}</h3>
+          <p className="mt-3 text-sm leading-relaxed text-white/75">{next.detail}</p>
+          <Link className="ui-heading mt-4 inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-bone)] px-4 text-sm font-semibold text-black transition-colors hover:bg-[var(--color-highlight)]" href={nextAction.href}>
+            {nextAction.label} →
           </Link>
-        </div>
+        </section>
       </div>
 
       {canManageTasks || canWriteNote || profileSupport ? (
@@ -146,38 +134,30 @@ export default function OperatorMemberRecord({
       <section className="scroll-mt-36 pt-10" id="overview">
         <SectionHeading title="Overview" />
         <OperatorMemberSetup record={record} />
-        <div className="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {stateRows.map(([label, state]) => (
-            <div
-              className="min-h-24 rounded-[4px] bg-black/[0.025] px-4 py-4"
-              key={label}
-            >
-              <p className="mb-4 text-sm text-black/42">{label}</p>
-              <StateLabel state={state} />
-            </div>
-          ))}
-        </div>
+        {!canManageSetup ? <p className="mt-4 text-sm text-black/60">Review this member’s joining, progress, and Circle below. An Administrator manages Circle placement and operator access.</p> : null}
       </section>
 
       <section className="scroll-mt-36 pt-16" id="membership">
         <SectionHeading title="Membership" />
 
-        <div className="mt-10">
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
           <div className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
             <div className="flex items-center justify-between gap-4">
-              <h3 className="ui-heading text-xl font-semibold">Administrative onboarding</h3>
+              <h3 className="ui-heading text-xl font-semibold">Joining progress</h3>
               <StateLabel state={membership.onboarding.state} />
             </div>
+            <p className="mt-3 text-sm leading-relaxed text-black/60">The member completes these steps in their own account. This record is for review, not accepting an agreement or making a payment for them.</p>
+            <p className="mt-2 text-sm text-black/60">Sign-in address to share: <a className="inline-flex min-h-11 items-center break-all underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a></p>
             <div className="mt-6 grid gap-2">
               {membership.onboarding.requirements.map((requirement) => (
                 <div className="grid gap-3 bg-[var(--color-bone)] px-4 py-4 sm:grid-cols-[minmax(0,1fr)_8rem] sm:items-center" key={requirement.key}>
                   <div>
-                    <p className="text-sm text-black/72">{requirement.label}</p>
+                    <p className="text-sm text-black/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? (membership.membershipFunding === "operator" ? requirement.label : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
                     <p className="mt-1 text-xs text-black/38">
-                      {requirement.required ? "Required" : "Collected when needed"}
+                      {requirement.state === "not_required" ? "Not required" : requirement.required ? "Required" : "Collected when needed"}
                     </p>
                   </div>
-                  <StateLabel state={requirement.state === "complete" ? "completed" : requirement.state === "missing" ? "pending" : "not_started"} />
+                  <StateLabel state={requirement.state === "complete" ? "completed" : requirement.state === "missing" ? "pending" : requirement.state === "not_required" ? "not_required" : "not_started"} />
                 </div>
               ))}
             </div>
@@ -256,7 +236,7 @@ export default function OperatorMemberRecord({
                 </div>
               </dl>
             ) : (
-              <EmptyRow>Financial detail is restricted for this operator role.</EmptyRow>
+              <EmptyRow>{access.capabilities.includes("member.billing_detail.read") ? (membership.membershipFunding === "operator" ? "Complimentary operator membership. No subscription is required." : "No billing record yet.") : "Financial detail is restricted for this operator role."}</EmptyRow>
             )}
             {membership.cancellation ? (
               <div className="mt-5 bg-[var(--color-poster)]/[0.07] px-4 py-4 text-sm leading-relaxed text-black/58">
@@ -270,6 +250,17 @@ export default function OperatorMemberRecord({
             ) : null}
           </div>
         </div>
+        <section className="mt-6" aria-labelledby="member-state-details">
+          <h3 className="ui-heading text-lg font-semibold" id="member-state-details">Detailed account states</h3>
+          <dl className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {stateRows.map(([label, state]) => (
+              <div className="rounded-[4px] bg-black/[0.025] px-4 py-3" key={label}>
+                <dt className="mb-2 text-sm text-black/55">{label}</dt>
+                <dd><StateLabel state={state} /></dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       </section>
 
       <section className="scroll-mt-36 pt-16" id="journey">
@@ -354,7 +345,7 @@ export default function OperatorMemberRecord({
             <p className="text-sm text-black/42">Circle</p>
             {community.circle ? (
               <>
-                <Link className="mt-4 inline-block text-4xl tracking-[-0.035em]" href={`/ops/circles#circle-${community.circle.circleId}`}>
+                <Link className="mt-4 inline-block text-4xl tracking-[-0.035em]" href={`/ops/circles?circleId=${encodeURIComponent(community.circle.circleId)}#circle-${community.circle.circleId}`}>
                   {community.circle.name}
                 </Link>
                 <div className="mt-7 grid gap-3 text-sm text-black/58 sm:grid-cols-2">
@@ -369,7 +360,7 @@ export default function OperatorMemberRecord({
                 <EmptyRow>No current Circle assignment.</EmptyRow>
                 {canManageSetup ? (
                   <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
-                    Assign Circle →
+                    {next.key === "ongoing-review" ? "Review ongoing participation" : next.placement === "blocked" ? "Review joining & billing" : "Review Circle placement"} →
                   </Link>
                 ) : <p className="mt-3 text-sm text-black/50">An Administrator can place this member in a Circle.</p>}
               </>

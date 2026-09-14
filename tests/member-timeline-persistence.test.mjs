@@ -6,6 +6,7 @@ import ts from "typescript";
 
 import { Parameter, types } from "../node_modules/postgres/src/types.js";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
+import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 
 const ids = {
   member: "11111111-1111-4111-8111-111111111111",
@@ -51,14 +52,21 @@ async function fixture(t) {
     create role anon nologin;
     create role authenticated nologin;
     create schema private;
-    create table ruined_members (id uuid primary key);
-    create table platform_users (auth_user_id uuid primary key);
+    create table people (id uuid primary key, status text default 'active');
+    create table ruined_members (id uuid primary key, person_id uuid, email text default 'member@example.test');
+    create table platform_users (auth_user_id uuid primary key, member_id uuid, person_id uuid, status text default 'active');
+    create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, revoked_at timestamptz);
+    create table member_lifecycle (member_id uuid primary key, account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', program_state text default 'active', foundations_state text default 'in_progress', standing_state text default 'active', cancellation_effective_at timestamptz);
     create table foundation_enrollments (id uuid primary key, member_id uuid not null references ruined_members(id), status text, enrolled_at timestamptz default now());
     ${appendOnly}
     ${automation.slice(start, end)}
   `);
-  await db.query("insert into ruined_members values ($1),($2)", [ids.member, ids.otherMember]);
-  await db.query("insert into platform_users values ($1),($2)", [ids.auth, ids.otherAuth]);
+  await installOperatorFundingFunctions(db);
+  await db.query("insert into people (id) values ($1),($2)", [ids.person, ids.otherMember]);
+  await db.query("insert into ruined_members (id,person_id) values ($1,$2),($3,$3)", [ids.member, ids.person, ids.otherMember]);
+  await db.query("insert into platform_users (auth_user_id,member_id,person_id) values ($1,$2,$3),($4,$5,$5)", [ids.auth, ids.member, ids.person, ids.otherAuth, ids.otherMember]);
+  await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'member'),($2,'member')", [ids.auth, ids.otherAuth]);
+  await db.query("insert into member_lifecycle (member_id) values ($1),($2)", [ids.member, ids.otherMember]);
   await db.query("insert into foundation_enrollments (id,member_id,status) values ($1,$2,'in_progress'),($3,$4,'in_progress')", [ids.enrollment, ids.member, ids.otherEnrollment, ids.otherMember]);
   const identities = new Map([
     [ids.auth, { member_id: ids.member, auth_user_id: ids.auth }],
@@ -69,6 +77,7 @@ async function fixture(t) {
     foundations_state: "in_progress", standing_state: "active", cancellation_effective_at: null,
   }]));
   const executedQueries = [];
+  let beforeTransaction = null;
   const wrap = (engine) => {
     const sql = async (strings, ...values) => {
       const text = strings.join("?");
@@ -94,7 +103,10 @@ async function fixture(t) {
       return (await engine.query(query, parameters)).rows;
     };
     sql.json = driver.json;
-    sql.begin = (callback) => engine.transaction((transaction) => callback(wrap(transaction)));
+    sql.begin = async (callback) => {
+      if (beforeTransaction) { const change = beforeTransaction; beforeTransaction = null; await change(); }
+      return engine.transaction((transaction) => callback(wrap(transaction)));
+    };
     return sql;
   };
   const access = await loadTypescript("src/lib/membership/access-policy.ts");
@@ -104,13 +116,43 @@ async function fixture(t) {
     "@/lib/membership/access-policy": access,
     "@/lib/membership/phone": {}, "@/lib/membership/avatar-url": {},
     "@/lib/membership/artifact-products": {}, "@/lib/events/member-experiences": {},
+    "@/lib/events/community-event-repository": {},
     "@/lib/google/communications": {}, "@/lib/platform/ops-calendar-repository": {},
     "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/platform/experience-member-access": {},
   });
   const versionCount = async () => (await db.query("select count(*)::int as count from member_timeline_entry_versions")).rows[0].count;
-  return { db, driver, executedQueries, identities, repository, versionCount };
+  return { db, driver, executedQueries, identities, repository, versionCount, beforeNextTransaction: (change) => { beforeTransaction = change; } };
 }
+
+test("Timeline writers recheck actual entitlement after the initial identity read", async (t) => {
+  const f = await fixture(t);
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [ids.member]);
+  await f.db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'guide')", [ids.auth]);
+  Object.assign(f.identities.get(ids.auth), { operator_funded: true, billing_state: 'pending' });
+  const saved = await f.repository.saveMemberTimeline(ids.auth, [event()], "0");
+  const versions = await f.versionCount();
+  for (const [restrict, restore] of [
+    ["update platform_role_grants set revoked_at=now() where role_slug='guide'", "update platform_role_grants set revoked_at=null where role_slug='guide'"],
+    ["update member_lifecycle set account_state='suspended'", "update member_lifecycle set account_state='active'"],
+    ["update member_lifecycle set administrative_onboarding_state='in_progress'", "update member_lifecycle set administrative_onboarding_state='completed'"],
+  ]) {
+    for (const write of [
+      () => f.repository.saveMemberTimeline(ids.auth, [], saved.revision),
+      () => f.repository.completeMemberFoundationRequirement(ids.auth, "timeline"),
+      () => f.repository.completeMemberFoundationRequirement(ids.auth, "future_letter"),
+    ]) {
+      // The initial identity intentionally remains entitled. Simulate the
+      // committed access change while the request waits to begin its writer.
+      f.beforeNextTransaction(() => f.db.exec(restrict));
+      await assert.rejects(write, f.repository.MembershipAccessDeniedError);
+      assert.equal(await f.versionCount(), versions);
+      assert.equal((await f.db.query("select count(*)::int as total from member_foundation_requirement_completions")).rows[0].total, 0);
+      await f.db.exec(restore);
+    }
+  }
+  assert.equal((await f.db.query("select billing_state from member_lifecycle where member_id=$1", [ids.member])).rows[0].billing_state, "pending");
+});
 
 test("Timeline saves and reloads chronologically; stale edits and deletions preserve newer work", async (t) => {
   const { db, repository, versionCount } = await fixture(t);

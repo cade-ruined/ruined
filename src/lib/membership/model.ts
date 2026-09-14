@@ -52,6 +52,8 @@ export type MemberAccessPolicy = {
 };
 
 export type MemberIdentity = {
+  /** Derived on the server from current operator grants, never from a form. */
+  membershipFunding?: "self" | "operator";
   accountState: AccountState;
   administrativeOnboardingState: AdministrativeOnboardingState;
   authUserId: string;
@@ -240,6 +242,7 @@ export type MemberProfileSnapshot = {
 };
 
 export type MemberOnboardingSnapshot = {
+  membershipFunding?: "self" | "operator";
   agreement: {
     acceptanceId: string | null;
     acceptedAt: string | null;
@@ -371,6 +374,7 @@ export type MemberUpdatesSnapshot = {
 };
 
 export type MemberAccountSnapshot = {
+  membershipFunding?: "self" | "operator";
   access: MemberAccessPolicy;
   agreement: {
     acceptedAt: string | null;

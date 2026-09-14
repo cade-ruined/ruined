@@ -82,7 +82,7 @@ test("access removal protects the final administrator and leaves shared membersh
   assert.match(repository, /Ruined must keep at least one active administrator/);
   assert.match(repository, /update circle_staff_assignments[\s\S]*ended_at = statement_timestamp\(\)/);
   assert.match(repository, /update platform_role_grants[\s\S]*revoked_at = statement_timestamp\(\)/);
-  const removal = repository.slice(repository.indexOf("export async function removeOperatorAccess"), repository.indexOf("export async function claimPlatformOperatorForViewer"));
+  const removal = repository.slice(repository.indexOf("export async function removeOperatorAccess"), repository.indexOf("export async function updateOperatorAccess"));
   assert.doesNotMatch(removal, /update platform_users[\s\S]*status/);
 });
 
@@ -102,7 +102,7 @@ test("operator UI uses a low-training list and focused add task", () => {
   assert.match(manager, /Add operator/);
   assert.match(manager, /Full name/);
   assert.match(manager, /Responsibility/);
-  assert.match(manager, /Assigned Circles/);
+  assert.match(manager, /Circles they help manage/);
   assert.match(manager, /Send invitation/);
   assert.match(manager, /aria-live="polite"/);
   assert.match(manager, /role="dialog"/);
@@ -119,7 +119,8 @@ test("operator navigation is grouped, responsive, and capability-aware", () => {
   assert.match(navigation, /label: "People"/);
   assert.match(navigation, /label: "Learning & events"/);
   assert.match(navigation, /label: "Messages"/);
-  assert.match(navigation, /label: "Tasks & tools"/);
+  assert.match(navigation, /label: "Settings"/);
+  assert.match(navigation, /label: "Circles"/);
   assert.match(navigation, /href: "\/ops\/operators"[^\n]*adminOnly: true/);
   assert.match(navigation, /href: "\/ops\/academy"[^\n]*adminOnly: true/);
   assert.match(navigation, /!item\.adminOnly \|\| role === "ops_admin"/);

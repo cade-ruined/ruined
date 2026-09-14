@@ -1,4 +1,5 @@
 import "server-only";
+import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 
 import { randomUUID } from "node:crypto";
 
@@ -291,6 +292,7 @@ export async function createOrReissueOperatorInvitation(input: {
   const sql = getBillingDatabase();
 
   return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, input.actorAuthUserId);
     if (email.length > MAX_EMAIL_LENGTH || !isPlausibleEmail(email)) {
       throw new OpsAccessRepositoryError("invalid_request", "Enter a valid email address.");
@@ -545,8 +547,8 @@ export async function removeOperatorAccess(input: {
 
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
-    await requireOpsAdmin(tx, input.actorAuthUserId);
     await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
+    await requireOpsAdmin(tx, input.actorAuthUserId);
 
     const roles = await tx<Array<{ role_slug: OperatorAccessRole }>>`
       select role_slug
@@ -600,6 +602,14 @@ export async function removeOperatorAccess(input: {
       returning role_slug
     `;
 
+    const linkedMembers = await tx<Array<{ member_id: string }>>`
+      select member.id as member_id from platform_users account
+      join ruined_members member on member.person_id = account.person_id
+      where account.auth_user_id = ${input.targetAuthUserId}::uuid
+    `;
+    if (linkedMembers[0]) await markCalendarAudiencesPendingForMember(tx, {
+      actorAuthUserId: input.actorAuthUserId, memberId: linkedMembers[0].member_id,
+    });
     await writeAudit(tx, {
       action: "operator_access.removed",
       actorAuthUserId: input.actorAuthUserId,
@@ -614,6 +624,143 @@ export async function removeOperatorAccess(input: {
   });
 }
 
+export async function updateOperatorAccess(input: {
+  actorAuthUserId: string;
+  targetAuthUserId: string;
+  role: OperatorAccessRole;
+  circleIds: string[];
+  expectedRole: OperatorAccessRole;
+  expectedCircleIds: string[];
+  expectedStatus: "active" | "suspended";
+  administratorConfirmed: boolean;
+  restoreAccount: boolean;
+  reason: string;
+}): Promise<{ authUserId: string; circles: OperatorAccessCircle[]; role: OperatorAccessRole; status: "active" }> {
+  const rolesAllowed = new Set<OperatorAccessRole>(["ops_admin", "circle_leader", "guide"]);
+  const circleIds = [...new Set(input.circleIds)].sort();
+  const reason = input.reason.trim();
+  if (!UUID_PATTERN.test(input.targetAuthUserId) || !rolesAllowed.has(input.role)
+    || !rolesAllowed.has(input.expectedRole) || circleIds.some((id) => !UUID_PATTERN.test(id))
+    || input.expectedCircleIds.some((id) => !UUID_PATTERN.test(id)) || reason.length < 3 || reason.length > 500) {
+    throw new OpsAccessRepositoryError("invalid_request", "Choose valid access and enter a reason between 3 and 500 characters.");
+  }
+  if (input.actorAuthUserId === input.targetAuthUserId) {
+    throw new OpsAccessRepositoryError("conflict", "Ask another administrator to change your access.");
+  }
+  if (input.role === "ops_admin" && (!input.administratorConfirmed || circleIds.length)) {
+    throw new OpsAccessRepositoryError("invalid_request", "Confirm administrator access. Administrators do not need Circle assignments.");
+  }
+  if (input.role !== "ops_admin" && !circleIds.length) {
+    throw new OpsAccessRepositoryError("invalid_request", "Choose at least one Circle.");
+  }
+  const sql = getBillingDatabase();
+  return sql.begin(async (tx) => {
+    // Serialize edits with removal, then recheck the actor after acquiring the lock.
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
+    await requireOpsAdmin(tx, input.actorAuthUserId);
+    const identities = await tx<Array<{ email_normalized: string }>>`
+      select email_normalized from platform_users where auth_user_id = ${input.targetAuthUserId}::uuid
+    `;
+    if (!identities[0]) throw new OpsAccessRepositoryError("not_found", "That operator account no longer exists.");
+    const email = identities[0].email_normalized;
+    await tx`select pg_advisory_xact_lock(hashtext(${email}), 1)`;
+    const accounts = await tx<Array<{ status: string; email_normalized: string }>>`
+      select status, email_normalized from platform_users
+      where auth_user_id = ${input.targetAuthUserId}::uuid for update
+    `;
+    const account = accounts[0];
+    if (!account || account.email_normalized !== email || !["active", "suspended"].includes(account.status)) {
+      throw new OpsAccessRepositoryError("conflict", "This account needs a separate recovery review before its operator access can change.");
+    }
+    if (account.status !== input.expectedStatus || (account.status === "suspended" && !input.restoreAccount)) {
+      throw new OpsAccessRepositoryError("conflict", "Account status changed, or restoration was not confirmed. Refresh and review the account again.");
+    }
+    const currentRoles = await tx<Array<{ role_slug: OperatorAccessRole }>>`
+      select role_slug from platform_role_grants
+      where auth_user_id = ${input.targetAuthUserId}::uuid
+        and role_slug in ('ops_admin', 'circle_leader', 'guide') and revoked_at is null
+      order by role_slug for update
+    `;
+    const currentAssignments = await tx<Array<{ circle_id: string; role_slug: OperatorAccessRole }>>`
+      select circle_id, role_slug from circle_staff_assignments
+      where auth_user_id = ${input.targetAuthUserId}::uuid and ended_at is null
+      order by circle_id, role_slug for update
+    `;
+    const currentCircleIds = currentAssignments.filter((row) => row.role_slug === input.expectedRole).map((row) => row.circle_id).sort();
+    if (currentRoles.length !== 1 || currentRoles[0].role_slug !== input.expectedRole
+      || JSON.stringify(currentCircleIds) !== JSON.stringify([...new Set(input.expectedCircleIds)].sort())) {
+      throw new OpsAccessRepositoryError("conflict", "This operator’s access changed since you opened it. Refresh and review the current record.");
+    }
+    if (input.expectedRole === "ops_admin" && input.role !== "ops_admin" && account.status === "active") {
+      const admins = await tx<Array<{ active_admins: number }>>`
+        select count(distinct role_grant.auth_user_id)::integer as active_admins
+        from platform_role_grants role_grant join platform_users platform_user on platform_user.auth_user_id = role_grant.auth_user_id
+        where role_grant.role_slug = 'ops_admin' and role_grant.revoked_at is null and platform_user.status = 'active'
+      `;
+      if ((admins[0]?.active_admins ?? 0) <= 1) throw new OpsAccessRepositoryError("conflict", "Ruined must keep at least one active administrator.");
+    }
+    const selectedCircles = circleIds.length ? await tx<OperatorAccessCircle[]>`
+      select id, name from circles where id = any(${circleIds}::uuid[]) and status in ('forming', 'active')
+      order by name, id for update
+    ` : [];
+    if (selectedCircles.length !== circleIds.length) throw new OpsAccessRepositoryError("conflict", "One of those Circles is no longer available. Refresh and choose again.");
+    if (input.role === "circle_leader") {
+      const conflicts = await tx<Array<{ name: string }>>`
+        select c.name from circles c where c.id = any(${circleIds}::uuid[]) and (
+          exists (select 1 from circle_staff_assignments a where a.circle_id = c.id and a.role_slug = 'circle_leader'
+            and a.ended_at is null and a.auth_user_id <> ${input.targetAuthUserId}::uuid)
+          or exists (select 1 from operator_invitation_circles ic
+            join operator_invitation_configs config on config.invitation_id = ic.invitation_id and config.role_slug = 'circle_leader'
+            join passwordless_account_invites invitation on invitation.id = config.invitation_id
+            where ic.circle_id = c.id and invitation.accepted_at is null and invitation.revoked_at is null
+              and (invitation.expires_at is null or invitation.expires_at > statement_timestamp()))
+        ) order by c.name limit 1
+      `;
+      if (conflicts[0]) throw new OpsAccessRepositoryError("conflict", `${conflicts[0].name} already has a Shaper or a pending Shaper invitation.`);
+    }
+    await tx`
+      update circle_staff_assignments set ended_at = statement_timestamp(), ended_by_auth_user_id = ${input.actorAuthUserId}::uuid, end_reason = ${reason}
+      where auth_user_id = ${input.targetAuthUserId}::uuid and ended_at is null
+        and (role_slug <> ${input.role} or not (circle_id = any(${circleIds}::uuid[])))
+    `;
+    await tx`
+      update platform_role_grants set revoked_at = statement_timestamp(), revoke_reason = ${reason}
+      where auth_user_id = ${input.targetAuthUserId}::uuid and role_slug in ('ops_admin', 'circle_leader', 'guide')
+        and role_slug <> ${input.role} and revoked_at is null
+    `;
+    await tx`
+      insert into platform_role_grants (auth_user_id, role_slug, granted_by_auth_user_id, granted_at)
+      select ${input.targetAuthUserId}::uuid, ${input.role}, ${input.actorAuthUserId}::uuid, statement_timestamp()
+      where not exists (select 1 from platform_role_grants where auth_user_id = ${input.targetAuthUserId}::uuid and role_slug = ${input.role} and revoked_at is null)
+    `;
+    if (circleIds.length) await tx`
+      insert into circle_staff_assignments (circle_id, auth_user_id, role_slug, assigned_by_auth_user_id, assigned_at)
+      select chosen.id, ${input.targetAuthUserId}::uuid, ${input.role}, ${input.actorAuthUserId}::uuid, statement_timestamp()
+      from unnest(${circleIds}::uuid[]) chosen(id)
+      where not exists (select 1 from circle_staff_assignments a where a.circle_id = chosen.id
+        and a.auth_user_id = ${input.targetAuthUserId}::uuid and a.role_slug = ${input.role} and a.ended_at is null)
+    `;
+    if (account.status === "suspended") await tx`
+      update platform_users set status = 'active', updated_at = statement_timestamp()
+      where auth_user_id = ${input.targetAuthUserId}::uuid and status = 'suspended'
+    `;
+    await writeAudit(tx, {
+      action: input.restoreAccount && account.status === "suspended" ? "operator_access.restored" : "operator_access.updated",
+      actorAuthUserId: input.actorAuthUserId, subjectId: input.targetAuthUserId, subjectType: "platform_user", reason,
+      before: { role: input.expectedRole, circleIds: currentCircleIds, accountStatus: account.status },
+      after: { role: input.role, circleIds, accountStatus: "active" },
+    });
+    const linkedMembers = await tx<Array<{ member_id: string }>>`
+      select member.id as member_id from platform_users account join ruined_members member on member.person_id = account.person_id
+      where account.auth_user_id = ${input.targetAuthUserId}::uuid
+    `;
+    for (const member of linkedMembers) await markCalendarAudiencesPendingForMember(tx, {
+      actorAuthUserId: input.actorAuthUserId, memberId: member.member_id,
+    });
+    return { authUserId: input.targetAuthUserId, role: input.role, circles: selectedCircles, status: "active" as const };
+  });
+}
+
 export async function claimPlatformOperatorForViewer(input: {
   authUserId: string;
   email: string;
@@ -622,6 +769,7 @@ export async function claimPlatformOperatorForViewer(input: {
   const sql = getBillingDatabase();
 
   return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await tx`select pg_advisory_xact_lock(hashtext(${email}), 1)`;
 
     const existingRows = await tx<
@@ -859,6 +1007,12 @@ export async function claimPlatformOperatorForViewer(input: {
       subjectType: "operator_invitation",
     });
 
+    const fundedMembers = await tx<Array<{ member_id: string }>>`
+      select id as member_id from ruined_members where person_id = ${personId}::uuid
+    `;
+    if (fundedMembers[0]) await markCalendarAudiencesPendingForMember(tx, {
+      actorAuthUserId: input.authUserId, memberId: fundedMembers[0].member_id,
+    });
     return { authUserId: input.authUserId, role: invitation.role_slug };
   });
 }

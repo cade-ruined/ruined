@@ -108,7 +108,9 @@ test("live invitations can be explicitly revoked through the same serialized bou
   assert.match(repository, /accepted_at is null[\s\S]*revoked_at is null/);
   assert.match(repository, /revoked_by_auth_user_id = \$\{actorAuthUserId\}::uuid/);
   assert.match(actions, /"\/api\/ops\/invitations", \{ email \}, "DELETE"/);
-  assert.match(actions, /Revoke live invite/);
+  assert.match(actions, /Remove a pending allowance/);
+  assert.match(actions, /Confirm pending allowance removal/);
+  assert.match(actions, /revokeEmailRef\.current !== revokeEmail/);
 });
 
 test("Circle creation keeps slug, capacity, and lifecycle server-owned", () => {
@@ -177,12 +179,13 @@ test("active Circle assignments can be ended without deleting historical proof",
   assert.match(actions, /Completed Foundations keeps its historical Circle proof/);
 });
 
-test("live mutating controls require an admin viewer and preview member allowance stays inert", () => {
+test("live mutating controls require an admin viewer and preview allowance demonstrates only sample steps", () => {
   assert.match(membersPage, /context\.role === "ops_admin" && \(context\.state === "preview" \|\| context\.viewer\)/);
-  assert.match(membersPage, /OpsInvitationActions preview=\{context\.state === "preview"\}/);
+  assert.match(membersPage, /OperatorMemberInvitations data=\{pendingInvitations\} directoryParams=\{directoryParams\} preview=\{context\.state === "preview"\}/);
   const allowanceAction = actions.slice(actions.indexOf("export function OpsInvitationActions"), actions.indexOf("export function getCirclePlacementIssue"));
   assert.match(allowanceAction, /if \(preview\) \{[\s\S]*return;[\s\S]*new FormData/);
-  assert.match(allowanceAction, /disabled=\{preview \|\| pending\}/);
+  assert.match(allowanceAction, /disabled=\{Boolean\(pending\)\}/);
+  assert.match(allowanceAction, /rememberAllowance\(\{ email: sampleEmail[\s\S]*sample: true/);
   assert.match(circlesPage, /context\.role === "ops_admin" && context\.viewer/);
   assert.match(circlesPage, /getOpsCircleSummaries\(context\.viewer\.authUserId\)/);
   assert.match(actions, /export function OpsInvitationActions/);

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_LABEL_TEXT_CLASS } from "@/components/platform/operatorStyles";
 
 type CommunicationKind = "chat" | "meet";
 type CommunicationEntityType = "circle" | "experience";
@@ -9,21 +10,15 @@ type CommunicationEntityType = "circle" | "experience";
 type CommunicationResponse = {
   communication?: {
     connected: boolean;
+    entityId: string;
+    entityType: CommunicationEntityType;
+    kind: CommunicationKind;
     url: string | null;
   };
   error?: unknown;
 };
 
-export default function OperatorGoogleCommunicationField({
-  configured,
-  editable,
-  entityId,
-  entityType,
-  initialUrl,
-  kind,
-  inline = false,
-  preview = false,
-}: {
+type CommunicationFieldProps = {
   configured: boolean;
   editable: boolean;
   entityId: string;
@@ -32,27 +27,52 @@ export default function OperatorGoogleCommunicationField({
   kind: CommunicationKind;
   inline?: boolean;
   preview?: boolean;
-}) {
+};
+
+export default function OperatorGoogleCommunicationField(props: CommunicationFieldProps) {
+  // A new target or authoritative saved URL must never inherit another form's
+  // unsaved draft, confirmation, or pending request state.
+  const editorKey = JSON.stringify([props.entityType, props.entityId, props.kind, props.initialUrl, props.configured, props.editable, props.preview]);
+  return <GoogleCommunicationEditor key={editorKey} {...props} />;
+}
+
+function GoogleCommunicationEditor({ configured, editable, entityId, entityType, initialUrl, kind, preview = false }: CommunicationFieldProps) {
   const router = useRouter();
   const [url, setUrl] = useState(initialUrl ?? "");
   const [draft, setDraft] = useState(initialUrl ?? "");
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [confirmRemoval, setConfirmRemoval] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const requestInFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const connected = Boolean(url);
   const name = kind === "chat" ? "Google Chat" : "Google Meet";
-  const LinkContainer = inline ? "div" : "details";
+  const linkName = kind === "chat" ? "chat link" : "meeting link";
   const label = kind === "chat" ? "Chat space link" : "Meet room link";
   const placeholder = kind === "chat"
     ? "https://chat.google.com/room/…"
     : "https://meet.google.com/abc-defg-hij";
 
   async function request(method: "DELETE" | "PUT", nextUrl?: string) {
+    if (!configured || !editable || requestInFlight.current || !mounted.current) return;
+    if (method === "DELETE" && (!confirmRemoval || !url)) return;
     if (preview) {
       setError(false);
       setNotice(`Preview only — the ${name} link was not changed.`);
       return;
     }
+    if (method === "PUT" && !nextUrl?.trim()) {
+      setError(true);
+      setNotice(`Paste the ${linkName} first.`);
+      return;
+    }
+    requestInFlight.current = true;
     setPending(true);
     setNotice(null);
     setError(false);
@@ -74,12 +94,20 @@ export default function OperatorGoogleCommunicationField({
             : `The ${name} link could not be changed.`,
         );
       }
-      const savedUrl = payload?.communication?.url ?? "";
+      const saved = payload?.communication;
+      if (!saved || saved.entityId !== entityId || saved.entityType !== entityType || saved.kind !== kind
+        || (method === "PUT" ? saved.connected !== true || typeof saved.url !== "string" || !saved.url : saved.connected !== false || saved.url !== null)) {
+        throw new Error("The saved link could not be verified. Refresh before trying again.");
+      }
+      if (!mounted.current) return;
+      const savedUrl = saved.url ?? "";
       setUrl(savedUrl);
       setDraft(savedUrl);
-      setNotice(savedUrl ? `${name} is ready.` : `${name} was disconnected.`);
+      setConfirmRemoval(false);
+      setNotice(savedUrl ? `${kind === "chat" ? "Chat" : "Meeting"} link saved in Ruined. No invitation was sent.` : "Link removed from Ruined. Nothing was changed in Google.");
       router.refresh();
     } catch (requestError) {
+      if (!mounted.current) return;
       setError(true);
       setNotice(
         requestError instanceof Error
@@ -87,14 +115,31 @@ export default function OperatorGoogleCommunicationField({
           : `The ${name} link could not be changed.`,
       );
     } finally {
-      setPending(false);
+      requestInFlight.current = false;
+      if (mounted.current) setPending(false);
     }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await request("PUT", String(form.get("url") ?? ""));
+    await request("PUT", draft.trim());
+  }
+
+  async function copyLink() {
+    if (!configured || !url || copying || !mounted.current) return;
+    setCopying(true);
+    setError(false);
+    try {
+      await navigator.clipboard.writeText(url);
+      if (mounted.current) setNotice(`${kind === "chat" ? "Chat" : "Meeting"} link copied.`);
+    } catch {
+      if (mounted.current) {
+        setError(true);
+        setNotice("The link could not be copied. Select and copy the saved URL below.");
+      }
+    } finally {
+      if (mounted.current) setCopying(false);
+    }
   }
 
   const tone = kind === "chat"
@@ -118,26 +163,40 @@ export default function OperatorGoogleCommunicationField({
                   : "bg-black/28"
             }`}
           />
-          {!configured ? "Setup needed" : connected ? "Ready" : "Not linked"}
+          {!configured ? "Setup needed" : connected ? "Link saved" : "Not linked"}
         </p>
       </div>
+
+      <p className="mt-3 text-sm leading-relaxed text-black/60">
+        {!editable
+          ? "Open or copy the saved link below. Access to the Google space or meeting is managed in Google."
+          : kind === "chat"
+          ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
+          : "Paste an existing Google Meet link here. Saving it does not send invitations or change Google access; use Calendar invitations for that flow."}
+      </p>
+
+      {configured && connected ? <div className="mt-3 rounded-[4px] bg-[var(--color-bone)]/60 p-3">
+        <p className="text-xs text-black/50">Saved {linkName}</p>
+        <a className="mt-1 block break-all text-sm underline decoration-black/25 underline-offset-4" href={url} rel="noreferrer" target="_blank">{url}</a>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <a className="inline-flex min-h-11 items-center px-2 text-sm font-semibold underline underline-offset-4" href={url} rel="noreferrer" target="_blank">{kind === "chat" ? "Open chat ↗" : "Open meeting ↗"}</a>
+          <button className="min-h-11 px-2 text-sm underline underline-offset-4 disabled:opacity-45" disabled={copying} onClick={copyLink} type="button">{copying ? "Copying…" : "Copy link"}</button>
+        </div>
+      </div> : null}
 
       {!configured ? (
         <p className="mt-2 text-xs leading-relaxed text-black/52">
           Choose test or live Google mode before adding links.
         </p>
       ) : editable ? (
-        <LinkContainer className="group mt-2">
-          {!inline ? <summary className="w-fit cursor-pointer list-none text-xs font-medium text-black/58 underline decoration-black/25 underline-offset-4 marker:content-none hover:text-black">
-            {connected ? "Change link" : "Add link"}
-          </summary> : null}
+        <div className="mt-2">
           <form className="mt-3 grid gap-3" onSubmit={submit}>
             <label htmlFor={`${kind}-${entityId}-url`}>
-              <span className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--color-poster)]">
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>
                 {label}
               </span>
               <input
-                className="mt-2 min-h-11 w-full rounded-[4px] border border-black/40 bg-[var(--color-bone)] px-3 py-2 text-sm normal-case tracking-normal text-black outline-none placeholder:text-black/34 focus-visible:border-black focus-visible:ring-2 focus-visible:ring-black/35 disabled:opacity-50"
+                className={OPERATOR_FIELD_CLASS}
                 disabled={pending}
                 id={`${kind}-${entityId}-url`}
                 inputMode="url"
@@ -146,30 +205,37 @@ export default function OperatorGoogleCommunicationField({
                 required
                 type="url"
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) => { setDraft(event.target.value); setConfirmRemoval(false); }}
               />
             </label>
             <div className="flex flex-wrap gap-2">
               <button
-                className="ui-heading min-h-10 rounded-[4px] bg-black px-4 py-2 text-[0.6rem] uppercase tracking-[0.14em] text-[var(--color-bone)] hover:bg-[var(--color-poster)] disabled:cursor-not-allowed disabled:opacity-45"
+                className={OPERATOR_BUTTON_CLASS}
                 disabled={pending}
                 type="submit"
               >
-                {pending ? "Saving" : connected ? "Update" : "Connect"}
+                {pending ? "Saving…" : kind === "chat" ? connected ? "Save chat link" : "Set chat link" : "Save meeting link"}
               </button>
               {connected ? (
                 <button
                   className="min-h-10 rounded-[4px] px-3 py-2 text-xs text-black/52 underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)] disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={pending}
-                  onClick={() => request("DELETE")}
+                  onClick={() => { if (!pending) setConfirmRemoval(true); }}
                   type="button"
                 >
-                  Disconnect
+                  Remove link
                 </button>
               ) : null}
             </div>
           </form>
-        </LinkContainer>
+          {confirmRemoval ? <div className="mt-3 rounded-[4px] bg-[var(--color-bone)]/70 p-3" role="group" aria-label={`Confirm ${linkName} removal`}>
+            <p className="text-sm leading-relaxed">Remove this {linkName} from Ruined? {kind === "chat" ? "The Google Chat space and its members stay unchanged. Manage membership in Google Chat." : "The Google meeting stays unchanged. This does not cancel it or send cancellation notices."}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => request("DELETE")} type="button">Confirm remove link</button>
+              <button className="min-h-11 px-3 text-sm underline underline-offset-4" disabled={pending} onClick={() => setConfirmRemoval(false)} type="button">Keep link</button>
+            </div>
+          </div> : null}
+        </div>
       ) : null}
 
       <p

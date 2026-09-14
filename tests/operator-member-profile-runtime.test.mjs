@@ -23,6 +23,7 @@ async function loadRepository(database) {
     if (name === "server-only") return {};
     if (name === "node:crypto") return { randomUUID: () => ids.member };
     if (name === "@/lib/platform/repository") return { PlatformAccessDeniedError };
+    if (name === "@/lib/platform/calendar-audience-invalidation") return { markCalendarAudiencesPendingForMember: async () => {} };
     if (name === "@/lib/stripe/database") return { getBillingDatabase: () => database };
     if (name === "@/lib/stripe/membership-state") {
       return {

@@ -83,100 +83,257 @@ const BUTTON_CLASS = OPERATOR_BUTTON_CLASS;
 const SECONDARY_BUTTON_CLASS =
   "min-h-12 rounded-[4px] border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
 
-export function OpsInvitationActions({ preview = false }: { preview?: boolean } = {}) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const [pending, setPending] = useState(false);
+export function OpsInvitationActions({ preview = false, onSaved }: { preview?: boolean; onSaved?: () => void } = {}) {
+  const sampleEmail = "sample.member@example.com";
+  const signInUrl = "https://members.theruinedproject.com/access";
+  const [email, setEmail] = useState(preview ? sampleEmail : "");
+  const emailRef = useRef(email);
+  const pendingRef = useRef(false);
+  const requestVersion = useRef(0);
+  const mounted = useRef(true);
+  const revokeEmailRef = useRef<string | null>(null);
+  const copyVersion = useRef(0);
+  const copyingRef = useRef(false);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const linkRef = useRef<HTMLInputElement>(null);
+  const allowanceRef = useRef<{ email: string; expiresAt: string; sample: boolean } | null>(null);
+  const [pending, setPending] = useState<"allow" | "revoke" | null>(null);
   const [notice, setNotice] = useState<ActionNotice>(null);
-  const [allowedEmail, setAllowedEmail] = useState<string | null>(null);
+  const [allowance, setAllowance] = useState<{ email: string; expiresAt: string; sample: boolean } | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [allowanceUncertain, setAllowanceUncertain] = useState(false);
+  const [revokeEmail, setRevokeEmail] = useState<string | null>(null);
+  const [copying, setCopying] = useState<"message" | "link" | null>(null);
+  const [copyNotice, setCopyNotice] = useState<ActionNotice>(null);
+
+  useEffect(() => {
+    const requests = requestVersion;
+    const copies = copyVersion;
+    mounted.current = true;
+    return () => { mounted.current = false; requests.current++; copies.current++; };
+  }, []);
+
+  useEffect(() => {
+    if (!allowance) return;
+    const timer = setTimeout(() => setExpired(Date.parse(allowance.expiresAt) <= Date.now()), Math.min(2_147_483_647, Math.max(0, Date.parse(allowance.expiresAt) - Date.now()) + 10));
+    return () => clearTimeout(timer);
+  }, [allowance]);
+
+  const normalizeEmail = (value: string) => value.trim().toLowerCase();
+  const validEmail = (value: string) => value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const formatExpiration = (value: string) => new Intl.DateTimeFormat("en-US", {
+    day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  }).format(new Date(value));
+  const canShare = Boolean(allowance && !allowanceUncertain && !expired && Date.parse(allowance.expiresAt) > Date.now());
+  const message = allowance ? `${allowance.sample ? "PREVIEW — SAMPLE ONLY\n\n" : ""}You're invited to join Ruined.\n\nSign in at ${signInUrl} using ${allowance.email} before ${formatExpiration(allowance.expiresAt)}. Request your own email code, then complete your profile, membership agreement, and payment instructions. We'll then place you in a Circle.\n\nQuestions? Reach us at connect@theruinedproject.com.` : "";
+
+  function changeEmail(value: string) {
+    emailRef.current = value;
+    requestVersion.current++;
+    copyVersion.current++;
+    revokeEmailRef.current = null;
+    allowanceRef.current = null;
+    pendingRef.current = false;
+    setPending(null);
+    setEmail(value);
+    setAllowance(null);
+    setRevokeEmail(null);
+    setNotice(null);
+    setCopyNotice(null);
+    setExpired(false);
+    setAllowanceUncertain(false);
+  }
+
+  function rememberAllowance(value: { email: string; expiresAt: string; sample: boolean }) {
+    copyVersion.current++;
+    allowanceRef.current = value;
+    setAllowance(value);
+    setExpired(false);
+    setAllowanceUncertain(false);
+    setCopyNotice(null);
+    setRevokeEmail(null);
+    revokeEmailRef.current = null;
+  }
 
   async function submitInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current || !mounted.current) return;
     if (preview) {
-      setNotice({ kind: "error", text: "Preview — email allowances are not changed and no invitation is sent." });
+      emailRef.current = sampleEmail;
+      setEmail(sampleEmail);
+      rememberAllowance({ email: sampleEmail, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), sample: true });
+      setNotice({ kind: "success", text: "Sample email allowed. No data changed and no email was sent." });
       return;
     }
-    setPending(true);
-    setNotice(null);
-    setAllowedEmail(null);
-
     const form = new FormData(event.currentTarget);
-    const email = String(form.get("email") ?? "");
-    const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    const intent = submitter instanceof HTMLButtonElement ? submitter.value : "record";
-
+    const email = normalizeEmail(String(form.get("email") ?? ""));
+    if (!validEmail(email)) { setNotice({ kind: "error", text: "Enter the member's full email address." }); return; }
+    emailRef.current = email;
+    setEmail(email);
+    pendingRef.current = true;
+    const version = ++requestVersion.current;
+    copyVersion.current++;
+    allowanceRef.current = null;
+    revokeEmailRef.current = null;
+    setRevokeEmail(null);
+    if (allowance) setAllowanceUncertain(true);
+    setPending("allow");
+    setNotice(null);
+    setCopyNotice(null);
     try {
-      if (intent === "revoke") {
-        const result = await postJson<{
-          revocation: { email: string; revoked: number };
-        }>("/api/ops/invitations", { email }, "DELETE");
-        setNotice({
-          kind: "success",
-          text: `${result.revocation.revoked} live invitation${result.revocation.revoked === 1 ? "" : "s"} revoked for ${result.revocation.email}.`,
-        });
-        formRef.current?.reset();
-        return;
-      }
-
       const result = await postJson<{
         invitation: { email: string; expiresAt: string; reissued: boolean };
       }>("/api/ops/invitations", { email });
-      const expiration = new Intl.DateTimeFormat("en-US", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      }).format(new Date(result.invitation.expiresAt));
-      setNotice({
-        kind: "success",
-          text: `${result.invitation.reissued ? "Access renewed" : "Access allowed"} for ${result.invitation.email} through ${expiration}. No email was sent.`,
-      });
-      setAllowedEmail(result.invitation.email);
-      formRef.current?.reset();
+      if (!mounted.current || requestVersion.current !== version) return;
+      const saved = result.invitation;
+      if (!saved || saved.email !== email || typeof saved.expiresAt !== "string" || typeof saved.reissued !== "boolean"
+        || !Number.isFinite(Date.parse(saved.expiresAt)) || Date.parse(saved.expiresAt) <= Date.now()) {
+        throw new Error("The allowance could not be confirmed. Keep this email and retry before sharing sign-in instructions.");
+      }
+      rememberAllowance({ email: saved.email, expiresAt: saved.expiresAt, sample: false });
+      setNotice({ kind: "success", text: `${saved.reissued ? "Allowance renewed" : "Email allowed"} for ${saved.email}. No email was sent.` });
+      onSaved?.();
     } catch (error) {
-      setNotice({
-        kind: "error",
-        text: error instanceof Error ? error.message : "The invitation could not be recorded.",
-      });
+      if (mounted.current && requestVersion.current === version) setNotice({ kind: "error", text: error instanceof Error ? error.message : "The email allowance could not be saved." });
     } finally {
-      setPending(false);
+      if (mounted.current && requestVersion.current === version) { pendingRef.current = false; setPending(null); }
+    }
+  }
+
+  async function copyInstructions(kind: "message" | "link") {
+    if (copyingRef.current || pendingRef.current || !mounted.current || allowanceRef.current !== allowance) return;
+    if (!allowance || allowanceUncertain || Date.parse(allowance.expiresAt) <= Date.now()) {
+      if (allowance && Date.parse(allowance.expiresAt) <= Date.now()) setExpired(true);
+      setCopyNotice({ kind: "error", text: "Allow this email again before sharing sign-in instructions." });
+      return;
+    }
+    copyingRef.current = true;
+    const version = ++copyVersion.current;
+    setCopying(kind);
+    setCopyNotice(null);
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(kind === "message" ? message : signInUrl);
+      if (mounted.current && copyVersion.current === version && Date.parse(allowance.expiresAt) > Date.now()) {
+        setCopyNotice({ kind: "success", text: `${kind === "message" ? "Message" : "Sign-in link"} copied. Paste it into your own email or chat to ${allowance.email}. Nothing was sent automatically.` });
+      }
+    } catch {
+      if (mounted.current && copyVersion.current === version) {
+        setCopyNotice({ kind: "error", text: `Copying is unavailable here. Select the ${kind === "message" ? "message" : "link"} below and copy it manually.` });
+        const field = kind === "message" ? messageRef.current : linkRef.current;
+        field?.focus();
+        field?.select();
+      }
+    } finally {
+      copyingRef.current = false;
+      if (mounted.current) setCopying(null);
+    }
+  }
+
+  function reviewRevocation() {
+    if (pendingRef.current || !mounted.current) return;
+    const value = normalizeEmail(emailRef.current);
+    if (!validEmail(value)) { setNotice({ kind: "error", text: "Enter the email whose pending allowance you want to remove." }); return; }
+    setRevokeEmail(value);
+    revokeEmailRef.current = value;
+    setNotice(null);
+  }
+
+  async function confirmRevocation() {
+    if (pendingRef.current || !mounted.current || !revokeEmail || revokeEmailRef.current !== revokeEmail || revokeEmail !== normalizeEmail(emailRef.current)) return;
+    const email = revokeEmail;
+    if (preview) {
+      setAllowance(null);
+      allowanceRef.current = null;
+      setRevokeEmail(null);
+      revokeEmailRef.current = null;
+      setCopyNotice(null);
+      copyVersion.current++;
+      setNotice({ kind: "success", text: "Sample allowance removed. No data changed and no member account was deleted." });
+      return;
+    }
+    pendingRef.current = true;
+    const version = ++requestVersion.current;
+    setPending("revoke");
+    setAllowanceUncertain(true);
+    allowanceRef.current = null;
+    copyVersion.current++;
+    setNotice(null);
+    try {
+      const result = await postJson<{ revocation: { email: string; revoked: number } }>("/api/ops/invitations", { email }, "DELETE");
+      if (!mounted.current || requestVersion.current !== version) return;
+      if (!result.revocation || result.revocation.email !== email || !Number.isInteger(result.revocation.revoked) || result.revocation.revoked < 0) {
+        throw new Error("The removal could not be confirmed. Keep this email and check its allowance before sharing instructions.");
+      }
+      setAllowance(null);
+      setRevokeEmail(null);
+      revokeEmailRef.current = null;
+      setCopyNotice(null);
+      copyVersion.current++;
+      setNotice({ kind: "success", text: result.revocation.revoked === 0
+        ? `No pending allowance was found for ${email}. Existing member accounts are unchanged.`
+        : `Pending allowance removed for ${email}. No member account was deleted.` });
+      onSaved?.();
+    } catch (error) {
+      if (mounted.current && requestVersion.current === version) setNotice({ kind: "error", text: error instanceof Error ? error.message : "The pending allowance could not be removed." });
+    } finally {
+      if (mounted.current && requestVersion.current === version) { pendingRef.current = false; setPending(null); }
     }
   }
 
   return (
-    <section aria-labelledby="invite-member-heading">
-      <h2 className="sr-only" id="invite-member-heading">Allow a member to join</h2>
-      <form className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end" onSubmit={submitInvitation} ref={formRef}>
-          <p className="text-sm leading-relaxed text-black/52 sm:col-span-3">
-            Allow the email, then give the person the sign-in address below. This does not send an email, create their sign-in account, or grant operator access.
-          </p>
-          {preview ? <p className="text-sm text-black/60 sm:col-span-3">Preview — email allowances are not changed and no invitation is sent.</p> : null}
-          <label className={`${OPERATOR_LABEL_CLASS} sm:col-span-3`} htmlFor="ops-invitation-email">
-            <span className={OPERATOR_LABEL_TEXT_CLASS}>Email</span>
-            <input
-              autoComplete="email"
-              className={INPUT_CLASS}
-              disabled={pending}
-              id="ops-invitation-email"
-              maxLength={254}
-              name="email"
-              placeholder="member@email.com"
-              required
-              type="email"
-            />
-          </label>
-          <button className={BUTTON_CLASS} disabled={preview || pending} name="intent" type="submit" value="record">
-            {pending ? "Saving" : "Allow email"}
-          </button>
-          <button aria-label="Revoke live invite" className={SECONDARY_BUTTON_CLASS} disabled={preview || pending} name="intent" type="submit" value="revoke">
-            Remove allowance
-          </button>
-          <div className="sm:col-span-3"><Notice notice={notice} /></div>
-      </form>
-      <div className="mt-4 text-sm leading-relaxed text-black/60">
-        <p>{allowedEmail ? `Next: give ${allowedEmail} this sign-in address. They request their own code and complete joining.` : "Member sign-in address to share after allowing their email:"}</p>
-        <a className="mt-1 inline-flex min-h-11 items-center underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a>
-        <p className="text-xs">Removing an allowance revokes a pending invitation, not an existing member account.</p>
+    <div aria-label="Add member steps">
+      {preview ? <p className="mb-4 text-sm text-black/60">Preview — sample only. Email allowances are not changed and no email is sent.</p> : null}
+      <ol className="grid list-none gap-6 p-0">
+        <li>
+          <h3 className="ui-heading mb-2 text-lg font-semibold" id="member-allow-step">1. Allow email to join</h3>
+          <p className="mb-4 text-sm leading-relaxed text-black/60">This allows sign-in for their email. They can open the shared members link and request their own code—no invitation link needed. This step does not send a message or grant operator access.</p>
+          <form aria-labelledby="member-allow-step" className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submitInvitation}>
+            <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-invitation-email">
+              <span className={OPERATOR_LABEL_TEXT_CLASS}>Member email</span>
+              <input autoComplete="email" className={INPUT_CLASS} disabled={Boolean(pending)} id="ops-invitation-email" maxLength={254}
+                name="email" onChange={(event) => changeEmail(event.currentTarget.value)} placeholder="member@email.com" readOnly={preview} required type="email" value={email} />
+            </label>
+            <button className={BUTTON_CLASS} disabled={Boolean(pending)} type="submit">{pending === "allow" ? "Allowing email…" : "Add member"}</button>
+          </form>
+          <Notice notice={notice} />
+        </li>
+        <li aria-labelledby="member-share-step">
+          <h3 className="ui-heading mb-2 text-lg font-semibold" id="member-share-step">2. Share sign-in instructions</h3>
+          {allowance ? (
+            <div className="space-y-3 text-sm leading-relaxed">
+              <p className="break-words"><strong>{allowance.email}</strong><br />{allowanceUncertain ? "Last confirmed expiry:" : `${allowance.sample ? "Sample allowance" : "Joining allowance"} ${canShare ? "expires" : "expired"}`} <time dateTime={allowance.expiresAt}>{formatExpiration(allowance.expiresAt)}</time>.</p>
+              {allowanceUncertain ? <p role="status" className="text-[var(--color-poster)]">Check this allowance before sharing. Use Add member again to confirm it.</p>
+                : canShare ? <p className="text-black/65">Your next action: send them the message below. They request their own code and complete their profile, agreement, and payment instructions. Then you place them in a Circle.</p>
+                : <p role="status" className="text-[var(--color-poster)]">Allow this email again before sharing. An expired allowance cannot start a new member account.</p>}
+              <div className="flex flex-wrap gap-3">
+                <button className={BUTTON_CLASS} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("message")} type="button">{copying === "message" ? "Copying…" : "Copy message"}</button>
+                <button className={`${BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("link")} type="button">{copying === "link" ? "Copying…" : "Copy link"}</button>
+              </div>
+              <Notice notice={copyNotice} />
+              {canShare ? <><label className="block" htmlFor="member-share-message"><span className="font-semibold">Message to share</span>
+                <textarea className={`${INPUT_CLASS} min-h-40 !bg-[var(--color-bone)] text-sm`} id="member-share-message" readOnly ref={messageRef} rows={6} value={message} />
+              </label>
+              <label className="block" htmlFor="member-share-link"><span className="font-semibold">Sign-in link</span>
+                <input className={`${INPUT_CLASS} !bg-[var(--color-bone)] text-sm`} id="member-share-link" readOnly ref={linkRef} type="url" value={signInUrl} />
+              </label>
+              <p className="text-xs text-black/60">You can select either field and copy it manually. Copying does not send anything.</p></> : null}
+            </div>
+          ) : <p className="text-sm text-black/55">Allow their email first. Their message and sign-in link will appear here.</p>}
+        </li>
+      </ol>
+      <div className="mt-8">
+        <button aria-expanded={Boolean(revokeEmail)} className="min-h-11 text-sm text-black/60 underline underline-offset-4 disabled:opacity-40" disabled={Boolean(pending)} onClick={reviewRevocation} type="button">Remove a pending allowance</button>
+        {revokeEmail ? <section aria-label="Confirm pending allowance removal" className="mt-3 space-y-3 rounded-[4px] bg-black/5 p-4 text-sm">
+          <p className="break-words">Remove pending joining access for <strong>{revokeEmail}</strong>?</p>
+          <p className="text-black/65">This does not delete a member account, end a membership, or change operator access.</p>
+          <div className="flex flex-wrap gap-3">
+            <button className={BUTTON_CLASS} disabled={Boolean(pending)} onClick={() => void confirmRevocation()} type="button">{pending === "revoke" ? "Removing…" : "Confirm removal"}</button>
+            <button className={`${BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={Boolean(pending)} onClick={() => { revokeEmailRef.current = null; setRevokeEmail(null); }} type="button">Keep allowance</button>
+          </div>
+        </section> : null}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -184,7 +341,9 @@ export function getCirclePlacementIssue(member: OperatorMemberSummary): string |
   if (member.circleName) return `Already assigned to ${member.circleName}. Open their Circle and choose Move to switch Circles.`;
   const missing: string[] = [];
   if (member.accountState !== "active") missing.push(`an active account (currently ${member.accountState})`);
-  if (member.billingState !== "active") missing.push(`active billing (currently ${member.billingState.replaceAll("_", " ")})`);
+  if (member.membershipFunding !== "operator" && member.billingState !== "active") missing.push(`active billing (currently ${member.billingState.replaceAll("_", " ")})`);
+  if (member.administrativeOnboardingState && member.administrativeOnboardingState !== "completed") missing.push("completed profile and agreement");
+  if (member.standingState && member.standingState !== "active" && !(member.standingState === "cancellation_requested" && member.cancellationEffectiveAt && new Date(member.cancellationEffectiveAt).getTime() > Date.now())) missing.push("active membership standing");
   if (member.programState !== "onboarding" && member.programState !== "active") {
     missing.push(`an onboarding or active program (currently ${member.programState})`);
   }

@@ -479,7 +479,7 @@ async function sendAnnouncementNotifications(
           on platform_user.person_id = member_record.person_id
           and platform_user.status = 'active'
         where lifecycle.account_state = 'active'
-          and lifecycle.billing_state = 'active'
+          and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member_record.id))
           and lifecycle.administrative_onboarding_state = 'completed'
           and lifecycle.standing_state in ('active', 'cancellation_requested')
           and (

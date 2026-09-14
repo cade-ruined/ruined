@@ -146,7 +146,7 @@ export default function OperatorExperienceCalendar({
         </p>
       ) : experienceState === "draft" ? (
         <p className="mt-4 rounded-[4px] bg-white/55 px-4 py-3 text-sm text-black/62">
-          Publishing creates the calendar event, adds a private Google Meet, and sends it to this audience.
+          Publish this draft to queue a Google Calendar invitation for this audience. When processed, Google creates a Meet link. Check the status here; publishing alone does not confirm delivery.
         </p>
       ) : null}
 

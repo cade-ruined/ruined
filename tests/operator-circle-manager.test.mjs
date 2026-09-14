@@ -86,6 +86,7 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
   let props = { ...defaults, ...overrides };
   let refreshes = 0;
   const calls = [];
+  const navigations = [];
   const mockedReact = { ...React,
     useRef(initial) { const index = cursor++; return hooks[index] ??= { current: initial }; },
     useState(initial) {
@@ -107,7 +108,7 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
   };
   const Component = load("src/components/platform/OperatorCirclesManager.tsx", {
     ...dependencies, react: mockedReact,
-    "next/navigation": { useRouter: () => ({ refresh() { refreshes++; } }) },
+    "next/navigation": { useRouter: () => ({ refresh() { refreshes++; }, push(href, options) { navigations.push({ href, options }); } }) },
   }, async (url, options) => {
     calls.push({ url, method: options.method, body: JSON.parse(options.body) });
     return request(url, options);
@@ -135,7 +136,7 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
     return result;
   }
   return {
-    draw, button, click, addForm, calls, refreshes: () => refreshes,
+    draw, button, click, addForm, calls, navigations, refreshes: () => refreshes,
     update(changes) { props = { ...props, ...changes }; return draw(); },
     open(circle) { return click(`Manage members — ${circle.name}`); },
     select(memberId, circle = firstCircle) { assert.equal(addForm(circle).props["data-member-id"], memberId, "the visible result's form is bound to its own member, without another selector"); },
@@ -184,10 +185,78 @@ test("opening and switching Circles only changes the viewed roster and clears ol
   assert.deepEqual(fixture.calls, []);
 });
 
+test("Circle workspace renders server-loaded resources only for their matching selected Circle", () => {
+  const children = React.createElement("div", { "data-resources-for": firstCircle.id }, "First Circle resources");
+  const fixture = harness({ initialCircleId: firstCircle.id, children, memberQuery: "A & B", initialMemberId: candidate.memberId });
+  const initial = fixture.draw();
+  assert.equal(nodes(initial).filter((node) => node.props?.["data-resources-for"]).length, 1);
+  const first = nodes(initial).find((node) => node.props?.id === `roster-${firstCircle.id}`);
+  assert.match(text(first), /First Circle resources/);
+  fixture.open(secondCircle);
+  const changed = fixture.draw();
+  assert.equal(nodes(changed).some((node) => node.props?.["data-resources-for"]), false, "stale first-Circle controls never appear in the new workspace");
+  const second = nodes(changed).find((node) => node.props?.id === `roster-${secondCircle.id}`);
+  assert.ok(nodes(second).some((node) => node.props?.href === `/ops/circles?circleId=${secondCircle.id}#circle-resources`));
+  const target = new URL(fixture.navigations.at(-1).href, "https://example.test");
+  assert.equal(target.searchParams.get("circleId"), secondCircle.id);
+  assert.equal(target.searchParams.get("memberQuery"), "A & B");
+  assert.equal(target.searchParams.get("memberId"), candidate.memberId);
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(fixture.refreshes(), 0);
+});
+
+test("every Circle card has an explicit Chat & meetings destination keyed by ID, even with duplicate names", () => {
+  const page = render({ initialCircles: [firstCircle, { ...secondCircle, name: firstCircle.name }] });
+  for (const circle of [firstCircle, secondCircle]) {
+    const card = byId(page, `circle-${circle.id}`);
+    const action = elements(card).find((node) => node.tagName === "a" && visibleText(node) === "Chat & meetings");
+    assert.ok(action);
+    assert.equal(attr(action, "href"), `/ops/circles?circleId=${circle.id}#circle-communications`);
+    assert.match(attr(action, "aria-label"), /^Chat & meetings — /);
+    for (let node = action; node && node !== card; node = node.parentNode) assert.equal(attr(node, "hidden"), undefined);
+  }
+});
+
+test("selected communications appear before roster content and never carry into a different Circle workspace", () => {
+  const communications = React.createElement("div", { "data-communications-for": firstCircle.id }, "Selected Circle communication controls");
+  const fixture = harness({ initialCircleId: firstCircle.id, communications });
+  const selected = nodes(fixture.draw()).find((node) => node.props?.id === `roster-${firstCircle.id}`);
+  const descendants = nodes(selected);
+  const panelIndex = descendants.findIndex((node) => node.props?.id === "circle-communications");
+  const firstRosterIndex = descendants.findIndex((node) => node.props?.href === `/ops/members/${firstAssignment.memberId}`);
+  assert.ok(panelIndex >= 0 && firstRosterIndex > panelIndex);
+  assert.equal(descendants.filter((node) => node.props?.["data-communications-for"]).length, 1);
+  fixture.open(secondCircle);
+  assert.equal(nodes(fixture.draw()).some((node) => node.props?.["data-communications-for"]), false);
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("Circle search and status filters are view-only and keep an already open workspace accessible", () => {
+  const archived = { ...secondCircle, id: "archived", name: "Past Circle", status: "archived", blockName: "Past Block", shaper: null };
+  const fixture = harness({ initialCircles: [firstCircle, secondCircle, archived] });
+  const cards = () => nodes(fixture.draw()).filter((node) => node.type === "article").map((node) => node.props.id);
+  const query = () => nodes(fixture.draw()).find((node) => node.type === "input" && node.props.placeholder === "Circle, Shaper, or Block");
+  const filter = () => nodes(fixture.draw()).find((node) => node.type === "select" && node.props.value === "current");
+  assert.deepEqual(cards(), [`circle-${firstCircle.id}`, `circle-${secondCircle.id}`]);
+  query().props.onChange({ target: { value: "shaper one" } });
+  assert.deepEqual(cards(), [`circle-${firstCircle.id}`]);
+  fixture.open(firstCircle);
+  filter().props.onChange({ target: { value: "archived" } });
+  query().props.onChange({ target: { value: "past block" } });
+  assert.deepEqual(cards(), [`circle-${firstCircle.id}`, "circle-archived"]);
+  fixture.open(firstCircle);
+  assert.deepEqual(cards(), ["circle-archived"]);
+  query().props.onChange({ target: { value: "no matches" } });
+  assert.deepEqual(cards(), []);
+  assert.match(text(fixture.draw()), /No Circles match/);
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(fixture.refreshes(), 0);
+});
+
 test("unknown URL targets never create candidate identities or trigger changes", () => {
   const fixture = harness({ initialCircleId: "not-authorized", initialMemberId: "<script>wrong</script>" });
   const tree = fixture.draw();
-  assert.equal(nodes(tree).filter((node) => node.type === "select").every((node) => node.props.value === ""), true);
+  assert.equal(nodes(tree).filter((node) => node.type === "select" && node.props.name).every((node) => node.props.value === ""), true);
   assert.equal(nodes(tree).filter((node) => node.props?.id?.startsWith("roster-")).every((node) => node.props.hidden), true);
   assert.doesNotMatch(text(tree), /<script>|wrong/);
   assert.match(text(tree), /selected member is unavailable/);
@@ -605,7 +674,7 @@ test("occupied Circles cannot be deleted or archived even if disabled controls a
 test("empty Circle deletion and archive require exact name confirmation and validate the returned outcome", async () => {
   const empty = { ...firstCircle, activeMembers: 0 };
   for (const [action, confirm, method, outcome] of [["Delete", "Permanently delete Circle", "DELETE", "deleted"], ["Archive", "Confirm archive", "PATCH", "archived"]]) {
-    const fixture = harness({ initialCircles: [empty], initialAssignments: [] }, async () => ok({ circle: { id: empty.id, name: empty.name, outcome } }));
+    const fixture = harness({ initialCircles: [empty], initialAssignments: [], initialCircleId: empty.id }, async () => ok({ circle: { id: empty.id, name: empty.name, outcome } }));
     fixture.click(`${action} ${empty.name}`);
     assert.deepEqual(fixture.calls, []);
     assert.equal(fixture.button(confirm).props.disabled, true);
@@ -680,7 +749,7 @@ test("preview transfer, delete and archive never call APIs or change the display
 test("retirement offers only valid lifecycle actions and opens confirmation beside the footer, not a hidden roster", () => {
   for (const status of ["forming", "active", "completed", "archived"]) {
     const circle = { ...firstCircle, activeMembers: 0, status };
-    const fixture = harness({ initialCircles: [circle], initialAssignments: [] });
+    const fixture = harness({ initialCircles: [circle], initialAssignments: [], initialCircleId: circle.id });
     const tree = fixture.draw();
     const buttons = nodes(tree).filter((node) => node.type === "button");
     assert.equal(buttons.some((node) => node.props["aria-label"] === `Delete ${circle.name}`), status === "forming");
@@ -692,7 +761,7 @@ test("retirement offers only valid lifecycle actions and opens confirmation besi
     fixture.click(`Archive ${circle.name}`);
     const updated = fixture.draw();
     const roster = nodes(updated).find((node) => node.props?.id === `roster-${circle.id}`);
-    assert.equal(roster.props.hidden, true, "retirement does not force open member management");
+    assert.equal(roster.props.hidden, false, "retirement stays within the selected Circle workspace");
     assert.equal(nodes(roster).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"), false);
     assert.ok(nodes(updated).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"));
     assert.deepEqual(fixture.calls, []);

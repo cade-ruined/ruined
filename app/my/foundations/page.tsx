@@ -2,36 +2,34 @@ import { redirect } from "next/navigation";
 
 import MemberFoundationsHome from "@/components/foundations/MemberFoundationsHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/foundations/model";
+import { PREVIEW_MEMBER_IDENTITY } from "@/lib/membership/preview";
+import { memberPreviewFoundations } from "@/lib/membership/preview-scenarios";
+import MemberAccessNotice from "@/components/membership/MemberAccessNotice";
 import { getMemberFoundationsState } from "@/lib/foundations/repository";
-import { getMemberFoundationRequirements } from "@/lib/membership/repository";
-import { hasActiveMemberAccess } from "@/lib/platform/model";
-import { getMemberPageContext } from "@/lib/platform/page-data";
+import { getMemberFoundationRequirements, getMemberIdentity } from "@/lib/membership/repository";
+import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
+import { getMembershipPageContext } from "@/lib/membership/page-context";
 
 export const dynamic = "force-dynamic";
 
 export default async function MyFoundationsPage() {
-  const context = await getMemberPageContext();
+  const context = await getMembershipPageContext(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Foundations");
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
-  if (
-    context.state !== "preview" &&
-    context.member &&
-    !hasActiveMemberAccess(context.member)
-  ) {
-    redirect("/my/account");
-  }
+  if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
+  const access = deriveMemberAccessPolicy(context.data);
+  if (!memberCan(access, "foundations.write")) return <MemberAccessNotice access={access} />;
 
   if (context.state === "preview") {
     return (
       <MemberFoundationsHome
-        initialState={PREVIEW_MEMBER_FOUNDATIONS_STATE}
+        initialState={memberPreviewFoundations(context.data)}
         writable={false}
       />
     );
   }
 
-  if (!context.member || !context.viewer) {
+  if (!context.data || !context.viewer) {
     return <PlatformUnavailable accessHref="/my/access" />;
   }
 

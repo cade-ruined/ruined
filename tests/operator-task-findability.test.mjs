@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
 const noNetwork = () => { throw new Error("Real requests are forbidden in operator UI tests"); };
-function loader({ react = React, request = noNetwork, extra = {}, router = {} } = {}) {
+function loader({ react = React, request = noNetwork, extra = {}, router = {}, realCommunicationFields = false } = {}) {
   const cache = new Map();
   function load(path) {
     if (cache.has(path)) return cache.get(path);
@@ -26,8 +26,9 @@ function loader({ react = React, request = noNetwork, extra = {}, router = {} } 
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/navigation") return { useRouter: () => ({ push() {}, refresh() {}, ...router }), redirect() { throw new Error("Unexpected redirect"); } };
       if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
+      if (name === "next/image") return { __esModule: true, default: ({ alt, src, width, height }) => React.createElement("img", { alt, src, width, height }) };
       if (name === "@/components/platform/OperatorPageFrame") return { __esModule: true, default: ({ children }) => React.createElement("main", null, children) };
-      if (name === "@/components/platform/OperatorGoogleCommunicationField") return { __esModule: true, default: () => React.createElement("div", null, "Google link") };
+      if (name === "@/components/platform/OperatorGoogleCommunicationField" && !realCommunicationFields) return { __esModule: true, default: () => React.createElement("div", null, "Google link") };
       if (/^@\/(components\/platform|lib\/(platform|datetime))\//.test(name)) {
         const local = `src/${name.slice(2)}`;
         const target = [".ts", ".tsx"].map((extension) => local + extension).find((candidate) => existsSync(new URL(candidate, root)));
@@ -121,18 +122,69 @@ test("Experience search and state filters change only the displayed authorized r
   assert.deepEqual(fixture.calls, []);
 });
 
-test("Experience record exposes details and roster tasks without removing optional Meet fallback", () => {
+test("Experience record exposes meeting setup, details and roster tasks without hiding routine controls", () => {
   const editable = { ...experience, canEdit: true, state: "draft" };
   const tree = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: editable, preview: true });
   anchorsResolve(tree);
   exposed(byId(tree, "edit-experience"));
   exposed(byId(tree, "experience-roster"));
-  assert.ok(elements(tree).some((node) => node.tagName === "summary" && text(node).includes("Manual Meet fallback")));
+  exposed(byId(tree, "meeting-setup"));
+  assert.ok(elements(tree).some((node) => node.tagName === "a" && attr(node, "href") === "#meeting-setup" && text(node) === "Set meeting link"));
+  assert.equal(elements(tree).some((node) => node.tagName === "summary" && text(node).includes("Manual Meet fallback")), false);
+  const aside = elements(tree).find((node) => node.tagName === "aside");
+  assert.match(attr(aside, "class"), /(?:^|\s)order-first(?:\s|$)/);
+  assert.match(attr(aside, "class"), /(?:^|\s)lg:order-last(?:\s|$)/);
   assert.ok(elements(tree).some((node) => node.tagName === "button" && /Publish/.test(text(node))));
   const restricted = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: { ...editable, canEdit: false, canManageRoster: false, canManageAttendance: false } });
   assert.equal(byId(restricted, "edit-experience"), undefined);
   assert.equal(byId(restricted, "experience-actions"), undefined);
   assert.equal(elements(restricted).some((node) => node.tagName === "button" && /Confirm place|Save|Cancel place/.test(text(node))), false);
+});
+
+test("meeting links stay visible and editable only when neither Calendar ownership nor operator permissions block them", () => {
+  const fullLoad = loader({ realCommunicationFields: true });
+  const Record = fullLoad("src/components/platform/OperatorExperienceRecord.tsx").default;
+  const base = { ...experience, circleId: "11111111-1111-4111-8111-111111111111", state: "draft", canEdit: true,
+    canManageCommunication: true, googleCommunicationsConfigured: true, meetingUrl: "https://meet.google.com/abc-defg-hij",
+    calendar: { ...experience.calendar, configured: true, status: "not_created", googleEventId: null, googleEventUrl: null, lastSyncedAt: null, bindingRequired: false },
+  };
+  const draw = (record) => parseFragment(renderToStaticMarkup(React.createElement(Record, { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: record, preview: true })));
+  const manual = draw(base);
+  const setup = byId(manual, "meeting-setup");
+  exposed(setup);
+  anchorsResolve(manual);
+  assert.ok(elements(setup).some((node) => node.tagName === "form"));
+  assert.ok(elements(setup).some((node) => node.tagName === "input" && attr(node, "value") === base.meetingUrl));
+  assert.ok(elements(manual).some((node) => node.tagName === "a" && attr(node, "href") === `/ops/circles?circleId=${base.circleId}#circle-communications`));
+  for (const calendar of [
+    { ...base.calendar, status: "synced", googleEventId: "owned-calendar-event" },
+    { ...base.calendar, status: "failed", googleEventId: "owned-calendar-event" },
+    { ...base.calendar, status: "pending_create" },
+    { ...base.calendar, status: "pending_update" },
+  ]) {
+    const managed = draw({ ...base, calendar });
+    exposed(byId(managed, "meeting-setup"));
+    assert.match(text(byId(managed, "meeting-setup")), /Google Calendar manages this meeting link/);
+    assert.equal(elements(byId(managed, "meeting-setup")).some((node) => node.tagName === "form"), false);
+    assert.ok(elements(byId(managed, "meeting-setup")).some((node) => node.tagName === "a" && attr(node, "href") === base.meetingUrl));
+  }
+  const readOnly = draw({ ...base, canManageCommunication: false });
+  exposed(byId(readOnly, "meeting-setup"));
+  assert.equal(elements(byId(readOnly, "meeting-setup")).some((node) => node.tagName === "form"), false);
+});
+
+test("draft publishing and Calendar status describe queueing honestly and preview publish cannot send", async () => {
+  const draft = { ...experience, state: "draft", canEdit: true, calendar: { ...experience.calendar, configured: true, status: "not_created", googleEventId: null, googleEventUrl: null, lastSyncedAt: null, bindingRequired: false } };
+  const tree = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: draft, preview: true });
+  assert.ok(elements(tree).some((node) => node.tagName === "button" && text(node) === "Publish + queue invitations"));
+  assert.match(text(byId(tree, "experience-calendar")), /Publish this draft to queue.*publishing alone does not confirm delivery/);
+  assert.equal(elements(byId(tree, "experience-calendar")).some((node) => node.tagName === "button" && /Create invite|Sync invitations/.test(text(node))), false);
+  assert.doesNotMatch(text(tree), /Publish \+ send invite|Calendar invitations sent\./);
+  const fixture = harness("src/components/platform/OperatorExperienceRecord.tsx", "default", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: draft, preview: true });
+  await nodes(fixture.draw()).find((node) => node.type === "button" && reactText(node) === "Publish + queue invitations").props.onClick();
+  assert.match(reactText(fixture.draw()), /Preview only/);
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(fixture.refreshes(), 0);
 });
 
 test("Academy keeps lessons first with exposed creation and permission-gated tasks", () => {
@@ -269,7 +321,10 @@ test("preview routes pass guards through every exposed action surface without lo
   const reads = [];
   const failRead = (...args) => { reads.push(args); throw new Error("Preview must not read live data"); };
   const pageLoader = loader({ extra: {
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => ({ state: "preview", role: "ops_admin", viewer: null, dashboard: { members: [] } }) },
+    "@/lib/platform/page-data": {
+      getOperatorPageContext: async () => ({ state: "preview", role: "ops_admin", viewer: null, dashboard: { members: [] } }),
+      getOperatorAccessContext: async () => ({ state: "preview", role: "ops_admin", viewer: null }),
+    },
     "@/lib/platform/ops-academy-repository": { getOpsAcademyEditor: failRead, getOpsAcademyReferenceOptions: failRead, getOpsAcademySnapshot: failRead },
     "@/lib/platform/ops-artifact-repository": { getOpsArtifactControlData: failRead },
     "@/lib/platform/ops-operating-repository": { getOpsArtifactQueue: failRead, getOpsSystemHealth: failRead, getOpsWorkQueue: failRead },

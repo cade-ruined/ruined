@@ -410,7 +410,7 @@ async function requireCollection(
 ) {
   if (!collectionId) return null;
   const rows = await tx<Array<{ id: string; status: string }>>`
-    select id, status from learning_collections where id = ${collectionId}::uuid limit 1
+    select id, status from learning_collections where id = ${collectionId}::uuid limit 1 for share
   `;
   const collection = rows[0];
   if (!collection || collection.status === "retired") {
@@ -854,12 +854,6 @@ export async function changeOpsAcademyResourceState(
     }
 
     if (input.action === "retire") {
-      if (!resource.published_at) {
-        throw new OpsOperatingRepositoryError(
-          "conflict",
-          "Publish this lesson once before retiring it; drafts remain available for correction.",
-        );
-      }
       await tx`
         update learning_resources
         set
@@ -871,7 +865,7 @@ export async function changeOpsAcademyResourceState(
         where id = ${resourceId}::uuid
       `;
       await writeAcademyAudit(tx, {
-        action: "academy.resource_retired",
+        action: resource.published_at ? "academy.resource_retired" : "academy.resource_draft_discarded",
         actorAuthUserId,
         after: { status: "retired" },
         before: { status: resource.status },
@@ -1105,18 +1099,19 @@ export async function changeOpsAcademyCollectionState(
     }
 
     if (input.action !== "publish") {
-      if (!collection.published_at) {
+      if (input.action === "unpublish" && !collection.published_at) {
         throw new OpsOperatingRepositoryError("conflict", "Publish this collection before removing it from the Academy.");
       }
       const publishedRows = await tx<Array<{ id: string }>>`
         select id from learning_resources
-        where collection_id = ${collectionId}::uuid and status = 'published'
+        where collection_id = ${collectionId}::uuid
+          and (status = 'published' or (${input.action} = 'retire' and status <> 'retired'))
         limit 1
       `;
       if (publishedRows[0]) {
         throw new OpsOperatingRepositoryError(
           "conflict",
-          "Move or unpublish the collection's live lessons first.",
+          input.action === "retire" ? "Move or retire the collection's remaining lessons first." : "Move or unpublish the collection's live lessons first.",
         );
       }
     }

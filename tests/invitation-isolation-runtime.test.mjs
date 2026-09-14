@@ -131,11 +131,12 @@ async function fixture(t) {
   };
   const platform = await load("src/lib/platform/repository.ts", deps);
   const members = await load("src/lib/platform/ops-repository.ts", deps);
+  const pending = await load("src/lib/platform/ops-member-invitation-repository.ts", { ...deps, "@/lib/platform/ops-repository": members });
   const operators = await load("src/lib/platform/ops-access-repository.ts", { ...deps, "@/lib/platform/repository": platform });
   const allowMember = (overrides = {}) => members.createOrReissueMemberInvitation({ actorAuthUserId: admin, email, ...overrides });
   const allowGuide = () => operators.createOrReissueOperatorInvitation({ actorAuthUserId: admin, email, displayName: "Test Guide", role: "guide", circleIds: [circle] });
   const grants = async () => (await db.query("select role_slug from platform_role_grants where auth_user_id=$1 and revoked_at is null order by role_slug", [auth])).rows.map((row) => row.role_slug);
-  return { db, members, operators, platform, allowMember, allowGuide, grants };
+  return { db, members, pending, operators, platform, allowMember, allowGuide, grants };
 }
 
 test("member reissue and revoke preserve the pending operator invitation and immutable scope", async (t) => {
@@ -204,4 +205,25 @@ test("non-admin attempts cannot create or revoke invitations or mutate their aud
   await assert.rejects(f.allowMember({ actorAuthUserId: auth }), (error) => error.code === "forbidden");
   await assert.rejects(f.members.revokeLiveMemberInvitations({ actorAuthUserId: auth, email }), (error) => error.code === "forbidden");
   assert.deepEqual((await f.db.query("select * from passwordless_account_invites")).rows, before);
+});
+
+test("exact pending joining renewal expires the old allowance, audits, and rejects stale renew/remove after replacement or acceptance", async (t) => {
+  const f = await fixture(t);
+  const initial = await f.allowMember();
+  const renewed = await f.allowMember({ expectedInvitationId: initial.id });
+  assert.notEqual(initial.id, renewed.id);
+  const rows = (await f.db.query("select * from passwordless_account_invites order by id")).rows;
+  assert.ok(rows[0].revoked_at); assert.equal(rows[1].revoked_at, null);
+  assert.equal((rows[1].expires_at - rows[1].invited_at) / 86400000, 7);
+  const audit = (await f.db.query("select * from operator_audit_events where action='member_invitation.reissued'")).rows[0];
+  assert.deepEqual(audit.before_snapshot, { invitationId: initial.id });
+  assert.equal(audit.after_snapshot.invitationId, renewed.id);
+  await assert.rejects(f.allowMember({ expectedInvitationId: initial.id }), /has changed/);
+  await assert.rejects(f.pending.revokePendingMemberInvitation({ actorAuthUserId: admin, invitationId: initial.id, email }), /has changed/);
+  assert.deepEqual((await f.db.query("select * from passwordless_account_invites order by id")).rows, rows);
+  await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email });
+  const acceptedRows = (await f.db.query("select * from passwordless_account_invites order by id")).rows;
+  await assert.rejects(f.allowMember({ expectedInvitationId: renewed.id }), /has changed/);
+  await assert.rejects(f.pending.revokePendingMemberInvitation({ actorAuthUserId: admin, invitationId: renewed.id, email }), /has changed/);
+  assert.deepEqual((await f.db.query("select * from passwordless_account_invites order by id")).rows, acceptedRows);
 });

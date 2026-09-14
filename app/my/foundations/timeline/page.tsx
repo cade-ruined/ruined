@@ -8,7 +8,7 @@ import { PREVIEW_MEMBER_TIMELINE } from "@/lib/membership/preview";
 import { getMemberTimeline } from "@/lib/membership/repository";
 import { memberCan } from "@/lib/membership/access-policy";
 
-export const metadata: Metadata = { title: "Ruined Timeline | Foundations" };
+export const metadata: Metadata = { title: "My Timeline | Foundations" };
 export const dynamic = "force-dynamic";
 
 export default async function MyTimelinePage() {

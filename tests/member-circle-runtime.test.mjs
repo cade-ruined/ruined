@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -31,9 +32,10 @@ async function fixture() {
   // Read paths use the real SQL against a small isolated relational fixture.
   // The profile audit table below is taken verbatim from the shipped migration.
   await pg.exec(`
+    create schema private;
     create table people(id uuid primary key, status text default 'active');
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text);
-    create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz);
+    create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
     create table ruined_members(id uuid primary key, person_id uuid);
     create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'in_progress', program_state text default 'onboarding', standing_state text default 'active');
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, timezone text, location_label text, bio text, building_now text, updated_at timestamptz);
@@ -55,6 +57,7 @@ async function fixture() {
     create table learning_collections(id uuid, name text, slug text, summary text, status text, position integer);
     create table circle_resources(id uuid default gen_random_uuid(), circle_id uuid, learning_resource_version_id uuid, ended_at timestamptz, is_pinned boolean, position integer, created_at timestamptz default now());
   `);
+  await installOperatorFundingFunctions(pg);
   const community = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_03_community_experiences.sql", import.meta.url), "utf8");
   await pg.exec(community.match(/create table if not exists public\.member_directory_preference_events \([\s\S]*?\n\);/)[0]);
   await pg.query("insert into people(id) values($1),($2)", [ids.person, ids.shaperPerson]);
@@ -111,6 +114,7 @@ async function fixture() {
     "@/lib/membership/phone": {},
     "@/lib/membership/avatar-url": { safeMemberAvatarUrl: (value) => value },
     "@/lib/events/member-experiences": { mergeUpcomingPublicMemberExperiences: (items) => items, publicEventDetailHref: (slug) => `/community#${slug}` },
+    "@/lib/events/community-event-repository": { getPublicCommunityEvents: async () => [] },
     "@/lib/google/communications": { googleCommunicationLivemode: () => false, googleCommunicationUrlFromMetadata: (_kind, metadata) => metadata?.url ?? null },
     "@/lib/membership/artifact-products": {},
     "@/lib/platform/ops-calendar-repository": { markOpsExperienceCalendarPending: async () => false },

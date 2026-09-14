@@ -14,13 +14,17 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, { params }: { params: Promise<{ announcementId: string }> }) {
   const access = await requireOpsMutationRequest(request);
   if ("response" in access) return access.response;
-  await request.json().catch(() => null);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body.expectedVersion !== "number" || Object.keys(body).some((key) => key !== "expectedVersion")) {
+    return opsJson({ error: "Reload and review the latest announcement before publishing." }, 400);
+  }
   const { announcementId } = await params;
 
   try {
     const announcement = await publishOpsAnnouncement({
       actorAuthUserId: access.viewer.authUserId,
       announcementId,
+      expectedVersion: body.expectedVersion,
     });
     return opsJson({ announcement });
   } catch (error) {

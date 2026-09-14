@@ -27,9 +27,9 @@ export default function OperatorAcademy({
   preview?: boolean;
 }) {
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState("current");
   const resources = academy.resources.filter((resource) =>
-    (status === "all" || resource.status === status)
+    (status === "all" || (status === "current" ? resource.status !== "retired" : resource.status === status))
     && `${resource.title} ${resource.collectionName ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
   return (
@@ -59,7 +59,7 @@ export default function OperatorAcademy({
       <section aria-label="Academy lessons" className="mt-8 space-y-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
           <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Find a lesson</span><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Search title or collection" type="search" value={query} /></label>
-          <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Show</span><select className={OPERATOR_FIELD_CLASS} onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All lessons</option><option value="draft">Drafts</option><option value="published">Published</option><option value="unpublished">Unpublished</option><option value="retired">Retired</option></select></label>
+          <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Show</span><select className={OPERATOR_FIELD_CLASS} onChange={(event) => setStatus(event.target.value)} value={status}><option value="current">Current lessons</option><option value="all">All lessons</option><option value="draft">Drafts</option><option value="published">Published</option><option value="unpublished">Unpublished</option><option value="retired">Retired</option></select></label>
         </div>
         <p className="py-2 text-sm text-black/50" aria-live="polite">{resources.length} of {academy.resources.length} lessons</p>
         {resources.map((resource) => (
@@ -116,7 +116,7 @@ export default function OperatorAcademy({
       <section aria-labelledby="academy-collections" className="mt-8 scroll-mt-28">
         <h2 className="font-[var(--font-display)] text-4xl leading-none tracking-[-0.035em]" id="academy-collections">Collections</h2>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {academy.collections.map((collection) => (
+          {academy.collections.filter((collection) => status === "all" || status === "retired" || collection.status !== "retired").map((collection) => (
             <article className="rounded-[4px] bg-black/[0.03] p-5" key={collection.collectionId}>
               <div className="flex items-start justify-between gap-4">
                 <div>

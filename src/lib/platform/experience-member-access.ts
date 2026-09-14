@@ -20,6 +20,9 @@ export async function memberEligibleForExperience(
   memberId: string | null,
 ): Promise<boolean> {
   if (!memberId) return false;
+  const funding = await tx<Array<{ operator_funded: boolean }>>`
+    select private.ruined_lock_member_operator_funding(${memberId}::uuid) as operator_funded
+  `;
   const rows = await tx<Array<{
     account_state: MemberIdentity["accountState"];
     administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
@@ -54,6 +57,7 @@ export async function memberEligibleForExperience(
   const row = rows[0];
   if (!row) return false;
   const access = deriveMemberAccessPolicy({
+    membershipFunding: funding[0]?.operator_funded ? "operator" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
     authUserId: row.auth_user_id,

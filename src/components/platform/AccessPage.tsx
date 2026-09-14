@@ -26,7 +26,7 @@ export default function AccessPage({ enabled, returnTo }: { enabled: boolean; re
             Enter Ruined
           </h2>
           <p className="mt-5 max-w-sm text-sm leading-relaxed text-black/58">
-            Use the email connected to Ruined. After you enter the code, your account opens the right space automatically.
+            Added to Ruined? Enter the email we have for you and request a sign-in code. No invitation link or password needed.
           </p>
           <PasswordlessAccessForm enabled={enabled} returnTo={returnTo} />
           <p className="mt-6 text-sm leading-relaxed text-black/60">

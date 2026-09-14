@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { getMemberIdentity } from "@/lib/membership/repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   PlatformAccessDeniedError,
@@ -68,6 +69,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const fundingViewer = await getCurrentPlatformViewer();
+    if (fundingViewer && (await getMemberIdentity(fundingViewer.authUserId))?.membershipFunding === "operator") {
+      return NextResponse.json({ error: "Your operator membership is complimentary. Return to membership entry to activate it." }, { status: 409 });
+    }
     const configuration = getPlatformConfiguration();
     if (!configuration.stripeCheckoutReady) {
       return NextResponse.json(

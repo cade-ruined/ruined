@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import CircleMemberPortrait from "@/components/membership/CircleMemberPortrait";
 import type { MemberHomeSnapshot } from "@/lib/membership/model";
+import { memberCan } from "@/lib/membership/access-policy";
 
 const contributionWays = ["Shape", "Build", "Author", "Partner"] as const;
 
@@ -239,7 +240,7 @@ function historyFor(member: MemberHomeSnapshot) {
       date: member.foundations.requirements.timeline.completedAt,
       detail: `${count} timeline ${count === 1 ? "entry" : "entries"}`,
       id: "ruined-timeline",
-      title: "Ruined Timeline",
+      title: "My Timeline",
       verb: "Completed",
     });
   }
@@ -264,7 +265,7 @@ function nextActionLabel(kind: MemberHomeSnapshot["nextAction"]["kind"]) {
     case "onboarding": return "Finish membership entry";
     case "account":
     case "billing": return "Review membership";
-    case "timeline": return "Open the Timeline";
+    case "timeline": return "Open My Timeline";
     case "foundations": return "Continue Foundations";
     case "circle": return "Open Circle";
     case "artifact": return "Open Artifacts";
@@ -303,6 +304,8 @@ function NextActionsBento({
   const upcoming = member.upcomingExperiences[0] ?? null;
   const upcomingStamp = upcoming ? formatEventStamp(upcoming.startsAt, upcoming.timezone) : null;
   const foundationsIsNext = member.nextAction.kind === "foundations";
+  const foundationAccess = memberCan(member.access, "foundations.summary");
+  const circleAccess = memberCan(member.access, "circle.read");
 
   return (
     <section aria-labelledby="member-next-actions" className="mt-10 sm:mt-12" data-member-next-actions>
@@ -330,13 +333,13 @@ function NextActionsBento({
           href="/my/foundations"
         >
           <p className={darkMicroLabel}>Foundations</p>
-          <p className="ui-heading mt-2 text-[2.45rem] font-black leading-[0.82] tracking-[-0.055em] text-[var(--color-bone)] sm:text-5xl">{foundationPercent}%</p>
+          <p className="ui-heading mt-2 text-[2.45rem] font-black leading-[0.82] tracking-[-0.055em] text-[var(--color-bone)] sm:text-5xl">{foundationAccess ? `${foundationPercent}%` : "Your start"}</p>
           <p className={`mt-2 font-[var(--font-body)] text-[0.61rem] font-bold uppercase leading-tight tracking-[0.025em] ${circleGateOutstanding ? "text-[var(--color-highlight)]" : "text-white/52"}`}>
-            {circleGateOutstanding ? "Active Circle required" : foundationHeading}
+            {!foundationAccess ? "After membership activation" : circleGateOutstanding ? "Active Circle required" : foundationHeading}
           </p>
-          <div aria-label={foundationValueText} aria-valuemax={100} aria-valuemin={0} aria-valuenow={foundationPercent} aria-valuetext={foundationValueText} className="mt-auto h-1.5 overflow-hidden rounded-[2px] bg-white/16" role="progressbar">
+          {foundationAccess ? <div aria-label={foundationValueText} aria-valuemax={100} aria-valuemin={0} aria-valuenow={foundationPercent} aria-valuetext={foundationValueText} className="mt-auto h-1.5 overflow-hidden rounded-[2px] bg-white/16" role="progressbar">
             <span className={`block h-full rounded-[2px] ${foundationComplete ? "bg-[var(--color-verdigris)]" : "bg-[var(--color-poster)]"}`} style={{ width: `${foundationPercent}%` }} />
-          </div>
+          </div> : null}
         </Link>
 
         <Link
@@ -358,11 +361,11 @@ function NextActionsBento({
         <Link
           className="group col-span-2 grid min-h-[8.5rem] grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-[4px] bg-[var(--color-shop)] p-3.5 text-[var(--color-faded)] shadow-[7px_8px_0_rgba(0,0,0,0.5)] transition-[background-color,box-shadow,transform] hover:bg-[#a9c2d7] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_5px_0_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] motion-reduce:transition-none sm:min-h-[9rem] sm:gap-4 sm:p-5 lg:col-span-7"
           data-circle-action
-          href="/my/circle"
+          href={circleAccess ? "/my/circle" : "/my/account"}
         >
           <div className="min-w-0">
             <p className={microLabel}>Circle</p>
-            <h3 className="ui-heading mt-2 break-words text-[clamp(1.7rem,3.8vw,3rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[var(--color-faded)]">{member.circleName ?? "Circle forming"}</h3>
+            <h3 className="ui-heading mt-2 break-words text-[clamp(1.7rem,3.8vw,3rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[var(--color-faded)]">{circleAccess ? member.circleName ?? "Find your Circle" : "Your people"}</h3>
             {member.circleMembers.length > 0 ? (
               <ul aria-label="Circle members" className="mt-3 flex -space-x-2 overflow-hidden py-1">
                 {member.circleMembers.slice(0, 6).map((person) => <li key={person.id}><PersonAvatar person={person} size="small" /></li>)}
@@ -371,7 +374,7 @@ function NextActionsBento({
           </div>
           <div className="sm:text-right">
             <p className="[font-family:var(--font-cadehandy2)] text-[1.12rem] leading-none text-[var(--color-poster)]">People</p>
-            <p className="ui-heading mt-1.5 text-base font-black uppercase leading-none tracking-[-0.025em] text-black/68">{member.circleMembers.length} members</p>
+            <p className="ui-heading mt-1.5 text-base font-black uppercase leading-none tracking-[-0.025em] text-black/68">{!circleAccess ? "Membership required" : member.circleName ? `${member.circleMembers.length} members` : "Not assigned yet"}</p>
             {member.blockName ? <p className="mt-2 font-[var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.035em] text-black/46">{member.blockName}</p> : null}
             <span className="mt-3 inline-block font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.04em] text-black/52">Open →</span>
           </div>
@@ -481,7 +484,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
         </section>
 
         <div className="space-y-8">
-          <section aria-labelledby="artifacts-title">
+          {memberCan(member.access, "artifacts.read") ? <section aria-labelledby="artifacts-title">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <h2 className={sectionTitle} id="artifacts-title">Artifacts</h2>
               <Link className={quietLink} href="/my/artifacts">View all →</Link>
@@ -519,13 +522,16 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                 </div>
                 <div className="self-center p-4 sm:p-5">
                   <p className={microLabel}>Archive empty</p>
-                  <p className="ui-heading mt-2 text-xl font-black uppercase leading-[0.9] tracking-[-0.035em] text-black/74">Nothing earned yet</p>
+                  <p className="ui-heading mt-2 text-xl font-black uppercase leading-[0.9] tracking-[-0.035em] text-black/74">No artifacts yet</p>
                 </div>
               </div>
             )}
-          </section>
+          </section> : <section aria-labelledby="artifacts-title" className="rounded-[4px] bg-black/[0.045] p-5">
+            <h2 className={sectionTitle} id="artifacts-title">Artifacts</h2>
+            <p className="mt-3 text-base text-black/65">Your personal collection will live here when your membership is active.</p>
+          </section>}
 
-          <section aria-labelledby="experiences-title">
+          {member.upcomingExperiences.length > 0 ? <section aria-labelledby="experiences-title">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <h2 className={sectionTitle} id="experiences-title">Upcoming</h2>
               <Link className={quietLink} href="/my/experiences">View all →</Link>
@@ -558,7 +564,7 @@ export default function MemberHome({ member }: { member: MemberHomeSnapshot }) {
                 })}
               </ol>
             ) : <p className="mt-4 font-[var(--font-body)] text-sm text-black/54">No dates yet.</p>}
-          </section>
+          </section> : null}
         </div>
       </div>
 

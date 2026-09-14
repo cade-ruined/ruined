@@ -8,6 +8,7 @@ import {
   mergeUpcomingPublicMemberExperiences,
   publicEventDetailHref,
 } from "@/lib/events/member-experiences";
+import { getPublicCommunityEvents } from "@/lib/events/community-event-repository";
 import {
   googleCommunicationLivemode,
   googleCommunicationUrlFromMetadata,
@@ -72,6 +73,7 @@ export class MembershipConflictError extends Error {
 }
 
 type IdentityRow = {
+  operator_funded: boolean;
   account_state: AccountState;
   administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
   auth_user_id: string;
@@ -92,6 +94,7 @@ function toIso(value: Date | string | null | undefined): string | null {
 
 function identityFromRow(row: IdentityRow): MemberIdentity {
   return {
+    membershipFunding: row.operator_funded ? "operator" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
     authUserId: row.auth_user_id,
@@ -118,6 +121,7 @@ export async function getMemberIdentity(
       coalesce(primary_email.email, member.email) as email,
       lifecycle.account_state,
       lifecycle.billing_state,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
       lifecycle.program_state,
       lifecycle.foundations_state,
       lifecycle.administrative_onboarding_state,
@@ -274,6 +278,7 @@ export async function getMemberOnboarding(
       version: row.agreement_version === null ? null : String(row.agreement_version),
     },
     completedAt: toIso(row.completed_at),
+    membershipFunding: identity.membershipFunding,
     email: identity.email,
     profile: {
       apparelSizing: row.apparel_sizing,
@@ -772,6 +777,7 @@ export async function completeMemberAdministrativeOnboarding(
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 43)`;
+    await tx`select private.ruined_lock_member_operator_funding(${identity.memberId}::uuid)`;
     const lifecycleRows = await tx<
       Array<{
         administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
@@ -791,22 +797,28 @@ export async function completeMemberAdministrativeOnboarding(
       update member_onboardings onboarding
       set
         state = 'completed',
-        billing_confirmed_at = coalesce(onboarding.billing_confirmed_at, statement_timestamp()),
+        billing_confirmed_at = case when lifecycle.billing_state = 'active'
+          then coalesce(onboarding.billing_confirmed_at, statement_timestamp())
+          else onboarding.billing_confirmed_at end,
         completed_at = coalesce(onboarding.completed_at, statement_timestamp()),
-        completion_evidence = onboarding.completion_evidence || '{"source":"member_entry_reconciliation"}'::jsonb,
+        completion_evidence = onboarding.completion_evidence || jsonb_build_object(
+          'source', 'member_entry_reconciliation',
+          'funding', case when private.ruined_member_has_operator_funding(onboarding.member_id)
+            then 'operator' else 'self' end),
         version = onboarding.version + 1,
         updated_at = statement_timestamp()
       from member_lifecycle lifecycle
       where onboarding.member_id = ${identity.memberId}::uuid
         and lifecycle.member_id = onboarding.member_id
-        and lifecycle.billing_state = 'active'
+        and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(onboarding.member_id))
+        and lifecycle.account_state = 'active'
         and onboarding.profile_completed_at is not null
         and onboarding.agreement_completed_at is not null
       returning onboarding.member_id
     `;
     if (!updated[0]) {
       throw new MembershipConflictError(
-        "Profile, agreement, and active payment must all be confirmed first.",
+        "Complete your profile and agreement, then confirm payment or complimentary operator access.",
       );
     }
     await tx`
@@ -946,6 +958,7 @@ export async function getMemberAccount(
           : String(agreement.agreement_version),
     },
     billingState: identity.billingState,
+    membershipFunding: identity.membershipFunding,
     email: identity.email,
     standingState: identity.standingState,
   };
@@ -1806,11 +1819,12 @@ export async function getMemberExperiences(
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   const now = Date.now();
   const fullExperienceAccess = memberCan(access, "experiences.member");
+  const publicEvents = await getPublicCommunityEvents();
   if (!fullExperienceAccess && !memberCan(access, "circle.read")) {
     return {
       access,
       past: [],
-      upcoming: mergeUpcomingPublicMemberExperiences([], now),
+      upcoming: mergeUpcomingPublicMemberExperiences([], now, publicEvents),
     };
   }
   const sql = getApplicationDatabase();
@@ -1900,6 +1914,7 @@ export async function getMemberExperiences(
         (experience) => new Date(experience.endsAt ?? experience.startsAt).getTime() >= now,
       ),
       now,
+      publicEvents,
     ),
   };
 }
@@ -2787,7 +2802,7 @@ export async function getMemberHome(
       kind: "onboarding",
       title: "Finish membership entry.",
     };
-  } else if (identity.billingState === "attention_required") {
+  } else if (identity.billingState === "attention_required" && identity.membershipFunding !== "operator") {
     nextAction = {
       body: "Restore the membership billing record before returning to the active rooms.",
       href: "/my/account",
@@ -2806,7 +2821,7 @@ export async function getMemberHome(
       body: "Build the durable Timeline with Year, Title, and only the Details you choose to keep.",
       href: "/my/foundations/timeline",
       kind: "timeline",
-      title: "Make the Ruined Timeline.",
+      title: "Build My Timeline.",
     };
   } else if (identity.foundationsState !== "completed") {
     nextAction = {
@@ -2977,6 +2992,37 @@ function validateTimelineInput(input: MemberTimelineInput) {
   });
 }
 
+async function requireLockedFoundationAccess(tx: postgres.TransactionSql, identity: MemberIdentity) {
+  // Recheck after waiting for the writer lock. Funding can be revoked while a
+  // request is in flight; an earlier page/identity read is not authorization.
+  await tx`select private.ruined_lock_member_operator_funding(${identity.memberId}::uuid)`;
+  await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
+  await tx`select member_id from member_lifecycle where member_id = ${identity.memberId}::uuid for update`;
+  const rows = await tx<Array<IdentityRow>>`
+    select account.auth_user_id, member.id as member_id, member.person_id,
+      member.email, lifecycle.account_state, lifecycle.billing_state,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      lifecycle.program_state, lifecycle.foundations_state,
+      lifecycle.administrative_onboarding_state, lifecycle.standing_state,
+      lifecycle.cancellation_effective_at
+    from ruined_members member
+    join people person on person.id = member.person_id and person.status = 'active'
+    join platform_users account on account.member_id = member.id
+      and account.person_id = member.person_id and account.status = 'active'
+    join platform_role_grants member_grant on member_grant.auth_user_id = account.auth_user_id
+      and member_grant.role_slug = 'member' and member_grant.revoked_at is null
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    where member.id = ${identity.memberId}::uuid
+      and account.auth_user_id = ${identity.authUserId}::uuid
+    limit 1
+    for share of person, account, member_grant
+  `;
+  const row = rows[0];
+  if (!row || !memberCan(deriveMemberAccessPolicy(identityFromRow(row)), "foundations.write")) {
+    throw new MembershipAccessDeniedError();
+  }
+}
+
 export async function saveMemberTimeline(
   authUserId: string,
   input: MemberTimelineInput,
@@ -2995,6 +3041,7 @@ export async function saveMemberTimeline(
   const sql = getApplicationDatabase();
   const record = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 45)`;
+    await requireLockedFoundationAccess(tx, identity);
     const current = await readTimelineRecord(tx, identity.memberId);
     if (current.revision !== expectedRevision) {
       throw new MembershipConflictError("Your Timeline changed in another tab. Your draft is still here. Load the latest saved events before trying again.");
@@ -3077,6 +3124,7 @@ export async function completeMemberFoundationRequirement(
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 46)`;
+    await requireLockedFoundationAccess(tx, identity);
     const enrollmentRows = await tx<Array<{ id: string }>>`
       select id
       from foundation_enrollments

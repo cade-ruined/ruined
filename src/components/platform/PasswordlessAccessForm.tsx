@@ -7,6 +7,7 @@ type AuthResponse = {
   error?: string;
   ok?: boolean;
   redirectTo?: string;
+  requestId?: string;
 };
 
 export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled: boolean; returnTo?: string }) {
@@ -15,6 +16,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
   const [pending, setPending] = useState(false);
   const [requested, setRequested] = useState(false);
   const [resendDelay, setResendDelay] = useState(0);
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     if (resendDelay <= 0) return;
@@ -34,6 +36,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
       });
       const payload = (await response.json()) as AuthResponse;
       if (!response.ok) throw new Error(payload.error || "Access could not be requested.");
+      setRequestId(payload.requestId ?? null);
       setRequested(true);
       setResendDelay(60);
     } catch (requestError) {
@@ -120,7 +123,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
   return (
     <form className="mt-8 grid gap-5" onSubmit={verifyCode}>
       <p className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-sm leading-relaxed text-black/58" role="status">
-        If <span className="font-medium text-black">{email.trim().toLowerCase()}</span> is connected to Ruined, the code is on its way.
+        Request received for <span className="font-medium text-black">{email.trim().toLowerCase()}</span>. An active account or current invitation is needed to receive a code. Check your inbox and spam folder, then enter the newest code below.
       </p>
       <label className="grid gap-2">
         <span className="font-cadehandy2 text-xl leading-none text-[var(--color-poster)]">
@@ -168,6 +171,10 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
         >
           {resendDelay > 0 ? `Send again in ${resendDelay}s` : "Send a new code"}
         </button>
+      </div>
+      <div className="text-sm leading-relaxed text-black/65">
+        <p>Still no code? Your invitation may have expired, or email delivery may need attention. <a className="underline underline-offset-4" href={`mailto:connect@theruinedproject.com?subject=${encodeURIComponent("Sign-in help")}&body=${encodeURIComponent(`I could not receive a sign-in code for ${email.trim().toLowerCase()}. Request reference: ${requestId ?? "not available"}.`)}`}>Contact connect@theruinedproject.com</a>.</p>
+        {requestId ? <p className="mt-2 break-all text-xs">Request reference: {requestId}</p> : null}
       </div>
     </form>
   );

@@ -1,4 +1,6 @@
 import { deriveMemberAccessPolicy } from "@/lib/membership/access-policy";
+import { FOUNDATION_MOMENTS } from "@/data/foundations";
+import type { MemberFoundationsState } from "@/lib/foundations/model";
 import { getUpcomingPublicMemberExperiences } from "@/lib/events/member-experiences";
 import type {
   MemberAccountSnapshot,
@@ -15,6 +17,8 @@ import type {
   MemberUpdatesSnapshot,
   PrivacySafePersonSummary,
 } from "@/lib/membership/model";
+
+export const PREVIEW_REFERENCE_DATE = "2026-08-27T12:00:00.000Z";
 
 export const PREVIEW_MEMBER_IDENTITY: MemberIdentity = {
   accountState: "active",
@@ -61,19 +65,19 @@ const previewMeeting = {
 };
 
 const previewPublicExperiences = getUpcomingPublicMemberExperiences(
-  Date.parse("2026-08-27T12:00:00.000Z"),
+  Date.parse(PREVIEW_REFERENCE_DATE),
 );
 const previewExperience = previewPublicExperiences[0] ?? null;
 const previewUpcomingExperiences = [previewMeeting, ...previewPublicExperiences]
   .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
 
 const previewArtifact = {
-  acquisitionType: "earned" as const,
+  acquisitionType: "gifted" as const,
   artifactState: "collecting" as const,
   awardId: "preview-artifact",
   description: "A hand-forged artifact.",
   earnedAt: "2026-08-25T16:00:00.000Z",
-  earnedReason: "Foundations completed",
+  earnedReason: "Welcome gift",
   fulfilledAt: null,
   imageUrl: null,
   inputRequired: true,
@@ -209,7 +213,7 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
       activeCircle: { completed: true, name: "Circle 01" },
       futureLetter: { completed: false, completedAt: null },
       moments: { completed: 16, total: 22 },
-      timeline: { completed: true, completedAt: "2026-08-24T16:00:00.000Z", entryCount: 4 },
+      timeline: { completed: true, completedAt: "2026-08-24T16:00:00.000Z", entryCount: 2 },
     },
     state: "in_progress",
   },
@@ -263,9 +267,9 @@ export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
   },
   privateProfile: {
     accessibilityNotes: null,
-    apparelSizing: null,
+    apparelSizing: { top: "M" },
     birthDate: "1990-01-01",
-    fulfillmentAddress: null,
+    fulfillmentAddress: { addressLine1: "01 Preview Way", city: "Alpine", countryCode: "US", postalCode: "84004", region: "UT" },
     legalName: "Preview Member",
     mobile: "+18015550100",
   },
@@ -285,16 +289,10 @@ export const PREVIEW_MEMBER_ONBOARDING: MemberOnboardingSnapshot = {
   completedAt: "2026-08-01T16:00:00.000Z",
   email: PREVIEW_MEMBER_IDENTITY.email,
   profile: {
-    apparelSizing: { top: "M" },
+    apparelSizing: PREVIEW_MEMBER_PROFILE.privateProfile.apparelSizing,
     avatarUrl: null,
     birthDate: "1990-01-01",
-    fulfillmentAddress: {
-      addressLine1: "01 Preview Way",
-      city: "Alpine",
-      countryCode: "US",
-      postalCode: "84004",
-      region: "UT",
-    },
+    fulfillmentAddress: PREVIEW_MEMBER_PROFILE.privateProfile.fulfillmentAddress,
     legalName: "Preview Member",
     mobile: "+18015550100",
     preferredName: "Preview",
@@ -627,4 +625,38 @@ export const PREVIEW_MEMBER_TIMELINE: MemberTimelineSnapshot = {
       year: 2023,
     },
   ],
+};
+
+// Every member surface describes the same person and the same saved progress.
+const previewCompletedUnits = PREVIEW_MEMBER_HOME.foundations.requirements.moments.completed;
+export const PREVIEW_MEMBER_FOUNDATIONS_STATE: MemberFoundationsState = {
+  activeCircleName: PREVIEW_MEMBER_CIRCLE.circle?.name ?? null,
+  activeCircleStatus: PREVIEW_MEMBER_CIRCLE.circle?.status ?? null,
+  completedUnits: previewCompletedUnits,
+  completionAvailable: false,
+  enrollmentId: "preview-foundations-enrollment",
+  nextMomentId: FOUNDATION_MOMENTS[previewCompletedUnits]?.id ?? null,
+  progressPercent: PREVIEW_MEMBER_HOME.foundations.progressPercent,
+  readyForCircle: false,
+  requirements: {
+    futureLetter: PREVIEW_MEMBER_HOME.foundations.requirements.futureLetter,
+    timeline: {
+      completed: PREVIEW_MEMBER_TIMELINE.completedAt !== null,
+      completedAt: PREVIEW_MEMBER_TIMELINE.completedAt,
+      entryCount: PREVIEW_MEMBER_TIMELINE.entries.length,
+    },
+  },
+  status: PREVIEW_MEMBER_IDENTITY.foundationsState,
+  totalUnits: FOUNDATION_MOMENTS.length,
+  units: FOUNDATION_MOMENTS.map((moment, index) => ({
+    chapterId: "chapterId" in moment ? moment.chapterId : null,
+    id: moment.id,
+    kind: moment.kind,
+    label: moment.label,
+    position: index + 1,
+    stage: moment.stage,
+    status: index < previewCompletedUnits ? "completed" : index === previewCompletedUnits ? "in_progress" : "not_started",
+  })),
+  version: 1,
+  versionTitle: "Founding Foundations",
 };

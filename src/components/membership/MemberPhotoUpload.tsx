@@ -98,7 +98,7 @@ export default function MemberPhotoUpload({
         {avatarUrl ? <button className="min-h-11 text-sm opacity-65 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-40" disabled={!enabled || !available || pending} onClick={() => void changePhoto()} type="button">Remove photo</button> : null}
       </div>
       <p className="text-xs leading-relaxed opacity-60" id={`${inputId}-help`}>JPG, PNG, or WebP · Up to 3 MB.<br />Your profile-sharing settings apply.</p>
-      {!available ? <p className="mt-2 text-xs leading-relaxed opacity-60">Photo upload is temporarily unavailable. You can save your details without a photo.</p> : null}
+      {!available ? <p className="mt-2 text-xs leading-relaxed opacity-60">{enabled ? "Photo upload is temporarily unavailable. You can save your details without a photo." : "Photo upload is unavailable in this view."}</p> : null}
       {error ? <p className="mt-2 text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
       {message ? <p className="mt-2 text-sm" role="status">{message}</p> : null}
     </div>

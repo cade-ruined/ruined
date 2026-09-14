@@ -7,6 +7,7 @@ import {
   OpsAccessRepositoryError,
   removeOperatorAccess,
   revokeOperatorInvitation,
+  updateOperatorAccess,
   type OperatorAccessRole,
 } from "@/lib/platform/ops-access-repository";
 import {
@@ -129,5 +130,33 @@ export async function DELETE(request: Request) {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
     return json({ error: "Operator access could not be removed." }, 503);
+  }
+}
+
+export async function PATCH(request: Request) {
+  if (!isTrustedPlatformOrigin(request)) return json({ error: "Request origin is not allowed." }, 403);
+  const viewer = await getCurrentPlatformViewer();
+  if (!viewer) return json({ error: "Operator account access is required." }, 401);
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return json({ error: "JSON is required." }, 415);
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body || typeof body.authUserId !== "string" || !isOperatorRole(body.role) || !isOperatorRole(body.expectedRole)
+    || !Array.isArray(body.circleIds) || !body.circleIds.every((id) => typeof id === "string")
+    || !Array.isArray(body.expectedCircleIds) || !body.expectedCircleIds.every((id) => typeof id === "string")
+    || (body.expectedStatus !== "active" && body.expectedStatus !== "suspended") || typeof body.reason !== "string") {
+    return json({ error: "Review the operator, responsibility, Circles, and reason before saving." }, 400);
+  }
+  try {
+    const access = await updateOperatorAccess({
+      actorAuthUserId: viewer.authUserId, targetAuthUserId: body.authUserId,
+      role: body.role, circleIds: body.circleIds, expectedRole: body.expectedRole,
+      expectedCircleIds: body.expectedCircleIds, expectedStatus: body.expectedStatus,
+      reason: body.reason, administratorConfirmed: body.administratorConfirmed === true,
+      restoreAccount: body.restoreAccount === true,
+    });
+    return json({ access });
+  } catch (error) {
+    if (error instanceof OpsAccessRepositoryError) return repositoryError(error);
+    console.error("Operator access could not be updated", { errorType: error instanceof Error ? error.name : "UnknownError" });
+    return json({ error: "Operator access could not be updated. Refresh and review the current record before trying again." }, 503);
   }
 }

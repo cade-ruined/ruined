@@ -41,7 +41,8 @@ test("the Overview is an activity-first linked snapshot", () => {
   assert.match(overview, /data\.activity/);
   assert.match(overview, /Needs a decision/);
   assert.match(overview, /\/ops\/members\?filter=attention/);
-  assert.match(overview, /\/ops\/members\?filter=unassigned/);
+  assert.match(overview, /\/ops\/circles#assign-member/);
+  assert.match(overview, /Ready for a Circle/);
   assert.doesNotMatch(overview, /The membership, in view|Member decisions/);
 });
 

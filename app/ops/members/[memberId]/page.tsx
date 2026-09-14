@@ -17,10 +17,13 @@ export const dynamic = "force-dynamic";
 
 export default async function OperationsMemberRecordPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ memberId: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
 }) {
   const { memberId } = await params;
+  const { returnTo } = await searchParams ?? {};
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") {
@@ -29,10 +32,12 @@ export default async function OperationsMemberRecordPage({
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
   if (context.state === "preview") {
+    if (!context.dashboard.members.some((member) => member.memberId === memberId)) notFound();
     return (
       <OperatorMemberRecord
         profileSupport={getPreviewOpsMemberProfileSupport(memberId)}
         record={getPreviewOpsMemberRecord(memberId)}
+        returnTo={returnTo}
         preview
       />
     );
@@ -57,5 +62,5 @@ export default async function OperationsMemberRecordPage({
         return null;
       })
     : null;
-  return <OperatorMemberRecord profileSupport={profileSupport} record={record} />;
+  return <OperatorMemberRecord profileSupport={profileSupport} record={record} returnTo={returnTo} />;
 }

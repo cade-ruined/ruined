@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 
 import OperatorCirclesManager from "@/components/platform/OperatorCirclesManager";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
-import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
+import OperatorCircleCommunicationPanel from "@/components/platform/OperatorCircleCommunicationPanel";
 import OpsCircleManagementActions from "@/components/platform/OpsCircleManagementActions";
-import OpsSection from "@/components/platform/OpsSection";
+import StateLabel from "@/components/platform/StateLabel";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import type { OpsCircleCommunicationItem } from "@/lib/platform/ops-model";
 import { getOpsCircleCommunicationDirectory } from "@/lib/platform/ops-operating-repository";
@@ -23,6 +23,9 @@ import {
 } from "@/lib/platform/ops-repository";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
 import { getOperatorMemberDirectoryPage } from "@/lib/platform/repository";
+import { getOpsExperienceManagementDirectory } from "@/lib/platform/ops-experience-repository";
+import { PREVIEW_OPS_EXPERIENCE_DIRECTORY } from "@/lib/platform/ops-experience-preview";
+import type { OpsExperienceDirectory } from "@/lib/platform/ops-experience-model";
 
 export const dynamic = "force-dynamic";
 export default async function OperationsCirclesPage({
@@ -50,6 +53,7 @@ export default async function OperationsCirclesPage({
   let assignments: OpsCircleMemberAssignment[] | undefined;
   let communicationCircles: OpsCircleCommunicationItem[] | undefined =
     context.state === "preview" ? PREVIEW_OPS_CIRCLE_COMMUNICATIONS : undefined;
+  let meetingDirectory: OpsExperienceDirectory | null = context.state === "preview" ? PREVIEW_OPS_EXPERIENCE_DIRECTORY : null;
   if (context.state === "preview") {
     circles = PREVIEW_OPS_CIRCLES;
     managementOptions = PREVIEW_OPS_CIRCLE_MANAGEMENT;
@@ -110,10 +114,20 @@ export default async function OperationsCirclesPage({
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
     }
+    if (initialCircleId || context.role !== "ops_admin") {
+      try {
+        meetingDirectory = await getOpsExperienceManagementDirectory(context.viewer.authUserId);
+      } catch (error) {
+        console.error("Operations Circle meetings could not be loaded", {
+          errorType: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
+    }
   }
 
   if (context.role === "ops_admin") {
     if (!circles || !assignments || !managementOptions) return <PlatformUnavailable accessHref="/ops/access" />;
+    const selectedCircle = circles.find((circle) => circle.id === initialCircleId);
     return <OperatorPageFrame title="Circles">
       <OperatorCirclesManager
         key={`${initialMemberId ?? ""}:${initialCircleId ?? ""}:${memberQuery}`}
@@ -128,26 +142,27 @@ export default async function OperationsCirclesPage({
         initialCircleId={initialCircleId}
         memberQuery={memberQuery}
         preview={context.state === "preview"}
+        communications={selectedCircle ? <OperatorCircleCommunicationPanel
+          circle={selectedCircle}
+          communication={communicationCircles?.find((item) => item.id === selectedCircle.id)}
+          directory={meetingDirectory}
+          preview={context.state === "preview"}
+        /> : null}
       >
-        <OpsCircleManagementActions initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} />
-        {communicationCircles?.length ? <section className="mt-8" aria-label="Circle Google Chat links">
-          <h2 className="font-[var(--font-display)] text-3xl">Circle chat</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">{communicationCircles.map((circle) => <div key={circle.id}>
-            <h3 className="mb-2 text-sm font-semibold">{circle.name}</h3>
-            <OperatorGoogleCommunicationField configured={circle.googleCommunicationsConfigured} editable inline entityId={circle.id} entityType="circle" initialUrl={circle.chatUrl} kind="chat" preview={context.state === "preview"} />
-          </div>)}</div>
-        </section> : null}
+        <OpsCircleManagementActions initialCircleId={initialCircleId} initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} />
       </OperatorCirclesManager>
     </OperatorPageFrame>;
   }
 
-  return (
-    <OpsSection
-      canManageGoogleCommunications={context.state === "authenticated"}
-      circles={communicationCircles ?? circles}
-      configuration={context.configuration}
-      dashboard={context.dashboard}
-      section="circles"
-    />
-  );
+  if (!communicationCircles) return <PlatformUnavailable accessHref="/ops/access" />;
+  const visibleCircles = initialCircleId ? communicationCircles.filter((circle) => circle.id === initialCircleId) : communicationCircles;
+  return <OperatorPageFrame title="Circles">
+    {!visibleCircles.length ? <p className="text-sm text-black/65">{initialCircleId ? "This Circle is not available to your account. Ask an Administrator to check your Circle access." : "No Circles are assigned to you yet. Ask an Administrator to assign the Circles you help manage."}</p> : null}
+    <div className="grid gap-6">{visibleCircles.map((circle) => <article key={circle.id} id={`circle-${circle.id}`} className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
+      <header className="mb-5 flex flex-wrap items-center gap-4"><h2 className="font-[var(--font-display)] text-3xl">{circle.name}</h2><StateLabel state={circle.status} /><p className="text-sm text-black/60">{circle.activeMembers}/{circle.capacity} members</p></header>
+      <section id={initialCircleId ? "circle-communications" : `circle-communications-${circle.id}`} aria-label={`${circle.name} chat and meetings`} className="scroll-mt-28">
+        <OperatorCircleCommunicationPanel circle={circle} communication={circle} directory={meetingDirectory} />
+      </section>
+    </article>)}</div>
+  </OperatorPageFrame>;
 }

@@ -138,5 +138,5 @@ test("Overview authorizes directly and only offers Circle placement to admins", 
   assert.doesNotMatch(page, /getOperatorPageContext/);
   assert.match(page, /getOpsOverviewData\(viewer\.authUserId\)/);
   assert.match(repository, /canPlaceMembers: isAdmin/);
-  assert.match(component, /data\.canPlaceMembers \? \(/);
+  assert.match(component, /data\.canPlaceMembers && data\.counts\.eligibleWithoutCircle > 0/);
 });

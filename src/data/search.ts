@@ -1,4 +1,4 @@
-import { EVENTS } from "@/data/events";
+import { EVENTS, type StudioEvent } from "@/data/events";
 import { type Product } from "@/data/products";
 import {
   SEARCH_GROUPS,
@@ -118,7 +118,7 @@ function productDocuments(products: Product[]): SearchDocument[] {
 
 const PROJECT_DOCUMENTS: SearchDocument[] = [];
 
-const EVENT_DOCUMENTS: SearchDocument[] = EVENTS.map((event, index) => ({
+const eventDocuments = (events: StudioEvent[]): SearchDocument[] => events.map((event, index) => ({
   id: event.id,
   group: "events",
   title: event.title,
@@ -188,11 +188,11 @@ function scoreDocument(document: SearchDocument, query: string, tokens: string[]
   return score;
 }
 
-export function searchSite(products: Product[] = [], rawQuery = ""): SearchResponse {
+export function searchSite(products: Product[] = [], rawQuery = "", events: StudioEvent[] = EVENTS): SearchResponse {
   const documents = [
     ...productDocuments(products),
     ...PROJECT_DOCUMENTS,
-    ...EVENT_DOCUMENTS,
+    ...eventDocuments(events),
     ...PAGES,
   ];
   const query = normalize(rawQuery).slice(0, 80);

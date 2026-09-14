@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
+import MemberPreviewSwitcher from "@/components/membership/MemberPreviewSwitcher";
+import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario } from "@/lib/membership/preview-scenarios";
 
 import PlatformShell from "@/components/platform/PlatformShell";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
@@ -18,7 +21,8 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
 
   const configuration = getPlatformConfiguration();
   const viewer = configuration.mode === "connected" ? await getCurrentPlatformViewer() : null;
-  let operatorRole: OperatorRole | null = configuration.mode === "preview" ? "ops_admin" : null;
+  const scenario = configuration.mode === "preview" ? memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value) : null;
+  let operatorRole: OperatorRole | null = scenario === "operator" ? "ops_admin" : null;
   if (viewer) {
     try {
       operatorRole = await getOperatorRole(viewer.authUserId);
@@ -36,6 +40,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       surface="member"
       viewerLabel={configuration.mode === "preview" ? "Preview member" : viewer?.email}
     >
+      {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
     </PlatformShell>
   );

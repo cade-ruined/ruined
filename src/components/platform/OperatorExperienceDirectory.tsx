@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useState } from "react";
 
-import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
 import {
@@ -48,29 +47,38 @@ function FormField({
 
 export default function OperatorExperienceDirectory({
   directory,
+  navigation,
+  requestedCircleId,
   preview = false,
 }: {
   directory: OpsExperienceDirectory;
+  navigation?: ReactNode;
+  requestedCircleId?: string;
   preview?: boolean;
 }) {
   const router = useRouter();
+  const selectedCircle = directory.circles.find((circle) => circle.id === requestedCircleId);
+  const invalidCircle = requestedCircleId !== undefined && !selectedCircle;
+  const experiences = invalidCircle ? [] : selectedCircle
+    ? directory.experiences.filter((experience) => experience.circleId === selectedCircle.id)
+    : directory.experiences;
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
-  const visibleExperiences = directory.experiences.filter((experience) =>
+  const visibleExperiences = experiences.filter((experience) =>
     (stateFilter === "all" || experience.state === stateFilter)
     && `${experience.title} ${experience.scope} ${experience.kind}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [newRegistrationMode, setNewRegistrationMode] = useState<"external" | "internal" | "none">("internal");
+  const [newRegistrationMode, setNewRegistrationMode] = useState<"external" | "internal" | "none">(selectedCircle ? "none" : "internal");
   const [newVisibility, setNewVisibility] = useState<"all_members" | "block" | "circle" | "invite_only" | "public">(
-    directory.canManageGlobal ? "all_members" : "circle",
+    selectedCircle || !directory.canManageGlobal ? "circle" : "all_members",
   );
-  const registeredCount = directory.experiences.reduce(
+  const registeredCount = experiences.reduce(
     (total, experience) => total + experience.registeredCount,
     0,
   );
-  const waitlistedCount = directory.experiences.reduce(
+  const waitlistedCount = experiences.reduce(
     (total, experience) => total + experience.waitlistedCount,
     0,
   );
@@ -78,14 +86,18 @@ export default function OperatorExperienceDirectory({
   async function createExperience(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
+    if (invalidCircle || !directory.canCreate) {
+      setError("Choose a Circle you can manage before scheduling a meeting.");
+      return;
+    }
     if (preview) {
       setError("Preview only — this draft was not saved.");
       return;
     }
     const form = event.currentTarget;
     const data = new FormData(form);
-    const visibility = String(data.get("visibility") ?? "all_members");
-    const registrationMode = String(data.get("registrationMode") ?? "none");
+    const visibility = selectedCircle ? "circle" : String(data.get("visibility") ?? "all_members");
+    const registrationMode = selectedCircle ? "none" : String(data.get("registrationMode") ?? "none");
     const capacityValue = String(data.get("capacity") ?? "").trim();
     const timezone = String(data.get("timezone") ?? "America/Denver").trim();
     setPending(true);
@@ -95,13 +107,13 @@ export default function OperatorExperienceDirectory({
         body: JSON.stringify({
           blockId: visibility === "block" ? String(data.get("blockId") ?? "") || null : null,
           capacity: registrationMode === "internal" && capacityValue ? Number(capacityValue) : null,
-          circleId: visibility === "circle" ? String(data.get("circleId") ?? "") || null : null,
+          circleId: selectedCircle?.id ?? (visibility === "circle" ? String(data.get("circleId") ?? "") || null : null),
           details: String(data.get("details") ?? ""),
           endsAt: zonedDateTimeLocalToIso(String(data.get("endsAt") ?? ""), timezone),
           externalRegistrationUrl: registrationMode === "external"
             ? String(data.get("externalRegistrationUrl") ?? "") || null
             : null,
-          kind: String(data.get("kind") ?? "member_event"),
+          kind: selectedCircle ? "circle_meeting" : String(data.get("kind") ?? "member_event"),
           locationLabel: String(data.get("locationLabel") ?? ""),
           registrationClosesAt: registrationMode === "internal"
             ? zonedDateTimeLocalToIso(String(data.get("registrationClosesAt") ?? ""), timezone)
@@ -115,7 +127,7 @@ export default function OperatorExperienceDirectory({
           timezone,
           title: String(data.get("title") ?? ""),
           visibility,
-          waitlistEnabled: data.get("waitlistEnabled") === "on",
+          waitlistEnabled: registrationMode === "internal" && data.get("waitlistEnabled") === "on",
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -128,7 +140,7 @@ export default function OperatorExperienceDirectory({
         throw new Error(payload.error || "The Experience draft could not be created.");
       }
       form.reset();
-      router.push(`/ops/experiences/${payload.experience.experienceId}`);
+      router.push(`/ops/experiences/${payload.experience.experienceId}${selectedCircle ? "#meeting-setup" : ""}`);
       router.refresh();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The Experience draft could not be created.");
@@ -137,21 +149,34 @@ export default function OperatorExperienceDirectory({
     }
   }
 
+  if (invalidCircle) return (
+    <OperatorPageFrame title="Circle meetings">
+      {navigation}
+      <p role="alert" className="mb-4 text-[var(--color-poster)]">This Circle is unavailable or you do not have permission to schedule for it. No other audience has been selected.</p>
+      <div className="flex flex-wrap gap-4 text-sm font-semibold"><Link href="/ops/circles">Choose a Circle →</Link><Link href="/ops/experiences">All member experiences →</Link></div>
+    </OperatorPageFrame>
+  );
+
   return (
     <OperatorPageFrame title="Experiences">
+      {navigation}
+      {selectedCircle ? <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div><p className={OPERATOR_LABEL_TEXT_CLASS}>Circle meetings</p><h2 className="ui-heading text-2xl">{selectedCircle.name}</h2></div>
+        <Link className="text-sm underline underline-offset-4" href={`/ops/circles?circleId=${selectedCircle.id}#circle-communications`}>Back to chat & meetings →</Link>
+      </div> : null}
       <nav aria-label="Experience tasks" className="mb-4 flex flex-wrap items-center gap-3">
-        {directory.canCreate ? <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#new-experience">+ New Experience</a> : null}
-        <Link className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="/ops/circles">Circles</Link>
+        {directory.canCreate ? <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#new-experience">{selectedCircle ? "+ Schedule a meeting" : "+ New Experience"}</a> : null}
+        <Link className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href={selectedCircle ? "/ops/experiences" : "/ops/circles"}>{selectedCircle ? "All member experiences" : "Circles"}</Link>
       </nav>
       <dl
         aria-label="Experience snapshot"
         className="grid gap-6 rounded-[4px] bg-[#080605] px-6 py-6 text-[var(--color-bone)] sm:grid-cols-4 sm:px-8 sm:py-8"
       >
         {[
-          ["Experiences", directory.experiences.length],
+          [selectedCircle ? "Meetings & events" : "Experiences", experiences.length],
           ["Confirmed", registeredCount],
           ["Waitlisted", waitlistedCount],
-          ["Drafts", directory.experiences.filter((item) => item.state === "draft").length],
+          ["Drafts", experiences.filter((item) => item.state === "draft").length],
         ].map(([name, value]) => (
           <div key={name}>
             <dt className="text-sm text-white/48">{name}</dt>
@@ -168,7 +193,7 @@ export default function OperatorExperienceDirectory({
           <FormField label="Find an Experience"><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Search title or audience" type="search" value={query} /></FormField>
           <FormField label="Show"><select className={OPERATOR_FIELD_CLASS} onChange={(event) => setStateFilter(event.target.value)} value={stateFilter}><option value="all">All Experiences</option>{["draft", "published", "completed", "cancelled", "archived"].map((state) => <option key={state} value={state}>{state[0].toUpperCase() + state.slice(1)}</option>)}</select></FormField>
         </div>
-        <p className="py-2 text-sm text-black/50" aria-live="polite">{visibleExperiences.length} of {directory.experiences.length} Experiences</p>
+        <p className="py-2 text-sm text-black/50" aria-live="polite">{visibleExperiences.length} of {experiences.length} {selectedCircle ? "Circle meetings and events" : "Experiences"}</p>
         {visibleExperiences.map((experience) => (
           <article
             className="grid gap-5 rounded-[4px] bg-black/[0.035] px-5 py-6 transition-colors hover:bg-black/[0.06] sm:px-6 xl:grid-cols-[minmax(15rem,1fr)_12rem_9rem_7rem] xl:items-center min-[1400px]:grid-cols-[minmax(15rem,1fr)_12rem_9rem_7rem_minmax(14rem,0.8fr)]"
@@ -196,34 +221,28 @@ export default function OperatorExperienceDirectory({
             </div>
             <StateLabel state={experience.state} />
             <div className="xl:col-span-4 min-[1400px]:col-span-1">
-              <OperatorGoogleCommunicationField
-                configured={experience.googleCommunicationsConfigured}
-                editable
-                entityId={experience.experienceId}
-                entityType="experience"
-                initialUrl={experience.meetingUrl}
-                kind="meet"
-                preview={preview}
-              />
+              <p className="text-sm text-black/55">{experience.meetingUrl ? "Meeting link saved" : "Meeting link not set"}</p>
+              <Link className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={`/ops/experiences/${experience.experienceId}#meeting-setup`}>{experience.meetingUrl ? "Manage meeting link →" : "Set meeting link →"}</Link>
             </div>
           </article>
         ))}
         {visibleExperiences.length === 0 ? (
           <p className="rounded-[4px] bg-black/[0.035] px-5 py-10 text-sm text-black/50">
-            {directory.experiences.length ? "No matches. Try another title or show all Experiences." : directory.canCreate ? "No Experiences yet. Create a draft to set the time, audience, and registration." : "No Experiences are available in your assigned scope."}
+            {experiences.length ? "No matches. Try another title or show all Experiences." : selectedCircle ? "No meetings scheduled for this Circle yet." : directory.canCreate ? "No Experiences yet. Create a draft to set the time, audience, and registration." : "No Experiences are available in your assigned scope."}
           </p>
         ) : null}
       </section>
 
       {directory.canCreate ? (
         <section className="mt-8 scroll-mt-28 rounded-[4px] bg-[var(--color-shop)]/25 p-5 sm:p-6" id="new-experience" aria-labelledby="new-experience-title">
-          <h2 className="font-[var(--font-display)] text-3xl" id="new-experience-title">New Experience</h2>
-          <p className="mt-2 text-sm text-black/60">Save a draft first. Publishing is a separate action that can send invitations.</p>
+          <h2 className="font-[var(--font-display)] text-3xl" id="new-experience-title">{selectedCircle ? "Schedule a meeting" : "New Experience"}</h2>
+          {selectedCircle ? <p className="mt-2 text-sm font-semibold">For {selectedCircle.name}</p> : null}
+          {selectedCircle ? <ol aria-label="Meeting setup steps" className="mt-3 grid gap-2 text-sm text-black/65 sm:grid-cols-3"><li>1. Save the date and time as a draft.</li><li>2. Review the meeting and eligible Circle audience.</li><li>3. Publish, then check Google Calendar invitation delivery.</li></ol> : <p className="mt-2 text-sm text-black/60">Save a draft first. Publishing is a separate action that can send invitations.</p>}
           <form className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" onSubmit={createExperience}>
-            <FormField className="sm:col-span-2" label="Title">
-              <input className={OPERATOR_FIELD_CLASS} maxLength={200} name="title" required />
+            <FormField className="sm:col-span-2" label={selectedCircle ? "Meeting title" : "Title"}>
+              <input className={OPERATOR_FIELD_CLASS} maxLength={200} name="title" defaultValue={selectedCircle ? `${selectedCircle.name} meeting` : undefined} required />
             </FormField>
-            {directory.canManageGlobal ? (
+            {selectedCircle ? <><input name="kind" type="hidden" value="circle_meeting" /><input name="visibility" type="hidden" value="circle" /><input name="circleId" type="hidden" value={selectedCircle.id} /></> : directory.canManageGlobal ? (
               <>
                 <FormField label="Type">
                   <select className={OPERATOR_FIELD_CLASS} defaultValue="member_event" name="kind">
@@ -257,7 +276,7 @@ export default function OperatorExperienceDirectory({
                 <input name="visibility" type="hidden" value="circle" />
               </>
             )}
-            {newVisibility === "circle" && directory.circles.length > 0 ? (
+            {!selectedCircle && newVisibility === "circle" && directory.circles.length > 0 ? (
               <FormField label="Circle">
                 <select className={OPERATOR_FIELD_CLASS} defaultValue={directory.circles[0]?.id} name="circleId" required>
                   {directory.circles.map((circle) => <option key={circle.id} value={circle.id}>{circle.name}</option>)}
@@ -283,7 +302,7 @@ export default function OperatorExperienceDirectory({
             <FormField label="Place">
               <input className={OPERATOR_FIELD_CLASS} maxLength={500} name="locationLabel" />
             </FormField>
-            <FormField label="Registration">
+            {selectedCircle ? <><input name="registrationMode" type="hidden" value="none" /><p className="self-end text-sm text-black/60">The Circle is the invitation audience. Members do not need to reserve a place.</p></> : <FormField label="Registration">
               <select
                 className={OPERATOR_FIELD_CLASS}
                 name="registrationMode"
@@ -294,7 +313,7 @@ export default function OperatorExperienceDirectory({
                 <option value="none">No reservation</option>
                 <option value="external">External link</option>
               </select>
-            </FormField>
+            </FormField>}
             {newRegistrationMode === "internal" ? (
               <>
                 <FormField label="Capacity">

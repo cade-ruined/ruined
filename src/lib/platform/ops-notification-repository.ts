@@ -170,7 +170,7 @@ export async function getOpsNotificationCenter(
         left join person_profiles profile on profile.person_id = member.person_id
         left join person_private_profiles private_profile on private_profile.person_id = member.person_id
         where lifecycle.account_state = 'active'
-          and lifecycle.billing_state = 'active'
+          and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
           and lifecycle.administrative_onboarding_state = 'completed'
           and lifecycle.standing_state in ('active', 'cancellation_requested')
           and (
@@ -382,7 +382,7 @@ export async function sendOpsNotification(input: {
       left join block_circle_assignments block_assignment
         on block_assignment.circle_id = circle_assignment.circle_id and block_assignment.ended_at is null
       where lifecycle.account_state = 'active'
-        and lifecycle.billing_state = 'active'
+        and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
         and lifecycle.administrative_onboarding_state = 'completed'
         and lifecycle.standing_state in ('active', 'cancellation_requested')
         and (

@@ -34,6 +34,9 @@ const migrations = [
   "../db/migrations/20260903225243_member_phone_e164_constraint.sql",
   "../db/migrations/20260904225258_calendar_durable_reconciliation.sql",
   "../db/migrations/20260908234300_circle_retirement.sql",
+  "../db/migrations/20260914181653_operator_complimentary_membership.sql",
+  "../db/migrations/20260914221302_community_event_operations.sql",
+  "../db/migrations/20260914221725_academy_unused_draft_retirement.sql",
 ];
 
 function migrationBody(migration, migrationName) {

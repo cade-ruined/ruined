@@ -12,6 +12,7 @@ import {
 import {
   getMemberPlatformSnapshot,
   getOperatorDashboard,
+  getOperatorRole,
   type OperatorRole,
 } from "@/lib/platform/repository";
 
@@ -46,6 +47,23 @@ export type OperatorPageContext = {
   state: PageState;
   viewer: PlatformViewer | null;
 };
+
+/** Settings must remain reachable when a member/dashboard query fails. */
+export async function getOperatorAccessContext(): Promise<Omit<OperatorPageContext, "dashboard">> {
+  const configuration = getPlatformConfiguration();
+  if (configuration.mode === "preview") return { configuration, role: "ops_admin", state: "preview", viewer: null };
+  if (configuration.mode === "unavailable") return { configuration, role: null, state: "unavailable", viewer: null };
+  let viewer: PlatformViewer | null = null;
+  try {
+    viewer = await getCurrentPlatformViewer();
+    if (!viewer) return { configuration, role: null, state: "signed_out", viewer: null };
+    const role = await getOperatorRole(viewer.authUserId);
+    return { configuration, role, state: role ? "authenticated" : "denied", viewer };
+  } catch (error) {
+    console.error("Operations access could not be checked", getSafeErrorDetails(error));
+    return { configuration, role: null, state: "unavailable", viewer };
+  }
+}
 
 export async function getMemberPageContext(): Promise<MemberPageContext> {
   const configuration = getPlatformConfiguration();

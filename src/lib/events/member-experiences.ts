@@ -47,8 +47,8 @@ export function memberExperienceFromStudioEvent(
   };
 }
 
-export function getUpcomingPublicMemberExperiences(now = Date.now()) {
-  return EVENTS
+export function getUpcomingPublicMemberExperiences(now = Date.now(), events: StudioEvent[] = EVENTS) {
+  return events
     .filter((event) => event.status !== "Ended")
     .map((event) => ({ event, experience: memberExperienceFromStudioEvent(event) }))
     .filter(({ event, experience }) => (
@@ -61,10 +61,11 @@ export function getUpcomingPublicMemberExperiences(now = Date.now()) {
 export function mergeUpcomingPublicMemberExperiences(
   memberExperiences: MemberExperienceSummary[],
   now = Date.now(),
+  publicEvents: StudioEvent[] = EVENTS,
 ) {
   const merged = [...memberExperiences];
 
-  for (const publicExperience of getUpcomingPublicMemberExperiences(now)) {
+  for (const publicExperience of getUpcomingPublicMemberExperiences(now, publicEvents)) {
     const existingIndex = merged.findIndex(
       (experience) => experience.detailHref === publicExperience.detailHref,
     );

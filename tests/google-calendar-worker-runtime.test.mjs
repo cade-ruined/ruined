@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -122,8 +123,8 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
     await db.exec(`create role anon; create role authenticated; create schema private;
       create table people(id uuid primary key,status text);
       create table ruined_members(id uuid primary key,person_id uuid references people(id),unique(id,person_id));
-      create table platform_users(auth_user_id uuid primary key,person_id uuid,status text);
-      create table platform_role_grants(auth_user_id uuid references platform_users(auth_user_id),role_slug text,revoked_at timestamptz);
+      create table platform_users(auth_user_id uuid primary key,person_id uuid,status text,member_id uuid);
+      create table platform_role_grants(auth_user_id uuid references platform_users(auth_user_id),role_slug text,revoked_at timestamptz,id bigint generated always as identity primary key);
       create table member_lifecycle(member_id uuid,account_state text,billing_state text,administrative_onboarding_state text,standing_state text,cancellation_effective_at timestamptz);
       create table person_profiles(person_id uuid,preferred_name text,display_name text);
       create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
@@ -139,6 +140,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
         unique(provider,local_entity_type,local_entity_id,external_entity_type,livemode));
       create function ruined_reject_append_only_mutation() returns trigger language plpgsql as $$begin raise exception 'append only'; end;$$;
     `);
+    await installOperatorFundingFunctions(db);
     for (const migration of ["20260829_operator_google_calendar_sync", "20260829_operator_google_calendar_sync_hardening", "20260829_operator_google_calendar_meet_url_constraint", "20260904225258_calendar_durable_reconciliation"]) {
       await db.exec(await source(`db/migrations/${migration}.sql`));
     }
@@ -190,7 +192,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       await db.query("insert into ruined_members values ($1,$2)", [memberId, personId]);
       await db.query("update platform_users set person_id=$1 where auth_user_id=$2", [personId, actor]);
       await db.query("insert into platform_role_grants values ($1,'member',null)", [actor]);
-      await db.query("insert into member_lifecycle (member_id,account_state,billing_state,standing_state) values ($1,'active','active','active')", [memberId]);
+      await db.query("insert into member_lifecycle (member_id,account_state,billing_state,standing_state,administrative_onboarding_state) values ($1,'active','active','active','completed')", [memberId]);
       await db.query("insert into experience_registrations values ($1,$2,$3,$4,'registered')", [registrationId, event, personId, memberId]);
       await db.exec("update experiences set starts_at=now()-interval '2 days',ends_at=now()-interval '1 day'"); await mark("attendees");
       await assert.rejects(() => repo.syncMemberExperienceCalendar({ actorAuthUserId: actor, experienceId: event,

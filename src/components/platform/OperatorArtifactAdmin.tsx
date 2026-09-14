@@ -13,6 +13,7 @@ import {
 import type { OpsArtifactQueueItem } from "@/lib/platform/ops-model";
 import { isLiveAwardableArtifactTemplate } from "@/lib/platform/artifact-invariants";
 import type { OpsArtifactControlData } from "@/lib/platform/ops-artifact-repository";
+import OperatorArtifactProductPicker, { type ArtifactProductSelection } from "@/components/platform/OperatorArtifactProductPicker";
 
 const ArtifactPreviewContext = createContext(false);
 
@@ -38,6 +39,7 @@ function TemplateCreateForm() {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [product, setProduct] = useState<ArtifactProductSelection | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,6 +58,7 @@ function TemplateCreateForm() {
         slug: String(data.get("slug") ?? ""),
       });
       form.reset();
+      setProduct(null);
       setMessage("Template published and bound to Shopify.");
       router.refresh();
     } catch (error) {
@@ -71,18 +74,8 @@ function TemplateCreateForm() {
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Name</span>
         <input className={OPERATOR_FIELD_CLASS} maxLength={200} minLength={2} name="name" required />
       </label>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Slug</span>
-        <input className={OPERATOR_FIELD_CLASS} maxLength={120} name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="the-first-coin" required />
-      </label>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Shopify Product GID</span>
-        <input className={OPERATOR_FIELD_CLASS} name="productGid" placeholder="gid://shopify/Product/…" required />
-      </label>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Shopify handle</span>
-        <input className={OPERATOR_FIELD_CLASS} name="productHandle" placeholder="the-first-coin" required />
-      </label>
+      <input type="hidden" name="slug" value={product?.handle ?? ""} />
+      <OperatorArtifactProductPicker selected={product} onSelect={setProduct} disabled={submitting} preview={preview} />
       <label className={`${OPERATOR_LABEL_CLASS} sm:col-span-2`}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Description</span>
         <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} maxLength={2000} name="description" />
@@ -93,7 +86,7 @@ function TemplateCreateForm() {
       </label>
       <div className="flex flex-wrap items-center justify-end gap-3">
         <Notice message={message} />
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting || !product} type="submit">
           {submitting ? "Publishing" : "Publish template"}
         </button>
       </div>
@@ -116,6 +109,7 @@ function ShopifyBindingForm({
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [product, setProduct] = useState<ArtifactProductSelection | null>(productGid && productHandle ? { id: productGid, handle: productHandle, title: productHandle.replaceAll("-", " ") } : null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,19 +134,12 @@ function ShopifyBindingForm({
 
   return (
     <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_0.7fr_auto] sm:items-end" onSubmit={submit}>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Product GID</span>
-        <input className={OPERATOR_FIELD_CLASS} defaultValue={productGid ?? ""} name="productGid" required />
-      </label>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Handle</span>
-        <input className={OPERATOR_FIELD_CLASS} defaultValue={productHandle ?? ""} name="productHandle" required />
-      </label>
+      <OperatorArtifactProductPicker selected={product} onSelect={setProduct} disabled={submitting} preview={preview} />
       <div className="grid gap-2">
         <label className="flex items-center gap-2 text-xs text-black/58">
           <input className="size-4 accent-black" defaultChecked={livemode ?? true} name="livemode" type="checkbox" /> Live
         </label>
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">Bind</button>
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting || !product} type="submit">Save product</button>
       </div>
       <Notice message={message} />
     </form>

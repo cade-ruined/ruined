@@ -559,6 +559,7 @@ export async function getOpsExperienceManagementDirectory(
     const access = await requireEventOperator(tx, actorAuthUserId);
     const rows = await tx<Array<{
       capacity: number | null;
+      circle_id: string | null;
       ends_at: Date | string | null;
       experience_id: string;
       kind: string;
@@ -572,6 +573,7 @@ export async function getOpsExperienceManagementDirectory(
     }>>`
       select
         experience.id as experience_id,
+        experience.circle_id,
         experience.title,
         experience.kind,
         experience.starts_at,
@@ -612,6 +614,7 @@ export async function getOpsExperienceManagementDirectory(
             where staff_assignment.circle_id = experience.circle_id
               and staff_assignment.auth_user_id = ${access.authUserId}::uuid
               and staff_assignment.ended_at is null
+              and staff_assignment.assigned_at <= statement_timestamp()
           )
         )
       )
@@ -644,6 +647,7 @@ export async function getOpsExperienceManagementDirectory(
               and staff_assignment.auth_user_id = ${access.authUserId}::uuid
               and staff_assignment.role_slug = 'circle_leader'
               and staff_assignment.ended_at is null
+              and staff_assignment.assigned_at <= statement_timestamp()
           )
         )
       order by circle.name
@@ -663,6 +667,7 @@ export async function getOpsExperienceManagementDirectory(
       circles,
       experiences: rows.map((row) => ({
         capacity: row.capacity,
+        circleId: row.circle_id,
         endsAt: asIso(row.ends_at),
         experienceId: row.experience_id,
         googleCommunicationsConfigured,

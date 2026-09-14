@@ -143,7 +143,7 @@ test("Academy shares the member paper shell without duplicate membership chrome"
   assert.match(shell, /const memberLearning = member && pathname\.startsWith\("\/my\/learn"\)/);
   assert.match(
     shell,
-    /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| memberSupport \|\| timeline/,
+    /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| memberSupport \|\| memberSettings \|\| timeline/,
   );
   assert.match(
     shell,

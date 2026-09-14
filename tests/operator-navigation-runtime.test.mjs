@@ -11,12 +11,12 @@ const require = createRequire(import.meta.url);
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 let pathname = "/ops";
 const modules = new Map();
-function load(path, overrides = {}, browserWindow) {
+function load(path, overrides = {}, browserWindow, runtime = {}) {
   const compiled = ts.transpileModule(source(path), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText;
   const cjsModule = { exports: {} };
-  new Function("require", "module", "exports", "fetch", "window", compiled)((name) => {
+  new Function("require", "module", "exports", "fetch", "window", "FormData", compiled)((name) => {
     if (Object.hasOwn(overrides, name)) return overrides[name];
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     if (name === "next/navigation") return { usePathname: () => pathname };
@@ -36,7 +36,7 @@ function load(path, overrides = {}, browserWindow) {
       return modules.get(dependency);
     }
     throw new Error(`Unexpected navigation dependency: ${name}`);
-  }, cjsModule, cjsModule.exports, () => { throw new Error("Navigation must not make external requests"); }, browserWindow);
+  }, cjsModule, cjsModule.exports, runtime.fetch ?? (() => { throw new Error("Navigation must not make external requests"); }), browserWindow, runtime.FormData ?? FormData);
   return cjsModule.exports;
 }
 const navigation = load("src/lib/platform/operations-navigation.ts");
@@ -55,7 +55,7 @@ const renderNavigation = (path, role = "ops_admin") => render(React.createElemen
   configuration: connected, operatorRole: role, pathname: path, viewerLabel: "operator@example.test",
 }));
 const sharedRoutes = ["/ops", "/ops/members", "/ops/circles", "/ops/foundations", "/ops/experiences", "/ops/work"];
-const adminRoutes = ["/ops/blocks", "/ops/operators", "/ops/academy", "/ops/artifacts", "/ops/support", "/ops/announcements", "/ops/notifications", "/ops/system"];
+const adminRoutes = ["/ops/blocks", "/ops/operators", "/ops/academy", "/ops/artifacts", "/ops/support", "/ops/messages", "/ops/system"];
 
 test("only header destinations disable Next focus scrolling and explicitly reveal the selection rails", () => {
   const calls = [];
@@ -71,7 +71,14 @@ test("only header destinations disable Next focus scrolling and explicitly revea
     const tree = Navigation({ configuration: connected, operatorRole: "ops_admin", pathname: route });
     const links = descendants(tree).filter((node) => node.props?.href);
     const headerLinks = links.filter((node) => node.props.href === "/ops" || node.props["aria-current"] !== undefined || typeof node.props.onNavigate === "function");
-    assert.equal(headerLinks.length, 1 + 5 + (route === "/ops" ? 0 : getOperationsLocation(route, getOperationsNavigation("ops_admin")).group.items.length));
+    const group = getOperationsLocation(route, getOperationsNavigation("ops_admin")).group;
+    assert.equal(headerLinks.length, 2 + (group.items.length > 1 ? group.items.length : 0));
+    const triggers = descendants(tree).filter((node) => node.type === "button" && node.props.id?.startsWith("operator-section-"));
+    assert.equal(triggers.length, 5);
+    for (const trigger of triggers) {
+      assert.equal(trigger.props.href, undefined, "section switches do not navigate to an unrelated page");
+      assert.equal(trigger.props["aria-controls"], "operator-section-pages");
+    }
     for (const link of headerLinks) {
       assert.equal(link.props.scroll, false);
       assert.equal(link.props.onClick, undefined, "onNavigate leaves modifier/new-tab clicks to Next");
@@ -89,7 +96,7 @@ test("only header destinations disable Next focus scrolling and explicitly revea
 
 test("horizontal navigation preserves exactly the existing shared and Administrator-only destinations", () => {
   const admin = getOperationsNavigation("ops_admin");
-  assert.deepEqual(admin.map((group) => group.label), ["Overview", "People", "Learning & events", "Messages", "Tasks & tools"]);
+  assert.deepEqual(admin.map((group) => group.label), ["Overview", "People", "Circles", "Learning & events", "Messages", "Settings"]);
   assert.deepEqual(admin.flatMap((group) => group.items.map((item) => item.href)).sort(), [...sharedRoutes, ...adminRoutes].sort());
   for (const role of ["circle_leader", "guide"]) {
     assert.deepEqual(getOperationsNavigation(role).flatMap((group) => group.items.map((item) => item.href)).sort(), sharedRoutes.toSorted());
@@ -113,6 +120,34 @@ test("exact and nested locations select one section/page without prefix collisio
   assert.equal(isOperationsPathCurrent("/ops/memberships", "/ops/members"), false);
   assert.equal(isOperationsPathCurrent("/ops/work", "/ops"), false);
   assert.equal(getOperationsLocation("/ops/operators", getOperationsNavigation("guide")), null);
+  for (const path of ["/ops/announcements", "/ops/notifications"]) assert.equal(getOperationsLocation(path, groups).item.href, "/ops/messages");
+  assert.equal(getOperationsLocation("/ops/community/byob-02", groups).item.href, "/ops/experiences");
+});
+
+test("section buttons reveal destinations without navigating and route changes restore the selected section", () => {
+  const slots = [];
+  let cursor = 0;
+  const scrolls = [];
+  const Navigation = load("src/components/platform/PlatformShell.tsx", {
+    react: { ...React, useEffect() {}, useRef: () => ({ current: null }), useState(initial) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = initial;
+      return [slots[index], (next) => { slots[index] = typeof next === "function" ? next(slots[index]) : next; }];
+    } },
+  }, { scrollTo: (options) => scrolls.push(options) }).OperationsNavigation;
+  const descendants = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(descendants) : [node, ...descendants(node.props?.children)];
+  const draw = (path) => { cursor = 0; return Navigation({ configuration: connected, operatorRole: "ops_admin", pathname: path }); };
+  const initial = descendants(draw("/ops/members"));
+  initial.find((node) => node.type === "button" && node.props.id === "operator-section-programme").props.onClick();
+  const opened = descendants(draw("/ops/members"));
+  assert.ok(opened.some((node) => node.type === "nav" && node.props["aria-label"] === "Learning & events pages"));
+  assert.equal(opened.find((node) => node.props?.id === "operator-section-people").props["aria-current"], "location");
+  assert.equal(opened.find((node) => node.props?.id === "operator-section-programme").props["aria-expanded"], true);
+  assert.deepEqual(scrolls, [], "opening a section neither scrolls nor activates its first destination");
+  const navigated = descendants(draw("/ops/notifications"));
+  assert.ok(navigated.some((node) => node.type === "nav" && node.props["aria-label"] === "Messages pages"));
+  assert.ok(navigated.some((node) => node.props?.href === "/ops/messages" && node.props["aria-current"] === "page"));
+  for (const invalid of ["/ops/announcementstuff", "/ops/notifications-other"]) assert.equal(getOperationsLocation(invalid, getOperationsNavigation("ops_admin")), null);
 });
 
 test("every page renders selected section/page in horizontal rails without a sidebar or navigation drawer", () => {
@@ -120,14 +155,15 @@ test("every page renders selected section/page in horizontal rails without a sid
     const tree = renderNavigation(route);
     const sections = nodes(tree, "nav").find((node) => attr(node, "aria-label") === "Operations sections");
     assert.ok(sections);
-    assert.equal(nodes(sections, "a").length, 5);
+    assert.equal(nodes(sections, "a").length, 1);
+    assert.equal(nodes(sections, "button").length, 5);
     assert.match(attr(sections, "class"), /flex-wrap/);
     assert.doesNotMatch(attr(sections, "class"), /overflow-x/);
     const current = elements(tree).filter((node) => attr(node, "aria-current") === "page");
     assert.equal(current.length, 1, route);
     assert.equal(attr(current[0], "href"), route);
-    assert.equal(elements(tree).filter((node) => attr(node, "aria-current") === "location").length, route === "/ops" ? 0 : 1);
-    assert.equal(nodes(tree, "nav").length, route === "/ops" ? 1 : 2);
+    assert.equal(elements(tree).filter((node) => attr(node, "aria-current") === "location").length, route === "/ops/system" ? 0 : 1);
+    assert.equal(nodes(tree, "nav").length, route === "/ops/system" ? 1 : 2);
     for (let parent = current[0]; parent; parent = parent.parentNode) {
       assert.notEqual(parent.tagName, "details");
       assert.notEqual(attr(parent, "role"), "dialog");
@@ -172,20 +208,20 @@ const data = {
   },
 };
 
-test("Overview maps concrete jobs to the same destinations and takes Circle placement directly to its form", () => {
+test("Overview offers three starting actions and a direct member search, not a duplicate menu", () => {
   const tree = render(React.createElement(OpsOverview, { data }));
   const tasks = nodes(tree, "nav").find((node) => attr(node, "aria-label") === "Operator tasks");
   assert.ok(tasks);
-  assert.deepEqual(nodes(tasks, "a").map((node) => attr(node, "href")).sort(), [...sharedRoutes.filter((path) => path !== "/ops"), ...adminRoutes, "/ops/members#allow-member-email", "/ops/circles#create-circle"].sort());
-  assert.match(text(tasks), /Find a member/);
-  assert.match(text(tasks), /Open a Circle roster/);
-  assert.match(text(tasks), /Plan events and take attendance/);
-  assert.match(text(tasks), /Add or manage operators/);
-  for (const heading of nodes(tasks, "h2")) {
-    assert.match(attr(nodes(heading, "span")[0], "class"), /\[font-family:var\(--font-cadehandy2\)\]/);
-  }
-  assert.equal(attr(nodes(tasks, "a").find((node) => text(node).startsWith("Allow member email")), "href"), "/ops/members#allow-member-email");
-  assert.equal(attr(nodes(tasks, "a").find((node) => text(node).startsWith("Create a Circle")), "href"), "/ops/circles#create-circle");
+  assert.deepEqual(nodes(tasks, "a").map((node) => attr(node, "href")), ["/ops/members#allow-member-email", "/ops/circles", "/ops/operators?add=1"]);
+  assert.match(text(tasks), /Add a member/);
+  assert.match(text(tasks), /Manage Circles/);
+  assert.match(text(tasks), /Add an operator/);
+  assert.match(text(tasks), /Allow their email, then share joining instructions/);
+  const search = nodes(tree, "form").find((node) => attr(node, "role") === "search");
+  assert.equal(attr(search, "action"), "/ops/members");
+  assert.equal(attr(search, "method"), "get");
+  assert.equal(attr(nodes(search, "input")[0], "name"), "q");
+  assert.equal(attr(nodes(search, "input")[0], "type"), "search");
   assert.match(source("app/ops/members/page.tsx"), /id="allow-member-email"/);
   assert.match(source("src/components/platform/OperatorCirclesManager.tsx"), /id="create-circle"/);
   const placement = nodes(tree, "a").find((node) => text(node).startsWith("Place 2 eligible members"));
@@ -195,10 +231,25 @@ test("Overview maps concrete jobs to the same destinations and takes Circle plac
 test("Overview shares the existing server Administrator boundary for privileged job shortcuts", () => {
   const tree = render(React.createElement(OpsOverview, { data: { ...data, canPlaceMembers: false } }));
   const tasks = nodes(tree, "nav").find((node) => attr(node, "aria-label") === "Operator tasks");
-  assert.deepEqual(nodes(tasks, "a").map((node) => attr(node, "href")).sort(), sharedRoutes.filter((path) => path !== "/ops").toSorted());
+  assert.deepEqual(nodes(tasks, "a").map((node) => attr(node, "href")), ["/ops/circles", "/ops/foundations", "/ops/experiences"]);
   for (const forbidden of adminRoutes) assert.equal(nodes(tree, "a").some((node) => attr(node, "href") === forbidden), false);
   assert.doesNotMatch(text(tree), /Place 2 eligible members/);
-  assert.doesNotMatch(text(tasks), /Allow member email|Create a Circle/);
+  assert.doesNotMatch(text(tree), /Ready for a Circle/);
+  assert.equal(nodes(tree, "a").some((node) => attr(node, "href") === "/ops/circles#assign-member"), false);
+  assert.equal(attr(nodes(tree, "input").find((node) => attr(node, "name") === "q"), "placeholder"), "Name");
+  assert.doesNotMatch(text(tasks), /Add a member|Add an operator|Create a Circle/);
+});
+
+test("Overview does not show empty attention calls or ask operators to place zero members", () => {
+  const tree = render(React.createElement(OpsOverview, { data: {
+    ...data,
+    counts: { ...data.counts, eligibleWithoutCircle: 0 },
+    attention: [{ count: 0, href: "/ops/system#delivery", label: "Empty delivery queue", oldestAt: null }],
+  } }));
+  assert.doesNotMatch(text(tree), /Place 0|Empty delivery queue/);
+  const snapshot = nodes(tree, "nav").find((node) => attr(node, "aria-label") === "Current membership snapshot");
+  assert.match(text(snapshot), /Ready for a Circle/);
+  assert.doesNotMatch(text(snapshot), /Without a Circle/);
 });
 
 test("operator account profile link avoids the unified sign-in invitation-claiming redirect", () => {
@@ -248,4 +299,225 @@ test("member shell retains its utility rail, member FAB and thresholds without o
   pathname = "/my/join";
   const threshold = render(React.createElement(PlatformShell, { configuration: connected, surface: "member" }, React.createElement("p", null, "Membership entry")));
   assert.equal(nodes(threshold, "button").some((node) => attr(node, "data-member-fab") === "true"), false);
+});
+
+const audienceTabs = load("src/components/platform/OperatorEventAudienceTabs.tsx");
+const eventClientDependencies = {
+  "next/navigation": { useRouter: () => ({ push() { throw new Error("Rendering must not navigate"); }, refresh() { throw new Error("Rendering must not refresh"); } }) },
+  "@/lib/datetime/zoned-date-time": load("src/lib/datetime/zoned-date-time.ts"),
+};
+const communityComponents = load("src/components/platform/OperatorCommunityEvents.tsx", eventClientDependencies);
+const memberEventComponents = load("src/components/platform/OperatorExperienceDirectory.tsx", eventClientDependencies);
+const eventDirectory = { canCreate: false, canManageGlobal: true, experiences: [], circles: [], blocks: [] };
+const publicEvent = {
+  eventKey: "byob-02", title: "BYOB 02", location: "Alpine, Utah", timezone: "America/Denver",
+  startsAt: "2026-09-19T15:00:00Z", publicationState: "published", eventState: "Upcoming",
+  registrationMode: "byob", registeredCount: 0, attendanceCount: 0, version: 1,
+};
+function eventPageDependencies(state) {
+  return {
+    "@/components/platform/OperatorEventAudienceTabs": audienceTabs,
+    "@/components/platform/OperatorCommunityEvents": communityComponents,
+    "@/components/platform/OperatorExperienceDirectory": memberEventComponents,
+    "@/components/platform/PlatformUnavailable": { __esModule: true, default: () => React.createElement("p", null, "Unavailable") },
+    "@/lib/platform/page-data": { getOperatorPageContext: async () => ({ state, role: "ops_admin", dashboard: {}, viewer: { authUserId: "local-fixture" } }) },
+    "@/lib/platform/ops-experience-preview": { PREVIEW_OPS_EXPERIENCE_DIRECTORY: eventDirectory },
+    "@/lib/platform/ops-experience-repository": { getOpsExperienceManagementDirectory: async () => eventDirectory },
+    "@/lib/events/community-event-model": { legacyCommunityEventRecords: () => [publicEvent] },
+    "@/lib/events/community-event-repository": {
+      getOpsCommunityEvents: async () => [publicEvent],
+      getCommunityRoster: async () => ({ count: 0, page: 1, pageCount: 1, registrations: [] }),
+    },
+  };
+}
+function assertAudienceInsideFrame(tree, selected) {
+  const frames = nodes(tree, "main");
+  assert.equal(frames.length, 1);
+  assert.equal(attr(frames[0], "id"), "operator-content");
+  const audiences = nodes(tree, "nav").filter((node) => attr(node, "aria-label") === "Event audiences");
+  assert.equal(audiences.length, 1);
+  const [audience] = audiences;
+  assert.ok(elements(frames[0]).includes(audience), "audience tabs must not be a sibling above the negative-margin page frame");
+  assert.equal(audience.parentNode.parentNode, frames[0]);
+  const bodyChildren = audience.parentNode.childNodes.filter((node) => node.tagName);
+  assert.equal(bodyChildren[0], audience, "audience navigation is the first content inside the page frame");
+  assert.ok(bodyChildren.length > 1, "the page body follows the audience tabs");
+  const selectedLinks = nodes(audience, "a").filter((node) => attr(node, "aria-current") === "page");
+  assert.equal(selectedLinks.length, 1);
+  assert.equal(attr(selectedLinks[0], "href"), selected === "community" ? "/ops/experiences?view=community" : "/ops/experiences");
+  return audience;
+}
+
+test("both event audiences remain inside their listing frame before the body in preview and connected routes", async () => {
+  for (const state of ["preview", "connected"]) {
+    for (const view of ["members", "community"]) {
+      const Page = load("app/ops/experiences/page.tsx", eventPageDependencies(state)).default;
+      const page = await Page({ searchParams: Promise.resolve({ view }) });
+      assert.equal(page.type, view === "community" ? communityComponents.default : memberEventComponents.default);
+      assert.equal(page.props.navigation.type, audienceTabs.default, "the route passes tabs into the listing instead of rendering them outside its frame");
+      const tree = render(page);
+      const audience = assertAudienceInsideFrame(tree, view);
+      const body = audience.parentNode;
+      if (view === "community") {
+        assert.ok(nodes(body, "input").some((node) => attr(node, "type") === "search"));
+        assert.ok(nodes(body, "a").some((node) => attr(node, "href") === "/ops/community/byob-02"));
+      } else {
+        assert.ok(nodes(body, "nav").some((node) => attr(node, "aria-label") === "Experience tasks"));
+        assert.ok(nodes(body, "dl").some((node) => attr(node, "aria-label") === "Experience snapshot"));
+      }
+    }
+  }
+});
+
+test("public event detail keeps audience tabs inside its frame and website links leave the member host", async () => {
+  const previous = process.env.NEXT_PUBLIC_SITE_URL;
+  const site = load("src/lib/site.ts");
+  const paths = [];
+  try {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://members.theruinedproject.com";
+    for (const state of ["preview", "connected"]) {
+      const Page = load("app/ops/community/[eventKey]/page.tsx", {
+        ...eventPageDependencies(state),
+        "@/lib/site": { ...site, publicWebsiteHref: (path) => { paths.push(path); return site.publicWebsiteHref(path); } },
+      }).default;
+      const tree = render(await Page({ params: Promise.resolve({ eventKey: publicEvent.eventKey }), searchParams: Promise.resolve({}) }));
+      assertAudienceInsideFrame(tree, "community");
+      assert.equal(paths.at(-1), "/community#byob-02", "the public destination must use the shared website host helper");
+      const websiteLink = nodes(tree, "a").find((node) => text(node).startsWith("View on website"));
+      assert.ok(websiteLink);
+      assert.equal(attr(websiteLink, "href"), "https://theruinedproject.com/community#byob-02");
+      assert.equal(attr(websiteLink, "target"), "_blank");
+      assert.match(attr(websiteLink, "rel"), /noopener/);
+      assert.ok(nodes(tree, "a").some((node) => attr(node, "href") === "/ops/experiences?view=community"), "operator back link stays local");
+      assert.ok(nodes(tree, "section").some((node) => attr(node, "id") === "registrations"));
+      assert.ok(nodes(tree, "button").some((node) => text(node) === "Save event"));
+    }
+    assert.equal(paths.length, 2);
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previous;
+  }
+});
+
+const opsPreview = load("src/lib/platform/ops-preview.ts");
+const experiencePreview = load("src/lib/platform/ops-experience-preview.ts", { "@/lib/platform/ops-preview": opsPreview });
+const meetingCircleId = opsPreview.PREVIEW_OPS_CIRCLES[0].id;
+const otherMeetingCircleId = opsPreview.PREVIEW_OPS_CIRCLES[1].id;
+const meetingDirectory = {
+  ...experiencePreview.PREVIEW_OPS_EXPERIENCE_DIRECTORY,
+  circles: [{ id: meetingCircleId, name: "Same display name" }, { id: otherMeetingCircleId, name: "Same display name" }],
+  experiences: [
+    { ...experiencePreview.PREVIEW_OPS_EXPERIENCE_DIRECTORY.experiences[0], circleId: meetingCircleId, title: "Selected meeting" },
+    { ...experiencePreview.PREVIEW_OPS_EXPERIENCE_DIRECTORY.experiences[0], circleId: otherMeetingCircleId, experienceId: "other-meeting", title: "Other Circle meeting" },
+    { ...experiencePreview.PREVIEW_OPS_EXPERIENCE_DIRECTORY.experiences[1], circleId: null, title: "All-member gathering" },
+  ],
+};
+function meetingPage(state) {
+  return load("app/ops/experiences/page.tsx", {
+    ...eventPageDependencies(state),
+    "@/lib/platform/ops-experience-preview": { PREVIEW_OPS_EXPERIENCE_DIRECTORY: meetingDirectory },
+    "@/lib/platform/ops-experience-repository": { getOpsExperienceManagementDirectory: async () => meetingDirectory },
+  }).default;
+}
+
+test("Circle scheduling uses canonical preview IDs shared with Circle management", () => {
+  assert.deepEqual(experiencePreview.PREVIEW_OPS_EXPERIENCE_DIRECTORY.circles, opsPreview.PREVIEW_OPS_CIRCLES
+    .filter((circle) => ["active", "forming"].includes(circle.status)).map(({ id, name }) => ({ id, name })));
+  assert.equal(experiencePreview.PREVIEW_OPS_EXPERIENCE_DIRECTORY.experiences[0].circleId, meetingCircleId);
+  assert.equal(experiencePreview.PREVIEW_OPS_EXPERIENCE_RECORDS["preview-experience-circle-01"].circleId, meetingCircleId);
+});
+
+test("event listings use compact meeting-link status and route edits through meeting setup", () => {
+  const tree = render(React.createElement(memberEventComponents.default, { directory: meetingDirectory }));
+  for (const article of nodes(tree, "article")) {
+    assert.equal(nodes(article, "form").length, 0, "the listing must not contain an inline Google mutation form");
+    const link = nodes(article, "a").find((node) => attr(node, "href")?.endsWith("#meeting-setup"));
+    assert.ok(link);
+    const event = meetingDirectory.experiences.find((entry) => attr(link, "href") === `/ops/experiences/${entry.experienceId}#meeting-setup`);
+    assert.ok(event);
+    assert.equal(text(link), event.meetingUrl ? "Manage meeting link →" : "Set meeting link →");
+    assert.match(text(article), event.meetingUrl ? /Meeting link saved/ : /Meeting link not set/);
+  }
+});
+
+test("Circle shortcut filters by exact ID and prefills a no-reservation meeting for the selected Circle", async () => {
+  for (const state of ["preview", "connected"]) {
+    const page = await meetingPage(state)({ searchParams: Promise.resolve({ circleId: meetingCircleId, view: "community" }) });
+    assert.equal(page.key, meetingCircleId, "changing Circle resets the new-draft form");
+    const tree = render(page);
+    assertAudienceInsideFrame(tree, "members");
+    assert.match(text(tree), /Selected meeting/);
+    assert.doesNotMatch(text(tree), /Other Circle meeting|All-member gathering/);
+    assert.ok(nodes(tree, "a").some((node) => attr(node, "href") === `/ops/circles?circleId=${meetingCircleId}#circle-communications`));
+    const section = nodes(tree, "section").find((node) => attr(node, "id") === "new-experience");
+    const form = nodes(section, "form")[0];
+    assert.ok(form);
+    const input = (name) => nodes(form, "input").find((node) => attr(node, "name") === name);
+    assert.equal(attr(input("title"), "value"), "Same display name meeting");
+    for (const [name, value] of [["kind", "circle_meeting"], ["visibility", "circle"], ["circleId", meetingCircleId], ["registrationMode", "none"]]) {
+      assert.equal(attr(input(name), "type"), "hidden");
+      assert.equal(attr(input(name), "value"), value);
+      assert.equal(nodes(form, "select").some((node) => attr(node, "name") === name), false);
+    }
+    assert.equal(input("capacity"), undefined);
+    assert.equal(nodes(form, "input").some((node) => attr(node, "name") === "waitlistEnabled"), false);
+    const steps = nodes(section, "ol").find((node) => attr(node, "aria-label") === "Meeting setup steps");
+    assert.equal(nodes(steps, "li").length, 3);
+    assert.match(text(steps), /Save.*draft.*Review.*audience.*Publish.*invitation delivery/);
+  }
+});
+
+test("invalid, unauthorized, ambiguous and empty Circle shortcuts never fall back to another audience", async () => {
+  for (const state of ["preview", "connected"]) {
+    for (const circleId of ["", "not-a-circle", "Same display name", "11111111-1111-4111-8111-111111111199", [meetingCircleId, otherMeetingCircleId]]) {
+      const tree = render(await meetingPage(state)({ searchParams: Promise.resolve({ circleId }) }));
+      assertAudienceInsideFrame(tree, "members");
+      assert.match(text(tree), /No other audience has been selected/);
+      assert.equal(nodes(tree, "form").length, 0);
+      assert.equal(nodes(tree, "article").length, 0);
+      assert.equal(nodes(tree, "input").length, 0);
+      assert.ok(nodes(tree, "a").some((node) => attr(node, "href") === "/ops/circles"));
+    }
+  }
+});
+
+test("saving a scoped meeting pins the request audience and opens meeting setup without sending invitations", async () => {
+  const calls = [];
+  const navigations = [];
+  let resets = 0;
+  const descendants = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(descendants) : [node, ...descendants(node.props?.children)];
+  const Form = load("src/components/platform/OperatorExperienceDirectory.tsx", {
+    ...eventClientDependencies,
+    react: { ...React, useState: (initial) => [initial, () => {}] },
+    "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), refresh() {} }) },
+  }, undefined, {
+    FormData: class { constructor(form) { this.values = form.values; } get(name) { return this.values[name] ?? null; } },
+    fetch: async (url, options) => { calls.push({ url, ...options, body: JSON.parse(options.body) }); return { ok: true, json: async () => ({ experience: { experienceId: "new-meeting" } }) }; },
+  }).default;
+  const event = {
+    preventDefault() {},
+    currentTarget: { reset() { resets += 1; }, values: {
+      title: "Our next meeting", startsAt: "2026-10-01T18:00", endsAt: "2026-10-01T19:00", timezone: "America/Denver",
+      visibility: "all_members", kind: "public_event", circleId: otherMeetingCircleId, blockId: "other-block",
+      registrationMode: "internal", capacity: "100", waitlistEnabled: "on",
+    } },
+  };
+  const form = descendants(Form({ directory: meetingDirectory, requestedCircleId: meetingCircleId })).find((node) => node.type === "form");
+  await form.props.onSubmit(event);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/ops/experiences");
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].body.circleId, meetingCircleId);
+  assert.equal(calls[0].body.visibility, "circle");
+  assert.equal(calls[0].body.kind, "circle_meeting");
+  assert.equal(calls[0].body.registrationMode, "none");
+  assert.equal(calls[0].body.blockId, null);
+  assert.equal(calls[0].body.capacity, null);
+  assert.equal(calls[0].body.waitlistEnabled, false);
+  assert.equal(calls[0].body.startsAt, "2026-10-02T00:00:00.000Z");
+  assert.deepEqual(navigations, ["/ops/experiences/new-meeting#meeting-setup"]);
+  assert.equal(resets, 1);
+  const preview = descendants(Form({ directory: meetingDirectory, requestedCircleId: meetingCircleId, preview: true })).find((node) => node.type === "form");
+  await preview.props.onSubmit(event);
+  assert.equal(calls.length, 1, "preview cannot create or publish an event");
 });

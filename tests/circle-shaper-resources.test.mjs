@@ -113,8 +113,10 @@ test("operator routes and the Circle management surface expose assign and end ac
     assert.doesNotMatch(route, /export async function DELETE/);
   }
   assert.match(actions, /Assign Shaper/);
-  assert.match(actions, /End assignment/);
-  assert.match(actions, /Assign exact version/);
+  assert.match(actions, /Remove Shaper/);
+  assert.match(actions, /Remove resource/);
+  assert.match(actions, /Add resource/);
+  assert.match(actions, /resource\.title\} · v\{resource\.version/);
   assert.match(actions, /\/api\/ops\/circle-shaper-assignments/);
   assert.match(actions, /\/api\/ops\/circle-resources/);
   assert.match(circlesPage, /getOpsCircleManagementOptions/);

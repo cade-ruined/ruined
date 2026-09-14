@@ -11,10 +11,13 @@ import type {
 } from "@/lib/foundations/model";
 import type { PlatformViewer } from "@/lib/platform/model";
 import { getApplicationDatabase } from "@/lib/database/server";
+import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
+import { getMemberIdentity } from "@/lib/membership/repository";
 
 type FoundationTransaction = postgres.TransactionSql;
 
 type LockedMember = {
+  membershipFunding: "self" | "operator";
   accountState: "active" | "closed" | "invited" | "provisional" | "suspended";
   administrativeOnboardingState: "completed" | "in_progress" | "not_started";
   billingState: "active" | "attention_required" | "ended" | "pending";
@@ -89,15 +92,10 @@ function asProgress(completed: number, total: number): number {
 }
 
 function canUseFoundations(member: LockedMember): boolean {
-  return (
-    member.accountState === "active" &&
-    member.administrativeOnboardingState === "completed" &&
-    member.billingState === "active" &&
-    (member.standingState === "active" ||
-      (member.standingState === "cancellation_requested" &&
-        (!member.cancellationEffectiveAt || member.cancellationEffectiveAt > new Date()))) &&
-    (member.programState === "onboarding" || member.programState === "active")
-  );
+  return memberCan(deriveMemberAccessPolicy({
+    ...member,
+    cancellationEffectiveAt: member.cancellationEffectiveAt?.toISOString() ?? null,
+  }), "foundations.write");
 }
 
 async function lockMemberForFoundations(
@@ -119,6 +117,9 @@ async function lockMemberForFoundations(
   `;
   const memberId = links[0]?.member_id;
   if (!memberId) throw new FoundationAccessError();
+  const funding = await tx<Array<{ operator_funded: boolean }>>`
+    select private.ruined_lock_member_operator_funding(${memberId}::uuid) as operator_funded
+  `;
 
   // Stripe locks ruined_members before member_lifecycle. Reuse that ordering so
   // billing webhooks and Foundation writes cannot deadlock one another.
@@ -157,6 +158,7 @@ async function lockMemberForFoundations(
   if (!lifecycle) throw new FoundationAccessError();
 
   const member: LockedMember = {
+    membershipFunding: funding[0]?.operator_funded ? "operator" : "self",
     accountState: lifecycle.account_state,
     administrativeOnboardingState: lifecycle.administrative_onboarding_state,
     billingState: lifecycle.billing_state,
@@ -270,6 +272,10 @@ async function unitRows(
 export async function getMemberFoundationsState(
   authUserId: string,
 ): Promise<MemberFoundationsState | null> {
+  const identity = await getMemberIdentity(authUserId);
+  if (!identity || !memberCan(deriveMemberAccessPolicy(identity), "foundations.write")) {
+    throw new FoundationAccessError();
+  }
   const sql = getApplicationDatabase();
   return sql.begin("isolation level repeatable read read only", async (tx) => {
   const memberRows = await tx<
@@ -304,11 +310,10 @@ export async function getMemberFoundationsState(
       and platform_user.status = 'active'
       and lifecycle.account_state = 'active'
       and lifecycle.administrative_onboarding_state = 'completed'
-      and lifecycle.billing_state = 'active'
+      and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
       and lifecycle.standing_state in ('active', 'cancellation_requested')
       and (
         lifecycle.standing_state = 'active'
-        or lifecycle.cancellation_effective_at is null
         or lifecycle.cancellation_effective_at > statement_timestamp()
       )
       and lifecycle.program_state in ('onboarding', 'active')

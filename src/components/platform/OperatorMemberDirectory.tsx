@@ -8,6 +8,7 @@ import {
   OPERATOR_PRIMARY_ACTION_CLASS,
 } from "@/components/platform/operatorStyles";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
+import { guidanceForMemberSummary } from "@/lib/platform/operator-member-guidance";
 import type {
   OperatorMemberDirectoryFilter,
   OperatorMemberDirectoryPage,
@@ -122,10 +123,12 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
       </div>
 
       <div className="grid gap-2">
-        {directory.members.map((member) => (
+        {directory.members.map((member) => {
+          const next = guidanceForMemberSummary(member);
+          return (
           <Link
             className="grid gap-4 rounded-[4px] bg-black/[0.025] px-4 py-4 transition-[background-color,transform] hover:-translate-y-px hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black xl:grid-cols-[minmax(13rem,1.2fr)_minmax(10rem,0.8fr)_10rem_minmax(11rem,1fr)] xl:items-center xl:px-5"
-            href={`/ops/members/${member.memberId}`}
+            href={`/ops/members/${member.memberId}?returnTo=${encodeURIComponent(directoryHref(directory, directory.page))}`}
             aria-label={`Open ${member.name}’s member record`}
             key={member.memberId}
           >
@@ -136,23 +139,24 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
               {member.email ? <p className="mt-2 truncate text-sm text-black/50">{member.email}</p> : null}
             </div>
             <div className="text-sm leading-relaxed text-black/62">
-              <span className="mb-1 block text-[0.62rem] font-medium uppercase tracking-[0.12em] text-black/38 xl:sr-only">Circle + Block</span>
+              <span className="mb-1 block [font-family:var(--font-cadehandy2)] text-lg text-black/50 xl:sr-only">Circle + Block</span>
               <p>{member.circleName ?? "No Circle"}</p>
               <p className="text-black/40">{member.blockName ?? "No Block"}</p>
             </div>
             <div>
-              <span className="mb-2 block text-[0.62rem] font-medium uppercase tracking-[0.12em] text-black/38 xl:sr-only">Membership</span>
+              <span className="mb-2 block [font-family:var(--font-cadehandy2)] text-lg text-black/50">Billing</span>
               <StateLabel state={member.billingState} />
               <p className="mt-3 text-xs tabular-nums text-black/45">Foundations {member.foundationsProgress}%</p>
               <div className="mt-2"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
             </div>
             <p className="text-sm leading-relaxed text-black/58">
-              <span className="mb-1 block text-[0.62rem] font-medium uppercase tracking-[0.12em] text-black/38 xl:sr-only">Next action</span>
-              {member.nextAction}
+              <span className="mb-1 block [font-family:var(--font-cadehandy2)] text-lg text-black/70">{next.status} · {next.actor}</span>
+              {next.title}
               <span className="mt-2 block font-semibold text-black underline decoration-black/25 underline-offset-4">Open member record <span aria-hidden="true">→</span></span>
             </p>
           </Link>
-        ))}
+          );
+        })}
         {directory.members.length === 0 ? (
           <p className="py-10 text-sm text-black/50">
             No members match this search. Try a name, email, Circle, or Block.

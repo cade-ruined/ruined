@@ -8,7 +8,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { EVENTS } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 import type { Product } from "@/data/products";
 import { JourneyLobbyIndex } from "@/components/sequence/JourneyIndexes";
 import { EXPLORE_ROOMS } from "@/data/navigation";
@@ -92,6 +92,7 @@ export default function ImmersiveParallax({
   fallback: ReactNode;
   products: Product[];
 }) {
+  const EVENTS = usePublicEvents();
   const desktopEligible = useSyncExternalStore(
     subscribeToDesktopExperience,
     getDesktopExperienceSnapshot,

@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { OpsInvitationActions } from "@/components/platform/OpsActions";
+import OperatorMemberInvitations from "@/components/platform/OperatorMemberInvitations";
 import OperatorMemberDirectory from "@/components/platform/OperatorMemberDirectory";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getPendingMemberInvitations, type PendingMemberInvitationPage } from "@/lib/platform/ops-member-invitation-repository";
 import {
   getOperatorMemberDirectoryPage,
   type OperatorMemberDirectoryFilter,
@@ -100,17 +101,25 @@ export default async function OperationsMembersPage({
   }
   if (!directory) return <PlatformUnavailable accessHref="/ops/access" />;
 
+  let pendingInvitations: PendingMemberInvitationPage | null = context.state === "preview"
+    ? { entries: [{ id: "preview-invitation", email: "sample.member@example.com", memberId: null, invitedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), status: "pending" }], query: "", page: 1, pageCount: 1, totalResults: 1 }
+    : null;
+  if (context.role === "ops_admin" && context.state !== "preview" && context.viewer) {
+    try { pendingInvitations = await getPendingMemberInvitations(context.viewer.authUserId, { query: firstSearchValue(params.invitationQ), page: requestedPage(firstSearchValue(params.invitationPage)) }); }
+    catch (error) { console.error("Pending member joining could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" }); }
+  }
+  const directoryParams = { q: directory.query, filter: directory.filter, page: String(directory.page) };
   const actions = context.role === "ops_admin" && (context.state === "preview" || context.viewer)
-    ? <OpsInvitationActions preview={context.state === "preview"} />
+    ? <OperatorMemberInvitations data={pendingInvitations} directoryParams={directoryParams} preview={context.state === "preview"} />
     : undefined;
 
   return (
     <OperatorPageFrame title="Members">
-      {actions ? <nav aria-label="Member directory actions" className="mb-4 flex flex-wrap gap-4"><a className="ui-heading inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href="#allow-member-email">Allow member email</a></nav> : null}
+      {actions ? <nav aria-label="Member directory actions" className="mb-4 flex flex-wrap gap-4"><a className="ui-heading inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href="#allow-member-email">Add member</a><a className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="#pending-member-joining">Pending joining</a></nav> : null}
       <OperatorMemberDirectory directory={directory} />
       {actions ? (
         <section aria-labelledby="allow-member-email-heading" className="mt-8 scroll-mt-32 rounded-[4px] bg-[var(--color-surface)] p-5 sm:p-6" id="allow-member-email">
-          <h2 className="ui-heading mb-4 text-2xl font-semibold" id="allow-member-email-heading">Allow a member to join</h2>
+          <h2 className="ui-heading mb-4 text-2xl font-semibold" id="allow-member-email-heading">Add member</h2>
           {actions}
         </section>
       ) : null}

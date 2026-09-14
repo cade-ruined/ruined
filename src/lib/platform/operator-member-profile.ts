@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { PlatformAccessDeniedError } from "@/lib/platform/repository";
+import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/stripe/membership-state";
 
@@ -18,8 +19,8 @@ export type OperatorMemberProfileResult = {
 };
 
 /**
- * Gives a verified operator a basic member profile without granting paid
- * membership benefits. Existing member state is canonical: revoked member
+ * Gives a verified operator a member profile. Complimentary funding is derived
+ * separately from current grants; this never fabricates payment. Revoked member
  * roles and suspended or closed accounts are never restored here.
  */
 export async function ensureOperatorMemberProfile(input: {
@@ -371,6 +372,7 @@ export async function ensureOperatorMemberProfile(input: {
       insertedProfiles.length > 0;
 
     if (changed) {
+      await markCalendarAudiencesPendingForMember(tx, { actorAuthUserId: authUserId, memberId });
       const beforeSnapshot = tx.json({
         accountState: priorAccountState,
         activeMemberRole: hasActiveMemberRole,

@@ -21,6 +21,7 @@ const LABELS: Record<string, string> = {
   in_transit: "In transit",
   label_created: "Label created",
   not_started: "Not started",
+  not_required: "Not required",
   onboarding: "Onboarding",
   paused: "Paused",
   pending: "Pending",

@@ -39,8 +39,8 @@ test("OTP delivery is generic and creates an Auth identity only for a current in
   const otpIndex = requestRoute.indexOf("supabase.auth.signInWithOtp");
 
   assert.ok(eligibilityIndex >= 0 && otpIndex > eligibilityIndex);
-  assert.match(requestRoute, /const response = NextResponse\.json\(\{ ok: true \}\)/);
-  assert.match(requestRoute, /if \(!eligibility\.eligible\) return response/);
+  assert.match(requestRoute, /const response = NextResponse\.json\(\{ ok: true, requestId \}\)/);
+  assert.match(requestRoute, /if \(!eligibility\.eligible\) \{[\s\S]*?return response;[\s\S]*?\}/);
   assert.match(
     requestRoute,
     /eligibility\.shouldCreateUser[\s\S]*getMemberEmailConfirmationUrl\(request\)[\s\S]*options = \{ emailRedirectTo, shouldCreateUser: true \}/,

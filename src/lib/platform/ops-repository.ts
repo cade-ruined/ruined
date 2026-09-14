@@ -72,6 +72,10 @@ export type OpsCircleShaperAssignment = {
 };
 
 export type OpsCircleMemberAssignment = {
+  membershipFunding?: "self" | "operator";
+  administrativeOnboardingState?: "completed" | "in_progress" | "not_started";
+  standingState?: string;
+  cancellationEffectiveAt?: string | null;
   accountState: OperatorMemberSummary["accountState"] | null;
   assignedAt: string;
   assignmentId: string;
@@ -181,7 +185,7 @@ export type OpsCircleActivationResult = OpsCircleSummary & {
   activated: boolean;
 };
 
-async function requireOpsAdmin(
+export async function requireOpsAdmin(
   tx: postgres.TransactionSql,
   actorAuthUserId: string,
 ): Promise<void> {
@@ -203,7 +207,7 @@ async function requireOpsAdmin(
   }
 }
 
-async function writeOpsAudit(
+export async function writeOpsAudit(
   tx: postgres.TransactionSql,
   input: {
     action: string;
@@ -269,9 +273,11 @@ function blockSlug(name: string): string {
 export async function createOrReissueMemberInvitation({
   actorAuthUserId,
   email: emailValue,
+  expectedInvitationId,
 }: {
   actorAuthUserId: string;
   email: string;
+  expectedInvitationId?: string;
 }): Promise<OpsInvitationResult> {
   const email = normalizeEmail(emailValue);
   const sql = getBillingDatabase();
@@ -284,6 +290,16 @@ export async function createOrReissueMemberInvitation({
     // Use the same email-scoped lock as passwordless identity claiming so an
     // invitation can never race the member record it authorizes.
     await tx`select pg_advisory_xact_lock(hashtext(${email}), 1)`;
+
+    if (expectedInvitationId !== undefined) {
+      if (!/^[1-9][0-9]*$/.test(expectedInvitationId)) throw new OpsRepositoryError("invalid_request", "Choose a valid joining allowance.");
+      const expected = await tx<Array<{ id: string }>>`
+        select id::text from passwordless_account_invites
+        where id = ${expectedInvitationId}::bigint and email_normalized = ${email} and intended_user_type = 'member'
+          and accepted_at is null and revoked_at is null for update
+      `;
+      if (!expected[0]) throw new OpsRepositoryError("conflict", "This joining allowance has changed. Refresh pending joining before renewing it.");
+    }
 
     const identityRows = await tx<
       Array<{
@@ -501,6 +517,11 @@ export async function createOrReissueMemberInvitation({
     if (!invitation) {
       throw new Error("The invitation audit record could not be created.");
     }
+
+    if (expectedInvitationId) await writeOpsAudit(tx, {
+      action: "member_invitation.reissued", actorAuthUserId, subjectId: invitation.id, subjectType: "member_invitation",
+      before: { invitationId: expectedInvitationId }, after: { invitationId: invitation.id, email, expiresAt: invitation.expires_at.toISOString() },
+    });
 
     return {
       email: invitation.email_normalized,
@@ -743,6 +764,10 @@ export async function getOpsCircleMemberAssignments(
 
     const rows = await tx<Array<{
       account_state: OpsCircleMemberAssignment["accountState"];
+      operator_funded: boolean;
+      administrative_onboarding_state: OpsCircleMemberAssignment["administrativeOnboardingState"];
+      standing_state: string;
+      cancellation_effective_at: Date | string | null;
       assigned_at: Date | string;
       assignment_id: string;
       billing_state: OpsCircleMemberAssignment["billingState"];
@@ -765,6 +790,10 @@ export async function getOpsCircleMemberAssignments(
           nullif(split_part(member.email, '@', 1), ''),
           'Member'
         ) as name,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        lifecycle.administrative_onboarding_state,
+        lifecycle.standing_state,
+        lifecycle.cancellation_effective_at,
         lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.program_state
@@ -783,6 +812,10 @@ export async function getOpsCircleMemberAssignments(
     return rows.map((row) => ({
       accountState: row.account_state,
       assignedAt: new Date(row.assigned_at).toISOString(),
+      membershipFunding: row.operator_funded ? "operator" : "self",
+      administrativeOnboardingState: row.administrative_onboarding_state,
+      standingState: row.standing_state,
+      cancellationEffectiveAt: row.cancellation_effective_at ? new Date(row.cancellation_effective_at).toISOString() : null,
       assignmentId: row.assignment_id,
       billingState: row.billing_state,
       circleId: row.circle_id,
@@ -1013,6 +1046,8 @@ export async function assignShaperToCircle({
   }
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
+    // Share access-edit ordering before taking account, Circle, or grant locks.
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
     await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 4)`;
 
@@ -1140,6 +1175,7 @@ export async function endCircleShaperAssignment({
   }
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
     const assignmentRows = await tx<Array<{
       auth_user_id: string;
@@ -1832,19 +1868,29 @@ export async function assignMemberToCircle({
     // assignment decision atomic even when two operators act concurrently.
     await tx`select pg_advisory_xact_lock(hashtext(${memberId}), 2)`;
 
+    await tx`select private.ruined_lock_member_operator_funding(${memberId}::uuid)`;
+
     const memberRows = await tx<
       Array<{
         account_state: string;
         billing_state: string;
         membership_state: string;
         program_state: string;
+        operator_funded: boolean;
+        administrative_onboarding_state: string;
+        standing_state: string;
+        cancellation_effective_at: Date | string | null;
       }>
     >`
       select
         lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.program_state,
-        member.membership_state
+        member.membership_state,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        lifecycle.administrative_onboarding_state,
+        lifecycle.standing_state,
+        lifecycle.cancellation_effective_at
       from ruined_members member
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
       where member.id = ${memberId}::uuid
@@ -1858,13 +1904,14 @@ export async function assignMemberToCircle({
 
     const eligible =
       member.account_state === "active" &&
-      member.billing_state === "active" &&
-      member.membership_state === "active" &&
+      member.administrative_onboarding_state === "completed" &&
+      (member.operator_funded || (member.billing_state === "active" && member.membership_state === "active")) &&
+      (member.standing_state === "active" || (member.standing_state === "cancellation_requested" && member.cancellation_effective_at !== null && new Date(member.cancellation_effective_at).getTime() > Date.now())) &&
       (member.program_state === "onboarding" || member.program_state === "active");
     if (!eligible) {
       throw new OpsRepositoryError(
         "conflict",
-        "Only active, paid members in onboarding or the active program can enter a Circle.",
+        "Complete membership entry and confirm active membership before adding this person to a Circle.",
       );
     }
 
@@ -1980,10 +2027,15 @@ export async function transferMemberToCircle({
     // Match assignment/removal writers: member lock before assignment and Circle
     // locks. Both Circles are then locked in UUID order for opposite-direction moves.
     await tx`select pg_advisory_xact_lock(hashtext(${normalizedMemberId}), 2)`;
+    await tx`select private.ruined_lock_member_operator_funding(${normalizedMemberId}::uuid)`;
     const memberRows = await tx<Array<{
       account_state: string; billing_state: string; membership_state: string; program_state: string;
+      operator_funded: boolean; administrative_onboarding_state: string; standing_state: string;
+      cancellation_effective_at: Date | string | null;
     }>>`
-      select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, member.membership_state
+      select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, member.membership_state,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        lifecycle.administrative_onboarding_state, lifecycle.standing_state, lifecycle.cancellation_effective_at
       from ruined_members member
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
       where member.id = ${normalizedMemberId}::uuid
@@ -1991,9 +2043,11 @@ export async function transferMemberToCircle({
     `;
     const member = memberRows[0];
     if (!member) throw new OpsRepositoryError("not_found", "That member could not be found.");
-    if (member.account_state !== "active" || member.billing_state !== "active" || member.membership_state !== "active"
+    if (member.account_state !== "active" || member.administrative_onboarding_state !== "completed"
+      || (!member.operator_funded && (member.billing_state !== "active" || member.membership_state !== "active"))
+      || !(member.standing_state === "active" || (member.standing_state === "cancellation_requested" && member.cancellation_effective_at !== null && new Date(member.cancellation_effective_at).getTime() > Date.now()))
       || !["onboarding", "active"].includes(member.program_state)) {
-      throw new OpsRepositoryError("conflict", "Review this member's membership before transferring them. An active account, active billing, and an onboarding or active program are required.");
+      throw new OpsRepositoryError("conflict", "Review this member's access before transferring them. Completed entry and active membership are required.");
     }
     const assignmentRows = await tx<Array<{ id: string; circle_id: string }>>`
       select id::text, circle_id from circle_member_assignments

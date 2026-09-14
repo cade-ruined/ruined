@@ -30,6 +30,10 @@ export type MemberPlatformSnapshot = {
 };
 
 export type OperatorMemberSummary = {
+  membershipFunding?: "self" | "operator";
+  administrativeOnboardingState?: "completed" | "in_progress" | "not_started";
+  standingState?: string;
+  cancellationEffectiveAt?: string | null;
   /** Current membership standing, when supplied by the full operator directory. */
   membershipState?: string;
   accountState: AccountState;
@@ -166,15 +170,22 @@ export function nextMemberAction({
   billingState,
   foundationsState,
   hasCircle,
+  membershipFunding = "self",
+  administrativeOnboardingState,
 }: {
   artifactState: ArtifactState;
   billingState: BillingState;
   foundationsState: FoundationsState;
   hasCircle: boolean;
+  membershipFunding?: "self" | "operator";
+  administrativeOnboardingState?: string;
 }): string {
-  if (billingState === "attention_required") return "Resolve membership billing";
-  if (billingState === "ended") return "Review membership status";
-  if (billingState === "pending") return "Complete membership entry";
+  if (administrativeOnboardingState && administrativeOnboardingState !== "completed") return "Complete membership entry";
+  if (membershipFunding !== "operator") {
+    if (billingState === "attention_required") return "Resolve membership billing";
+    if (billingState === "ended") return "Review membership status";
+    if (billingState === "pending") return "Complete membership entry";
+  }
   if (foundationsState !== "completed") return "Continue Foundations";
   if (!hasCircle) return "Await Circle assignment";
   if (artifactState === "collecting") return "Complete Artifact inputs";

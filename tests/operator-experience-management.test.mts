@@ -129,7 +129,7 @@ test("operator pages and JSON boundaries expose creation, roster, waitlist, atte
   assert.match(directoryPage, /getOpsExperienceManagementDirectory/);
   assert.match(recordPage, /getOpsExperienceRecord/);
   assert.match(recordPage, /notFound\(\)/);
-  assert.match(directory, /href="#new-experience">\+ New Experience/);
+  assert.match(directory, /href="#new-experience">\{selectedCircle \? "\+ Schedule a meeting" : "\+ New Experience"\}/);
   assert.match(directory, /id="new-experience"/);
   assert.match(record, /Roster/);
   assert.match(record, /Move to waitlist/);

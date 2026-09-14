@@ -17,18 +17,22 @@ import type {
 
 const PREVIEW_NOW = "2026-08-26T16:00:00.000Z";
 
+function previewMemberNumber(memberId: string): string {
+  if (!/^preview-0[1-4]$/.test(memberId)) throw new Error("Unknown preview member.");
+  return memberId.slice(-2);
+}
+
 export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
+  const memberNumber = previewMemberNumber(memberId);
   const isAttention = memberId === "preview-02";
   const isNew = memberId === "preview-03";
   const isComplete = memberId === "preview-04";
-  const preferredName = isAttention
-    ? "Member 02"
-    : isNew
-      ? "Member 03"
-      : isComplete
-        ? "Member 04"
-        : "Member 01";
+  const preferredName = `Member ${memberNumber}`;
+  const email = `member${memberNumber}@ruined.local`;
   const hasCircle = !isNew;
+  const previewCircle = PREVIEW_OPS_CIRCLES.find((circle) => circle.slug === (isComplete ? "circle-02" : "circle-01"));
+  if (!previewCircle) throw new Error("Unknown preview Circle.");
+  const { id: circleId, name: circleName } = previewCircle;
 
   return {
     access: {
@@ -59,19 +63,18 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
         : null,
       circle: hasCircle
         ? {
-            circleId: "preview-circle-01",
-            guides: ["Guide 01"],
-            members: [
+            circleId,
+            guides: isComplete ? [] : ["Guide 01"],
+            members: isComplete ? [{ memberId: "preview-04", preferredName: "Member 04" }] : [
               { memberId: "preview-01", preferredName: "Member 01" },
               { memberId: "preview-02", preferredName: "Member 02" },
-              { memberId: "preview-04", preferredName: "Member 04" },
             ],
-            name: "Circle 01",
-            shaperName: "Shaper 01",
+            name: circleName,
+            shaperName: isComplete ? null : "Shaper 01",
             state: "active",
           }
         : null,
-      meetings: hasCircle
+      meetings: hasCircle && !isComplete
         ? [
             {
               completedAt: null,
@@ -88,14 +91,14 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
             {
               label: "Circle working agreement",
               resourceId: "preview-resource-01",
-              url: "/ops/circles#preview-circle-01",
+              url: `/ops/circles#circle-${circleId}`,
             },
           ]
         : [],
     },
     header: {
       blockName: hasCircle ? "Block 01" : null,
-      circleName: hasCircle ? "Circle 01" : null,
+      circleName: hasCircle ? circleName : null,
       lifecycleVersion: 4,
       memberId,
       nextDecision: isAttention
@@ -105,22 +108,22 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
           : isComplete
             ? "Review the Artifact now in production."
             : "Complete the remaining Foundations stage.",
-      openWorkCount: isAttention ? 2 : 1,
+      openWorkCount: 1,
       personId: `person-${memberId}`,
       preferredName,
-      primaryEmail: `${memberId}@ruined.local`,
+      primaryEmail: email,
       states: {
         account: isNew ? "invited" : "active",
-        administrativeOnboarding: isNew ? "in_progress" : "completed",
+        administrativeOnboarding: isNew ? "not_started" : "completed",
         admission: isNew ? "invited" : "accepted",
-        artifact: isComplete ? "in_production" : isNew ? "not_started" : "collecting",
+        artifact: isComplete ? "in_production" : isNew || isAttention ? "not_started" : "collecting",
         billing: isAttention ? "attention_required" : isNew ? "pending" : "active",
         foundations: isComplete ? "completed" : isNew ? "not_started" : "in_progress",
         standing: isAttention ? "paused" : isNew ? "pre_active" : "active",
       },
     },
     journey: {
-      artifacts: isNew
+      artifacts: isNew || isAttention
         ? []
         : [
             {
@@ -151,8 +154,8 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
         progressPercent: isComplete ? 100 : isNew ? 0 : isAttention ? 50 : 75,
         stages: [
           { completed: isNew ? 0 : 1, key: "story", label: "Story", total: 1 },
-          { completed: isComplete ? 1 : 0, key: "philosophy", label: "Philosophy", total: 1 },
-          { completed: isComplete ? 1 : 0, key: "culture", label: "Culture", total: 1 },
+          { completed: isNew ? 0 : 1, key: "philosophy", label: "Philosophy", total: 1 },
+          { completed: isNew || isAttention ? 0 : 1, key: "culture", label: "Culture", total: 1 },
           { completed: isComplete ? 1 : 0, key: "commitment", label: "Commitment", total: 1 },
         ],
         startedAt: isNew ? null : "2026-07-20T17:00:00.000Z",
@@ -173,31 +176,31 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
         : {
             cancelAtPeriodEnd: false,
             currentPeriodEnd: "2026-09-19T18:00:00.000Z",
-            latestInvoiceAmountPaid: 25000,
+            latestInvoiceAmountPaid: isAttention ? 0 : 25000,
             latestInvoiceCurrency: "usd",
             latestInvoiceState: isAttention ? "open" : "paid",
             stripeState: isAttention ? "past_due" : "active",
           },
       cancellation: null,
       contact: {
-        email: `${memberId}@ruined.local`,
-        legalName: `${preferredName} Legal`,
-        phone: "+18015550199",
+        email,
+        legalName: isNew ? null : `Preview Member ${memberNumber}`,
+        phone: isNew ? null : "+18015550199",
         preferredName,
       },
       onboarding: {
         completedAt: isNew ? null : "2026-07-19T18:15:00.000Z",
         requirements: [
-          { completedAt: PREVIEW_NOW, key: "verified_email", label: "Verified email", required: true, state: "complete" },
-          { completedAt: isNew ? null : PREVIEW_NOW, key: "private_profile", label: "Legal name, mobile, and age attestation", required: true, state: isNew ? "missing" : "complete" },
-          { completedAt: isNew ? null : PREVIEW_NOW, key: "agreement", label: "Membership agreement", required: true, state: isNew ? "missing" : "complete" },
-          { completedAt: null, key: "fulfillment", label: "Artifact fulfillment details", required: false, state: "not_required" },
+          { completedAt: isNew ? null : "2026-07-19T17:50:00.000Z", key: "verified_email", label: "Verified email", required: true, state: isNew ? "missing" : "complete" },
+          { completedAt: isNew ? null : "2026-07-19T17:55:00.000Z", key: "private_profile", label: "Legal name, mobile, and age attestation", required: true, state: isNew ? "missing" : "complete" },
+          { completedAt: isNew ? null : "2026-07-19T18:00:00.000Z", key: "agreement", label: "Membership agreement", required: true, state: isNew ? "missing" : "complete" },
+          { completedAt: isNew ? null : "2026-07-19T18:10:00.000Z", key: "billing", label: "Membership payment", required: true, state: isNew ? "missing" : "complete" },
         ],
-        state: isNew ? "in_progress" : "completed",
+        state: isNew ? "not_started" : "completed",
       },
     },
     operational: {
-      history: [
+      history: isNew ? [{ actor: "Operator 01", occurredAt: PREVIEW_NOW, source: "invitation", summary: "Email allowed. Waiting for the member to sign in." }] : [
         {
           actor: "System",
           occurredAt: "2026-07-19T18:15:00.000Z",
@@ -205,13 +208,14 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
           summary: "Administrative onboarding completed.",
         },
         {
-          actor: "Leader 01",
+          actor: "Shaper 01",
           occurredAt: "2026-07-20T17:00:00.000Z",
           source: "circle",
           summary: "Placed in Circle 01.",
         },
+        ...(isComplete ? [{ actor: "Operator 01", occurredAt: "2026-08-25T19:00:00.000Z", source: "circle", summary: "Moved to Circle 02. Completed Foundations history is preserved." }] : []),
       ],
-      notes: [
+      notes: isNew ? [] : [
         {
           body: "Prefers evening Circle meetings.",
           category: "circle_context",
@@ -230,7 +234,7 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
           priority: 60,
           state: "open",
           taskId: "preview-task-01",
-          title: isAttention ? "Payment follow-up" : "Review Foundations proof",
+          title: isAttention ? "Review paused membership and payment" : isNew ? "Share sign-in instructions" : isComplete ? "Review Artifact production" : "Review remaining Foundations",
         },
       ],
     },
@@ -399,7 +403,12 @@ export const PREVIEW_OPS_CIRCLE_MANAGEMENT: OpsCircleManagementOptions = {
 };
 
 export function getPreviewOpsMemberProfileSupport(memberId: string): OpsMemberProfileSupport {
-  const memberNumber = memberId.endsWith("04") ? "04" : memberId.endsWith("02") ? "02" : "01";
+  const memberNumber = previewMemberNumber(memberId);
+  if (memberId === "preview-03") return {
+    accessibilityNotes: null, address: null, apparelTopSize: null, avatarStoragePath: null,
+    bio: null, buildingNow: null, directoryStatus: "hidden", displayName: `Member ${memberNumber}`,
+    legalName: null, location: null, mobile: null, preferredName: `Member ${memberNumber}`, timezone: null, version: "none|none",
+  };
   return {
     accessibilityNotes: "Needs step-free access for longer gatherings.",
     address: {
@@ -425,20 +434,18 @@ export function getPreviewOpsMemberProfileSupport(memberId: string): OpsMemberPr
   };
 }
 
-export const PREVIEW_OPS_CIRCLE_COMMUNICATIONS: OpsCircleCommunicationItem[] = [
-  {
-    activeMembers: 3,
-    blockId: "preview-block-01",
-    blockName: "Block 01",
-    blockStatus: "active",
-    capacity: 10,
-    chatUrl: "https://chat.google.com/room/preview-circle-01",
+export const PREVIEW_OPS_CIRCLE_COMMUNICATIONS: OpsCircleCommunicationItem[] = PREVIEW_OPS_CIRCLES.map((circle) => ({
+    activeMembers: circle.activeMembers,
+    blockId: circle.blockId,
+    blockName: circle.blockName,
+    blockStatus: circle.blockStatus,
+    capacity: circle.capacity,
+    chatUrl: circle.slug === "circle-01" ? "https://chat.google.com/room/preview-circle-01" : null,
     googleCommunicationsConfigured: true,
-    id: "preview-circle-01",
-    name: "Circle 01",
-    status: "active",
-  },
-];
+    id: circle.id,
+    name: circle.name,
+    status: circle.status,
+  }));
 
 export const PREVIEW_OPS_EXPERIENCES: OpsExperienceDirectoryItem[] = [
   {
@@ -539,7 +546,7 @@ export const PREVIEW_OPS_OVERVIEW: OpsOverviewData = {
     activeMembers: 2,
     attentionRequired: 1,
     circles: { active: 2, forming: 0 },
-    eligibleWithoutCircle: 1,
+    eligibleWithoutCircle: 0,
     foundations: { completed: 1, inProgress: 2, notStarted: 1 },
     totalMembers: 4,
     work: { artifacts: 1, failures: 1, tasks: 1 },
@@ -551,11 +558,12 @@ export const PREVIEW_OPS_OVERVIEW: OpsOverviewData = {
 export const PREVIEW_OPS_ANNOUNCEMENTS: OpsAnnouncementSummary[] = [
   {
     announcementId: "preview-announcement-01",
-    body: "September Circle meeting details are now available in My Ruined.",
+    version: 1,
+    body: "September Circle meeting details are now available on your Circle page.",
     publishedAt: null,
     state: "draft",
     targetLabel: "All active members",
-    title: "September inside My Ruined",
+    title: "September with Ruined",
   },
 ];
 

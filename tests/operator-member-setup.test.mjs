@@ -14,9 +14,13 @@ const output = ts.transpileModule(source, { compilerOptions: {
   jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
 } }).outputText;
 const cjsModule = { exports: {} };
+const helperSource = readFileSync(new URL("../src/lib/platform/operator-member-guidance.ts", import.meta.url), "utf8");
+const helperModule = { exports: {} };
+new Function("module", "exports", ts.transpileModule(helperSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(helperModule, helperModule.exports);
 new Function("require", "module", "exports", output)((name) => {
   if (name === "react/jsx-runtime") return require(name);
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
+  if (name === "@/lib/platform/operator-member-guidance") return helperModule.exports;
   throw new Error(`Setup guidance must remain presentation-only: ${name}`);
 }, cjsModule, cjsModule.exports);
 const Setup = cjsModule.exports.default;
@@ -25,7 +29,7 @@ const elements = (node) => [node, ...(node.childNodes ?? []).flatMap(elements)].
 const text = (node) => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(text).join("");
 function render({ roles = ["ops_admin"], memberId = "preview-unassigned", circle = null } = {}) {
   return parseFragment(renderToStaticMarkup(React.createElement(Setup, { record: {
-    access: { roles }, header: { memberId }, community: { circle },
+    access: { roles }, header: { memberId, states: { account: "active", billing: "active", foundations: "in_progress", artifact: "not_started", administrativeOnboarding: "completed", admission: "accepted", standing: "active" } }, community: { circle }, membership: { onboarding: { requirements: [] } },
   } })));
 }
 
@@ -56,9 +60,9 @@ test("already placed members are not instructed to assign again", () => {
   const active = render({ circle: { circleId: "preview-circle", name: "Circle 01", state: "active" } });
   assert.match(text(forming), /This placement is already saved/);
   assert.match(text(forming), /Review Circle activation/);
-  assert.ok(elements(forming).some((node) => attr(node, "href") === "/ops/circles?memberId=preview-unassigned#activate-circle"));
+  assert.ok(elements(forming).some((node) => attr(node, "href") === "/ops/circles?circleId=preview-circle&memberId=preview-unassigned#circle-preview-circle"));
   assert.match(text(active), /no need to assign this member again/);
-  assert.ok(elements(active).some((node) => attr(node, "href") === "/ops/circles#circle-preview-circle"));
+  assert.ok(elements(active).some((node) => attr(node, "href") === "/ops/circles?circleId=preview-circle&memberId=preview-unassigned#circle-preview-circle"));
   assert.doesNotMatch(text(active), /Select Assign member|Activate a forming Circle/);
 });
 

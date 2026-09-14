@@ -31,7 +31,7 @@ const [
 ]);
 
 test("the member directory opens one unified, server-projected operating record", () => {
-  assert.match(directory, /href=\{`\/ops\/members\/\$\{member\.memberId\}`\}/);
+  assert.match(directory, /href=\{`\/ops\/members\/\$\{member\.memberId\}\?returnTo=/);
   assert.match(memberPage, /getOpsMemberOperatingRecord\(context\.viewer\.authUserId, memberId\)/);
   assert.match(memberPage, /context\.state === "signed_out"[\s\S]*redirect\("\/ops\/access"\)/);
   assert.match(memberPage, /if \(!record\) notFound\(\)/);

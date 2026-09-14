@@ -386,13 +386,14 @@ async function requireGoogleCommunicationEntityAccess(
 }
 
 function nextDecision(input: {
+  membershipFunding?: "self" | "operator";
   administrativeOnboarding: string;
   billing: string;
   circleId: string | null;
   foundations: string;
   standing: string;
 }) {
-  if (input.billing === "attention_required") return "Resolve payment standing without changing the member's history.";
+  if (input.membershipFunding !== "operator" && input.billing === "attention_required") return "Resolve payment standing without changing the member's history.";
   if (input.administrativeOnboarding !== "completed") return "Complete the remaining administrative onboarding requirements.";
   if (input.standing === "paused") return "Confirm the pause terms and protect private Circle participation.";
   if (!input.circleId) return "Place the member in an active Circle before Foundations can be completed.";
@@ -401,6 +402,7 @@ function nextDecision(input: {
 }
 
 type MemberBaseRow = {
+  operator_funded: boolean;
   account_state: string;
   administrative_onboarding_state: string;
   admission_state: string;
@@ -448,6 +450,7 @@ export async function getOpsMemberOperatingRecord(
         coalesce(primary_email.email, member.email) as primary_email,
         coalesce(directory.email_scope, 'none') as email_scope,
         coalesce(directory.phone_scope, 'none') as phone_scope,
+        private.ruined_member_has_operator_funding(member.id) as operator_funded,
         lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.foundations_state,
@@ -1058,6 +1061,7 @@ export async function getOpsMemberOperatingRecord(
         lifecycleVersion: Number(base.lifecycle_version),
         memberId: base.member_id,
         nextDecision: nextDecision({
+          membershipFunding: base.operator_funded ? "operator" : "self",
           administrativeOnboarding: base.administrative_onboarding_state,
           billing: base.billing_state,
           circleId: base.circle_id,
@@ -1112,6 +1116,7 @@ export async function getOpsMemberOperatingRecord(
         },
       },
       membership: {
+        membershipFunding: base.operator_funded ? "operator" : "self",
         agreement: {
           acceptedAt: asIso(agreement?.accepted_at),
           contentSha256: agreement?.agreement_content_sha256 ?? null,
@@ -1169,9 +1174,9 @@ export async function getOpsMemberOperatingRecord(
             {
               completedAt: asIso(onboarding?.billing_confirmed_at),
               key: "billing",
-              label: "Membership payment",
-              required: true,
-              state: onboarding?.billing_confirmed_at ? "complete" : "missing",
+              label: base.operator_funded ? "Complimentary operator membership" : "Membership payment",
+              required: !base.operator_funded,
+              state: base.operator_funded ? "not_required" : onboarding?.billing_confirmed_at ? "complete" : "missing",
             },
           ],
           state: onboarding?.state ?? base.administrative_onboarding_state,
@@ -1402,6 +1407,9 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
       with scoped_members as (
         select
           member.id,
+          private.ruined_member_has_operator_funding(member.id) as operator_funded,
+          lifecycle.administrative_onboarding_state,
+          lifecycle.cancellation_effective_at,
           lifecycle.account_state,
           lifecycle.billing_state,
           lifecycle.foundations_state,
@@ -1455,8 +1463,9 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         count(*) as total_members,
         count(*) filter (
           where account_state = 'active'
-            and billing_state = 'active'
-            and standing_state = 'active'
+            and administrative_onboarding_state = 'completed'
+            and (billing_state = 'active' or operator_funded)
+            and (standing_state = 'active' or (standing_state = 'cancellation_requested' and cancellation_effective_at > now()))
             and program_state in ('onboarding', 'active')
         ) as active_members,
         count(*) filter (
@@ -1466,8 +1475,9 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         ) as attention_required,
         count(*) filter (
           where account_state = 'active'
-            and billing_state = 'active'
-            and standing_state = 'active'
+            and administrative_onboarding_state = 'completed'
+            and (billing_state = 'active' or operator_funded)
+            and (standing_state = 'active' or (standing_state = 'cancellation_requested' and cancellation_effective_at > now()))
             and program_state in ('onboarding', 'active')
             and circle_id is null
         ) as eligible_without_circle,
@@ -2468,6 +2478,7 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
     await requireOperatorAccess(tx, actorAuthUserId, { requireAdmin: true });
     const rows = await tx<Array<{
       announcement_id: string;
+      version: number | string;
       body_text: string;
       published_at: Date | string | null;
       state: string;
@@ -2476,6 +2487,7 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
     }>>`
       select
         announcement.id as announcement_id,
+        announcement.version,
         announcement.title,
         announcement.body_text,
         announcement.status as state,
@@ -2534,6 +2546,7 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
     return {
       announcements: rows.map((row) => ({
         announcementId: row.announcement_id,
+        version: Number(row.version),
         body: row.body_text,
         publishedAt: asIso(row.published_at),
         state: row.state,
@@ -3414,9 +3427,102 @@ export async function createOpsAnnouncement(input: {
   });
 }
 
+function requireAnnouncementVersion(expected: number, actual: number | string) {
+  if (!Number.isSafeInteger(expected) || expected < 1) {
+    throw new OpsOperatingRepositoryError("invalid_request", "Reload the announcement before changing it.");
+  }
+  if (expected !== Number(actual)) {
+    throw new OpsOperatingRepositoryError("conflict", "This announcement changed. Reload it and review the latest version.");
+  }
+}
+
+export async function correctOpsAnnouncement(input: {
+  actorAuthUserId: string;
+  announcementId: string;
+  expectedVersion: number;
+  action: "edit" | "discard" | "retract";
+  title?: string;
+  body?: string;
+  targetKind?: string;
+  targetId?: string | null;
+  reason?: string;
+}) {
+  const announcementId = requireUuid(input.announcementId, "Announcement");
+  if (!["edit", "discard", "retract"].includes(input.action)) {
+    throw new OpsOperatingRepositoryError("invalid_request", "Choose a valid announcement action.");
+  }
+  const title = input.action === "edit" ? normalizedText(input.title ?? "", "Title", 3, 200) : null;
+  const body = input.action === "edit" ? normalizedBody(input.body ?? "", "Announcement", 3, 10_000) : null;
+  const reason = input.action === "retract" ? normalizedBody(input.reason ?? "", "Retraction reason", 3, 1000) : null;
+  const targetKind = input.targetKind;
+  if (targetKind !== undefined && !["all_active_members", "circle", "block", "member"].includes(targetKind)) {
+    throw new OpsOperatingRepositoryError("invalid_request", "Choose a valid announcement audience.");
+  }
+  const targetId = targetKind && targetKind !== "all_active_members" ? requireUuid(input.targetId ?? "", "Announcement audience") : null;
+  const sql = getApplicationDatabase();
+  return sql.begin(async (tx) => {
+    const access = await requireOperatorAccess(tx, input.actorAuthUserId, { lock: true, requireAdmin: true });
+    const rows = await tx<Array<{ title: string; body_text: string; status: string; version: number | string }>>`
+      select title, body_text, status, version from member_announcements
+      where id = ${announcementId}::uuid for update
+    `;
+    const announcement = rows[0];
+    if (!announcement) throw new OpsOperatingRepositoryError("not_found", "Announcement not found.");
+    requireAnnouncementVersion(input.expectedVersion, announcement.version);
+    if (announcement.status !== (input.action === "retract" ? "published" : "draft")) {
+      throw new OpsOperatingRepositoryError("conflict", input.action === "retract" ? "Only a published announcement can be retracted." : "Only a draft announcement can be edited or discarded.");
+    }
+    const targets = await tx<Array<{ target_type: string; circle_id: string | null; block_id: string | null; member_id: string | null; progression_level_slug: string | null }>>`
+      select target_type, circle_id, block_id, member_id, progression_level_slug
+      from member_announcement_targets where announcement_id = ${announcementId}::uuid order by id for update
+    `;
+    if (input.action === "edit" && targetKind !== undefined) {
+      if (targetKind === "circle") {
+        const found = await tx`select id from circles where id = ${targetId}::uuid and status <> 'archived' for update`;
+        if (!found[0]) throw new OpsOperatingRepositoryError("not_found", "Circle not found.");
+      } else if (targetKind === "block") {
+        const found = await tx`select id from membership_blocks where id = ${targetId}::uuid and status <> 'archived' for update`;
+        if (!found[0]) throw new OpsOperatingRepositoryError("not_found", "Block not found.");
+      } else if (targetKind === "member") {
+        const found = await tx`select member.id from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id where member.id = ${targetId}::uuid and lifecycle.account_state = 'active' for update of member, lifecycle`;
+        if (!found[0]) throw new OpsOperatingRepositoryError("not_found", "Active member not found.");
+      }
+      await tx`delete from member_announcement_targets where announcement_id = ${announcementId}::uuid`;
+      await tx`
+        insert into member_announcement_targets (announcement_id, target_type, circle_id, block_id, member_id, created_by_auth_user_id)
+        values (${announcementId}::uuid, ${targetKind}, ${targetKind === "circle" ? targetId : null}::uuid, ${targetKind === "block" ? targetId : null}::uuid, ${targetKind === "member" ? targetId : null}::uuid, ${access.authUserId}::uuid)
+      `;
+    }
+    const state = input.action === "edit" ? "draft" : input.action === "discard" ? "cancelled" : "archived";
+    await tx`
+      update member_announcements set
+        title = coalesce(${title}, title), body_text = coalesce(${body}, body_text), status = ${state},
+        archived_at = case when ${state} = 'archived' then statement_timestamp() else archived_at end,
+        version = version + 1, updated_at = statement_timestamp(), updated_by_auth_user_id = ${access.authUserId}::uuid
+      where id = ${announcementId}::uuid
+    `;
+    if (input.action === "retract") {
+      // The publication worker locks this same announcement before generating
+      // inbox copies. This transaction hides existing copies and prevents later ones.
+      await tx`update member_notifications set status = 'cancelled', updated_at = statement_timestamp() where announcement_id = ${announcementId}::uuid and status <> 'cancelled'`;
+    }
+    await writeAudit(tx, {
+      action: `announcement.${input.action === "edit" ? "draft_updated" : input.action === "discard" ? "draft_discarded" : "retracted"}`,
+      actorAuthUserId: access.authUserId,
+      before: { state: announcement.status, title: announcement.title, body: announcement.body_text, version: Number(announcement.version), targets },
+      after: { state, title: title ?? announcement.title, body: body ?? announcement.body_text, version: Number(announcement.version) + 1, ...(targetKind !== undefined ? { targetKind, targetId } : {}), ...(reason ? { reason } : {}) },
+      reason,
+      subjectId: announcementId,
+      subjectType: "member_announcement",
+    });
+    return { id: announcementId, state, version: Number(announcement.version) + 1 };
+  });
+}
+
 export async function publishOpsAnnouncement(input: {
   actorAuthUserId: string;
   announcementId: string;
+  expectedVersion: number;
 }) {
   const announcementId = requireUuid(input.announcementId, "Announcement");
   const sql = getApplicationDatabase();
@@ -3435,6 +3541,7 @@ export async function publishOpsAnnouncement(input: {
     if (!announcement) {
       throw new OpsOperatingRepositoryError("not_found", "Announcement not found.");
     }
+    requireAnnouncementVersion(input.expectedVersion, announcement.version);
     if (announcement.status !== "draft") {
       throw new OpsOperatingRepositoryError("conflict", "Only a draft announcement can be published.");
     }

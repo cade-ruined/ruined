@@ -15,7 +15,7 @@ const [
   experiencesDirectory,
   experienceRecord,
   experienceRepository,
-  opsSection,
+  circleCommunicationPanel,
   googleHelper,
 ] = await Promise.all([
   source("src/lib/platform/ops-operating-repository.ts"),
@@ -26,7 +26,7 @@ const [
   source("src/components/platform/OperatorExperienceDirectory.tsx"),
   source("src/components/platform/OperatorExperienceRecord.tsx"),
   source("src/lib/platform/ops-experience-repository.ts"),
-  source("src/components/platform/OpsSection.tsx"),
+  source("src/components/platform/OperatorCircleCommunicationPanel.tsx"),
   source("src/lib/google/communications.ts"),
 ]);
 
@@ -99,10 +99,13 @@ test("the JSON boundary and compact operator controls are wired into both existi
   assert.doesNotMatch(field, /iframe|dangerouslySetInnerHTML|title=/);
 
   assert.match(circlesPage, /getOpsCircleCommunicationDirectory/);
-  assert.match(circlesPage, /canManageGoogleCommunications=\{context\.state === "authenticated"\}/);
-  assert.match(opsSection, /entityType="circle"/);
+  assert.match(circlesPage, /communicationCircles\?\.find\(\(item\) => item\.id === selectedCircle\.id\)/);
+  assert.match(circlesPage, /<OperatorCircleCommunicationPanel/);
+  assert.match(circleCommunicationPanel, /communication\?\.id === circle\.id/);
+  assert.match(circleCommunicationPanel, /entityId=\{circle\.id\} entityType="circle"/);
   assert.match(experiencesPage, /getOpsExperienceManagementDirectory/);
-  assert.match(experiencesDirectory, /entityType="experience"/);
-  assert.match(experienceRecord, /editable=\{experience\.canManageCommunication\}/);
+  assert.match(experiencesDirectory, /href=\{`\/ops\/experiences\/\$\{experience\.experienceId\}#meeting-setup`\}/);
+  assert.match(experienceRecord, /entityType="experience"/);
+  assert.match(experienceRecord, /editable=\{experience\.canManageCommunication && !experience\.calendar\.googleEventId && !\["pending_create", "pending_update"\]\.includes\(experience\.calendar\.status\)\}/);
   assert.match(experienceRepository, /canManageCommunication: true/);
 });

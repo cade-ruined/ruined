@@ -144,6 +144,7 @@ export default function JoinForm({
   const [submitting, setSubmitting] = useState(false);
   const [photoPending, setPhotoPending] = useState(false);
   const profileComplete = onboarding.requiredFieldsComplete;
+  const complimentary = onboarding.membershipFunding === "operator";
   const agreementComplete = Boolean(acceptanceId);
   const stage = membershipEntryStage(profileComplete, agreementComplete);
   const testCheckout = publishableKey?.startsWith("pk_test_") ?? false;
@@ -284,7 +285,7 @@ export default function JoinForm({
   }
 
   async function openCheckout() {
-    if (!checkoutEnabled || !publishableKey || !acceptanceId || submitting || clientSecret) return;
+    if (complimentary || !checkoutEnabled || !publishableKey || !acceptanceId || submitting || clientSecret) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -308,6 +309,28 @@ export default function JoinForm({
           ? checkoutError.message
           : "Secure payment is temporarily unavailable.",
       );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function activateComplimentaryMembership() {
+    if (!enabled || !complimentary || !profileComplete || !agreementComplete || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/my/onboarding", {
+        method: "POST", cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "complete" }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.onboarding?.state !== "completed") {
+        throw new Error(payload.error || "Membership could not be activated. Please try again.");
+      }
+      window.location.assign("/my");
+    } catch (activationError) {
+      setError(activationError instanceof Error ? activationError.message : "Membership could not be activated.");
     } finally {
       setSubmitting(false);
     }
@@ -568,7 +591,16 @@ export default function JoinForm({
         </form>
       ) : null}
 
-      {stage === "payment" ? (
+      {stage === "payment" && complimentary ? (
+        <section className="mt-9" aria-labelledby="complimentary-membership-title">
+          <h3 className="font-[var(--font-display)] text-4xl" id="complimentary-membership-title" ref={stageHeadingRef} tabIndex={-1}>You’re ready.</h3>
+          <p className="mt-4 text-base leading-relaxed text-white/72">Your operator access includes complimentary membership. Your profile and agreement are saved—no payment is needed.</p>
+          {error || disabledReason ? <p className="mt-4 text-sm" role="status">{error ?? disabledReason}</p> : null}
+          <button className="mt-6 min-h-12 rounded-[4px] bg-[var(--color-signal)] px-6 py-3 font-bold text-black disabled:opacity-50" disabled={!enabled || submitting} onClick={activateComplimentaryMembership} type="button">{submitting ? "Activating membership…" : "Activate my membership"}</button>
+        </section>
+      ) : null}
+
+      {stage === "payment" && !complimentary ? (
         <section className="mt-9" aria-labelledby="secure-payment-title">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">{testCheckout ? "Final / Test checkout" : "Final / Secure payment"}</p>
           <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4">

@@ -8,7 +8,7 @@ import { useEffect, useId, useRef, useState } from "react";
 const MEMBER_DESTINATIONS = [
   { href: "/my", label: "Profile" },
   { href: "/my/foundations", label: "Foundations" },
-  { href: "/my/foundations/timeline", label: "Ruined Timeline" },
+  { href: "/my/foundations/timeline", label: "My Timeline" },
   { href: "/my/circle", label: "Circle" },
   { href: "/my/experiences", label: "Experiences" },
   { href: "/my/learn", label: "Learn" },

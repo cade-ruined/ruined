@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useMemo, useRef, useState } from "react";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import {
   OPERATOR_FIELD_CLASS,
   OPERATOR_LABEL_CLASS,
@@ -128,9 +129,10 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
   }
 
   return (
-    <OperatorPageFrame title="Notifications">
+    <OperatorPageFrame title="Messages">
+      <OperatorMessagesTabs active="alerts" />
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-black/60">In-app messages, not email or text. Choose an audience and review before sending.</p>
+        <p className="text-sm text-black/60">Alerts in the member notification center. No email or text is sent.</p>
         <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#write-notification">Write notification</a>
       </header>
       {preview ? <p className="mb-4 text-sm text-black/60" role="status">Preview — review is available; notifications are not sent.</p> : null}

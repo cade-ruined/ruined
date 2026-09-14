@@ -89,7 +89,7 @@ test("member profile modules only use real membership data and valid routes", ()
   assert.match(home, /!member\.foundations\.requirements\.activeCircle\.completed/);
   assert.match(home, /aria-valuetext=\{foundationValueText\}/);
   assert.match(home, /ProfileState state=\{member\.identity\.standingState\}/);
-  assert.match(home, /href="\/my\/circle"/);
+  assert.match(home, /href=\{circleAccess \? "\/my\/circle" : "\/my\/account"\}/);
   assert.match(home, /href="\/my\/artifacts"/);
   assert.match(home, /href="\/my\/experiences"/);
   assert.match(home, /href="\/my\/profile"/);
@@ -127,7 +127,7 @@ test("next actions use a responsive bento and deeper participation stays below t
   assert.match(home, /const upcoming = member\.upcomingExperiences\[0\] \?\? null/);
   assert.match(home, /href=\{member\.nextAction\.href\}/);
   assert.match(home, /href="\/my\/foundations"/);
-  assert.match(home, /href="\/my\/circle"/);
+  assert.match(home, /href=\{circleAccess \? "\/my\/circle" : "\/my\/account"\}/);
   assert.match(home, /circleGateOutstanding \? "Active Circle required" : foundationHeading/);
   assert.match(hero, /MemberPortrait member=\{member\}/);
   assert.match(hero, /data-member-profile-identity/);
@@ -164,7 +164,7 @@ test("profile, Circle, Experiences, Academy, and Timeline get light paper dossie
   assert.match(shell, /const memberExperiences = member && pathname\.startsWith\("\/my\/experiences"\)/);
   assert.match(shell, /const memberLearning = member && pathname\.startsWith\("\/my\/learn"\)/);
   assert.match(shell, /const timeline = member && pathname === "\/my\/foundations\/timeline"/);
-  assert.match(shell, /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| memberSupport \|\| timeline/);
+  assert.match(shell, /const paperSurface = memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning \|\| memberSupport \|\| memberSettings \|\| timeline/);
   assert.match(shell, /timeline[\s\S]*?"member-timeline-paper"/);
   assert.match(shell, /memberHome \|\| memberCircle \|\| memberExperiences \|\| memberLearning[\s\S]*?"member-profile-paper"/);
   assert.match(shell, /const dark = !member \|\| threshold \|\| \(foundations && !timeline\)/);

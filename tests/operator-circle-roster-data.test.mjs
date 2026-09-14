@@ -82,6 +82,10 @@ const assignment = {
   member_id: memberId,
   name: "Example Member",
   program_state: "onboarding",
+  operator_funded: false,
+  administrative_onboarding_state: "completed",
+  standing_state: "active",
+  cancellation_effective_at: null,
 };
 
 test("Circle roster reads authorize active Administrator access in a read-only snapshot before selecting member data", async () => {
@@ -96,6 +100,10 @@ test("Circle roster reads authorize active Administrator access in a read-only s
     memberId,
     name: "Example Member",
     programState: "onboarding",
+    membershipFunding: "self",
+    administrativeOnboardingState: "completed",
+    standingState: "active",
+    cancellationEffectiveAt: null,
   }]);
   assert.deepEqual(reader.counts(), { connections: 1, transactions: 1 });
   assert.equal(reader.queries.length, 2);
