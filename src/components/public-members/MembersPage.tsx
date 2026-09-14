@@ -6,15 +6,16 @@ import {
   MEMBERSHIP_LINKS,
   MEMBERSHIP_PILLARS,
 } from "@/data/public-membership";
+import MembershipWaitlistForm from "./MembershipWaitlistForm";
 import styles from "./MembersPage.module.css";
 
 const [foundations, circle, academy, experiences] = MEMBERSHIP_PILLARS;
 const [headlineLead, ...headlineClose] = MEMBERSHIP_INTRO.headline.split(". ");
 
-function InquiryLink({ light = false }: { light?: boolean }) {
+function WaitlistLink() {
   return (
-    <Link className={`${styles.inquiry} ${light ? styles.inquiryLight : ""}`} href={MEMBERSHIP_LINKS.inquire}>
-      Ask about membership <span aria-hidden="true">↗</span>
+    <Link className={styles.inquiry} href={MEMBERSHIP_LINKS.waitlist}>
+      Join the waitlist <span aria-hidden="true">↘</span>
     </Link>
   );
 }
@@ -32,7 +33,7 @@ export default function MembersPage() {
             </h1>
             <p className={styles.heroDescription}>{MEMBERSHIP_INTRO.description}</p>
             <div className={styles.heroActions}>
-              <InquiryLink />
+              <WaitlistLink />
               <a className={styles.signIn} href={MEMBERSHIP_LINKS.signIn}>Member sign-in <span aria-hidden="true">↗</span></a>
             </div>
           </div>
@@ -122,15 +123,15 @@ export default function MembersPage() {
           <p>Sometimes the work leaves something tangible. Artifacts belong to the Ruined story; specific items and their availability are shared separately.</p>
         </aside>
 
-        <section aria-labelledby="membership-invitation-heading" className={styles.invitation}>
+        <section aria-labelledby="membership-invitation-heading" className={styles.invitation} id="waitlist">
           <div>
-            <p className={styles.handwritten}>Start a conversation</p>
+            <p className={styles.handwritten}>Join the waitlist</p>
             <h2 className={`ui-heading ${styles.invitationTitle}`} id="membership-invitation-heading">There’s room<br /><em>for a beginning.</em></h2>
           </div>
           <div className={styles.invitationCopy}>
-            <p>Membership is currently by invitation. Tell us a little about yourself and what brings you here.</p>
-            <InquiryLink light />
-            <p className={styles.invitationNote}>We’ll talk through the current experience, availability, and details before you decide to join.</p>
+            <p>Leave your details. We’ll be in touch when membership opens.</p>
+            <MembershipWaitlistForm />
+            <p className={styles.invitationNote}>We’ll confirm availability, billing, and membership terms before you decide to join.</p>
             <a className={styles.signIn} href={MEMBERSHIP_LINKS.signIn}>Already a member? Sign in <span aria-hidden="true">↗</span></a>
           </div>
         </section>

@@ -45,6 +45,6 @@ export const MEMBERSHIP_PILLARS = [
 ] as const;
 
 export const MEMBERSHIP_LINKS = {
-  inquire: "/contact?topic=membership",
+  waitlist: "#waitlist",
   signIn: "https://members.theruinedproject.com/access",
 } as const;

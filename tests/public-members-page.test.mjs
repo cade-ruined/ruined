@@ -17,7 +17,7 @@ function load(path, dependencies = {}) {
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
-    if (name === "react/jsx-runtime") return require(name);
+    if (name === "react/jsx-runtime" || name === "react") return require(name);
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (name === "next/image") return { __esModule: true, default: ({ src, alt, sizes, className }) => React.createElement("img", { src, alt, sizes, className }) };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_target, property) => property }) };
@@ -30,7 +30,11 @@ function load(path, dependencies = {}) {
 const membership = load("src/data/public-membership.ts");
 const { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS, MEMBERSHIP_PILLARS } = membership;
 const publicDependencies = { "@/data/public-membership": membership };
-const MembersPage = load("src/components/public-members/MembersPage.tsx", publicDependencies).default;
+const MembershipWaitlistForm = load("src/components/public-members/MembershipWaitlistForm.tsx").default;
+const MembersPage = load("src/components/public-members/MembersPage.tsx", {
+  ...publicDependencies,
+  "./MembershipWaitlistForm": { __esModule: true, default: MembershipWaitlistForm },
+}).default;
 const JourneyMembersPreview = load("src/components/sequence/JourneyMembersPreview.tsx", publicDependencies).default;
 const route = load("app/members/page.tsx", {
   ...publicDependencies,
@@ -98,18 +102,32 @@ test("the rendered Members page gives every pillar a working anchor and named se
   }
 });
 
-test("public calls to action inquire or sign in without offering unapproved checkout or prices", () => {
-  assert.equal(MEMBERSHIP_LINKS.inquire, "/contact?topic=membership");
+test("public calls to action lead to the membership waitlist or member sign-in", () => {
+  assert.equal(MEMBERSHIP_LINKS.waitlist, "#waitlist");
   assert.equal(MEMBERSHIP_LINKS.signIn, "https://members.theruinedproject.com/access");
   const links = descendants(page, "a").map((link) => attr(link, "href"));
-  assert.ok(links.includes(MEMBERSHIP_LINKS.inquire));
+  assert.ok(links.includes(MEMBERSHIP_LINKS.waitlist));
   assert.ok(links.includes(MEMBERSHIP_LINKS.signIn));
   assert.ok(links.includes("/community"));
-  const approvedDestinations = new Set([...pillarIds.map((id) => `#${id}`), MEMBERSHIP_LINKS.inquire, "/community", MEMBERSHIP_LINKS.signIn]);
+  const approvedDestinations = new Set([...pillarIds.map((id) => `#${id}`), MEMBERSHIP_LINKS.waitlist, "/community", MEMBERSHIP_LINKS.signIn]);
   for (const href of links) assert.ok(approvedDestinations.has(href), `unexpected public action: ${href}`);
-  assert.equal(elements(page).filter((node) => ["form", "input", "iframe"].includes(node.tagName)).length, 0);
+  const waitlist = descendants(page, "section").filter((node) => attr(node, "id") === "waitlist");
+  assert.equal(waitlist.length, 1);
+  assert.equal(descendants(waitlist[0], "form").length, 1);
+  assert.match(text(waitlist[0]), /Join the waitlist/);
+  assert.match(text(waitlist[0]), /Leave your details\. We’ll be in touch when membership opens\./);
+  const inputs = descendants(waitlist[0], "input");
+  assert.deepEqual(inputs.map((node) => attr(node, "name")), ["website", "name", "email", "phone"]);
+  for (const input of inputs) {
+    assert.ok(descendants(waitlist[0], "label").some((label) => attr(label, "for") === attr(input, "id")), "every waitlist field has a label");
+  }
+  assert.equal(attr(inputs.find((input) => attr(input, "name") === "email"), "type"), "email");
+  assert.equal(attr(inputs.find((input) => attr(input, "name") === "phone"), "required"), undefined);
+  assert.equal(attr(inputs.find((input) => attr(input, "name") === "website"), "tabindex"), "-1");
+  assert.equal(descendants(page, "iframe").length, 0);
   assert.doesNotMatch(text(page), /\$\s*\d|\bUSD\s*\d|\b\d+(?:\.\d{2})?\s*\/\s*(?:month|year|mo|yr)\b/i);
   assert.match(text(page), /by invitation/i);
+  assert.match(text(page), /confirm availability, billing, and membership terms before you decide to join/i);
 });
 
 test("the walk preview links to the same four public sections and the real member portal", () => {

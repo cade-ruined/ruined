@@ -230,6 +230,39 @@ export function getGoogleRegistrationSpreadsheetId(): string {
   return requireSpreadsheetId();
 }
 
+export function getGoogleMembershipWaitlistSheetConfigurationStatus(): {
+  enabled: boolean;
+  missing: string[];
+  ready: boolean;
+  spreadsheetId: string | null;
+} {
+  const enabled = process.env.GOOGLE_MEMBERSHIP_WAITLIST_SHEET_ENABLED === "true";
+  const spreadsheetId = process.env.GOOGLE_MEMBERSHIP_WAITLIST_SPREADSHEET_ID?.trim() || null;
+  const encodedCredentials =
+    process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64?.trim() || null;
+  const workloadIdentity = getWorkloadIdentityConfiguration();
+  const missing = [
+    ...(!enabled ? ["GOOGLE_MEMBERSHIP_WAITLIST_SHEET_ENABLED"] : []),
+    ...(!spreadsheetId ? ["GOOGLE_MEMBERSHIP_WAITLIST_SPREADSHEET_ID"] : []),
+    ...(workloadIdentity.requested
+      ? workloadIdentity.missing
+      : !encodedCredentials ? ["GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64"] : []),
+  ];
+
+  if (spreadsheetId && !/^[A-Za-z0-9_-]+$/.test(spreadsheetId)) {
+    missing.push("GOOGLE_MEMBERSHIP_WAITLIST_SPREADSHEET_ID (invalid)");
+  }
+  if (!workloadIdentity.requested && encodedCredentials) {
+    try {
+      parseServiceAccountCredentials(encodedCredentials);
+    } catch {
+      missing.push("GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64 (invalid)");
+    }
+  }
+
+  return { enabled, missing, ready: missing.length === 0, spreadsheetId };
+}
+
 export async function getGoogleSheetValues(
   spreadsheetId: string,
   range: string,
