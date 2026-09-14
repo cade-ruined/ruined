@@ -15,3 +15,11 @@
 .error { color: var(--color-highlight); }
 .honeypot, .visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .honeypot { pointer-events: none; }
+
+.paper .fields { gap: .85rem; }
+.paper .field input { border-bottom-color: color-mix(in srgb, currentColor 35%, transparent); }
+.paper .field input:focus-visible { border-bottom-color: var(--color-verdigris); outline-color: var(--color-verdigris); }
+.paper .submit { background: var(--color-faded); color: var(--color-bone); }
+.paper .submit:hover { background: var(--color-verdigris); }
+.paper .submit:focus-visible { outline-color: var(--color-verdigris); }
+.paper .error { color: var(--color-poster); }

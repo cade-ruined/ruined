@@ -884,7 +884,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(footer, /pathname === "\/"/);
   assert.match(desktop, /WALK_SECTION_ITEMS\.map/);
   assert.doesNotMatch(desktop, /GLOBAL_NAV_ITEMS\.map/);
-  for (const href of ["/store", "/about", "/members", "/community"]) {
+  for (const href of ["/store", "/about", "/#members", "/community"]) {
     assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
   }
   assert.match(searchDialog, /href=\{publicSearchHref\("\/store"\)\}[\s\S]*Browse the shop instead/);
@@ -935,7 +935,7 @@ test("primary destinations are direct while in-walk room controls keep their anc
   assert.match(siblingNav, /WALK_SECTION_ITEMS\.map/);
   assert.match(siblingNav, /href=\{room\.href\}/);
 
-  for (const href of ["/store", "/about", "/members", "/community"]) {
+  for (const href of ["/store", "/about", "/#members", "/community"]) {
     assert.match(searchData, new RegExp(`href: "${href.replace("/", "\\/")}"`));
   }
   assert.doesNotMatch(searchData, /href: "\/#work"/);

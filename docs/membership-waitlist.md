@@ -2,7 +2,7 @@
 
 ## Behavior
 
-`/members#waitlist` collects name, email, and optional phone. `POST /api/members/waitlist` normalizes the email and saves to `public.membership_waitlist` in Supabase. Repeating an email returns the same confirmation without changing its original details or position. Joining the waitlist does not create a membership, send email, or subscribe someone to general marketing.
+`/#members` contains the waitlist form directly in the walk and collects name, email, and optional phone. The former `/members` page redirects to this section; menu, footer, and search links also lead here. `POST /api/members/waitlist` normalizes the email and saves to `public.membership_waitlist` in Supabase. Repeating an email returns the same confirmation without changing its original details or position. Joining the waitlist does not create a membership, send email, or subscribe someone to general marketing.
 
 The signup and `membership_waitlist.sheet_sync_requested` outbox event commit in one database transaction. Google delivery runs after the HTTP response. Missing Google configuration or an outage does not lose accepted signups.
 

@@ -70,7 +70,7 @@ function withHost(origin, work) {
 }
 
 test("search rewrites only public targets on the exact member deployment", () => {
-  const publicPaths = ["/#top", "/members", "/about", "/store", "/store/first-coin", "/community#byob-01", "/contact?topic=membership"];
+  const publicPaths = ["/#top", "/#members", "/about", "/store", "/store/first-coin", "/community#byob-01", "/contact?topic=membership"];
   const untouched = ["/my", "/my/profile", "/ops", "/ops/members", "/access?returnTo=%2Fmy", "/auth/callback?code=test", "https://external.example/path", "//external.example/path"];
   withHost("https://members.theruinedproject.com", () => {
     for (const href of publicPaths) assert.equal(links.publicSearchHref(href), `https://theruinedproject.com${href}`);
@@ -128,13 +128,15 @@ function headerFixture(currentHref) {
   return { ...harness, tree: Header() };
 }
 
-test("the actual menu restores its trigger for modified/current-page clicks but not a new page", () => {
+test("the actual menu restores its trigger for the current stop but releases focus for new destinations", () => {
   withHost("https://theruinedproject.com", () => {
     for (const [location, href, overrides, expected] of [
       ["https://theruinedproject.com/#top", "/store", { metaKey: true }, true],
       ["https://theruinedproject.com/#top", "/store", { ctrlKey: true }, true],
-      ["https://theruinedproject.com/members", "/members", {}, true],
-      ["https://theruinedproject.com/members", "/store", {}, false],
+      ["https://theruinedproject.com/#members", "/#members", {}, true],
+      ["https://theruinedproject.com/#top", "/#members", {}, false],
+      ["https://theruinedproject.com/store", "/#members", {}, false],
+      ["https://theruinedproject.com/#members", "/store", {}, false],
     ]) {
       const fixture = headerFixture(location);
       const link = descendants(fixture.tree).find((element) => element.props.href === href);
@@ -151,7 +153,7 @@ function searchFixture(currentHref, { failed = false } = {}) {
   const response = { query: "Ruined", total: 5, groups: {
     pieces: [result("pieces", "/store/first-coin")], projects: [],
     events: [result("events", "/community#byob-01")],
-    pages: [result("pages", "/members"), result("pages", "/my/profile"), result("pages", "/ops/members")],
+    pages: [result("pages", "/#members"), result("pages", "/my/profile"), result("pages", "/ops/members")],
   } };
   const harness = hooks(["Ruined", response, false, failed]);
   const openChanges = [];
@@ -171,7 +173,7 @@ test("actual search result and failure links leave the member host without movin
     const hrefs = descendants(fixture.tree).map((element) => element.props.href).filter(Boolean);
     assert.deepEqual(hrefs, [
       "https://theruinedproject.com/store/first-coin", "https://theruinedproject.com/community#byob-01",
-      "https://theruinedproject.com/members", "/my/profile", "/ops/members",
+      "https://theruinedproject.com/#members", "/my/profile", "/ops/members",
     ]);
     const failed = searchFixture("https://members.theruinedproject.com/my", { failed: true });
     assert.equal(descendants(failed.tree).find((element) => element.props.href).props.href, "https://theruinedproject.com/store");
@@ -180,8 +182,8 @@ test("actual search result and failure links leave the member host without movin
 
 test("actual search dismissal also restores focus when the visitor stays in this tab", () => {
   withHost("https://theruinedproject.com", () => {
-    for (const [href, overrides, expected] of [["/members", {}, true], ["/store/first-coin", { metaKey: true }, true], ["/store/first-coin", {}, false]]) {
-      const fixture = searchFixture("https://theruinedproject.com/members");
+    for (const [href, overrides, expected] of [["/#members", {}, true], ["/store/first-coin", { metaKey: true }, true], ["/store/first-coin", {}, false]]) {
+      const fixture = searchFixture("https://theruinedproject.com/#members");
       const link = descendants(fixture.tree).find((element) => element.props.href === href);
       link.props.onClick(click(href, overrides));
       assert.equal(fixture.refs.at(-1).current, expected);

@@ -47,10 +47,10 @@ const PAGES: SearchDocument[] = [
     id: "members",
     group: "pages",
     title: "Members",
-    description: "Foundations, Circles, and a shared practice.",
+    description: "Join the membership waitlist.",
     meta: "Membership",
-    href: "/members",
-    searchable: "members membership foundations circles academy learning practice join",
+    href: "/#members",
+    searchable: "members membership waitlist waiting list sign up signup foundations circles academy learning practice join",
     priority: 85,
   },
   {

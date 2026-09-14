@@ -394,7 +394,7 @@ export default function RoomSequenceCanvas({
           <nav aria-label="While the walk loads" className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-semibold">
             <button type="button" className="underline underline-offset-4" onClick={() => retryRef.current()}>Retry</button>
             <Link href="/store" prefetch={false} className="underline underline-offset-4">Store</Link>
-            <Link href="/members" prefetch={false} className="underline underline-offset-4">Members</Link>
+            <Link href="/#members" prefetch={false} className="underline underline-offset-4">Members</Link>
           </nav>
         </div>
       </div>

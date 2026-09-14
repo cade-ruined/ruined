@@ -29,6 +29,9 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    return [{ source: "/members", destination: "/#members", permanent: false }];
+  },
   images: {
     // Prefer modern formats for any next/image usage; the hero <picture>
     // already serves AVIF/WebP directly.

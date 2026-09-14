@@ -834,6 +834,14 @@ export default function MobileImmersiveJourney({
           outline-offset: -2px;
         }
 
+        .ruined-mobile-journey[data-stage-enabled][data-active-scene="members"] {
+          touch-action: pan-y pinch-zoom;
+        }
+
+        .ruined-mobile-scene[data-scene-id="members"] {
+          --members-panel-max-height: calc(100dvh - var(--ruined-header-height, 4.5rem) - 9rem - env(safe-area-inset-bottom, 0px));
+        }
+
         .ruined-mobile-journey__orientation {
           position: absolute;
           right: 0;

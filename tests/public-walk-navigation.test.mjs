@@ -50,18 +50,18 @@ test("the public walk has exactly five ordered stops with the existing scene gly
 
 test("canonical navigation distinguishes public Members from signed-in membership", () => {
   assert.deepEqual(GLOBAL_NAV_ITEMS.map((item) => item.href), [
-    "/store", "/about", "/members", "/community",
+    "/store", "/about", "/#members", "/community",
   ]);
   assert.deepEqual(GLOBAL_MENU_ITEMS.map((item) => item.id), [
     "home", "store", "about", "members", "events",
   ]);
   assert.deepEqual(GLOBAL_MENU_ITEMS.map((item) => [item.label, item.href]), [
     ["Lobby", "/#top"], ["Store", "/store"], ["About", "/about"],
-    ["Members", "/members"], ["Community", "/community"],
+    ["Members", "/#members"], ["Community", "/community"],
   ]);
   assert.equal(SITE_ROUTES.about.glyphIndex, 2);
   assert.equal(SITE_ROUTES.members.glyphIndex, 3);
-  assert.equal(SITE_ROUTES.members.href, "/members");
+  assert.equal(SITE_ROUTES.members.href, "/#members");
   assert.equal(SITE_ROUTES.my.href, "/my");
   assert.equal(activeGlobalNavigationId("/members"), "members");
   assert.equal(activeGlobalNavigationId("/members/details"), "members");
@@ -72,11 +72,11 @@ test("canonical navigation distinguishes public Members from signed-in membershi
   assert.equal(sectionLocatorForPathname("/my/account"), "MEMBERS");
 });
 
-test("footer links go straight to public destinations without another walk step", () => {
+test("footer links open each public destination including the signup in the walk", () => {
   assert.deepEqual(FOOTER_INDEX_ITEMS.map((item) => [item.label, item.href]), [
     ["Store", "/store"],
     ["About", "/about"],
-    ["Members", "/members"],
+    ["Members", "/#members"],
     ["Community", "/community"],
     ["Contact", "/contact"],
   ]);
@@ -95,7 +95,7 @@ test("search discovers public membership and never sends Artifacts searches to t
   for (const query of ["members", "membership", "foundations", "circles"]) {
     const memberPage = searchSite([], query).groups.pages.find((page) => page.id === "members");
     assert.ok(memberPage, `Members should be discoverable using ${query}`);
-    assert.equal(memberPage.href, "/members");
+    assert.equal(memberPage.href, "/#members");
   }
   assert.equal(searchSite([], "about").groups.pages[0].href, "/about");
   assert.equal(searchSite([], "community").groups.pages[0].href, "/community");
@@ -104,7 +104,7 @@ test("search discovers public membership and never sends Artifacts searches to t
   assert.equal(walk.description, "Move through the Lobby, Store, About, Members, and Community.");
 });
 
-test("the generated sitemap includes the canonical public Members route, not a private account route", async () => {
+test("the sitemap excludes the retired Members subpage and private account routes", async () => {
   const { default: sitemap } = await compile("app/sitemap.ts", {
     "@/lib/site": { SITE_URL: "https://theruinedproject.com" },
     "@/lib/shopify": {
@@ -114,13 +114,12 @@ test("the generated sitemap includes the canonical public Members route, not a p
   });
   const entries = await sitemap();
   const urls = entries.map((entry) => entry.url);
-  assert.deepEqual(urls.slice(0, 5), [
+  assert.deepEqual(urls.slice(0, 4), [
     "https://theruinedproject.com",
     "https://theruinedproject.com/store",
     "https://theruinedproject.com/about",
-    "https://theruinedproject.com/members",
     "https://theruinedproject.com/community",
   ]);
-  assert.equal(urls.filter((url) => url.endsWith("/members")).length, 1);
+  assert.equal(urls.filter((url) => url.endsWith("/members")).length, 0);
   assert.ok(urls.every((url) => !/\/(my|ops|access)(\/|$)/.test(new URL(url).pathname)));
 });

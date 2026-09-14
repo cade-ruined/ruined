@@ -7,7 +7,7 @@ import styles from "./MembershipWaitlistForm.module.css";
 
 const SEND_ERROR = "Your details didn’t send. Please try again.";
 
-export default function MembershipWaitlistForm() {
+export default function MembershipWaitlistForm({ tone = "dark" }: { tone?: "dark" | "paper" } = {}) {
   const fieldId = useId();
   const submitting = useRef(false);
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -55,7 +55,7 @@ export default function MembershipWaitlistForm() {
   }
 
   return (
-    <form aria-label="Membership waitlist" aria-busy={state === "sending"} className={styles.form} onSubmit={submit}>
+    <form aria-label="Membership waitlist" aria-busy={state === "sending"} className={`${styles.form} ${tone === "paper" ? styles.paper : ""}`} onSubmit={submit}>
       {state !== "sent" && (
         <>
           <div aria-hidden="true" className={styles.honeypot}>

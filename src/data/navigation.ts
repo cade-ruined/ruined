@@ -3,7 +3,7 @@ export const SITE_ROUTES = {
   store: { id: "store", label: "Store", href: "/store", glyphIndex: 1 },
   work: { id: "work", label: "Artifacts", href: "/work", glyphIndex: 2 },
   about: { id: "about", label: "About", href: "/about", glyphIndex: 2 },
-  members: { id: "members", label: "Members", href: "/members", glyphIndex: 3 },
+  members: { id: "members", label: "Members", href: "/#members", glyphIndex: 3 },
   events: { id: "events", label: "Community", href: "/community", glyphIndex: 4 },
   contact: { id: "contact", label: "Contact", href: "/contact" },
   my: { id: "my", label: "Membership", href: "/my" },
@@ -128,6 +128,8 @@ const SECTION_LOCATORS: Record<GlobalNavId | "work" | "bag", string> = {
 };
 
 export function activeGlobalNavigationId(pathname: string): GlobalNavId | null {
+  // Older public Members links redirect into the walk.
+  if (pathname === "/members" || pathname.startsWith("/members/")) return "members";
   const active = GLOBAL_NAV_ITEMS.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
   );

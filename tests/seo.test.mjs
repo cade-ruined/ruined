@@ -46,7 +46,7 @@ test("sitemap includes the public catalogue and product routes", async () => {
     assert.match(sitemap, new RegExp(`path: "${route}"`));
   }
 
-  for (const route of ["/work", "/foundations"]) {
+  for (const route of ["/work", "/foundations", "/members"]) {
     assert.doesNotMatch(sitemap, new RegExp(`path: "${route}"`));
   }
 

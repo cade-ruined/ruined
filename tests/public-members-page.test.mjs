@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import React from "react";
@@ -21,28 +21,20 @@ function load(path, dependencies = {}) {
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (name === "next/image") return { __esModule: true, default: ({ src, alt, sizes, className }) => React.createElement("img", { src, alt, sizes, className }) };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_target, property) => property }) };
-    // Public editorial pages must not silently start loading accounts, billing, or private images.
+    // The public waitlist must not start loading private account or billing data.
     throw new Error(`Unexpected public page dependency: ${name}`);
   }, cjsModule, cjsModule.exports);
   return cjsModule.exports;
 }
 
 const membership = load("src/data/public-membership.ts");
-const { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS, MEMBERSHIP_PILLARS } = membership;
-const publicDependencies = { "@/data/public-membership": membership };
+const { MEMBERSHIP_LINKS } = membership;
 const MembershipWaitlistForm = load("src/components/public-members/MembershipWaitlistForm.tsx").default;
-const MembersPage = load("src/components/public-members/MembersPage.tsx", {
-  ...publicDependencies,
-  "./MembershipWaitlistForm": { __esModule: true, default: MembershipWaitlistForm },
+const JourneyMembersPreview = load("src/components/sequence/JourneyMembersPreview.tsx", {
+  "@/data/public-membership": membership,
+  "@/components/public-members/MembershipWaitlistForm": { __esModule: true, default: MembershipWaitlistForm },
 }).default;
-const JourneyMembersPreview = load("src/components/sequence/JourneyMembersPreview.tsx", publicDependencies).default;
-const route = load("app/members/page.tsx", {
-  ...publicDependencies,
-  "@/components/public-members/MembersPage": { __esModule: true, default: MembersPage },
-});
-const pageHtml = renderToStaticMarkup(React.createElement(route.default));
-const page = parseFragment(pageHtml);
-const pillarIds = ["foundations", "circle", "academy", "experiences"];
+const preview = parseFragment(renderToStaticMarkup(React.createElement(JourneyMembersPreview, { headingId: "test-members-heading" })));
 const attr = (node, name) => node.attrs?.find((item) => item.name === name)?.value;
 function elements(node) {
   return [node, ...(node.childNodes ?? []).flatMap(elements)].filter((item) => item.tagName);
@@ -71,110 +63,66 @@ function assertAccessibleStructure(document) {
   }
 }
 
-test("the public membership story has four distinct pillars backed by existing public images", () => {
-  assert.deepEqual(MEMBERSHIP_PILLARS.map((pillar) => pillar.id), pillarIds);
-  for (const item of [MEMBERSHIP_INTRO, ...MEMBERSHIP_PILLARS]) {
-    assert.match(item.image, /^\/(?!\/)/, "imagery is a local public asset");
-    assert.doesNotMatch(item.image, /\/api\/|\/my\/|\/ops\//);
-    assert.ok(statSync(new URL(`../public${item.image}`, import.meta.url)).size > 0, item.image);
-    assert.ok(item.alt.trim().length > 0, `image ${item.image} needs descriptive alt text`);
-  }
-  const images = descendants(page, "img");
-  assert.deepEqual(images.map((image) => attr(image, "src")), [MEMBERSHIP_INTRO, ...MEMBERSHIP_PILLARS].map((item) => item.image));
-  assert.deepEqual(images.map((image) => attr(image, "alt")), [MEMBERSHIP_INTRO, ...MEMBERSHIP_PILLARS].map((item) => item.alt));
-  for (const image of images) assert.ok(attr(image, "sizes"), "responsive images declare their display sizes");
-});
-
-test("the rendered Members page gives every pillar a working anchor and named section", () => {
-  assertAccessibleStructure(page);
-  assert.equal(descendants(page, "main").length, 1);
-  assert.equal(descendants(page, "h1").length, 1);
-  assert.ok(descendants(page, "h2").length >= pillarIds.length);
-  assert.equal(elements(page).filter((node) => /^h[3-6]$/.test(node.tagName)).length, 0, "this two-level page does not skip heading levels");
-  const index = descendants(page, "nav").find((nav) => attr(nav, "aria-label") === "Explore membership");
-  assert.ok(index, "the pillar index is named navigation");
-  assert.deepEqual(descendants(index, "a").map((link) => attr(link, "href")), pillarIds.map((id) => `#${id}`));
-  for (const id of pillarIds) {
-    const sections = descendants(page, "section").filter((section) => attr(section, "id") === id);
-    assert.equal(sections.length, 1, `exactly one #${id} destination`);
-    const heading = descendants(sections[0], "h2")[0];
-    assert.equal(attr(sections[0], "aria-labelledby"), attr(heading, "id"));
-  }
-});
-
-test("public calls to action lead to the membership waitlist or member sign-in", () => {
-  assert.equal(MEMBERSHIP_LINKS.waitlist, "#waitlist");
-  assert.equal(MEMBERSHIP_LINKS.signIn, "https://members.theruinedproject.com/access");
-  const links = descendants(page, "a").map((link) => attr(link, "href"));
-  assert.ok(links.includes(MEMBERSHIP_LINKS.waitlist));
-  assert.ok(links.includes(MEMBERSHIP_LINKS.signIn));
-  assert.ok(links.includes("/community"));
-  const approvedDestinations = new Set([...pillarIds.map((id) => `#${id}`), MEMBERSHIP_LINKS.waitlist, "/community", MEMBERSHIP_LINKS.signIn]);
-  for (const href of links) assert.ok(approvedDestinations.has(href), `unexpected public action: ${href}`);
-  const waitlist = descendants(page, "section").filter((node) => attr(node, "id") === "waitlist");
-  assert.equal(waitlist.length, 1);
-  assert.equal(descendants(waitlist[0], "form").length, 1);
-  assert.match(text(waitlist[0]), /Join the waitlist/);
-  assert.match(text(waitlist[0]), /Leave your details\. We’ll be in touch when membership opens\./);
-  const inputs = descendants(waitlist[0], "input");
-  assert.deepEqual(inputs.map((node) => attr(node, "name")), ["website", "name", "email", "phone"]);
-  for (const input of inputs) {
-    assert.ok(descendants(waitlist[0], "label").some((label) => attr(label, "for") === attr(input, "id")), "every waitlist field has a label");
-  }
-  assert.equal(attr(inputs.find((input) => attr(input, "name") === "email"), "type"), "email");
-  assert.equal(attr(inputs.find((input) => attr(input, "name") === "phone"), "required"), undefined);
-  assert.equal(attr(inputs.find((input) => attr(input, "name") === "website"), "tabindex"), "-1");
-  assert.equal(descendants(page, "iframe").length, 0);
-  assert.doesNotMatch(text(page), /\$\s*\d|\bUSD\s*\d|\b\d+(?:\.\d{2})?\s*\/\s*(?:month|year|mo|yr)\b/i);
-  assert.match(text(page), /by invitation/i);
-  assert.match(text(page), /confirm availability, billing, and membership terms before you decide to join/i);
-});
-
-test("the walk preview links to the same four public sections and the real member portal", () => {
-  const preview = parseFragment(renderToStaticMarkup(React.createElement(JourneyMembersPreview, { headingId: "test-members-heading" })));
+test("the Members walk section contains the signup form and keeps the member portal accessible", () => {
   assertAccessibleStructure(preview);
   assert.equal(descendants(preview, "h1").length, 0, "embedded content does not add a second page title");
   assert.equal(descendants(preview, "h2").length, 1);
   assert.equal(attr(descendants(preview, "h2")[0], "id"), "test-members-heading");
   assert.equal(attr(descendants(preview, "section")[0], "aria-labelledby"), "test-members-heading");
-  const links = descendants(preview, "a").map((link) => attr(link, "href"));
-  assert.deepEqual(links, [...pillarIds.map((id) => `/members#${id}`), "/members", MEMBERSHIP_LINKS.signIn]);
-  assert.equal(attr(descendants(preview, "img")[0], "src"), MEMBERSHIP_INTRO.image);
-  for (const href of links.filter((link) => link.startsWith("/members#"))) {
-    assert.ok(elements(page).some((node) => attr(node, "id") === href.split("#")[1]), href);
+  assert.equal(descendants(preview, "form").length, 1, "signup is available directly in the walk");
+  assert.equal(attr(descendants(preview, "form")[0], "aria-label"), "Membership waitlist");
+  assert.equal(MEMBERSHIP_LINKS.signIn, "https://members.theruinedproject.com/access");
+  assert.deepEqual(descendants(preview, "a").map((link) => attr(link, "href")), [MEMBERSHIP_LINKS.signIn]);
+  assert.equal(descendants(preview, "iframe").length, 0);
+  assert.doesNotMatch(text(preview), /Explore membership/);
+  assert.doesNotMatch(text(preview), /\$\s*\d|\bUSD\s*\d|\b\d+(?:\.\d{2})?\s*\/\s*(?:month|year|mo|yr)\b/i);
+});
+
+test("the embedded signup labels its fields and makes phone optional", () => {
+  const form = descendants(preview, "form")[0];
+  const inputs = descendants(form, "input");
+  assert.deepEqual(inputs.map((node) => attr(node, "name")), ["website", "name", "email", "phone"]);
+  for (const input of inputs) {
+    assert.ok(descendants(form, "label").some((label) => attr(label, "for") === attr(input, "id")), "every waitlist field has a label");
   }
+  const byName = (name) => inputs.find((input) => attr(input, "name") === name);
+  assert.equal(attr(byName("name"), "required"), "");
+  assert.equal(attr(byName("email"), "required"), "");
+  assert.equal(attr(byName("email"), "type"), "email");
+  assert.equal(attr(byName("email"), "inputmode"), "email");
+  assert.equal(attr(byName("phone"), "required"), undefined);
+  assert.equal(attr(byName("phone"), "type"), "tel");
+  assert.equal(attr(byName("website"), "tabindex"), "-1");
+  const submit = descendants(form, "button").find((button) => attr(button, "type") === "submit");
+  assert.ok(submit);
+  assert.equal(accessibleText(submit).trim(), "Join the waitlist");
+  assert.ok(elements(form).some((node) => attr(node, "role") === "status" && attr(node, "aria-live") === "polite"));
+});
+
+test("desktop and mobile signup copies retain unique IDs and associated labels", () => {
   const bothPreviews = parseFragment(renderToStaticMarkup(React.createElement(React.Fragment, null,
     React.createElement(JourneyMembersPreview, { headingId: "desktop-members-heading" }),
     React.createElement(JourneyMembersPreview, { headingId: "mobile-members-heading" }),
   )));
   assertAccessibleStructure(bothPreviews);
-});
-
-test("the public route metadata describes Members rather than a private account screen", () => {
-  assert.equal(route.metadata.alternates.canonical, "/members");
-  assert.equal(route.metadata.openGraph.url, "/members");
-  assert.equal(route.metadata.description, MEMBERSHIP_INTRO.description);
-  assert.equal(route.metadata.openGraph.images[0].url, MEMBERSHIP_INTRO.image);
-  assert.equal(pageHtml, renderToStaticMarkup(React.createElement(MembersPage)));
-});
-
-test("public Members styling uses the existing paper, typography, palette, and responsive treatment", () => {
-  const pageStyles = source("src/components/public-members/MembersPage.module.css");
-  const previewStyles = source("src/components/sequence/JourneyMembersPreview.module.css");
-  for (const styles of [pageStyles, previewStyles]) {
-    for (const token of ["--color-bone", "--color-faded", "--color-poster", "--color-verdigris", "--font-body"]) {
-      assert.ok(styles.includes(`var(${token})`), `uses shared token ${token}`);
+  assert.equal(descendants(bothPreviews, "form").length, 2);
+  for (const form of descendants(bothPreviews, "form")) {
+    for (const input of descendants(form, "input")) {
+      assert.ok(descendants(form, "label").some((label) => attr(label, "for") === attr(input, "id")), "each form owns its input labels");
     }
-    assert.match(styles, /\/textures\/member-paper\.svg/);
-    assert.match(styles, /var\(--font-(?:cadehandy2|handwritten)\)/);
-    assert.match(styles, /@media/);
-    assert.match(styles, /minmax\(0,/);
   }
-  assert.match(pageStyles, /var\(--color-highlight\)/);
-  assert.match(pageStyles, /var\(--color-shop\)/);
-  assert.match(pageStyles, /scroll-margin-top:/);
-  assert.match(pageStyles, /:focus-visible/);
-  assert.match(pageStyles, /prefers-reduced-motion: reduce/);
-  assert.match(previewStyles, /var\(--font-header\)/);
-  assert.ok(statSync(new URL("../public/textures/member-paper.svg", import.meta.url)).size > 0);
+});
+
+test("the former Members subpage redirects visitors to the signup in the walk", () => {
+  const redirected = new Error("redirect");
+  const destinations = [];
+  const route = load("app/members/page.tsx", {
+    "next/navigation": { redirect: (destination) => {
+      destinations.push(destination);
+      throw redirected;
+    } },
+  });
+  assert.throws(() => route.default(), (error) => error === redirected);
+  assert.deepEqual(destinations, ["/#members"]);
+  assert.equal(route.metadata, undefined, "the old subpage does not keep a separate canonical URL");
 });
