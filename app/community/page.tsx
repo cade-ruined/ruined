@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import EventsIndex from "@/components/events/EventsIndex";
 import { SITE_URL } from "@/lib/site";
+import { getPublicCommunityEvents } from "@/lib/events/community-event-repository";
+
+export const dynamic = "force-dynamic";
 
 const description =
   "Community gatherings from The Ruined Project in Alpine, Utah, including the monthly BYOB series.";
@@ -31,7 +34,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function CommunityPage() {
+export default async function CommunityPage() {
+  const events = await getPublicCommunityEvents();
   const communitySchema = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -53,7 +57,7 @@ export default function CommunityPage() {
           __html: JSON.stringify(communitySchema).replace(/</g, "\\u003c"),
         }}
       />
-      <EventsIndex />
+      <EventsIndex initialEvents={events} />
     </>
   );
 }

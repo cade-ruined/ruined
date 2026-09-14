@@ -14,6 +14,7 @@ import {
   registerByob02Participant,
 } from "@/lib/events/byob-registration-repository";
 import { processRegistrationSheetOutboxBatch } from "@/lib/events/registration-sheet-sync";
+import { CommunityEventRegistrationClosedError } from "@/lib/events/community-event-repository";
 
 export const runtime = "nodejs";
 
@@ -131,6 +132,9 @@ export async function POST(request: Request) {
     });
     return json(SUCCESS_RESPONSE);
   } catch (error) {
+    if (error instanceof CommunityEventRegistrationClosedError) {
+      return json({ error: error.message }, 409);
+    }
     const details =
       error && typeof error === "object"
         ? {

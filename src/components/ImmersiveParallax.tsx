@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { EVENTS } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 import type { Product } from "@/data/products";
 import type { CatalogStatus } from "@/lib/store/catalog";
 import { JourneyLobbyIndex } from "@/components/sequence/JourneyIndexes";
@@ -99,6 +99,7 @@ export default function ImmersiveParallax({
   products: Product[];
   catalogStatus?: CatalogStatus;
 }) {
+  const EVENTS = usePublicEvents();
   const desktopEligible = useSyncExternalStore(
     subscribeToDesktopExperience,
     getDesktopExperienceSnapshot,

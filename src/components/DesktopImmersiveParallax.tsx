@@ -16,7 +16,7 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import { EVENTS } from "@/data/events";
+import { usePublicEvents } from "@/lib/events/use-public-events";
 import type { Product } from "@/data/products";
 import type { CatalogStatus } from "@/lib/store/catalog";
 import {
@@ -585,6 +585,7 @@ export default function DesktopImmersiveParallax({
   products: Product[];
   catalogStatus?: CatalogStatus;
 }) {
+  const EVENTS = usePublicEvents();
   const containerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
 

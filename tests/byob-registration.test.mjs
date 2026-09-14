@@ -93,8 +93,8 @@ test("registration keeps the recap on Community and presents compact final detai
   assert.match(page, /<time dateTime=\{event\.dateTime\}>\{event\.date\}<\/time>/);
   assert.match(page, /\{event\.time\}/);
   assert.match(page, /\{event\.location\}/);
-  assert.match(events, /isFirstEvent \|\| isRegistrationEvent[\s\S]*?`\$\{isoDate\}T08:00:00`/);
-  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MST"[\s\S]*?"Details to come"/);
+  assert.match(events, /isFirstEvent \|\| isRegistrationEvent[\s\S]*?`\$\{isoDate\}T14:00:00\.000Z`/);
+  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
 });
 

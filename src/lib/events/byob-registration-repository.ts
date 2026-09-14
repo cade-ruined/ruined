@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getApplicationDatabase } from "@/lib/database/server";
+import { assertCommunityEventRegistrationOpen } from "@/lib/events/community-event-repository";
 import {
   BYOB_02_EVENT_KEY,
   BYOB_02_WAIVER_BODY,
@@ -52,6 +53,9 @@ export async function registerByob02Participant(
   const sql = getApplicationDatabase();
 
   await sql.begin(async (tx) => {
+    // Lock the public listing while accepting a registration so an operator
+    // closing it cannot race a later accepted submission. Database outages throw.
+    await assertCommunityEventRegistrationOpen(tx, BYOB_02_EVENT_KEY);
     await tx`
       select pg_advisory_xact_lock(
         hashtext(${BYOB_02_EVENT_KEY}),

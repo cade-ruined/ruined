@@ -842,10 +842,10 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(searchStyles, /animation: search-dialog-expand/);
   assert.match(searchData, /productDocuments/);
   assert.match(searchData, /PROJECT_DOCUMENTS/);
-  assert.match(searchData, /EVENT_DOCUMENTS/);
+  assert.match(searchData, /eventDocuments\(events\)/);
   assert.match(searchData, /const PAGES/);
   assert.match(searchRoute, /getProducts\(\)/);
-  assert.match(searchRoute, /searchSite\(products, query\)/);
+  assert.match(searchRoute, /searchSite\(products, query, events\)/);
   assert.match(navigation, /export const GLOBAL_NAV_ITEMS/);
   assert.match(navigation, /export const GLOBAL_MENU_ITEMS/);
   assert.match(navigation, /export const WALK_MENU_ITEMS = EXPLORE_ROOMS/);
@@ -1002,7 +1002,7 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
   assert.match(events, /image: isFirstEvent \? BYOB_01_FEATURE_IMAGE : "\/events\/byob-key-art\.png"/);
   assert.match(events, /status: isFirstEvent \? "Ended" : "Upcoming"/);
-  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MST"[\s\S]*?"Details to come"/);
+  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);
   assert.match(events, /\/events\/byob-01-recap-poster\.webp\?v=2/);
