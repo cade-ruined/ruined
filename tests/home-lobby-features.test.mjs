@@ -52,7 +52,7 @@ test("the home marquee keeps the tank first and turns the BYOB group image into 
   assert.doesNotMatch(indexSource, /href: `\/community#\$\{byobOne\.id\}`/);
   assert.match(
     eventsSource,
-    /registration: isRegistrationEvent[\s\S]*?href: "\/community\/byob-02\/register"[\s\S]*?label: "Register"[\s\S]*?status: "Open"/
+    /registration: isRegistrationEvent[\s\S]*?href: `\/community\/\$\{id\}\/register`[\s\S]*?label: "Register"[\s\S]*?status: isSecondEvent \? "Closed" : "Open"/
   );
   assert.match(indexSource, /title:\s*tank\?\.name \?\? BYOB_TANK_FEATURE_FALLBACK\.title/);
   assert.match(indexSource, /href:\s*tank \? `\/store\/\$\{tank\.id\}` : undefined/);
