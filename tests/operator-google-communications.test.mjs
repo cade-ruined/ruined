@@ -104,8 +104,11 @@ test("the JSON boundary and compact operator controls are wired into both existi
   assert.match(circleCommunicationPanel, /communication\?\.id === circle\.id/);
   assert.match(circleCommunicationPanel, /entityId=\{circle\.id\} entityType="circle"/);
   assert.match(experiencesPage, /getOpsExperienceManagementDirectory/);
-  assert.match(experiencesDirectory, /href=\{`\/ops\/experiences\/\$\{experience\.experienceId\}#meeting-setup`\}/);
+  assert.match(experiencesDirectory, /href=\{`\/ops\/experiences\/\$\{experience\.experienceId\}`\}/);
   assert.match(experienceRecord, /entityType="experience"/);
-  assert.match(experienceRecord, /editable=\{experience\.canManageCommunication && !experience\.calendar\.googleEventId && !\["pending_create", "pending_update"\]\.includes\(experience\.calendar\.status\)\}/);
+  assert.match(experienceRecord, /const calendarManaged = Boolean\(experience\.calendar\.googleEventId\)/);
+  assert.match(experienceRecord, /\["pending_create", "pending_update", "pending_cancel"\]\.includes\(experience\.calendar\.status\)/);
+  assert.match(experienceRecord, /calendarManaged \? <p[\s\S]*Google Calendar manages this meeting link/);
+  assert.match(experienceRecord, /editable=\{experience\.canManageCommunication && !\["cancelled", "archived", "completed"\]\.includes\(experience\.state\)\}/);
   assert.match(experienceRepository, /canManageCommunication: true/);
 });

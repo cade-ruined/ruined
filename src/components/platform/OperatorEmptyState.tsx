@@ -15,12 +15,12 @@ export default function OperatorEmptyState({
   title: string;
 }) {
   return (
-    <article className="grid gap-4 rounded-[4px] bg-black/[0.035] px-5 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6 sm:py-6">
+    <article className="operator-bento-card grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div>
         {eyebrow ? <p className="mb-2 w-fit [font-family:var(--font-cadehandy2)] text-xl leading-none text-[var(--color-poster)]">
           {eyebrow}
         </p> : null}
-        <h2 className="max-w-2xl font-[var(--font-display)] text-2xl leading-tight sm:text-3xl">
+        <h2 className="operator-section-heading max-w-2xl">
           {title}
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/60">{detail}</p>

@@ -18,19 +18,19 @@ function FoundationMemberRow({
 }) {
   return (
     <article
-      className="grid gap-4 rounded-[4px] bg-black/[0.025] px-4 py-4 transition-colors hover:bg-black/[0.05] sm:grid-cols-[minmax(12rem,1fr)_9rem_5rem_minmax(11rem,0.8fr)] sm:items-center sm:px-5"
+      className="operator-bento-card grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[minmax(12rem,1fr)_9rem_5rem_minmax(11rem,0.8fr)]"
       id={`member-foundations-${member.memberId}`}
     >
-      <div>
-        <h3 className="font-[var(--font-display)] text-xl leading-none">
+      <div className="col-span-2 lg:col-span-1">
+        <h3 className="text-base font-semibold leading-snug">
           <Link
-            className="transition-colors hover:text-[var(--color-poster)]"
+            className="inline-flex min-h-11 items-center transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
             href={`/ops/members/${member.memberId}#journey`}
           >
             {member.name}
           </Link>
         </h3>
-        <p className={`mt-2 text-sm ${member.circleName ? "text-black/45" : "text-[var(--color-poster)]"}`}>
+        <p className={`text-sm ${member.circleName ? "text-black/55" : "text-[var(--color-poster)]"}`}>
           {member.circleName ?? (canPlaceMembers ? (
             <Link className="underline underline-offset-4" href={`/ops/circles?memberId=${encodeURIComponent(member.memberId)}#assign-member`}>
               Choose a Circle before completion →
@@ -40,7 +40,7 @@ function FoundationMemberRow({
       </div>
       <StateLabel state={member.foundationsState} />
       <p className="text-sm tabular-nums text-black/58">{member.foundationsProgress}%</p>
-      <OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} />
+      <div className="col-span-2 lg:col-span-1"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
     </article>
   );
 }
@@ -121,28 +121,17 @@ export default function OpsSection({
       ) : null}
 
       {section === "foundations" ? (
-        <section className="mt-2" aria-label="Foundations snapshot">
-          <div className="grid gap-px overflow-hidden rounded-[4px] bg-black sm:grid-cols-3">
-            {[
-              ["Not started", dashboard.members.filter((member) => member.foundationsState === "not_started").length],
-              ["Moving", dashboard.members.filter((member) => member.foundationsState === "in_progress").length],
-              ["Complete", dashboard.members.filter((member) => member.foundationsState === "completed").length],
-            ].map(([label, value]) => (
-              <div className="bg-[#080605] px-5 py-5 text-[var(--color-bone)] sm:px-6" key={label}>
-                <p className="text-sm text-white/48">{label}</p>
-                <p className="mt-3 font-[var(--font-display)] text-4xl leading-none">{value}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-7 grid gap-8">
+        <section aria-label="Foundations snapshot">
+          <header className="operator-record-header mb-4"><h2 className="operator-page-heading">Foundations</h2></header>
+          <div className="grid gap-5">
             {foundationGroups.map((group) => group.members.length ? (
               <section aria-labelledby={`foundations-${group.label.replaceAll(" ", "-").toLowerCase()}`} key={group.label}>
-                <div className="mb-3 flex items-center justify-between gap-4">
-                  <h2 className="font-[var(--font-display)] text-2xl leading-none" id={`foundations-${group.label.replaceAll(" ", "-").toLowerCase()}`}>
-                    {group.label} <span className="text-black/35">{group.members.length}</span>
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <h2 className="operator-section-heading flex items-baseline gap-2" id={`foundations-${group.label.replaceAll(" ", "-").toLowerCase()}`}>
+                    {group.label} <span className="text-sm text-black/35">{group.members.length}</span>
                   </h2>
                   {group.action && canPlaceMembers ? (
-                    <Link className="text-sm underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]" href="/ops/circles#assign-member">
+                    <Link className="inline-flex min-h-11 items-center text-sm underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]" href="/ops/circles#assign-member">
                       Place members →
                     </Link>
                   ) : null}
@@ -162,10 +151,10 @@ export default function OpsSection({
               />
             ) : null}
             {completedFoundations.length ? (
-              <details className="group rounded-[4px] bg-black/[0.025]">
+              <details className="group rounded-[8px] bg-black/[0.025]">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 marker:content-none">
-                  <span className="font-[var(--font-display)] text-2xl">Complete <span className="text-black/35">{completedFoundations.length}</span></span>
-                  <span aria-hidden="true" className="text-2xl transition-transform group-open:rotate-45">+</span>
+                  <span className="flex items-baseline gap-2 text-base font-semibold">Complete <span className="text-sm text-black/45">{completedFoundations.length}</span></span>
+                  <span aria-hidden="true" className="text-xl transition-transform group-open:rotate-45">+</span>
                 </summary>
                 <div className="grid gap-2 px-3 pb-3">
                   {completedFoundations.map((member) => <FoundationMemberRow canPlaceMembers={canPlaceMembers} key={member.memberId} member={member} />)}
@@ -234,7 +223,13 @@ export default function OpsSection({
       ) : null}
 
       {section === "access-billing" || section === "sync" ? (
-        <section className="mt-14 grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.55fr)]">
+        <section className="grid gap-3" aria-label="Access and billing snapshot">
+          <header className="operator-record-header">
+            <h2 className="operator-page-heading">Access &amp; Billing</h2>
+            <p className="text-sm text-black/60">
+              <span className="font-semibold tabular-nums text-[var(--color-poster)]">{dashboard.attentionRequired}</span> need billing attention
+            </p>
+          </header>
           <div className="grid gap-2">
             {[
               ["Member identity", configuration.supabase, "Passwordless sign-in and verified identity."],
@@ -242,7 +237,7 @@ export default function OpsSection({
               ["Membership billing", configuration.stripe, "Checkout, subscriptions, and payment attention."],
             ].map(([name, state, description]) => (
               <div
-                className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-5 sm:grid-cols-[minmax(10rem,0.6fr)_8rem_minmax(12rem,1fr)] sm:items-center"
+                className="operator-bento-card grid gap-2 sm:grid-cols-[minmax(10rem,0.6fr)_8rem_minmax(12rem,1fr)] sm:items-center"
                 key={name}
               >
                 <h2 className="ui-heading text-base font-semibold">{name}</h2>
@@ -251,24 +246,20 @@ export default function OpsSection({
               </div>
             ))}
           </div>
-          <aside className="rounded-[4px] bg-[#080605] p-6 text-[var(--color-bone)]">
-            <p className="text-sm text-white/48">Billing attention</p>
-            <p className="mt-5 text-5xl tracking-[-0.04em] text-[var(--color-poster)]">{dashboard.attentionRequired}</p>
-          </aside>
         </section>
       ) : null}
 
       {actions && section === "circles" ? (
-        <div className="mt-8 scroll-mt-40" id="manage-circles">{actions}</div>
+        <div className="mt-4 scroll-mt-40" id="manage-circles">{actions}</div>
       ) : actions ? (
         <details
-          className="group mt-10 rounded-[4px] bg-[var(--color-surface)]"
+          className="group mt-4 rounded-[8px] bg-[var(--color-surface)]"
         >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-5 text-sm font-medium marker:content-none sm:px-6">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium marker:content-none">
             <span>{`Manage ${title}`}</span>
             <span aria-hidden="true" className="text-xl font-normal text-[var(--color-poster)] group-open:rotate-45">+</span>
           </summary>
-          <div className="border-t border-black/10 px-5 pb-6 pt-5 sm:px-6">{actions}</div>
+          <div className="px-4 pb-4 pt-1">{actions}</div>
         </details>
       ) : null}
     </OperatorPageFrame>

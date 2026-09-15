@@ -40,6 +40,8 @@ const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
   "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
   ...guidanceDeps,
   "@/components/platform/OperatorMemberSetup": { __esModule: true, default: Setup },
+  "@/components/platform/OperatorMemberWorkspace": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },
+  "@/components/platform/OperatorMemberAvatar": empty,
   "@/components/platform/OperatorPageFrame": { __esModule: true, default: ({ children }) => React.createElement("main", null, children) },
   "@/components/platform/OperatorMemberActions": { OperatorNoteAction: () => null, OperatorTaskCreateAction: () => null, OperatorOverrideAction: () => null },
   "@/components/platform/OperatorProfileSupport": empty,
@@ -281,6 +283,13 @@ test("directory uses actual states, explicitly names Billing, and has a single n
   assert.doesNotMatch(text(tree), /FAKE SERVER COPY/);
   const links = nodes(tree).filter((node) => node.tagName === "a" && attr(node, "href")?.startsWith("/ops/members/"));
   assert.equal(links.length, 2);
+  assert.ok(links.every((link) => attr(link, "class").includes("operator-bento-card")), "each person is one compact navigable card");
+  assert.ok(nodes(tree).some((node) => attr(node, "class")?.includes("md:grid-cols-2 xl:grid-cols-3")), "the roster becomes a responsive card grid");
+  assert.ok(nodes(tree).filter((node) => node.tagName === "label").every((node) => !attr(node, "class")?.includes("grid-cols")), "search fields keep their labels above each control");
+  const search = nodes(tree).find((node) => node.tagName === "form");
+  assert.match(attr(search, "class"), /grid-cols-\[minmax\(0,1fr\)_auto\]/, "mobile search and Find share one row");
+  assert.ok(nodes(search).some((node) => node.tagName === "button" && attr(node, "aria-label") === "Find members" && attr(node, "type") === "submit"));
+  assert.equal(nodes(search).filter((node) => node.tagName === "label").length, 2, "both controls retain accessible labels");
   assert.equal(links.every((link) => nodes(link).filter((node) => node.tagName === "a").length === 1), true);
 });
 
@@ -289,8 +298,14 @@ test("record foregrounds one owned next step, keeps seven technical states lower
   const next = nextPanel(tree);
   assert.match(text(next), /Waiting · MemberComplete joining/);
   assert.match(text(next), /accepts the agreement themselves/);
+  const explanation = nodes(next).find((node) => node.tagName === "details");
+  assert.ok(explanation);
+  assert.equal(attr(explanation, "open"), undefined, "full guidance is optional rather than dominating the profile");
+  assert.equal(nodes(explanation).some((node) => node.tagName === "a"), false, "the next action stays immediately visible");
   assert.deepEqual(nodes(next).filter((node) => node.tagName === "a").map((node) => attr(node, "href")), ["#membership"]);
   const stateSection = nodes(tree).find((node) => attr(node, "aria-labelledby") === "member-state-details");
+  assert.equal(stateSection.tagName, "details");
+  assert.equal(attr(stateSection, "open"), undefined, "technical states stay available without dominating the profile");
   assert.equal(nodes(stateSection).filter((node) => node.tagName === "dt").length, 7);
   assert.ok(nodes(tree).findIndex((node) => attr(node, "id") === "membership") < nodes(tree).indexOf(stateSection));
   assert.ok(nodes(tree).some((node) => attr(node, "href") === "https://members.theruinedproject.com/access"));

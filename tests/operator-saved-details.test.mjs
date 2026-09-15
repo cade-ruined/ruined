@@ -6,10 +6,14 @@ import React from "react";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
-const byobModelModule = { exports: {} };
-new Function("module", "exports", ts.transpileModule(readFileSync(new URL("../src/lib/events/byob-registration-model.ts", import.meta.url), "utf8"), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText)(byobModelModule, byobModelModule.exports);
+const registrationModel = (() => {
+  const output = ts.transpileModule(readFileSync(new URL("../src/lib/events/byob-registration-model.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const compiledModule = { exports: {} };
+  new Function("module", "exports", output)(compiledModule, compiledModule.exports);
+  return compiledModule.exports;
+})();
 const nodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 function fixture(path, props, { exportName = "default", nestedName, preview = false, respond = () => Response.json({ event: { eventKey: "workshop" } }) } = {}) {
@@ -17,7 +21,7 @@ function fixture(path, props, { exportName = "default", nestedName, preview = fa
   const requests = [];
   let cursor = 0;
   let refreshes = 0;
-  const hooks = { ...React, useContext: () => preview, useMemo: (fn) => fn(), useState(initial) {
+  const hooks = { ...React, useEffect() {}, useContext: () => preview, useMemo: (fn) => fn(), useRef(initial) { const [ref] = hooks.useState(() => ({ current: initial })); return ref; }, useState(initial) {
     const index = cursor++;
     if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
     return [state[index], (next) => { state[index] = typeof next === "function" ? next(state[index]) : next; }];
@@ -28,14 +32,15 @@ function fixture(path, props, { exportName = "default", nestedName, preview = fa
   const compiledModule = { exports: {} };
   new Function("require", "module", "exports", "fetch", "FormData", output)((name) => {
     if (name === "react") return hooks;
-    if (name === "@/lib/events/byob-registration-model") return byobModelModule.exports;
     if (name === "react/jsx-runtime") return require(name);
     if (name === "next/navigation") return { useRouter: () => ({ refresh() { refreshes++; }, push() {} }) };
     if (name === "next/link") return { __esModule: true, default: "a" };
     if (name === "@/components/platform/OperatorPageFrame") return { __esModule: true, default: "main" };
+    if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: ({ children }) => children };
     if (name === "@/components/platform/operatorStyles") return new Proxy({}, { get: () => "control" });
     if (name === "@/components/platform/OperatorArtifactProductPicker") return { __esModule: true, default: "product-picker" };
     if (name === "@/lib/platform/artifact-invariants") return { isLiveAwardableArtifactTemplate: () => true };
+    if (name === "@/lib/events/byob-registration-model") return registrationModel;
     if (name === "@/lib/datetime/zoned-date-time") return { zonedDateTimeLocalToIso: (value) => `${value}:00.000Z`, zonedDateTimeLocalValue: (value) => value?.slice(0, 16) ?? "" };
     throw new Error(`Unexpected UI dependency ${name}`);
   }, compiledModule, compiledModule.exports, async (url, options) => {
@@ -67,6 +72,35 @@ const event = {
 };
 const eventFixture = (options = {}, props = {}) => fixture("src/components/platform/OperatorCommunityEvents.tsx", { event, ...props }, { exportName: "CommunityEventEditor", ...options });
 
+test("public events browse first and open creation in the shared guarded dialog", () => {
+  const f = fixture("src/components/platform/OperatorCommunityEvents.tsx", { events: [event], preview: true });
+  assert.equal(nodes(f.draw()).some((node) => node.props?.title === "New public event"), false);
+  assert.ok(nodes(f.draw()).some((node) => node.props?.href === "/ops/community/workshop"));
+  f.click("Add public event");
+  const dialog = nodes(f.draw()).find((node) => node.props?.title === "New public event");
+  assert.equal(dialog.props.open, true);
+  assert.equal(dialog.props.returnFocusId, "add-public-event");
+  assert.ok(nodes(dialog).some((node) => node.type?.name === "CommunityEventEditor" && node.props.preview));
+  dialog.props.onClose();
+  assert.equal(nodes(f.draw()).some((node) => node.props?.title === "New public event"), false);
+  assert.equal(f.requests.length, 0);
+});
+
+test("public event forms expose dirty and pending guards and prevent duplicate saves", async () => {
+  let finish;
+  const waiting = new Promise((resolve) => { finish = resolve; });
+  const f = eventFixture({ respond: () => waiting }, { event: undefined });
+  nodes(f.draw()).find((node) => node.type === "form").props.onChange();
+  assert.equal(nodes(f.draw()).find((node) => node.type === "form").props["data-operator-dirty"], true);
+  const saving = f.submit({ title: "New gathering", startsAt: "2026-09-20T10:00" });
+  assert.equal(nodes(f.draw()).find((node) => node.type === "form").props["data-operator-pending"], true);
+  await f.submit({ title: "Duplicate", startsAt: "2026-09-20T10:00" });
+  assert.equal(f.requests.length, 1);
+  finish(Response.json({ event: { eventKey: "new-gathering" } }));
+  await saving;
+  assert.equal(nodes(f.draw()).find((node) => node.type === "form").props["data-operator-dirty"], false);
+});
+
 test("saved public events show operational details and registration state before offering Edit", () => {
   const f = eventFixture();
   assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
@@ -74,7 +108,8 @@ test("saved public events show operational details and registration state before
   assert.ok(nodes(f.draw()).some((node) => node.props?.href === event.registrationUrl));
   f.click("Edit event");
   assert.ok(nodes(f.draw()).some((node) => node.type === "form"));
-  f.click("Cancel");
+  assert.equal(nodes(f.draw()).some((node) => node.type === "button" && text(node) === "Cancel"), false);
+  nodes(f.draw()).find((node) => node.props?.title === "Edit public event").props.onClose();
   assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
   assert.equal(f.requests.length, 0);
 });
@@ -116,7 +151,7 @@ test("saved Artifact bindings and shipments open editors only after Edit, while 
   assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
   f.click("Edit product");
   assert.ok(nodes(f.draw()).some((node) => node.type === "form"));
-  f.click("Cancel");
+  nodes(f.draw()).find((node) => node.props?.title === "Shopify product").props.onClose();
   assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
   assert.equal(f.requests.length, 0);
   const parent = fixture("src/components/platform/OperatorArtifactAdmin.tsx", artifactProps);
@@ -125,7 +160,7 @@ test("saved Artifact bindings and shipments open editors only after Edit, while 
   assert.equal(nodes(tracking.draw()).some((node) => node.type === "form"), false);
   tracking.click("Edit shipment");
   assert.ok(nodes(tracking.draw()).some((node) => node.type === "form"));
-  tracking.click("Cancel");
+  nodes(tracking.draw()).find((node) => node.props?.title === "Edit shipment").props.onClose();
   assert.equal(tracking.requests.length, 0);
 });
 

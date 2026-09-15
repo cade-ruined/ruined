@@ -39,37 +39,38 @@ export default function OpsBlocks({
 
   return (
     <OperatorPageFrame title="Blocks">
-      <nav aria-label="Block tasks" className="mb-5 flex flex-wrap items-center gap-3">
-        {actions ? <a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#create-block">+ New Block</a> : null}
-        {actions && visibleBlocks.length ? <a className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="#assign-block-circle">Assign a Circle</a> : null}
+      <header className="operator-record-header flex flex-wrap items-center justify-between gap-3">
+      <h2 className="operator-page-heading">Blocks</h2>
+      <nav aria-label="Block tasks" className="flex flex-wrap items-center gap-3">
+        {actions ? <a id="new-block-trigger" className={OPERATOR_PRIMARY_ACTION_CLASS} href="#create-block">+ New Block</a> : null}
         <Link className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" href="/ops/circles">Manage Circles →</Link>
       </nav>
-      <section className="mt-2 grid gap-3" aria-label="Block hierarchy">
+      </header>
+      <section className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Block hierarchy">
         {visibleBlocks.map((block) => (
           <article
-            className="grid gap-5 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.05] lg:grid-cols-[minmax(13rem,0.7fr)_8rem_minmax(18rem,1fr)] lg:items-start lg:px-6"
+            className="operator-bento-card flex flex-col gap-3 transition-colors hover:bg-black/[0.05]"
             id={`block-${block.id}`}
             key={block.id}
           >
             <div>
-              <h2 className="font-[var(--font-display)] text-3xl leading-none">
-                <a className="hover:text-[var(--color-poster)]" href={`#block-${block.id}`}>
-                  {block.name}
-                </a>
+              <h2 className="text-xl font-semibold leading-tight">
+                {block.name}
               </h2>
               <p className="mt-3 text-sm text-black/42">
-                {block.currentCircles} current Circles
+                {block.currentCircles} current {block.currentCircles === 1 ? "Circle" : "Circles"}
                 {block.status === "forming" && block.currentCircles < 2
                   ? ` · ${2 - block.currentCircles} more needed`
                   : ""}
               </p>
+              {actions ? <a id={`manage-block-trigger-${block.id}`} className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={`#manage-block-${block.id}`}>Manage Block →</a> : null}
             </div>
             <StateLabel state={block.status} />
-            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-black/65">
+            <div className="flex flex-wrap gap-2 text-sm text-black/65">
               {block.circles.length > 0
                 ? block.circles.map((circle) => (
                     <Link
-                      className="underline decoration-black/20 underline-offset-4 hover:decoration-black"
+                      className="inline-flex min-h-11 items-center rounded-md bg-white/25 px-3 text-xs font-medium hover:bg-white/50"
                       href={`/ops/circles#circle-${circle.id}`}
                       key={circle.id}
                     >
@@ -93,7 +94,7 @@ export default function OpsBlocks({
 
       {actions ? (
         <section
-          className="mt-8 scroll-mt-28"
+          className="scroll-mt-28"
           id="manage-blocks"
           aria-label="Block setup"
         >

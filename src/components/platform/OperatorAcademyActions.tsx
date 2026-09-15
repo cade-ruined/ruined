@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -75,15 +75,15 @@ function AudienceFields({
     { label: "Blocks", name: "blockIds", options: options.blocks, selected: blockIds, setSelected: setBlockIds },
   ];
   return (
-    <fieldset className="grid gap-3 rounded-[4px] bg-black/[0.035] p-4 sm:grid-cols-2">
-      <legend className="px-1 font-[var(--font-display)] text-xl tracking-[-0.02em]">Audience</legend>
+    <fieldset className="grid gap-2 rounded-[6px] bg-black/[0.035] p-3 sm:grid-cols-2">
+      <legend className="operator-compact-label px-1">Audience</legend>
       <label className="flex min-h-11 items-center gap-3 text-sm sm:col-span-2">
         <input checked={allMembers} className="size-4 shrink-0 accent-[var(--color-faded)]" name="audienceAll" onChange={(event) => setAllMembers(event.target.checked)} type="checkbox" value="yes" />
         All active members
       </label>
-      {groups.map((group) => <fieldset className="min-w-0" key={group.name}>
+      {groups.map((group) => <fieldset className="min-w-0" hidden={allMembers} key={group.name}>
         <legend className={OPERATOR_LABEL_TEXT_CLASS}>{group.label}</legend>
-        <div className={`mt-2 max-h-52 overflow-y-auto rounded-[4px] bg-[var(--color-bone)]/60 p-2 ${allMembers ? "opacity-50" : ""}`}>
+        <div className="mt-2 max-h-40 overflow-y-auto rounded-[4px] bg-[var(--color-bone)]/60 p-1">
           {group.options.length ? group.options.map((option) => <label className="flex min-h-11 items-center gap-3 rounded-[3px] px-2 text-sm" key={option.id}>
             <input checked={group.selected.has(option.id)} className="size-4 shrink-0 accent-[var(--color-faded)]" disabled={allMembers} name={group.name} onChange={(event) => {
               const checked = event.target.checked;
@@ -97,9 +97,6 @@ function AudienceFields({
           </label>) : <p className="px-2 py-3 text-sm text-black/50">No {group.label.toLowerCase()} available.</p>}
         </div>
       </fieldset>)}
-      <p className="text-xs leading-relaxed text-black/45 sm:col-span-2">
-        {allMembers ? "Circle and Block choices are paused while All active members is selected." : "Choose one or more Circles and Blocks, or share with all active members."}
-      </p>
     </fieldset>
   );
 }
@@ -112,8 +109,16 @@ function ResourceFields({
   resource?: OpsAcademyResourceDraft;
 }) {
   const slugLocked = Boolean(resource?.publishedAt);
+  const [contentType, setContentType] = useState(resource?.contentType ?? "video");
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4" onInvalidCapture={(event) => {
+      // Reveal invalid optional settings before native validation moves focus.
+      let disclosure = (event.target as HTMLElement).closest("details");
+      while (disclosure) {
+        disclosure.open = true;
+        disclosure = disclosure.parentElement?.closest("details") ?? null;
+      }
+    }}>
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.45fr)]">
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
@@ -121,7 +126,7 @@ function ResourceFields({
         </label>
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Format</span>
-          <select className={OPERATOR_FIELD_CLASS} defaultValue={resource?.contentType ?? "video"} name="contentType">
+          <select className={OPERATOR_FIELD_CLASS} name="contentType" onChange={(event) => setContentType(event.target.value as OpsAcademyResourceDraft["contentType"])} value={contentType}>
             <option value="video">Video</option>
             <option value="article">Article</option>
             <option value="audio">Audio</option>
@@ -131,22 +136,34 @@ function ResourceFields({
           </select>
         </label>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Source link</span>
+        <input className={OPERATOR_FIELD_CLASS} defaultValue={resource?.externalUrl ?? ""} name="externalUrl" placeholder="Video, audio, file, or hosted page URL" type="url" />
+      </label>
+      <label className={OPERATOR_LABEL_CLASS}>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Collection</span>
+        <select className={OPERATOR_FIELD_CLASS} defaultValue={resource?.collectionId ?? ""} name="collectionId">
+          <option value="">No collection</option>
+          {options.collections.map((option) => <option disabled={option.status === "retired"} key={option.id} value={option.id}>{option.label}{option.status !== "published" ? ` · ${option.status}` : ""}</option>)}
+        </select>
+      </label>
+      </div>
+      <details open={contentType === "article" || Boolean(resource?.bodyText)}>
+        <summary className="min-h-11 cursor-pointer py-2 font-medium">Lesson copy</summary>
+        <label className={`${OPERATOR_LABEL_CLASS} mt-2`}>
+          <span className={OPERATOR_LABEL_TEXT_CLASS}>Article or supporting notes</span>
+          <textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} defaultValue={resource?.bodyText ?? ""} maxLength={100000} name="bodyText" />
+        </label>
+      </details>
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Summary</span>
-        <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} defaultValue={resource?.summary ?? ""} maxLength={2000} name="summary" />
+        <textarea className={`${OPERATOR_FIELD_CLASS} min-h-20 resize-y`} defaultValue={resource?.summary ?? ""} maxLength={2000} name="summary" />
       </label>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <label className={OPERATOR_LABEL_CLASS}>
-          <span className={OPERATOR_LABEL_TEXT_CLASS}>Collection</span>
-          <select className={OPERATOR_FIELD_CLASS} defaultValue={resource?.collectionId ?? ""} name="collectionId">
-            <option value="">No collection</option>
-            {options.collections.map((option) => (
-              <option disabled={option.status === "retired"} key={option.id} value={option.id}>
-                {option.label}{option.status !== "published" ? ` · ${option.status}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+      <AudienceFields audiences={resource?.audiences} options={options} />
+      <details>
+        <summary className="min-h-11 cursor-pointer py-2 font-medium">Presentation &amp; media options</summary>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Position</span>
           <input className={OPERATOR_FIELD_CLASS} defaultValue={resource?.position ?? 1} max={10000} min={1} name="position" required type="number" />
@@ -155,16 +172,6 @@ function ResourceFields({
           <span className={OPERATOR_LABEL_TEXT_CLASS}>URL name</span>
           <input className={OPERATOR_FIELD_CLASS} defaultValue={resource?.slug ?? ""} disabled={slugLocked} maxLength={160} name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="made-from-title" />
           {slugLocked ? <input name="slug" type="hidden" value={resource?.slug} /> : null}
-        </label>
-      </div>
-      <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Lesson copy</span>
-        <textarea className={`${OPERATOR_FIELD_CLASS} min-h-44 resize-y`} defaultValue={resource?.bodyText ?? ""} maxLength={100000} name="bodyText" />
-      </label>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className={OPERATOR_LABEL_CLASS}>
-          <span className={OPERATOR_LABEL_TEXT_CLASS}>Resource, download, or hosted page URL</span>
-          <input className={OPERATOR_FIELD_CLASS} defaultValue={resource?.externalUrl ?? ""} name="externalUrl" placeholder="https://" type="url" />
         </label>
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Direct video URL</span>
@@ -186,12 +193,12 @@ function ResourceFields({
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Duration</span>
           <input className={OPERATOR_FIELD_CLASS} defaultValue={resource?.durationLabel ?? ""} maxLength={40} name="durationLabel" placeholder="08:14" />
         </label>
-      </div>
-      <label className="flex min-h-11 items-center gap-3 text-sm">
-        <input defaultChecked={resource?.featured} name="featured" type="checkbox" value="yes" />
-        Feature this lesson at the top of the Academy
-      </label>
-      <AudienceFields audiences={resource?.audiences} options={options} />
+          <label className="flex min-h-11 items-center gap-3 text-sm sm:col-span-2">
+            <input defaultChecked={resource?.featured} name="featured" type="checkbox" value="yes" />
+            Feature this lesson at the top of the Academy
+          </label>
+        </div>
+      </details>
     </div>
   );
 }
@@ -200,9 +207,13 @@ export function OperatorAcademyCreateResource({ options, preview = false }: { op
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const pendingRef = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
+    pendingRef.current = true;
     setMessage("");
     setSubmitting(true);
     try {
@@ -210,16 +221,19 @@ export function OperatorAcademyCreateResource({ options, preview = false }: { op
         "/api/ops/academy/resources",
         resourcePayload(new FormData(event.currentTarget)),
       );
+      setDirty(false);
       router.push(`/ops/academy/${result.resource.resourceId}`);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The lesson draft could not be created.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
   return (
-    <form className="grid gap-5" onSubmit={submit}>
+    <form className="grid gap-5" data-operator-dirty={dirty} data-operator-pending={submitting} onChange={() => setDirty(true)} onSubmit={submit}>
+      <fieldset className="contents" disabled={submitting}>
       <ResourceFields options={options} />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <span aria-live="polite" className="text-xs text-black/50">{message}</span>
@@ -227,6 +241,7 @@ export function OperatorAcademyCreateResource({ options, preview = false }: { op
           {submitting ? "Creating" : "Create lesson draft"}
         </button>
       </div>
+      </fieldset>
     </form>
   );
 }
@@ -235,38 +250,49 @@ export function OperatorAcademyEditorForm({
   options,
   resource,
   preview = false,
+  onSaved,
 }: {
   options: OpsAcademyReferenceOptions;
   resource: OpsAcademyResourceDraft;
   preview?: boolean;
+  onSaved?: () => void;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const pendingRef = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
+    pendingRef.current = true;
     setMessage("");
     setSubmitting(true);
     try {
       await academyRequest(`/api/ops/academy/resources/${resource.resourceId}`, resourcePayload(new FormData(event.currentTarget), resource), "PATCH");
       setMessage("New draft version saved.");
+      setDirty(false);
       router.refresh();
+      onSaved?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The lesson draft could not be saved.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
   return (
-    <form className="grid gap-5" onSubmit={submit}>
+    <form className="grid gap-4" data-operator-dirty={dirty} data-operator-pending={submitting} onChange={() => setDirty(true)} onSubmit={submit}>
+      <fieldset className="contents" disabled={submitting || resource.status === "retired"}>
       <ResourceFields options={options} resource={resource} />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <span aria-live="polite" className="text-xs text-black/50">{message}</span>
         <button className={OPERATOR_BUTTON_CLASS} disabled={submitting || resource.status === "retired"} type="submit">
-          {submitting ? "Saving" : "Save new draft version"}
+          {submitting ? "Saving" : "Save draft"}
         </button>
       </div>
+      </fieldset>
     </form>
   );
 }
@@ -288,8 +314,11 @@ export function OperatorAcademyResourceStateActions({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmRetirement, setConfirmRetirement] = useState(false);
+  const pendingRef = useRef(false);
   async function change(action: "publish" | "retire" | "unpublish") {
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
+    pendingRef.current = true;
     setSubmitting(true);
     setMessage("");
     try {
@@ -299,32 +328,42 @@ export function OperatorAcademyResourceStateActions({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The lesson state could not be changed.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
   if (status === "retired") return null;
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2" data-operator-pending={submitting}>
       {status !== "published" || hasUnpublishedChanges ? (
         <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("publish")} type="button">{status === "published" ? "Publish latest changes" : "Publish"}</button>
       ) : null}
-      {status === "published" ? (
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
-      ) : null}
-      <button className={`${OPERATOR_BUTTON_CLASS} border-[var(--color-poster)] text-[var(--color-poster)]`} disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{status === "draft" ? "Discard draft" : "Retire"}</button>
+      <details className="basis-full">
+        <summary className="min-h-11 cursor-pointer content-center text-sm font-medium text-black/60">More actions</summary>
+        <div className="flex flex-wrap gap-2">
+        {status === "published" ? (
+          <button className="min-h-11 rounded-[6px] bg-black/[0.055] px-3 text-sm font-medium" disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
+        ) : null}
+        <button className="min-h-11 rounded-[6px] px-3 text-sm font-medium text-[var(--color-poster)]" disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{status === "draft" ? "Discard draft" : "Retire"}</button>
+        </div>
+      </details>
       {confirmRetirement ? <div className="basis-full rounded-[4px] bg-white p-4 text-black" role="group" aria-label="Confirm lesson retirement"><p className="text-sm">{status === "draft" ? "Discard this unused lesson draft?" : "Retire this lesson and remove it from the Academy?"} Its history is retained. This cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">{status === "draft" ? "Confirm discard" : "Confirm retirement"}</button><button className="min-h-11 text-sm underline" disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep lesson</button></div></div> : null}
       <span aria-live="polite" className="text-xs text-black/48">{message}</span>
     </div>
   );
 }
 
-export function OperatorAcademyCollectionCreate({ preview = false }: { preview?: boolean }) {
+export function OperatorAcademyCollectionCreate({ preview = false, onCreated }: { preview?: boolean; onCreated?: () => void }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const pendingRef = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
+    pendingRef.current = true;
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -337,16 +376,20 @@ export function OperatorAcademyCollectionCreate({ preview = false }: { preview?:
         summary: String(data.get("summary") ?? ""),
       });
       form.reset();
+      setDirty(false);
       setMessage("Collection draft created.");
       router.refresh();
+      onCreated?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The collection could not be created.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+    <form className="grid gap-4 sm:grid-cols-2" data-operator-dirty={dirty} data-operator-pending={submitting} onChange={() => setDirty(true)} onSubmit={submit}>
+      <fieldset className="contents" disabled={submitting}>
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Collection name</span>
         <input className={OPERATOR_FIELD_CLASS} maxLength={160} minLength={2} name="name" required />
@@ -367,18 +410,23 @@ export function OperatorAcademyCollectionCreate({ preview = false }: { preview?:
         <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} type="submit">Create collection</button>
       </div>
       <span aria-live="polite" className="text-xs text-black/48 sm:col-span-2">{message}</span>
+      </fieldset>
     </form>
   );
 }
 
-export function OperatorAcademyCollectionActions({ collection, preview = false }: { collection: OpsAcademyCollection; preview?: boolean }) {
+export function OperatorAcademyCollectionActions({ collection, preview = false, expanded = false }: { collection: OpsAcademyCollection; preview?: boolean; expanded?: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmRetirement, setConfirmRetirement] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const pendingRef = useRef(false);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
+    pendingRef.current = true;
     setSubmitting(true);
     setMessage("");
     const data = new FormData(event.currentTarget);
@@ -390,16 +438,21 @@ export function OperatorAcademyCollectionActions({ collection, preview = false }
         slug: String(data.get("slug") ?? ""),
         summary: String(data.get("summary") ?? ""),
       }, "PATCH");
+      setDirty(false);
       setMessage("Collection saved.");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The collection could not be saved.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
   async function change(action: "publish" | "retire" | "unpublish") {
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview only — no Academy content was changed."); return; }
+    if (dirty) { setMessage("Save your collection changes before changing its status."); return; }
+    pendingRef.current = true;
     setSubmitting(true);
     setMessage("");
     try {
@@ -411,16 +464,14 @@ export function OperatorAcademyCollectionActions({ collection, preview = false }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The collection could not be changed.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
   if (collection.status === "retired") return null;
-  return (
-    <details className="group mt-4">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-black/60 marker:content-none">
-        Edit collection <span aria-hidden="true" className="ml-2 transition-transform group-open:rotate-45">+</span>
-      </summary>
-      <form className="grid gap-3 pt-3" onSubmit={save}>
+  const form = (
+      <form className="grid gap-3 pt-3" data-operator-dirty={dirty} data-operator-pending={submitting} onChange={() => setDirty(true)} onSubmit={save}>
+        <fieldset className="contents" disabled={submitting}>
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Name</span>
           <input className={OPERATOR_FIELD_CLASS} defaultValue={collection.name} maxLength={160} minLength={2} name="name" required />
@@ -449,7 +500,16 @@ export function OperatorAcademyCollectionActions({ collection, preview = false }
         </div>
         {confirmRetirement ? <div className="rounded-[4px] bg-white p-3" role="group" aria-label="Confirm collection retirement"><p className="text-sm">Retire this collection? Move its remaining lessons first. Its history is retained and this cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">Confirm retirement</button><button className="min-h-11 text-sm underline" disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep collection</button></div></div> : null}
         <span aria-live="polite" className="text-xs text-black/48">{message}</span>
+        </fieldset>
       </form>
+  );
+  if (expanded) return form;
+  return (
+    <details className="group mt-4">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-black/60 marker:content-none">
+        Edit collection <span aria-hidden="true" className="ml-2 transition-transform group-open:rotate-45">+</span>
+      </summary>
+      {form}
     </details>
   );
 }

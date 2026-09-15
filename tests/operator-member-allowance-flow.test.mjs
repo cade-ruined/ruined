@@ -21,6 +21,7 @@ function load(path, dependencies = {}) {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime") return require(name);
     if (name === "react") return React;
+    if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: ({ children }) => children };
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() { throw new Error("Allowance UI must not refresh or claim identity"); } }) };
     if (name === "@/components/platform/operatorStyles") return new Proxy({}, { get: () => "control" });
@@ -99,6 +100,17 @@ test("Add member shows two visible steps, one primary action, and no premature s
   assert.equal(f.find((n) => n.props?.id === "member-share-message"), undefined);
   assert.match(text(tree), /does not send a message/);
   assert.match(text(tree), /Allow their email first/);
+});
+
+test("untouched live and preview Add dialogs are clean, but changing the email requests discard confirmation", () => {
+  for (const preview of [false, true]) {
+    const f = fixture(preview);
+    const marker = () => f.find((node) => node.props?.["aria-label"] === "Add member steps");
+    assert.equal(marker().props["data-operator-dirty"], undefined);
+    assert.equal(marker().props["data-operator-pending"], undefined);
+    f.change(email);
+    assert.equal(marker().props["data-operator-dirty"], "true");
+  }
 });
 
 test("confirmed allowance identifies exact email/expiry and gives explicit operator/member next steps without sending", async (t) => {
@@ -353,6 +365,7 @@ test("Members page keeps the compatible Add member anchor and exact Administrato
     "@/components/platform/OperatorMemberInvitations": { __esModule: true, default: (props) => React.createElement("div", { "data-allowance": true, "data-preview": props.preview }) },
     "@/lib/platform/ops-member-invitation-repository": { getPendingMemberInvitations: async () => ({ entries: [], query: "", page: 1, pageCount: 1, totalResults: 0 }) },
     "@/components/platform/OperatorMemberDirectory": { __esModule: true, default: () => React.createElement("div", { "data-directory": true }) },
+    "@/components/platform/OperatorPeopleWorkspace": { __esModule: true, default: ({ children, pendingJoining }) => React.createElement("div", { "data-people-workspace": true }, children, pendingJoining) },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: ({ children }) => React.createElement("main", null, children) },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: () => React.createElement("p", null, "Unavailable") },
     "@/lib/platform/page-data": { getOperatorPageContext: async () => context },
@@ -360,9 +373,9 @@ test("Members page keeps the compatible Add member anchor and exact Administrato
   }).default;
   const render = () => Page({ searchParams: Promise.resolve({ q: "name", page: "2", filter: "unassigned" }) });
   const admin = nodes(await render());
-  assert.equal(admin.find((n) => n.type === "a" && n.props.href === "#allow-member-email").props.children, "Add member");
-  assert.equal(admin.filter((n) => n.type === "h2" && text(n) === "Add member").length, 1);
-  assert.ok(admin.some((n) => n.props?.id === "allow-member-email"));
+  assert.ok(admin.some((n) => n.props?.["data-people-workspace"]));
+  assert.ok(admin.some((n) => n.props?.["data-allowance"]));
+  assert.match(source("src/components/platform/OperatorPeopleWorkspace.tsx"), /id="allow-member-email"/);
   assert.deepEqual(calls[0], ["admin", { query: "name", page: 2, filter: "unassigned" }]);
   context.role = "circle_leader";
   assert.equal(nodes(await render()).some((n) => n.props?.["data-allowance"]), false);

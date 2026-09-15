@@ -284,7 +284,8 @@ test("in-place member selection is one click to review and never navigates throu
   const fixture = managerFixture({ selectedMember: null, memberSearch });
   let tree = fixture.draw();
   assert.ok(!nodes(tree).some((node) => node.props?.href === "/ops/members"));
-  assert.ok(!nodes(tree).some((node) => node.type === "h2" && text(node) === "Operators"), "shared page heading is not duplicated");
+  assert.equal(nodes(tree).filter((node) => node.type === "h2" && text(node) === "Operators").length, 1, "the browse surface has one compact visible title");
+  assert.equal(nodes(tree).filter((node) => node.type === "h1").length, 0, "the shared frame remains the only page-level heading");
   fixture.click("Choose existing member");
   tree = fixture.draw();
   const searchForm = nodes(tree).find((node) => node.type === "form");

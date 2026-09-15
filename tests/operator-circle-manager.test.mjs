@@ -20,6 +20,7 @@ function load(path, dependencies = {}, request = noNetwork, environment = {}) {
   new Function("require", "module", "exports", "fetch", "window", "document", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "next/link") return link;
+    if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: ({ children }) => children };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     throw new Error(`Unexpected Circle manager dependency: ${name}`);

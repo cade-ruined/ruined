@@ -129,14 +129,16 @@ test("operator pages and JSON boundaries expose creation, roster, waitlist, atte
   assert.match(directoryPage, /getOpsExperienceManagementDirectory/);
   assert.match(recordPage, /getOpsExperienceRecord/);
   assert.match(recordPage, /notFound\(\)/);
-  assert.match(directory, /href="#new-experience">\{selectedCircle \? "\+ Schedule a meeting" : "\+ New Experience"\}/);
+  assert.match(directory, /id="new-experience-trigger" onClick=\{openCreate\}/);
+  assert.match(directory, /<OperatorDialog open=\{createOpen\}/);
   assert.match(directory, /id="new-experience"/);
   assert.match(record, /Roster/);
   assert.match(record, /Move to waitlist/);
   assert.match(record, /Check in/);
   assert.match(record, /No-show/);
   assert.match(record, /Cancel Experience/);
-  assert.match(record, /History/);
+  assert.match(record, /Activity/);
+  assert.match(record, /experience\.history\.map/);
   assert.doesNotMatch(`${directory}\n${record}`, /Accountability|Current level|progression/i);
 
   for (const route of [createRoute, updateRoute, lifecycleRoute, registrationRoute, attendanceRoute]) {
@@ -163,7 +165,8 @@ test("Experience forms stay timezone-safe and reveal only relevant scope and reg
   assert.match(record, /Change registration/);
   assert.match(record, /Confirm place/);
   assert.match(record, /value="revoked">Not marked/);
-  assert.match(record, /text-3xl leading-tight sm:text-4xl/);
+  assert.match(record, /operator-record-title/);
+  assert.match(record, /aria-label="Event snapshot"/);
   assert.match(record, /id="edit-experience"/);
 });
 

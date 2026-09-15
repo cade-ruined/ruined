@@ -20,7 +20,7 @@ function loader({ react = React, request = noNetwork, extra = {}, router = {}, r
     const output = ts.transpileModule(read(path), { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
     } }).outputText;
-    new Function("require", "module", "exports", "fetch", "FormData", output)((name) => {
+    new Function("require", "module", "exports", "fetch", "FormData", "window", output)((name) => {
       if (Object.hasOwn(extra, name)) return extra[name];
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return require(name);
@@ -41,7 +41,7 @@ function loader({ react = React, request = noNetwork, extra = {}, router = {}, r
       constructor(values) { this.values = values; }
       get(key) { return this.values[key] ?? null; }
       getAll(key) { return Array.isArray(this.values[key]) ? this.values[key] : []; }
-    });
+    }, { history: { state: null, replaceState() {} }, location: { hash: "", pathname: "/ops/experiences/fixture", search: "" } });
     return exports;
   }
   return load;
@@ -98,14 +98,18 @@ function harness(path, name, props, request = async () => ({ ok: true, json: asy
 }
 const previewEvent = { preventDefault() {}, get currentTarget() { throw new Error("Preview must return before reading or resetting form data"); } };
 
-test("Experiences puts the searchable directory before its exposed draft form and task links resolve", () => {
+test("Experiences keeps creation one click away in a closed modal without an always-open form", () => {
   const tree = render("OperatorExperienceDirectory", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, preview: true });
-  exposed(byId(tree, "new-experience"));
+  exposed(byId(tree, "new-experience-trigger"));
   anchorsResolve(tree);
   const all = elements(tree);
-  assert.ok(all.indexOf(all.find((node) => attr(node, "aria-label") === "Experience directory")) < all.indexOf(byId(tree, "new-experience")));
+  const dialog = all.find((node) => node.tagName === "dialog");
+  assert.ok(dialog);
+  assert.equal(attr(dialog, "open"), undefined);
+  assert.ok(elements(dialog).includes(byId(tree, "new-experience")));
+  assert.equal(all.filter((node) => node.tagName === "form").length, 1);
   assert.ok(all.some((node) => node.tagName === "input" && attr(node, "type") === "search"));
-  assert.match(text(tree), /Publishing is a separate action/);
+  assert.match(text(tree), /Nothing is published or sent yet/);
   const restricted = render("OperatorExperienceDirectory", { directory: { ...experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, canCreate: false } });
   assert.equal(byId(restricted, "new-experience"), undefined);
   assert.equal(elements(restricted).some((node) => attr(node, "href") === "#new-experience"), false);
@@ -122,20 +126,19 @@ test("Experience search and state filters change only the displayed authorized r
   assert.deepEqual(fixture.calls, []);
 });
 
-test("Experience record exposes meeting setup, details and roster tasks without hiding routine controls", () => {
+test("Experience record exposes edit and view controls without repeating forms across the overview", () => {
   const editable = { ...experience, canEdit: true, state: "draft" };
   const tree = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: editable, preview: true });
   anchorsResolve(tree);
-  exposed(byId(tree, "edit-experience"));
-  assert.equal(elements(byId(tree, "edit-experience")).some((node) => node.tagName === "form"), false, "saved details are not repeated as an always-open edit form");
-  exposed(byId(tree, "experience-roster"));
+  exposed(byId(tree, "edit-experience-trigger"));
+  assert.equal(byId(tree, "edit-experience"), undefined, "details edit form opens only in its dialog");
+  assert.equal(attr(byId(tree, "experience-view-people"), "hidden"), "");
+  assert.ok(byId(tree, "experience-roster"));
   exposed(byId(tree, "meeting-setup"));
-  assert.ok(elements(tree).some((node) => node.tagName === "a" && attr(node, "href") === "#meeting-setup" && text(node) === "Set meeting link"));
+  assert.equal(elements(tree).filter((node) => node.tagName === "button" && attr(node, "aria-pressed")).length, 3);
   assert.equal(elements(tree).some((node) => node.tagName === "summary" && text(node).includes("Manual Meet fallback")), false);
-  const aside = elements(tree).find((node) => node.tagName === "aside");
-  assert.match(attr(aside, "class"), /(?:^|\s)order-first(?:\s|$)/);
-  assert.match(attr(aside, "class"), /(?:^|\s)lg:order-last(?:\s|$)/);
-  assert.ok(elements(tree).some((node) => node.tagName === "button" && /Publish/.test(text(node))));
+  assert.equal(elements(tree).some((node) => node.tagName === "aside"), false);
+  assert.ok(elements(tree).some((node) => node.tagName === "button" && text(node) === "Review & publish"));
   const restricted = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: { ...editable, canEdit: false, canManageRoster: false, canManageAttendance: false } });
   assert.equal(byId(restricted, "edit-experience"), undefined);
   assert.equal(byId(restricted, "experience-actions"), undefined);
@@ -149,14 +152,15 @@ test("Experience edits and cancellation open only on request, preserve failure s
   }, async () => ({ ok: false, json: async () => ({ error: "Save failed. Retry your changes." }) }));
   const button = (label) => nodes(fixture.draw()).find((node) => node.type === "button" && reactText(node) === label);
   assert.equal(nodes(fixture.draw()).some((node) => node.type === "form" && node.props.onSubmit.name === "save"), false);
-  button("Edit details").props.onClick();
+  button("Edit").props.onClick();
   const form = nodes(fixture.draw()).find((node) => node.type === "form" && node.props.onSubmit.name === "save");
   assert.ok(form);
   await form.props.onSubmit({ preventDefault() {}, currentTarget: { title: "Updated gathering", startsAt: "2026-09-20T10:00", timezone: "America/Denver", circleId: experience.circleId } });
   assert.equal(fixture.calls.length, 1);
   assert.ok(nodes(fixture.draw()).some((node) => node.type === "form" && node.props.onSubmit.name === "save"));
   assert.match(reactText(fixture.draw()), /Save failed/);
-  button("Cancel edits").props.onClick();
+  // OperatorDialog calls onClose only after its pending/dirty guards have passed.
+  nodes(fixture.draw()).find((node) => node.props?.title === "Edit Experience").props.onClose();
   assert.equal(nodes(fixture.draw()).some((node) => node.type === "form" && node.props.onSubmit.name === "save"), false);
   button("Cancel Experience").props.onClick();
   assert.ok(button("Confirm cancellation"));
@@ -172,7 +176,7 @@ test("meeting links stay visible and editable only when neither Calendar ownersh
   const Record = fullLoad("src/components/platform/OperatorExperienceRecord.tsx").default;
   const base = { ...experience, circleId: "11111111-1111-4111-8111-111111111111", state: "draft", canEdit: true,
     canManageCommunication: true, googleCommunicationsConfigured: true, meetingUrl: "https://meet.google.com/abc-defg-hij",
-    calendar: { ...experience.calendar, configured: true, status: "not_created", googleEventId: null, googleEventUrl: null, lastSyncedAt: null, bindingRequired: false },
+    calendar: { ...experience.calendar, configured: true, status: "not_created", googleEventId: null, googleEventUrl: null, meetingUrl: null, lastSyncedAt: null, bindingRequired: false },
   };
   const draw = (record) => parseFragment(renderToStaticMarkup(React.createElement(Record, { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: record, preview: true })));
   const manual = draw(base);
@@ -182,7 +186,7 @@ test("meeting links stay visible and editable only when neither Calendar ownersh
   assert.equal(elements(setup).some((node) => node.tagName === "form"), false, "saved meeting links do not repeat as edit fields");
   assert.ok(elements(setup).some((node) => node.tagName === "a" && attr(node, "href") === base.meetingUrl));
   assert.ok(elements(setup).some((node) => node.tagName === "button" && attr(node, "aria-label") === "Edit meeting link"));
-  assert.ok(elements(manual).some((node) => node.tagName === "a" && attr(node, "href") === `/ops/circles?circleId=${base.circleId}#circle-communications`));
+  assert.ok(elements(manual).some((node) => node.tagName === "a" && attr(node, "href") === `/ops/circles?circleId=${base.circleId}`));
   for (const calendar of [
     { ...base.calendar, status: "synced", googleEventId: "owned-calendar-event" },
     { ...base.calendar, status: "failed", googleEventId: "owned-calendar-event" },
@@ -201,29 +205,53 @@ test("meeting links stay visible and editable only when neither Calendar ownersh
 });
 
 test("draft publishing and Calendar status describe queueing honestly and preview publish cannot send", async () => {
-  const draft = { ...experience, state: "draft", canEdit: true, calendar: { ...experience.calendar, configured: true, status: "not_created", googleEventId: null, googleEventUrl: null, lastSyncedAt: null, bindingRequired: false } };
+  const draft = { ...experience, state: "draft", startsAt: "2099-09-15T18:00:00Z", endsAt: "2099-09-15T19:00:00Z", canEdit: true, calendar: { ...experience.calendar, configured: true, status: "not_created", googleEventId: null, googleEventUrl: null, lastSyncedAt: null, bindingRequired: false } };
   const tree = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: draft, preview: true });
-  assert.ok(elements(tree).some((node) => node.tagName === "button" && text(node) === "Publish + queue invitations"));
-  assert.match(text(byId(tree, "experience-calendar")), /Publish this draft to queue.*publishing alone does not confirm delivery/);
-  assert.equal(elements(byId(tree, "experience-calendar")).some((node) => node.tagName === "button" && /Create invite|Sync invitations/.test(text(node))), false);
+  assert.ok(elements(tree).some((node) => node.tagName === "button" && text(node) === "Review & publish"));
+  assert.match(text(byId(tree, "experience-calendar")), /Review & publish.*publishing alone does not confirm delivery/);
+  assert.equal(elements(byId(tree, "experience-calendar")).some((node) => node.tagName === "button" && /Send invitations|Update invitations/.test(text(node))), false);
   assert.doesNotMatch(text(tree), /Publish \+ send invite|Calendar invitations sent\./);
   const fixture = harness("src/components/platform/OperatorExperienceRecord.tsx", "default", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: draft, preview: true });
+  nodes(fixture.draw()).find((node) => node.type === "button" && reactText(node) === "Review & publish").props.onClick();
+  assert.match(reactText(fixture.draw()), /queued does not mean sent/);
+  assert.deepEqual(fixture.calls, [], "reviewing a publication does not queue or send anything");
   await nodes(fixture.draw()).find((node) => node.type === "button" && reactText(node) === "Publish + queue invitations").props.onClick();
   assert.match(reactText(fixture.draw()), /Preview only/);
   assert.deepEqual(fixture.calls, []);
   assert.equal(fixture.refreshes(), 0);
 });
 
-test("Academy keeps lessons first with exposed creation and permission-gated tasks", () => {
+test("Academy keeps lessons first with one creation action and permission-gated dialog tasks", () => {
   const tree = render("OperatorAcademy", { academy: academy.PREVIEW_OPS_ACADEMY, options: academy.PREVIEW_OPS_ACADEMY_EDITOR.options, preview: true });
   anchorsResolve(tree);
-  exposed(byId(tree, "new-lesson")); exposed(byId(tree, "new-collection"));
-  const all = elements(tree);
-  assert.ok(all.indexOf(all.find((node) => attr(node, "aria-label") === "Academy lessons")) < all.indexOf(byId(tree, "new-lesson")));
+  exposed(byId(tree, "open-new-lesson"));
+  assert.equal(byId(tree, "new-lesson"), undefined);
+  assert.equal(byId(tree, "new-collection"), undefined);
+  assert.equal(elements(tree).some((node) => node.tagName === "form"), false);
+  assert.ok(elements(tree).some((node) => attr(node, "aria-label") === "Academy lessons"));
   const restricted = render("OperatorAcademy", { academy: { ...academy.PREVIEW_OPS_ACADEMY, canManage: false }, options: academy.PREVIEW_OPS_ACADEMY_EDITOR.options });
   assert.equal(elements(restricted).some((node) => node.tagName === "form"), false);
   assert.equal(byId(restricted, "new-lesson"), undefined);
+  assert.equal(byId(restricted, "open-new-lesson"), undefined);
   anchorsResolve(restricted);
+});
+
+test("Academy view selection exposes only that workspace and creates content in a shared dialog", () => {
+  const fixture = harness("src/components/platform/OperatorAcademy.tsx", "default", { academy: academy.PREVIEW_OPS_ACADEMY, options: academy.PREVIEW_OPS_ACADEMY_EDITOR.options, preview: true });
+  const click = (label) => nodes(fixture.draw()).find((node) => node.type === "button" && reactText(node) === label).props.onClick();
+  click("+ New lesson");
+  let dialog = nodes(fixture.draw()).find((node) => node.type?.name === "OperatorDialog");
+  assert.ok(dialog);
+  assert.equal(dialog.props.returnFocusId, "open-new-lesson");
+  assert.equal(nodes(dialog).find((node) => node.type?.name === "OperatorAcademyCreateResource").props.preview, true);
+  dialog.props.onClose();
+  click("Collections");
+  assert.equal(nodes(fixture.draw()).some((node) => node.props?.["aria-label"] === "Academy lessons"), false);
+  click("+ New collection");
+  dialog = nodes(fixture.draw()).find((node) => node.type?.name === "OperatorDialog");
+  assert.equal(dialog.props.returnFocusId, "open-new-collection");
+  assert.ok(nodes(dialog).some((node) => node.type?.name === "OperatorAcademyCollectionCreate"));
+  assert.deepEqual(fixture.calls, []);
 });
 
 test("Academy search and status filters do not change the source library or save content", () => {
@@ -235,25 +263,33 @@ test("Academy search and status filters do not change the source library or save
   assert.deepEqual(fixture.calls, []);
 });
 
-test("Artifacts keeps production first and exposes award, binding, new-template and shipping tasks", () => {
+test("Artifacts opens on production with one view selector and focused creation actions", () => {
   const Admin = component("OperatorArtifactAdmin");
   const tree = render("OperatorArtifactQueue", { artifacts: preview.PREVIEW_OPS_ARTIFACTS, preview: true, controls: React.createElement(Admin, { artifacts: preview.PREVIEW_OPS_ARTIFACTS, data: preview.PREVIEW_OPS_ARTIFACT_CONTROLS, preview: true }) });
   anchorsResolve(tree);
-  for (const id of ["award-artifact", "artifact-templates", "new-artifact-template", "artifact-fulfillment"]) exposed(byId(tree, id));
+  exposed(byId(tree, "open-award-artifact"));
+  exposed(byId(tree, "artifact-production"));
+  assert.equal(byId(tree, "award-artifact"), undefined, "award form opens only on request");
+  assert.equal(byId(tree, "new-artifact-template"), undefined, "template form opens only on request");
+  assert.equal(attr(byId(tree, "artifact-templates"), "hidden"), "");
+  assert.equal(attr(byId(tree, "artifact-fulfillment"), "hidden"), "");
   const all = elements(tree);
-  assert.ok(all.indexOf(byId(tree, "artifact-production")) < all.indexOf(byId(tree, "award-artifact")));
+  assert.equal(all.filter((node) => node.tagName === "nav" && attr(node, "aria-label") === "Artifact views").length, 1);
+  assert.equal(all.filter((node) => node.tagName === "form").length, preview.PREVIEW_OPS_ARTIFACTS.filter((artifact) => artifact.artifactJobId).length, "only the existing production actions appear initially");
   const readonly = render("OperatorArtifactQueue", { artifacts: [], preview: true });
   assert.equal(elements(readonly).some((node) => attr(node, "aria-label") === "Artifact tasks"), false);
   anchorsResolve(readonly);
 });
 
-test("Block setup is exposed in sequence while ending an assignment remains secondary", () => {
+test("Blocks is browse-first with clear creation and per-Block management links instead of stacked forms", () => {
   const block = { id: "block-1", name: "Block 01", status: "forming", circles: [], currentCircles: 0 };
   const BlockActions = load("src/components/platform/OpsActions.tsx").OpsBlockActions;
   const tree = render("OpsBlocks", { blocks: [block], dashboard: { members: [] }, actions: React.createElement(BlockActions, { circles: preview.PREVIEW_OPS_CIRCLES, initialBlocks: [block], preview: true }) });
-  anchorsResolve(tree); exposed(byId(tree, "create-block")); exposed(byId(tree, "assign-block-circle"));
-  assert.match(text(tree), /1\. Create a Block.*2\. Assign a Circle.*3\. Activate a Block/s);
-  assert.ok(elements(tree).some((node) => node.tagName === "summary" && text(node).includes("End a Block assignment")));
+  exposed(byId(tree, "new-block-trigger")); exposed(byId(tree, "manage-block-trigger-block-1"));
+  assert.equal(attr(byId(tree, "new-block-trigger"), "href"), "#create-block");
+  assert.equal(attr(byId(tree, "manage-block-trigger-block-1"), "href"), "#manage-block-block-1");
+  assert.equal(elements(tree).filter((node) => node.tagName === "form").length, 0);
+  assert.doesNotMatch(text(tree), /1\. Create a Block|2\. Assign a Circle|3\. Activate a Block/);
   const restricted = render("OpsBlocks", { blocks: [block], dashboard: { members: [] } });
   assert.equal(byId(restricted, "create-block"), undefined);
   assert.equal(elements(restricted).some((node) => attr(node, "href") === "#create-block"), false);
@@ -274,8 +310,11 @@ test("System puts failed services first while preserving modes, evidence and ret
   services[1] = { ...services[1], label: "Failed service", state: "failed", mode: "test" };
   const tree = render("OperatorSystemHealth", { health: { ...preview.PREVIEW_OPS_SYSTEM, services }, canRetry: false, preview: true });
   anchorsResolve(tree);
-  const rows = elements(byId(tree, "service-checks")).filter((node) => node.tagName === "article");
+  const rows = elements(byId(tree, "service-checks")).filter((node) => node.tagName === "details");
   assert.match(text(rows[0]), /Failed service/);
+  assert.ok(rows[0].attrs.some((attribute) => attribute.name === "open"), "failures remain expanded");
+  const healthy = rows.find((row) => /Healthy service/.test(text(row)));
+  assert.equal(healthy.attrs.some((attribute) => attribute.name === "open"), false, "healthy service evidence is optional");
   assert.match(text(tree), /Test mode/);
   assert.equal(elements(tree).some((node) => node.tagName === "button" && text(node).includes("Queue retry")), false);
   assert.equal(services[0].label, "Healthy service", "sorting must not mutate the incoming snapshot");
@@ -304,6 +343,12 @@ test("every Academy preview mutation returns before form reads, fetch, navigatio
 test("all five Artifact preview forms return before form reads or requests", async () => {
   const fixture = harness("src/components/platform/OperatorArtifactAdmin.tsx", "default", { artifacts: preview.PREVIEW_OPS_ARTIFACTS, data: preview.PREVIEW_OPS_ARTIFACT_CONTROLS, preview: true });
   const forms = nodes(fixture.draw()).filter((node) => typeof node.type === "function" && node.type.name.endsWith("Form"));
+  for (const buttonId of ["open-award-artifact", "open-new-artifact-template", "open-new-artifact-shipment"]) {
+    nodes(fixture.draw()).find((node) => node.props?.id === buttonId).props.onClick();
+    for (const node of nodes(fixture.draw()).filter((node) => typeof node.type === "function" && node.type.name.endsWith("Form"))) {
+      if (!forms.some((known) => known.type === node.type)) forms.push(node);
+    }
+  }
   assert.equal(forms.length, 5);
   for (const node of forms) {
     let form = fixture.invoke(node.type, node.props);
@@ -320,7 +365,7 @@ test("all five Artifact preview forms return before form reads or requests", asy
   assert.equal(fixture.refreshes(), 0);
 });
 
-test("task, retry, production and all four Block actions are no-request previews", async () => {
+test("task, retry and production actions are no-request previews; Block tasks stay closed until requested", async () => {
   for (const [name, props] of [
     ["OperatorTaskAction", { state: "open", taskId: "task-1" }],
     ["OperatorWorkflowRetryAction", { workflowActionId: "retry-1" }],
@@ -335,8 +380,7 @@ test("task, retry, production and all four Block actions are no-request previews
   }
   const fixture = harness("src/components/platform/OpsActions.tsx", "OpsBlockActions", { circles: preview.PREVIEW_OPS_CIRCLES, initialBlocks: [{ id: "block-1", name: "Block 01", status: "forming", currentCircles: 2, circles: [] }], preview: true });
   const forms = nodes(fixture.draw()).filter((node) => node.type === "form");
-  assert.equal(forms.length, 4);
-  for (const form of forms) await form.props.onSubmit(previewEvent);
+  assert.equal(forms.length, 0, "the four explicit Block task preview submissions are covered by operator-block-workspace-runtime");
   assert.deepEqual(fixture.calls, []); assert.equal(fixture.refreshes(), 0);
 });
 
@@ -372,8 +416,9 @@ test("preview routes pass guards through every exposed action surface without lo
     assert.ok(candidates.every((node) => node.props.preview === true), `${path} preserves preview all the way to its actions`);
     if (path === "blocks/page.tsx") {
       const html = parseFragment(renderToStaticMarkup(tree));
-      exposed(byId(html, "create-block")); exposed(byId(html, "assign-block-circle"));
-      assert.equal(elements(html).filter((node) => node.tagName === "form").length, 4);
+      exposed(byId(html, "new-block-trigger"));
+      assert.ok(elements(html).some((node) => attr(node, "href")?.startsWith("#manage-block-")));
+      assert.equal(elements(html).filter((node) => node.tagName === "form").length, 0);
       const snapshots = tree.props.blocks;
       assert.ok(snapshots.every((block) => block.currentCircles === block.circles.length && (block.status !== "active" || block.currentCircles >= 2)));
     }

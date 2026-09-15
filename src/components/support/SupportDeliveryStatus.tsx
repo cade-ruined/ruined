@@ -11,8 +11,8 @@ export default function SupportDeliveryStatus({ deliveries, writable, pending, o
   onRefresh: () => void;
 }) {
   const attention = deliveries.filter((delivery) => supportDeliveryNeedsReview(delivery)).length;
-  return <details className="mt-6" open={attention > 0 || undefined}>
-    <summary className="cursor-pointer text-lg [font-family:var(--font-cadehandy2)]">Email notifications{attention ? ` · ${attention} need attention` : ` · ${deliveries.length}`}</summary>
+  return <details className="operator-bento-card mt-3" open={attention > 0 || undefined}>
+    <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">Email notifications{attention ? ` · ${attention} need attention` : ` · ${deliveries.length}`}</summary>
     <p className="mt-2 text-xs leading-relaxed text-black/60">The conversation is saved here even if its email notification fails.</p>
     <button className={`${SUPPORT_LINK_CLASS} mt-2 text-xs`} onClick={onRefresh} type="button">Refresh email status</button>
     <ul className="mt-3 grid max-h-[32rem] gap-3 overflow-y-auto" aria-label="Email notification status">

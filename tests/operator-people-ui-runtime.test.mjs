@@ -114,6 +114,19 @@ test("pending removal requires an explicit confirmation and never acts on a repl
   await f.button("Confirm removal").props.onClick(); assert.equal(requests[0].method, "DELETE"); assert.deepEqual(JSON.parse(requests[0].body), { email: invitation.email, invitationId: "12" }); assert.match(text(f.draw()), /has changed/); assert.equal(f.refreshes(), 0);
 });
 
+test("a pending joining request advertises busy state until its result is visible", async (t) => {
+  let resolve;
+  t.mock.method(globalThis, "fetch", () => new Promise((done) => { resolve = done; }));
+  const f = fixture("src/components/platform/OperatorMemberInvitations.tsx", pendingProps());
+  assert.equal(f.draw().props["data-operator-pending"], undefined);
+  const review = f.button("Review").props.onClick();
+  assert.equal(f.draw().props["data-operator-pending"], "true");
+  resolve(Response.json({ invitation }));
+  await review;
+  assert.equal(f.draw().props["data-operator-pending"], undefined);
+  assert.match(f.find((node) => node.type === "textarea").props.value, /member@example.com/);
+});
+
 test("operator PATCH validates origin, session, JSON, and exact input before invoking access edits; no email is sent", async () => {
   let trusted = true; let viewer = { authUserId: "admin" }; const edits = []; const deliveries = [];
   class RepositoryError extends Error {}

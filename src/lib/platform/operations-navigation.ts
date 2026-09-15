@@ -26,14 +26,18 @@ const OPERATIONS_NAVIGATION: OperationsNavigationGroup[] = [
     { href: "/ops/circles", label: "Circles", task: "Open a Circle roster" },
     { href: "/ops/blocks", label: "Blocks", task: "Organize Circles into Blocks", adminOnly: true },
   ] },
-  { id: "programme", label: "Learning & events", items: [
+  { id: "events", label: "Events", items: [
+    { href: "/ops/experiences", label: "Events", task: "Plan events and take attendance" },
+  ] },
+  { id: "programme", label: "Learning", items: [
     { href: "/ops/foundations", label: "Foundations", task: "Review Foundations progress" },
-    { href: "/ops/experiences", label: "Experiences", task: "Plan events and take attendance" },
     { href: "/ops/academy", label: "Academy", task: "Organize training videos", adminOnly: true },
+  ] },
+  { id: "artifacts", label: "Artifacts", items: [
     { href: "/ops/artifacts", label: "Artifacts", task: "Manage awards and fulfillment", adminOnly: true },
   ] },
   { id: "communication", label: "Messages", items: [
-    { href: "/ops/messages", label: "Board posts & alerts", task: "Publish member messages", adminOnly: true },
+    { href: "/ops/messages", label: "Messages", task: "Publish member messages", adminOnly: true },
     { href: "/ops/support", label: "Support", task: "Reply to support requests", adminOnly: true },
   ] },
   { id: "workspace", label: "Settings", items: [

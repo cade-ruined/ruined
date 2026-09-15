@@ -115,9 +115,10 @@ test("operator UI uses a low-training list and focused add task", () => {
   assert.match(manager, /Remove operator access\?/);
 });
 
-test("operator navigation is grouped, responsive, and capability-aware", () => {
+test("operator workspace selector retains the grouped route model and capability boundaries", () => {
   assert.match(navigation, /label: "People"/);
-  assert.match(navigation, /label: "Learning & events"/);
+  assert.match(navigation, /label: "Learning"/);
+  assert.match(navigation, /label: "Events"/);
   assert.match(navigation, /label: "Messages"/);
   assert.match(navigation, /label: "Settings"/);
   assert.match(navigation, /label: "Circles"/);
@@ -125,7 +126,9 @@ test("operator navigation is grouped, responsive, and capability-aware", () => {
   assert.match(navigation, /href: "\/ops\/academy"[^\n]*adminOnly: true/);
   assert.match(navigation, /!item\.adminOnly \|\| role === "ops_admin"/);
   assert.match(shell, /getOperationsNavigation\(operatorRole\)/);
-  assert.match(shell, /aria-label="Operations sections" className="flex flex-wrap/);
+  assert.match(shell, /aria-controls="ops-workspaces"/);
+  assert.match(shell, /aria-label="Operator workspaces"/);
+  assert.doesNotMatch(shell, /aria-label="Operations sections"|operator-section-pages/);
   assert.doesNotMatch(shell, /Close operations menu|mobileDialogRef|aria-haspopup="dialog"/);
   assert.match(shell, /aria-current=\{current \? "page" : undefined\}/);
 });

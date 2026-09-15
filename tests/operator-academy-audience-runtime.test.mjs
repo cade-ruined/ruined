@@ -25,12 +25,12 @@ function load(path, dependencies = {}, request = () => { throw Error("No real ne
 const nodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 const options = { circles: [{ id: "circle-one", label: "Circle One" }, { id: "circle-two", label: "Circle Two" }], blocks: [{ id: "block-one", label: "Block One" }], collections: [] };
-function fixture({ audiences = [], preview = false, referenceOptions = options } = {}) {
+function fixture({ audiences = [], preview = false, referenceOptions = options, resource = {} } = {}) {
   const slots = [];
   let cursor = 0;
   const requests = [];
   let refreshes = 0;
-  const hooks = { ...React, useState(initial) {
+  const hooks = { ...React, useRef(initial) { const index = cursor++; return slots[index] ??= { current: initial }; }, useState(initial) {
     const index = cursor++;
     if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
     return [slots[index], (next) => { slots[index] = typeof next === "function" ? next(slots[index]) : next; }];
@@ -41,10 +41,11 @@ function fixture({ audiences = [], preview = false, referenceOptions = options }
   }, async (url, init) => { requests.push({ url, method: init.method, body: JSON.parse(init.body) }); return Response.json({ resource: { resourceId: "saved" } }); }, function(form) { return form.data; });
   function draw() {
     cursor = 0;
-    const form = actions.OperatorAcademyEditorForm({ options: referenceOptions, resource: { audiences, resourceId: "lesson", revision: 4 }, preview });
+    const form = actions.OperatorAcademyEditorForm({ options: referenceOptions, resource: { audiences, resourceId: "lesson", revision: 4, ...resource }, preview });
     const fields = nodes(form).find((node) => node.type?.name === "ResourceFields");
-    const audience = nodes(fields.type(fields.props)).find((node) => node.type?.name === "AudienceFields");
-    return { form, audience: audience.type(audience.props) };
+    const fieldTree = fields.type(fields.props);
+    const audience = nodes(fieldTree).find((node) => node.type?.name === "AudienceFields");
+    return { form, fields: fieldTree, audience: audience.type(audience.props) };
   }
   const checkbox = (name, value) => nodes(draw().audience).find((node) => node.type === "input" && node.props.name === name && (value === undefined || node.props.value === value));
   // Reproduce HTML successful-control rules from the actual rendered attributes,
@@ -80,6 +81,50 @@ test("Academy audience uses labeled checkbox groups and keeps multiple scoped se
     audiences: [{ id: "circle-one", kind: "circle" }, { id: "circle-two", kind: "circle" }, { id: "block-one", kind: "block" }],
     bodyText: "", captionsUrl: "", collectionId: "", contentType: "article", durationLabel: "", expectedRevision: 4, externalUrl: "", featured: false, position: 1, presenter: "", slug: "", summary: "", thumbnailUrl: "", title: "", videoUrl: "",
   } });
+});
+
+test("lesson fields start compact, reveal article copy, and keep optional media mounted across format changes", () => {
+  const f = fixture();
+  const details = () => nodes(f.draw().fields).filter((node) => node.type === "details");
+  const format = () => nodes(f.draw().fields).find((node) => node.props?.name === "contentType");
+  assert.equal(format().props.value, "video");
+  assert.ok(details().every((node) => !node.props.open));
+  assert.deepEqual(details().map((node) => text(nodes(node).find((child) => child.type === "summary"))), ["Lesson copy", "Presentation & media options"]);
+  const expectedFields = nodes(f.draw().fields).filter((node) => node.props?.name).map((node) => node.props.name).sort();
+  format().props.onChange({ target: { value: "article" } });
+  assert.equal(details()[0].props.open, true);
+  format().props.onChange({ target: { value: "audio" } });
+  assert.deepEqual(nodes(f.draw().fields).filter((node) => node.props?.name).map((node) => node.props.name).sort(), expectedFields);
+  assert.equal(details()[0].props.open, false);
+  assert.equal(nodes(f.draw().fields).filter((node) => node.props?.name === "videoUrl").length, 1);
+});
+
+test("collapsed presentation fields keep saved values, publication slug lock, and existing payload keys", async () => {
+  const resource = { title: "Craft", contentType: "video", summary: "A lesson", bodyText: "Supporting notes", externalUrl: "https://example.com/watch", videoUrl: "https://example.com/video.mp4", thumbnailUrl: "https://example.com/image.jpg", captionsUrl: "https://example.com/captions.vtt", presenter: "Presenter", durationLabel: "08:14", position: 7, slug: "craft", publishedAt: "2026-09-01T12:00:00Z", featured: true, collectionId: "collection-one" };
+  const f = fixture({ resource, referenceOptions: { ...options, collections: [{ id: "collection-one", label: "Collection One", status: "published" }] } });
+  const tree = f.draw().fields;
+  const settings = nodes(tree).filter((node) => node.type === "details")[1];
+  assert.equal(settings.props.open, undefined);
+  const values = new FormData();
+  for (const control of nodes(tree).filter((node) => node.props?.name)) {
+    if (control.props.disabled || control.props.type === "checkbox" && !control.props.defaultChecked) continue;
+    values.append(control.props.name, control.props.value ?? control.props.defaultValue ?? "");
+  }
+  for (const key of ["videoUrl", "thumbnailUrl", "captionsUrl", "presenter", "durationLabel", "position", "slug"]) assert.equal(values.get(key), String(resource[key]));
+  assert.equal(nodes(tree).find((node) => node.props?.name === "slug" && node.props.type !== "hidden").props.disabled, true);
+  await f.draw().form.props.onSubmit({ preventDefault() {}, currentTarget: { data: values } });
+  const expected = { ...resource, expectedRevision: 4, audiences: [] };
+  delete expected.publishedAt;
+  assert.deepEqual(f.requests[0].body, expected);
+});
+
+test("invalid collapsed settings open synchronously before the browser focuses the invalid input", () => {
+  const f = fixture();
+  const outer = { open: false, parentElement: null };
+  const inner = { open: false, parentElement: { closest: (tag) => { assert.equal(tag, "details"); return outer; } } };
+  f.draw().fields.props.onInvalidCapture({ target: { closest: (tag) => { assert.equal(tag, "details"); return inner; } } });
+  assert.equal(inner.open, true);
+  assert.equal(outer.open, true);
 });
 
 test("All active members excludes disabled scopes from FormData without forgetting prior selections", async () => {

@@ -16,16 +16,17 @@ function load(path, dependencies = {}) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText;
   const cjsModule = { exports: {} };
-  new Function("require", "module", "exports", output)((name) => {
+  new Function("require", "module", "exports", "window", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime") return require(name);
     if (name === "react") return React;
     if (name === "next/link") return Link;
     if (name === "@/components/platform/OperatorPageFrame") return Frame;
+    if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: "operator-dialog" };
     if (name === "@/components/platform/OperatorMessagesTabs") return load("src/components/platform/OperatorMessagesTabs.tsx");
     if (name === "@/components/platform/operatorStyles") return styles;
     throw new Error(`Unexpected task-first UI dependency: ${name}`);
-  }, cjsModule, cjsModule.exports);
+  }, cjsModule, cjsModule.exports, { history: { state: null, replaceState() {} } });
   return cjsModule.exports;
 }
 function nodes(node) {
@@ -81,22 +82,27 @@ function notificationFixture(props = {}) {
 }
 const draft = { audience: "member:member-one", notificationType: "reminder", title: "A private reminder", body: "Bring your journal.", actionLabel: "Open Circle", actionUrl: "/my/circle" };
 function reviewNotification(fixture, fields = draft) {
+  if (!nodes(fixture.draw()).some((node) => node.type === "form")) fixture.button("Write notification").props.onClick();
   nodes(fixture.draw()).find((node) => node.type === "form").props.onSubmit(event(fields));
 }
 
-test("notifications show history before the visible composer, require an audience, and cannot send during review", async (t) => {
+test("notifications open a focused composer from history, require an audience, and cannot send during review", async (t) => {
   const requests = captureRequests(t);
   const f = notificationFixture();
   const initial = nodes(f.draw());
   assert.equal(initial.some((node) => node.type === "details"), false);
-  assert.ok(initial.findIndex((node) => node.props?.id === "notification-history") < initial.findIndex((node) => node.props?.id === "write-notification"));
-  const audience = initial.find((node) => node.type === "select" && node.props.name === "audience");
+  assert.ok(initial.some((node) => node.props?.id === "notification-history"));
+  assert.equal(initial.some((node) => node.type === "form"), false);
+  f.button("Write notification").props.onClick();
+  assert.equal(nodes(f.draw()).find((node) => node.type === "operator-dialog").props.returnFocusId, "open-write-notification");
+  const audience = nodes(f.draw()).find((node) => node.type === "select" && node.props.name === "audience");
   assert.equal(audience.props.defaultValue, "");
   assert.equal(audience.props.required, true);
   reviewNotification(f, { ...draft, audience: "" });
   assert.match(text(f.draw()), /Choose the intended audience/);
   assert.equal(nodes(f.draw()).some((node) => node.props?.onClick?.name === "sendNotification"), false);
   reviewNotification(f);
+  assert.equal(nodes(f.draw()).find((node) => node.type === "form").props.hidden, true);
   assert.match(text(f.draw()), /Example Member/);
   assert.equal(requests.length, 0);
   await f.button("Send notification").props.onClick();
@@ -138,7 +144,7 @@ test("notification preview supports review but its handler cannot send even if i
   assert.match(text(f.draw()), /Preview — notifications are not sent/);
 });
 
-test("announcements expose their draft form and require an explicit audience review before the existing publish control", () => {
+test("announcements open drafting in a dialog and require an explicit audience review before publishing", () => {
   const Create = () => null;
   const Publish = () => null;
   const f = hookFixture("src/components/platform/OperatorAnnouncements.tsx", {
@@ -151,7 +157,11 @@ test("announcements expose their draft form and require an explicit audience rev
   });
   assert.equal(nodes(f.draw()).some((node) => node.type === "details"), false);
   assert.equal(nodes(f.draw()).some((node) => node.type === Publish), false);
+  assert.equal(nodes(f.draw()).some((node) => node.type === Create), false);
+  f.button("Write announcement").props.onClick();
   assert.equal(nodes(f.draw()).find((node) => node.type === Create).props.preview, true);
+  assert.equal(nodes(f.draw()).find((node) => node.type === Create).props.compact, true);
+  nodes(f.draw()).find((node) => node.type === "operator-dialog").props.onClose();
   f.button("Review & publish").props.onClick();
   assert.match(text(f.draw()), /Publish to Circle One/);
   assert.match(text(f.draw()), /You can retract it later/);
@@ -251,6 +261,8 @@ test("member record action anchors have visible authorized destinations and neve
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
     "@/components/platform/OperatorMemberSetup": { __esModule: true, default: component },
+    "@/components/platform/OperatorMemberWorkspace": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },
+    "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: () => null },
     "@/components/platform/OperatorProfileSupport": { __esModule: true, default: component },
     "@/components/platform/OperatorProgress": { __esModule: true, default: component },
     "@/components/platform/StateLabel": { __esModule: true, default: component },
@@ -261,7 +273,12 @@ test("member record action anchors have visible authorized destinations and neve
     assert.ok(list.some((node) => node.type === "a" && node.props.href === `#${id}`));
     assert.ok(list.some((node) => node.props?.id === id));
   }
-  assert.equal(list.some((node) => node.type === "details"), false);
+  const disclosures = list.filter((node) => node.type === "details");
+  assert.deepEqual(disclosures.map((node) => node.props["aria-labelledby"]), ["member-next-step-guidance", "member-state-details"], "only explanatory guidance and diagnostic states are collapsed");
+  for (const disclosure of disclosures) {
+    assert.equal(disclosure.props.open, undefined);
+    assert.equal(nodes(disclosure).some((node) => ["new-member-task", "new-member-note"].includes(node.props?.id) || node.type === "a"), false, "work actions remain outside optional guidance");
+  }
   assert.equal(list.filter((node) => node.type === component && Object.hasOwn(node.props, "memberId")).every((node) => node.props.preview), true);
   const restricted = Record({ record: { ...record, access: { ...record.access, roles: ["guide"], capabilities: [] } } });
   assert.equal(nodes(restricted).some((node) => node.props?.id === "new-member-task"), false);
@@ -277,7 +294,8 @@ test("operator guide distinguishes email allowance, acceptance, member placement
   assert.match(guide, /Circle placement.*Operator access/s);
   const memberPage = source("app/ops/members/page.tsx");
   assert.match(memberPage, /context\.role === "ops_admin" && \(context\.state === "preview" \|\| context\.viewer\)/);
-  assert.match(memberPage, /href="#allow-member-email"/);
+  assert.match(memberPage, /<OperatorPeopleWorkspace pendingJoining=\{actions\}/);
+  assert.match(source("src/components/platform/OperatorPeopleWorkspace.tsx"), /id="allow-member-email"/);
   assert.doesNotMatch(memberPage, /<details/);
 });
 

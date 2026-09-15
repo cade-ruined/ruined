@@ -353,7 +353,7 @@ export default function OpsCircleManagementActions({
       </select>
     </label>
     {currentCircleMembers.some((member) => member.unavailableReason) ? <details className="text-sm text-black/65">
-      <summary className="w-fit cursor-pointer py-2 underline underline-offset-4">Why are some members unavailable?</summary>
+      <summary className="min-h-11 w-fit cursor-pointer content-center py-2 underline underline-offset-4">Why are some members unavailable?</summary>
       <ul className="mt-1 space-y-2">{currentCircleMembers.filter((member) => member.unavailableReason).map((member) => <li key={member.memberId}><Link className="font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link>: {member.unavailableReason}</li>)}</ul>
     </details> : null}
   </>;
@@ -376,13 +376,13 @@ export default function OpsCircleManagementActions({
       aria-label={section === "shaper" ? "Circle Shaper" : "Circle resources"}
       data-operator-pending={pending !== null ? "true" : undefined}
       data-operator-dirty={selectedShaper || selectedResource || selectedPinned || selectedShaperAssignment || selectedResourceAssignment ? "true" : undefined}
-      className="space-y-4"
+      className="operator-bento-card space-y-3"
     >
       {section === "shaper" ? <>
         <header className="flex items-start justify-between gap-4">
           <div>
-            <h3 className={OPERATOR_LABEL_TEXT_CLASS}>Shaper</h3>
-            <p className="mt-1 text-lg font-semibold">{contextCircle.shaper?.name ?? "Not assigned"}</p>
+            <h3 className="operator-compact-label">Shaper</h3>
+            <p className="mt-1 text-base font-semibold">{contextCircle.shaper?.name ?? "Not assigned"}</p>
           </div>
           {!editingShaper ? <button
             className="min-h-11 px-2 text-sm underline underline-offset-4"
@@ -418,7 +418,7 @@ export default function OpsCircleManagementActions({
         <ActionNotice notice={shaperNotice} />
       </> : <>
         <header className="flex items-center justify-between gap-4">
-          <h3 className="ui-heading text-xl font-semibold">Resources</h3>
+          <h3 className="ui-heading text-base font-semibold">Resources</h3>
           {!addingResource ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => { setAddingResource(true); setResourceCircleId(contextCircle.id); setResourceNotice(null); }} type="button">Add resource</button> : null}
         </header>
         {contextCircle.resources.length ? <ul className="space-y-2">
@@ -451,19 +451,19 @@ export default function OpsCircleManagementActions({
   );
 
   return (
-    <section aria-label="Shaper and Circle resource administration" className="grid gap-12 pt-4 lg:grid-cols-2">
+    <section aria-label="Shaper and Circle resource administration" className="grid gap-3 pt-3 lg:grid-cols-2">
       {contextCircle ? <header className="flex flex-wrap items-center justify-between gap-3 lg:col-span-2">
         <p className="text-sm text-black/65">Managing <strong>{contextCircle.name}</strong> only</p>
         <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/circles">View all Circles</Link>
       </header> : null}
       <div>
         <div>
-          <h2 className="ui-heading mt-1 text-2xl font-black uppercase tracking-[-0.035em]">Shaper</h2>
+          <h2 className="ui-heading text-base font-semibold">Shaper</h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
             The Shaper leads the Circle. Choose a Circle member or an existing Shaper.
           </p>
         </div>
-        <form className="mt-6 grid gap-3" onSubmit={assignShaper}>
+        <form className="mt-3 grid gap-3" onSubmit={assignShaper}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
@@ -499,12 +499,12 @@ export default function OpsCircleManagementActions({
 
       <div>
         <div>
-          <h2 className="ui-heading mt-1 text-2xl font-black uppercase tracking-[-0.035em]">Circle resources</h2>
+          <h2 className="ui-heading text-base font-semibold">Circle resources</h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
             Share a published lesson or document. Members receive the version shown here.
           </p>
         </div>
-        <form className="mt-6 grid gap-3" onSubmit={assignResource}>
+        <form className="mt-3 grid gap-3" onSubmit={assignResource}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>

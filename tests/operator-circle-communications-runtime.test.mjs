@@ -116,7 +116,8 @@ test("Circle chat and meetings use exact identities, never shared display names 
   assert.ok(hrefs.includes(communication.chatUrl));
   assert.ok(hrefs.includes(`/ops/experiences?circleId=${circle.id}#new-experience`));
   assert.ok(hrefs.includes("/ops/experiences/own-meeting#meeting-setup"));
-  assert.ok(hrefs.includes("/ops/experiences/own-meeting#experience-calendar"));
+  assert.equal(links(tree).filter((node) => attr(node, "href").startsWith("/ops/experiences/own-meeting#")).length, 1, "one destination manages the meeting and invitations together");
+  assert.match(text(tree), /Manage meeting →/);
   assert.equal(hrefs.some((href) => /other-circle|other-meeting|global-meeting/.test(href)), false);
   const mismatch = render({ communication: otherCommunication });
   assert.match(text(mismatch), /saved chat link could not be loaded/);

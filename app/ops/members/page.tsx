@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import OperatorMemberInvitations from "@/components/platform/OperatorMemberInvitations";
 import OperatorMemberDirectory from "@/components/platform/OperatorMemberDirectory";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorPeopleWorkspace from "@/components/platform/OperatorPeopleWorkspace";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
@@ -110,19 +111,14 @@ export default async function OperationsMembersPage({
   }
   const directoryParams = { q: directory.query, filter: directory.filter, page: String(directory.page) };
   const actions = context.role === "ops_admin" && (context.state === "preview" || context.viewer)
-    ? <OperatorMemberInvitations data={pendingInvitations} directoryParams={directoryParams} preview={context.state === "preview"} />
+    ? <OperatorMemberInvitations data={pendingInvitations} directoryParams={directoryParams} preview={context.state === "preview"} showAdd={false} />
     : undefined;
 
   return (
     <OperatorPageFrame title="Members">
-      {actions ? <nav aria-label="Member directory actions" className="mb-4 flex flex-wrap gap-4"><a className="ui-heading inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href="#allow-member-email">Add member</a><a className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="#pending-member-joining">Pending joining</a></nav> : null}
-      <OperatorMemberDirectory directory={directory} />
-      {actions ? (
-        <section aria-labelledby="allow-member-email-heading" className="mt-8 scroll-mt-32 rounded-[4px] bg-[var(--color-surface)] p-5 sm:p-6" id="allow-member-email">
-          <h2 className="ui-heading mb-4 text-2xl font-semibold" id="allow-member-email-heading">Add member</h2>
-          {actions}
-        </section>
-      ) : null}
+      <OperatorPeopleWorkspace pendingJoining={actions} preview={context.state === "preview"}>
+        <OperatorMemberDirectory directory={directory} />
+      </OperatorPeopleWorkspace>
     </OperatorPageFrame>
   );
 }

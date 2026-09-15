@@ -96,10 +96,10 @@ export default function OperatorDialog({ open, title, context, children, onClose
       const submitter = (event.nativeEvent as SubmitEvent).submitter;
       requestClose(() => { if (form.isConnected) form.requestSubmit(submitter?.isConnected ? submitter : undefined); });
     }}
-    className="operator-paper fixed inset-0 m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-5xl overflow-hidden rounded-[5px] border-0 bg-[var(--color-bone)] p-0 text-[var(--color-faded)] shadow-2xl backdrop:bg-black/55 sm:max-h-[calc(100dvh-3rem)] sm:w-[calc(100%-3rem)]">
+    className="operator-paper fixed inset-0 m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-5xl overflow-hidden rounded-[12px] border-0 bg-[var(--color-bone)] p-0 text-[var(--color-faded)] shadow-2xl backdrop:bg-black/55 sm:max-h-[calc(100dvh-3rem)] sm:w-[calc(100%-3rem)]">
     <div className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-3rem)]">
-      <header className="flex shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-7">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1"><h2 id={titleId} className="break-words font-[var(--font-display)] text-3xl">{title}</h2>{context}</div>
+      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><h2 id={titleId} className="operator-record-title">{title}</h2>{context}</div>
         <button ref={closeRef} type="button" aria-label={`Close ${title} management`} disabled={pending} onClick={() => requestClose()} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] text-2xl hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40"><span aria-hidden="true">×</span></button>
       </header>
       {savingNotice ? <p role="status" className="px-5 pb-3 text-sm sm:px-7">Wait for the current save to finish before closing.</p> : null}
@@ -107,7 +107,7 @@ export default function OperatorDialog({ open, title, context, children, onClose
         <p id={`${titleId}-discard`} className="text-sm">Discard unsaved changes?</p>
         <div className="mt-2 flex flex-wrap gap-2"><button ref={keepEditingRef} type="button" onClick={() => { setConfirmDiscard(false); navigationRef.current = null; requestAnimationFrame(() => { const target = editFocusRef.current; if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true }); }); }} className="min-h-11 rounded-[4px] bg-[var(--color-faded)] px-3 text-sm text-[var(--color-bone)]">Keep editing</button><button type="button" onClick={finishClose} className="min-h-11 px-3 text-sm underline underline-offset-4">Discard changes</button></div>
       </div> : null}
-      <div className="min-h-0 overflow-y-auto overscroll-contain px-5 pb-6 sm:px-7 sm:pb-7" inert={confirmDiscard ? true : undefined}>{children}</div>
+      <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-5" inert={confirmDiscard ? true : undefined}>{children}</div>
     </div>
   </dialog>;
 }

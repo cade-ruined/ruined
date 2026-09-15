@@ -1,15 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
+import OperatorDialog from "@/components/platform/OperatorDialog";
 
 import type {
   OpsExperienceCalendarState,
   OpsExperienceLifecycleState,
 } from "@/lib/platform/ops-experience-model";
 
-const actionButton = "min-h-11 rounded-[4px] bg-black px-4 text-xs font-bold text-white transition hover:bg-[var(--color-poster)] disabled:opacity-40";
-const quietButton = "min-h-11 rounded-[4px] bg-black/[0.065] px-4 text-xs font-bold text-black/65 transition hover:bg-black/10 disabled:opacity-40";
+const actionButton = "inline-flex min-h-11 items-center justify-center rounded-[8px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-40";
+const quietButton = "inline-flex min-h-11 items-center justify-center rounded-[8px] bg-black/[0.065] px-4 text-sm font-medium text-black/65 transition hover:bg-black/10 disabled:opacity-40";
 
 function formatDate(value: string | null) {
   if (!value) return null;
@@ -49,6 +50,11 @@ export default function OperatorExperienceCalendar({
   experienceState,
   preview = false,
   scope,
+  meetingUrl,
+  linksEnabled = true,
+  audienceReviewHref,
+  audienceReviewLabel = "Review people",
+  children,
 }: {
   calendar: OpsExperienceCalendarState;
   canManage: boolean;
@@ -57,16 +63,22 @@ export default function OperatorExperienceCalendar({
   experienceState: OpsExperienceLifecycleState;
   preview?: boolean;
   scope: string;
+  meetingUrl?: string | null;
+  linksEnabled?: boolean;
+  audienceReviewHref?: string;
+  audienceReviewLabel?: string;
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   async function verifyBinding() {
     if (pending || !canBind || !calendar.bindingMode) return;
     if (preview) { setMessage("Preview only — nothing was bound or sent."); return; }
-    if (!window.confirm(`Verify this existing Google invitation and bind it to ${calendar.bindingMode.toUpperCase()}? This only reads Google. Use Sync invitations afterward to send changes.`)) return;
+    if (!window.confirm(`Verify this existing Google invitation and bind it to ${calendar.bindingMode.toUpperCase()}? This only reads Google. Use Update invitations afterward to send changes.`)) return;
     setPending(true); setMessage(null); setMessageIsError(false);
     try {
       const response = await fetch(`/api/ops/experiences/${experienceId}/calendar/binding`, {
@@ -75,7 +87,7 @@ export default function OperatorExperienceCalendar({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Calendar verification failed.");
-      setMessage(`Verified. Nothing was sent. Use ${calendar.canSendCancellation ? "Send cancellation" : "Sync invitations"} to send the pending changes.`);
+      setMessage(`Verified. Nothing was sent. Use ${calendar.canSendCancellation ? "Send cancellation" : "Retry invitations in Manage meeting"} to send the pending changes.`);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Calendar verification failed."); setMessageIsError(true);
@@ -115,55 +127,64 @@ export default function OperatorExperienceCalendar({
 
   const lastSynced = formatDate(calendar.lastSyncedAt);
   const canSend = canManage && calendar.configured && experienceState === "published";
-  const assignedCopy = calendar.attendeeCount === 1
-    ? "1 person will receive the invitation"
-    : `${calendar.attendeeCount} people will receive the invitation`;
+  const isQueued = ["pending_create", "pending_update", "pending_cancel"].includes(calendar.status);
+  const joinUrl = calendar.meetingUrl ?? meetingUrl;
+  const assignedCopy = calendar.attendeeCount === 1 ? "1 eligible recipient" : `${calendar.attendeeCount} eligible recipients`;
 
   return (
-    <section id="experience-calendar" aria-busy={pending} className="scroll-mt-28 rounded-[4px] bg-[#d9d6cf] px-5 py-5" aria-labelledby="experience-calendar-title">
+    <section id="experience-calendar" aria-busy={pending} className="operator-bento-card h-full scroll-mt-28" aria-labelledby="experience-calendar-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">Invite</p>
-          <h2 className="font-[var(--font-display)] text-3xl" id="experience-calendar-title">Google Calendar</h2>
+          <h2 className="operator-section-heading" id="experience-calendar-title">Meeting</h2>
+          <p className="mt-1 text-xs text-black/55">{assignedCopy}</p>
         </div>
-        <span className="whitespace-nowrap rounded-full bg-black px-3 py-1 text-[0.58rem] font-bold uppercase tracking-[0.06em] text-white">
+        <span className="text-xs font-medium text-black/65">
           {statusCopy(calendar)}
         </span>
       </div>
 
-      <p className="mt-4 text-sm font-semibold text-black/75">{scope}</p>
-      <p className="mt-1 text-sm text-black/52">{assignedCopy}. Waitlisted and cancelled places are excluded.</p>
-
-      {calendar.organizerEmail ? (
-        <p className="mt-4 text-xs text-black/45">From {calendar.organizerEmail}</p>
-      ) : null}
-      {lastSynced ? <p className="mt-1 text-xs text-black/45">Last sent {lastSynced}</p> : null}
       {calendar.lastError ? <p className="mt-3 text-sm text-[var(--color-poster)]">{calendar.lastError}</p> : null}
 
+      {calendar.attendeeCount === 0 && ["draft", "published"].includes(experienceState) ? <div className="mt-3 text-sm text-black/65">
+        <p>No one is currently eligible for an invitation. Check the audience and member access before sending.</p>
+        {audienceReviewHref ? <a className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={audienceReviewHref}>{audienceReviewLabel}</a> : null}
+      </div> : null}
+
       {!calendar.configured && !calendar.bindingRequired ? (
-        <p className="mt-4 rounded-[4px] bg-white/55 px-4 py-3 text-sm text-black/62">
-          Connect the Ruined Workspace organizer to begin sending invitations.
+        <p className="mt-3 text-sm text-black/62">
+          Google Calendar setup needs attention before invitations can be sent.
         </p>
       ) : experienceState === "draft" ? (
-        <p className="mt-4 rounded-[4px] bg-white/55 px-4 py-3 text-sm text-black/62">
-          Publish this draft to queue a Google Calendar invitation for this audience. When processed, Google creates a Meet link. Check the status here; publishing alone does not confirm delivery.
+        <p className="mt-3 text-sm text-black/62">
+          Review & publish to make this Experience available. Google creates the Meet link when its invitation is processed; publishing alone does not confirm delivery.
         </p>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
+        {linksEnabled && joinUrl && !["cancelled", "archived"].includes(experienceState) && calendar.status !== "cancelled" ? <a className="inline-flex min-h-11 items-center rounded-[4px] bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href={joinUrl} rel="noreferrer" target="_blank">Open Google Meet ↗</a> : null}
+        <button className={quietButton} id="meeting-options-trigger" onClick={() => setOptionsOpen(true)} type="button">{canManage ? "Manage meeting" : "Meeting details"}</button>
+        {isQueued ? <button className={quietButton} type="button" disabled={pending} onClick={() => router.refresh()}>Refresh status</button> : null}
+      </div>
+      <OperatorDialog open={optionsOpen} title="Manage meeting" pending={pending} returnFocusId="meeting-options-trigger" onClose={() => setOptionsOpen(false)}>
+        <div className="space-y-3 pb-2" data-operator-pending={pending ? "true" : "false"}>
+          <p className="text-sm font-medium">{scope} · {assignedCopy}</p>
+          <p className="text-xs text-black/60">{statusCopy(calendar)}</p>
+          {calendar.lastError ? <p className="text-sm text-[var(--color-poster)]">{calendar.lastError}</p> : null}
+          {calendar.attendeeCount === 0 ? <p className="text-sm text-[var(--color-poster)]">No one is currently eligible for an invitation. Check the audience before sending.</p> : null}
+        <div className="flex flex-wrap gap-2">
         {calendar.bindingRequired && canBind && calendar.bindingMode ? (
           <button className={actionButton} disabled={pending} onClick={verifyBinding} type="button">
             {pending ? "Verifying" : `Verify & bind to ${calendar.bindingMode}`}
           </button>
         ) : null}
-        {experienceState === "published" && calendar.status !== "cancelled" ? (
+        {experienceState === "published" && calendar.status !== "cancelled" && (!isQueued || calendar.automaticDeliveryPaused) ? (
           <button
             className={actionButton}
             disabled={!canSend || pending}
             onClick={() => sync(intentFor(calendar))}
             type="button"
           >
-            {pending ? "Sending" : calendar.googleEventId ? "Sync invitations" : "Create invite + Meet"}
+            {pending ? "Sending" : calendar.googleEventId ? "Update invitations" : "Send invitations"}
           </button>
         ) : null}
         {calendar.googleEventUrl && calendar.status !== "cancelled" ? (
@@ -174,7 +195,17 @@ export default function OperatorExperienceCalendar({
             {pending ? "Sending" : "Send cancellation"}
           </button>
         ) : null}
-      </div>
+        </div>
+        <div className="space-y-3 pt-2">
+          {children}
+          {experienceState === "published" && isQueued && !calendar.automaticDeliveryPaused ? <button className={quietButton} disabled={!canSend || pending} onClick={() => sync(intentFor(calendar))} type="button">{pending ? "Sending" : "Retry invitations"}</button> : null}
+          <p className="text-xs leading-relaxed text-black/50">Google Calendar invites eligible people in the selected audience. Waitlisted and cancelled places are excluded.</p>
+          {calendar.organizerEmail ? <p className="text-xs text-black/50">Organizer: {calendar.organizerEmail}</p> : null}
+          {lastSynced ? <p className="text-xs text-black/50">Last sent {lastSynced}</p> : null}
+        </div>
+          {message ? <p className={`text-sm ${messageIsError ? "text-[var(--color-poster)]" : "text-black/65"}`} role={messageIsError ? "alert" : "status"}>{message}</p> : null}
+        </div>
+      </OperatorDialog>
       {message ? (
         <p
           aria-live={messageIsError ? "assertive" : "polite"}

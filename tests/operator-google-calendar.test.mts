@@ -110,8 +110,9 @@ test("the operator Experience makes publish, sync, open, and cancellation unders
   assert.match(model, /OpsExperienceCalendarState/);
   assert.match(preview, /organizerEmail: "connect@theruinedproject\.com"/);
   assert.match(panel, /Google Calendar/);
-  assert.match(panel, /Create invite \+ Meet/);
-  assert.match(panel, /Sync invitations/);
+  assert.match(panel, /Send invitations/);
+  assert.match(panel, /Update invitations/);
+  assert.match(panel, /Retry invitations/);
   assert.match(panel, /Open calendar/);
   assert.match(panel, /Send cancellation/);
   assert.match(panel, /Waitlisted and cancelled places are excluded/);
@@ -121,6 +122,9 @@ test("the operator Experience makes publish, sync, open, and cancellation unders
   assert.match(record, /Google Calendar manages this meeting link/);
   assert.doesNotMatch(record, /Manual Meet fallback|Publish \+ send invite/);
   assert.match(panel, /publishing alone does not confirm delivery/);
+  assert.match(record, /Review & publish/);
+  assert.match(record, /OperatorDialog open title="Publish Experience"/);
+  assert.match(record, /queued does not mean sent/);
   assert.doesNotMatch(record, /await calendarRequest\(/);
   assert.match(record, /Calendar delivery is durably queued/);
   assert.match(panel, /aria-busy=\{pending\}/);

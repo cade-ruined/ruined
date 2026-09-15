@@ -140,39 +140,26 @@ export function OperationsNavigation({
   viewerLabel?: string | null;
 }) {
   const [accountOpen, setAccountOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
-  const navigationRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const workspaceTriggerRef = useRef<HTMLButtonElement>(null);
   const preview = configuration.mode === "preview";
   const groups = getOperationsNavigation(operatorRole);
   const location = getOperationsLocation(pathname, groups);
-  const [expandedSection, setExpandedSection] = useState<{ pathname: string; id: string } | null>(null);
-  const expandedGroup = groups.find((group) => group.id === (expandedSection?.pathname === pathname ? expandedSection.id : location?.group.id));
-
-  useEffect(() => {
-    const navigation = navigationRef.current;
-    const shell = navigation?.closest<HTMLElement>('[data-platform-surface="ops"]');
-    if (!navigation || !shell) return;
-    // Both rails can wrap as the viewport, text size, role or section changes.
-    // Keep anchor and keyboard targets below their actual combined height.
-    const measure = () => shell.style.setProperty("--operator-navigation-height", `${navigation.getBoundingClientRect().height}px`);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(navigation);
-    return () => {
-      observer.disconnect();
-      shell.style.removeProperty("--operator-navigation-height");
-    };
-  }, [operatorRole]);
+  const currentWorkspace = location?.item.label ?? "Select workspace";
 
   function showNavigation() {
-    // Header destinations start above the page content. Next's default focus
-    // can scroll the focusable main past these rails, even from the page top.
+    setWorkspaceOpen(false);
+    // Keep workspace changes at the start of the page, without Next moving
+    // the focusable main beneath the fixed header.
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }
 
   useEffect(() => {
     setAccountOpen(false);
+    setWorkspaceOpen(false);
   }, [operatorRole, pathname]);
 
   useEffect(() => {
@@ -193,27 +180,97 @@ export function OperationsNavigation({
     };
   }, [accountOpen]);
 
+  useEffect(() => {
+    if (!workspaceOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!workspaceRef.current?.contains(event.target as Node)) setWorkspaceOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setWorkspaceOpen(false);
+      workspaceTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [workspaceOpen]);
+
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-[90] bg-[#080605] font-[var(--font-body)] text-white">
+      <header className="fixed inset-x-0 top-0 z-[90] bg-[#080605] font-[var(--font-body)] text-white" data-operator-navigation>
         <a className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-10 focus:rounded-[4px] focus:bg-[var(--color-signal)] focus:px-4 focus:py-3 focus:text-black" href="#operator-content">Skip to page content</a>
-        <div className="mx-auto flex min-h-[var(--ruined-header-height)] max-w-[100rem] items-center justify-between gap-3 px-4 sm:px-6 lg:px-10">
+        <div className="mx-auto flex min-h-[var(--ruined-header-height)] max-w-[100rem] items-center gap-2 px-4 pt-[env(safe-area-inset-top,0px)] sm:gap-4 sm:px-6 lg:px-10">
           <Link aria-label="Ruined Operations overview" className="flex shrink-0 items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]" href="/ops" scroll={false} onNavigate={showNavigation}>
             <Image alt="Ruined" className="h-6 w-auto brightness-0 invert sm:h-7" draggable={false} height={300} priority src="/ruined-wordmark.svg" width={1000} />
-            <span className="[font-family:var(--font-cadehandy2)] text-xl text-white/75 sm:text-2xl">Operations</span>
+            <span className="hidden [font-family:var(--font-cadehandy2)] text-2xl text-white/75 sm:inline">Operations</span>
           </Link>
-          <div className="relative min-w-0" ref={accountRef}>
+          {groups.length ? (
+            <div
+              className="relative min-w-0 sm:ml-3"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setWorkspaceOpen(false);
+              }}
+              ref={workspaceRef}
+            >
+              <button
+                aria-controls="ops-workspaces"
+                aria-expanded={workspaceOpen}
+                aria-label={`Workspace: ${currentWorkspace}`}
+                className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-[8px] bg-white/10 px-3 text-sm font-medium hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-signal)] sm:min-w-40 sm:justify-between"
+                onClick={() => {
+                  setAccountOpen(false);
+                  setWorkspaceOpen((open) => !open);
+                }}
+                ref={workspaceTriggerRef}
+                type="button"
+              >
+                <span className="truncate">{currentWorkspace}</span>
+                <svg aria-hidden="true" className={`size-3 shrink-0 transition-transform motion-reduce:transition-none ${workspaceOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 12 12"><path d="m2.5 4.5 3.5 3 3.5-3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
+              </button>
+              {workspaceOpen ? (
+                <nav
+                  aria-label="Operator workspaces"
+                  className="fixed inset-x-4 top-[calc(var(--ruined-header-height)+0.5rem)] max-h-[calc(100dvh-var(--ruined-header-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-[8px] bg-[var(--color-bone)] p-2 text-[var(--color-faded)] shadow-[3px_3px_0_var(--color-faded)] sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.75rem)] sm:w-64"
+                  id="ops-workspaces"
+                >
+                  {groups.flatMap((group) => group.items).map((item) => {
+                    const current = isOperationsPathCurrent(pathname, item.href);
+                    return <Link
+                      aria-current={current ? "page" : undefined}
+                      className={`flex min-h-11 items-center justify-between gap-3 rounded-[6px] px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] ${current ? "bg-[var(--color-faded)] font-semibold text-[var(--color-bone)]" : "hover:bg-black/[0.06]"}`}
+                      href={item.href}
+                      key={item.href}
+                      onNavigate={showNavigation}
+                      scroll={false}
+                    >
+                      {item.label}
+                      {current ? <svg aria-hidden="true" className="size-4 shrink-0" fill="none" viewBox="0 0 16 16"><path d="m3 8 3 3 7-7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg> : null}
+                    </Link>;
+                  })}
+                </nav>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="relative ml-auto shrink-0" ref={accountRef}>
             <button
               aria-controls="ops-account"
               aria-expanded={accountOpen}
-              className="inline-flex min-h-11 items-center gap-2 rounded-[4px] px-2 text-sm text-white/75 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
-              onClick={() => setAccountOpen((open) => !open)}
+              aria-label="Account"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-[8px] px-2 text-sm text-white/75 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+              onClick={() => {
+                setWorkspaceOpen(false);
+                setAccountOpen((open) => !open);
+              }}
               ref={accountTriggerRef}
               type="button"
             >
               <span className="hidden max-w-48 truncate lg:block">{viewerLabel ?? "Operator"}</span>
-              <span>Account</span>
-              <span aria-hidden="true" className={accountOpen ? "rotate-180" : undefined}>⌄</span>
+              <span className="hidden sm:inline">Account</span>
+              <svg aria-hidden="true" className="size-6 sm:hidden" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" /><circle cx="12" cy="9" r="3" stroke="currentColor" strokeWidth="1.5" /><path d="M5.5 18c1-3 3.5-4.5 6.5-4.5s5.5 1.5 6.5 4.5" stroke="currentColor" strokeWidth="1.5" /></svg>
+              <span aria-hidden="true" className={`hidden sm:inline ${accountOpen ? "rotate-180" : ""}`}>⌄</span>
             </button>
             {accountOpen ? (
               <div aria-label="Operator account" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-2rem)] rounded-[4px] bg-[var(--color-bone)] p-3 text-[var(--color-faded)] shadow-[4px_4px_0_var(--color-poster)]" id="ops-account" role="region">
@@ -230,53 +287,6 @@ export function OperationsNavigation({
         </div>
       </header>
 
-      {groups.length ? (
-        <div className="sticky top-[var(--ruined-header-height)] z-[80] bg-[var(--color-bone)] px-4 pb-3 pt-3 font-[var(--font-body)] text-[var(--color-faded)] sm:px-6 lg:px-10" data-operator-navigation ref={navigationRef}>
-          <div className="mx-auto max-w-[96rem]">
-            <nav aria-label="Operations sections" className="flex flex-wrap gap-1 sm:gap-2">
-              {groups.map((group) => {
-                const className = `inline-flex min-h-11 shrink-0 items-center rounded-[4px] px-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] sm:px-4 ${expandedGroup?.id === group.id ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "text-black/60 hover:bg-black/[0.06] hover:text-black"}`;
-                return group.items.length > 1 ? <button
-                  aria-controls="operator-section-pages"
-                  aria-expanded={expandedGroup?.id === group.id}
-                  aria-current={location?.group.id === group.id ? "location" : undefined}
-                  className={className}
-                  id={`operator-section-${group.id}`}
-                  key={group.id}
-                  onClick={() => setExpandedSection({ pathname, id: group.id })}
-                  type="button"
-                >{group.label}</button> : <Link
-                  aria-current={location?.group.id === group.id ? "page" : undefined}
-                  className={className}
-                  href={group.items[0].href}
-                  key={group.id}
-                  scroll={false}
-                  onNavigate={showNavigation}
-                >{group.label}</Link>;
-              })}
-            </nav>
-            {expandedGroup && expandedGroup.items.length > 1 ? (
-              <nav aria-label={`${expandedGroup.label} pages`} className="mt-1 flex flex-wrap gap-x-4 sm:gap-x-6" id="operator-section-pages" onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                document.getElementById(`operator-section-${expandedGroup.id}`)?.focus();
-                setExpandedSection(null);
-              }}>
-                {expandedGroup.items.map((item) => {
-                  const current = isOperationsPathCurrent(pathname, item.href);
-                  return <Link
-                    aria-current={current ? "page" : undefined}
-                    className={`inline-flex min-h-11 shrink-0 items-center border-b-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] ${current ? "border-[var(--color-poster)] font-semibold text-[var(--color-faded)]" : "border-transparent text-black/55 hover:border-black/20 hover:text-black"}`}
-                    href={item.href}
-                    key={item.href}
-                    scroll={false}
-                    onNavigate={showNavigation}
-                  >{item.label}</Link>;
-                })}
-              </nav>
-            ) : !expandedGroup ? <p className="py-3 text-sm text-black/55">Choose a section to continue.</p> : null}
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }
@@ -330,7 +340,7 @@ export default function PlatformShell({
 
   return (
     <div
-      className={`min-h-screen pt-[var(--ruined-header-height)] ${paperClass} ${
+      className={`min-h-screen pt-[var(--ruined-header-height)] ${paperClass} ${!member ? "operator-paper" : ""} ${
         dark
           ? "bg-[#080605] text-[var(--color-bone)]"
           : "bg-[var(--color-bone)] text-[#201d19]"
@@ -363,7 +373,9 @@ export default function PlatformShell({
             className={`border-b border-[var(--color-poster)]/50 px-4 text-center font-[var(--font-body)] tracking-[0.03em] sm:px-6 ${
               memberHome ? "py-2 text-[0.6rem] leading-snug" : "py-3 text-[0.67rem] leading-relaxed"
             } ${
-              dark
+              !member
+                ? "bg-[var(--color-poster)]/[0.07] text-black/60"
+              : dark
                 ? "bg-[var(--color-poster)]/10 text-white/60"
                 : "bg-[var(--color-poster)]/[0.07] text-black/65"
             }`}
@@ -393,7 +405,7 @@ export default function PlatformShell({
           {children}
         </div>
 
-        <footer
+        {member ? <footer
           className={`border-t px-4 font-[var(--font-body)] text-[0.64rem] uppercase tracking-[0.1em] sm:px-6 lg:px-10 ${
             paperSurface
               ? "border-transparent py-4 text-black/42"
@@ -406,7 +418,7 @@ export default function PlatformShell({
             <span>The Ruined Project</span>
             {!paperSurface ? <span>{member ? "Members & Membership" : "Internal operations"}</span> : null}
           </div>
-        </footer>
+        </footer> : null}
       </div>
 
       {member && !threshold && !foundationsExperience ? <MemberNavigationFab /> : null}

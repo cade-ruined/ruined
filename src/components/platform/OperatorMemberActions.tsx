@@ -70,9 +70,9 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
   }
 
   return (
-    <form className="grid gap-4" onSubmit={submit}>
+    <form className="grid gap-4" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="ui-heading text-xl font-semibold">Add internal note</h3>
+        <h3 className="ui-heading text-base font-semibold">Add internal note</h3>
         <span className="text-xs text-black/38">Internal only</span>
       </div>
       {preview ? <p className="text-sm text-black/60">Preview — notes are not saved.</p> : null}
@@ -141,8 +141,8 @@ export function OperatorTaskCreateAction({ memberId, preview = false }: { member
   }
 
   return (
-    <form className="grid gap-4" onSubmit={submit}>
-      <h3 className="ui-heading text-xl font-semibold">Create a task</h3>
+    <form className="grid gap-4" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
+      <h3 className="ui-heading text-base font-semibold">Create a task</h3>
       {preview ? <p className="text-sm text-black/60">Preview — tasks are not created.</p> : null}
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
@@ -258,9 +258,9 @@ export function OperatorOverrideAction({
   }
 
   return (
-    <form className="grid gap-4" onSubmit={submit}>
+    <form className="grid gap-4" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
       <div>
-        <h3 className="ui-heading text-xl font-semibold">Record a state correction</h3>
+        <h3 className="ui-heading text-base font-semibold">Record a state correction</h3>
         {preview ? <p className="mt-2 text-sm text-black/60">Preview — member states are not changed.</p> : null}
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-black/48">
           Payment, agreements, and Foundations completion cannot be overridden here. Every correction keeps its actor, reason, and prior state.

@@ -30,19 +30,25 @@ const [
   source("app/ops/access-billing/page.tsx"),
 ]);
 
-test("the member directory opens one unified, server-projected operating record", () => {
+test("the member directory opens one unified, server-projected operating record", async () => {
   assert.match(directory, /href=\{`\/ops\/members\/\$\{member\.memberId\}\?returnTo=/);
   assert.match(memberPage, /getOpsMemberOperatingRecord\(context\.viewer\.authUserId, memberId\)/);
   assert.match(memberPage, /context\.state === "signed_out"[\s\S]*redirect\("\/ops\/access"\)/);
   assert.match(memberPage, /if \(!record\) notFound\(\)/);
 
+  const workspace = await source("src/components/platform/OperatorMemberWorkspace.tsx");
   for (const section of ["overview", "membership", "journey", "community", "record"]) {
     assert.match(memberRecord, new RegExp(`id="${section}"`));
-    assert.match(memberRecord, new RegExp(`"#${section}"`));
+    assert.match(workspace, new RegExp(`id: "${section}"`));
   }
+  assert.match(memberRecord, /<OperatorMemberWorkspace>/);
   assert.doesNotMatch(memberRecord, /divide-y|border-y|uppercase tracking-\[0\.1/);
   assert.match(memberRecord, /Member record actions/);
-  assert.doesNotMatch(memberRecord, /<details/);
+  const optionalDetails = [...memberRecord.matchAll(/<details\b[\s\S]*?<\/details>/g)].map((match) => match[0]);
+  assert.equal(optionalDetails.length, 2);
+  assert.match(optionalDetails[0], /aria-labelledby="member-next-step-guidance"/);
+  assert.match(optionalDetails[1], /aria-labelledby="member-state-details"/);
+  for (const disclosure of optionalDetails) assert.doesNotMatch(disclosure, /OperatorTaskCreateAction|OperatorNoteAction|OperatorOverrideAction|<Link|\bopen=/, "only guidance and diagnostics are collapsed; work actions remain directly reachable");
   assert.match(memberRecord, /OperatorTaskCreateAction/);
   assert.match(memberRecord, /OperatorNoteAction/);
   assert.match(memberRecord, /OperatorOverrideAction/);

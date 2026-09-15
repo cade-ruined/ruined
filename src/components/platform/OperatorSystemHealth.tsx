@@ -26,44 +26,28 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
   const services = [...health.services].sort((left, right) => attentionStates.indexOf(left.state) - attentionStates.indexOf(right.state));
 
   return (
-    <OperatorPageFrame title="System">
-      <dl
-        aria-label="System snapshot"
-        className="grid grid-cols-3 gap-4 rounded-[4px] bg-[#080605] px-5 py-5 text-[var(--color-bone)] sm:gap-6 sm:px-8 sm:py-8"
-      >
-        {[
-          ["Verified now", verifiedChecks, ""],
-          ["Needs attention", servicesNeedingAttention, servicesNeedingAttention > 0 ? "text-[var(--color-signal)]" : ""],
-          ["Not live-checked", awaitingVerification, ""],
-        ].map(([label, value, tone]) => (
-          <div key={label}>
-            <dt className="min-h-10 text-xs text-white/70 sm:min-h-0 sm:text-sm">{label}</dt>
-            <dd className={`mt-2 font-[var(--font-display)] text-4xl leading-none tracking-[-0.03em] sm:text-5xl ${tone}`}>
-              {value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+    <OperatorPageFrame title="Settings">
+      <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="operator-page-heading">Settings</h2><p className="mt-1 text-xs text-black/55" aria-label="System snapshot">{verifiedChecks} verified · <span className={servicesNeedingAttention ? "text-[var(--color-poster)]" : ""}>{servicesNeedingAttention} need attention</span> · {awaitingVerification} not live-checked</p></div><Link href="/ops/operators" className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4">Operator access →</Link></header>
 
-      <nav aria-label="System tasks" className="mt-4 flex flex-wrap gap-4 text-sm">
+      <nav aria-label="System tasks" className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#service-checks">Review services</a>
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#failed-actions">Failed actions · {health.workflowFailures.length}</a>
         <Link className="inline-flex min-h-11 items-center underline underline-offset-4" href="/ops/work">Open work queue →</Link>
       </nav>
-      <p className="mt-3 text-sm text-black/55">Review the services needing attention first. A saved configuration is not a successful connection; previous activity is separate from checks performed now.</p>
-      <section className="mt-6 scroll-mt-28 space-y-3" id="service-checks" aria-label="Service checks and delivery queues">
+      <section className="grid items-start gap-3 scroll-mt-28 md:grid-cols-2" id="service-checks" aria-label="Service checks and delivery queues">
         {services.map((service) => (
-          <article
-            className="grid gap-4 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] md:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)] md:items-center sm:px-6"
+          <details
+            className="operator-bento-card"
+            open={["failed", "delayed", "unavailable"].includes(service.state)}
             key={service.label}
           >
+            <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+              <span className="flex flex-wrap items-center gap-2 font-semibold">{service.label}{service.mode ? <span className={`rounded-sm px-2 py-1 text-xs font-medium ${service.mode === 'test' ? 'bg-[#FFCA2C] text-black' : 'bg-black/5'}`}>{service.mode === 'test' ? 'Test mode' : 'Live mode'}</span> : null}</span>
+              <span className={`text-sm ${service.state === 'verified' ? 'text-[var(--color-verdigris)]' : service.state === 'configured' ? 'text-black/60' : 'text-[var(--color-poster)]'}`}>{{ configured: "Configured", verified: "Verified", delayed: "Delayed", failed: "Needs review", unavailable: "Not configured" }[service.state]} <span aria-hidden="true">⌄</span></span>
+            </summary>
+            <div className="mt-2 grid gap-3 text-sm">
             <div>
-              <h2 className="ui-heading text-lg font-semibold">{service.label}</h2>
-              {service.mode ? <p className={`mt-2 inline-block rounded-sm px-2 py-1 text-xs font-semibold ${service.mode === "test" ? "bg-[#FFCA2C] text-black" : "bg-black/5"}`}>{service.mode === "test" ? "Test mode" : "Live mode"}</p> : null}
-              <p className="mt-2 text-sm text-black/65">{service.detail}</p>
-            </div>
-            <div className={service.state === "verified" ? "text-[var(--color-verdigris)]" : service.state === "configured" ? "text-black/55" : "text-[var(--color-poster)]"}>
-              <span className="text-sm font-medium">{{ configured: "Configured", verified: "Verified", delayed: "Delayed", failed: "Needs review", unavailable: "Not configured" }[service.state]}</span>
+              <p className="text-sm text-black/65">{service.detail}</p>
             </div>
             <div className="space-y-2 text-sm text-black/55">
               <p>{service.evidenceLabel} · {formatDate(service.lastSucceededAt)}</p>
@@ -71,24 +55,22 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
               {service.oldestPendingAt ? <p>Oldest due · {formatDate(service.oldestPendingAt)}</p> : null}
               {service.href ? <Link className="inline-block py-2 underline underline-offset-4 hover:text-black" href={service.href}>Open {service.label === "Support email" ? "support queue" : service.label === "Google Calendar" ? "Experiences" : "controls"} →</Link> : null}
             </div>
-          </article>
+            </div>
+          </details>
         ))}
       </section>
 
-      <section className="mt-8 scroll-mt-28" id="failed-actions" aria-label="Failed automation actions">
+      <section className="mt-5 scroll-mt-28" id="failed-actions" aria-label="Failed automation actions">
         <div className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="text-sm text-black/45">Automation</p>
-            <h2 className="mt-2 text-3xl leading-none">Failed actions</h2>
-          </div>
+          <h2 className="text-lg font-semibold">Failed actions</h2>
           <Link className="text-sm text-black/55 underline decoration-black/25 underline-offset-5 hover:text-black" href="/ops/work">
             Open all work
           </Link>
         </div>
-        <div className="mt-5 space-y-3">
+        <div className="mt-3 space-y-3">
           {health.workflowFailures.map((failure) => (
             <article
-              className="grid gap-5 rounded-[4px] bg-black/[0.025] px-5 py-6 transition-colors hover:bg-black/[0.055] sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_8rem_10rem_minmax(12rem,0.7fr)] lg:items-center"
+              className="operator-bento-card grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_8rem_10rem_minmax(12rem,0.7fr)] lg:items-center"
               key={failure.actionId}
             >
               <div>
@@ -108,7 +90,7 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
             </article>
           ))}
           {health.workflowFailures.length === 0 ? (
-            <p className="rounded-[4px] bg-black/[0.025] px-5 py-10 text-sm text-black/50">
+            <p className="operator-bento-card text-sm text-black/55">
               No failed automation actions.
             </p>
           ) : null}

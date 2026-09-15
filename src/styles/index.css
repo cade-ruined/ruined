@@ -231,11 +231,57 @@ html {
   background-size: 100% 100%, 640px 640px;
 }
 
-/* The section rails stay below the brand header. Hash links, browser focus
-   scrolling and the skip link must clear both, including wrapped mobile rails. */
+/* Operator records are working surfaces, not editorial landing pages.
+   These primitives are shared by directories, details and focused editors. */
+.operator-paper .operator-record-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.operator-paper :is(.operator-record-title, .operator-page-heading) {
+  font-family: var(--font-body) !important;
+  font-size: clamp(1.3rem, 2.2vw, 1.65rem);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.operator-paper .operator-section-heading {
+  font-family: var(--font-body) !important;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.operator-paper .operator-bento-card {
+  min-width: 0;
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  padding: 1rem;
+  box-shadow: 2px 2px 0 rgb(42 42 42 / 0.06);
+}
+
+.operator-paper .operator-compact-label {
+  display: block;
+  font-family: var(--font-body) !important;
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.4;
+  color: rgb(42 42 42 / 0.6);
+  letter-spacing: normal;
+}
+
+/* Workspace navigation lives inside the fixed header. Hash links, browser
+   focus scrolling and the skip link clear it without a second rail's gap. */
 [data-platform-surface="ops"] .operator-paper,
 [data-platform-surface="ops"] .operator-paper :is([id], a, button, input, select, textarea, summary, [tabindex]) {
-  scroll-margin-top: calc(var(--ruined-header-height) + var(--operator-navigation-height, 10rem) + 1rem);
+  scroll-margin-top: calc(var(--ruined-header-height) + 1rem);
 }
 
 .member-timeline-paper {

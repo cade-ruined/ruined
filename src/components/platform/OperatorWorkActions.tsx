@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -151,21 +151,27 @@ export function OperatorAnnouncementCreateAction({
   announcement,
   onSaved,
   onCancel,
+  compact = false,
   preview = false,
 }: {
   audienceOptions: OpsAnnouncementAudienceOptions;
   announcement?: OpsAnnouncementSummary;
   onSaved?: () => void;
   onCancel?: () => void;
+  compact?: boolean;
   preview?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const pendingRef = useRef(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current) return;
     if (preview) { setMessage("Preview — announcement drafts are not saved."); return; }
+    pendingRef.current = true;
     setSubmitting(true);
     setMessage("");
     const form = event.currentTarget;
@@ -179,19 +185,22 @@ export function OperatorAnnouncementCreateAction({
         title: String(data.get("title") ?? ""),
       }, announcement ? "PATCH" : "POST");
       form.reset();
+      setDirty(false);
       setMessage(announcement ? "Draft saved. Review it before publishing." : "Draft announcement created.");
       onSaved?.();
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The announcement could not be created.");
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
 
   return (
-    <form className="grid gap-4 border-y border-black/25 py-6" onSubmit={submit}>
-      <h2 className="ui-heading text-2xl font-semibold">{announcement ? "Edit draft" : "Create a draft"}</h2>
+    <form className={`grid gap-4 ${compact ? "" : "py-6"}`} data-operator-dirty={dirty} data-operator-pending={submitting} onChange={() => setDirty(true)} onSubmit={submit}>
+      <fieldset className="contents" disabled={submitting}>
+      {!compact ? <h2 className="ui-heading text-2xl font-semibold">{announcement ? "Edit draft" : "Create a draft"}</h2> : null}
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,0.4fr)]">
         <label className={OPERATOR_LABEL_CLASS}>
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
@@ -223,6 +232,7 @@ export function OperatorAnnouncementCreateAction({
         {onCancel ? <button className="min-h-11 text-sm underline" disabled={submitting} onClick={onCancel} type="button">Cancel editing</button> : null}
         <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Saving" : announcement ? "Save draft" : "Create draft"}</button>
       </div>
+      </fieldset>
     </form>
   );
 }

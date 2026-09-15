@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import OperatorExperienceCalendar from "@/components/platform/OperatorExperienceCalendar";
+import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
@@ -230,6 +231,53 @@ export default function OperatorExperienceRecord({
   const [editVisibility, setEditVisibility] = useState(experience.visibility);
   const [editingDetails, setEditingDetails] = useState(false);
   const [reviewingCancellation, setReviewingCancellation] = useState(false);
+  const [reviewingPublish, setReviewingPublish] = useState(false);
+  const [detailsDirty, setDetailsDirty] = useState(false);
+  const [section, setSection] = useState<"overview" | "people" | "activity">("overview");
+  const [eventOptionsOpen, setEventOptionsOpen] = useState(false);
+  const [cancellationDirty, setCancellationDirty] = useState(false);
+  const canEditDetails = experience.canEdit && ["draft", "published"].includes(experience.state);
+  const calendarManaged = Boolean(experience.calendar.googleEventId)
+    || ["pending_create", "pending_update", "pending_cancel"].includes(experience.calendar.status);
+  const eventEnded = new Date(experience.endsAt ?? new Date(new Date(experience.startsAt).getTime() + 3_600_000).toISOString()).getTime() <= Date.now();
+  const willQueue = experience.calendar.configured && !eventEnded;
+
+  function openDetails() {
+    setDetailsDirty(false);
+    setEditRegistrationMode(experience.registrationMode);
+    setEditVisibility(experience.visibility);
+    setEditingDetails(true);
+    setError(null);
+  }
+  function clearDialogHash() {
+    if (["#edit-experience", "#experience-actions"].includes(window.location.hash)) {
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+    }
+  }
+  function selectView(view: "overview" | "people" | "activity") {
+    setSection(view);
+    const hash = view === "people" ? "#experience-roster" : view === "activity" ? "#experience-activity" : "#meeting-setup";
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${hash}`);
+  }
+  useEffect(() => {
+    function followHash() {
+      const hash = window.location.hash;
+      if (hash === "#experience-roster") setSection("people");
+      else if (hash === "#experience-activity") setSection("activity");
+      else if (["#meeting-setup", "#experience-calendar", "#experience-actions", "#edit-experience"].includes(hash)) setSection("overview");
+      if (hash === "#edit-experience" && canEditDetails) {
+        setEditRegistrationMode(experience.registrationMode);
+        setEditVisibility(experience.visibility);
+        setEditingDetails(true);
+      }
+      if (hash === "#experience-actions" && experience.canEdit && experience.state === "draft") setReviewingPublish(true);
+      else if (hash === "#experience-actions" && experience.canEdit) setEventOptionsOpen(true);
+      if (hash) requestAnimationFrame(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "nearest" }));
+    }
+    followHash();
+    window.addEventListener("hashchange", followHash);
+    return () => window.removeEventListener("hashchange", followHash);
+  }, [canEditDetails, experience.canEdit, experience.registrationMode, experience.state, experience.visibility]);
   const registeredMemberIds = useMemo(
     () => new Set(experience.roster.map((item) => item.memberId).filter(Boolean)),
     [experience.roster],
@@ -278,6 +326,8 @@ export default function OperatorExperienceRecord({
         visibility,
         waitlistEnabled: data.get("waitlistEnabled") === "on",
       }, "PATCH");
+      setDetailsDirty(false);
+      clearDialogHash();
       setEditingDetails(false);
       await changed();
     } catch (requestError) {
@@ -300,6 +350,10 @@ export default function OperatorExperienceRecord({
       await jsonRequest(`/api/ops/experiences/${experience.experienceId}/lifecycle`, { intent, reason });
       stateChanged = true;
       setReviewingCancellation(false);
+      setCancellationDirty(false);
+      setEventOptionsOpen(false);
+      setReviewingPublish(false);
+      clearDialogHash();
       await changed();
     } catch (requestError) {
       setError(requestError instanceof Error
@@ -343,32 +397,30 @@ export default function OperatorExperienceRecord({
 
   return (
     <OperatorPageFrame title={experience.title}>
-      <div className="mx-auto max-w-[92rem] pb-20">
-      <div className="flex flex-wrap gap-5 text-sm"><Link className="text-black/50 hover:text-black" href="/ops/experiences">← Experiences</Link>{experience.circleId ? <Link className="font-semibold underline underline-offset-4" href={`/ops/circles?circleId=${encodeURIComponent(experience.circleId)}#circle-communications`}>← Circle chat & meetings</Link> : null}</div>
-      <header className="mt-4 grid gap-5 rounded-[4px] bg-[#080605] p-5 text-[var(--color-bone)] sm:p-6 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-end">
-        <div>
-          <p className="text-sm capitalize text-white/45">{experience.kind.replaceAll("_", " ")} · {experience.scope}</p>
-          <h1 className="mt-3 font-[var(--font-display)] text-3xl leading-tight sm:text-4xl">{experience.title}</h1>
-          <p className="mt-5 text-sm text-white/55">{formatDate(experience.startsAt, experience.timezone)}{experience.locationLabel ? ` · ${experience.locationLabel}` : ""}</p>
+      <div className="mx-auto max-w-6xl pb-6">
+      <Link className="mb-2 inline-flex min-h-11 items-center text-sm text-black/55 hover:text-black" href="/ops/experiences">← Events</Link>
+      <header className="operator-record-header">
+        <div className="min-w-0 flex-1">
+          <h2 className="operator-record-title">{experience.title}</h2>
+          <div className="mt-2"><StateLabel state={experience.state} /></div>
         </div>
-        <div className="grid gap-3">
-          <StateLabel state={experience.state} />
-          <p className="text-sm text-white/55">{experience.registeredCount} confirmed · {experience.waitlistedCount} waiting{experience.capacity ? ` · ${experience.capacity} capacity` : ""}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {canEditDetails ? <button id="edit-experience-trigger" className={quietButton} disabled={pending} onClick={openDetails} type="button">Edit</button> : null}
+          {experience.canEdit && experience.state === "draft" ? <button id="publish-experience-trigger" className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => { setError(null); setReviewingPublish(true); }} type="button">Review & publish</button> : null}
+          {experience.canEdit ? <button id="event-options-trigger" aria-label="Event actions" className={`${quietButton} !px-3`} disabled={pending} onClick={() => { setError(null); setEventOptionsOpen(true); }} type="button"><span aria-hidden="true">•••</span></button> : null}
         </div>
       </header>
 
-      <nav className="mt-3 flex flex-wrap gap-4 text-sm" aria-label="Experience record tasks">
-        <a className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href="#meeting-setup">Set meeting link</a>
-        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-roster">Roster & attendance</a>
-        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-calendar">Calendar invitations</a>
-        {experience.canEdit && ["draft", "published"].includes(experience.state) ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#edit-experience" onClick={() => { if (!pending) { setEditingDetails(true); setEditRegistrationMode(experience.registrationMode); setEditVisibility(experience.visibility); } }}>Edit details</a> : null}
-        {experience.canEdit ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-actions">{experience.state === "draft" ? "Review & publish" : "Event status"}</a> : null}
-      </nav>
+      <div className="inline-flex max-w-full gap-1 rounded-[8px] bg-black/[0.055] p-1" role="group" aria-label="Experience views">
+        {(["overview", "people", "activity"] as const).map((view) => <button key={view} aria-pressed={section === view} aria-controls={`experience-view-${view}`} className={`min-h-11 rounded-[4px] px-4 text-sm font-semibold capitalize transition ${section === view ? "bg-[var(--color-bone)] text-black shadow-sm" : "text-black/55 hover:text-black"}`} onClick={() => selectView(view)} type="button">{view}</button>)}
+      </div>
+      {error && !editingDetails && !reviewingPublish && !eventOptionsOpen ? <p aria-live="assertive" className="mt-4 text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
-        <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-5 sm:px-6" id="experience-roster" aria-labelledby="roster-title">
+      <div className="mt-4">
+        <div id="experience-view-people" hidden={section !== "people"}>
+        <section className="scroll-mt-28" id="experience-roster" aria-labelledby="roster-title">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <div><p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">People</p><h2 className="font-[var(--font-display)] text-3xl" id="roster-title">Roster</h2></div>
+            <div><h2 className="operator-section-heading" id="roster-title">People</h2><p className="mt-1 text-sm text-black/55">{experience.registeredCount} confirmed · {experience.waitlistedCount} waiting{experience.capacity ? ` · ${experience.capacity} places` : ""}</p></div>
             {experience.canManageRoster && experience.registrationMode === "internal" && availableMembers.length > 0 ? (
               <form className="flex flex-wrap gap-2" onSubmit={addMember}>
                 <label className="sr-only" htmlFor="experience-member">Member</label>
@@ -395,27 +447,26 @@ export default function OperatorExperienceRecord({
           </ul>
           {experience.roster.length === 0 ? <p className="mt-5 rounded-[4px] bg-white/50 px-4 py-5 text-sm text-black/55">{experience.registrationMode !== "internal" ? "Registration is not managed here for this Experience." : availableMembers.length && experience.canManageRoster ? "No reservations yet. Choose a member above to add a place." : "No reservations yet. Eligible members can register once this Experience is published and registration opens."}</p> : null}
         </section>
+        </div>
 
-        <aside className="order-first space-y-4 lg:order-last">
-          <section id="meeting-setup" className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-4" aria-labelledby="meeting-setup-title">
-            <h2 id="meeting-setup-title" className="font-[var(--font-display)] text-2xl">Meeting link</h2>
-            <p className="mt-2 text-sm leading-relaxed text-black/65">For {experience.scope}. Members use this link to join the meeting after it is published.</p>
-            <div className="pt-3">
-              <OperatorGoogleCommunicationField
-                configured={experience.googleCommunicationsConfigured}
-                editable={experience.canManageCommunication && !experience.calendar.googleEventId && !["pending_create", "pending_update"].includes(experience.calendar.status)}
-                entityId={experience.experienceId}
-                entityType="experience"
-                initialUrl={experience.meetingUrl}
-                kind="meet"
-                inline
-                preview={preview}
-              />
-            </div>
-            <p className="mt-3 text-xs leading-relaxed text-black/60">{experience.calendar.googleEventId || ["pending_create", "pending_update"].includes(experience.calendar.status)
-              ? "Google Calendar manages this meeting link. Use the invitation controls below to update it."
-              : "Have a room already? Save its Google Meet link here. Sending Calendar invitations below creates Google's own Meet link and replaces this one."}</p>
-          </section>
+        <div id="experience-view-overview" hidden={section !== "overview"}>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-6" aria-label="Event snapshot">
+            <section className="operator-bento-card col-span-2 lg:col-span-2" aria-label="Schedule">
+              <span className="operator-compact-label">Schedule</span>
+              <p className="mt-2 text-base font-semibold">{formatDate(experience.startsAt, experience.timezone)}</p>
+              {experience.endsAt ? <p className="mt-1 text-xs text-black/60">Until {formatDate(experience.endsAt, experience.timezone)}</p> : null}
+              <p className="mt-2 text-xs text-black/50">{experience.timezone}</p>
+            </section>
+            <section className="operator-bento-card lg:col-span-2" aria-label="Audience">
+              <span className="operator-compact-label">Audience</span>
+              <p className="mt-2 break-words text-sm font-semibold">{experience.circleId ? <Link className="underline underline-offset-4" href={`/ops/circles?circleId=${encodeURIComponent(experience.circleId)}`}>{experience.scope}</Link> : experience.scope}</p>
+              <button className="mt-1 inline-flex min-h-11 items-center text-left text-xs text-black/60 underline underline-offset-4" onClick={() => selectView("people")} type="button">{experience.registeredCount} confirmed{experience.waitlistedCount ? ` · ${experience.waitlistedCount} waiting` : ""} →</button>
+            </section>
+            <section className="operator-bento-card lg:col-span-2" aria-label="Location">
+              <span className="operator-compact-label">Location</span>
+              <p className="mt-2 break-words text-sm font-semibold">{experience.locationLabel || (experience.meetingUrl ? "Google Meet" : "Not set")}</p>
+            </section>
+          <div id="meeting-setup" className="col-span-2 scroll-mt-28 lg:col-span-3">
           <OperatorExperienceCalendar
             calendar={experience.calendar}
             canManage={experience.canManageCommunication}
@@ -424,19 +475,39 @@ export default function OperatorExperienceRecord({
             experienceState={experience.state}
             preview={preview}
             scope={experience.scope}
-          />
+            meetingUrl={experience.meetingUrl}
+            linksEnabled={experience.googleCommunicationsConfigured}
+            audienceReviewHref={experience.circleId ? `/ops/circles?circleId=${encodeURIComponent(experience.circleId)}` : "#experience-roster"}
+            audienceReviewLabel={experience.circleId ? "Review Circle" : "Review people"}
+          >
+            {calendarManaged ? <p className="text-sm text-black/60">Google Calendar manages this meeting link.</p> : <>
+              <p className="mb-3 text-sm text-black/60">Use a Meet link you already have. Saving does not send invitations. If you later send Google Calendar invitations, Google creates a new link and replaces this one.</p>
+              <OperatorGoogleCommunicationField configured={experience.googleCommunicationsConfigured} editable={experience.canManageCommunication && !["cancelled", "archived", "completed"].includes(experience.state)} entityId={experience.experienceId} entityType="experience" initialUrl={experience.meetingUrl} kind="meet" inline preview={preview} />
+            </>}
+          </OperatorExperienceCalendar>
+          </div>
+          <section className="operator-bento-card col-span-2 lg:col-span-3" aria-label="Event details">
+            <h2 className="operator-section-heading">Event details</h2>
+            {experience.summary ? <p className="mt-2 text-sm leading-relaxed text-black/65">{experience.summary}</p> : null}
+            {experience.details ? <details className="mt-1"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Read description</summary><p className="whitespace-pre-line pb-2 text-sm leading-relaxed text-black/65">{experience.details}</p></details> : null}
+            <p className="mt-2 text-xs text-black/60">{experience.registrationMode === "internal" ? `Reservations managed here${experience.waitlistEnabled ? " · Waitlist enabled" : ""}` : experience.registrationMode === "external" ? "Registration with an external provider" : "No reservation required"}</p>
+            {experience.registrationOpensAt || experience.registrationClosesAt ? <details><summary className="min-h-11 cursor-pointer py-3 text-xs font-medium text-black/60">Registration window</summary><p className="text-xs leading-relaxed text-black/60">{experience.registrationOpensAt ? `Opens ${formatDate(experience.registrationOpensAt, experience.timezone)}` : "Open now"}{experience.registrationClosesAt ? ` · Closes ${formatDate(experience.registrationClosesAt, experience.timezone)}` : ""}</p></details> : null}
+          </section>
+          </div>
+        </div>
+      </div>
+
           {experience.canEdit ? (
-            <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-5" id="experience-actions" aria-label="Experience actions">
-              <h2 className="font-[var(--font-display)] text-2xl">{experience.state === "draft" ? "Review & publish" : "Event status"}</h2>
-              {experience.state === "draft" ? <p className="mt-2 text-sm text-black/60">Check the date, audience, and registration settings before publishing{experience.calendar.configured ? ". Google invitations will be queued; check Calendar invitations for delivery status" : ""}.</p> : null}
+            <OperatorDialog open={eventOptionsOpen} title="Event actions" pending={pending} returnFocusId="event-options-trigger" onClose={() => { setEventOptionsOpen(false); setReviewingCancellation(false); setCancellationDirty(false); clearDialogHash(); }}>
+              <div className="scroll-mt-28" id="experience-actions">
+              <p className="text-sm font-medium">{experience.title}</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {experience.state === "draft" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{experience.calendar.configured ? "Publish + queue invitations" : "Publish"}</button> : null}
                 {experience.state === "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("complete")} type="button">Complete</button> : null}
                 {["draft", "cancelled", "completed"].includes(experience.state) ? <button className={quietButton} disabled={pending} onClick={() => lifecycle("archive")} type="button">Archive</button> : null}
               </div>
               {experience.state === "published" && !reviewingCancellation ? <button className="mt-3 min-h-11 px-2 text-sm text-[var(--color-poster)] underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(true)} type="button">Cancel Experience</button> : null}
               {experience.state === "published" && reviewingCancellation ? (
-                <form className="mt-4 grid gap-2" onSubmit={(event) => {
+                <form className="mt-4 grid gap-2" data-operator-dirty={cancellationDirty ? "true" : "false"} onChange={() => setCancellationDirty(true)} onSubmit={(event) => {
                   event.preventDefault();
                   const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
                   void lifecycle("cancel", reason);
@@ -446,25 +517,18 @@ export default function OperatorExperienceRecord({
                     <input className={OPERATOR_FIELD_CLASS} minLength={3} name="reason" required />
                   </FormField>
                   <button className={`${OPERATOR_BUTTON_CLASS} !border-[var(--color-poster)] !bg-[var(--color-poster)]`} disabled={pending} type="submit">Confirm cancellation</button>
-                  <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(false)} type="button">Keep Experience</button>
+                  <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setReviewingCancellation(false); setCancellationDirty(false); }} type="button">Keep Experience</button>
                 </form>
               ) : null}
-            </section>
+              {!['draft', 'published', 'cancelled', 'completed'].includes(experience.state) ? <p className="mt-3 text-sm text-black/55">This event is archived.</p> : null}
+              {error ? <p role="alert" className="mt-3 text-sm text-[var(--color-poster)]">{error}</p> : null}
+              </div>
+            </OperatorDialog>
           ) : null}
-          {error ? <p aria-live="assertive" className="rounded-[4px] bg-[var(--color-poster)]/10 px-4 py-3 text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
-        </aside>
-      </div>
 
-      {experience.canEdit && ["draft", "published"].includes(experience.state) ? (
-        <section className="mt-5 scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-4 sm:px-6" id="edit-experience" aria-labelledby="edit-experience-title">
-          <header className="flex flex-wrap items-center justify-between gap-3"><h2 className="py-3 font-[var(--font-display)] text-2xl" id="edit-experience-title">Details</h2>{!editingDetails ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setEditingDetails(true); setEditRegistrationMode(experience.registrationMode); setEditVisibility(experience.visibility); }} type="button">Edit details</button> : null}</header>
-          {!editingDetails ? <div className="space-y-3 pb-2 text-sm leading-relaxed text-black/65">
-            {experience.summary ? <p>{experience.summary}</p> : null}
-            {experience.details ? <p className="whitespace-pre-line">{experience.details}</p> : null}
-            <p>{experience.registrationMode === "internal" ? `Registration managed in Ruined${experience.waitlistEnabled ? " · Waitlist enabled" : ""}` : experience.registrationMode === "external" ? "Registration with an external provider" : "No reservation required"} · {experience.timezone}</p>
-            {experience.registrationOpensAt ? <p>Registration opens {formatDate(experience.registrationOpensAt, experience.timezone)}</p> : null}
-            {experience.registrationClosesAt ? <p>Registration closes {formatDate(experience.registrationClosesAt, experience.timezone)}</p> : null}
-          </div> : <form className="grid gap-4 pb-3 pt-5 sm:grid-cols-2 lg:grid-cols-4" onSubmit={save}>
+      {canEditDetails && editingDetails ? (
+        <OperatorDialog open title="Edit Experience" pending={pending} returnFocusId="edit-experience-trigger" onClose={() => { setEditingDetails(false); setDetailsDirty(false); clearDialogHash(); }}>
+          <form id="edit-experience" data-operator-dirty={detailsDirty ? "true" : "false"} data-operator-pending={pending ? "true" : "false"} className="grid gap-4 pb-3 pt-2 sm:grid-cols-2" onChange={() => setDetailsDirty(true)} onSubmit={save}>
             <FormField className="sm:col-span-2" label="Title">
               <input className={OPERATOR_FIELD_CLASS} defaultValue={experience.title} maxLength={200} name="title" required />
             </FormField>
@@ -569,17 +633,30 @@ export default function OperatorExperienceRecord({
               <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} defaultValue={experience.details ?? ""} maxLength={20000} name="details" />
             </FormField>
             <button className={`${OPERATOR_BUTTON_CLASS} sm:col-span-2`} disabled={pending} type="submit">{pending ? "Saving" : "Save changes"}</button>
-            <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => setEditingDetails(false)} type="button">Cancel edits</button>
-          </form>}
-        </section>
+          </form>
+          {error ? <p role="alert" className="mt-3 text-sm text-[var(--color-poster)]">{error}</p> : null}
+        </OperatorDialog>
       ) : null}
 
-      <section className="mt-5 rounded-[4px] bg-black/[0.025] px-5 py-5 sm:px-6" aria-labelledby="history-title">
-        <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">Record</p>
-        <h2 className="font-[var(--font-display)] text-3xl" id="history-title">History</h2>
+      {experience.canEdit && experience.state === "draft" && reviewingPublish ? <OperatorDialog open title="Publish Experience" pending={pending} returnFocusId="publish-experience-trigger" onClose={() => { setReviewingPublish(false); clearDialogHash(); }}>
+        <div className="space-y-4 text-sm" data-operator-pending={pending ? "true" : "false"}>
+          <p className="font-semibold">{experience.title}</p>
+          <p>{formatDate(experience.startsAt, experience.timezone)} · {experience.scope}</p>
+          <p>{willQueue ? `Publishing makes this Experience visible and queues Google Calendar invitations for ${experience.calendar.attendeeCount} ${experience.calendar.attendeeCount === 1 ? "person" : "people"}. Delivery status appears in Meeting; queued does not mean sent.` : eventEnded ? "This event has ended. Publishing makes it visible but will not automatically send Google invitations." : "Publishing makes this Experience visible. Google invitations will not be sent automatically while Calendar setup needs attention."}</p>
+          {experience.calendar.attendeeCount === 0 && willQueue ? <p className="rounded-[4px] bg-[var(--color-highlight)]/35 p-3">No one is currently eligible for an invitation. Review the audience before publishing; a Google event can still be created for the organizer.</p> : null}
+          {experience.meetingUrl && willQueue && !calendarManaged ? <p className="text-[var(--color-poster)]">Google will replace your saved meeting link with a new Meet link.</p> : null}
+          <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{pending ? "Publishing" : willQueue ? "Publish + queue invitations" : "Publish Experience"}</button>
+          {error ? <p role="alert" className="text-[var(--color-poster)]">{error}</p> : null}
+        </div>
+      </OperatorDialog> : null}
+
+      <section id="experience-view-activity" hidden={section !== "activity"} className="mt-6" aria-labelledby="history-title">
+        <h2 className="operator-section-heading" id="history-title">Activity</h2>
+        <span id="experience-activity" />
         <ol className="mt-4 grid gap-2">
           {experience.history.map((item) => <li className="grid gap-1 rounded-[4px] bg-white/55 px-4 py-3 text-sm sm:grid-cols-[10rem_1fr_12rem]" key={`${item.occurredAt}-${item.eventType}`}><time className="text-black/42">{formatDate(item.occurredAt, experience.timezone)}</time><span className="capitalize text-black/70">{item.eventType.replaceAll("_", " ")}{item.reason ? ` · ${item.reason}` : ""}</span><span className="text-black/42">{item.actor ?? "System"}</span></li>)}
         </ol>
+        {experience.history.length === 0 ? <p className="mt-4 text-sm text-black/55">No activity yet.</p> : null}
       </section>
       </div>
     </OperatorPageFrame>

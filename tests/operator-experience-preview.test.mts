@@ -26,7 +26,8 @@ test("preview Experiences expose creation with Circle and Block choices", () => 
   assert.match(fixtures, /preview-block-01/);
   assert.match(directoryPage, /directory=\{PREVIEW_OPS_EXPERIENCE_DIRECTORY\}/);
   assert.match(directoryPage, /preview/);
-  assert.match(directory, /href="#new-experience">\{selectedCircle \? "\+ Schedule a meeting" : "\+ New Experience"\}/);
+  assert.match(directory, /id="new-experience-trigger" onClick=\{openCreate\}/);
+  assert.match(directory, /<OperatorDialog open=\{createOpen\}/);
   assert.match(directory, /id="new-experience"/);
 });
 

@@ -131,16 +131,16 @@ export default function OperatorProfileSupport({
   }
 
   return (
-    <section aria-labelledby="profile-support-heading" className="mt-3 scroll-mt-36 rounded-[4px] bg-black/[0.025]" id="profile-support">
-      <header className="flex items-start justify-between gap-4 px-5 py-5 sm:px-6">
+    <section aria-labelledby="profile-support-heading" className="mt-3 scroll-mt-36 operator-bento-card" id="profile-support">
+      <header className="flex items-center justify-between gap-3">
         <div>
-        <h3 className="ui-heading text-xl font-semibold" id="profile-support-heading">Profile support</h3>
+        <h3 className="ui-heading text-base font-semibold" id="profile-support-heading">Profile support</h3>
         {preview ? <p className="mt-2 text-sm text-black/60">Preview — profile details are not changed.</p> : null}
         </div>
         {!editing ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" aria-expanded={false} aria-controls="profile-correction-form" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }} type="button">Edit profile detail</button> : null}
       </header>
-      <div className="px-5 pb-6 sm:px-6">
-        <dl className="grid gap-3 rounded-[4px] bg-black/[0.035] p-4 text-sm sm:grid-cols-2">
+      <div className="mt-2">
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
           {[
             ["Location", profile.location ?? "Not recorded"],
             ["Shipping", profileAddress(profile)],
@@ -153,9 +153,9 @@ export default function OperatorProfileSupport({
         </dl>
 
         {!editing && message ? <p className="mt-3 text-sm text-black/60" role="status">{message}</p> : null}
-        {editing ? <form className="mt-5" id="profile-correction-form" onSubmit={submit}>
+        {editing ? <form className="mt-5" id="profile-correction-form" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
           <p className="mb-4 text-sm text-black/60">Correct one verified detail and record why. The member still controls directory sharing.</p>
-          <fieldset className="grid gap-5 sm:grid-cols-2" disabled={submitting}>
+          <fieldset className="grid gap-3 sm:grid-cols-2" disabled={submitting}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Detail to correct</span>
             <select

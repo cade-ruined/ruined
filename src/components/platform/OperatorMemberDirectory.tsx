@@ -5,8 +5,7 @@ import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
 import StateLabel from "@/components/platform/StateLabel";
 import {
   OPERATOR_FIELD_CLASS,
-  OPERATOR_LABEL_TEXT_CLASS,
-  OPERATOR_PRIMARY_ACTION_CLASS,
+  OPERATOR_BUTTON_CLASS,
 } from "@/components/platform/operatorStyles";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { guidanceForMemberSummary } from "@/lib/platform/operator-member-guidance";
@@ -16,7 +15,7 @@ import type {
 } from "@/lib/platform/repository";
 
 const FILTERS: Array<{ label: string; value: OperatorMemberDirectoryFilter }> = [
-  { label: "All visible members", value: "all" },
+  { label: "All members", value: "all" },
   { label: "Needs attention", value: "attention" },
   { label: "Moving through Foundations", value: "foundations" },
   { label: "Without a Circle", value: "unassigned" },
@@ -71,11 +70,11 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
     <section className="mt-2" aria-labelledby="member-directory-heading">
       <form
         action="/ops/members"
-        className="grid gap-5 rounded-[4px] bg-[var(--color-surface)] p-5 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,0.4fr)_auto] lg:items-end sm:p-6"
+        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(10rem,0.5fr)]"
         method="get"
       >
-        <label className="grid gap-2">
-          <span className={OPERATOR_LABEL_TEXT_CLASS}>Search</span>
+        <label className="min-w-0">
+          <span className="sr-only">Search members</span>
           <input
             className={`${OPERATOR_FIELD_CLASS} mt-0`}
             defaultValue={directory.query}
@@ -85,8 +84,15 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             type="search"
           />
         </label>
-        <label className="grid gap-2">
-          <span className={OPERATOR_LABEL_TEXT_CLASS}>Show</span>
+        <button
+          aria-label="Find members"
+          className={OPERATOR_BUTTON_CLASS}
+          type="submit"
+        >
+          Find
+        </button>
+        <label className="col-span-2 min-w-0 sm:col-span-1">
+          <span className="sr-only">Show members</span>
           <select
             className={`${OPERATOR_FIELD_CLASS} mt-0`}
             defaultValue={directory.filter}
@@ -99,15 +105,9 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             ))}
           </select>
         </label>
-        <button
-          className={OPERATOR_PRIMARY_ACTION_CLASS}
-          type="submit"
-        >
-          Find members
-        </button>
       </form>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 py-5 text-sm text-black/45">
+      <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs text-black/45">
         <h2 className="sr-only" id="member-directory-heading">Member directory</h2>
         <div className="flex items-center gap-5">
           <span>
@@ -116,53 +116,53 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
               : `${firstResult}–${lastResult} of ${directory.totalResults}`}
           </span>
           {hasRefinement ? (
-            <Link className="underline underline-offset-4 hover:text-black" href="/ops/members">
+            <Link className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-black" href="/ops/members">
               Clear search
             </Link>
           ) : null}
         </div>
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {directory.members.map((member) => {
           const next = guidanceForMemberSummary(member);
           return (
           <Link
-            className="grid gap-4 rounded-[4px] bg-black/[0.025] px-4 py-4 transition-[background-color,transform] hover:-translate-y-px hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black xl:grid-cols-[minmax(13rem,1.2fr)_minmax(10rem,0.8fr)_10rem_minmax(11rem,1fr)] xl:items-center xl:px-5"
+            className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
             href={`/ops/members/${member.memberId}?returnTo=${encodeURIComponent(directoryHref(directory, directory.page))}`}
             aria-label={`Open ${member.name}’s member record`}
             key={member.memberId}
           >
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="col-span-2 flex min-w-0 items-center gap-3">
               <OperatorMemberAvatar memberId={member.memberId} className="h-11 w-11" />
               <div className="min-w-0">
-                <h3 className="truncate font-[var(--font-display)] text-xl leading-none">
+                <h3 className="truncate text-base font-semibold leading-tight">
                   {member.name}
                 </h3>
-                {member.email ? <p className="mt-2 truncate text-sm text-black/50">{member.email}</p> : null}
+                {member.email ? <p className="mt-1 truncate text-xs text-black/50">{member.email}</p> : null}
               </div>
             </div>
             <div className="text-sm leading-relaxed text-black/62">
-              <span className="mb-1 block [font-family:var(--font-cadehandy2)] text-lg text-black/50 xl:sr-only">Circle + Block</span>
+              <span className="operator-compact-label mb-1 block text-black/50">Circle + Block</span>
               <p>{member.circleName ?? "No Circle"}</p>
-              <p className="text-black/40">{member.blockName ?? "No Block"}</p>
+              {member.blockName ? <p className="text-black/50">{member.blockName}</p> : null}
             </div>
             <div>
-              <span className="mb-2 block [font-family:var(--font-cadehandy2)] text-lg text-black/50">Billing</span>
+              <span className="operator-compact-label mb-1 block text-black/50">Billing</span>
               <StateLabel state={member.billingState} />
-              <p className="mt-3 text-xs tabular-nums text-black/45">Foundations {member.foundationsProgress}%</p>
+              <p className="mt-2 text-xs tabular-nums text-black/45">Foundations {member.foundationsProgress}%</p>
               <div className="mt-2"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
             </div>
-            <p className="text-sm leading-relaxed text-black/58">
-              <span className="mb-1 block [font-family:var(--font-cadehandy2)] text-lg text-black/70">{next.status} · {next.actor}</span>
+            <p className="col-span-2 text-xs leading-relaxed text-black/58">
+              <span className="mb-1 block text-xs font-semibold text-black/70">{next.status} · {next.actor}</span>
               {next.title}
-              <span className="mt-2 block font-semibold text-black underline decoration-black/25 underline-offset-4">Open member record <span aria-hidden="true">→</span></span>
+              <span className="mt-2 flex min-h-11 items-center font-semibold text-black">Open member record <span aria-hidden="true">→</span></span>
             </p>
           </Link>
           );
         })}
         {directory.members.length === 0 ? (
-          <p className="py-10 text-sm text-black/50">
+          <p className="col-span-full py-5 text-sm text-black/50">
             No members match this search. Try a name, email, Circle, or Block.
           </p>
         ) : null}
@@ -171,11 +171,11 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
       {directory.pageCount > 1 ? (
         <nav
           aria-label="Member directory pages"
-          className="flex items-center justify-between py-5 text-[0.66rem] font-medium uppercase tracking-[0.16em]"
+          className="flex items-center justify-between py-5 text-sm font-medium"
         >
           {directory.page > 1 ? (
             <Link
-              className="underline decoration-black/35 underline-offset-4 hover:decoration-black"
+              className="inline-flex min-h-11 items-center underline decoration-black/35 underline-offset-4 hover:decoration-black"
               href={directoryHref(directory, directory.page - 1)}
             >
               ← Previous members
@@ -186,7 +186,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
           </span>
           {directory.page < directory.pageCount ? (
             <Link
-              className="underline decoration-black/35 underline-offset-4 hover:decoration-black"
+              className="inline-flex min-h-11 items-center underline decoration-black/35 underline-offset-4 hover:decoration-black"
               href={directoryHref(directory, directory.page + 1)}
             >
               Next members →

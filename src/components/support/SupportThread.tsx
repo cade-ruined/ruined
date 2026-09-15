@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorDialog from "@/components/platform/OperatorDialog";
 import SupportDeliveryStatus from "@/components/support/SupportDeliveryStatus";
 import { SupportPreviewNotice, SupportStatusBadge, supportDate } from "@/components/support/SupportShared";
 import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
@@ -20,9 +21,11 @@ export default function SupportThread({ initialTicket, writable, operator = fals
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
+  const [editingStatus, setEditingStatus] = useState(false);
   const basePath = operator ? "/ops/support" : "/my/support";
   const endpoint = `/api${basePath}/${ticket.id}`;
   const Title = operator ? "h2" : "h1";
+  const MessageTitle = operator ? "h3" : "h2";
 
   useEffect(() => {
     setTicket(initialTicket);
@@ -31,6 +34,26 @@ export default function SupportThread({ initialTicket, writable, operator = fals
     setError("");
     setNotice("");
   }, [initialTicket]);
+
+  useEffect(() => {
+    function readLocation() {
+      if (operator && window.location.hash === "#support-request-status") setEditingStatus(true);
+    }
+    readLocation();
+    window.addEventListener("hashchange", readLocation);
+    return () => window.removeEventListener("hashchange", readLocation);
+  }, [operator]);
+
+  function clearStatusHash() {
+    if (window.location.hash === "#support-request-status") window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+  }
+
+  function closeStatusEditor() {
+    if (pending) return;
+    setStatus(ticket.status);
+    setEditingStatus(false);
+    clearStatusHash();
+  }
 
   async function submitReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,6 +101,8 @@ export default function SupportThread({ initialTicket, writable, operator = fals
       setTicket(result.ticket);
       setStatus(result.ticket.status);
       setNotice("Status saved.");
+      setEditingStatus(false);
+      clearStatusHash();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The status couldn't be saved.");
     } finally {
@@ -103,31 +128,41 @@ export default function SupportThread({ initialTicket, writable, operator = fals
   }
 
   const content = (
-    <div className="mx-auto max-w-[70rem] pb-16 [font-family:var(--font-body)]">
+    <div className={`mx-auto [font-family:var(--font-body)] ${operator ? "max-w-[64rem] pb-6" : "max-w-[70rem] pb-16"}`}>
       {!writable ? <SupportPreviewNotice /> : null}
-      <Link className={`${SUPPORT_LINK_CLASS} mb-5`} href={basePath}><span aria-hidden="true">←</span>{operator ? "All requests" : "Your requests"}</Link>
-      <header className="mb-7">
+      <Link className={`${SUPPORT_LINK_CLASS} ${operator ? "mb-2" : "mb-5"}`} href={basePath}><span aria-hidden="true">←</span>{operator ? "All requests" : "Your requests"}</Link>
+      <header className={operator ? "operator-record-header mb-4" : "mb-7"}>
+        <div className="min-w-0">
         <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-black/60"><span>{ticket.number}</span><span>{supportCategoryLabel(ticket.category)}</span><SupportStatusBadge operator={operator} status={ticket.status} /></div>
-        <Title className="ui-heading max-w-4xl break-words text-[clamp(2rem,4vw,3.4rem)] font-bold uppercase leading-[0.98] tracking-[-0.04em] [overflow-wrap:anywhere]">{ticket.subject}</Title>
-        {operator ? <p className="mt-3 break-all text-sm text-black/65">{ticket.requesterName} · {ticket.requesterEmail}</p> : null}
-        {operator ? <nav aria-label="Request actions" className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm"><a className={SUPPORT_LINK_CLASS} href="#support-reply">Reply to member</a><a className={SUPPORT_LINK_CLASS} href="#support-request-status">Update status</a><Link className={SUPPORT_LINK_CLASS} href={`/ops/members?q=${encodeURIComponent(ticket.requesterEmail)}`}>Find member record</Link></nav> : null}
+        <Title className={operator ? "operator-record-title break-words [overflow-wrap:anywhere]" : "ui-heading max-w-4xl break-words text-[clamp(2rem,4vw,3.4rem)] font-bold uppercase leading-[0.98] tracking-[-0.04em] [overflow-wrap:anywhere]"}>{ticket.subject}</Title>
+        {operator ? <p className="mt-2 break-all text-sm text-black/65">{ticket.requesterName} · {ticket.requesterEmail}</p> : null}
+        </div>
+        {operator ? <nav aria-label="Request actions" className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm"><a className={SUPPORT_ACTION_CLASS} href="#support-reply">Reply to member</a><button className={SUPPORT_LINK_CLASS} id="support-status-trigger" onClick={() => setEditingStatus(true)} type="button">Update status</button><Link className={SUPPORT_LINK_CLASS} href={`/ops/members?q=${encodeURIComponent(ticket.requesterEmail)}`}>Find member record</Link></nav> : null}
       </header>
-      <div className={`grid items-start gap-8 ${operator ? "lg:grid-cols-[minmax(0,1fr)_17rem]" : ""}`}>
+      {operator ? <dl className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-black/55"><div className="flex gap-2"><dt>Opened</dt><dd><time dateTime={ticket.createdAt}>{supportDate(ticket.createdAt, true)} MT</time></dd></div><div className="flex gap-2"><dt>Last activity</dt><dd><time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt, true)} MT</time></dd></div></dl> : null}
+      <div>
         <div className="min-w-0">
           <ol aria-label="Conversation" className="grid gap-3">
-            {ticket.messages.map((item) => <li className={`min-w-0 rounded-[4px] p-4 sm:p-5 ${item.authorType === "operator" ? "bg-[var(--color-shop)]/45" : "bg-black/[0.035]"}`} key={item.id}><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="min-w-0 text-2xl leading-none text-[var(--color-poster)] [overflow-wrap:anywhere]"><span className="[font-family:var(--font-cadehandy2)]">{item.authorType === "operator" ? "Ruined support" : operator ? ticket.requesterName : "You"}</span></h2><time className="text-xs text-black/60" dateTime={item.createdAt}>{supportDate(item.createdAt, true)} MT</time></div><p className="whitespace-pre-wrap break-words text-sm leading-relaxed sm:text-base [overflow-wrap:anywhere]">{item.body}</p></li>)}
+            {ticket.messages.map((item) => <li className={`min-w-0 ${operator ? "rounded-[8px] p-4" : "rounded-[4px] p-4 sm:p-5"} ${item.authorType === "operator" ? "bg-[var(--color-shop)]/45" : "bg-black/[0.035]"}`} key={item.id}><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><MessageTitle className={operator ? "min-w-0 text-sm font-semibold [overflow-wrap:anywhere]" : "min-w-0 text-2xl leading-none text-[var(--color-poster)] [overflow-wrap:anywhere]"}><span className={operator ? undefined : "[font-family:var(--font-cadehandy2)]"}>{item.authorType === "operator" ? "Ruined support" : operator ? ticket.requesterName : "You"}</span></MessageTitle><time className="text-xs text-black/60" dateTime={item.createdAt}>{supportDate(item.createdAt, true)} MT</time></div><p className={`whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere] ${operator ? "" : "sm:text-base"}`}>{item.body}</p></li>)}
           </ol>
-          <form className="mt-7 scroll-mt-32" id="support-reply" onSubmit={submitReply}>
-            <label><span className={SUPPORT_LABEL_CLASS}>{ticket.status === "resolved" && !operator ? "Need anything else?" : "Reply"}</span><textarea aria-describedby="support-reply-guidance" className={`${SUPPORT_FIELD_CLASS} min-h-32 resize-y`} disabled={pending !== null} maxLength={5000} minLength={1} onChange={(event) => { setMessage(event.target.value); requestKey.current = ""; }} placeholder={operator ? "Write a reply to the member." : "Add a message."} required rows={4} value={message} /></label>
+          <form className={`${operator ? "operator-bento-card mt-3" : "mt-7"} scroll-mt-32`} id="support-reply" onSubmit={submitReply}>
+            <label><span className={operator ? "operator-compact-label" : SUPPORT_LABEL_CLASS}>{ticket.status === "resolved" && !operator ? "Need anything else?" : "Reply"}</span><textarea aria-describedby="support-reply-guidance" className={`${SUPPORT_FIELD_CLASS} min-h-32 resize-y`} disabled={pending !== null} maxLength={5000} minLength={1} onChange={(event) => { setMessage(event.target.value); requestKey.current = ""; }} placeholder={operator ? "Write a reply to the member." : "Add a message."} required rows={4} value={message} /></label>
             <p className="mt-2 text-xs leading-relaxed text-black/60" id="support-reply-guidance">{ticket.status === "resolved" && !operator ? "A new reply reopens this request. " : ""}Keep passwords, sign-in codes, and card details out of your message.</p>
             <button className={`${SUPPORT_ACTION_CLASS} mt-4`} disabled={!writable || pending !== null || !message.trim()} type="submit">{pending === "reply" ? "Sending…" : "Send reply"}<span aria-hidden="true">↗</span></button>
           </form>
           {operator && ticket.emailDeliveries ? <SupportDeliveryStatus deliveries={ticket.emailDeliveries} writable={writable} pending={pending !== null} onRetry={retryEmail} onRefresh={() => router.refresh()} /> : null}
         </div>
-        {operator ? <aside className="scroll-mt-32" id="support-request-status"><form className="rounded-[4px] bg-black/[0.035] p-4 sm:p-5" onSubmit={updateStatus}><label><span className={SUPPORT_LABEL_CLASS}>Status</span><select aria-describedby="support-status-help" className={SUPPORT_FIELD_CLASS} disabled={!writable || pending !== null} onChange={(event) => setStatus(event.target.value as SupportStatus)} value={status}>{SUPPORT_STATUSES.map((item) => <option key={item.value} value={item.value}>{supportStatusLabel(item.value, true)}</option>)}</select></label><p className="mt-3 text-xs leading-relaxed text-black/60" id="support-status-help">{status === "waiting_on_member" ? "Use after asking the member for information. Send your reply separately." : status === "resolved" ? "Use when the request is handled. This does not send a closing reply." : status === "in_progress" ? "Use while Ruined is working on the request." : "A new request waiting for an operator to review."}</p><button className={`${SUPPORT_ACTION_CLASS} mt-4 w-full`} disabled={!writable || pending !== null || status === ticket.status || conflict} type="submit">{pending === "status" ? "Saving…" : "Save status"}</button></form><dl className="mt-5 grid gap-3 text-xs text-black/60"><div><dt className="font-medium text-black/75">Opened</dt><dd className="mt-1"><time dateTime={ticket.createdAt}>{supportDate(ticket.createdAt, true)} MT</time></dd></div><div><dt className="font-medium text-black/75">Last activity</dt><dd className="mt-1"><time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt, true)} MT</time></dd></div></dl></aside> : null}
       </div>
-      {error ? <div className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--color-poster)]" role="alert"><p>{error}</p>{conflict ? <button className={SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
+      {error && !editingStatus ? <div className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--color-poster)]" role="alert"><p>{error}</p>{conflict ? <button className={SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
       {notice ? <p className="mt-5 text-sm text-[var(--color-verdigris)]" role="status">{notice}</p> : null}
+      {operator && editingStatus ? <OperatorDialog open title="Update request status" onClose={closeStatusEditor} pending={pending !== null} returnFocusId="support-status-trigger">
+        <form id="support-request-status" data-operator-dirty={status !== ticket.status} data-operator-pending={pending !== null} onSubmit={updateStatus}>
+          <label><span className="operator-compact-label">Status</span><select aria-describedby="support-status-help" className={SUPPORT_FIELD_CLASS} disabled={!writable || pending !== null} onChange={(event) => setStatus(event.target.value as SupportStatus)} value={status}>{SUPPORT_STATUSES.map((item) => <option key={item.value} value={item.value}>{supportStatusLabel(item.value, true)}</option>)}</select></label>
+          <p className="mt-3 text-sm leading-relaxed text-black/60" id="support-status-help">{status === "waiting_on_member" ? "Use after asking the member for information. Send your reply separately." : status === "resolved" ? "Use when the request is handled. This does not send a closing reply." : status === "in_progress" ? "Use while Ruined is working on the request." : "A new request waiting for an operator to review."}</p>
+          {error ? <div className="mt-3 text-sm text-[var(--color-poster)]" role="alert"><p>{error}</p>{conflict ? <button className={SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
+          <button className={`${SUPPORT_ACTION_CLASS} mt-4`} disabled={!writable || pending !== null || status === ticket.status || conflict} type="submit">{pending === "status" ? "Saving…" : "Save status"}</button>
+        </form>
+      </OperatorDialog> : null}
     </div>
   );
 

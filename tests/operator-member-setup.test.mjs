@@ -39,6 +39,10 @@ test("administrator gets two separate, named setup paths without a submit action
   assert.deepEqual(nodes.filter((node) => node.tagName === "h3").map(text), ["Circle placement", "Operator access"]);
   assert.equal(nodes.filter((node) => node.tagName === "ol").length, 2);
   assert.equal(nodes.filter((node) => node.tagName === "li").length, 6);
+  const guidance = nodes.filter((node) => node.tagName === "details");
+  assert.equal(guidance.length, 2, "setup cards show saved state and next action before optional instructions");
+  assert.ok(guidance.every((node) => attr(node, "open") === undefined));
+  assert.ok(guidance.every((node) => !elements(node).some((item) => item.tagName === "a")), "setup actions are not hidden inside guidance");
   assert.deepEqual(nodes.filter((node) => node.tagName === "a").map((node) => attr(node, "href")), [
     "/ops/circles?memberId=preview-unassigned#assign-member",
     "/ops/operators?memberId=preview-unassigned",

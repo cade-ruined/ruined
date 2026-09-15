@@ -398,8 +398,8 @@ export default function OperatorAccessManager({
 
   return (
     <div>
-      <header className="flex flex-wrap items-end justify-between gap-6">
-        <p className="max-w-lg text-sm leading-relaxed text-black/60">Invite someone to help run Ruined. Choose an existing member or add someone by email.</p>
+      <header className="operator-record-header flex flex-wrap items-center justify-between gap-3">
+        <h2 className="operator-page-heading">Operators</h2>
         <div className="flex flex-wrap items-center gap-4">
           <button aria-controls="choose-operator-member" aria-expanded={memberPickerOpen} className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" onClick={openMemberPicker} ref={memberPickerTriggerRef} type="button">Choose existing member</button>
         <button
@@ -417,7 +417,7 @@ export default function OperatorAccessManager({
       </header>
 
       {memberPickerOpen && memberSearch ? (
-        <section aria-labelledby="choose-operator-member-title" className="mt-6 rounded-[4px] bg-black/[0.035] p-4 sm:p-5" id="choose-operator-member">
+        <section aria-labelledby="choose-operator-member-title" className="mt-3 operator-bento-card" id="choose-operator-member">
           <div className="flex items-center justify-between gap-4">
             <h2 className="ui-heading text-xl font-semibold" id="choose-operator-member-title">Choose a member</h2>
             <button className="min-h-11 text-sm underline underline-offset-4" onClick={() => {
@@ -470,7 +470,7 @@ export default function OperatorAccessManager({
       ) : null}
 
       {selectedMember ? (
-        <section aria-labelledby="selected-operator-member" className="mt-6 rounded-[4px] bg-[var(--color-shop)]/35 p-5">
+        <section aria-labelledby="selected-operator-member" className="mt-3 operator-bento-card bg-[var(--color-shop)]/25">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className={OPERATOR_LABEL_TEXT_CLASS}>From member record</p>
@@ -508,7 +508,7 @@ export default function OperatorAccessManager({
         </section>
       ) : null}
 
-      <dl aria-label="Operator access snapshot" className="mt-8 grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <dl aria-label="Operator access snapshot" className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           ["Active", counts.active],
           ["Invited", counts.invited],
@@ -516,16 +516,16 @@ export default function OperatorAccessManager({
           ["Total", counts.total],
         ].map(([label, value], index) => (
           <div
-            className={`rounded-[4px] px-4 py-5 ${index === 0 ? "bg-[var(--color-verdigris)] text-white" : "bg-black/[0.035]"}`}
+            className={`rounded-lg px-4 py-3 ${index === 0 ? "bg-[var(--color-verdigris)] text-white" : "bg-black/[0.035]"}`}
             key={label}
           >
             <dt className={`text-xs ${index === 0 ? "text-white/66" : "text-black/46"}`}>{label}</dt>
-            <dd className="mt-3 font-[var(--font-display)] text-4xl leading-none">{value}</dd>
+            <dd className="mt-1 text-2xl font-semibold leading-none tabular-nums">{value}</dd>
           </div>
         ))}
       </dl>
 
-      <div className="mt-8 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
         <label>
           <span className="sr-only">Search operators</span>
           <input
@@ -560,41 +560,34 @@ export default function OperatorAccessManager({
       </p>
 
       <div className="mt-2" role="list" aria-label="Operators">
-        <div className="hidden grid-cols-[minmax(12rem,1.25fr)_10rem_minmax(11rem,0.9fr)_11rem_7rem] gap-4 px-4 pb-3 text-sm font-medium text-black/55 xl:grid">
-          <span>Operator</span>
-          <span>Responsibility</span>
-          <span>Areas they manage</span>
-          <span>Status</span>
-          <span className="sr-only">Actions</span>
-        </div>
-        <div className="space-y-2">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filteredOperators.map((entry) => (
             <article
-              className="grid gap-4 rounded-[4px] bg-black/[0.035] px-4 py-5 transition-colors hover:bg-black/[0.06] md:grid-cols-2 xl:grid-cols-[minmax(12rem,1.25fr)_10rem_minmax(11rem,0.9fr)_11rem_7rem] xl:items-center"
+              className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-black/[0.06]"
               key={entry.id}
               id={`operator-row-${entry.id}`}
               role="listitem"
               tabIndex={-1}
             >
-              <div className="min-w-0 md:col-span-2 xl:col-span-1">
+              <div className="col-span-2 min-w-0">
                 <h2 className="ui-heading truncate text-base font-semibold">{entry.displayName}</h2>
                 <p className="mt-1 truncate text-sm text-black/48">{entry.email}</p>
               </div>
               <div>
-                <p className="text-xs text-black/42 xl:hidden">Responsibility</p>
-                <p className="mt-1 text-sm font-medium xl:mt-0">{roleLabel(entry.role)}</p>
+                <p className="operator-compact-label text-black/42">Responsibility</p>
+                <p className="mt-1 text-sm font-medium">{roleLabel(entry.role)}</p>
               </div>
               <div>
-                <p className="text-xs text-black/42 xl:hidden">Areas they manage</p>
-                <p className="mt-1 text-sm text-black/62 xl:mt-0"><OperatorScope circles={entry.circles} role={entry.role} /></p>
+                <p className="operator-compact-label text-black/42">Areas they manage</p>
+                <p className="mt-1 text-sm text-black/62"><OperatorScope circles={entry.circles} role={entry.role} /></p>
               </div>
-              <div>
+              <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <OperatorStatus status={entry.status} />
                 <p className="mt-1 text-xs text-black/42">
                   {entry.status === "active" ? `Last active ${formatDate(entry.lastSignedInAt)}` : `Invitation created ${formatDate(entry.invitedAt)}`}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-4 xl:justify-end">
+              <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-1">
                 {entry.authUserId && entry.authUserId !== currentViewerAuthUserId ? <button className="min-h-11 text-sm font-semibold underline decoration-black/25 underline-offset-4" onClick={() => setEditing(entry)} type="button">Edit access</button> : null}
                 {!entry.authUserId ? (
                   <button
@@ -626,7 +619,7 @@ export default function OperatorAccessManager({
             </article>
           ))}
           {filteredOperators.length === 0 ? (
-            <p className="rounded-[4px] bg-black/[0.035] px-5 py-12 text-center text-sm text-black/50">
+            <p className="operator-bento-card col-span-full py-5 text-center text-sm text-black/50">
               No operators match those filters.
             </p>
           ) : null}
@@ -652,7 +645,7 @@ export default function OperatorAccessManager({
           >
             <div className="flex items-start justify-between gap-5">
               <div>
-                <h2 className="mt-2 font-[var(--font-display)] text-4xl leading-none" id="add-operator-title">
+                <h2 className="operator-record-title" id="add-operator-title">
                   {resendEmail ? "Send again" : reviewedMember ? "Review access" : "Add operator"}
                 </h2>
               </div>
@@ -672,7 +665,7 @@ export default function OperatorAccessManager({
             </p>
             {!reviewedMember && !resendEmail && memberSearch ? <button className="mt-3 min-h-11 text-sm underline underline-offset-4" disabled={pending} onClick={openMemberPicker} type="button">Already a member? Find their account</button> : null}
 
-            <form className="mt-8 space-y-7" onSubmit={submitOperator} ref={formRef}>
+            <form className="mt-4 space-y-4" onSubmit={submitOperator} ref={formRef}>
               <label className={OPERATOR_LABEL_CLASS} htmlFor="operator-display-name">
                 <span className={OPERATOR_LABEL_TEXT_CLASS}>Full name</span>
                 <input
@@ -722,7 +715,7 @@ export default function OperatorAccessManager({
                 <div className="mt-3 space-y-2">
                   {(Object.entries(ROLE_COPY) as Array<[OperatorAccessRole, (typeof ROLE_COPY)[OperatorAccessRole]]>).map(([value, copy]) => (
                     <label
-                      className={`block cursor-pointer rounded-[4px] border px-4 py-4 transition-colors ${role === value ? "border-black bg-[var(--color-shop)]" : "border-black/15 bg-black/[0.025] hover:border-black/45"}`}
+                      className={`block cursor-pointer rounded-lg border px-3 py-3 transition-colors ${role === value ? "border-black bg-[var(--color-shop)]" : "border-black/15 bg-black/[0.025] hover:border-black/45"}`}
                       key={value}
                     >
                       <span className="flex items-start gap-3">
@@ -836,7 +829,7 @@ export default function OperatorAccessManager({
             ref={confirmDialogRef}
             role="dialog"
           >
-            <h2 className="font-[var(--font-display)] text-3xl leading-none" id="operator-removal-title">
+            <h2 className="operator-record-title" id="operator-removal-title">
               {confirming.authUserId ? "Remove operator access?" : "Revoke invitation?"}
             </h2>
             <p className="mt-4 text-sm leading-relaxed text-black/58">

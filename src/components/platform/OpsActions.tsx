@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import OperatorDialog from "@/components/platform/OperatorDialog";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -282,7 +283,7 @@ export function OpsInvitationActions({ preview = false, onSaved }: { preview?: b
   }
 
   return (
-    <div aria-label="Add member steps">
+    <div aria-label="Add member steps" data-operator-pending={pending || copying ? "true" : undefined} data-operator-dirty={email.trim() !== (preview ? sampleEmail : "") && !allowance || revokeEmail ? "true" : undefined}>
       {preview ? <p className="mb-4 text-sm text-black/60">Preview — sample only. Email allowances are not changed and no email is sent.</p> : null}
       <ol className="grid list-none gap-6 p-0">
         <li>
@@ -782,9 +783,41 @@ export function OpsBlockActions({
   const [assignmentNotice, setAssignmentNotice] = useState<ActionNotice>(null);
   const [activationNotice, setActivationNotice] = useState<ActionNotice>(null);
   const [endNotice, setEndNotice] = useState<ActionNotice>(null);
+  const [task, setTask] = useState<"overview" | "create" | "assign" | "activate" | "end" | null>(null);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [workspaceNotice, setWorkspaceNotice] = useState<ActionNotice>(null);
+  const selectedBlock = blocks.find((block) => block.id === selectedBlockId);
+  const taskGuard = useRef({ dirty, pendingAction });
+  taskGuard.current = { dirty, pendingAction };
 
   useEffect(() => setBlocks(initialBlocks), [initialBlocks]);
   useEffect(() => setCircles(initialCircles), [initialCircles]);
+
+  useEffect(() => {
+    function readTask() {
+      if (taskGuard.current.dirty || taskGuard.current.pendingAction) return;
+      const hash = window.location.hash;
+      if (hash === "#create-block") { setSelectedBlockId(null); setTask("create"); }
+      else if (hash === "#assign-block-circle") { setSelectedBlockId(null); setTask("assign"); }
+      else if (hash.startsWith("#manage-block-")) { setSelectedBlockId(hash.slice("#manage-block-".length)); setTask("overview"); }
+    }
+    readTask();
+    window.addEventListener("hashchange", readTask);
+    window.addEventListener("popstate", readTask);
+    return () => { window.removeEventListener("hashchange", readTask); window.removeEventListener("popstate", readTask); };
+  }, []);
+
+  function closeTask() {
+    if (pendingAction) return;
+    setTask(null); setDirty(false);
+    setCreateNotice(null); setAssignmentNotice(null); setActivationNotice(null); setEndNotice(null);
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${selectedBlock ? `#block-${selectedBlock.id}` : ""}`);
+  }
+  function finishAction(message: string, blockId?: string) {
+    setWorkspaceNotice({ kind: "success", text: message }); setTask(null); setDirty(false);
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}${blockId ? `#block-${blockId}` : ""}`);
+  }
 
   const acceptingBlocks = blocks.filter(
     (block) => block.status === "forming" || block.status === "active",
@@ -796,10 +829,11 @@ export function OpsBlockActions({
   const activatableBlocks = blocks.filter(
     (block) => block.status === "forming" && block.currentCircles >= 2,
   );
-  const assignedCircles = circles.filter((circle) => Boolean(circle.blockId));
+  const assignedCircles = circles.filter((circle) => Boolean(circle.blockId) && (!selectedBlockId || circle.blockId === selectedBlockId));
 
   async function submitBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAction) return;
     if (preview) { setCreateNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("create");
     setCreateNotice(null);
@@ -813,6 +847,7 @@ export function OpsBlockActions({
       setCreateNotice({ kind: "success", text: `${result.block.name} created in forming state.` });
       formElement.reset();
       router.refresh();
+      finishAction(`${result.block.name} created. Manage the Block to add its Circles.`, result.block.id);
     } catch (error) {
       setCreateNotice({
         kind: "error",
@@ -825,6 +860,7 @@ export function OpsBlockActions({
 
   async function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAction) return;
     if (preview) { setAssignmentNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("assign");
     setAssignmentNotice(null);
@@ -836,6 +872,7 @@ export function OpsBlockActions({
     const circle = circles.find((candidate) => candidate.id === circleId);
 
     try {
+      if ((selectedBlockId && selectedBlockId !== blockId) || !acceptingBlocks.some((item) => item.id === blockId) || !availableCircles.some((item) => item.id === circleId)) throw new Error("Choose an available Circle and a current Block.");
       const result = await postJson<{ assignment: { created: boolean } }>(
         "/api/ops/block-assignments",
         { blockId, circleId },
@@ -872,6 +909,7 @@ export function OpsBlockActions({
       });
       formElement.reset();
       router.refresh();
+      finishAction(`${circle?.name ?? "Circle"} assigned to ${block?.name ?? "Block"}.`, blockId);
     } catch (error) {
       setAssignmentNotice({
         kind: "error",
@@ -884,6 +922,7 @@ export function OpsBlockActions({
 
   async function submitActivation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAction) return;
     if (preview) { setActivationNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("activate");
     setActivationNotice(null);
@@ -893,6 +932,7 @@ export function OpsBlockActions({
     const block = blocks.find((candidate) => candidate.id === blockId);
 
     try {
+      if ((selectedBlockId && selectedBlockId !== blockId) || !activatableBlocks.some((item) => item.id === blockId)) throw new Error("Choose a forming Block with at least two current Circles.");
       const result = await postJson<{
         block: OpsActionBlock & { activated: boolean };
       }>("/api/ops/blocks", { blockId }, "PATCH");
@@ -910,6 +950,7 @@ export function OpsBlockActions({
       });
       formElement.reset();
       router.refresh();
+      finishAction(`${block?.name ?? "Block"} is active.`, blockId);
     } catch (error) {
       setActivationNotice({
         kind: "error",
@@ -922,6 +963,7 @@ export function OpsBlockActions({
 
   async function submitEndAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAction) return;
     if (preview) { setEndNotice({ kind: "success", text: "Preview only — no Block or Circle was changed." }); return; }
     setPendingAction("end");
     setEndNotice(null);
@@ -931,6 +973,7 @@ export function OpsBlockActions({
     const circle = circles.find((candidate) => candidate.id === circleId);
 
     try {
+      if (!circle?.blockId || (selectedBlockId && circle.blockId !== selectedBlockId)) throw new Error("Choose a Circle currently assigned to this Block.");
       const result = await postJson<{
         assignment: {
           blockId: string;
@@ -963,6 +1006,7 @@ export function OpsBlockActions({
       });
       formElement.reset();
       router.refresh();
+      finishAction(result.assignment.blockStatus === "archived" ? `${circle.name} removed. The Block closed because fewer than two Circles remain; its history is preserved.` : `${circle.name} removed from the Block. Its history is preserved.`, result.assignment.blockId);
     } catch (error) {
       setEndNotice({
         kind: "error",
@@ -973,14 +1017,21 @@ export function OpsBlockActions({
     }
   }
 
-  return (
-    <section className="grid gap-5 lg:grid-cols-2" aria-label="Block administration">
-      <section className="scroll-mt-28 rounded-[4px] bg-[var(--color-shop)]/25 p-5" id="create-block" aria-labelledby="create-block-title">
-        <h2 className="font-[var(--font-display)] text-2xl" id="create-block-title">1. Create a Block</h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-          Start with a name, then add at least two Circles before activation.
-        </p>
-        <form className="mt-5 grid gap-3" onSubmit={submitBlock}>
+  return <>
+    {workspaceNotice ? <div className="mt-4"><Notice notice={workspaceNotice} /></div> : null}
+    {task ? <OperatorDialog open title={task === "create" ? "New Block" : selectedBlock?.name ?? "Assign a Circle"} pending={pendingAction !== null} onClose={closeTask} returnFocusId={selectedBlockId ? `manage-block-trigger-${selectedBlockId}` : "new-block-trigger"}>
+    <section key={task} className="space-y-5" aria-label="Block administration" data-operator-dirty={dirty ? "true" : undefined} data-operator-pending={pendingAction ? "true" : undefined} onChangeCapture={() => setDirty(true)}>
+      {selectedBlockId && !selectedBlock ? <p role="alert" className="text-sm text-[var(--color-poster)]">This Block is no longer available. Close this window and choose a current Block.</p> : <>
+      {selectedBlock && task !== "overview" ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" type="button" disabled={dirty || pendingAction !== null} onClick={() => setTask("overview")}>← Back to Block</button> : null}
+      {task === "overview" && selectedBlock ? <>
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm capitalize text-black/55">{selectedBlock.status} · {selectedBlock.currentCircles} {selectedBlock.currentCircles === 1 ? "Circle" : "Circles"}</p>{acceptingBlocks.some((block) => block.id === selectedBlock.id) ? <button className={BUTTON_CLASS} onClick={() => setTask("assign")} type="button">Add a Circle</button> : null}</div>
+        <div className="space-y-2">{selectedBlock.circles.length ? selectedBlock.circles.map((circle) => <Link className="flex min-h-14 items-center justify-between gap-4 rounded-[4px] bg-black/[0.035] px-4 text-sm font-semibold" href={`/ops/circles?circleId=${circle.id}`} key={circle.id}>{circle.name}<span aria-hidden="true">→</span></Link>) : <p className="rounded-[4px] bg-black/[0.035] p-5 text-sm text-black/55">No Circles assigned yet.</p>}</div>
+        {selectedBlock.status === "forming" ? <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-black/55">{selectedBlock.currentCircles < 2 ? `Add ${2 - selectedBlock.currentCircles} more ${selectedBlock.currentCircles === 1 ? "Circle" : "Circles"} before activating.` : "Two or more Circles are assigned. Activate when the group is ready."}</p><button className={BUTTON_CLASS} disabled={selectedBlock.currentCircles < 2} onClick={() => setTask("activate")} type="button">Activate Block</button></div> : null}
+        {assignedCircles.length ? <button className="min-h-11 text-sm text-[var(--color-poster)] underline underline-offset-4" onClick={() => setTask("end")} type="button">Remove a Circle</button> : null}
+      </> : null}
+      {task === "create" ? <section id="create-block" aria-label="Create Block">
+        <p className="mb-4 text-sm text-black/55">Name the Block. You can add its Circles next.</p>
+        <form className="grid gap-3" onSubmit={submitBlock}>
           <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-block-name">
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Block name</span>
           </label>
@@ -1001,16 +1052,12 @@ export function OpsBlockActions({
           </div>
           <Notice notice={createNotice} />
         </form>
-      </section>
+      </section> : null}
 
-      {blocks.length > 0 ? (
-        <>
-      <section className="scroll-mt-28 rounded-[4px] bg-black/[0.035] p-5" id="assign-block-circle" aria-labelledby="assign-block-circle-title">
-        <h2 className="font-[var(--font-display)] text-2xl" id="assign-block-circle-title">2. Assign a Circle</h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-          A Circle can have one current Block. Reassignment begins by ending its current relationship.
-        </p>
-        <form className="mt-6 grid gap-3" onSubmit={submitAssignment}>
+      {task === "assign" ? <section id="assign-block-circle" aria-label="Assign a Circle">
+        <p className="mb-4 text-sm text-black/55">Choose a Circle that is not already in a Block.</p>
+        {!acceptingBlocks.length ? <p className="mb-4 text-sm text-[var(--color-poster)]">Create a Block before assigning a Circle.</p> : !availableCircles.length ? <p className="mb-4 text-sm text-[var(--color-poster)]">No available Circles. Create one, or remove a Circle from its current Block first.</p> : null}
+        <form className="grid gap-3" onSubmit={submitAssignment}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
@@ -1019,47 +1066,43 @@ export function OpsBlockActions({
                 {availableCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name}</option>)}
               </select>
             </label>
-            <label className={OPERATOR_LABEL_CLASS}>
+            {selectedBlock ? <input name="blockId" type="hidden" value={selectedBlock.id} /> : <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Block</span>
               <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || acceptingBlocks.length === 0} name="blockId" required>
                 <option className="bg-[var(--color-bone)]" disabled value="">Choose Block</option>
                 {acceptingBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
               </select>
-            </label>
+            </label>}
           </div>
           <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "assign" || availableCircles.length === 0 || acceptingBlocks.length === 0} type="submit">
             {pendingAction === "assign" ? "Assigning" : "Assign Circle"}
           </button>
           <Notice notice={assignmentNotice} />
         </form>
-      </section>
+      </section> : null}
 
-      <section className="rounded-[4px] bg-black/[0.035] p-5" aria-labelledby="activate-block-title">
-        <h2 className="font-[var(--font-display)] text-2xl" id="activate-block-title">3. Activate a Block</h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-          At least two current Circles are required. Activate when the group is ready to run; this does not change Foundations requirements.
-        </p>
-        <form className="mt-6 grid gap-3" onSubmit={submitActivation}>
-          <label className={OPERATOR_LABEL_CLASS}>
+      {task === "activate" ? <section aria-label="Activate Block">
+        <p className="mb-4 text-sm text-black/55">Activate {selectedBlock?.name ?? "this Block"}? At least two current Circles are required. Foundations requirements stay the same.</p>
+        <form className="grid gap-3" onSubmit={submitActivation}>
+          {selectedBlock ? <input name="blockId" type="hidden" value={selectedBlock.id} /> : <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Forming Block</span>
             <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "activate" || activatableBlocks.length === 0} name="blockId" required>
               <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Block</option>
               {activatableBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
             </select>
-          </label>
+          </label>}
           <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "activate" || activatableBlocks.length === 0} type="submit">
             {pendingAction === "activate" ? "Activating" : "Activate Block"}
           </button>
           <Notice notice={activationNotice} />
         </form>
-      </section>
+      </section> : null}
 
-      <details className="self-start rounded-[4px] bg-black/[0.035] p-5">
-        <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">End a Block assignment</summary>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
+      {task === "end" ? <section aria-label="Remove a Circle">
+        <p className="mb-4 max-w-md text-sm leading-relaxed text-black/55">
           End only the current relationship. If fewer than two current Circles remain, the Block closes while its full history stays intact.
         </p>
-        <form className="mt-6 grid gap-3" onSubmit={submitEndAssignment}>
+        <form className="grid gap-3" onSubmit={submitEndAssignment}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Assigned Circle</span>
             <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "end" || assignedCircles.length === 0} name="circleId" required>
@@ -1067,14 +1110,14 @@ export function OpsBlockActions({
               {assignedCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.blockName}</option>)}
             </select>
           </label>
-          <button className={`${SECONDARY_BUTTON_CLASS} w-fit`} disabled={pendingAction === "end" || assignedCircles.length === 0} type="submit">
-            {pendingAction === "end" ? "Ending" : "End assignment"}
+          <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "end" || assignedCircles.length === 0} type="submit">
+            {pendingAction === "end" ? "Removing" : "Remove Circle"}
           </button>
           <Notice notice={endNotice} />
         </form>
-      </details>
-        </>
-      ) : null}
+      </section> : null}
+      </>}
     </section>
-  );
+    </OperatorDialog> : null}
+  </>;
 }

@@ -119,11 +119,14 @@ test("the operator surface covers drafts, publishing, collections, media, downlo
   assert.match(academyView, /Academy snapshot/);
   assert.match(academyView, /New lesson/);
   assert.match(academyView, /Collections/);
-  assert.match(academyEditor, /Saving creates a new immutable draft version/);
+  assert.match(academyEditor, /Live version/);
+  assert.match(academyEditor, /Latest version/);
+  assert.match(academyEditor, /Changes not published/);
+  assert.match(academyEditor, /workspace === "edit" && editor\.canManage/);
   for (const label of [
     "Create lesson draft",
-    "Save new draft version",
-    "Resource, download, or hosted page URL",
+    "Save draft",
+    "Source link",
     "Direct video URL",
     "Thumbnail URL",
     "Captions URL",

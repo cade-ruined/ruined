@@ -5,16 +5,16 @@ export const OPERATOR_LABEL_CLASS =
   "block";
 
 export const OPERATOR_LABEL_TEXT_CLASS =
-  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.5rem] leading-none tracking-normal text-[var(--color-poster)] [transform:rotate(-3deg)] sm:text-[1.65rem]";
+  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.3rem] leading-none tracking-normal text-[var(--color-poster)] [transform:rotate(-2deg)] sm:text-[1.4rem]";
 
 export const OPERATOR_BUTTON_CLASS =
-  "inline-flex min-h-12 items-center justify-center rounded-[4px] border border-black bg-[var(--color-faded)] px-5 py-3 font-[var(--font-body)] text-sm font-semibold normal-case tracking-normal text-[var(--color-bone)] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-55";
+  "inline-flex min-h-11 items-center justify-center rounded-[8px] border border-black bg-[var(--color-faded)] px-4 py-2.5 font-[var(--font-body)] text-sm font-semibold normal-case tracking-normal text-[var(--color-bone)] transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-55";
 
 export const OPERATOR_PRIMARY_ACTION_CLASS =
   `${OPERATOR_BUTTON_CLASS} shadow-[4px_4px_0_var(--color-poster)] hover:shadow-[2px_2px_0_var(--color-poster)]`;
 
 export const OPERATOR_PANEL_CLASS =
-  "rounded-[4px] bg-black/[0.035]";
+  "rounded-[8px] bg-black/[0.035]";
 
 export const OPERATOR_DISCLOSURE_CLASS =
   "group rounded-[4px] bg-black/[0.035] transition-colors open:bg-black/[0.045]";

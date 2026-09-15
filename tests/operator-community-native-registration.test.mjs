@@ -55,6 +55,7 @@ function fixture(event) {
   const routes = [];
   const hooks = {
     ...React,
+    useRef(initial) { const [ref] = hooks.useState(() => ({ current: initial })); return ref; },
     useState(initial) {
       const index = cursor++;
       if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
@@ -67,6 +68,7 @@ function fixture(event) {
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
     "next/navigation": { useRouter: () => ({ push: (path) => routes.push(path), refresh: () => { refreshes++; } }) },
     "@/components/platform/OperatorPageFrame": { default: ({ children }) => React.createElement("main", null, children) },
+    "@/components/platform/OperatorDialog": { default: ({ children }) => children },
     "@/components/platform/operatorStyles": {
       OPERATOR_FIELD_CLASS: "field", OPERATOR_LABEL_CLASS: "label", OPERATOR_LABEL_TEXT_CLASS: "label-text", OPERATOR_PRIMARY_ACTION_CLASS: "action",
     },
@@ -92,6 +94,7 @@ function fixture(event) {
   };
   return {
     draw, find, registration, requests, routes,
+    surface: () => find((node) => node.type === "form") ?? find((node) => node.type === "section" && node.props["aria-label"] === "Event details"),
     refreshes: () => refreshes,
     edit() {
       const button = find((node) => node.type === "button" && text(node) === "Edit event");
@@ -99,16 +102,19 @@ function fixture(event) {
       button.props.onClick();
     },
     cancel() {
-      const button = find((node) => node.type === "button" && text(node) === "Cancel");
-      assert.ok(button, "Existing-event editing retains Cancel");
-      button.props.onClick();
+      assert.equal(find((node) => node.type === "button" && text(node) === "Cancel"), undefined, "No internal Cancel can bypass the shared dirty/pending guard");
+      const dialog = find((node) => node.props.title === "Edit public event");
+      assert.ok(dialog, "Existing-event editing uses the shared guarded dialog");
+      assert.equal(dialog.props.returnFocusId, "edit-public-event");
+      // Simulate onClose only after the shared dialog has approved dismissal.
+      dialog.props.onClose();
     },
     chooseMode(value) {
       const select = registration();
       assert.equal(select.props.disabled, false, "Only an enabled registration selector may be changed");
       select.props.onChange({ target: { value } });
     },
-    submit(values = fields) { return draw().props.onSubmit({ preventDefault() {}, currentTarget: { values } }); },
+    submit(values = fields) { return find((node) => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { values } }); },
   };
 }
 
@@ -116,12 +122,12 @@ for (const eventKey of ["byob-02", "byob-03"]) {
   test(`${eventKey} preserves saved details and locks native registration when editing`, () => {
     for (const registrationMode of ["none", "external", "byob"]) {
       const view = fixture({ ...baseEvent, eventKey, registrationMode, registrationUrl: "https://tickets.example.test/stale", registrationOpen: true });
-      assert.equal(view.draw().type, "section");
-      assert.equal(view.draw().props["aria-label"], "Event details");
+      assert.equal(view.surface().type, "section");
+      assert.equal(view.surface().props["aria-label"], "Event details");
       assert.equal(view.find((node) => node.type === "form"), undefined);
       view.edit();
-      assert.equal(view.draw().type, "form");
-      assert.equal(view.draw().props["aria-label"], "Edit event details");
+      assert.equal(view.surface().type, "form");
+      assert.equal(view.surface().props["aria-label"], "Edit event details");
       assert.equal(view.find((node) => node.type === "fieldset").props.disabled, false);
       assert.equal(view.find((node) => node.type === "input" && node.props.name === "title").props.defaultValue, baseEvent.title);
       assert.equal(view.find((node) => node.type === "input" && node.props.name === "eventKey").props.readOnly, true);
@@ -131,7 +137,7 @@ for (const eventKey of ["byob-02", "byob-03"]) {
       assert.equal(view.find((node) => node.props.name === "registrationUrl"), undefined);
       assert.equal(view.find((node) => node.props.name === "registrationOpen").props.defaultChecked, true);
       assert.equal(text(view.find((node) => node.type === "button" && node.props.type === "submit")), "Save event");
-      assert.equal(nodes(view.draw()).some((node) => node.type === "button" && /^Edit/.test(text(node))), false);
+      assert.equal(nodes(view.surface()).some((node) => node.type === "button" && /^Edit/.test(text(node))), false);
     }
   });
 
@@ -153,7 +159,7 @@ for (const eventKey of ["byob-02", "byob-03"]) {
     assert.equal(view.refreshes(), 1);
     assert.deepEqual(view.routes, []);
     assert.equal(text(view.find((node) => node.props.role === "status")), "Event saved.");
-    assert.equal(view.draw().type, "section", "Saving retains the live return to saved details");
+    assert.equal(view.surface().type, "section", "Saving retains the live return to saved details");
     view.edit();
     assert.equal(view.registration().props.value, "byob", "Reopening editing must not restore stale external mode");
     assert.equal(view.registration().props.disabled, true);
@@ -163,7 +169,7 @@ for (const eventKey of ["byob-02", "byob-03"]) {
 test("custom events retain both existing registration modes and an editable selector", async () => {
   for (const registrationMode of ["none", "external"]) {
     const view = fixture({ ...baseEvent, registrationMode, registrationUrl: registrationMode === "external" ? "https://tickets.example.test/studio" : null });
-    assert.equal(view.draw().type, "section");
+    assert.equal(view.surface().type, "section");
     view.edit();
     assert.equal(view.registration().props.disabled, false);
     assert.equal(view.registration().props.value, registrationMode);
@@ -185,7 +191,7 @@ test("custom event operators can change none to external and back through the en
   assert.equal(view.requests[0].body.event.registrationMode, "external");
   assert.equal(view.requests[0].body.event.registrationUrl, "https://tickets.example.test/studio");
   assert.equal(view.requests[0].body.event.registrationOpen, true);
-  assert.equal(view.draw().type, "section");
+  assert.equal(view.surface().type, "section");
   view.edit();
   view.chooseMode("none");
   assert.equal(view.find((node) => node.props.name === "registrationUrl"), undefined);
@@ -202,7 +208,7 @@ test("cancel preserves saved details without a request and reopening restores th
     view.edit();
     if (eventKey === "studio-night") view.chooseMode("external");
     view.cancel();
-    assert.equal(view.draw().type, "section");
+    assert.equal(view.surface().type, "section");
     assert.equal(view.requests.length, 0);
     assert.equal(view.refreshes(), 0);
     view.edit();

@@ -120,7 +120,7 @@ test("Block activation requires two current Circles in both Postgres and the rep
   assert.match(opsRepository, /if \(currentCircles < 2\)/);
   assert.match(opsRepository, /activated_by_auth_user_id = \$\{actorAuthUserId\}::uuid/);
   assert.match(actions, /At least two current Circles are required/);
-  assert.match(actions, /this does not change Foundations requirements/);
+  assert.match(actions, /Foundations requirements stay the same/);
   assert.match(actions, /block\.status === "forming" && block\.currentCircles >= 2/);
 });
 

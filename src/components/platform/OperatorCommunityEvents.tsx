@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorDialog from "@/components/platform/OperatorDialog";
 import { OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_LABEL_TEXT_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import { zonedDateTimeLocalToIso, zonedDateTimeLocalValue } from "@/lib/datetime/zoned-date-time";
 import type { CommunityEventRecord, CommunityEventRegistrant } from "@/lib/events/community-event-model";
@@ -17,6 +18,8 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
   const nativeRegistration = event ? getByobRegistrationConfig(event.eventKey) : null;
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
+  const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [mode, setMode] = useState(nativeRegistration ? "byob" : event?.registrationMode ?? "none");
   const [timezone, setTimezone] = useState(event?.timezone ?? "America/Denver");
@@ -24,7 +27,8 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
   const [failed, setFailed] = useState(false);
   async function save(action: FormEvent<HTMLFormElement>) {
     action.preventDefault();
-    if (pending || preview) return;
+    if (pendingRef.current || preview) return;
+    pendingRef.current = true;
     const data = new FormData(action.currentTarget);
     setPending(true); setMessage(""); setFailed(false);
     try {
@@ -43,28 +47,29 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "The event could not be saved.");
       setMessage("Event saved.");
+      setDirty(false);
       if (event) setEditing(false);
       if (!event) router.push(`/ops/community/${result.event.eventKey}`);
       router.refresh();
     } catch (error) { setFailed(true); setMessage(error instanceof Error ? error.message : "The event could not be saved."); }
-    finally { setPending(false); }
+    finally { pendingRef.current = false; setPending(false); }
   }
-  if (event && !editing) return <section aria-label="Event details" className="rounded-lg bg-black/[0.035] p-4 sm:p-5">
-    <header className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="ui-heading text-xl font-semibold">Event details</h2><p className="mt-2 text-sm text-black/60">{event.publicationState === "published" ? "Published on website" : event.publicationState === "archived" ? "Archived — hidden from website" : "Draft — hidden from website"} · {event.eventState}</p></div>
-      <button className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(nativeRegistration ? "byob" : event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
+  const savedSummary = event ? <section aria-label="Event details">
+    <header className="operator-record-header">
+      <div><h2 className="operator-record-title">{event.title}</h2><p className="mt-2 text-xs text-black/60">{event.publicationState === "published" ? "Published on website" : event.publicationState === "archived" ? "Archived — hidden from website" : "Draft — hidden from website"} · {event.eventState}</p></div>
+      <button id="edit-public-event" className="min-h-11 rounded-[8px] bg-black/[0.055] px-4 text-sm font-medium" onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(nativeRegistration ? "byob" : event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
     </header>
-    <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>When</dt><dd className="mt-1">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone }).format(new Date(event.startsAt))}<span className="mt-1 block text-xs text-black/55">{event.timezone}</span></dd></div>
-      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>Where</dt><dd className="mt-1">{event.location || "Not set"}</dd></div>
-      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>Admission</dt><dd className="mt-1">{event.admission || "Not set"}</dd></div>
-      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>Registration</dt><dd className="mt-1">{event.registrationMode === "none" ? "No registration required" : `${event.registrationOpen ? "Open" : "Closed"} · ${event.registrationMode === "byob" ? "Ruined BYOB registration" : "External provider"}`}{event.registrationMode === "external" && event.registrationUrl ? <a className="mt-1 block break-all underline underline-offset-4" href={event.registrationUrl} rel="noopener noreferrer" target="_blank">Open registration ↗</a> : null}</dd></div>
+    <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+      <div className="operator-bento-card col-span-2 sm:col-span-1"><dt className="operator-compact-label">Schedule</dt><dd className="mt-2 font-medium">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone }).format(new Date(event.startsAt))}<span className="mt-1 block text-xs font-normal text-black/55">{event.timezone}</span></dd></div>
+      <div className="operator-bento-card"><dt className="operator-compact-label">Location</dt><dd className="mt-2">{event.location || "Not set"}</dd></div>
+      <div className="operator-bento-card"><dt className="operator-compact-label">Admission</dt><dd className="mt-2">{event.admission || "Not set"}</dd></div>
+      <div className="operator-bento-card col-span-2 sm:col-span-1"><dt className="operator-compact-label">Registration</dt><dd className="mt-2">{event.registrationMode === "none" ? "No registration required" : `${event.registrationOpen ? "Open" : "Closed"} · ${event.registrationMode === "byob" ? "Ruined BYOB registration" : "External provider"}`}{event.registrationMode === "external" && event.registrationUrl ? <a className="mt-1 inline-flex min-h-11 items-center break-all underline underline-offset-4" href={event.registrationUrl} rel="noopener noreferrer" target="_blank">Open registration ↗</a> : null}</dd></div>
     </dl>
-    {event.summary ? <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-black/65">{event.summary}</p> : null}
+    {event.summary ? <details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Event description</summary><p className="whitespace-pre-line text-sm leading-relaxed text-black/65">{event.summary}</p></details> : null}
     {preview ? <p className="mt-4 text-sm text-black/60">Preview only. Event and attendance changes are not saved.</p> : null}
     {message ? <p role="status" className="mt-3 text-sm">{message}</p> : null}
-  </section>;
-  return <form onSubmit={save} className="space-y-5" aria-label={event ? "Edit event details" : "New event details"}>
+  </section> : null;
+  const editor = <form onSubmit={save} onChange={() => setDirty(true)} data-operator-pending={pending} data-operator-dirty={dirty} className="space-y-4" aria-label={event ? "Edit event details" : "New event details"}>
     {preview ? <p className="text-sm text-black/60">Preview only. Event and attendance changes are not saved.</p> : null}
     <fieldset disabled={pending || preview} className="grid gap-4 sm:grid-cols-2">
       <Field label="Event name"><input className={OPERATOR_FIELD_CLASS} name="title" defaultValue={event?.title} required maxLength={160} /></Field>
@@ -85,8 +90,9 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
       <Field label="Video poster path"><input className={OPERATOR_FIELD_CLASS} name="videoPosterPath" defaultValue={event?.videoPosterPath ?? ""} placeholder="/events/your-poster.webp" /></Field>
       <p className="self-end text-sm text-black/55">Use existing site media paths. The current BYOB gallery and photo credits are preserved.</p>
     </fieldset>
-    <div className="flex flex-wrap items-center gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} type="submit" disabled={pending || preview}>{pending ? "Saving…" : event ? "Save event" : "Create event"}</button>{event ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setEditing(false); setMessage(""); setFailed(false); }} type="button">Cancel</button> : null}<p role={failed ? "alert" : "status"} className={`text-sm ${failed ? "text-[var(--color-poster)]" : ""}`}>{message}</p></div>
+    <div className="flex flex-wrap items-center gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} type="submit" disabled={pending || preview}>{pending ? "Saving…" : event ? "Save event" : "Create event"}</button><p role={failed ? "alert" : "status"} className={`text-sm ${failed ? "text-[var(--color-poster)]" : ""}`}>{message}</p></div>
   </form>;
+  return event ? <>{savedSummary}{editing ? <OperatorDialog open title="Edit public event" pending={pending} returnFocusId="edit-public-event" onClose={() => { setEditing(false); setDirty(false); setMessage(""); setFailed(false); }}>{editor}</OperatorDialog> : null}</> : editor;
 }
 
 export default function OperatorCommunityEvents({ events, navigation, preview = false }: { events: CommunityEventRecord[]; navigation?: ReactNode; preview?: boolean }) {
@@ -95,13 +101,13 @@ export default function OperatorCommunityEvents({ events, navigation, preview = 
   const visible = events.filter((event) => `${event.title} ${event.location} ${event.eventKey}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <OperatorPageFrame title="Public community">
     {navigation}
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div className="min-w-0 flex-1"><Field label="Find an event"><input className={OPERATOR_FIELD_CLASS} value={query} onChange={(e) => setQuery(e.target.value)} type="search" /></Field></div><button className={OPERATOR_PRIMARY_ACTION_CLASS} type="button" aria-expanded={adding} aria-controls="new-community-event" onClick={() => setAdding(!adding)}>{adding ? "Close new event" : "Add public event"}</button></div>
-    <div className="grid gap-3">{visible.map((event) => <article key={event.eventKey} className="rounded-lg bg-black/[0.045] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
-      <div><p className="text-xs text-black/55">{event.publicationState === "published" ? event.eventState : event.publicationState === "draft" ? "Draft" : "Archived"} · {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: event.timezone }).format(new Date(event.startsAt))}</p><h2 className="ui-heading mt-1 text-xl">{event.title}</h2><p className="mt-1 text-sm text-black/65">{event.registrationMode === "external" ? "Registrations with external provider" : event.registrationMode === "byob" ? `${event.registeredCount} registered · ${event.attendanceCount} checked in` : "No registration required"}</p></div>
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div className="min-w-0 flex-1"><Field label="Find an event"><input className={OPERATOR_FIELD_CLASS} value={query} onChange={(e) => setQuery(e.target.value)} type="search" /></Field></div><button className={OPERATOR_PRIMARY_ACTION_CLASS} type="button" id="add-public-event" aria-haspopup="dialog" onClick={() => setAdding(true)}>Add public event</button></div>
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visible.map((event) => <article key={event.eventKey} className="operator-bento-card flex flex-col justify-between gap-3">
+      <div><p className="text-xs text-black/55">{event.publicationState === "published" ? event.eventState : event.publicationState === "draft" ? "Draft" : "Archived"} · {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: event.timezone }).format(new Date(event.startsAt))}</p><h2 className="operator-section-heading mt-2">{event.title}</h2><p className="mt-2 text-xs text-black/65">{event.registrationMode === "external" ? "Registrations with external provider" : event.registrationMode === "byob" ? `${event.registeredCount} registered · ${event.attendanceCount} checked in` : "No registration required"}</p></div>
       <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold sm:mt-0"><Link href={`/ops/community/${event.eventKey}`}>Manage event →</Link>{event.registrationMode === "byob" ? <Link href={`/ops/community/${event.eventKey}#registrations`}>View roster →</Link> : null}</div>
     </article>)}</div>
     {!visible.length ? <p className="py-6 text-black/60">No events match this search.</p> : null}
-    {adding ? <section id="new-community-event" className="mt-8"><h2 className="ui-heading mb-4 text-2xl">New public event</h2><CommunityEventEditor preview={preview} /></section> : null}
+    {adding ? <OperatorDialog open title="New public event" onClose={() => setAdding(false)} returnFocusId="add-public-event"><div id="new-community-event"><CommunityEventEditor preview={preview} /></div></OperatorDialog> : null}
   </OperatorPageFrame>;
 }
 
