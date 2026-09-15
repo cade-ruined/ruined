@@ -136,6 +136,7 @@ function ProductCard({
   index: number;
   featured?: boolean;
 }) {
+  const secondImage = product.images?.[1];
   const availability = product.available === false
     ? "Sold out"
     : product.variants.some((variant) => variant.available)
@@ -162,6 +163,16 @@ function ProductCard({
             priority={featured}
             sizes={featured ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
             className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018]"
+          />
+        )}
+        {product.image && secondImage && secondImage.url !== product.image.url && (
+          <Image
+            src={secondImage.url}
+            alt=""
+            aria-hidden="true"
+            fill
+            sizes={featured ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
+            className="pointer-events-none object-cover opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100"
           />
         )}
         <div className="absolute inset-x-2 top-2 flex justify-between font-mono text-[0.64rem] uppercase tracking-[0.14em] text-white/75 sm:inset-x-3 sm:top-3">

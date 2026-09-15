@@ -401,6 +401,7 @@ export function JourneyStoreIndex({
           }}
         >
           {featuredProducts.map((product, index) => {
+            const secondImage = product.images?.[1];
             const shipDate = product.expectedShipDate
               ? formatJourneyShipDate(product.expectedShipDate)
               : undefined;
@@ -423,6 +424,16 @@ export function JourneyStoreIndex({
                       fill
                       sizes="(min-width: 640px) 22rem, 28vw"
                       className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+                    />
+                  )}
+                  {product.image && secondImage && secondImage.url !== product.image.url && (
+                    <Image
+                      src={secondImage.url}
+                      alt=""
+                      aria-hidden="true"
+                      fill
+                      sizes="(min-width: 640px) 22rem, 28vw"
+                      className="pointer-events-none object-cover opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100"
                     />
                   )}
                   <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
