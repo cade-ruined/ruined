@@ -17,12 +17,9 @@ const JOURNEY_GRID_CLASS =
 const JOURNEY_CARD_CLASS =
   "group relative aspect-[4/5] overflow-hidden bg-black/85 text-[var(--color-bone)] ring-1 ring-inset ring-white/15";
 const JOURNEY_RAIL_CLASS =
-  "flex touch-pan-x snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:gap-1.5 sm:p-1.5";
+  "flex touch-pan-x snap-x snap-mandatory scroll-px-1 gap-1 overflow-x-auto overscroll-x-contain border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [scrollbar-width:thin] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:scroll-px-1.5 sm:gap-1.5 sm:p-1.5";
 const JOURNEY_RAIL_CARD_CLASS =
   `${JOURNEY_CARD_CLASS} w-[58%] flex-none snap-start focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white sm:w-[38%] lg:w-[31.5%]`;
-const HOME_MARQUEE_SPEED_PX_PER_SECOND = 20;
-const HOME_MARQUEE_MAX_FRAME_MS = 48;
-const HOME_MARQUEE_RESUME_DELAY_MS = 12000;
 
 function formatJourneyShipDate(value: string): string {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -129,6 +126,7 @@ type LobbySelection = {
   image?: string;
   video?: string;
   poster?: string;
+  products?: Product[];
   alt: string;
 };
 
@@ -141,49 +139,41 @@ export function JourneyLobbyIndex({
 }) {
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
   const nextByob = events.find((candidate) => candidate.id.startsWith("byob-") && candidate.registration?.status === "Open" && candidate.status !== "Ended");
-  const tank = products.find(
-    (candidate) => candidate.id === "byob-tank"
-  );
-  const tankImage =
-    tank?.images?.find((image) => image.url.includes("BYOB_Tee_Product.png")) ??
-    tank?.image;
+  const newProducts = products
+    .filter((product) => product.id !== "byob-tank" && product.image)
+    .slice(0, 9);
   const selections: LobbySelection[] = [
-    // The marquee is newest-first. Add future features above the current lead.
+    ...(nextByob?.registration
+      ? [{
+          key: `events-${nextByob.id}`,
+          href: nextByob.registration.href,
+          realm: "Community" as const,
+          title: nextByob.title,
+          meta: `Register now · ${nextByob.date}`,
+          image: nextByob.image ?? byobOne?.image,
+          alt: `${nextByob.title} community gathering in the mountains.`,
+        }]
+      : []),
+    ...(newProducts.length
+      ? [{
+          key: "new-arrivals",
+          href: "/store",
+          realm: "Store" as const,
+          title: "New arrivals",
+          meta: "Shop the collection",
+          products: newProducts,
+          alt: "New Ruined apparel",
+        }]
+      : []),
     {
       key: "members-introduction",
       href: "#members",
       realm: "Members",
-      title: "Good company. Real work.",
-      meta: "Explore membership",
+      title: "Join waitlist",
+      meta: "Good company. Real work.",
       image: MEMBERSHIP_INTRO.image,
       alt: MEMBERSHIP_INTRO.alt,
     },
-    ...(tank ? [{
-      key: "byob-tank",
-      href: `/store/${tank.id}`,
-      realm: "Store" as const,
-      title: tank.name,
-      meta: tank.available === false
-        ? `${tank.price.replace(/^([£$€])\s+/, "$1")} · Sold out`
-        : tank.expectedShipDate
-          ? `${tank.price.replace(/^([£$€])\s+/, "$1")} · Preorder · Ships ${formatJourneyShipDate(tank.expectedShipDate)}`
-          : tank.price,
-      image: tankImage?.url,
-      alt: tankImage?.alt ?? tank.name,
-    }] : []),
-    ...(byobOne && nextByob?.registration
-      ? [
-          {
-            key: `events-${nextByob.id}`,
-            href: nextByob.registration.href,
-            realm: "Community" as const,
-            title: nextByob.title,
-            meta: `Register · ${nextByob.date}`,
-            image: byobOne.image,
-            alt: "The BYOB community gathered beneath storm clouds in the mountains.",
-          },
-        ]
-      : []),
     {
       key: "meet-the-cast",
       href: "https://www.instagram.com/theruinedproject/",
@@ -195,115 +185,40 @@ export function JourneyLobbyIndex({
       poster: "/media/meet-the-cast-poster.jpg",
       alt: "Meet the Cast from The Ruined Project",
     },
-    {
-      key: "what-is-this",
-      href: "#about",
-      realm: "About",
-      title: "What is this?",
-      meta: "About Ruined",
-      image: "/media/what-is-this.webp",
-      alt: "The Ruined Project collage",
-    },
   ];
+  const leadingSelectionKey = selections[0]?.key;
   const marqueeRef = useRef<HTMLDivElement>(null);
-  const marqueePauseReasonsRef = useRef(new Set<"drag" | "focus" | "hover">());
-  const marqueeResumeAtRef = useRef(0);
-  const marqueeDirectionRef = useRef<1 | -1>(1);
-  const marqueeVisibleRef = useRef(false);
-  const [marqueeStopped, setMarqueeStopped] = useState(false);
+  const [canScrollBack, setCanScrollBack] = useState(false);
+  const [canScrollForward, setCanScrollForward] = useState(false);
+
+  const updateScrollControls = () => {
+    const rail = marqueeRef.current;
+    if (!rail) return;
+    setCanScrollBack(rail.scrollLeft > 2);
+    setCanScrollForward(rail.scrollLeft < rail.scrollWidth - rail.clientWidth - 2);
+  };
 
   useEffect(() => {
-    const marquee = marqueeRef.current;
-    if (!marquee || selections.length < 2) return;
+    const rail = marqueeRef.current;
+    if (!rail) return;
+    updateScrollControls();
+    const observer = new ResizeObserver(updateScrollControls);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [leadingSelectionKey, selections.length]);
 
-    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const visibilityObserver = new IntersectionObserver(
-      ([entry]) => {
-        marqueeVisibleRef.current = entry?.isIntersecting ?? false;
-      },
-      { threshold: 0.35 }
-    );
-    visibilityObserver.observe(marquee);
-    let animationFrameId: number | undefined;
-    let previousFrameTime: number | undefined;
-
-    const drift = (frameTime: number) => {
-      animationFrameId = window.requestAnimationFrame(drift);
-      if (
-        motionPreference.matches ||
-        marqueeStopped ||
-        marqueePauseReasonsRef.current.size > 0 ||
-        !marqueeVisibleRef.current ||
-        Date.now() < marqueeResumeAtRef.current ||
-        document.visibilityState !== "visible"
-      ) {
-        marquee.style.removeProperty("scroll-snap-type");
-        previousFrameTime = frameTime;
-        return;
-      }
-
-      marquee.style.scrollSnapType = "none";
-      const maxScroll = Math.max(0, marquee.scrollWidth - marquee.clientWidth);
-      if (maxScroll <= 1) {
-        previousFrameTime = frameTime;
-        return;
-      }
-
-      const elapsedMs = Math.min(
-        previousFrameTime === undefined ? 0 : frameTime - previousFrameTime,
-        HOME_MARQUEE_MAX_FRAME_MS
-      );
-      previousFrameTime = frameTime;
-      let nextScrollLeft =
-        marquee.scrollLeft +
-        marqueeDirectionRef.current *
-          HOME_MARQUEE_SPEED_PX_PER_SECOND *
-          (elapsedMs / 1000);
-
-      if (nextScrollLeft >= maxScroll) {
-        nextScrollLeft = maxScroll;
-        marqueeDirectionRef.current = -1;
-      } else if (nextScrollLeft <= 0) {
-        nextScrollLeft = 0;
-        marqueeDirectionRef.current = 1;
-      }
-
-      marquee.scrollLeft = nextScrollLeft;
-    };
-
-    const syncAutoplay = () => {
-      if (animationFrameId !== undefined) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-      marquee.style.removeProperty("scroll-snap-type");
-      previousFrameTime = undefined;
-      animationFrameId =
-        motionPreference.matches || marqueeStopped
-          ? undefined
-          : window.requestAnimationFrame(drift);
-    };
-
-    syncAutoplay();
-    motionPreference.addEventListener("change", syncAutoplay);
-    return () => {
-      if (animationFrameId !== undefined) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-      marquee.style.removeProperty("scroll-snap-type");
-      visibilityObserver.disconnect();
-      motionPreference.removeEventListener("change", syncAutoplay);
-    };
-  }, [marqueeStopped, selections.length]);
-
-  const deferMarquee = () => {
-    marqueeResumeAtRef.current = Date.now() + HOME_MARQUEE_RESUME_DELAY_MS;
-  };
-  const pauseMarquee = (reason: "drag" | "focus" | "hover") => {
-    marqueePauseReasonsRef.current.add(reason);
-  };
-  const resumeMarquee = (reason: "drag" | "focus" | "hover") => {
-    marqueePauseReasonsRef.current.delete(reason);
-    deferMarquee();
+  const scrollFeature = (direction: -1 | 1) => {
+    const rail = marqueeRef.current;
+    if (!rail) return;
+    const first = rail.children[0] as HTMLElement | undefined;
+    const second = rail.children[1] as HTMLElement | undefined;
+    const step = first && second
+      ? second.offsetLeft - first.offsetLeft
+      : rail.clientWidth;
+    rail.scrollBy({
+      left: direction * step,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
   };
 
   if (!selections.length) return null;
@@ -311,35 +226,35 @@ export function JourneyLobbyIndex({
   return (
     <div data-journey-lobby-index className="relative">
       <div
+        key={leadingSelectionKey}
         data-home-marquee
         ref={marqueeRef}
         className={JOURNEY_RAIL_CLASS}
         role="region"
         aria-label="Featured stories and products"
         tabIndex={0}
-        onPointerEnter={(event) => {
-          if (event.pointerType === "mouse") pauseMarquee("hover");
-        }}
-        onPointerLeave={() => {
-          resumeMarquee("hover");
-          resumeMarquee("drag");
-        }}
-        onPointerDown={() => {
-          pauseMarquee("drag");
-          deferMarquee();
-        }}
-        onPointerUp={() => resumeMarquee("drag")}
-        onPointerCancel={() => resumeMarquee("drag")}
-        onWheel={deferMarquee}
-        onFocusCapture={() => pauseMarquee("focus")}
-        onBlurCapture={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            resumeMarquee("focus");
-          }
-        }}
+        onScroll={updateScrollControls}
       >
         {selections.map((selection, index) => {
           const content = <>
+          {selection.products && (
+            <span
+              data-home-product-grid
+              className={`absolute inset-x-0 top-0 bottom-[3.6rem] grid gap-px bg-black/90 ${selection.products.length > 4 ? "grid-cols-3 grid-rows-3" : selection.products.length > 1 ? "grid-cols-2 grid-rows-2" : "grid-cols-1"}`}
+            >
+              {selection.products.map((product) => (
+                <span key={product.id} className="relative min-h-0 min-w-0 overflow-hidden">
+                  <Image
+                    src={product.image!.url}
+                    alt={product.name}
+                    fill
+                    sizes="(min-width: 1024px) 7rem, (min-width: 640px) 13vw, 20vw"
+                    className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+                  />
+                </span>
+              ))}
+            </span>
+          )}
           {selection.video && (
             <video
               src={selection.video}
@@ -364,7 +279,7 @@ export function JourneyLobbyIndex({
               className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
             />
           )}
-          <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/5 to-black/35" />
+          <span className={`absolute inset-0 ${selection.products ? "bg-gradient-to-b from-black/25 via-transparent to-transparent" : "bg-gradient-to-t from-black/85 via-black/5 to-black/35"}`} />
           <span className="absolute left-2 top-2 bg-black/90 px-1.5 py-1 font-sans text-[clamp(0.4rem,0.9vw,0.5rem)] font-medium uppercase tracking-[0.16em] text-[var(--color-signal)] sm:left-3 sm:top-3 sm:tracking-[0.2em]">
             {selection.realm}
           </span>
@@ -410,15 +325,26 @@ export function JourneyLobbyIndex({
           );
         })}
       </div>
-      <button
-        type="button"
-        onClick={() => setMarqueeStopped((current) => !current)}
-        aria-pressed={marqueeStopped}
-        aria-label={marqueeStopped ? "Play marquee" : "Pause marquee"}
-        className="absolute right-3 top-3 z-20 flex min-h-11 min-w-11 items-center justify-center border border-white/35 bg-black/75 font-sans text-[0.65rem] text-white transition-colors hover:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-      >
-        <span aria-hidden="true">{marqueeStopped ? "▶" : "Ⅱ"}</span>
-      </button>
+      <div className="mt-2 flex justify-end gap-1" aria-label="Carousel controls">
+        <button
+          type="button"
+          onClick={() => scrollFeature(-1)}
+          disabled={!canScrollBack}
+          aria-label="Previous feature"
+          className="flex min-h-11 min-w-11 items-center justify-center border border-white/35 bg-black/75 text-white transition-colors hover:border-white disabled:cursor-default disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          <span aria-hidden="true">←</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollFeature(1)}
+          disabled={!canScrollForward}
+          aria-label="Next feature"
+          className="flex min-h-11 min-w-11 items-center justify-center border border-white/35 bg-black/75 text-white transition-colors hover:border-white disabled:cursor-default disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          <span aria-hidden="true">→</span>
+        </button>
+      </div>
     </div>
   );
 }

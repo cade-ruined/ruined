@@ -453,15 +453,13 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /key: `events-\$\{nextByob\.id\}`/);
   assert.match(lobbyIndex, /href: nextByob\.registration\.href/);
   assert.match(lobbyIndex, /title: nextByob\.title/);
-  assert.match(lobbyIndex, /meta: `Register · \$\{nextByob\.date\}`/);
-  assert.match(lobbyIndex, /image: byobOne\.image/);
-  assert.match(lobbyIndex, /key: "what-is-this"/);
-  assert.match(lobbyIndex, /href: "#about"/);
+  assert.match(lobbyIndex, /meta: `Register now · \$\{nextByob\.date\}`/);
+  assert.doesNotMatch(lobbyIndex, /key: "what-is-this"/);
+  assert.match(lobbyIndex, /href: "#members"/);
   assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
   assert.match(lobbyIndex, /onClick=\{\(event\) => requestWalkRoom\(event, selection\.href!\)\}/);
   assert.match(indexes, /new CustomEvent\("ruined:home-scene-request"/);
   assert.match(indexes, /if \(!window\.dispatchEvent\(request\)\) event\.preventDefault\(\)/);
-  assert.match(lobbyIndex, /image: "\/media\/what-is-this\.webp"/);
   assert.match(lobbyIndex, /key: "meet-the-cast"/);
   assert.match(lobbyIndex, /video: "\/media\/meet-the-cast\.mp4"/);
   assert.match(lobbyIndex, /href: "https:\/\/www\.instagram\.com\/theruinedproject\/"/);

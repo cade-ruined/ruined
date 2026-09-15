@@ -1,232 +1,191 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import React from "react";
+import * as jsxRuntime from "react/jsx-runtime";
+import { renderToStaticMarkup } from "react-dom/server";
+import { parseFragment } from "parse5";
+import ts from "typescript";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const indexSource = await readFile(new URL("../src/components/sequence/JourneyIndexes.tsx", import.meta.url), "utf8");
+const compiled = ts.transpileModule(indexSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+}).outputText;
+function load(react = React, environment = {}) {
+  const dependencies = {
+    react, "react/jsx-runtime": jsxRuntime,
+    "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
+    "next/image": { default: ({ src, alt, className }) => React.createElement("img", { src, alt, className }) },
+    "./JourneyQuickBuy": { default: () => null },
+    "@/data/navigation": { EXPLORE_ROOMS: [] },
+    "@/data/public-membership": { MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members gathered" } },
+    "@/lib/store/catalog": { catalogNotice: () => "" },
+  };
+  const output = { exports: {} };
+  new Function("require", "module", "exports", "window", "ResizeObserver", compiled)((name) => {
+    assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency: ${name}`);
+    return dependencies[name];
+  }, output, output.exports, environment.window, environment.ResizeObserver);
+  return output.exports.JourneyLobbyIndex;
+}
+const JourneyLobbyIndex = load();
+const events = [
+  { id: "byob-01", title: "BYOB Nº 01", status: "Ended", image: "/byob-community.webp" },
+  { id: "byob-02", title: "BYOB Nº 02", date: "September 11", status: "Ended", registration: { status: "Closed", href: "/community/byob-02/register" } },
+  { id: "byob-03", title: "BYOB Nº 03", date: "October 9", status: "Upcoming", registration: { status: "Open", href: "/community/byob-03/register" } },
+];
+const makeProduct = (id) => ({ id, name: id, price: "$64", available: true, image: { url: `/${id}.webp`, alt: id } });
+const handles = ["ruined-hoodie", "ruined-tee", "womens-crop-tee", "mens-distressed-crop-tee", "mens-collared-script", "womens-crop-collared-script", "mens-less-permanent-tee", "womens-less-permanent-crop-tee", "sunday-clothes-hoodie"];
+const products = [makeProduct("byob-tank"), ...[...handles].reverse().map(makeProduct), { ...makeProduct("missing-photo"), image: undefined }];
+function nodes(node) { return [node, ...(node.childNodes ?? []).flatMap(nodes)]; }
+function attr(node, name) { return node.attrs?.find((entry) => entry.name === name)?.value; }
+function text(node) { return node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(text).join(""); }
+function render(props = {}) {
+  const fragment = parseFragment(renderToStaticMarkup(React.createElement(JourneyLobbyIndex, { events, products, ...props })));
+  return { all: nodes(fragment), cards: nodes(fragment).filter((node) => attr(node, "data-home-marquee-item") !== undefined) };
+}
 
-test("the home marquee places the live tank before BYOB registration and preserves the event image", async () => {
-  const [indexSource, eventsSource, gallerySource] = await Promise.all([
-    fs.readFile(
-      path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
-      "utf8"
-    ),
-    fs.readFile(path.join(root, "src", "data", "events.ts"), "utf8"),
-    fs.readFile(
-      path.join(root, "src", "data", "eventGalleries.ts"),
-      "utf8"
-    ),
+test("the opening cards lead with open BYOB registration, then new arrivals, the waitlist, and cast", () => {
+  const { cards } = render();
+  assert.deepEqual(cards.map((card) => attr(card, "href")), [
+    "/community/byob-03/register", "/store", "#members", "https://www.instagram.com/theruinedproject/",
   ]);
-
-  const byobRegistrationPosition = indexSource.indexOf(
-    "key: `events-${nextByob.id}`"
-  );
-  const castPosition = indexSource.indexOf('key: "meet-the-cast"');
-  const aboutPosition = indexSource.indexOf('key: "what-is-this"');
-  const tankPosition = indexSource.indexOf('key: "byob-tank"');
-
-  assert.ok(tankPosition >= 0);
-  assert.ok(byobRegistrationPosition >= 0);
-  assert.ok(tankPosition < byobRegistrationPosition);
-  assert.ok(byobRegistrationPosition < castPosition);
-  assert.ok(castPosition < aboutPosition);
-  assert.match(indexSource, /candidate\.id === "byob-01"/);
-  assert.match(indexSource, /candidate\.registration\?\.status === "Open" && candidate\.status !== "Ended"/);
-  assert.match(
-    indexSource,
-    /products\.find\([\s\S]*?candidate\.id === (?:"byob-tank"|BYOB_TANK_FEATURE_FALLBACK\.id)[\s\S]*?\)/
-  );
-  assert.match(indexSource, /href: nextByob\.registration\.href/);
-  assert.match(indexSource, /title: nextByob\.title/);
-  assert.match(indexSource, /meta: `Register · \$\{nextByob\.date\}`/);
-  assert.match(indexSource, /image: byobOne\.image/);
-  assert.match(
-    indexSource,
-    /key: `events-\$\{nextByob\.id\}`[\s\S]*?alt: "The BYOB community gathered beneath storm clouds in the mountains\."/
-  );
-  assert.doesNotMatch(
-    indexSource,
-    /key: `events-\$\{nextByob\.id\}`[\s\S]*?alt: [^\n]*BYOB Nº 01/
-  );
-  assert.doesNotMatch(indexSource, /href: `\/community#\$\{byobOne\.id\}`/);
-  assert.match(
-    eventsSource,
-    /registration: isRegistrationEvent[\s\S]*?href: `\/community\/\$\{id\}\/register`[\s\S]*?label: "Register"[\s\S]*?status: isSecondEvent \? "Closed" : "Open"/
-  );
-  assert.match(indexSource, /title:\s*tank\.name/);
-  assert.match(indexSource, /href:\s*`\/store\/\$\{tank\.id\}`/);
-  assert.match(indexSource, /tank\?\.images\?\.find\(\(image\) => image\.url\.includes\("BYOB_Tee_Product\.png"\)\)[\s\S]*?\?\?\s*tank\?\.image/);
-  assert.match(indexSource, /href: "#about"/);
-  assert.match(indexSource, /priority=\{index === 0\}/);
-  assert.match(
-    gallerySource,
-    /src: "\/events\/byob-01\/gallery\/01-img-8059\.webp\?v=1"/
-  );
+  assert.match(text(cards[0]), /BYOB Nº 03/);
+  assert.match(text(cards[0]), /Register now · October 9/);
+  assert.equal(attr(nodes(cards[0]).find((node) => node.tagName === "img"), "src"), "/byob-community.webp");
+  assert.match(text(cards[1]), /New arrivals/);
+  assert.match(text(cards[1]), /Shop the collection/);
+  assert.match(text(cards[2]), /Join waitlist/);
+  assert.match(text(cards[3]), /Meet the Cast/);
+  assert.ok(!cards.some((card) => /What is this|BYOB Tank/i.test(text(card))));
+  assert.equal(attr(cards[3], "target"), "_blank");
+  assert.equal(nodes(cards[3]).filter((node) => node.tagName === "video").length, 1);
 });
 
-test("the BYOB Tank promotion requires a live product and never invents a price or shipping date", async () => {
-  const indexSource = await fs.readFile(
-    path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
-    "utf8"
-  );
-  const lobbyIndex = indexSource.slice(
-    indexSource.indexOf("export function JourneyLobbyIndex"),
-    indexSource.indexOf("export function JourneyStoreIndex")
-  );
-  assert.doesNotMatch(indexSource, /BYOB_TANK_FEATURE_FALLBACK|\$32|Ships September/);
-  assert.match(
-    lobbyIndex,
-    /products\.find\([\s\S]*?candidate\.id === (?:"byob-tank"|BYOB_TANK_FEATURE_FALLBACK\.id)[\s\S]*?\)/
-  );
-  assert.match(lobbyIndex, /title:\s*tank\.name/);
-  assert.match(
-    lobbyIndex,
-    /href:\s*`\/store\/\$\{tank\.id\}`/
-  );
-  assert.match(
-    lobbyIndex,
-    /meta:\s*tank\.available === false[\s\S]*?Sold out[\s\S]*?tank\.expectedShipDate[\s\S]*?formatJourneyShipDate\(tank\.expectedShipDate\)/
-  );
-  assert.match(lobbyIndex, /image:\s*tankImage\?\.url/);
-  assert.match(lobbyIndex, /alt:\s*tankImage\?\.alt \?\? tank\.name/);
-  assert.match(
-    lobbyIndex,
-    /\.\.\.\(tank\s*\?/,
-    "only a real product may supply a tank promotion"
-  );
-});
-
-test("the home marquee drifts continuously and gives people persistent control", async () => {
-  const indexSource = await fs.readFile(
-    path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
-    "utf8"
-  );
-  const lobbyIndex = indexSource.slice(
-    indexSource.indexOf("export function JourneyLobbyIndex"),
-    indexSource.indexOf("export function JourneyStoreIndex")
-  );
-
-  assert.match(indexSource, /const HOME_MARQUEE_RESUME_DELAY_MS = 12000;/);
-  assert.match(indexSource, /const HOME_MARQUEE_SPEED_PX_PER_SECOND = 20;/);
-  assert.match(indexSource, /const HOME_MARQUEE_MAX_FRAME_MS = 48;/);
-  assert.match(lobbyIndex, /requestAnimationFrame\s*\(/, "drift should follow the display refresh rate");
-  assert.match(lobbyIndex, /cancelAnimationFrame\s*\(/, "the animation frame must be cleaned up");
-  assert.doesNotMatch(lobbyIndex, /setInterval\s*\(|clearInterval\s*\(/);
-  assert.doesNotMatch(
-    lobbyIndex,
-    /(?:scrollTo|scrollIntoView)\s*\([\s\S]*?behavior:\s*"smooth"/,
-    "continuous drift must not be disguised card-step scrolling"
-  );
-  assert.match(
-    lobbyIndex,
-    /Math\.min\([\s\S]{0,160}?(?:delta|elapsed|frame)[\s\S]{0,160}?\)/i,
-    "large frame gaps must be capped so returning to the tab cannot cause a jump"
-  );
-  assert.match(
-    lobbyIndex,
-    /HOME_MARQUEE_(?:DRIFT_)?SPEED_PX_PER_SECOND[\s\S]{0,180}?(?:delta|elapsed|frame)/i,
-    "distance should be time-based rather than frame-count based"
-  );
-  assert.match(
-    lobbyIndex,
-    /(?:scrollWidth\s*-\s*marquee\.clientWidth|marquee\.scrollWidth\s*-\s*marquee\.clientWidth)/,
-    "drift needs the real horizontal boundary"
-  );
-  assert.match(
-    lobbyIndex,
-    /marqueeDirectionRef\.current\s*=\s*-1[\s\S]*?marqueeDirectionRef\.current\s*=\s*1/,
-    "the marquee should reverse at both ends rather than jump from end to start"
-  );
-  assert.match(lobbyIndex, /marquee\.scrollLeft\s*=/);
-  assert.doesNotMatch(lobbyIndex, /%\s*(?:cards|positions|selections)\.length/);
-  assert.match(
-    lobbyIndex,
-    /\)\s*\{[\s\S]*?marquee\.style\.removeProperty\("scroll-snap-type"\)[\s\S]*?return;[\s\S]*?marquee\.style\.scrollSnapType = "none"/,
-    "native snap should be disabled only after all automation gates allow drift"
-  );
-  assert.ok(
-    (lobbyIndex.match(/marquee\.style\.removeProperty\("scroll-snap-type"\)/g) ?? []).length >= 3,
-    "native snap must be restored while gated, when syncing, and during cleanup"
-  );
-  assert.match(
-    indexSource,
-    /matchMedia\(\s*"\(prefers-reduced-motion:\s*reduce\)"\s*\)/,
-    "reduced-motion preference must be detected"
-  );
-  assert.match(
-    lobbyIndex,
-    /motionPreference\.matches[\s\S]{0,200}?(?:return|marqueeCanDrift|shouldDrift)/,
-    "reduced motion should prevent automatic drift"
-  );
-
-  for (const handlers of [
-    ["onMouseEnter", "onPointerEnter"],
-    ["onMouseLeave", "onPointerLeave"],
-    ["onFocusCapture", "onFocus"],
-    ["onBlurCapture", "onBlur"],
-    ["onPointerDown"],
-    ["onPointerUp"],
-    ["onPointerCancel"],
-  ]) {
-    const pattern = new RegExp(`(?:${handlers.join("|")})=`);
-    assert.match(
-      lobbyIndex,
-      pattern,
-      `${handlers.join(" or ")} should participate in pausing or resuming the marquee`
-    );
+test("new arrivals uses live non-tank product images in a single catalog-linked grid", () => {
+  for (const count of [4, 9]) {
+    const selected = handles.slice(0, count).map(makeProduct);
+    const { cards } = render({ products: [makeProduct("byob-tank"), ...selected, { ...makeProduct("missing-photo"), image: undefined }] });
+    const store = cards.find((card) => attr(card, "href") === "/store");
+    assert.ok(store);
+    const imageUrls = nodes(store).filter((node) => node.tagName === "img").map((node) => attr(node, "src"));
+    assert.deepEqual([...imageUrls].sort(), selected.map(({ image }) => image.url).sort());
+    const columns = count > 4 ? "grid-cols-3" : "grid-cols-2";
+    const grid = nodes(store).find((node) => (attr(node, "class") ?? "").split(/\s+/).includes(columns));
+    assert.ok(grid, `The ${count}-image collage must use ${columns}`);
+    assert.equal(nodes(grid).filter((node) => node.tagName === "img").length, count);
+    assert.equal(nodes(store).filter((node) => node.tagName === "a").length, 1, "The collage must not nest product links");
   }
-  assert.match(
-    lobbyIndex,
-    /motionPreference\.matches\s*\|\|\s*marqueeStopped\s*\|\|\s*marqueePauseReasonsRef\.current\.size > 0\s*\|\|\s*!marqueeVisibleRef\.current\s*\|\|[\s\S]*?Date\.now\(\)\s*<\s*marqueeResumeAtRef\.current[\s\S]*?\)\s*\{[\s\S]*?return;/,
-    "manual stop, overlapping interaction reasons, cooldown, and offscreen state must gate drift"
-  );
-  assert.match(
-    lobbyIndex,
-    /const drift = \([^)]*\) => \{[\s\S]*?requestAnimationFrame\(drift\)[\s\S]*?if \(\s*motionPreference\.matches/,
-    "the next frame must be scheduled before a temporary pause gate so drift can resume"
-  );
-  assert.match(lobbyIndex, /new Set<"drag" \| "focus" \| "hover">\(\)/);
-  assert.match(lobbyIndex, /marqueePauseReasonsRef\.current\.add\(reason\)/);
-  assert.match(lobbyIndex, /marqueePauseReasonsRef\.current\.delete\(reason\)/);
-  assert.match(lobbyIndex, /new IntersectionObserver\s*\(/);
-  assert.match(lobbyIndex, /visibilityObserver\.observe\(marquee\)/);
-  assert.match(lobbyIndex, /visibilityObserver\.disconnect\(\)/);
-
-  assert.match(lobbyIndex, /const \[marqueeStopped, setMarqueeStopped\] = useState\(false\)/);
-  assert.match(lobbyIndex, /onClick=\{\(\) => setMarqueeStopped\(\(current\) => !current\)\}/);
-  assert.match(lobbyIndex, /aria-pressed=\{marqueeStopped\}/);
-  assert.match(lobbyIndex, /aria-label=\{marqueeStopped \? "Play marquee" : "Pause marquee"\}/);
+  const store = render({ products: [...products, makeProduct("tenth-piece")] }).cards.find((card) => attr(card, "href") === "/store");
+  assert.equal(nodes(store).filter((node) => node.tagName === "img").length, 9, "The collage stays bounded when more products are added");
 });
 
-test("the home feature list remains a native horizontal rail during drift", async () => {
-  const indexSource = await fs.readFile(
-    path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"),
-    "utf8"
-  );
-  const lobbyIndex = indexSource.slice(
-    indexSource.indexOf("export function JourneyLobbyIndex"),
-    indexSource.indexOf("export function JourneyStoreIndex")
-  );
-  const railClass = indexSource.match(
-    /const JOURNEY_RAIL_CLASS\s*=\s*\n?\s*"([^"]+)"/
-  )?.[1];
-  const railCardClass = indexSource.match(
-    /const JOURNEY_RAIL_CARD_CLASS\s*=\s*\n?\s*`([^`]+)`/
-  )?.[1];
+test("an open event can lead with its own image even without the archive event", () => {
+  const next = { ...events[2], image: "/byob-03.webp" };
+  const { cards } = render({ events: [next] });
+  assert.equal(attr(cards[0], "href"), "/community/byob-03/register");
+  assert.equal(attr(nodes(cards[0]).find((node) => node.tagName === "img"), "src"), "/byob-03.webp");
+});
 
-  assert.match(lobbyIndex, /data-journey-lobby-index/);
-  assert.match(lobbyIndex, /className=\{JOURNEY_RAIL_CLASS\}/);
-  assert.match(lobbyIndex, /className=\{JOURNEY_RAIL_CARD_CLASS\}/);
-  assert.ok(railClass, "the shared homepage rail needs an explicit class contract");
-  assert.ok(railCardClass, "the shared homepage rail card needs an explicit class contract");
-  assert.match(railClass, /\bflex\b/);
-  assert.match(railClass, /\btouch-pan-x\b/);
-  assert.match(railClass, /\boverflow-x-auto\b/);
-  assert.match(railClass, /\boverscroll-x-contain\b/);
-  assert.match(railClass, /\bsnap-x\b/);
-  assert.match(railClass, /\bsnap-mandatory\b/);
-  assert.doesNotMatch(railClass, /\bgrid-cols-3\b/);
-  assert.match(railCardClass, /\bsnap-start\b/);
-  assert.match(railCardClass, /\b(?:shrink-0|flex-none)\b/);
+test("missing products and closed events never resurrect obsolete promotions", () => {
+  const { cards } = render({ products: [], events: events.slice(0, 2) });
+  assert.deepEqual(cards.map((card) => attr(card, "href")), ["#members", "https://www.instagram.com/theruinedproject/"]);
+  assert.doesNotMatch(cards.map(text).join(" "), /Register now|BYOB Tank|What is this|Preorder|Ships September/);
+});
+
+test("the carousel stays a native swipe rail with manual controls and no automatic motion", () => {
+  const { all } = render();
+  const rail = all.find((node) => attr(node, "data-home-marquee") !== undefined);
+  assert.equal(attr(rail, "role"), "region");
+  assert.equal(attr(rail, "tabindex"), "0");
+  for (const token of ["flex", "touch-pan-x", "overflow-x-auto", "overscroll-x-contain", "snap-x", "snap-mandatory", "scroll-px-1", "sm:scroll-px-1.5"]) {
+    assert.ok((attr(rail, "class") ?? "").split(/\s+/).includes(token), `${token} preserves native horizontal navigation`);
+  }
+  const labels = all.filter((node) => node.tagName === "button").map((node) => attr(node, "aria-label"));
+  assert.equal(labels.filter((label) => /^Previous /i.test(label ?? "")).length, 1);
+  assert.equal(labels.filter((label) => /^Next /i.test(label ?? "")).length, 1);
+  assert.ok(!labels.some((label) => /Pause|Play marquee/i.test(label ?? "")));
+  const lobby = indexSource.slice(indexSource.indexOf("export function JourneyLobbyIndex"), indexSource.indexOf("export function JourneyStoreIndex"));
+  assert.doesNotMatch(lobby, /requestAnimationFrame|setInterval|setTimeout|marqueeStopped|pauseMarquee|resumeMarquee/);
+  assert.doesNotMatch(indexSource, /HOME_MARQUEE_SPEED|HOME_MARQUEE_RESUME|HOME_MARQUEE_MAX_FRAME/);
+});
+
+test("late event data resets the rail to its new leading card while ordinary rerenders preserve its identity", () => {
+  const effectDependencies = [];
+  const Component = load({
+    ...React,
+    useRef: () => ({ current: null }),
+    useEffect: (_effect, dependencies) => effectDependencies.push(dependencies),
+    useState: (initial) => [initial, () => {}],
+  });
+  const elements = (node) => React.isValidElement(node)
+    ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
+  const rail = (eventData, productData = products) => elements(Component({ events: eventData, products: productData }))
+    .find((node) => "data-home-marquee" in node.props);
+  const pending = rail([]);
+  const pendingDependencies = effectDependencies.at(-1);
+  const populated = rail(events);
+  const populatedDependencies = effectDependencies.at(-1);
+  assert.notEqual(pending.key, null);
+  assert.notEqual(populated.key, null);
+  assert.notEqual(pending.key, populated.key, "A prepended event must remount the native scroller instead of retaining the old snapped card");
+  assert.notDeepEqual(pendingDependencies, populatedDependencies);
+  assert.equal(rail([]).key, pending.key);
+  assert.equal(rail(events.map((event) => ({ ...event }))).key, populated.key);
+  assert.equal(rail(events, products.map((product) => ({ ...product, price: "$72" }))).key, populated.key,
+    "Unrelated refreshed product data must preserve a visitor's chosen carousel position");
+  assert.deepEqual(effectDependencies.at(-1), populatedDependencies);
+  const replacement = rail(events.map((event) => event.id === "byob-03" ? { ...event, id: "byob-04" } : event));
+  assert.notEqual(replacement.key, populated.key);
+  assert.notDeepEqual(effectDependencies.at(-1), populatedDependencies,
+    "A new leading event with the same card count must reconnect the observer to the remounted rail");
+});
+
+test("manual arrows advance one card, honor reduced motion, and disable at the rail boundaries", () => {
+  const calls = [];
+  const effects = [];
+  const state = [];
+  let cursor = 0;
+  let reducedMotion = false;
+  const rail = {
+    scrollLeft: 0, scrollWidth: 1280, clientWidth: 640,
+    children: [{ offsetLeft: 10 }, { offsetLeft: 330 }],
+    scrollBy(options) {
+      calls.push(options);
+      this.scrollLeft = Math.max(0, Math.min(640, this.scrollLeft + options.left));
+    },
+  };
+  const Component = load({
+    ...React,
+    useRef: () => ({ current: rail }),
+    useEffect: (effect) => effects.push(effect),
+    useState(initial) {
+      const slot = cursor++;
+      if (!(slot in state)) state[slot] = initial;
+      return [state[slot], (value) => { state[slot] = value; }];
+    },
+  }, {
+    window: { matchMedia: () => ({ matches: reducedMotion }) },
+    ResizeObserver: class { observe() {} disconnect() {} },
+  });
+  const elements = (node) => React.isValidElement(node)
+    ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
+  const draw = () => { cursor = 0; return elements(Component({ events, products })); };
+  const button = (label) => draw().find((node) => node.props["aria-label"] === label);
+  const update = () => draw().find((node) => "data-home-marquee" in node.props).props.onScroll();
+  draw();
+  effects[0]();
+  assert.equal(calls.length, 0, "Mounting and measuring the rail must not move it");
+  assert.equal(button("Previous feature").props.disabled, true);
+  assert.equal(button("Next feature").props.disabled, false);
+  button("Next feature").props.onClick();
+  update();
+  assert.deepEqual(calls[0], { left: 320, behavior: "smooth" });
+  assert.equal(button("Previous feature").props.disabled, false);
+  button("Next feature").props.onClick();
+  update();
+  assert.equal(button("Next feature").props.disabled, true);
+  reducedMotion = true;
+  button("Previous feature").props.onClick();
+  assert.deepEqual(calls.at(-1), { left: -320, behavior: "instant" });
 });

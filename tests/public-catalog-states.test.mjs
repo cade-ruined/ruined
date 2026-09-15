@@ -137,16 +137,19 @@ test("the walk store receives an honest state and provides a direct catalog reco
   assert.doesNotMatch(empty, /couldn’t load/);
 });
 
-test("a removed featured tank is absent instead of an unclickable stale promotion", () => {
+test("an empty lobby catalog leaves membership and social links without a stale product promotion", () => {
   const html = renderToStaticMarkup(React.createElement(JourneyLobbyIndex, { events: [], products: [] }));
   assert.doesNotMatch(html, /BYOB Tank|BYOB_Tee_Product|\$32|Ships September/);
-  assert.match(html, /Good company\. Real work\./);
+  assert.match(html, /Join waitlist/);
   assert.match(html, /Meet the Cast/);
 });
 
-test("the live lobby tank uses real data and does not advertise sold-out stock as preorder", () => {
-  const html = renderToStaticMarkup(React.createElement(JourneyLobbyIndex, { events: [], products: [{ ...product, available: false, expectedShipDate: "2026-10-01" }] }));
-  assert.match(html, /href="\/store\/byob-tank"/);
-  assert.match(html, /\$48 · Sold out/);
-  assert.doesNotMatch(html, /Preorder/);
+test("the lobby store collage uses live images and links to the full catalog", () => {
+  const products = ["ruined-hoodie", "ruined-tee", "womens-crop-tee", "mens-distressed-crop-tee"].map((id) => ({
+    ...product, id, name: id, image: { url: `/${id}.webp`, alt: id },
+  }));
+  const html = renderToStaticMarkup(React.createElement(JourneyLobbyIndex, { events: [], products }));
+  assert.match(html, /href="\/store"/);
+  for (const { image } of products) assert.ok(html.includes(`src="${image.url}"`));
+  assert.doesNotMatch(html, /href="\/store\/byob-tank"|BYOB_Tee_Product|Ships September/);
 });
