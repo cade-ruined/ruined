@@ -128,14 +128,11 @@ export default function BYOBRegistrationForm({ eventKey = BYOB_02_EVENT_KEY }: {
             <h3 className="display mt-2 text-3xl leading-none sm:text-4xl">
               BYOB Tank
             </h3>
-            <p className="mt-3 font-sans text-sm text-black/55">
-              $32 · Preorder · Ships September
-            </p>
             <Link
               href={TANK_CTA_HREF}
               className="ui-heading mt-6 inline-flex min-h-12 w-full items-center justify-between gap-8 border border-black bg-black px-5 py-3 text-[0.62rem] uppercase tracking-[0.16em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
             >
-              View the tank <span aria-hidden="true">→</span>
+              View BYOB Tank <span aria-hidden="true">→</span>
             </Link>
           </div>
         </div> : null}

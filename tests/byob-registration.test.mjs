@@ -617,7 +617,7 @@ test("the tank offer appears only after durable success and remains PII-free", a
     form,
     /TANK_CTA_HREF\s*=\s*`\$\{BYOB_02_TANK_HREF\}\?utm_source=byob-02-registration&utm_medium=onsite&utm_campaign=byob-02`/,
   );
-  assert.match(form, /View the tank/);
+  assert.match(form, /View BYOB Tank/);
   assert.match(form, /href=\{`\/community#\$\{config\.eventKey\}`\}/);
   assert.match(form, /Back to \{config\.title\}/);
   assert.match(form, /config\.showTankOffer \?/);
@@ -668,8 +668,8 @@ test("the post-registration tank offer shows the responsive flat-lay product ima
   );
   assert.match(tankImage, /className="[^"]*object-cover[^"]*"/);
   assert.match(successBranch, /href=\{TANK_CTA_HREF\}/);
-  assert.match(successBranch, /\$32 · Preorder · Ships September/);
-  assert.doesNotMatch(successBranch, /Ships September\s+\d/);
+  assert.match(successBranch, /View BYOB Tank/);
+  assert.doesNotMatch(successBranch, /\$32|Preorder|Ships September/);
 });
 
 test("registration neither opts people into marketing nor invokes Shopify purchase state", async () => {
