@@ -5,14 +5,16 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Product } from "@/data/products";
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
+import { getProductColorHref, getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 import { isShopifyVariantId, type BagItem, useBag } from "./bag-store";
 
 type DisplayBagItem = BagItem & {
   canonical: boolean;
   available: boolean;
+  href: string;
 };
 
-function resolveBagItems(items: BagItem[], products: Product[]): DisplayBagItem[] {
+export function resolveBagItems(items: BagItem[], products: Product[]): DisplayBagItem[] {
   const variants = new Map(
     products.flatMap((product) =>
       product.variants.map((variant) => [variant.id, { product, variant }] as const)
@@ -21,7 +23,10 @@ function resolveBagItems(items: BagItem[], products: Product[]): DisplayBagItem[
 
   return items.map((item) => {
     const current = variants.get(item.variantId);
-    if (!current) return { ...item, canonical: false, available: false };
+    if (!current) return { ...item, canonical: false, available: false, href: `/store/${encodeURIComponent(item.productId)}` };
+
+    const colorOption = getProductColorOption(current.product);
+    const color = current.variant.selectedOptions.find((option) => option.name === colorOption?.name)?.value;
 
     return {
       ...item,
@@ -33,7 +38,8 @@ function resolveBagItems(items: BagItem[], products: Product[]): DisplayBagItem[
       unitPrice: current.variant.price,
       priceAmount: current.variant.priceAmount,
       currencyCode: current.variant.currencyCode,
-      image: current.product.image,
+      image: getVariantImage(current.product, current.variant),
+      href: getProductColorHref(current.product, color),
       expectedShipDate: current.product.expectedShipDate,
       canonical: true,
       available: current.variant.available,
@@ -159,7 +165,7 @@ export default function BagPageClient({
       <section aria-label="Bag items" className="border-t border-white/15 lg:col-span-8">
         {displayItems.map((item) => (
           <article key={item.key} className="grid grid-cols-[6.5rem_1fr] gap-4 border-b border-white/15 py-5 sm:grid-cols-[9rem_1fr] sm:gap-7 sm:py-7">
-            <Link href={`/store/${item.productId}`} className="relative aspect-[4/5] overflow-hidden bg-white/5">
+            <Link href={item.href} className="relative aspect-[4/5] overflow-hidden bg-white/5">
               {item.image && (
                 <Image src={item.image.url} alt={item.image.alt} fill sizes="144px" className="object-cover" />
               )}
@@ -169,7 +175,7 @@ export default function BagPageClient({
                 <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
                   <div>
                     <p className="font-mono text-[0.52rem] uppercase tracking-[0.22em] text-white/40">{item.productCode}</p>
-                    <Link href={`/store/${item.productId}`} className="display mt-2 block text-2xl leading-none transition-colors hover:text-[var(--color-poster)] sm:text-4xl">{item.productName}</Link>
+                    <Link href={item.href} className="display mt-2 block text-2xl leading-none transition-colors hover:text-[var(--color-poster)] sm:text-4xl">{item.productName}</Link>
                   </div>
                   <p className="display shrink-0 text-lg sm:text-2xl">{item.unitPrice}</p>
                 </div>

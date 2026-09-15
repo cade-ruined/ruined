@@ -8,12 +8,13 @@ import {
   getProductSizeGuideConfig,
 } from "@/data/product-size-guides";
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
+import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 import BagLink from "./BagLink";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
 
-function optionValue(variant: ProductVariant, name: string): string | undefined {
-  return variant.selectedOptions.find((option) => option.name === name)?.value;
+function optionValue(variant: ProductVariant | undefined, name: string): string | undefined {
+  return variant?.selectedOptions.find((option) => option.name === name)?.value;
 }
 
 function variantMatches(variant: ProductVariant, selection: Record<string, string>): boolean {
@@ -23,10 +24,12 @@ function variantMatches(variant: ProductVariant, selection: Record<string, strin
 }
 
 function visibleOptions(product: Product): ProductOption[] {
-  return product.options.filter(
+  const options = product.options.filter(
     (option) =>
       !(option.name === "Title" && option.values.length === 1 && option.values[0] === "Default Title")
   );
+  const color = getProductColorOption(product);
+  return color ? [color, ...options.filter((option) => option !== color)] : options;
 }
 
 function formatPriceForSentence(price: string): string {
@@ -45,19 +48,24 @@ function formatExpectedShipDate(value?: string): string | undefined {
   }).format(date);
 }
 
-export default function ProductPurchase({ product }: { product: Product }) {
+export default function ProductPurchase({ product, initialColor, onColorChange }: {
+  product: Product;
+  initialColor?: string;
+  onColorChange?: (color: string) => void;
+}) {
   const options = useMemo(() => visibleOptions(product), [product]);
+  const colorOption = getProductColorOption(product);
   const firstAvailable = product.variants.find((variant) => variant.available) ?? product.variants[0];
-  const [selection, setSelection] = useState<Record<string, string>>(() =>
-    options.every((option) => option.values.length <= 1)
-      ? Object.fromEntries(
-          options.map((option) => [
-            option.name,
-            optionValue(firstAvailable, option.name) ?? option.values[0] ?? "",
-          ])
-        )
-      : {}
-  );
+  const [selection, setSelection] = useState<Record<string, string>>(() => ({
+    ...Object.fromEntries(
+      options.filter((option) => option.values.length === 1).map((option) => [
+        option.name,
+        optionValue(firstAvailable, option.name) ?? option.values[0] ?? "",
+      ])
+    ),
+    ...(colorOption && initialColor && colorOption.values.includes(initialColor)
+      ? { [colorOption.name]: initialColor } : {}),
+  }));
   const [added, setAdded] = useState(false);
   const { add } = useBag();
 
@@ -65,7 +73,10 @@ export default function ProductPurchase({ product }: { product: Product }) {
   const selectedVariant = selectionComplete
     ? product.variants.find((variant) => variantMatches(variant, selection))
     : undefined;
-  const hasAvailableVariant = product.variants.some((variant) => variant.available);
+  const selectedColor = colorOption ? selection[colorOption.name] : undefined;
+  const hasAvailableVariant = product.variants.some((variant) =>
+    variant.available && (!colorOption || !selectedColor || optionValue(variant, colorOption.name) === selectedColor)
+  );
   const purchasable = selectedVariant?.available === true;
   const expectedShipDate = formatExpectedShipDate(product.expectedShipDate);
   const isPreorder = Boolean(expectedShipDate);
@@ -81,6 +92,10 @@ export default function ProductPurchase({ product }: { product: Product }) {
     : "Select options";
 
   function canSelect(name: string, value: string): boolean {
+    // A sold-out color remains viewable; its sizes and purchase button cannot be used.
+    if (name === colorOption?.name) {
+      return product.variants.some((variant) => optionValue(variant, name) === value);
+    }
     const optionIndex = options.findIndex((option) => option.name === name);
     const next = Object.fromEntries([
       ...options.slice(0, optionIndex).flatMap((option) =>
@@ -93,6 +108,7 @@ export default function ProductPurchase({ product }: { product: Product }) {
 
   function choose(name: string, value: string) {
     setAdded(false);
+    if (name === colorOption?.name) onColorChange?.(value);
     const optionIndex = options.findIndex((option) => option.name === name);
     setSelection((current) =>
       Object.fromEntries([
@@ -116,7 +132,7 @@ export default function ProductPurchase({ product }: { product: Product }) {
       unitPrice: selectedVariant.price,
       priceAmount: selectedVariant.priceAmount,
       currencyCode: selectedVariant.currencyCode,
-      image: product.image,
+      image: getVariantImage(product, selectedVariant),
       expectedShipDate: product.expectedShipDate,
     });
     setAdded(true);

@@ -62,6 +62,7 @@ const PRODUCTS_QUERY = `#graphql
             availableForSale
             selectedOptions { name value }
             price { amount currencyCode }
+            image { url altText width height }
           }
         }
         metafields(identifiers: [
@@ -160,6 +161,12 @@ type SFProductNode = {
       availableForSale: boolean;
       selectedOptions: { name: string; value: string }[];
       price: SFMoney;
+      image?: {
+        url: string;
+        altText: string | null;
+        width: number | null;
+        height: number | null;
+      } | null;
     }[];
   };
   metafields: SFMetafield[];
@@ -222,6 +229,14 @@ function mapProduct(node: SFProductNode, index: number): Product {
     price: formatPrice(variant.price),
     priceAmount: variant.price.amount,
     currencyCode: variant.price.currencyCode,
+    ...(variant.image ? {
+      image: {
+        url: variant.image.url,
+        alt: variant.image.altText ?? `${node.title} — ${variant.title}`,
+        ...(variant.image.width ? { width: variant.image.width } : {}),
+        ...(variant.image.height ? { height: variant.image.height } : {}),
+      },
+    } : {}),
   }));
   const options: ProductOption[] = (node.options ?? [])
     .filter(

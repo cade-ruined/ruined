@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
+import { getCatalogEntries, type CatalogEntry } from "@/lib/store/product-colors";
 
 export default function StoreGallery({
   products,
@@ -11,6 +12,7 @@ export default function StoreGallery({
   products: Product[];
   catalogStatus?: CatalogStatus;
 }) {
+  const entries = getCatalogEntries(products);
   if (!products.length) {
     const notice = catalogNotice(catalogStatus);
     return (
@@ -73,7 +75,7 @@ export default function StoreGallery({
 
           <div className="md:col-span-5 lg:col-span-4">
             <div className="flex items-end justify-between gap-6 border-b border-white/15 pb-4 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-white/45">
-              <span>{String(products.length).padStart(2, "0")} pieces</span>
+              <span>{String(entries.length).padStart(2, "0")} pieces</span>
               <span>Available online</span>
             </div>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-white/60">
@@ -90,10 +92,10 @@ export default function StoreGallery({
       >
         <div className="mx-auto max-w-[96rem]">
           <div className="grid grid-cols-2 border-l border-t border-black/15 lg:grid-cols-4">
-            {products.map((product, index) => (
+            {entries.map((entry, index) => (
               <ProductCard
-                key={product.id}
-                product={product}
+                key={entry.key}
+                entry={entry}
                 index={index}
                 featured={index === 0}
               />
@@ -128,25 +130,24 @@ export default function StoreGallery({
 }
 
 function ProductCard({
-  product,
+  entry,
   index,
   featured = false,
 }: {
-  product: Product;
+  entry: CatalogEntry;
   index: number;
   featured?: boolean;
 }) {
-  const secondImage = product.images?.[1];
-  const availability = product.available === false
+  const { product, color, price, href } = entry;
+  const [image, secondImage] = entry.images;
+  const availability = !entry.available
     ? "Sold out"
-    : product.variants.some((variant) => variant.available)
-      ? product.expectedShipDate
-        ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
-        : "Available"
-      : "Enquire";
+    : product.expectedShipDate
+      ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
+      : "Available";
   return (
     <Link
-      href={`/store/${product.id}`}
+      href={href}
       className={`group border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${
         featured ? "col-span-2" : ""
       }`}
@@ -155,17 +156,17 @@ function ProductCard({
         className={`relative overflow-hidden ${featured ? "aspect-[5/4] sm:aspect-[4/3] lg:aspect-[5/4]" : "aspect-[4/5]"}`}
         style={{ background: PRODUCT_TONES[product.tone] }}
       >
-        {product.image && (
+        {image && (
           <Image
-            src={product.image.url}
-            alt={product.image.alt}
+            src={image.url}
+            alt={image.alt}
             fill
             priority={featured}
             sizes={featured ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
             className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018]"
           />
         )}
-        {product.image && secondImage && secondImage.url !== product.image.url && (
+        {image && secondImage && secondImage.url !== image.url && (
           <Image
             src={secondImage.url}
             alt=""
@@ -187,11 +188,11 @@ function ProductCard({
             {product.name}
           </h2>
           <span className={`ui-heading tabular-nums ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`}>
-            {product.price}
+            {price}
           </span>
         </div>
         <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/50">
-          <span className="truncate">{product.subtitle || product.material}</span>
+          <span className="truncate">{color || product.subtitle || product.material}</span>
           <span className={availability === "Sold out" ? "text-black/35" : "text-[var(--color-poster)]"}>{availability}</span>
         </div>
       </div>

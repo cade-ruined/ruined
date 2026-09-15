@@ -1,41 +1,46 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import ProductPurchase from "@/components/store/ProductPurchase";
+import ProductDetail from "@/components/store/ProductDetail";
 import ProductDescription from "@/components/store/ProductDescription";
 import {
-  PRODUCT_TONES,
   type Product,
   type ProductImage,
 } from "@/data/products";
 import { SITE_URL } from "@/lib/site";
 import { getProducts } from "@/lib/shopify";
+import { getProductColorHref, getProductColorImages, getProductColorOption } from "@/lib/store/product-colors";
 
 // Product visibility can change independently of a Vercel deployment. Resolve
 // the active Headless catalogue at request time rather than from build output.
 export const dynamic = "force-dynamic";
 
-function editorialImages(product: Product): ProductImage[] {
-  const images = product.images?.length
-    ? product.images
-    : product.image
-      ? [product.image]
-      : [];
+type ProductPageProps = {
+  params: Promise<{ handle: string }>;
+  searchParams: Promise<{ color?: string | string[] }>;
+};
 
-  return Array.from(new Map(images.map((image) => [image.url, image])).values()).slice(0, 2);
+function selectedColor(product: Product, requested?: string | string[]): string | undefined {
+  const color = getProductColorOption(product);
+  return typeof requested === "string" && color?.values.includes(requested)
+    ? requested
+    : color?.values[0];
+}
+
+function editorialImages(product: Product, color?: string): ProductImage[] {
+  return getProductColorImages(product, color).slice(0, 2);
 }
 
 export async function generateMetadata({
   params,
-}: {
-  params: Promise<{ handle: string }>;
-}): Promise<Metadata> {
+  searchParams,
+}: ProductPageProps): Promise<Metadata> {
   const { handle } = await params;
   const product = (await getProducts()).find((item) => item.id === handle);
   if (!product) return {};
 
-  const images = editorialImages(product);
+  const color = selectedColor(product, (await searchParams).color);
+  const images = editorialImages(product, color);
   return {
     title: product.name,
     description: product.description,
@@ -50,42 +55,33 @@ export async function generateMetadata({
 
 export default async function ProductPage({
   params,
-}: {
-  params: Promise<{ handle: string }>;
-}) {
+  searchParams,
+}: ProductPageProps) {
   const { handle } = await params;
   const product = (await getProducts()).find((item) => item.id === handle);
   if (!product) notFound();
 
-  const images = editorialImages(product);
-  const hasAvailableVariant = product.variants.some((variant) => variant.available);
-  const hasOnlineVariant = product.variants.some((variant) =>
+  const color = selectedColor(product, (await searchParams).color);
+  const images = editorialImages(product, color);
+  const colorOption = getProductColorOption(product);
+  const variants = product.variants.filter((variant) => !color || variant.selectedOptions.some(
+    (option) => option.name === colorOption?.name && option.value === color
+  ));
+  const hasAvailableVariant = variants.some((variant) => variant.available);
+  const hasOnlineVariant = variants.some((variant) =>
     variant.id.startsWith("gid://shopify/ProductVariant/")
   );
-  const status = !hasAvailableVariant
-    ? "Sold out"
-    : product.expectedShipDate
-      ? "Preorder — pay in full"
-      : hasOnlineVariant
-        ? "Available"
-        : "Studio confirmation";
-  const specs = [
-    { label: "Material", value: product.material },
-    { label: "Origin", value: product.origin },
-    { label: "Care", value: product.care },
-    { label: "Status", value: status },
-  ].filter((spec) => spec.value.trim());
 
-  const amounts = product.variants
+  const amounts = variants
     .map((variant) => Number(variant.priceAmount))
     .filter(Number.isFinite);
-  const currencyCode = product.variants[0]?.currencyCode;
+  const currencyCode = variants[0]?.currencyCode;
   const availability = !hasAvailableVariant
     ? "https://schema.org/OutOfStock"
     : product.expectedShipDate
       ? "https://schema.org/PreOrder"
       : "https://schema.org/InStock";
-  const productUrl = `${SITE_URL}/store/${encodeURIComponent(product.id)}`;
+  const productUrl = `${SITE_URL}${getProductColorHref(product, color)}`;
   const offer = hasOnlineVariant && currencyCode && amounts.length
     ? {
         "@type": "AggregateOffer",
@@ -93,7 +89,7 @@ export default async function ProductPage({
         priceCurrency: currencyCode,
         lowPrice: Math.min(...amounts).toFixed(2),
         highPrice: Math.max(...amounts).toFixed(2),
-        offerCount: product.variants.length,
+        offerCount: variants.length,
         availability,
       }
     : undefined;
@@ -103,6 +99,7 @@ export default async function ProductPage({
     name: product.name,
     description: product.description,
     sku: product.code,
+    ...(color ? { color } : {}),
     url: productUrl,
     brand: { "@type": "Brand", name: "Ruined" },
     ...(images.length ? { image: images.map((image) => image.url) } : {}),
@@ -125,71 +122,14 @@ export default async function ProductPage({
           <span>{product.code}</span>
         </div>
 
-        <div className="mt-10 grid gap-10 md:grid-cols-12 md:gap-14">
-          <div className="grid gap-3 md:col-span-7 sm:gap-5">
-            {images.length ? (
-              images.map((image, index) => (
-                <div
-                  key={image.url}
-                  className="relative aspect-[4/5] overflow-hidden"
-                  style={{ background: PRODUCT_TONES[product.tone] }}
-                >
-                  <Image
-                    src={image.url}
-                    alt={image.alt}
-                    fill
-                    priority={index === 0}
-                    sizes="(min-width: 768px) 58vw, 100vw"
-                    className="object-cover"
-                  />
-                </div>
-              ))
-            ) : (
-              <div
-                className="aspect-[4/5]"
-                aria-hidden="true"
-                style={{ background: PRODUCT_TONES[product.tone] }}
-              />
-            )}
-          </div>
-
-          <article className="self-start md:sticky md:top-28 md:col-span-5 md:pt-8">
-            {product.subtitle && (
-              <p className="font-mono text-[0.64rem] uppercase tracking-[0.28em] text-[var(--color-poster)]">
-                {product.subtitle}
-              </p>
-            )}
-            <h1 className="display mt-4 text-[clamp(3rem,7vw,5.5rem)] leading-[0.9]">
-              {product.name}
-            </h1>
-
-            <ProductPurchase product={product} />
-
-            <ProductDescription
-              description={product.description}
-              descriptionHtml={product.descriptionHtml}
-              expectedShipDate={product.expectedShipDate}
-            />
-
-            {specs.length > 0 && (
-              <dl className="mt-8 space-y-3 border-y border-white/15 py-6 font-mono text-[0.64rem] uppercase tracking-[0.16em]">
-                {specs.map((spec) => (
-                  <Row key={spec.label} label={spec.label} value={spec.value} />
-                ))}
-              </dl>
-            )}
-          </article>
-        </div>
+        <ProductDetail key={product.id} product={product}>
+          <ProductDescription
+            description={product.description}
+            descriptionHtml={product.descriptionHtml}
+            expectedShipDate={product.expectedShipDate}
+          />
+        </ProductDetail>
       </div>
     </main>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-3 gap-3">
-      <dt className="text-white/40">{label}</dt>
-      <dd className="col-span-2">{value}</dd>
-    </div>
   );
 }

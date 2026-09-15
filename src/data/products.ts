@@ -36,6 +36,7 @@ export type ProductVariant = {
   price: string;
   priceAmount: string;
   currencyCode: string;
+  image?: ProductImage;
 };
 
 export type Product = {

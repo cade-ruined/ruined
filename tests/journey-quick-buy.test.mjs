@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
 import { compile } from "tailwindcss";
+import * as productColors from "../src/lib/store/product-colors.ts";
 
 const compiled = new Map();
 function load(path, dependencies, environment = {}) {
@@ -38,6 +39,7 @@ function variant(id, color, size, available = true, priceAmount = "64.00") {
     id: `gid://shopify/ProductVariant/${id}`,
     title: `${color} / ${size}`,
     available,
+    image: { url: `/script-hoodie-${color.toLowerCase()}.png`, alt: `${color} Script Hoodie` },
     selectedOptions: [{ name: "Color", value: color }, { name: "Size", value: size }],
     price: `$${Number(priceAmount)}`,
     priceAmount,
@@ -76,6 +78,7 @@ function fixture(item = product, add = () => {}) {
     },
   };
   const Component = load("src/components/sequence/JourneyQuickBuy.tsx", {
+    "@/lib/store/product-colors": productColors,
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add(payload) { calls.push(payload); return add(payload); } }) },
@@ -124,7 +127,7 @@ test("walk quick buy sends the exact chosen variant and announces the product, c
     unitPrice: "$68",
     priceAmount: "68.00",
     currencyCode: "USD",
-    image: product.image,
+    image: product.variants[4].image,
     expectedShipDate: "2026-10-01",
   }]);
   assert.equal(content(view.button()), "Added ✓");
@@ -297,11 +300,13 @@ test("quick-buy gestures stay local without canceling native controls or capturi
 
 test("the walk shelf renders three purchase panels beside product links and a full-catalog route", async () => {
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
+    "@/lib/store/product-colors": productColors,
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add() {} }) },
   }).default;
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
+    "@/lib/store/product-colors": productColors,
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },

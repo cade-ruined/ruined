@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { loadCatalog } from "../src/lib/store/catalog-loader.ts";
 import * as catalog from "../src/lib/store/catalog.ts";
+import * as productColors from "../src/lib/store/product-colors.ts";
 
 const product = {
   id: "byob-tank", name: "BYOB Tank", code: "RU—001", price: "$ 48",
@@ -33,6 +34,7 @@ const uiDependencies = {
   "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
   "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
   "@/lib/store/catalog": catalog,
+  "@/lib/store/product-colors": productColors,
 };
 const { default: StoreGallery } = await compile("src/components/store/StoreGallery.tsx", {
   ...uiDependencies,
@@ -128,7 +130,7 @@ test("a confirmed empty catalog says no pieces are listed without inventing a re
 });
 
 test("available products preserve real product routes, price, and sold-out state", () => {
-  const html = renderToStaticMarkup(React.createElement(StoreGallery, { products: [{ ...product, available: false }], catalogStatus: "ready" }));
+  const html = renderToStaticMarkup(React.createElement(StoreGallery, { products: [{ ...product, available: false, variants: product.variants.map((variant) => ({ ...variant, available: false })) }], catalogStatus: "ready" }));
   assert.match(html, /href="\/store\/byob-tank"/);
   assert.match(html, /\$ 48/);
   assert.match(html, /Sold out/);
