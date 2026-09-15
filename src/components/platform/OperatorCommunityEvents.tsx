@@ -7,16 +7,18 @@ import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_LABEL_TEXT_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import { zonedDateTimeLocalToIso, zonedDateTimeLocalValue } from "@/lib/datetime/zoned-date-time";
 import type { CommunityEventRecord, CommunityEventRegistrant } from "@/lib/events/community-event-model";
+import { getByobRegistrationConfig } from "@/lib/events/byob-registration-model";
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>{label}</span>{children}</label>;
 }
 
 export function CommunityEventEditor({ event, preview = false }: { event?: CommunityEventRecord; preview?: boolean }) {
+  const nativeRegistration = event ? getByobRegistrationConfig(event.eventKey) : null;
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
-  const [mode, setMode] = useState(event?.registrationMode ?? "none");
+  const [mode, setMode] = useState(nativeRegistration ? "byob" : event?.registrationMode ?? "none");
   const [timezone, setTimezone] = useState(event?.timezone ?? "America/Denver");
   const [editing, setEditing] = useState(!event);
   const [failed, setFailed] = useState(false);
@@ -50,7 +52,7 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
   if (event && !editing) return <section aria-label="Event details" className="rounded-lg bg-black/[0.035] p-4 sm:p-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="ui-heading text-xl font-semibold">Event details</h2><p className="mt-2 text-sm text-black/60">{event.publicationState === "published" ? "Published on website" : event.publicationState === "archived" ? "Archived — hidden from website" : "Draft — hidden from website"} · {event.eventState}</p></div>
-      <button className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
+      <button className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(nativeRegistration ? "byob" : event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
     </header>
     <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
       <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>When</dt><dd className="mt-1">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone }).format(new Date(event.startsAt))}<span className="mt-1 block text-xs text-black/55">{event.timezone}</span></dd></div>
@@ -74,7 +76,7 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
       <Field label="Website visibility"><select className={OPERATOR_FIELD_CLASS} name="publicationState" defaultValue={event?.publicationState ?? "draft"}><option value="draft">Draft — hidden from the website</option><option value="published">Published — on the website</option><option value="archived">Archived — hidden, records retained</option></select></Field>
       <Field label="Event status"><select className={OPERATOR_FIELD_CLASS} name="eventState" defaultValue={event?.eventState ?? "Upcoming"}><option value="Upcoming">Upcoming</option><option value="Ongoing">Happening now</option><option value="Ended">Previously held</option></select></Field>
       <Field label="Short label"><input className={OPERATOR_FIELD_CLASS} name="eyebrow" defaultValue={event?.eyebrow ?? "Community gathering"} maxLength={100} /></Field>
-      <Field label="Registration"><select className={OPERATOR_FIELD_CLASS} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} disabled={event?.eventKey === "byob-02"}>{event?.eventKey === "byob-02" ? <option value="byob">Existing BYOB registration</option> : <><option value="none">No registration</option><option value="external">External registration link</option></>}</select></Field>
+      <Field label="Registration"><select className={OPERATOR_FIELD_CLASS} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} disabled={Boolean(nativeRegistration)}>{nativeRegistration ? <option value="byob">Existing BYOB registration</option> : <><option value="none">No registration</option><option value="external">External registration link</option></>}</select></Field>
       <div className="sm:col-span-2"><Field label="Description"><textarea className={`${OPERATOR_FIELD_CLASS} min-h-24`} name="summary" defaultValue={event?.summary} maxLength={3000} /></Field></div>
       {mode === "external" ? <div className="sm:col-span-2"><Field label="External registration link"><input className={OPERATOR_FIELD_CLASS} name="registrationUrl" type="url" placeholder="https://" defaultValue={event?.registrationUrl ?? ""} required /></Field><p className="mt-2 text-sm text-black/55">Registration, waivers, capacity and attendee records stay with that provider.</p></div> : null}
       {mode !== "none" ? <label className="flex items-center gap-3 text-sm sm:col-span-2"><input name="registrationOpen" type="checkbox" defaultChecked={event?.registrationOpen ?? false} className="h-5 w-5 accent-black" />Registration open</label> : null}

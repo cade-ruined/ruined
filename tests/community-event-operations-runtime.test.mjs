@@ -9,6 +9,7 @@ import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const migration = "db/migrations/20260914221302_community_event_operations.sql";
+const byob03Migration = "db/migrations/20260915161147_byob_03_registration.sql";
 const admin = "11111111-1111-4111-8111-111111111111";
 const guide = "22222222-2222-4222-8222-222222222222";
 async function load(path, dependencies = {}) {
@@ -23,7 +24,7 @@ async function load(path, dependencies = {}) {
 }
 class OpsOperatingRepositoryError extends Error { constructor(code, message) { super(message); this.code = code; } }
 
-async function fixture(t, { migrate = true, databaseFails = false } = {}) {
+async function fixture(t, { migrate = true, migrateByob03 = true, databaseFails = false } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   const driver = postgres({ host: "127.0.0.1", port: 1, max: 1 });
@@ -46,6 +47,7 @@ async function fixture(t, { migrate = true, databaseFails = false } = {}) {
   `);
   for (const file of ["20260821_byob_registration.sql", "20260821_byob_registration_v2.sql", "20260821_byob_registration_v3.sql"]) await db.exec(await source(`db/migrations/${file}`));
   if (migrate) await db.exec(await source(migration));
+  if (migrate && migrateByob03) await db.exec(await source(byob03Migration));
   await db.query("insert into platform_users values ($1,'active'),($2,'active')", [admin, guide]);
   await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'ops_admin'),($2,'guide')", [admin, guide]);
   const wrap = (engine) => {
@@ -67,12 +69,16 @@ async function fixture(t, { migrate = true, databaseFails = false } = {}) {
   const byobModel = await load("src/lib/events/byob-registration-model.ts");
   const gallery = await load("src/data/eventGalleries.ts");
   const events = await load("src/data/events.ts", { "@/data/eventGalleries": gallery, "@/lib/events/byob-registration-model": byobModel });
-  const model = await load("src/lib/events/community-event-model.ts", { "@/data/events": events });
+  const model = await load("src/lib/events/community-event-model.ts", {
+    "@/data/events": events,
+    "@/lib/events/byob-registration-model": byobModel,
+  });
   const repository = await load("src/lib/events/community-event-repository.ts", {
     "node:crypto": { randomUUID }, "@/data/events": events,
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError },
     "@/lib/events/community-event-model": model,
+    "@/lib/events/byob-registration-model": byobModel,
   });
   const byob = await load("src/lib/events/byob-registration-repository.ts", {
     "@/lib/database/server": { getApplicationDatabase: () => sql },
@@ -80,12 +86,26 @@ async function fixture(t, { migrate = true, databaseFails = false } = {}) {
     "@/lib/events/byob-registration-model": byobModel,
   });
   const submission = byobModel.parseByob02RegistrationInput({ firstName: "Casey", lastName: "Example", email: "casey@example.test", waiverAccepted: true, waiverVersion: byobModel.BYOB_02_WAIVER_VERSION });
-  return { db, sql, repository, byob, submission, model, events };
+  const submission03 = byobModel.parseByobRegistrationInput({ firstName: "Casey", lastName: "Example", email: "casey@example.test", waiverAccepted: true, waiverVersion: byobModel.BYOB_03_WAIVER_VERSION }, byobModel.BYOB_03_REGISTRATION);
+  return { db, sql, repository, byob, byobModel, submission, submission03, model, events };
+}
+
+async function publishByob03(f) {
+  const draft = (await f.repository.getOpsCommunityEvents(admin)).find((event) => event.eventKey === "byob-03");
+  assert.ok(draft, "the Nº.03 migration must create a listing");
+  return f.repository.saveCommunityEvent(admin, { ...draft, publicationState: "published", registrationOpen: true, eventState: "Upcoming" }, draft.version);
 }
 
 test("migration preserves the exact existing public events and keeps new tables private", async (t) => {
   const f = await fixture(t);
-  assert.deepEqual(await f.repository.getPublicCommunityEvents(), f.events.EVENTS);
+  // The operations migration owns the historical public listing snapshot.
+  // Later static fallback edits must not silently rewrite these stored records.
+  const initial02 = f.events.EVENTS.find((event) => event.id === "byob-02");
+  assert.deepEqual(await f.repository.getPublicCommunityEvents(), [
+    f.events.EVENTS.find((event) => event.id === "byob-01"),
+    { ...initial02, status: "Upcoming", video: undefined, videoPoster: undefined,
+      registration: { href: "/community/byob-02/register", label: "Register", status: "Open" } },
+  ]);
   const privileges = await f.db.query(`select c.relname, c.relrowsecurity,
     has_table_privilege('anon', c.oid, 'SELECT') as anonymous_read,
     has_table_privilege('authenticated', c.oid, 'INSERT') as browser_write
@@ -165,7 +185,7 @@ test("registration scope, cancelled attendance, unsafe media and BYOB waiver reu
   await f.db.query("update community_event_registrations set status='cancelled', cancelled_at=now() where id=$1", [registration.id]);
   await assert.rejects(f.repository.recordCommunityAttendance(admin, "byob-02", registration.id, "present", null), (error) => error.code === "conflict");
   const input = f.model.legacyCommunityEventRecords()[1];
-  for (const invalid of [{ ...input, imagePath: "//attacker.test/image" }, { ...input, imagePath: "/../secret" }, { ...input, eventKey: "byob-03" }, { ...input, registrationMode: "none" }]) {
+  for (const invalid of [{ ...input, imagePath: "//attacker.test/image" }, { ...input, imagePath: "/../secret" }, { ...input, eventKey: "byob-04" }, { ...input, registrationMode: "none" }]) {
     assert.throws(() => f.repository.parseCommunityEventInput(invalid), (error) => error.code === "invalid_request");
   }
 });
@@ -187,6 +207,146 @@ test("configured database errors stop public feed reads and registration", async
   const f = await fixture(t, { databaseFails: true });
   await assert.rejects(f.repository.getPublicCommunityEvents(), /Database offline/);
   await assert.rejects(f.byob.registerByob02Participant(f.submission), /Database offline/);
+});
+
+test("Nº.03 migration preserves historical Nº.02 waivers, guest evidence, registrations and Sheets jobs", async (t) => {
+  const f = await fixture(t, { migrateByob03: false });
+  await f.byob.registerByob02Participant(f.submission);
+  const legacy = await f.db.query(`insert into community_event_registrations (
+    event_key, registrant_name, email_normalized, waiver_version, waiver_acceptance_evidence
+  ) values ('byob-02', 'Historical Participant', 'historical@example.test', 'byob-02-risk-acknowledgment-v1',
+    '{"affirmative_action":"required_checkbox","scope":"registrant_only","guest_count":1}'::jsonb)
+  returning id`);
+  await f.db.query("insert into community_event_registration_guests (registration_id, position, guest_name) values ($1, 1, 'Historical Guest')", [legacy.rows[0].id]);
+  const before = {};
+  for (const table of ["community_event_waiver_versions", "community_event_registrations", "community_event_registration_guests", "integration_outbox"]) {
+    before[table] = (await f.db.query(`select * from ${table} order by 1, 2`)).rows;
+  }
+  const publicBefore = await f.repository.getPublicCommunityEvents();
+  await f.db.exec(await source(byob03Migration));
+  await f.db.exec(await source(byob03Migration));
+  for (const table of Object.keys(before)) {
+    const where = table === "community_event_waiver_versions" ? " where event_key='byob-02'" : "";
+    assert.deepEqual((await f.db.query(`select * from ${table}${where} order by 1, 2`)).rows, before[table], `${table} must remain unchanged`);
+  }
+  assert.deepEqual(await f.repository.getPublicCommunityEvents(), publicBefore);
+  const draft = (await f.repository.getOpsCommunityEvents(admin)).find((event) => event.eventKey === "byob-03");
+  assert.equal(draft.publicationState, "draft");
+  assert.equal(draft.registrationMode, "byob");
+  const waiver = (await f.db.query("select title, body, content_sha256 from community_event_waiver_versions where event_key='byob-03' and version=$1", [f.byobModel.BYOB_03_WAIVER_VERSION])).rows;
+  assert.deepEqual(waiver, [{ title: f.byobModel.BYOB_03_WAIVER_TITLE, body: f.byobModel.BYOB_03_WAIVER_BODY, content_sha256: f.byobModel.BYOB_03_WAIVER_SHA256 }]);
+  await assert.rejects(f.db.exec("update community_event_waiver_versions set title='Changed' where event_key='byob-03'"), /append-only/);
+});
+
+test("the same email registers independently for Nº.02 and Nº.03 without changing prior evidence or Sheets work", async (t) => {
+  const f = await fixture(t);
+  await publishByob03(f);
+  await f.byob.registerByob02Participant(f.submission);
+  const original02 = (await f.db.query("select * from community_event_registrations where event_key='byob-02'")).rows;
+  const originalOutbox = (await f.db.query("select * from integration_outbox")).rows;
+  await f.byob.registerByobParticipant(f.submission03, f.byobModel.BYOB_03_REGISTRATION);
+  const original03 = (await f.db.query("select * from community_event_registrations where event_key='byob-03'")).rows;
+  await f.byob.registerByobParticipant({ ...f.submission03, registrantName: "Changed Participant", registrantFirstName: "Changed", registrantLastName: "Participant" }, f.byobModel.BYOB_03_REGISTRATION);
+  assert.equal(original02.length, 1);
+  assert.equal(original03.length, 1);
+  assert.notEqual(original03[0].id, original02[0].id);
+  assert.equal(original03[0].email_normalized, original02[0].email_normalized);
+  assert.equal(original03[0].waiver_version, f.byobModel.BYOB_03_WAIVER_VERSION);
+  assert.equal(original03[0].waiver_acceptance_evidence.waiver_sha256, f.byobModel.BYOB_03_WAIVER_SHA256);
+  assert.deepEqual((await f.db.query("select * from community_event_registrations where event_key='byob-02'")).rows, original02);
+  assert.deepEqual((await f.db.query("select * from community_event_registrations where event_key='byob-03'")).rows, original03);
+  const sharedOutbox = (await f.db.query("select * from integration_outbox order by id")).rows;
+  assert.deepEqual(sharedOutbox[0], originalOutbox[0]);
+  assert.equal(sharedOutbox.length, 2, "each event schedules exactly one independent delivery");
+  assert.deepEqual(sharedOutbox.map((row) => row.aggregate_id), [original02[0].id, original03[0].id]);
+  for (const row of sharedOutbox) {
+    assert.equal(row.event_type, "community_event_registration.sheet_sync_requested");
+    assert.equal(row.destination, "google");
+    assert.equal(row.dedupe_key, `google:community-event-registration:${row.aggregate_id}:created:v1`);
+    assert.deepEqual(row.payload, {});
+  }
+  const roster02 = await f.repository.getCommunityRoster(admin, "byob-02");
+  const roster03 = await f.repository.getCommunityRoster(admin, "byob-03");
+  assert.equal(roster02.count, 1);
+  assert.equal(roster03.count, 1);
+  assert.equal(roster03.registrations[0].id, original03[0].id);
+  await assert.rejects(f.repository.recordCommunityAttendance(admin, "byob-03", original02[0].id, "present", null), (error) => error.code === "not_found");
+  await f.repository.recordCommunityAttendance(admin, "byob-03", original03[0].id, "present", null);
+  assert.equal((await f.repository.getCommunityRoster(admin, "byob-03")).registrations[0].attendanceState, "present");
+  assert.deepEqual((await f.db.query("select * from integration_outbox order by id")).rows, sharedOutbox);
+  assert.deepEqual((await f.db.query("select * from community_event_registrations where event_key='byob-02'")).rows, original02);
+  const public03 = (await f.repository.getPublicCommunityEvents()).find((event) => event.id === "byob-03");
+  assert.equal(public03.registration.href, "/community/byob-03/register");
+});
+
+test("draft, closed, archived and ended Nº.03 listings accept no registrations or Sheets work", async (t) => {
+  const f = await fixture(t);
+  let listing = (await f.repository.getOpsCommunityEvents(admin)).find((event) => event.eventKey === "byob-03");
+  for (const state of [
+    { publicationState: "draft", registrationOpen: true, eventState: "Upcoming" },
+    { publicationState: "published", registrationOpen: false, eventState: "Upcoming" },
+    { publicationState: "archived", registrationOpen: true, eventState: "Upcoming" },
+    { publicationState: "published", registrationOpen: true, eventState: "Ended" },
+  ]) {
+    listing = await f.repository.saveCommunityEvent(admin, { ...listing, ...state }, listing.version);
+    await assert.rejects(f.byob.registerByobParticipant(f.submission03, f.byobModel.BYOB_03_REGISTRATION), (error) => error.code === "conflict");
+  }
+  assert.equal((await f.db.query("select count(*)::int as count from community_event_registrations")).rows[0].count, 0);
+  assert.equal((await f.db.query("select count(*)::int as count from integration_outbox")).rows[0].count, 0);
+});
+
+test("Nº.03 rejects cross-event waivers and incomplete participant evidence at persistence", async (t) => {
+  const f = await fixture(t);
+  await publishByob03(f);
+  await assert.rejects(f.byob.registerByobParticipant({ ...f.submission03, waiverVersion: f.byobModel.BYOB_02_WAIVER_VERSION }, f.byobModel.BYOB_03_REGISTRATION));
+  await assert.rejects(f.byob.registerByobParticipant({ ...f.submission03, waiverVersion: "byob-03-risk-acknowledgment-v0" }, f.byobModel.BYOB_03_REGISTRATION));
+  assert.equal((await f.db.query("select count(*)::int as count from community_event_registrations")).rows[0].count, 0);
+  await f.byob.registerByobParticipant(f.submission03, f.byobModel.BYOB_03_REGISTRATION);
+  const original = (await f.db.query("select * from community_event_registrations where event_key='byob-03'")).rows;
+  for (const key of ["participant", "age_confirmation", "carpool_disclosure_presented"]) {
+    await assert.rejects(f.db.query("update community_event_registrations set waiver_acceptance_evidence=waiver_acceptance_evidence - $1::text where event_key='byob-03'", [key]), /check constraint/);
+  }
+  for (const key of ["guest_count", "guest_scope", "guest_acknowledgment_required"]) {
+    await assert.rejects(f.db.query("update community_event_registrations set waiver_acceptance_evidence=waiver_acceptance_evidence || jsonb_build_object($1::text, 1) where event_key='byob-03'", [key]), /check constraint/);
+  }
+  await assert.rejects(f.db.exec("update community_event_registrations set registrant_first_name=null, registrant_last_name=null where event_key='byob-03'"), /check constraint/);
+  await assert.rejects(f.db.query("update community_event_registrations set waiver_version=$1 where event_key='byob-03'", [f.byobModel.BYOB_02_WAIVER_VERSION]), /foreign key constraint/);
+  assert.deepEqual((await f.db.query("select * from community_event_registrations where event_key='byob-03'")).rows, original);
+  assert.equal((await f.db.query("select count(*)::int as count from integration_outbox")).rows[0].count, 1);
+});
+
+test("registration rate limits are independent per event", async (t) => {
+  const f = await fixture(t);
+  const fingerprint = "a".repeat(64);
+  for (let attempt = 0; attempt < 8; attempt += 1) assert.equal(await f.byob.consumeByobRegistrationRateLimit(fingerprint), true);
+  assert.equal(await f.byob.consumeByobRegistrationRateLimit(fingerprint), false);
+  assert.equal(await f.byob.consumeByobRegistrationRateLimit(fingerprint, "byob-03"), true);
+  assert.deepEqual((await f.db.query("select event_key, attempts from community_event_registration_rate_limits order by event_key")).rows, [
+    { event_key: "byob-02", attempts: 8 }, { event_key: "byob-03", attempts: 1 },
+  ]);
+});
+
+test("Nº.03 preserves private registration tables and the native event allowlist", async (t) => {
+  const f = await fixture(t);
+  const privileges = await f.db.query(`select c.relname, c.relrowsecurity,
+    has_table_privilege(r.role_name, c.oid, 'SELECT') as can_read,
+    has_table_privilege(r.role_name, c.oid, 'INSERT,UPDATE,DELETE') as can_write
+    from pg_class c cross join (values ('anon'), ('authenticated')) r(role_name)
+    where c.relname in ('community_event_waiver_versions','community_event_registrations',
+      'community_event_registration_guests','community_event_registration_rate_limits',
+      'community_event_listings','community_event_attendance_events')`);
+  assert.equal(privileges.rows.length, 12);
+  for (const row of privileges.rows) {
+    assert.equal(row.relrowsecurity, true, row.relname);
+    assert.equal(row.can_read, false, row.relname);
+    assert.equal(row.can_write, false, row.relname);
+  }
+  const listing = (await f.repository.getOpsCommunityEvents(admin)).find((event) => event.eventKey === "byob-03");
+  assert.equal(f.repository.parseCommunityEventInput(listing).registrationMode, "byob");
+  for (const invalid of [{ ...listing, eventKey: "byob-04" }, { ...listing, registrationMode: "none" }, { ...listing, registrationMode: "external", registrationUrl: "https://tickets.example.test" }]) {
+    assert.throws(() => f.repository.parseCommunityEventInput(invalid), (error) => error.code === "invalid_request");
+  }
+  await assert.rejects(f.db.exec("update community_event_listings set event_key='byob-04' where event_key='byob-03'"), /check constraint/);
 });
 
 test("public consumers share the live feed and operator mutations retain request guards", async () => {

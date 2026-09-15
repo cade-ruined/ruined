@@ -37,6 +37,7 @@ const migrations = [
   "../db/migrations/20260914181653_operator_complimentary_membership.sql",
   "../db/migrations/20260914221302_community_event_operations.sql",
   "../db/migrations/20260914221725_academy_unused_draft_retirement.sql",
+  "../db/migrations/20260915161147_byob_03_registration.sql",
 ];
 
 function migrationBody(migration, migrationName) {

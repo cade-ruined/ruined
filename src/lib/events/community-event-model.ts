@@ -1,4 +1,5 @@
 import { EVENTS, type StudioEvent } from "@/data/events";
+import { getByobRegistrationConfig } from "@/lib/events/byob-registration-model";
 
 export type CommunityEventInput = {
   eventKey: string;
@@ -40,7 +41,7 @@ export function studioEventFromCommunityEvent(record: CommunityEventInput): Stud
     image: record.imagePath ?? undefined, video: record.videoPath ?? undefined, videoPoster: record.videoPosterPath ?? undefined,
     status: record.eventState,
     registration: record.registrationMode === "none" ? undefined : {
-      href: record.registrationMode === "byob" ? "/community/byob-02/register" : record.registrationUrl!,
+      href: record.registrationMode === "byob" ? getByobRegistrationConfig(record.eventKey)!.registrationPath : record.registrationUrl!,
       label: "Register", status: record.registrationOpen && record.eventState !== "Ended" ? "Open" : "Closed",
     },
   };
@@ -52,8 +53,8 @@ export function legacyCommunityEventRecords(): CommunityEventRecord[] {
     timezone: event.timezone, location: event.location, admission: event.admission, summary: event.summary,
     imagePath: event.image ?? null, videoPath: event.video ?? null, videoPosterPath: event.videoPoster ?? null,
     publicationState: "published", eventState: event.status,
-    registrationMode: event.id === "byob-02" ? "byob" : event.registration ? "external" : "none",
-    registrationUrl: event.id === "byob-02" ? null : event.registration?.href ?? null,
+    registrationMode: getByobRegistrationConfig(event.id) ? "byob" : event.registration ? "external" : "none",
+    registrationUrl: getByobRegistrationConfig(event.id) ? null : event.registration?.href ?? null,
     registrationOpen: event.registration?.status === "Open", version: 0, registeredCount: 0, attendanceCount: 0,
   }));
 }

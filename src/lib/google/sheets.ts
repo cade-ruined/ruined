@@ -365,8 +365,12 @@ export async function extendGoogleSheetTableToRow(
   spreadsheetId: string,
   sheetTitle: string,
   endRowIndex: number,
+  minimumColumnCount = 9,
 ): Promise<void> {
-  if (!Number.isInteger(endRowIndex) || endRowIndex < 1) {
+  if (
+    !Number.isInteger(endRowIndex) || endRowIndex < 1
+    || !Number.isInteger(minimumColumnCount) || minimumColumnCount < 9
+  ) {
     throw new Error("Google registration table range is invalid.");
   }
 
@@ -380,7 +384,10 @@ export async function extendGoogleSheetTableToRow(
       && (range.endColumnIndex ?? 0) >= 9;
   });
   const range = table?.range;
-  if (!table?.tableId || !range || (range.endRowIndex ?? 0) >= endRowIndex) return;
+  if (!table?.tableId || !range) return;
+  const nextEndRowIndex = Math.max(range.endRowIndex ?? 0, endRowIndex);
+  const nextEndColumnIndex = Math.max(range.endColumnIndex ?? 0, minimumColumnCount);
+  if (range.endRowIndex === nextEndRowIndex && range.endColumnIndex === nextEndColumnIndex) return;
 
   await getGoogleSheetsAuth().request({
     data: {
@@ -391,7 +398,8 @@ export async function extendGoogleSheetTableToRow(
             table: {
               range: {
                 ...range,
-                endRowIndex,
+                endColumnIndex: nextEndColumnIndex,
+                endRowIndex: nextEndRowIndex,
                 sheetId,
               },
               tableId: table.tableId,

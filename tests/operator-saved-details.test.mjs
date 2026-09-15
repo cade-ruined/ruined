@@ -6,6 +6,10 @@ import React from "react";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const byobModelModule = { exports: {} };
+new Function("module", "exports", ts.transpileModule(readFileSync(new URL("../src/lib/events/byob-registration-model.ts", import.meta.url), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText)(byobModelModule, byobModelModule.exports);
 const nodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 function fixture(path, props, { exportName = "default", nestedName, preview = false, respond = () => Response.json({ event: { eventKey: "workshop" } }) } = {}) {
@@ -24,6 +28,7 @@ function fixture(path, props, { exportName = "default", nestedName, preview = fa
   const compiledModule = { exports: {} };
   new Function("require", "module", "exports", "fetch", "FormData", output)((name) => {
     if (name === "react") return hooks;
+    if (name === "@/lib/events/byob-registration-model") return byobModelModule.exports;
     if (name === "react/jsx-runtime") return require(name);
     if (name === "next/navigation") return { useRouter: () => ({ refresh() { refreshes++; }, push() {} }) };
     if (name === "next/link") return { __esModule: true, default: "a" };

@@ -13,9 +13,8 @@ import {
 import {
   BYOB_02_EVENT_KEY,
   BYOB_02_TANK_HREF,
-  BYOB_02_WAIVER_BODY,
-  BYOB_02_WAIVER_TITLE,
-  BYOB_02_WAIVER_VERSION,
+  getByobRegistrationConfig,
+  type ByobEventKey,
   type Byob02RegistrationSuccess,
 } from "@/lib/events/byob-registration-model";
 
@@ -33,7 +32,8 @@ const TANK_FLAT_LAY_IMAGE =
 const TANK_FLAT_LAY_ALT =
   "Black BYOB Tank shown front and back on dark earth among yellow wildflowers.";
 
-export default function BYOBRegistrationForm() {
+export default function BYOBRegistrationForm({ eventKey = BYOB_02_EVENT_KEY }: { eventKey?: ByobEventKey }) {
+  const config = getByobRegistrationConfig(eventKey)!;
   const [state, setState] = useState<SubmissionState>("idle");
   const [error, setError] = useState("");
   const [submittedEmail, setSubmittedEmail] = useState("");
@@ -55,7 +55,7 @@ export default function BYOBRegistrationForm() {
     setState("sending");
 
     try {
-      const response = await fetch("/api/events/byob-02/register", {
+      const response = await fetch(config.apiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -64,7 +64,7 @@ export default function BYOBRegistrationForm() {
           email: data.get("email"),
           instagramHandle: data.get("instagramHandle"),
           waiverAccepted: data.get("waiverAccepted") === "on",
-          waiverVersion: BYOB_02_WAIVER_VERSION,
+          waiverVersion: config.waiverVersion,
           company: data.get("company"),
         }),
       });
@@ -95,7 +95,7 @@ export default function BYOBRegistrationForm() {
         className="py-7 sm:py-9"
       >
         <p className="ui-heading text-[0.58rem] uppercase tracking-[0.16em] text-[var(--color-poster)]">
-          BYOB Nº 02
+          {config.title}
         </p>
         <h2
           ref={successHeadingRef}
@@ -110,7 +110,7 @@ export default function BYOBRegistrationForm() {
           <span className="break-all text-black">{submittedEmail}</span>.
         </p>
 
-        <div className="mt-9 grid max-w-3xl gap-6 sm:grid-cols-[minmax(0,20rem)_minmax(15rem,1fr)] sm:items-end lg:gap-9">
+        {config.showTankOffer ? <div className="mt-9 grid max-w-3xl gap-6 sm:grid-cols-[minmax(0,20rem)_minmax(15rem,1fr)] sm:items-end lg:gap-9">
           <div className="relative aspect-[4/5] overflow-hidden bg-black">
             <Image
               src={TANK_FLAT_LAY_IMAGE}
@@ -138,13 +138,13 @@ export default function BYOBRegistrationForm() {
               View the tank <span aria-hidden="true">→</span>
             </Link>
           </div>
-        </div>
+        </div> : null}
 
         <Link
-          href={`/community#${BYOB_02_EVENT_KEY}`}
+          href={`/community#${config.eventKey}`}
           className="ui-heading mt-7 inline-flex text-[0.58rem] uppercase tracking-[0.14em] transition-colors hover:text-[var(--color-poster)]"
         >
-          ← Back to BYOB Nº 02
+          ← Back to {config.title}
         </Link>
       </section>
     );
@@ -154,7 +154,7 @@ export default function BYOBRegistrationForm() {
     <form
       onSubmit={submit}
       aria-busy={state === "sending"}
-      aria-label="Register for BYOB Nº 02"
+      aria-label={`Register for ${config.title}`}
       className="py-4 sm:py-5"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2 pb-1">
@@ -234,7 +234,7 @@ export default function BYOBRegistrationForm() {
             <details className="group">
               <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 py-3 outline-none [&::-webkit-details-marker]:hidden focus-visible:text-[var(--color-poster)]">
                 <span id={`${fieldPrefix}-waiver-title`} className="ui-heading text-[0.6rem] uppercase tracking-[0.13em]">
-                  {BYOB_02_WAIVER_TITLE}
+                  {config.waiverTitle}
                 </span>
                 <span className="flex items-center gap-3">
                   <span className="ui-heading text-[0.52rem] uppercase tracking-[0.12em] text-black/40 group-open:hidden">
@@ -249,9 +249,9 @@ export default function BYOBRegistrationForm() {
                 </span>
               </summary>
               <div className="pb-5">
-                <span className="sr-only">Version {BYOB_02_WAIVER_VERSION}</span>
+                <span className="sr-only">Version {config.waiverVersion}</span>
                 <p id={`${fieldPrefix}-waiver-copy`} className="text-sm leading-relaxed text-black/60">
-                  {BYOB_02_WAIVER_BODY}
+                  {config.waiverBody}
                 </p>
               </div>
             </details>
@@ -266,7 +266,7 @@ export default function BYOBRegistrationForm() {
                 className="mt-0.5 size-4 accent-[var(--color-faded)]"
               />
               <span>
-                I have read and agree to the {BYOB_02_WAIVER_TITLE}. I confirm
+                I have read and agree to the {config.waiverTitle}. I confirm
                 that I am 18 or older and am registering only myself.
               </span>
             </label>

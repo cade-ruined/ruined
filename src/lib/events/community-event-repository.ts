@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import { EVENTS } from "@/data/events";
 import { getApplicationDatabase } from "@/lib/database/server";
+import { BYOB_02_EVENT_KEY, getByobRegistrationConfig } from "@/lib/events/byob-registration-model";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
 import { studioEventFromCommunityEvent, type CommunityEventInput, type CommunityEventRecord, type CommunityEventRegistrant } from "@/lib/events/community-event-model";
 
@@ -43,7 +44,8 @@ export async function getPublicCommunityEvents() {
 
 export async function assertCommunityEventRegistrationOpen(tx: postgres.TransactionSql, eventKey: string) {
   const schema = await tx<Array<{ ready: boolean }>>`select to_regclass('public.community_event_listings') is not null as ready`;
-  if (!schema[0]?.ready) return; // Existing registration before the additive listing migration.
+  if (!schema[0]?.ready && eventKey === BYOB_02_EVENT_KEY) return; // Only the original route predates listings.
+  if (!schema[0]?.ready) throw new OpsOperatingRepositoryError("conflict", "Registration is closed for this event.");
   const rows = await tx<Array<{ event_key: string }>>`
     select event_key from community_event_listings
     where event_key = ${eventKey} and publication_state = 'published'
@@ -90,8 +92,9 @@ export function parseCommunityEventInput(value: unknown): CommunityEventInput {
   const eventState = input.eventState;
   const registrationMode = input.registrationMode;
   if (!["draft", "published", "archived"].includes(String(publicationState)) || !["Upcoming", "Ongoing", "Ended"].includes(String(eventState)) || !["none", "external", "byob"].includes(String(registrationMode))) throw new OpsOperatingRepositoryError("invalid_request", "Choose valid event and registration states.");
-  if (registrationMode === "byob" && eventKey !== "byob-02") throw new OpsOperatingRepositoryError("invalid_request", "BYOB Nº 02 has its own registration and approved waiver. New events need an external registration link or no registration.");
-  if (eventKey === "byob-02" && registrationMode !== "byob") throw new OpsOperatingRepositoryError("invalid_request", "Keep the existing BYOB registration. Use Registration open to open or close it.");
+  const nativeRegistration = getByobRegistrationConfig(eventKey);
+  if (registrationMode === "byob" && !nativeRegistration) throw new OpsOperatingRepositoryError("invalid_request", "This event does not have a configured registration and waiver. Use an external registration link or no registration.");
+  if (nativeRegistration && registrationMode !== "byob") throw new OpsOperatingRepositoryError("invalid_request", "Keep the existing BYOB registration. Use Registration open to open or close it.");
   const urlValue = boundedText(input.registrationUrl, "the registration link", 2000);
   let registrationUrl: string | null = null;
   if (registrationMode === "external") {

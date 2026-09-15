@@ -14,6 +14,48 @@ export const BYOB_02_WAIVER_SHA256 =
 
 export const BYOB_02_TANK_HREF = "/store/byob-tank" as const;
 
+export const BYOB_03_EVENT_KEY = "byob-03" as const;
+export const BYOB_03_WAIVER_VERSION = "byob-03-risk-acknowledgment-v1" as const;
+export const BYOB_03_WAIVER_TITLE = BYOB_02_WAIVER_TITLE;
+// Preserve the approved wording exactly; only the named gathering changes.
+export const BYOB_03_WAIVER_BODY = BYOB_02_WAIVER_BODY.replace("BYOB Nº 02", "BYOB Nº 03");
+export const BYOB_03_WAIVER_SHA256 = "8f13e06c3fc769d6b5cd437d81beb689775154360cb6ca71d62abb1bcc1987f6" as const;
+
+export type ByobEventKey = typeof BYOB_02_EVENT_KEY | typeof BYOB_03_EVENT_KEY;
+export type ByobRegistrationConfig = Readonly<{
+  eventKey: ByobEventKey;
+  title: string;
+  registrationPath: string;
+  apiPath: string;
+  waiverTitle: string;
+  waiverBody: string;
+  waiverVersion: string;
+  waiverSha256: string;
+  syncToSheet: boolean;
+  showTankOffer: boolean;
+}>;
+
+export const BYOB_02_REGISTRATION: ByobRegistrationConfig = Object.freeze({
+  eventKey: BYOB_02_EVENT_KEY, title: "BYOB Nº 02",
+  registrationPath: "/community/byob-02/register", apiPath: "/api/events/byob-02/register",
+  waiverTitle: BYOB_02_WAIVER_TITLE, waiverBody: BYOB_02_WAIVER_BODY,
+  waiverVersion: BYOB_02_WAIVER_VERSION, waiverSha256: BYOB_02_WAIVER_SHA256,
+  syncToSheet: true, showTankOffer: true,
+});
+export const BYOB_03_REGISTRATION: ByobRegistrationConfig = Object.freeze({
+  eventKey: BYOB_03_EVENT_KEY, title: "BYOB Nº 03",
+  registrationPath: "/community/byob-03/register", apiPath: "/api/events/byob-03/register",
+  waiverTitle: BYOB_03_WAIVER_TITLE, waiverBody: BYOB_03_WAIVER_BODY,
+  waiverVersion: BYOB_03_WAIVER_VERSION, waiverSha256: BYOB_03_WAIVER_SHA256,
+  syncToSheet: true, showTankOffer: false,
+});
+
+export function getByobRegistrationConfig(eventKey: string): ByobRegistrationConfig | null {
+  if (eventKey === BYOB_02_EVENT_KEY) return BYOB_02_REGISTRATION;
+  if (eventKey === BYOB_03_EVENT_KEY) return BYOB_03_REGISTRATION;
+  return null;
+}
+
 export type Byob02RegistrationRequest = Readonly<{
   company?: string;
   email: string;
@@ -32,6 +74,8 @@ export type Byob02RegistrationSubmission = Readonly<{
   registrantName: string;
   waiverVersion: typeof BYOB_02_WAIVER_VERSION;
 }>;
+
+export type ByobRegistrationSubmission = Omit<Byob02RegistrationSubmission, "waiverVersion"> & Readonly<{ waiverVersion: string }>;
 
 export type Byob02RegistrationSuccess = Readonly<{
   ok: true;
@@ -69,6 +113,13 @@ function normalizeInstagramHandle(value: unknown): string | null | undefined {
 export function parseByob02RegistrationInput(
   value: unknown,
 ): Byob02RegistrationSubmission | null {
+  return parseByobRegistrationInput(value, BYOB_02_REGISTRATION) as Byob02RegistrationSubmission | null;
+}
+
+export function parseByobRegistrationInput(
+  value: unknown,
+  config: ByobRegistrationConfig,
+): ByobRegistrationSubmission | null {
   if (!isRecord(value)) return null;
   if ("bringingGuests" in value || "guestNames" in value) return null;
 
@@ -91,7 +142,7 @@ export function parseByob02RegistrationInput(
     !EMAIL_PATTERN.test(emailNormalized) ||
     instagramHandle === undefined ||
     value.waiverAccepted !== true ||
-    value.waiverVersion !== BYOB_02_WAIVER_VERSION
+    value.waiverVersion !== config.waiverVersion
   ) {
     return null;
   }
@@ -102,6 +153,6 @@ export function parseByob02RegistrationInput(
     registrantFirstName,
     registrantLastName,
     registrantName,
-    waiverVersion: BYOB_02_WAIVER_VERSION,
+    waiverVersion: config.waiverVersion,
   };
 }

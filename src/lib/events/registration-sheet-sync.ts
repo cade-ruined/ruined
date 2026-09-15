@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { getApplicationDatabase } from "@/lib/database/server";
-import { BYOB_02_EVENT_KEY } from "@/lib/events/byob-registration-model";
+import { BYOB_02_EVENT_KEY, BYOB_03_EVENT_KEY } from "@/lib/events/byob-registration-model";
 import {
   REGISTRATION_ID_COLUMN_INDEX,
   REGISTRATION_SHEET_HEADERS,
@@ -73,7 +73,7 @@ async function getCanonicalRegistration(
       created_at as "registeredAt"
     from community_event_registrations
     where id = ${registrationId}::uuid
-      and event_key = ${BYOB_02_EVENT_KEY}
+      and event_key in (${BYOB_02_EVENT_KEY}, ${BYOB_03_EVENT_KEY})
     limit 1
   `;
   return rows[0] ?? null;
@@ -95,7 +95,7 @@ async function listCanonicalRegistrations(): Promise<CanonicalRegistration[]> {
       waiver_accepted_at as "waiverAcceptedAt",
       created_at as "registeredAt"
     from community_event_registrations
-    where event_key = ${BYOB_02_EVENT_KEY}
+    where event_key in (${BYOB_02_EVENT_KEY}, ${BYOB_03_EVENT_KEY})
     order by created_at, id
   `;
 }
@@ -105,7 +105,7 @@ async function ensureRegistrationSheetStructure(
 ): Promise<void> {
   await updateGoogleSheetValues(
     spreadsheetId,
-    `${REGISTRATION_SHEET_TAB}!A1:I1`,
+    `${REGISTRATION_SHEET_TAB}!A1:J1`,
     [[...REGISTRATION_SHEET_HEADERS]],
   );
   await configureGoogleRegistrationSheet(
@@ -117,11 +117,17 @@ async function ensureRegistrationSheetStructure(
     REGISTRATION_SHEET_TAB,
     REGISTRATION_ID_COLUMN_INDEX,
   );
+  await extendGoogleSheetTableToRow(
+    spreadsheetId,
+    REGISTRATION_SHEET_TAB,
+    1,
+    REGISTRATION_SHEET_HEADERS.length,
+  );
 }
 
 function appendedSheetRowNumber(updatedRange: string | null): number | null {
   if (!updatedRange) return null;
-  const match = updatedRange.match(/!A(\d+):I\1$/);
+  const match = updatedRange.match(/!A(\d+):J\1$/);
   if (!match) return null;
   const rowNumber = Number(match[1]);
   return Number.isSafeInteger(rowNumber) && rowNumber >= 2 ? rowNumber : null;
@@ -142,20 +148,21 @@ async function upsertRegistrationSheetRow(
   if (sheetRow !== null) {
     await updateGoogleSheetValues(
       spreadsheetId,
-      `${REGISTRATION_SHEET_TAB}!A${sheetRow}:I${sheetRow}`,
+      `${REGISTRATION_SHEET_TAB}!A${sheetRow}:J${sheetRow}`,
       [row],
     );
     await extendGoogleSheetTableToRow(
       spreadsheetId,
       REGISTRATION_SHEET_TAB,
       sheetRow,
+      REGISTRATION_SHEET_HEADERS.length,
     );
     return;
   }
 
   const updatedRange = await appendGoogleSheetValues(
     spreadsheetId,
-    `${REGISTRATION_SHEET_TAB}!A:I`,
+    `${REGISTRATION_SHEET_TAB}!A:J`,
     [row],
   );
   const appendedRow = appendedSheetRowNumber(updatedRange);
@@ -166,6 +173,7 @@ async function upsertRegistrationSheetRow(
     spreadsheetId,
     REGISTRATION_SHEET_TAB,
     appendedRow,
+    REGISTRATION_SHEET_HEADERS.length,
   );
 }
 
@@ -342,7 +350,7 @@ export async function reconcileRegistrationSheet(): Promise<RegistrationSheetRec
   const spreadsheetId = getGoogleRegistrationSpreadsheetId();
   const [registrations, existingRows] = await Promise.all([
     listCanonicalRegistrations(),
-    getGoogleSheetValues(spreadsheetId, `${REGISTRATION_SHEET_TAB}!A2:I`),
+    getGoogleSheetValues(spreadsheetId, `${REGISTRATION_SHEET_TAB}!A2:J`),
   ]);
   const rows = registrations.map(buildRegistrationSheetRow);
 
@@ -350,13 +358,14 @@ export async function reconcileRegistrationSheet(): Promise<RegistrationSheetRec
   if (rows.length > 0) {
     await updateGoogleSheetValues(
       spreadsheetId,
-      `${REGISTRATION_SHEET_TAB}!A2:I${rows.length + 1}`,
+      `${REGISTRATION_SHEET_TAB}!A2:J${rows.length + 1}`,
       rows,
     );
     await extendGoogleSheetTableToRow(
       spreadsheetId,
       REGISTRATION_SHEET_TAB,
       rows.length + 1,
+      REGISTRATION_SHEET_HEADERS.length,
     );
   }
 
@@ -364,7 +373,7 @@ export async function reconcileRegistrationSheet(): Promise<RegistrationSheetRec
   if (existingRows.length > rows.length) {
     await clearGoogleSheetValues(
       spreadsheetId,
-      `${REGISTRATION_SHEET_TAB}!A${rows.length + 2}:I${existingRows.length + 1}`,
+      `${REGISTRATION_SHEET_TAB}!A${rows.length + 2}:J${existingRows.length + 1}`,
     );
   }
 

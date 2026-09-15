@@ -303,6 +303,7 @@ test("member shell retains its utility rail, member FAB and thresholds without o
 
 const audienceTabs = load("src/components/platform/OperatorEventAudienceTabs.tsx");
 const eventClientDependencies = {
+  "@/lib/events/byob-registration-model": load("src/lib/events/byob-registration-model.ts"),
   "next/navigation": { useRouter: () => ({ push() { throw new Error("Rendering must not navigate"); }, refresh() { throw new Error("Rendering must not refresh"); } }) },
   "@/lib/datetime/zoned-date-time": load("src/lib/datetime/zoned-date-time.ts"),
 };

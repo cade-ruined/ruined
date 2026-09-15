@@ -20,7 +20,8 @@ const LEGACY_WAIVER_V2_SHA256 =
   "2ebe0e0eeaf274e48956111c0757a50362ec6c186d7a72ab4d322d6387181c9e";
 
 const paths = {
-  api: "app/api/events/byob-02/register/route.ts",
+  api: "src/lib/events/byob-registration-handler.ts",
+  apiRoute: "app/api/events/byob-02/register/route.ts",
   eventData: "src/data/events.ts",
   eventsIndex: "src/components/events/EventsIndex.tsx",
   footer: "src/components/SiteFooter.tsx",
@@ -46,16 +47,17 @@ async function readMigrationCorpus() {
   return migrations.join("\n");
 }
 
-test("only BYOB Nº 02 exposes the dedicated registration path", async () => {
-  const [events, index] = await Promise.all([
+test("BYOB Nº 02 retains one configured dedicated registration path", async () => {
+  const [events, index, model] = await Promise.all([
     read(paths.eventData),
     read(paths.eventsIndex),
+    read(paths.model),
   ]);
 
   assert.equal(
-    occurrences(events, /\/community\/byob-02\/register/g),
+    occurrences(model, /\/community\/byob-02\/register/g),
     1,
-    "the registration route should have one canonical event-data owner",
+    "the registration route should have one canonical event configuration",
   );
   assert.doesNotMatch(events, /\/community\/byob-01\/register/);
   assert.match(events, /registration\??:\s*EventRegistration/);
@@ -224,15 +226,16 @@ test("registration removes decorative rules while retaining functional control b
 
 test("the browser posts to the fixed BYOB Nº 02 API without choosing a trusted event ID", async () => {
   const [api, form, model] = await Promise.all([
-    read(paths.api),
+    read(paths.apiRoute),
     read(paths.form),
     read(paths.model),
   ]);
 
-  assert.match(form, /fetch\("\/api\/events\/byob-02\/register"/);
+  assert.match(form, /fetch\(config\.apiPath/);
+  assert.match(form, /eventKey = BYOB_02_EVENT_KEY/);
   assert.doesNotMatch(form, /\b(?:eventId|eventKey)\s*:/);
   assert.doesNotMatch(api, /\bbody\.(?:eventId|eventKey)\b/);
-  assert.match(api, /BYOB_02_EVENT_KEY/);
+  assert.match(api, /handleByobRegistration\(request, BYOB_02_REGISTRATION\)/);
   assert.match(model, /BYOB_02_EVENT_KEY\s*=\s*"byob-02"/);
   assert.doesNotMatch(
     model.slice(
@@ -250,7 +253,7 @@ test("the registration endpoint rejects untrusted or abusive submissions before 
   assert.match(api, /application\/json/i);
   assert.match(api, /isTrustedPlatformOrigin/);
   assert.match(api, /body\.company/);
-  assert.match(api, /parseByob02RegistrationInput/);
+  assert.match(api, /parseByobRegistrationInput/);
   assert.match(api, /COMMUNICATION_RATE_LIMIT_SECRET/);
   assert.match(api, /byob-registration:v1/);
   assert.match(api, /consumeByobRegistrationRateLimit/);
@@ -387,8 +390,8 @@ test("the exact acknowledgment remains in a collapsed native disclosure", async 
 
   assert.ok(detailsStart >= 0 && detailsEnd > detailsStart);
   assert.doesNotMatch(openingTag, /\sopen(?:\s|=|>)/);
-  assert.match(disclosure, /<summary\b[\s\S]*?BYOB_02_WAIVER_TITLE[\s\S]*?<\/summary>/);
-  assert.match(disclosure, /\{BYOB_02_WAIVER_BODY\}/);
+  assert.match(disclosure, /<summary\b[\s\S]*?config\.waiverTitle[\s\S]*?<\/summary>/);
+  assert.match(disclosure, /\{config\.waiverBody\}/);
   assert.match(form, /name="waiverAccepted"/);
   assert.match(form, /aria-describedby=\{`\$\{fieldPrefix\}-waiver-copy`\}/);
 });
@@ -508,7 +511,7 @@ test("new registrations atomically queue a PII-free Google Sheet sync", async ()
 
 test("registration defers Google Sheet delivery without making it part of success", async () => {
   const api = await read(paths.api);
-  const persist = api.indexOf("await registerByob02Participant(submission)");
+  const persist = api.indexOf("await registerByobParticipant(submission, config)");
   const deferred = api.indexOf("after(", persist);
   const response = api.indexOf("return json(SUCCESS_RESPONSE)", persist);
   const deferredBlock = api.slice(deferred, response);
@@ -561,7 +564,7 @@ test("registration is self-only from the UI through persistence", async () => {
   assert.doesNotMatch(submissionType, /bringingGuests|guestNames|\bguest/i);
   assert.match(model, /if \("bringingGuests" in value \|\| "guestNames" in value\) return null/);
   assert.doesNotMatch(api, /registerByob02Group|bringingGuests|guestNames/);
-  assert.match(api, /registerByob02Participant/);
+  assert.match(api, /registerByobParticipant/);
   assert.doesNotMatch(registrationWriter, /community_event_registration_guests|guestNames|bringingGuests/);
   assert.match(registrationWriter, /'participant',\s*'registrant'/);
   assert.match(registrationWriter, /'age_confirmation',\s*'18_or_older'/);
@@ -615,8 +618,9 @@ test("the tank offer appears only after durable success and remains PII-free", a
     /TANK_CTA_HREF\s*=\s*`\$\{BYOB_02_TANK_HREF\}\?utm_source=byob-02-registration&utm_medium=onsite&utm_campaign=byob-02`/,
   );
   assert.match(form, /View the tank/);
-  assert.match(form, /href=\{`\/community#\$\{BYOB_02_EVENT_KEY\}`\}/);
-  assert.match(form, /Back to BYOB Nº 02/);
+  assert.match(form, /href=\{`\/community#\$\{config\.eventKey\}`\}/);
+  assert.match(form, /Back to \{config\.title\}/);
+  assert.match(form, /config\.showTankOffer \?/);
   assert.doesNotMatch(tankHref, /email|name|guest|instagram|registration(?:Id|_id)/i);
   assert.match(model, /BYOB_02_TANK_HREF\s*=\s*"\/store\/byob-tank"/);
   assert.match(api, /tankHref:\s*BYOB_02_TANK_HREF|tankHref:\s*"\/store\/byob-tank"/);
