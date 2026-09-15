@@ -582,8 +582,11 @@ test("incomplete creation responses do not invent a new Circle or clear the ente
   }
 });
 
-test("activation requires a populated forming Circle and explicit confirmation; response preserves Shaper metadata", async () => {
+test("activation needs members and confirmation, not a first meeting; response preserves Shaper metadata", async () => {
   const fixture = harness({ initialCircleId: firstCircle.id }, async () => ok({ circle: { id: firstCircle.id, status: "active", activeMembers: 1, activated: true } }));
+  assert.match(text(fixture.draw()), /You can schedule meetings later/);
+  assert.doesNotMatch(text(fixture.draw()), /first meeting.*ready/);
+  assert.equal(fixture.button(`Activate ${firstCircle.name}`).props.disabled, false);
   fixture.click(`Activate ${firstCircle.name}`);
   assert.deepEqual(fixture.calls, []);
   await fixture.click("Confirm activation");

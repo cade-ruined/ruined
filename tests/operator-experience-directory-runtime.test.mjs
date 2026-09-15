@@ -57,6 +57,7 @@ function fixture(patch = {}, { hash = "", respond = async () => Response.json({ 
     new Function("require", "module", "exports", "window", "fetch", "FormData", output)((name) => {
       if (dependencies[name]) return dependencies[name];
       if (name === "react/jsx-runtime") return require(name);
+      if (name === "@/components/platform/OperatorDateTimeField") return load("src/components/platform/OperatorDateTimeField.tsx");
       if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");
       if (name === "@/lib/datetime/zoned-date-time") return load("src/lib/datetime/zoned-date-time.ts");
       throw new Error(`Unexpected directory dependency ${name}`);

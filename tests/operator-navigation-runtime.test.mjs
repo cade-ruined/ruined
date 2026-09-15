@@ -28,6 +28,7 @@ function load(path, overrides = {}, browserWindow, runtime = {}) {
       "@/lib/platform/operations-navigation": "src/lib/platform/operations-navigation.ts",
       "@/components/platform/OperatorPageFrame": "src/components/platform/OperatorPageFrame.tsx",
       "@/components/platform/OperatorDialog": "src/components/platform/OperatorDialog.tsx",
+      "@/components/platform/OperatorDateTimeField": "src/components/platform/OperatorDateTimeField.tsx",
       "@/components/platform/StateLabel": "src/components/platform/StateLabel.tsx",
       "@/components/platform/operatorStyles": "src/components/platform/operatorStyles.ts",
     };

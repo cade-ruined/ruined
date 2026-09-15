@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import OperatorExperienceCalendar from "@/components/platform/OperatorExperienceCalendar";
+import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
@@ -580,12 +581,8 @@ export default function OperatorExperienceRecord({
                 </select>
               </FormField>
             ) : null}
-            <FormField label="Starts">
-              <input className={OPERATOR_FIELD_CLASS} defaultValue={zonedDateTimeLocalValue(experience.startsAt, experience.timezone)} name="startsAt" required type="datetime-local" />
-            </FormField>
-            <FormField label="Ends">
-              <input className={OPERATOR_FIELD_CLASS} defaultValue={zonedDateTimeLocalValue(experience.endsAt, experience.timezone)} name="endsAt" type="datetime-local" />
-            </FormField>
+            <OperatorDateTimeField defaultValue={zonedDateTimeLocalValue(experience.startsAt, experience.timezone)} label="Starts" name="startsAt" onChange={() => setDetailsDirty(true)} required />
+            <OperatorDateTimeField defaultValue={zonedDateTimeLocalValue(experience.endsAt, experience.timezone)} label="Ends (optional)" name="endsAt" onChange={() => setDetailsDirty(true)} />
             <FormField label="Timezone">
               <input className={OPERATOR_FIELD_CLASS} defaultValue={experience.timezone} name="timezone" required />
             </FormField>

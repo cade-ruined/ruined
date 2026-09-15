@@ -27,6 +27,8 @@ function load(path, dependencies = {}, fetch = noNetwork, window = undefined) {
     if (name === "next/link") return { __esModule: true, default: Link };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: Dialog };
+    if (name === "@/components/platform/OperatorDateTimeField") return load("src/components/platform/OperatorDateTimeField.tsx");
+    if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     throw new Error(`Unexpected dependency ${name}`);
   }, loadedModule, loadedModule.exports, fetch, window);

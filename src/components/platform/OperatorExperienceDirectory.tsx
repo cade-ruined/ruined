@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
 import OperatorDialog from "@/components/platform/OperatorDialog";
+import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
 import {
@@ -248,12 +249,8 @@ export default function OperatorExperienceDirectory({
             <fieldset className="min-w-0">
               <legend className="mb-3 font-[var(--font-display)] text-2xl">When</legend>
               <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Starts">
-                  <input className={`${OPERATOR_FIELD_CLASS} min-w-0`} name="startsAt" required type="datetime-local" />
-                </FormField>
-                <FormField label="Ends (optional)">
-                  <input className={`${OPERATOR_FIELD_CLASS} min-w-0`} name="endsAt" type="datetime-local" />
-                </FormField>
+                <OperatorDateTimeField label="Starts" name="startsAt" onChange={() => setDirty(true)} required />
+                <OperatorDateTimeField label="Ends (optional)" name="endsAt" onChange={() => setDirty(true)} />
                 <FormField className="sm:col-span-2" label="Time zone">
                   <input className={OPERATOR_FIELD_CLASS} defaultValue="America/Denver" name="timezone" required />
                 </FormField>
