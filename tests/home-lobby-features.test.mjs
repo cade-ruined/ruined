@@ -6,6 +6,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
+import * as productColors from "../src/lib/store/product-colors.ts";
 
 const indexSource = await readFile(new URL("../src/components/sequence/JourneyIndexes.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(indexSource, {
@@ -14,6 +15,7 @@ const compiled = ts.transpileModule(indexSource, {
 function load(react = React, environment = {}) {
   const dependencies = {
     react, "react/jsx-runtime": jsxRuntime,
+    "@/lib/store/product-colors": productColors,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
     "next/image": { default: ({ src, alt, className }) => React.createElement("img", { src, alt, className }) },
     "./JourneyQuickBuy": { default: () => null },

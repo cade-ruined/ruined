@@ -10,6 +10,7 @@ import type { StudioEvent } from "@/data/events";
 import { EXPLORE_ROOMS, type ExploreRoom } from "@/data/navigation";
 import { MEMBERSHIP_INTRO } from "@/data/public-membership";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
+import { getProductColorHref, getProductColorImages } from "@/lib/store/product-colors";
 import JourneyQuickBuy from "./JourneyQuickBuy";
 
 const JOURNEY_GRID_CLASS =
@@ -356,7 +357,21 @@ export function JourneyStoreIndex({
   products: Product[];
   catalogStatus?: CatalogStatus;
 }) {
-  const featuredProducts = products.slice(0, 3);
+  const rackSelections = [
+    { id: "sunday-clothes-hoodie", color: "Grey" },
+    { id: "womens-crop-tee" },
+    { id: "mens-less-permanent-tee" },
+  ];
+  const featuredProducts: { product: Product; color?: string }[] = [];
+  for (const { id, color } of rackSelections) {
+    const product = products.find((item) => item.id === id);
+    if (product) featuredProducts.push({ product, color });
+  }
+  // Keep the shelf useful if a featured product leaves the published catalog.
+  for (const product of products) {
+    if (featuredProducts.length === 3) break;
+    if (!featuredProducts.some((entry) => entry.product.id === product.id)) featuredProducts.push({ product });
+  }
   const productCount = featuredProducts.length;
   const notice = catalogNotice(catalogStatus);
   const shelfWidthClass =
@@ -400,8 +415,8 @@ export function JourneyStoreIndex({
             gridTemplateColumns: `repeat(${productCount}, minmax(0, 1fr))`,
           }}
         >
-          {featuredProducts.map((product, index) => {
-            const secondImage = product.images?.[1];
+          {featuredProducts.map(({ product, color }, index) => {
+            const [firstImage, secondImage] = getProductColorImages(product, color);
             const shipDate = product.expectedShipDate
               ? formatJourneyShipDate(product.expectedShipDate)
               : undefined;
@@ -414,19 +429,19 @@ export function JourneyStoreIndex({
                 className="flex min-w-0 flex-col bg-black/85 text-[var(--color-bone)]"
               >
                 <Link
-                  href={`/store/${product.id}`}
+                  href={getProductColorHref(product, color)}
                   className={`${JOURNEY_CARD_CLASS} block focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white`}
                 >
-                  {product.image && (
+                  {firstImage && (
                     <Image
-                      src={product.image.url}
-                      alt={product.image.alt}
+                      src={firstImage.url}
+                      alt={firstImage.alt}
                       fill
                       sizes="(min-width: 640px) 22rem, 28vw"
                       className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
                     />
                   )}
-                  {product.image && secondImage && secondImage.url !== product.image.url && (
+                  {firstImage && secondImage && secondImage.url !== firstImage.url && (
                     <Image
                       src={secondImage.url}
                       alt=""
@@ -446,7 +461,7 @@ export function JourneyStoreIndex({
                       {product.name}
                     </strong>
                     <span className="mt-1 block font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
-                      {product.price}
+                      {color ? `${color} · ` : ""}{product.price}
                     </span>
                     {shipDate && (
                       <span className="mt-1 block font-sans text-[clamp(0.38rem,0.82vw,0.5rem)] uppercase tracking-[0.08em] text-[var(--color-poster)] sm:tracking-[0.13em]">
@@ -455,7 +470,7 @@ export function JourneyStoreIndex({
                     )}
                   </span>
                 </Link>
-                <JourneyQuickBuy product={product} />
+                <JourneyQuickBuy product={product} color={color} />
               </article>
             );
           })}

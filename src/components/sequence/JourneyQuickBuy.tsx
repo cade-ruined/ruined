@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Product, ProductVariant } from "@/data/products";
 import { useBag } from "@/components/store/bag-store";
-import { getVariantImage } from "@/lib/store/product-colors";
+import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 
 function matches(variant: ProductVariant, selection: Record<string, string>) {
   return Object.entries(selection).every(([name, value]) =>
@@ -11,14 +11,17 @@ function matches(variant: ProductVariant, selection: Record<string, string>) {
   );
 }
 
-export default function JourneyQuickBuy({ product }: { product: Product }) {
+export default function JourneyQuickBuy({ product, color }: { product: Product; color?: string }) {
   const options = product.options.filter((option) =>
     !(option.name === "Title" && option.values.length === 1 && option.values[0] === "Default Title")
   );
-  const choices = options.filter((option) => option.values.length > 1);
+  const colorOption = getProductColorOption(product);
+  const fixedColor = colorOption?.values.find((value) => value === color);
   const fixedSelection = Object.fromEntries(
     options.filter((option) => option.values.length === 1).map((option) => [option.name, option.values[0]])
   );
+  if (colorOption && fixedColor) fixedSelection[colorOption.name] = fixedColor;
+  const choices = options.filter((option) => !fixedSelection[option.name]);
   const [selection, setSelection] = useState<Record<string, string>>({});
   const [added, setAdded] = useState(false);
   const [error, setError] = useState(false);
@@ -28,7 +31,7 @@ export default function JourneyQuickBuy({ product }: { product: Product }) {
   const selectedVariant = complete
     ? product.variants.find((variant) => matches(variant, resolvedSelection))
     : undefined;
-  const soldOut = !product.variants.some((variant) => variant.available);
+  const soldOut = !product.variants.some((variant) => variant.available && matches(variant, fixedSelection));
   const purchasable = selectedVariant?.available === true;
   const selectionSummary = selectedVariant?.selectedOptions
     .filter((option) => option.value !== "Default Title")

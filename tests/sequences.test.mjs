@@ -466,10 +466,10 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /muted[\s\S]*loop[\s\S]*autoPlay[\s\S]*playsInline/);
   assert.match(lobbyIndex, /target=\{selection\.external \? "_blank" : undefined\}/);
   assert.match(lobbyIndex, /className="journey-card-title/);
-  assert.match(indexes, /products\.slice\(0, 3\)/);
+  assert.match(indexes, /featuredProducts\.length === 3/);
   assert.match(indexes, /gridTemplateColumns: `repeat\(\$\{productCount\}, minmax\(0, 1fr\)\)`/);
   assert.match(indexes, /productCount === 2[\s\S]*max-w-\[38rem\]/);
-  assert.match(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
+  assert.match(indexes, /href=\{getProductColorHref\(product, color\)\}/);
   assert.match(indexes, /product\.expectedShipDate[\s\S]*Preorder · Est\. ship \{shipDate\}/);
   assert.match(indexes, /href="\/store"[\s\S]*Off the Rack/);
   assert.doesNotMatch(indexes, /View catalogue/);
@@ -901,7 +901,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.doesNotMatch(mobile, /cta: "Read about Ruined"/);
   assert.match(indexes, />See all events<\/span>/);
   assert.doesNotMatch(`${desktop}\n${mobile}`, /Enter the store/i);
-  assert.match(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
+  assert.match(indexes, /href=\{getProductColorHref\(product, color\)\}/);
   assert.doesNotMatch(indexes, /href=\{`\/work\/\$\{projectSlug\(project\)\}`\}/);
   assert.match(gallery, /featured=\{index === 0\}/);
   assert.match(gallery, /featured \? "col-span-2"/);

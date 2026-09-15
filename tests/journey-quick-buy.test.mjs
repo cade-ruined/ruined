@@ -65,7 +65,7 @@ const product = {
   ],
 };
 
-function fixture(item = product, add = () => {}) {
+function fixture(item = product, add = () => {}, props = {}) {
   const slots = [];
   let cursor = 0;
   const calls = [];
@@ -83,7 +83,7 @@ function fixture(item = product, add = () => {}) {
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add(payload) { calls.push(payload); return add(payload); } }) },
   }).default;
-  const render = () => { cursor = 0; return Component({ product: item }); };
+  const render = () => { cursor = 0; return Component({ product: item, ...props }); };
   const find = (predicate) => elements(render()).find(predicate);
   const select = (name) => {
     const label = find((node) => node.type === "label" && content(node).startsWith(`${name} for ${item.name}`));
@@ -199,6 +199,44 @@ test("a fixed color is carried into the purchased variant without a redundant co
   view.button().props.onClick();
   assert.equal(view.calls[0].variantId, "gid://shopify/ProductVariant/202");
   assert.deepEqual(view.calls[0].selectedOptions, [{ name: "Color", value: "White" }, { name: "Size", value: "M" }]);
+});
+
+test("the featured Grey hoodie needs only a size and adds the exact Grey variant and photo", () => {
+  const greyMedium = variant(107, "Grey", "M");
+  const item = { ...product, variants: [...product.variants, greyMedium] };
+  const before = structuredClone(item);
+  const view = fixture(item, () => {}, { color: "Grey" });
+  assert.equal(elements(view.render()).filter((node) => node.type === "select").length, 1);
+  assert.equal(view.select("Size").props.value, "");
+  assert.equal(view.button().props.disabled, true);
+  view.button().props.onClick();
+  assert.equal(view.calls.length, 0);
+  const small = elements(view.select("Size")).find((node) => node.type === "option" && node.props.value === "S");
+  assert.equal(small.props.disabled, true, "Grey availability must not inherit available Black sizes");
+  view.choose("Size", "M");
+  assert.equal(view.button().props.disabled, false);
+  view.button().props.onClick();
+  assert.equal(view.calls.length, 1);
+  assert.equal(view.calls[0].productId, item.id);
+  assert.equal(view.calls[0].variantId, greyMedium.id);
+  assert.deepEqual(view.calls[0].selectedOptions, greyMedium.selectedOptions);
+  assert.deepEqual(view.calls[0].image, greyMedium.image);
+  assert.equal(view.announcement(), "Script Hoodie, Grey, M added to bag.");
+  assert.deepEqual(item, before, "Quick buy must preserve the canonical catalog product");
+});
+
+test("the featured Grey hoodie stays sold out even when Black can still be purchased", () => {
+  const view = fixture(product, () => {}, { color: "Grey" });
+  assert.ok(product.variants.some((item) => item.available && item.title.startsWith("Black")));
+  assert.equal(elements(view.render()).filter((node) => node.type === "select").length, 1);
+  assert.equal(view.select("Size").props.disabled, true);
+  assert.equal(content(view.button()), "Sold out");
+  assert.equal(view.button().props.disabled, true);
+  view.choose("Size", "S");
+  view.button().props.onClick();
+  view.choose("Size", "M");
+  view.button().props.onClick();
+  assert.deepEqual(view.calls, []);
 });
 
 test("a single default variant needs no dropdown and does not announce Default Title", () => {
@@ -350,4 +388,70 @@ test("the walk shelf renders three purchase panels beside product links and a fu
   const catalogLink = all.find((node) => node.tagName === "a" && attr(node, "href") === "/store");
   assert.match(text(catalogLink), /Off the Rack/);
   assert.match(attr(catalogLink, "aria-label"), /full catalog/);
+});
+
+test("On the Rack features Grey, the women's script crop, and the men's Less Permanent tee in the requested order", () => {
+  const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
+    "@/lib/store/product-colors": productColors,
+    react: React,
+    "react/jsx-runtime": jsxRuntime,
+    "@/components/store/bag-store": { useBag: () => ({ add() {} }) },
+  }).default;
+  const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
+    "@/lib/store/product-colors": productColors,
+    react: React,
+    "react/jsx-runtime": jsxRuntime,
+    "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
+    "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
+    "@/data/navigation": { EXPLORE_ROOMS: [] },
+    "@/data/public-membership": { MEMBERSHIP_INTRO: {} },
+    "@/lib/store/catalog": load("src/lib/store/catalog.ts", {}),
+    "./JourneyQuickBuy": { default: QuickBuy },
+  });
+  const photo = (color, view) => ({ url: `/SundayClothes-${color}Hoodie${view}.png`, alt: "Sunday Clothes Hoodie" });
+  const hoodie = {
+    ...product, id: "sunday-clothes-hoodie", name: "Sunday Clothes Hoodie", price: "$96",
+    image: photo("Black", "Front"),
+    images: [photo("Black", "Front"), photo("Black", "Back"), photo("Grey", "Front"), photo("Grey", "Back")],
+    options: [{ name: "Color", values: ["Black", "Grey"] }, { name: "Size", values: ["S", "M"] }],
+    variants: [
+      { ...variant(401, "Black", "S", true, "96.00"), image: photo("Black", "Front") },
+      { ...variant(402, "Grey", "S", true, "96.00"), image: photo("Grey", "Front") },
+      { ...variant(403, "Grey", "M", true, "96.00"), image: photo("Grey", "Front") },
+    ],
+  };
+  const tee = (id, name, color) => ({
+    ...product, id, name, image: { url: `/${id}.png`, alt: name },
+    options: [{ name: "Color", values: [color] }, { name: "Size", values: ["S", "M"] }],
+    variants: [variant(`${id}-S`, color, "S"), variant(`${id}-M`, color, "M")],
+  });
+  const womensCrop = tee("womens-crop-tee", "Women's Crop Tee", "Grey");
+  const mensLessPermanent = tee("mens-less-permanent-tee", "Men's Less Permanent Tee", "Pale Khaki");
+  const items = [
+    { ...product, id: "ruined-hoodie", name: "Ruined Hoodie" },
+    tee("womens-less-permanent-crop-tee", "Women's Less Permanent Crop Tee", "White"),
+    mensLessPermanent, womensCrop, hoodie,
+  ];
+  const before = structuredClone(items);
+  const dom = parseFragment(renderToStaticMarkup(React.createElement(JourneyStoreIndex, { products: items, catalogStatus: "ready" })));
+  const nodes = (node) => [node, ...(node.childNodes ?? []).flatMap(nodes)];
+  const attr = (node, name) => node.attrs?.find((attribute) => attribute.name === name)?.value;
+  const cards = nodes(dom).filter((node) => attr(node, "data-journey-product-card") !== undefined);
+  assert.deepEqual(cards.map((node) => attr(node, "data-journey-product-card")), [
+    "sunday-clothes-hoodie", "womens-crop-tee", "mens-less-permanent-tee",
+  ]);
+  const expectedHrefs = ["/store/sunday-clothes-hoodie?color=Grey", "/store/womens-crop-tee", "/store/mens-less-permanent-tee"];
+  for (const [index, card] of cards.entries()) {
+    const children = nodes(card);
+    assert.equal(children.filter((node) => attr(node, "data-journey-quick-buy") !== undefined).length, 1);
+    assert.equal(children.filter((node) => node.tagName === "select").length, 1, "Each featured garment requires only a size choice");
+    assert.equal(children.filter((node) => node.tagName === "button").length, 1);
+    const link = children.find((node) => node.tagName === "a");
+    assert.equal(attr(link, "href"), expectedHrefs[index]);
+    assert.equal(nodes(link).some((node) => ["select", "button"].includes(node.tagName)), false);
+  }
+  assert.deepEqual(nodes(cards[0]).filter((node) => node.tagName === "img").map((node) => attr(node, "src")), [
+    "/SundayClothes-GreyHoodieFront.png", "/SundayClothes-GreyHoodieBack.png",
+  ]);
+  assert.deepEqual(items, before, "Featuring products must not reorder or narrow the canonical catalog input");
 });
