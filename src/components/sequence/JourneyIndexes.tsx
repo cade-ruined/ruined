@@ -410,7 +410,14 @@ export function JourneyStoreIndex({
       )}
       {productCount > 0 && (
         <div
-          className={`${JOURNEY_GRID_CLASS} ${shelfWidthClass}`}
+          data-journey-rack
+          role="region"
+          aria-label="On the Rack products"
+          tabIndex={productCount > 1 ? 0 : undefined}
+          onPointerDown={(event) => {
+            if (event.currentTarget.scrollWidth > event.currentTarget.clientWidth) event.stopPropagation();
+          }}
+          className={`${JOURNEY_GRID_CLASS} ${shelfWidthClass} max-sm:flex max-sm:gap-2 max-sm:overflow-x-auto max-sm:overscroll-x-contain max-sm:snap-x max-sm:snap-mandatory max-sm:scroll-px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white`}
           style={{
             gridTemplateColumns: `repeat(${productCount}, minmax(0, 1fr))`,
           }}
@@ -426,18 +433,18 @@ export function JourneyStoreIndex({
                 key={product.id}
                 data-journey-product-card={product.id}
                 aria-label={product.name}
-                className="flex min-w-0 flex-col bg-black/85 text-[var(--color-bone)]"
+                className={`flex min-w-0 flex-col bg-black/85 text-[var(--color-bone)] max-sm:shrink-0 max-sm:snap-start ${productCount > 1 ? "max-sm:w-[84%] max-sm:max-w-[max(12rem,calc((100svh_-_20rem)*0.8))]" : "max-sm:w-full"}`}
               >
                 <Link
                   href={getProductColorHref(product, color)}
-                  className={`${JOURNEY_CARD_CLASS} block focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white`}
+                  className={`${JOURNEY_CARD_CLASS} block max-sm:max-h-[max(4.5rem,calc(100svh_-_20rem))] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white`}
                 >
                   {firstImage && (
                     <Image
                       src={firstImage.url}
                       alt={firstImage.alt}
                       fill
-                      sizes="(min-width: 640px) 22rem, 28vw"
+                      sizes="(min-width: 640px) 22rem, 84vw"
                       className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
                     />
                   )}
@@ -447,20 +454,20 @@ export function JourneyStoreIndex({
                       alt=""
                       aria-hidden="true"
                       fill
-                      sizes="(min-width: 640px) 22rem, 28vw"
+                      sizes="(min-width: 640px) 22rem, 84vw"
                       className="pointer-events-none object-cover opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100"
                     />
                   )}
                   <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
-                  <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
+                  <span className="absolute left-3 top-3 font-sans text-[0.6rem] font-medium uppercase tracking-[0.14em] text-white/70 max-sm:[@media(max-height:480px)]:hidden sm:left-4 sm:top-4 sm:text-[clamp(0.4rem,0.9vw,0.52rem)] sm:tracking-[0.2em]">
                     {index === 0 ? "Featured · " : ""}
                     {product.code}
                   </span>
-                  <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-                    <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
+                  <span className="absolute bottom-3 left-3 right-3 sm:bottom-4 sm:left-4 sm:right-4">
+                    <strong className="journey-card-title block text-base leading-tight text-white sm:text-[clamp(0.62rem,1.8vw,1.125rem)]">
                       {product.name}
                     </strong>
-                    <span className="mt-1 block font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
+                    <span className="mt-1 block font-sans text-[0.6rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[clamp(0.4rem,0.9vw,0.52rem)] sm:tracking-[0.16em]">
                       {color ? `${color} · ` : ""}{product.price}
                     </span>
                     {shipDate && (

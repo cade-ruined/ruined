@@ -1175,6 +1175,12 @@ export default function MobileImmersiveJourney({
           }
         }
 
+        @media (max-width: 639px) and (max-height: 480px) {
+          .ruined-mobile-scene[data-scene-id="store"] .ruined-mobile-scene__copy {
+            padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 3.25rem);
+          }
+        }
+
         @media (max-height: 760px) {
           .ruined-mobile-journey[data-stage-enabled][data-active-scene="events"],
           .ruined-mobile-closing__inner {

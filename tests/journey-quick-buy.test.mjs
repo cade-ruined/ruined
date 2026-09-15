@@ -390,6 +390,52 @@ test("the walk shelf renders three purchase panels beside product links and a fu
   assert.match(attr(catalogLink, "aria-label"), /full catalog/);
 });
 
+test("an overflowing rack keeps product gestures out of the walk without taking over native actions", () => {
+  const quickBuy = fixture();
+  const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
+    "@/lib/store/product-colors": productColors,
+    react: React,
+    "react/jsx-runtime": jsxRuntime,
+    "next/link": { default: "a" },
+    "next/image": { default: "img" },
+    "@/data/navigation": { EXPLORE_ROOMS: [] },
+    "@/data/public-membership": { MEMBERSHIP_INTRO: {} },
+    "@/lib/store/catalog": load("src/lib/store/catalog.ts", {}),
+    "./JourneyQuickBuy": { default: () => quickBuy.render() },
+  });
+  const shelf = JourneyStoreIndex({ products: [product, { ...product, id: "another-piece" }] });
+  const rack = elements(shelf).find((node) => node.props["data-journey-rack"] !== undefined);
+  assert.ok(rack);
+  const link = elements(rack).find((node) => node.type === "a");
+  assert.equal(link.props.href, "/store/script-hoodie");
+
+  for (const [scrollWidth, clientWidth, expectedStops] of [[860, 340, 1], [340, 340, 0]]) {
+    let stops = 0;
+    let nativeActionCancelled = false;
+    let captured = false;
+    rack.props.onPointerDown({
+      currentTarget: {
+        scrollWidth,
+        clientWidth,
+        setPointerCapture() { captured = true; },
+      },
+      target: link,
+      stopPropagation() { stops += 1; },
+      preventDefault() { nativeActionCancelled = true; },
+    });
+    assert.equal(stops, expectedStops, "Only an overflowing rack owns gestures that begin on its products");
+    assert.equal(nativeActionCancelled, false, "The browser must retain native scrolling, zooming, and taps");
+    assert.equal(captured, false, "The rack must not capture the gesture away from native product controls");
+  }
+  for (const handler of ["onClick", "onClickCapture", "onPointerDownCapture", "onChangeCapture"]) {
+    assert.equal(rack.props[handler], undefined, "The rail must not intercept product navigation or purchase actions");
+  }
+  quickBuy.choose("Color", "Blue");
+  quickBuy.choose("Size", "M");
+  quickBuy.button().props.onClick();
+  assert.equal(quickBuy.calls[0].variantId, "gid://shopify/ProductVariant/105");
+});
+
 test("On the Rack features Grey, the women's script crop, and the men's Less Permanent tee in the requested order", () => {
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/store/product-colors": productColors,

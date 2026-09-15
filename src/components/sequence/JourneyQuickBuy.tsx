@@ -89,7 +89,7 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
       onWheel={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-1.5">
         {choices.map((option) => (
           <label key={option.name} className="relative block min-w-0">
             <span className="sr-only">{option.name} for {product.name}</span>
@@ -126,7 +126,7 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
           type="button"
           disabled={!purchasable}
           onClick={addSelectedVariant}
-          className={`min-h-11 border border-white bg-white px-1.5 py-2 font-sans text-[0.64rem] font-semibold text-black transition-colors hover:border-[var(--color-poster)] hover:bg-[var(--color-poster)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/40 sm:text-xs ${choices.length % 2 === 0 ? "sm:col-span-2" : ""}`}
+          className={`min-h-11 border border-white bg-white px-1.5 py-2 font-sans text-xs font-semibold text-black transition-colors hover:border-[var(--color-poster)] hover:bg-[var(--color-poster)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/40 ${choices.length % 2 === 0 ? "col-span-2" : ""}`}
         >
           {soldOut ? "Sold out" : added ? "Added ✓" : "Add to bag"}
         </button>
