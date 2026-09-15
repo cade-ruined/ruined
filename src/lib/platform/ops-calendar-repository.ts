@@ -18,7 +18,10 @@ import { googleCalendarEventIdForRequestKey, type GoogleCalendarEventResult } fr
 import { googleCommunicationLivemode } from "@/lib/google/communications";
 import type { OpsExperienceCalendarState } from "@/lib/platform/ops-experience-model";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
-import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
+import {
+  memberEligibleForExperience,
+  memberEligibleForExperienceSnapshot,
+} from "@/lib/platform/experience-member-access";
 import { SITE_URL } from "@/lib/site";
 
 const UUID_PATTERN =
@@ -319,6 +322,7 @@ async function getCalendarExperience(
 async function resolveCalendarAttendees(
   tx: postgres.TransactionSql,
   experience: CalendarExperience,
+  purpose: "snapshot" | "authorization",
 ): Promise<CalendarAttendee[]> {
   const organizerEmail = getGoogleCalendarConfigurationStatus().organizerEmail;
   const rows = await tx<Array<{
@@ -424,8 +428,11 @@ async function resolveCalendarAttendees(
     order by audience.email, audience.member_id nulls last, audience.person_id
   `;
   const eligible = [];
+  const memberEligible = purpose === "snapshot"
+    ? memberEligibleForExperienceSnapshot
+    : memberEligibleForExperience;
   for (const row of rows) {
-    if (row.member_id && !(await memberEligibleForExperience(tx, experience, row.member_id))) continue;
+    if (row.member_id && !(await memberEligible(tx, experience, row.member_id))) continue;
     eligible.push(row);
   }
   return eligible.map((row) => ({
@@ -507,7 +514,7 @@ export async function getOpsExperienceCalendarStateForTx(
   const experience = await getCalendarExperience(tx, experienceId);
   const [link, attendees] = await Promise.all([
     getCalendarLink(tx, experienceId),
-    resolveCalendarAttendees(tx, experience),
+    resolveCalendarAttendees(tx, experience, "snapshot"),
   ]);
   const organizerMatches = !link || (
     configuration.organizerEmail === link.organizer_email
@@ -935,7 +942,7 @@ async function reserveCalendarSync(input: {
       throw new OpsOperatingRepositoryError("conflict", "This event has ended. Automatic Calendar delivery is paused for operator review.");
     }
 
-    const attendees = await resolveCalendarAttendees(tx, experience);
+    const attendees = await resolveCalendarAttendees(tx, experience, "authorization");
     const snapshot = eventSnapshot(experience, attendees);
     const attendeeSetSha256 = sha256(JSON.stringify(attendees));
     const requestFingerprint = sha256(JSON.stringify({ intent: input.intent, snapshot }));

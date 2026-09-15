@@ -28,6 +28,16 @@ export default function OperatorCircleCommunicationPanel({ circle, communication
       {chat ? <OperatorGoogleCommunicationField
         key={`chat-${circle.id}`} configured={chat.googleCommunicationsConfigured} editable={current} inline
         entityId={circle.id} entityType="circle" initialUrl={chat.chatUrl} kind="chat" preview={preview}
+        setupHelp={<details className="mt-2 text-sm text-black/65">
+          <summary className="min-h-11 cursor-pointer py-3 font-medium underline decoration-black/25 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2">Where do I find the link?</summary>
+          <ol className="ml-5 list-decimal space-y-1 pb-2 leading-relaxed">
+            <li>Open your private space in Google Chat.</li>
+            <li>Click the space name at the top.</li>
+            <li>Choose <strong>Copy link to this space</strong>, then paste it below.</li>
+          </ol>
+          <p className="leading-relaxed">Keep the space private. Add or invite the Circle’s participants in Google Chat separately.</p>
+          <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="https://support.google.com/chat/answer/11971020?hl=en" rel="noreferrer" target="_blank">Google’s instructions ↗</a>
+        </details>}
       /> : <p className="rounded-[4px] bg-black/[0.035] p-4 text-sm text-black/65" role="status">The saved chat link could not be loaded. Refresh this Circle before making changes.</p>}
     </section>
     <section aria-label={`${circle.name} meetings`} className="min-w-0">

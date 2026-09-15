@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
+import type { OpsCircleShaperMemberCandidate } from "@/lib/platform/ops-repository";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -74,6 +75,7 @@ export default function OpsCircleManagementActions({
   initialCircleId,
   resources,
   shapers,
+  circleMembers = [],
   preview = false,
   section = "all",
 }: {
@@ -81,6 +83,7 @@ export default function OpsCircleManagementActions({
   initialCircleId?: string;
   resources: Array<{ resourceId: string; title: string; version: number; versionId: string }>;
   shapers: Array<{ authUserId: string; name: string }>;
+  circleMembers?: OpsCircleShaperMemberCandidate[];
   preview?: boolean;
   section?: "all" | "shaper" | "resources";
 }) {
@@ -116,6 +119,7 @@ export default function OpsCircleManagementActions({
   const [selectionContext, setSelectionContext] = useState(contextKey);
   const [shaperCircleId, setShaperCircleId] = useState(initialShaperCircle);
   const [shaperId, setShaperId] = useState("");
+  const [confirmedShaperMember, setConfirmedShaperMember] = useState("");
   const [shaperAssignmentId, setShaperAssignmentId] = useState("");
   const [resourceCircleId, setResourceCircleId] = useState(initialResourceCircle);
   const [resourceId, setResourceId] = useState("");
@@ -129,7 +133,12 @@ export default function OpsCircleManagementActions({
   const selectedResourceCircle = sameContext
     ? currentCircles.some((circle) => circle.id === resourceCircleId) ? resourceCircleId : ""
     : initialResourceCircle;
-  const selectedShaper = !invalidContext && sameContext && shapers.some((shaper) => shaper.authUserId === shaperId) ? shaperId : "";
+  const currentCircleMembers = circleMembers.filter((member) => member.circleId === selectedShaperCircle);
+  const otherShapers = shapers.filter((shaper) => !currentCircleMembers.some((member) => member.authUserId === shaper.authUserId));
+  const selectedMember = !invalidContext && sameContext ? currentCircleMembers.find((member) => `member:${member.memberId}` === shaperId && member.authUserId && !member.unavailableReason) : undefined;
+  const selectedShaper = !invalidContext && sameContext && (selectedMember || otherShapers.some((shaper) => shaper.authUserId === shaperId)) ? shaperId : "";
+  const selectedMemberKey = selectedMember ? `${selectedShaperCircle}:${selectedMember.memberId}:${selectedMember.authUserId}` : "";
+  const memberAccessConfirmed = !selectedMember?.requiresShaperAccess || confirmedShaperMember === selectedMemberKey;
   const selectedShaperAssignment = !invalidContext && sameContext && currentShaperAssignments.some((assignment) => assignment.assignmentId === shaperAssignmentId) ? shaperAssignmentId : "";
   const selectedResource = !invalidContext && sameContext && resources.some((resource) => resource.resourceId === resourceId && resource.versionId === resourceVersionId) ? resourceId : "";
   const selectedResourceAssignment = !invalidContext && sameContext && currentResourceAssignments.some((assignment) => assignment.assignmentId === resourceAssignmentId) ? resourceAssignmentId : "";
@@ -141,6 +150,7 @@ export default function OpsCircleManagementActions({
     setSelectionContext(contextKey);
     setShaperCircleId(selectedShaperCircle);
     setShaperId(selectedShaper);
+    if (!selectedShaper) setConfirmedShaperMember("");
     setShaperAssignmentId(selectedShaperAssignment);
     setResourceCircleId(selectedResourceCircle);
     setResourceId(selectedResource);
@@ -163,19 +173,26 @@ export default function OpsCircleManagementActions({
     const form = event.currentTarget;
     const data = new FormData(form);
     const circleId = String(data.get("circleId") ?? "");
-    const shaperAuthUserId = String(data.get("shaperAuthUserId") ?? "");
-    if (invalidContext || !selectedShaperCircle || circleId !== selectedShaperCircle || !selectedShaper || shaperAuthUserId !== selectedShaper) {
-      setShaperNotice({ kind: "error", text: "Choose a current Circle and active Shaper again. Nothing was changed." }); return;
+    const submittedChoice = String(data.get("shaperAuthUserId") ?? "");
+    if (invalidContext || !selectedShaperCircle || circleId !== selectedShaperCircle || !selectedShaper || submittedChoice !== selectedShaper) {
+      setShaperNotice({ kind: "error", text: "Choose a current Circle member or active Shaper again. Nothing was changed." }); return;
     }
+    if (selectedMember?.requiresShaperAccess && (!memberAccessConfirmed || data.get("grantShaperAccess") !== "on")) {
+      setShaperNotice({ kind: "error", text: "Confirm Shaper access for this Circle before saving. Nothing was changed." }); return;
+    }
+    const shaperAuthUserId = selectedMember?.authUserId ?? selectedShaper;
     setPending("shaper-assign");
     setShaperNotice(null);
     try {
       const assignment = await mutate(
         "/api/ops/circle-shaper-assignments",
-        { circleId, shaperAuthUserId },
+        selectedMember ? { circleId, memberId: selectedMember.memberId, grantShaperAccess: selectedMember.requiresShaperAccess && memberAccessConfirmed } : { circleId, shaperAuthUserId },
         "POST",
       );
-      const shaper = shapers.find((candidate) => candidate.authUserId === shaperAuthUserId);
+      if (selectedMember && (assignment.authUserId !== shaperAuthUserId || assignment.circleId !== circleId || assignment.memberId !== selectedMember.memberId || !assignment.assignmentId || !assignment.assignedAt)) {
+        throw new Error("The saved assignment could not be confirmed. Refresh this Circle before trying again.");
+      }
+      const shaper = selectedMember ?? shapers.find((candidate) => candidate.authUserId === shaperAuthUserId);
       setCircles((current) => current.map((circle) =>
         circle.id === circleId
           ? {
@@ -191,6 +208,7 @@ export default function OpsCircleManagementActions({
       ));
       form.reset();
       setShaperId("");
+      setConfirmedShaperMember("");
       setShaperCircleId("");
       setEditingShaper(false);
       setShaperNotice({ kind: "success", text: `${shaper?.name ?? "Shaper"} is assigned to ${currentCircles.find((circle) => circle.id === circleId)?.name ?? "the selected Circle"}.` });
@@ -321,6 +339,29 @@ export default function OpsCircleManagementActions({
     }
   }
 
+  const shaperPicker = <>
+    <label className={OPERATOR_LABEL_CLASS}>
+      <span className={OPERATOR_LABEL_TEXT_CLASS}>Choose Shaper</span>
+      <select className={OPERATOR_FIELD_CLASS} value={selectedShaper} onChange={(event) => { setShaperId(event.target.value); setConfirmedShaperMember(""); setShaperNotice(null); }} disabled={pending !== null || (!currentCircleMembers.length && !otherShapers.length)} name="shaperAuthUserId" required>
+        <option disabled value="">Choose a person</option>
+        {currentCircleMembers.length ? <optgroup label="Circle members">
+          {currentCircleMembers.map((member) => <option key={member.memberId} value={`member:${member.memberId}`} disabled={Boolean(member.unavailableReason) || !member.authUserId}>{member.name} · {member.email}{member.unavailableReason ? " — unavailable" : ""}</option>)}
+        </optgroup> : null}
+        {otherShapers.length ? <optgroup label="Existing Shapers">
+          {otherShapers.map((shaper) => <option key={shaper.authUserId} value={shaper.authUserId}>{shaper.name}</option>)}
+        </optgroup> : null}
+      </select>
+    </label>
+    {currentCircleMembers.some((member) => member.unavailableReason) ? <details className="text-sm text-black/65">
+      <summary className="w-fit cursor-pointer py-2 underline underline-offset-4">Why are some members unavailable?</summary>
+      <ul className="mt-1 space-y-2">{currentCircleMembers.filter((member) => member.unavailableReason).map((member) => <li key={member.memberId}><Link className="font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link>: {member.unavailableReason}</li>)}</ul>
+    </details> : null}
+  </>;
+  const shaperAccessConfirmation = selectedMember?.requiresShaperAccess ? <label className="flex items-start gap-3 text-sm leading-relaxed text-black/75">
+    <input className="mt-0.5 size-5 shrink-0 accent-[var(--color-poster)]" type="checkbox" name="grantShaperAccess" checked={memberAccessConfirmed} onChange={(event) => setConfirmedShaperMember(event.target.checked ? selectedMemberKey : "")} required disabled={pending !== null} />
+    <span>Give {selectedMember.name} Shaper access to manage this Circle. This does not grant administrator access.</span>
+  </label> : null;
+
   if (invalidContext) return (
     <section aria-label="Shaper and Circle resource administration" className="pt-4">
       <p className="text-sm leading-relaxed text-black/65">This Circle is no longer available for Shaper or resource changes. Nothing has been selected in another Circle.</p>
@@ -367,15 +408,10 @@ export default function OpsCircleManagementActions({
             <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} onClick={() => setShaperAssignmentId(contextCircle.shaper?.assignmentId ?? "")} type="button">Remove Shaper</button>
           </> : <form className="grid gap-3" onSubmit={assignShaper}>
             <input name="circleId" type="hidden" value={selectedShaperCircle} />
-            <label className={OPERATOR_LABEL_CLASS}>
-              <span className={OPERATOR_LABEL_TEXT_CLASS}>Choose Shaper</span>
-              <select className={OPERATOR_FIELD_CLASS} value={selectedShaper} onChange={(event) => setShaperId(event.target.value)} disabled={pending !== null || !shapers.length} name="shaperAuthUserId" required>
-                <option disabled value="">Choose Shaper</option>
-                {shapers.map((shaper) => <option key={shaper.authUserId} value={shaper.authUserId}>{shaper.name}</option>)}
-              </select>
-            </label>
-            {!shapers.length ? <p className="text-sm text-black/60">No active Shapers yet. <Link className="underline underline-offset-4" href="/ops/operators?add=1">Invite a Shaper</Link> and choose this Circle in the invitation. They are assigned when they accept.</p> : null}
-            <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper} type="submit">{pending === "shaper-assign" ? "Assigning…" : "Save Shaper"}</button>
+            {shaperPicker}
+            {shaperAccessConfirmation}
+            {!currentCircleMembers.length && !otherShapers.length ? <p className="text-sm text-black/60">Add a member to this Circle, then choose them here. To bring in someone else, <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite a Shaper</Link> and choose this Circle in the invitation.</p> : null}
+            <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper || !memberAccessConfirmed} type="submit">{pending === "shaper-assign" ? "Assigning…" : "Save Shaper"}</button>
           </form>}
           {!selectedShaperAssignment ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => { setEditingShaper(false); setShaperId(""); }} type="button">Cancel</button> : null}
         </div> : null}
@@ -424,7 +460,7 @@ export default function OpsCircleManagementActions({
         <div>
           <h2 className="ui-heading mt-1 text-2xl font-black uppercase tracking-[-0.035em]">Shaper</h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-            The Shaper leads the Circle. Choose someone with active Shaper access.
+            The Shaper leads the Circle. Choose a Circle member or an existing Shaper.
           </p>
         </div>
         <form className="mt-6 grid gap-3" onSubmit={assignShaper}>
@@ -436,19 +472,14 @@ export default function OpsCircleManagementActions({
                 {circlesWithoutShaper.map((circle) => <option key={circle.id} value={circle.id}>{circle.name}</option>)}
               </select>
             </label>
-            <label className={OPERATOR_LABEL_CLASS}>
-              <span className={OPERATOR_LABEL_TEXT_CLASS}>Active Shaper</span>
-              <select className={OPERATOR_FIELD_CLASS} value={selectedShaper} onChange={(event) => setShaperId(event.target.value)} disabled={pending !== null || shapers.length === 0} name="shaperAuthUserId" required>
-                <option disabled value="">Choose Shaper</option>
-                {shapers.map((shaper) => <option key={shaper.authUserId} value={shaper.authUserId}>{shaper.name}</option>)}
-              </select>
-            </label>
+            <div className="space-y-2">{shaperPicker}</div>
           </div>
-          <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper} type="submit">
+          {shaperAccessConfirmation}
+          <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper || !memberAccessConfirmed} type="submit">
             {pending === "shaper-assign" ? "Assigning" : "Assign Shaper"}
           </button>
         </form>
-        {shapers.length === 0 ? <p className="mt-3 text-sm text-black/60">No active Shapers yet. <Link className="underline underline-offset-4" href="/ops/operators?add=1">Invite someone as a Shaper</Link> and choose their Circle in the invitation. Their assignment is created when they accept; there is no need to assign them again here.</p> : null}
+        {!currentCircleMembers.length && !otherShapers.length ? <p className="mt-3 text-sm text-black/60">Open a Circle to choose one of its members, or <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite someone as a Shaper</Link> and choose their Circle in the invitation. Their assignment is created when they accept; there is no need to assign them again here.</p> : null}
         {currentShaperAssignments.length ? <form className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={endShaper}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Current assignment</span>

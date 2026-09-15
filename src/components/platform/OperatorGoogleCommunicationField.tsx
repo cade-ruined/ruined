@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_LABEL_TEXT_CLASS } from "@/components/platform/operatorStyles";
 
@@ -27,6 +27,7 @@ type CommunicationFieldProps = {
   kind: CommunicationKind;
   inline?: boolean;
   preview?: boolean;
+  setupHelp?: ReactNode;
 };
 
 export default function OperatorGoogleCommunicationField(props: CommunicationFieldProps) {
@@ -36,7 +37,7 @@ export default function OperatorGoogleCommunicationField(props: CommunicationFie
   return <GoogleCommunicationEditor key={editorKey} {...props} />;
 }
 
-function GoogleCommunicationEditor({ configured, editable, entityId, entityType, initialUrl, kind, preview = false }: CommunicationFieldProps) {
+function GoogleCommunicationEditor({ configured, editable, entityId, entityType, initialUrl, kind, preview = false, setupHelp }: CommunicationFieldProps) {
   const router = useRouter();
   const [url, setUrl] = useState(initialUrl ?? "");
   const [draft, setDraft] = useState(initialUrl ?? "");
@@ -197,6 +198,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
               ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
               : "Paste an existing Google Meet link here. Saving it does not send invitations or change Google access; use Calendar invitations for that flow."}
           </p>
+          {setupHelp}
           <form className="mt-3 grid gap-3" onSubmit={submit}>
             <label htmlFor={`${kind}-${entityId}-url`}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>

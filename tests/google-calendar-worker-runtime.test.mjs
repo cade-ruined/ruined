@@ -89,7 +89,10 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
     "@/lib/database/server": { getApplicationDatabase: () => bridge(db) }, "@/lib/google/calendar": api,
     "@/lib/google/calendar-model": model, "@/lib/google/communications": { googleCommunicationLivemode: () => mode },
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError }, "@/lib/site": { SITE_URL: "https://example.test" },
-    "@/lib/platform/experience-member-access": { memberEligibleForExperience: async () => true },
+    "@/lib/platform/experience-member-access": {
+      memberEligibleForExperience: async () => true,
+      memberEligibleForExperienceSnapshot: async () => true,
+    },
   });
   const worker = await load("src/lib/google/calendar-worker.ts", { "@/lib/google/calendar": api,
     "@/lib/google/communications": { googleCommunicationLivemode: () => mode }, "@/lib/platform/ops-calendar-repository": repo });

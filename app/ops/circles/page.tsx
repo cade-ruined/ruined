@@ -61,6 +61,14 @@ export default async function OperationsCirclesPage({
     assignments = circles.flatMap((circle) => context.dashboard!.members.filter((member) => member.circleName === circle.name).map((member) => ({
       ...member, assignmentId: `preview-assignment-${member.memberId}`, assignedAt: "2026-08-01T00:00:00.000Z", circleId: circle.id,
     })));
+    managementOptions = {
+      ...PREVIEW_OPS_CIRCLE_MANAGEMENT,
+      circleMembers: assignments.filter((member) => member.circleId === initialCircleId).map((member) => ({
+        memberId: member.memberId, circleId: member.circleId, name: member.name, email: member.email,
+        authUserId: `preview-user-${member.memberId}`, requiresShaperAccess: true,
+        unavailableReason: member.accountState === "active" ? null : "Complete member setup before assigning Shaper access.",
+      })),
+    };
     circles = circles.map((circle) => ({ ...circle, activeMembers: assignments!.filter((assignment) => assignment.circleId === circle.id).length }));
     placementMembers = context.dashboard.members.filter((member) => memberQuery ? `${member.name} ${member.email}`.toLowerCase().includes(memberQuery.toLowerCase()) : !member.circleName);
     candidateTotal = placementMembers.length;
@@ -74,7 +82,7 @@ export default async function OperationsCirclesPage({
     try {
       const [circleRows, options, roster, directory] = await Promise.all([
         getOpsCircleSummaries(context.viewer.authUserId),
-        getOpsCircleManagementOptions(context.viewer.authUserId),
+        getOpsCircleManagementOptions(context.viewer.authUserId, initialCircleId),
         getOpsCircleMemberAssignments(context.viewer.authUserId),
         // Search should find people, not silently hide them because they need setup or already have a Circle.
         getOperatorMemberDirectoryPage(context.viewer.authUserId, { filter: memberQuery ? "all" : "unassigned", query: memberQuery, page: requestedMemberPage }),
@@ -142,7 +150,7 @@ export default async function OperationsCirclesPage({
         initialCircleId={initialCircleId}
         memberQuery={memberQuery}
         preview={context.state === "preview"}
-        shaper={selectedCircle ? <OpsCircleManagementActions section="shaper" initialCircleId={initialCircleId} initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} /> : null}
+        shaper={selectedCircle ? <OpsCircleManagementActions section="shaper" initialCircleId={initialCircleId} initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} circleMembers={managementOptions.circleMembers} preview={context.state === "preview"} /> : null}
         communications={selectedCircle ? <OperatorCircleCommunicationPanel
           circle={selectedCircle}
           communication={communicationCircles?.find((item) => item.id === selectedCircle.id)}

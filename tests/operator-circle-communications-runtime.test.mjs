@@ -46,6 +46,67 @@ const elements = (node) => [node, ...(node.childNodes ?? []).flatMap(elements)].
 const text = (node) => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(text).join("");
 const render = (props = {}) => parseFragment(renderToStaticMarkup(React.createElement(Panel, { circle, communication, directory, now, ...props })));
 const links = (tree) => elements(tree).filter((node) => node.tagName === "a");
+const reactNodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(reactNodes) : [node, ...reactNodes(node.props?.children)];
+
+function interactiveField(props) {
+  const slots = [];
+  let cursor = 0;
+  const hooks = { ...React,
+    useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], (value) => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }]; },
+    useRef(initial) { const i = cursor++; return slots[i] ??= { current: initial }; },
+    useEffect() {},
+  };
+  const Field = load("src/components/platform/OperatorGoogleCommunicationField.tsx", { ...styles, react: hooks }).default;
+  return { draw() { cursor = 0; const editor = Field(props); return editor.type(editor.props); } };
+}
+
+test("Circle chat link instructions are collapsed within setup, never repeated in saved or unavailable controls", () => {
+  const setup = render({ communication: { ...communication, chatUrl: null } });
+  const disclosure = elements(setup).find((node) => node.tagName === "details");
+  assert.ok(disclosure);
+  assert.equal(attr(disclosure, "open"), undefined);
+  assert.equal(text(elements(disclosure).find((node) => node.tagName === "summary")), "Where do I find the link?");
+  assert.deepEqual(elements(disclosure).filter((node) => node.tagName === "li").map(text), [
+    "Open your private space in Google Chat.",
+    "Click the space name at the top.",
+    "Choose Copy link to this space, then paste it below.",
+  ]);
+  assert.match(text(disclosure), /Keep the space private.*participants in Google Chat separately/);
+  const help = links(disclosure).find((node) => attr(node, "href") === "https://support.google.com/chat/answer/11971020?hl=en");
+  assert.equal(attr(help, "target"), "_blank");
+  assert.equal(attr(help, "rel"), "noreferrer");
+  assert.match(text(setup), /Saving a link does not grant Google access/);
+  assert.ok(elements(setup).some((node) => node.tagName === "input" && attr(node, "name") === "url"));
+  const meetings = elements(setup).find((node) => attr(node, "aria-label") === `${circle.name} meetings`);
+  assert.doesNotMatch(text(meetings), /Where do I find|Copy link to this space/);
+
+  for (const tree of [render(), render({ communication: undefined }), render({ circle: { ...circle, status: "archived" }, communication: { ...communication, chatUrl: null } }), render({ communication: { ...communication, chatUrl: null, googleCommunicationsConfigured: false } })]) {
+    assert.equal(elements(tree).some((node) => node.tagName === "details"), false);
+    assert.doesNotMatch(text(tree), /Where do I find|Copy link to this space/);
+  }
+});
+
+test("editing a saved Circle chat exposes its help without adding it to Google Meet", () => {
+  const panel = Panel({ circle, communication, directory, now });
+  const fieldProps = reactNodes(panel).find((node) => node.type === field.default).props;
+  const f = interactiveField(fieldProps);
+  assert.equal(reactNodes(f.draw()).some((node) => node.type === "details"), false);
+  reactNodes(f.draw()).find((node) => node.type === "button" && node.props["aria-label"] === "Edit chat link").props.onClick();
+  const editing = parseFragment(renderToStaticMarkup(f.draw()));
+  assert.ok(elements(editing).some((node) => node.tagName === "details" && attr(node, "open") === undefined));
+  assert.match(text(editing), /Where do I find the link\?/);
+  reactNodes(f.draw()).find((node) => node.type === "button" && node.props.children === "Cancel").props.onClick();
+  assert.equal(reactNodes(f.draw()).some((node) => node.type === "details"), false);
+
+  for (const initialUrl of [null, meeting.meetingUrl]) {
+    const meet = interactiveField({ configured: true, editable: true, entityId: meeting.experienceId, entityType: "experience", initialUrl, kind: "meet" });
+    if (initialUrl) reactNodes(meet.draw()).find((node) => node.type === "button" && node.props["aria-label"] === "Edit meeting link").props.onClick();
+    const tree = parseFragment(renderToStaticMarkup(meet.draw()));
+    assert.equal(elements(tree).some((node) => node.tagName === "details"), false);
+    assert.doesNotMatch(text(tree), /Where do I find|Copy link to this space|Google Chat/);
+    assert.match(text(tree), /Saving it does not send invitations/);
+  }
+});
 
 test("Circle chat and meetings use exact identities, never shared display names or global scope", () => {
   const tree = render();

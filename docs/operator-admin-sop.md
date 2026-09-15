@@ -2,11 +2,11 @@
 
 **For:** Administrators who operate the Ruined member experience
 
-**Version:** 1.6
+**Version:** 1.7
 
 **Last reviewed:** 15 September 2026
 
-This revision covers the Circle management window, member portraits, and saved details with editing on demand.
+This revision covers Circle windows, saved-detail editing, choosing an existing Circle member as Shaper, and finding a private Google Chat space’s link.
 
 ## The simple mental model
 
@@ -46,7 +46,7 @@ Use **Members → Pending joining** to find saved allowances after leaving or re
 
 ### One person, two separate actions
 
-**Circle placement** gives a member their group. **Operator access** gives that same person permission to help run Ruined. Neither action completes the other, and Administrator access does not require a Circle placement.
+**Circle placement** gives a member their group. **Operator access** gives that same person permission to help run Ruined. Adding someone to a Circle does not grant operator access, and Administrator access does not require Circle placement. The **Assign Shaper** review can grant limited Shaper access to an existing Circle member when you explicitly confirm it; it never grants Administrator access.
 
 For an existing member, open **Members → their record → Overview**:
 
@@ -59,7 +59,7 @@ Opening either link does not assign a Circle, send an email, or grant access. Yo
 
 ## 1. Before adding a new operator
 
-An operator account is not open signup. An active Administrator must invite every new operator.
+Operator access is not open signup. An active Administrator must approve it: use an invitation for a new operator, or explicitly confirm Shaper access when assigning an eligible existing Circle member as Shaper.
 
 The first Administrator cannot be created through the operator screen; that account and role must be provisioned internally. The workflow below adds every subsequent Administrator.
 
@@ -249,8 +249,8 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 2. Find a **Forming** or **Active** Circle card with space. Select **Manage Circle**. A window opens with the Circle name, Shaper, and roster. Close it with **×** or Escape to return to the grid; unsaved edits require confirmation before discarding.
 3. Open **Add a member**, review the selected person or search by name or email. Read any eligibility message, then select **Add to Circle** once. Confirm the saved result and updated roster. Merely choosing a person or opening the window does not change their placement.
 4. If a new Circle is needed, select **+ Create a Circle** at the top. Enter its name and select **Create Circle**, or choose **Cancel** without saving. It begins **Forming** with ten places and opens its management window for adding the first member.
-5. The **Shaper** appears first in the window. Choose an existing active Shaper when unassigned, or use **Edit Shaper** to review a current assignment. Removing the current Shaper requires confirmation before a replacement can be assigned. If needed, **Invite someone as a Shaper**, select this Circle in the invitation, then verify their assignment after acceptance. Under **Resources**, use **Add resource** to share an approved, published lesson or document; each resource keeps its exact selected version.
-6. Under **Circle chat**, paste the private Google Chat space URL and select **Set chat link**. A saved link shows **Open chat**, **Copy link**, and **Edit**; choose **Edit** only when changing or removing it. **Cancel** keeps the saved link. Create the space and manage its participants in Google; Ruined does not do those tasks. To arrange the first meeting, select **Schedule a meeting** in the same window—the Circle audience is already selected.
+5. The **Shaper** appears first in the window. Select **Assign Shaper**, then choose from **Circle members** or **Existing Shapers**. If the member needs Shaper access, check the confirmation and select **Save Shaper**. This grants Circle-level operator access, not administrator access; existing administrator permissions are kept. Unavailable members show a reason—review that person's record instead of bypassing an account or membership restriction. Use **Edit Shaper** to review a current assignment; removal requires confirmation before selecting a replacement. Someone new can still be invited as a Shaper through **Operators**. Under **Resources**, use **Add resource** to share an approved, published lesson or document; each resource keeps its exact selected version.
+6. Under **Circle chat**, paste the private Google Chat space URL and select **Set chat link**. To find it, open the private space in Google Chat, click its name at the top, and choose **Copy link to this space**. **Where do I find the link?** keeps these instructions available during setup or editing. A saved link shows **Open chat**, **Copy link**, and **Edit**; choose **Edit** only when changing or removing it. **Cancel** keeps the saved link. Keep the space private and add or invite participants in Google Chat separately; saving a link in Ruined does not grant Google access or send invitations. To arrange the first meeting, select **Schedule a meeting** in the same window—the Circle audience is already selected.
 7. When a forming Circle has at least one member and is ready to run, open **Manage Circle** and select **Activate [Circle name]**, then **Confirm activation**. Review Shaper coverage, Chat, resources, and the first meeting beforehand. **Add members before activation.** Activation changes the whole Circle, not just the selected member.
 8. Circle roster and Block changes queue Calendar audience updates for linked Experiences. Check the affected Experience's Calendar status; use **Sync invitations** when an immediate explicit sync is needed. A saved roster or pending update does not prove that Google has delivered invitations.
 

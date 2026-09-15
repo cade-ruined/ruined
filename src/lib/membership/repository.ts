@@ -1612,7 +1612,7 @@ export async function getMemberCircle(
         and exists (
           select 1 from platform_role_grants shaper_grant
           where shaper_grant.auth_user_id = platform_user.auth_user_id
-            and shaper_grant.role_slug = 'circle_leader'
+            and shaper_grant.role_slug in ('circle_leader', 'ops_admin')
             and shaper_grant.revoked_at is null
         )
       order by staff_assignment.assigned_at desc

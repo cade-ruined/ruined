@@ -15,6 +15,8 @@ type ShaperAssignmentBody = {
   assignmentId?: unknown;
   circleId?: unknown;
   shaperAuthUserId?: unknown;
+  memberId?: unknown;
+  grantShaperAccess?: unknown;
 };
 
 function json(body: unknown, status = 200) {
@@ -54,11 +56,18 @@ export async function POST(request: Request) {
   if ("response" in context) return context.response;
   const body = (await request.json().catch(() => null)) as ShaperAssignmentBody | null;
   try {
+    if (!body || (body.memberId !== undefined && typeof body.memberId !== "string")
+      || (body.shaperAuthUserId !== undefined && typeof body.shaperAuthUserId !== "string")
+      || (body.grantShaperAccess !== undefined && typeof body.grantShaperAccess !== "boolean")) {
+      return json({ error: "Choose a valid Circle and Shaper." }, 400);
+    }
     const assignment = await assignShaperToCircle({
       actorAuthUserId: context.viewer.authUserId,
       circleId: typeof body?.circleId === "string" ? body.circleId : "",
       shaperAuthUserId:
-        typeof body?.shaperAuthUserId === "string" ? body.shaperAuthUserId : "",
+        typeof body.shaperAuthUserId === "string" ? body.shaperAuthUserId : undefined,
+      memberId: typeof body.memberId === "string" ? body.memberId : undefined,
+      grantShaperAccess: body.grantShaperAccess as boolean | undefined,
     });
     return json({ assignment }, assignment.created ? 201 : 200);
   } catch (error) {

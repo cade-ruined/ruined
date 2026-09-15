@@ -189,10 +189,82 @@ function fixture(patch = {}, respond = () => Response.json({ assignment: { assig
       return button.props.onClick();
     },
     change(action, name, value) { select(action, name).props.onChange({ target: { value } }); return draw(); },
+    check(action, name, checked) { elements(form(action)).find((node) => node.type === "input" && node.props.name === name).props.onChange({ target: { checked } }); return draw(); },
     rerender(patch, flush = true) { props = { ...props, ...patch }; return draw(flush); },
     submit(action, fields) { return form(action).props.onSubmit({ preventDefault() {}, currentTarget: { fields, reset() {} } }); },
   };
 }
+
+const circleMember = { memberId: "member-one", circleId: "forming", name: "Taylor", email: "taylor@example.test", authUserId: "auth-one", requiresShaperAccess: true, unavailableReason: null };
+const memberAssignment = { assignmentId: "assignment-one", assignedAt: "2026-09-15T12:00:00.000Z", authUserId: "auth-one", circleId: "forming", memberId: "member-one", created: true, shaperAccessGranted: true };
+
+test("Shaper picker lists the selected Circle roster first and keeps blocked people explainable", () => {
+  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember,
+    { ...circleMember, memberId: "elsewhere", circleId: "led", name: "Elsewhere" },
+    { ...circleMember, memberId: "blocked", name: "Invited person", authUserId: null, unavailableReason: "They need to sign in first." },
+  ] });
+  f.click("Assign Shaper");
+  const picker = f.select("assignShaper", "shaperAuthUserId");
+  assert.deepEqual(elements(picker).filter((node) => node.type === "optgroup").map((node) => node.props.label), ["Circle members", "Existing Shapers"]);
+  assert.match(elementText(picker), /Taylor · taylor@example.test/);
+  assert.doesNotMatch(elementText(picker), /Elsewhere/);
+  assert.equal(elements(picker).find((node) => node.type === "option" && node.props.value === "member:blocked").props.disabled, true);
+  assert.match(elementText(f.draw()), /They need to sign in first/);
+  assert.equal(picker.props.value, "", "no member is preselected");
+});
+
+test("making a Circle member Shaper needs a deliberate access confirmation, and sends only the member identity", async () => {
+  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember] }, () => Response.json({ assignment: memberAssignment }));
+  f.click("Assign Shaper");
+  f.change("assignShaper", "shaperAuthUserId", "member:member-one");
+  assert.match(elementText(f.draw()), /This does not grant administrator access/);
+  assert.equal(elements(f.form("assignShaper")).find((node) => node.type === "button" && node.props.type === "submit").props.disabled, true);
+  await f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "member:member-one", grantShaperAccess: "on" });
+  assert.equal(f.requests.length, 0, "forged form checkbox is not enough without the deliberate UI choice");
+  f.check("assignShaper", "grantShaperAccess", true);
+  await f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "member:member-one", grantShaperAccess: "on" });
+  assert.deepEqual(f.requests[0].body, { circleId: "forming", memberId: "member-one", grantShaperAccess: true });
+  assert.equal(f.form("assignShaper"), undefined);
+  assert.match(elements(f.draw()).find((node) => node.type?.name === "ActionNotice").props.notice.text, /Taylor is assigned to Circle 01/);
+  assert.equal(f.draw().props["data-operator-dirty"], undefined);
+});
+
+test("existing operator members retain access without requiring or sending a new grant", async () => {
+  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [{ ...circleMember, requiresShaperAccess: false }], shapers: [{ authUserId: "auth-one", name: "Taylor" }, { authUserId: "other", name: "Other Shaper" }] }, () => Response.json({ assignment: { ...memberAssignment, shaperAccessGranted: false } }));
+  f.click("Assign Shaper");
+  const options = elements(f.select("assignShaper", "shaperAuthUserId")).filter((node) => node.type === "option");
+  assert.equal(options.filter((node) => /Taylor/.test(elementText(node))).length, 1, "member is not duplicated in both groups");
+  f.change("assignShaper", "shaperAuthUserId", "member:member-one");
+  assert.equal(elements(f.draw()).some((node) => node.type === "input" && node.props.name === "grantShaperAccess"), false);
+  await f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "member:member-one" });
+  assert.deepEqual(f.requests[0].body, { circleId: "forming", memberId: "member-one", grantShaperAccess: false });
+});
+
+test("member eligibility and identity refresh clear stale Shaper consent without choosing another person", async () => {
+  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember] });
+  f.click("Assign Shaper");
+  f.change("assignShaper", "shaperAuthUserId", "member:member-one");
+  f.check("assignShaper", "grantShaperAccess", true);
+  f.rerender({ circleMembers: [{ ...circleMember, authUserId: "relinked-account" }] });
+  assert.equal(elements(f.draw()).find((node) => node.type === "input" && node.props.name === "grantShaperAccess").props.checked, false);
+  f.rerender({ circleMembers: [{ ...circleMember, unavailableReason: "Membership is suspended." }] });
+  assert.equal(f.select("assignShaper", "shaperAuthUserId").props.value, "");
+  await f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "member:member-one", grantShaperAccess: "on" });
+  assert.equal(f.requests.length, 0);
+  f.rerender({ circleMembers: [circleMember] });
+  assert.equal(f.select("assignShaper", "shaperAuthUserId").props.value, "");
+});
+
+test("a mismatched saved member assignment is never displayed as a successful Shaper change", async () => {
+  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember] }, () => Response.json({ assignment: { ...memberAssignment, circleId: "led" } }));
+  f.click("Assign Shaper");
+  f.change("assignShaper", "shaperAuthUserId", "member:member-one");
+  f.check("assignShaper", "grantShaperAccess", true);
+  await f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "member:member-one", grantShaperAccess: "on" });
+  assert.ok(f.form("assignShaper"));
+  assert.match(elements(f.draw()).find((node) => node.type?.name === "ActionNotice").props.notice.text, /Refresh this Circle before trying again/);
+  assert.equal(f.draw().props["data-operator-pending"], undefined);
+});
 
 test("all selects are controlled and an ineligible Circle clears immediately without selecting a replacement", () => {
   const f = fixture();

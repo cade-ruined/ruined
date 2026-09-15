@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import postgres from "postgres";
 import ts from "typescript";
-import { Parameter, types } from "../node_modules/postgres/src/types.js";
+import { Parameter, arraySerializer, types } from "../node_modules/postgres/src/types.js";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 
 const require = createRequire(import.meta.url);
@@ -85,21 +85,39 @@ async function fixture() {
   }
   const identity = { account_state: "active", administrative_onboarding_state: "completed", auth_user_id: ids.auth, billing_state: "active", cancellation_effective_at: null, email: "member@example.test", foundations_state: "in_progress", member_id: ids.member, person_id: ids.person, program_state: "onboarding", standing_state: "active" };
   const makeDb = (engine) => {
-    const sql = async (strings, ...values) => {
-      let query = strings[0];
-      const parameters = values.map((value, index) => {
-        query += `$${index + 1}${strings[index + 1]}`;
-        if (value instanceof Parameter) return types.json.serialize(value.value);
-        if (/^\s*::jsonb\b/.test(strings[index + 1])) return types.json.serialize(value);
-        return value;
-      });
-      // Identity linkage is independently covered; all scoped data queries and
-      // writes under test execute against PostgreSQL, not fake result branches.
-      if (query.includes("from platform_users platform_user")) return [identity];
-      if (query.includes("pg_advisory_xact_lock")) return [];
-      return (await engine.query(query, parameters)).rows;
-    };
+    // postgres-js tags are lazy, composable query objects. A nested tag is SQL,
+    // not a value parameter or an independently executed partial statement.
+    class Query {
+      constructor(strings, values) { this.strings = strings; this.values = values; }
+      compile(parameters) {
+        let query = this.strings[0];
+        this.values.forEach((value, index) => {
+          if (value instanceof Query) query += value.compile(parameters);
+          else {
+            const parameter = value instanceof Parameter
+              ? value.array ? arraySerializer(value.value) : types.json.serialize(value.value)
+              : /^\s*::jsonb\b/.test(this.strings[index + 1]) ? types.json.serialize(value)
+                : value instanceof Date ? types.date.serialize(value) : value;
+            parameters.push(parameter);
+            query += `$${parameters.length}`;
+          }
+          query += this.strings[index + 1];
+        });
+        return query;
+      }
+      async execute() {
+        const parameters = [], query = this.compile(parameters);
+        // Identity linkage is independently covered; all scoped data queries and
+        // writes under test execute against PostgreSQL, not fake result branches.
+        if (query.includes("from platform_users platform_user")) return [identity];
+        if (query.includes("pg_advisory_xact_lock")) return [];
+        return (await engine.query(query, parameters)).rows;
+      }
+      then(resolve, reject) { return this.execute().then(resolve, reject); }
+    }
+    const sql = (strings, ...values) => new Query(strings, values);
     sql.json = driver.json;
+    sql.array = driver.array;
     sql.begin = (callback) => pg.transaction((transaction) => callback(makeDb(transaction)));
     return sql;
   };
@@ -158,6 +176,32 @@ test("Circle Shaper IDs cannot collide with member IDs and optional fields requi
     assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
     await pg.query("update circle_staff_assignments set circle_id=$1", [ids.circle]);
     await pg.exec("update platform_role_grants set revoked_at=now()");
+    assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
+  } finally { await pg.close(); }
+});
+
+test("an administrator assigned as Shaper appears without a second role grant and keeps directory privacy", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    await pg.query("update platform_role_grants set role_slug='ops_admin' where auth_user_id=$1", [ids.shaperAuth]);
+    const grantsBefore = (await pg.query("select * from platform_role_grants where auth_user_id=$1", [ids.shaperAuth])).rows;
+    let circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.shaper.displayName, "Circle Shaper");
+    for (const field of ["avatarUrl", "bio", "location", "buildingNow", "email", "phone"]) assert.equal(circle.shaper[field], null, field);
+    await pg.query("update member_directory_preferences set directory_status='circle_visible',email_scope='circle' where member_id=$1", [ids.shaperMember]);
+    circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.shaper.email, "shaper@example.test");
+    assert.equal(circle.shaper.phone, null);
+    assert.deepEqual((await pg.query("select * from platform_role_grants where auth_user_id=$1", [ids.shaperAuth])).rows, grantsBefore);
+    await pg.query("update platform_users set status='suspended' where auth_user_id=$1", [ids.shaperAuth]);
+    assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
+    await pg.query("update platform_users set status='active' where auth_user_id=$1", [ids.shaperAuth]);
+    await pg.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [ids.shaperAuth]);
+    assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
+    await pg.query("update platform_role_grants set revoked_at=null,role_slug='guide' where auth_user_id=$1", [ids.shaperAuth]);
+    assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
+    await pg.query("update platform_role_grants set role_slug='ops_admin' where auth_user_id=$1", [ids.shaperAuth]);
+    await pg.exec("update circle_staff_assignments set ended_at=now()");
     assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
   } finally { await pg.close(); }
 });

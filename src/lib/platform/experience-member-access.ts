@@ -19,10 +19,34 @@ export async function memberEligibleForExperience(
   experience: ExperienceMemberAudience,
   memberId: string | null,
 ): Promise<boolean> {
+  return evaluateExperienceMemberAccess(tx, experience, memberId, true);
+}
+
+// Display-only snapshot. The same policy and audience checks apply, but no
+// evidence is locked. Never use this result to authorize an admission or send;
+// mutation paths must recheck with memberEligibleForExperience above.
+export async function memberEligibleForExperienceSnapshot(
+  tx: postgres.TransactionSql,
+  experience: ExperienceMemberAudience,
+  memberId: string | null,
+): Promise<boolean> {
+  return evaluateExperienceMemberAccess(tx, experience, memberId, false);
+}
+
+async function evaluateExperienceMemberAccess(
+  tx: postgres.TransactionSql,
+  experience: ExperienceMemberAudience,
+  memberId: string | null,
+  lockEvidence: boolean,
+): Promise<boolean> {
   if (!memberId) return false;
-  const funding = await tx<Array<{ operator_funded: boolean }>>`
-    select private.ruined_lock_member_operator_funding(${memberId}::uuid) as operator_funded
-  `;
+  const funding = lockEvidence
+    ? await tx<Array<{ operator_funded: boolean }>>`
+        select private.ruined_lock_member_operator_funding(${memberId}::uuid) as operator_funded
+      `
+    : await tx<Array<{ operator_funded: boolean }>>`
+        select private.ruined_member_has_operator_funding(${memberId}::uuid) as operator_funded
+      `;
   const rows = await tx<Array<{
     account_state: MemberIdentity["accountState"];
     administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
@@ -52,7 +76,7 @@ export async function memberEligibleForExperience(
       and member_grant.role_slug = 'member' and member_grant.revoked_at is null
     where member.id = ${memberId}::uuid
     limit 1
-    for share of member, person, lifecycle, account, member_grant
+    ${lockEvidence ? tx`for share of member, person, lifecycle, account, member_grant` : tx``}
   `;
   const row = rows[0];
   if (!row) return false;
@@ -87,7 +111,7 @@ export async function memberEligibleForExperience(
         and assignment.assigned_at <= statement_timestamp()
         and circle.activated_at <= statement_timestamp()
         and (circle.ends_at is null or circle.ends_at >= statement_timestamp())
-      for share of assignment, circle
+      ${lockEvidence ? tx`for share of assignment, circle` : tx``}
     `;
     return assignments.length > 0;
   }
@@ -108,7 +132,7 @@ export async function memberEligibleForExperience(
         and block.activated_at <= statement_timestamp()
         and (block.ends_at is null or block.ends_at >= statement_timestamp())
         and block_assignment.block_id = ${experience.block_id}::uuid
-      for share of member_assignment, circle, block_assignment, block
+      ${lockEvidence ? tx`for share of member_assignment, circle, block_assignment, block` : tx``}
     `;
     return assignments.length > 0;
   }

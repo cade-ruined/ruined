@@ -92,6 +92,16 @@ export type OpsShaperCandidate = {
   name: string;
 };
 
+export type OpsCircleShaperMemberCandidate = {
+  memberId: string;
+  circleId: string;
+  name: string;
+  email: string;
+  authUserId: string | null;
+  requiresShaperAccess: boolean;
+  unavailableReason: string | null;
+};
+
 export type OpsCircleResourceAssignment = {
   assignedAt: string;
   assignmentId: string;
@@ -110,6 +120,7 @@ export type OpsLearningResourceOption = {
 };
 
 export type OpsCircleManagementOptions = {
+  circleMembers?: OpsCircleShaperMemberCandidate[];
   resources: OpsLearningResourceOption[];
   shapers: OpsShaperCandidate[];
 };
@@ -972,8 +983,114 @@ export async function getOpsCircleSummaries(
   });
 }
 
+type CircleShaperMemberRow = {
+  member_id: string;
+  circle_id: string;
+  name: string;
+  email: string;
+  auth_user_id: string | null;
+  circle_status: string;
+  person_status: string | null;
+  user_status: string | null;
+  account_state: string | null;
+  administrative_onboarding_state: string | null;
+  billing_state: string | null;
+  membership_state: string;
+  program_state: string | null;
+  standing_eligible: boolean;
+  operator_funded: boolean;
+  member_access: boolean;
+  admin_access: boolean;
+  shaper_access: boolean;
+  guide_access: boolean;
+  revoked_operator_access: boolean;
+  pending_operator_invitation: boolean;
+  existing_staff_assignment: boolean;
+};
+
+async function getCircleShaperMemberRows(
+  tx: postgres.TransactionSql,
+  circleId: string,
+  memberId?: string,
+): Promise<CircleShaperMemberRow[]> {
+  return tx<CircleShaperMemberRow[]>`
+    select member.id as member_id, assignment.circle_id,
+      coalesce(nullif(btrim(profile.preferred_name), ''), nullif(btrim(profile.display_name), ''),
+        nullif(btrim(user_profile.display_name), ''), member.email) as name,
+      coalesce(platform_user.email_normalized, member.email) as email,
+      platform_user.auth_user_id, circle.status as circle_status,
+      person.status as person_status, platform_user.status as user_status,
+      lifecycle.account_state, lifecycle.administrative_onboarding_state,
+      lifecycle.billing_state, member.membership_state, lifecycle.program_state,
+      coalesce(lifecycle.standing_state = 'active' or (
+        lifecycle.standing_state = 'cancellation_requested'
+        and lifecycle.cancellation_effective_at > statement_timestamp()
+      ), false) as standing_eligible,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'member' and grant_row.revoked_at is null) as member_access,
+      exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'ops_admin' and grant_row.revoked_at is null) as admin_access,
+      exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'circle_leader' and grant_row.revoked_at is null) as shaper_access,
+      exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'guide' and grant_row.revoked_at is null) as guide_access,
+      exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug in ('ops_admin', 'circle_leader', 'guide') and grant_row.revoked_at is not null) as revoked_operator_access,
+      exists (
+        select 1 from passwordless_account_invites invitation
+        join operator_invitation_configs config on config.invitation_id = invitation.id
+        where (invitation.member_id = member.id or invitation.email_normalized = platform_user.email_normalized)
+          and invitation.accepted_at is null and invitation.revoked_at is null
+          and (invitation.expires_at is null or invitation.expires_at > statement_timestamp())
+      ) as pending_operator_invitation,
+      exists (select 1 from circle_staff_assignments staff where staff.auth_user_id = platform_user.auth_user_id and staff.ended_at is null) as existing_staff_assignment
+    from circle_member_assignments assignment
+    join circles circle on circle.id = assignment.circle_id
+    join ruined_members member on member.id = assignment.member_id
+    left join people person on person.id = member.person_id
+    left join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    left join platform_users platform_user on platform_user.member_id = member.id and platform_user.person_id = member.person_id
+    left join person_profiles profile on profile.person_id = member.person_id
+    left join user_profiles user_profile on user_profile.auth_user_id = platform_user.auth_user_id
+    where assignment.circle_id = ${circleId}::uuid and assignment.ended_at is null
+      and assignment.assigned_at <= statement_timestamp()
+      and (${memberId ?? null}::uuid is null or member.id = ${memberId ?? null}::uuid)
+    order by name, member.id
+  `;
+}
+
+function circleShaperMemberCandidate(row: CircleShaperMemberRow): OpsCircleShaperMemberCandidate {
+  let unavailableReason: string | null = null;
+  const alreadyAuthorized = row.admin_access || row.shaper_access;
+  if (row.circle_status !== "active" && row.circle_status !== "forming") {
+    unavailableReason = "Only a forming or active Circle can receive a Shaper.";
+  } else if (!row.auth_user_id) {
+    unavailableReason = "This member needs to sign in before receiving Shaper access.";
+  } else if (row.person_status !== "active" || row.user_status !== "active" || row.account_state !== "active" || !row.member_access) {
+    unavailableReason = "Review this member’s account access before assigning a Shaper.";
+  } else if (row.pending_operator_invitation) {
+    unavailableReason = "Review this member’s pending operator invitation in Operators first.";
+  } else if (!alreadyAuthorized && row.guide_access) {
+    unavailableReason = "This member is a Guide. Change their operator role in Operators first.";
+  } else if (!alreadyAuthorized && (row.revoked_operator_access || row.existing_staff_assignment)) {
+    unavailableReason = "Review this member’s previous operator access in Operators before restoring Shaper access.";
+  } else if (row.administrative_onboarding_state !== "completed") {
+    unavailableReason = "This member needs to finish their membership entry first.";
+  } else if (!row.standing_eligible || (row.program_state !== "active" && row.program_state !== "onboarding")) {
+    unavailableReason = "Review this member’s standing before assigning them as Shaper.";
+  } else if (!row.operator_funded && (row.billing_state !== "active" || row.membership_state !== "active")) {
+    unavailableReason = "Confirm this member’s active membership before granting Shaper access.";
+  }
+  return {
+    memberId: row.member_id,
+    circleId: row.circle_id,
+    name: row.name,
+    email: row.email,
+    authUserId: row.auth_user_id,
+    requiresShaperAccess: unavailableReason === null && !alreadyAuthorized,
+    unavailableReason,
+  };
+}
+
 export async function getOpsCircleManagementOptions(
   actorAuthUserId: string,
+  circleId?: string,
 ): Promise<OpsCircleManagementOptions> {
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
@@ -1017,7 +1134,10 @@ export async function getOpsCircleManagementOptions(
         and version_record.published_at is not null
       order by resource.position, resource.title, version_record.version desc
     `;
+    const circleMembers = circleId === undefined ? undefined : !UUID_PATTERN.test(circleId) ? []
+      : (await getCircleShaperMemberRows(tx, circleId.toLowerCase())).map(circleShaperMemberCandidate);
     return {
+      ...(circleMembers === undefined ? {} : { circleMembers }),
       resources: resourceRows.map((resource) => ({
         resourceId: resource.resource_id,
         title: resource.title,
@@ -1034,36 +1154,78 @@ export async function getOpsCircleManagementOptions(
 
 export async function assignShaperToCircle({
   actorAuthUserId,
-  circleId,
-  shaperAuthUserId,
+  circleId: requestedCircleId,
+  shaperAuthUserId: requestedShaperAuthUserId,
+  memberId: requestedMemberId,
+  grantShaperAccess,
 }: {
   actorAuthUserId: string;
   circleId: string;
-  shaperAuthUserId: string;
+  shaperAuthUserId?: string;
+  memberId?: string;
+  grantShaperAccess?: boolean;
 }) {
-  if (!UUID_PATTERN.test(circleId) || !UUID_PATTERN.test(shaperAuthUserId)) {
+  const memberPath = requestedMemberId !== undefined;
+  if (!UUID_PATTERN.test(requestedCircleId)
+    || memberPath === (requestedShaperAuthUserId !== undefined)
+    || !UUID_PATTERN.test(memberPath ? requestedMemberId! : requestedShaperAuthUserId!)
+    || (grantShaperAccess !== undefined && typeof grantShaperAccess !== "boolean")
+    || (!memberPath && grantShaperAccess !== undefined)) {
     throw new OpsRepositoryError("invalid_request", "Choose a valid Circle and Shaper.");
   }
+  const circleId = requestedCircleId.toLowerCase();
+  const memberId = requestedMemberId?.toLowerCase();
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
     // Share access-edit ordering before taking account, Circle, or grant locks.
     await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
-    await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 4)`;
-
-    const circleRows = await tx<Array<{ id: string; name: string; status: OpsCircleSummary["status"] }>>`
-      select id, name, status
-      from circles
-      where id = ${circleId}::uuid
-      for update
-    `;
-    const circle = circleRows[0];
-    if (!circle) throw new OpsRepositoryError("not_found", "That Circle could not be found.");
-    if (!new Set(["forming", "active"]).has(circle.status)) {
-      throw new OpsRepositoryError("conflict", "Only a forming or active Circle can receive a Shaper.");
-    }
-
-    const shaperRows = await tx<Array<{ auth_user_id: string; name: string }>>`
+    let shaper: { auth_user_id: string; name: string };
+    let candidate: OpsCircleShaperMemberCandidate | undefined;
+    if (memberId !== undefined) {
+      // Match transfers: serialize this member, then funding grants, identity,
+      // lifecycle and placement, before any Circle row. Never qualify a member
+      // by the complimentary funding that this transaction is about to grant.
+      await tx`select pg_advisory_xact_lock(hashtext(${memberId}), 2)`;
+      await tx`select private.ruined_lock_member_operator_funding(${memberId}::uuid)`;
+      await tx`
+        select auth_user_id from platform_users
+        where member_id = ${memberId}::uuid
+        order by auth_user_id for update
+      `;
+      await tx`
+        select grant_row.id from platform_role_grants grant_row
+        join platform_users platform_user on platform_user.auth_user_id = grant_row.auth_user_id
+        where platform_user.member_id = ${memberId}::uuid
+        order by grant_row.id for update of grant_row
+      `;
+      await tx`
+        select member.id from ruined_members member
+        join people person on person.id = member.person_id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        where member.id = ${memberId}::uuid
+        for update of member, person, lifecycle
+      `;
+      await tx`
+        select id from circle_member_assignments
+        where member_id = ${memberId}::uuid and ended_at is null
+        for update
+      `;
+      const row = (await getCircleShaperMemberRows(tx, circleId, memberId))[0];
+      if (!row) {
+        throw new OpsRepositoryError("conflict", "This member is no longer in this Circle. Refresh the Circle and choose a current member.");
+      }
+      candidate = circleShaperMemberCandidate(row);
+      if (candidate.unavailableReason || !candidate.authUserId) {
+        throw new OpsRepositoryError("conflict", candidate.unavailableReason ?? "This member needs to sign in first.");
+      }
+      if (candidate.requiresShaperAccess && grantShaperAccess !== true) {
+        throw new OpsRepositoryError("conflict", "Confirm granting Shaper access before assigning this member.");
+      }
+      shaper = { auth_user_id: candidate.authUserId, name: candidate.name };
+    } else {
+      // Take account/grant locks before the Circle, as member transfers do.
+      const shaperRows = await tx<Array<{ auth_user_id: string; name: string }>>`
       select
         platform_user.auth_user_id,
         coalesce(
@@ -1081,17 +1243,31 @@ export async function assignShaperToCircle({
         on person_profile.person_id = platform_user.person_id
       left join user_profiles user_profile
         on user_profile.auth_user_id = platform_user.auth_user_id
-      where platform_user.auth_user_id = ${shaperAuthUserId}::uuid
+      where platform_user.auth_user_id = ${requestedShaperAuthUserId!.toLowerCase()}::uuid
         and platform_user.status = 'active'
       limit 1
       for update of platform_user, role_grant
     `;
-    const shaper = shaperRows[0];
-    if (!shaper) {
-      throw new OpsRepositoryError(
-        "conflict",
-        "That person needs an active Shaper role before they can lead a Circle.",
-      );
+      if (!shaperRows[0]) {
+        throw new OpsRepositoryError(
+          "conflict",
+          "That person needs an active Shaper role before they can lead a Circle.",
+        );
+      }
+      shaper = shaperRows[0];
+    }
+    const shaperAuthUserId = shaper.auth_user_id;
+    await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 4)`;
+    const circleRows = await tx<Array<{ id: string; name: string; status: OpsCircleSummary["status"] }>>`
+      select id, name, status
+      from circles
+      where id = ${circleId}::uuid
+      for update
+    `;
+    const circle = circleRows[0];
+    if (!circle) throw new OpsRepositoryError("not_found", "That Circle could not be found.");
+    if (!new Set(["forming", "active"]).has(circle.status)) {
+      throw new OpsRepositoryError("conflict", "Only a forming or active Circle can receive a Shaper.");
     }
 
     const existingRows = await tx<Array<{
@@ -1116,6 +1292,7 @@ export async function assignShaperToCircle({
         circleId,
         created: false,
         name: shaper.name,
+        ...(memberId === undefined ? {} : { memberId, shaperAccessGranted: false }),
       };
     }
     if (existing) {
@@ -1123,6 +1300,34 @@ export async function assignShaperToCircle({
         "conflict",
         "That Circle already has a Shaper. End the current assignment first.",
       );
+    }
+
+    const pendingRows = await tx<Array<{ invitation_id: string }>>`
+      select config.invitation_id::text from operator_invitation_circles invitation_circle
+      join operator_invitation_configs config on config.invitation_id = invitation_circle.invitation_id
+      join passwordless_account_invites invitation on invitation.id = config.invitation_id
+      where invitation_circle.circle_id = ${circleId}::uuid and config.role_slug = 'circle_leader'
+        and invitation.accepted_at is null and invitation.revoked_at is null
+        and (invitation.expires_at is null or invitation.expires_at > statement_timestamp())
+      limit 1
+    `;
+    if (pendingRows[0]) {
+      throw new OpsRepositoryError("conflict", "That Circle has a pending Shaper invitation. Review it in Operators first.");
+    }
+    const shaperAccessGranted = candidate?.requiresShaperAccess === true;
+    if (shaperAccessGranted) {
+      await tx`
+        insert into platform_role_grants (auth_user_id, role_slug, granted_by_auth_user_id)
+        values (${shaperAuthUserId}::uuid, 'circle_leader', ${actorAuthUserId}::uuid)
+      `;
+      await writeOpsAudit(tx, {
+        action: "operator_access.shaper_granted",
+        actorAuthUserId,
+        after: { memberId: memberId!, role: "circle_leader", circleIds: [circleId] },
+        reason: "Shaper access explicitly confirmed while assigning a Circle member.",
+        subjectId: shaperAuthUserId,
+        subjectType: "platform_user",
+      });
     }
 
     const insertedRows = await tx<Array<{
@@ -1148,7 +1353,8 @@ export async function assignShaperToCircle({
     await writeOpsAudit(tx, {
       action: "circle.shaper_assigned",
       actorAuthUserId,
-      after: { circleId, shaperAuthUserId },
+      after: memberId === undefined ? { circleId, shaperAuthUserId }
+        : { circleId, shaperAuthUserId, memberId, shaperAccessGranted },
       subjectId: assignment.id,
       subjectType: "circle_staff_assignment",
     });
@@ -1159,6 +1365,7 @@ export async function assignShaperToCircle({
       circleId,
       created: true,
       name: shaper.name,
+      ...(memberId === undefined ? {} : { memberId, shaperAccessGranted }),
     };
   });
 }

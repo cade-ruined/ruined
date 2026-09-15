@@ -38,6 +38,7 @@ const migrations = [
   "../db/migrations/20260914221302_community_event_operations.sql",
   "../db/migrations/20260914221725_academy_unused_draft_retirement.sql",
   "../db/migrations/20260915161147_byob_03_registration.sql",
+  "../db/migrations/20260915174319_circle_shaper_admin_eligibility.sql",
 ];
 
 function migrationBody(migration, migrationName) {
