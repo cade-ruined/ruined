@@ -43,6 +43,7 @@ async function photoModule(options: {
   recoveryReadFails?: boolean;
 } = {}) {
   const calls: Array<{ name: string; value?: unknown }> = [];
+  const readQueries: Array<{ query: string; values: unknown[] }> = [];
   let current = options.currentUrl === undefined ? avatarUrl : options.currentUrl;
   let transactionFinished = false;
   let transactionCount = 0;
@@ -53,6 +54,7 @@ async function photoModule(options: {
       return [];
     }
     if (query.includes("select")) {
+      readQueries.push({ query, values });
       if (transactionFinished && options.recoveryReadFails) throw new Error("Database outcome unknown");
       return [{ avatar_storage_path: current }];
     }
@@ -94,7 +96,7 @@ async function photoModule(options: {
       };
     } } }) },
   });
-  return { photos, calls, current: () => current };
+  return { photos, calls, readQueries, current: () => current };
 }
 
 function uploadRequest(form: FormData): Request {
@@ -108,6 +110,48 @@ test("photo keys reject traversal, foreign owners, remote addresses, and extra U
   }
   assert.equal(policy.memberPhotoUrl("../member", fileName), null);
   assert.equal(policy.memberPhotoUrl(memberId, "../../photo.webp"), null);
+  assert.equal(policy.operatorMemberPhotoUrl(memberId), `/api/ops/member-photos/${memberId}`);
+  for (const value of ["preview-member", "../member", `${memberId}?photo=other`, `${memberId}/photo`, "' or true --"]) {
+    assert.equal(policy.operatorMemberPhotoUrl(value), null);
+  }
+});
+
+test("operator ID-only portrait reads require current Administrator authority before reading any target profile", async (context) => {
+  const priorUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const priorKey = process.env.SUPABASE_SECRET_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
+  process.env.SUPABASE_SECRET_KEY = "test-only-not-a-real-key";
+  context.after(() => {
+    if (priorUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = priorUrl;
+    if (priorKey === undefined) delete process.env.SUPABASE_SECRET_KEY;
+    else process.env.SUPABASE_SECRET_KEY = priorKey;
+  });
+  for (const role of [null, "member", "circle_leader", "guide"]) {
+    const { photos, calls, readQueries } = await photoModule({ role });
+    assert.equal(await photos.getAuthorizedOperatorMemberPhoto(otherId, memberId), null);
+    assert.deepEqual(readQueries, []);
+    assert.deepEqual(calls, []);
+  }
+  const { photos, calls, readQueries } = await photoModule({ role: "ops_admin" });
+  const result = await photos.getAuthorizedOperatorMemberPhoto(otherId, memberId);
+  assert.equal(await result?.text(), "private");
+  assert.equal(readQueries.length, 1);
+  assert.deepEqual(readQueries[0].values, [memberId]);
+  assert.match(readQueries[0].query, /where member\.id = \?::uuid/);
+  assert.deepEqual(calls, [{ name: "download", value: `${memberId}/${fileName}` }]);
+});
+
+test("operator portraits never load remote images, foreign keys, stale formats, or invalid IDs", async () => {
+  for (const currentUrl of [null, `https://example.test/avatar.webp`, `${avatarUrl}?token=secret`, policy.memberPhotoUrl(otherId, fileName)]) {
+    const { photos, calls } = await photoModule({ role: "ops_admin", currentUrl });
+    assert.equal(await photos.getAuthorizedOperatorMemberPhoto(otherId, memberId), null);
+    assert.deepEqual(calls, []);
+  }
+  const { photos, calls, readQueries } = await photoModule({ role: "ops_admin" });
+  assert.equal(await photos.getAuthorizedOperatorMemberPhoto(otherId, "../../member"), null);
+  assert.deepEqual(readQueries, []);
+  assert.deepEqual(calls, []);
 });
 
 test("photo permission requires the current URL, owner read or admin access, or a visible active Circle photo", () => {
@@ -221,6 +265,41 @@ test("an unknown commit outcome preserves the private upload rather than deletin
       assert.ok(policy.ownedMemberPhotoPath(memberId, current()));
     } else {
       assert.equal(current(), avatarUrl);
+    }
+  }
+});
+
+test("operator portrait endpoint protects preview, anonymous, denied, and successful responses without exposing storage paths", async () => {
+  for (const fixture of [
+    { mode: "preview", signedIn: true, found: true, status: 404 },
+    { mode: "connected", signedIn: false, found: true, status: 401 },
+    { mode: "connected", signedIn: true, found: false, status: 404 },
+    { mode: "connected", signedIn: true, found: true, status: 200 },
+  ]) {
+    let reads = 0;
+    const route = await load<typeof import("../app/api/ops/member-photos/[memberId]/route")>("app/api/ops/member-photos/[memberId]/route.ts", {
+      "@/lib/auth/session": { getCurrentPlatformViewer: async () => fixture.signedIn ? { authUserId: otherId } : null },
+      "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: fixture.mode }) },
+      "@/lib/membership/photo-policy": policy,
+      "@/lib/membership/photos": { getAuthorizedOperatorMemberPhoto: async (actor: string, target: string) => {
+        reads++;
+        assert.equal(actor, otherId);
+        assert.equal(target, memberId);
+        return fixture.found ? new Blob(["image-bytes"]) : null;
+      } },
+    });
+    const response = await route.GET(new Request(`https://members.example.test/api/ops/member-photos/${memberId}`), { params: Promise.resolve({ memberId }) });
+    assert.equal(response.status, fixture.status);
+    assert.equal(reads, fixture.mode === "connected" && fixture.signedIn ? 1 : 0);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.equal(response.headers.get("vary"), "Cookie");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("location"), null);
+    const body = await response.text();
+    assert.doesNotMatch(body, /member-portraits|storage|supabase|token|33333333/);
+    if (fixture.status === 200) {
+      assert.equal(response.headers.get("content-type"), "image/webp");
+      assert.equal(body, "image-bytes");
     }
   }
 });

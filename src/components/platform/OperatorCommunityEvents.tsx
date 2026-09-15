@@ -18,11 +18,13 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
   const [message, setMessage] = useState("");
   const [mode, setMode] = useState(event?.registrationMode ?? "none");
   const [timezone, setTimezone] = useState(event?.timezone ?? "America/Denver");
+  const [editing, setEditing] = useState(!event);
+  const [failed, setFailed] = useState(false);
   async function save(action: FormEvent<HTMLFormElement>) {
     action.preventDefault();
     if (pending || preview) return;
     const data = new FormData(action.currentTarget);
-    setPending(true); setMessage("");
+    setPending(true); setMessage(""); setFailed(false);
     try {
       const value = (name: string) => String(data.get(name) ?? "");
       const response = await fetch("/api/ops/community-events", {
@@ -39,12 +41,28 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "The event could not be saved.");
       setMessage("Event saved.");
+      if (event) setEditing(false);
       if (!event) router.push(`/ops/community/${result.event.eventKey}`);
       router.refresh();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "The event could not be saved."); }
+    } catch (error) { setFailed(true); setMessage(error instanceof Error ? error.message : "The event could not be saved."); }
     finally { setPending(false); }
   }
-  return <form onSubmit={save} className="space-y-5">
+  if (event && !editing) return <section aria-label="Event details" className="rounded-lg bg-black/[0.035] p-4 sm:p-5">
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div><h2 className="ui-heading text-xl font-semibold">Event details</h2><p className="mt-2 text-sm text-black/60">{event.publicationState === "published" ? "Published on website" : event.publicationState === "archived" ? "Archived — hidden from website" : "Draft — hidden from website"} · {event.eventState}</p></div>
+      <button className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
+    </header>
+    <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>When</dt><dd className="mt-1">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone }).format(new Date(event.startsAt))}<span className="mt-1 block text-xs text-black/55">{event.timezone}</span></dd></div>
+      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>Where</dt><dd className="mt-1">{event.location || "Not set"}</dd></div>
+      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>Admission</dt><dd className="mt-1">{event.admission || "Not set"}</dd></div>
+      <div><dt className={OPERATOR_LABEL_TEXT_CLASS}>Registration</dt><dd className="mt-1">{event.registrationMode === "none" ? "No registration required" : `${event.registrationOpen ? "Open" : "Closed"} · ${event.registrationMode === "byob" ? "Ruined BYOB registration" : "External provider"}`}{event.registrationMode === "external" && event.registrationUrl ? <a className="mt-1 block break-all underline underline-offset-4" href={event.registrationUrl} rel="noopener noreferrer" target="_blank">Open registration ↗</a> : null}</dd></div>
+    </dl>
+    {event.summary ? <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-black/65">{event.summary}</p> : null}
+    {preview ? <p className="mt-4 text-sm text-black/60">Preview only. Event and attendance changes are not saved.</p> : null}
+    {message ? <p role="status" className="mt-3 text-sm">{message}</p> : null}
+  </section>;
+  return <form onSubmit={save} className="space-y-5" aria-label={event ? "Edit event details" : "New event details"}>
     {preview ? <p className="text-sm text-black/60">Preview only. Event and attendance changes are not saved.</p> : null}
     <fieldset disabled={pending || preview} className="grid gap-4 sm:grid-cols-2">
       <Field label="Event name"><input className={OPERATOR_FIELD_CLASS} name="title" defaultValue={event?.title} required maxLength={160} /></Field>
@@ -65,7 +83,7 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
       <Field label="Video poster path"><input className={OPERATOR_FIELD_CLASS} name="videoPosterPath" defaultValue={event?.videoPosterPath ?? ""} placeholder="/events/your-poster.webp" /></Field>
       <p className="self-end text-sm text-black/55">Use existing site media paths. The current BYOB gallery and photo credits are preserved.</p>
     </fieldset>
-    <div className="flex flex-wrap items-center gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} type="submit" disabled={pending || preview}>{pending ? "Saving…" : event ? "Save event" : "Create event"}</button><p role="status" className="text-sm">{message}</p></div>
+    <div className="flex flex-wrap items-center gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} type="submit" disabled={pending || preview}>{pending ? "Saving…" : event ? "Save event" : "Create event"}</button>{event ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setEditing(false); setMessage(""); setFailed(false); }} type="button">Cancel</button> : null}<p role={failed ? "alert" : "status"} className={`text-sm ${failed ? "text-[var(--color-poster)]" : ""}`}>{message}</p></div>
   </form>;
 }
 

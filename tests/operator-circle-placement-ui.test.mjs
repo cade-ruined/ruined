@@ -327,23 +327,28 @@ test("Circle route passes exact roster IDs and searches all member states so una
   assert.equal(manager.props.communications.type, CircleCommunicationPanel);
   assert.equal(manager.props.communications.props.circle.id, circle.id);
   assert.equal(manager.props.communications.props.communication.id, circle.id);
-  assert.equal(manager.key, `${member.memberId}:${circle.id}:Example`);
+  assert.equal(manager.key, `${member.memberId}:Example`);
+  assert.equal(manager.props.shaper.props.section, "shaper");
+  assert.equal(manager.props.children.props.section, "resources");
   assert.deepEqual(fixture.reads.find(({ name }) => name === "directory").input, { filter: "all", query: "Example", page: 1 });
   assert.equal(fixture.reads.some(({ name }) => name === "selected-member"), false, "an already-loaded exact member is not fetched twice");
 });
 
-test("Circle search remount key retains member and Circle context while rejecting array parameters", async () => {
+test("Circle search retains exact context while Circle-only navigation preserves the grid and focus", async () => {
   const fixture = circlePageFixture();
   const first = (await fixture.draw({ memberId: member.memberId, circleId: circle.id, memberQuery: "First" })).manager;
   const second = (await fixture.draw({ memberId: member.memberId, circleId: circle.id, memberQuery: "Second" })).manager;
   assert.notEqual(first.key, second.key);
   assert.equal(second.props.initialMemberId, first.props.initialMemberId);
   assert.equal(second.props.initialCircleId, first.props.initialCircleId);
+  const changedCircle = (await fixture.draw({ memberId: member.memberId, circleId: "another-circle", memberQuery: "Second" })).manager;
+  assert.equal(changedCircle.key, second.key, "opening or closing a Circle does not replace the originating grid button");
+  assert.equal(changedCircle.props.initialCircleId, "another-circle");
   const malformed = (await fixture.draw({ memberId: [member.memberId, "another"], circleId: [circle.id], memberQuery: ["search"] })).manager;
   assert.equal(malformed.props.initialMemberId, undefined);
   assert.equal(malformed.props.initialCircleId, undefined);
   assert.equal(malformed.props.memberQuery, "");
-  assert.equal(malformed.key, "::");
+  assert.equal(malformed.key, ":");
   const bounded = (await fixture.draw({ memberQuery: "x".repeat(200) })).manager;
   assert.equal(bounded.props.memberQuery.length, 120);
 });

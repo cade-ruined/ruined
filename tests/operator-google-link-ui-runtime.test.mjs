@@ -71,9 +71,23 @@ test("empty Chat and Meet forms expose their exact action without a collapsed di
   }
 });
 
+test("saved links show one compact value and an Edit action instead of a redundant form", () => {
+  for (const [kind, url] of [["chat", chat], ["meet", meet]]) {
+    const f = fixture({ kind, initialUrl: url });
+    const tree = f.draw();
+    assert.equal(nodes(tree).some((node) => node.type === "form" || node.type === "input"), false);
+    assert.equal(nodes(tree).filter((node) => node.type === "a" && text(node) === url).length, 1);
+    assert.equal(f.button("Edit").props["aria-label"], `Edit ${kind === "chat" ? "chat" : "meeting"} link`);
+    assert.doesNotMatch(text(tree), /Saved (?:chat|meeting) link|Chat space link|Meet room link|[Pp]aste|Link saved/);
+    assert.equal(tree.props["data-operator-dirty"], undefined);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test("open and copy always use the saved link, not an unsaved draft, with a copy-failure fallback", async () => {
   for (const [kind, url, label] of [["chat", chat, "Open chat ↗"], ["meet", meet, "Open meeting ↗"]]) {
     const f = fixture({ kind, initialUrl: url });
+    f.button("Edit").props.onClick();
     f.change(`${url}?unsaved=1`);
     const open = nodes(f.draw()).find((node) => node.type === "a" && text(node) === label);
     assert.equal(open.props.href, url);
@@ -93,9 +107,10 @@ test("open and copy always use the saved link, not an unsaved draft, with a copy
 test("read-only links do not instruct operators to paste into a missing form", () => {
   for (const kind of ["chat", "meet"]) {
     const f = fixture({ kind, editable: false, initialUrl: kind === "chat" ? chat : meet });
-    assert.match(text(f.draw()), /Open or copy the saved link/);
+    assert.match(text(f.draw()), kind === "chat" ? /Open chat/ : /Open meeting/);
     assert.doesNotMatch(text(f.draw()), /[Pp]aste/);
     assert.equal(nodes(f.draw()).some((node) => node.type === "form" || node.type === "input"), false);
+    assert.equal(nodes(f.draw()).some((node) => node.type === "button" && text(node) === "Edit"), false);
     assert.deepEqual(f.calls, []);
   }
 });
@@ -106,20 +121,26 @@ test("saving preserves the existing endpoint and identity, blocks double submit,
   const f = fixture({}, () => response);
   f.change(` ${chat} `);
   const first = f.submit();
+  assert.equal(f.draw().props["data-operator-pending"], "true");
   await f.submit();
   assert.deepEqual(f.calls, [{ url: "/api/ops/google-communications", method: "PUT", body: { entityId: "circle-one", entityType: "circle", url: chat } }]);
   resolve(Response.json({ communication: { entityId: "circle-one", entityType: "circle", kind: "chat", connected: true, url: chat } }));
   await first;
   assert.match(text(f.draw()), /Chat link saved in Ruined. No invitation was sent/);
   assert.doesNotMatch(text(f.draw()), /Google Chat is ready/);
-  assert.ok(f.button("Save chat link"));
+  assert.ok(f.button("Edit"));
+  assert.equal(nodes(f.draw()).some((node) => node.type === "input"), false);
+  assert.equal(f.draw().props["data-operator-pending"], undefined);
+  assert.equal(f.draw().props["data-operator-dirty"], undefined);
   assert.equal(f.refreshes(), 1);
 });
 
 test("removing a saved link requires a separate confirmation and does not claim to remove people or cancel meetings", async () => {
   for (const kind of ["chat", "meet"]) {
     const f = fixture({ kind, entityType: kind === "chat" ? "circle" : "experience", initialUrl: kind === "chat" ? chat : meet });
+    f.button("Edit").props.onClick();
     f.button("Remove link").props.onClick();
+    assert.equal(f.draw().props["data-operator-dirty"], "true");
     assert.deepEqual(f.calls, []);
     assert.match(text(f.draw()), kind === "chat" ? /members stay unchanged.*Manage membership in Google Chat/ : /does not cancel it or send cancellation notices/);
     f.button("Keep link").props.onClick();
@@ -129,11 +150,14 @@ test("removing a saved link requires a separate confirmation and does not claim 
     assert.deepEqual(f.calls, [{ url: "/api/ops/google-communications", method: "DELETE", body: { entityId: "circle-one", entityType: kind === "chat" ? "circle" : "experience" } }]);
     assert.match(text(f.draw()), /Nothing was changed in Google/);
     assert.equal(nodes(f.draw()).some((node) => node.type === "a"), false);
+    assert.equal(nodes(f.draw()).find((node) => node.type === "input").props.value, "");
+    assert.equal(f.draw().props["data-operator-dirty"], undefined);
   }
 });
 
 test("preview and revoked UI capability prevent writes; read-only viewers can use a configured saved link", async () => {
   const preview = fixture({ initialUrl: chat, preview: true });
+  preview.button("Edit").props.onClick();
   preview.change(chat);
   await preview.submit();
   preview.button("Remove link").props.onClick();
@@ -143,6 +167,7 @@ test("preview and revoked UI capability prevent writes; read-only viewers can us
   assert.match(text(preview.draw()), /Preview only/);
   for (const patch of [{ configured: false }, { editable: false }]) {
     const f = fixture({ initialUrl: chat });
+    f.button("Edit").props.onClick();
     const oldSubmit = nodes(f.draw()).find((node) => node.type === "form").props.onSubmit;
     const tree = f.update(patch);
     assert.equal(nodes(tree).some((node) => node.type === "form"), false);
@@ -155,12 +180,14 @@ test("preview and revoked UI capability prevent writes; read-only viewers can us
 test("failed and mismatched saves retain the saved URL and editable draft", async () => {
   for (const response of [Response.json({ error: "Access changed" }, { status: 403 }), Response.json({}), Response.json({ communication: { entityId: "other-circle", entityType: "circle", kind: "chat", connected: true, url: chat } })]) {
     const f = fixture({ initialUrl: chat }, () => response);
+    f.button("Edit").props.onClick();
     f.change(`${chat}-new`);
     await f.submit();
     assert.equal(nodes(f.draw()).find((node) => node.type === "input").props.value, `${chat}-new`);
     assert.equal(nodes(f.draw()).find((node) => node.type === "a").props.href, chat);
     assert.ok(nodes(f.draw()).some((node) => node.props?.role === "alert"));
     assert.equal(f.refreshes(), 0);
+    assert.equal(f.draw().props["data-operator-dirty"], "true");
   }
 });
 
@@ -168,18 +195,56 @@ test("entity and authoritative-link changes reset draft and confirmation; old re
   let resolve;
   const response = new Promise((done) => { resolve = done; });
   const f = fixture({ initialUrl: chat }, () => response);
+  f.button("Edit").props.onClick();
   f.button("Remove link").props.onClick();
   f.change(`${chat}-new`);
   const pending = f.submit();
   const nextUrl = "https://chat.google.com/room/second";
   const next = f.update({ entityId: "circle-two", initialUrl: nextUrl });
-  assert.equal(nodes(next).find((node) => node.type === "input").props.value, nextUrl);
+  assert.equal(nodes(next).some((node) => node.type === "input"), false);
+  assert.ok(f.button("Edit"));
   assert.equal(nodes(next).some((node) => node.props?.role === "group"), false);
   resolve(Response.json({ communication: { entityId: "circle-one", entityType: "circle", kind: "chat", connected: true, url: `${chat}-new` } }));
   await pending;
   assert.equal(nodes(f.draw()).find((node) => node.type === "a").props.href, nextUrl);
   assert.equal(f.refreshes(), 0);
+  f.button("Edit").props.onClick();
+  assert.equal(nodes(f.draw()).find((node) => node.type === "input").props.value, nextUrl);
   f.change(`${nextUrl}-unsaved`);
   const refreshed = f.update({ initialUrl: `${nextUrl}-server` });
-  assert.equal(nodes(refreshed).find((node) => node.type === "input").props.value, `${nextUrl}-server`);
+  assert.equal(nodes(refreshed).some((node) => node.type === "input"), false);
+  f.button("Edit").props.onClick();
+  assert.equal(nodes(f.draw()).find((node) => node.type === "input").props.value, `${nextUrl}-server`);
+});
+
+test("Cancel discards only the local draft and removal confirmation without a request", () => {
+  const f = fixture({ initialUrl: chat });
+  f.button("Edit").props.onClick();
+  f.change(`${chat}-unsaved`);
+  f.button("Remove link").props.onClick();
+  assert.equal(f.draw().props["data-operator-dirty"], "true");
+  f.button("Cancel").props.onClick();
+  assert.equal(nodes(f.draw()).some((node) => node.type === "input" || node.props?.role === "group"), false);
+  assert.equal(f.draw().props["data-operator-dirty"], undefined);
+  assert.deepEqual(f.calls, []);
+  f.button("Edit").props.onClick();
+  assert.equal(nodes(f.draw()).find((node) => node.type === "input").props.value, chat);
+});
+
+test("Cancel is disabled and stale cancel handlers cannot hide a pending save", async () => {
+  let resolve;
+  const response = new Promise((done) => { resolve = done; });
+  const f = fixture({ initialUrl: chat }, () => response);
+  f.button("Edit").props.onClick();
+  const oldCancel = f.button("Cancel").props.onClick;
+  f.change(`${chat}-new`);
+  const pending = f.submit();
+  assert.equal(f.button("Cancel").props.disabled, true);
+  oldCancel();
+  assert.equal(nodes(f.draw()).find((node) => node.type === "input").props.value, `${chat}-new`);
+  resolve(Response.json({ error: "Please try again" }, { status: 503 }));
+  await pending;
+  assert.equal(f.button("Cancel").props.disabled, false);
+  assert.equal(f.draw().props["data-operator-pending"], undefined);
+  assert.equal(f.draw().props["data-operator-dirty"], "true");
 });

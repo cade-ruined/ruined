@@ -11,19 +11,19 @@ const require = createRequire(import.meta.url);
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const noNetwork = () => { throw new Error("No real network is allowed in Circle manager tests"); };
 const link = { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
-function load(path, dependencies = {}, request = noNetwork) {
+function load(path, dependencies = {}, request = noNetwork, environment = {}) {
   const output = ts.transpileModule(source(path), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
     jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText;
   const cjsModule = { exports: {} };
-  new Function("require", "module", "exports", "fetch", output)((name) => {
+  new Function("require", "module", "exports", "fetch", "window", "document", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "next/link") return link;
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     throw new Error(`Unexpected Circle manager dependency: ${name}`);
-  }, cjsModule, cjsModule.exports, request);
+  }, cjsModule, cjsModule.exports, request, environment.window, environment.document);
   return cjsModule.exports;
 }
 const styles = load("src/components/platform/operatorStyles.ts");
@@ -32,6 +32,8 @@ const dependencies = {
   "@/components/platform/operatorStyles": styles,
   "@/components/platform/OpsActions": { getCirclePlacementIssue: actions.getCirclePlacementIssue },
   "@/components/platform/StateLabel": { __esModule: true, default: ({ state }) => React.createElement("span", null, state) },
+  "@/components/platform/OperatorDialog": { __esModule: true, default: ({ children, title }) => React.createElement("dialog", { "aria-label": title }, children) },
+  "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: ({ memberId }) => React.createElement("span", { "data-avatar-member": memberId }) },
 };
 const firstCircle = {
   id: "11111111-1111-4111-8111-111111111111", name: "Circle 01", slug: "circle-01", status: "forming",
@@ -72,13 +74,19 @@ function nodes(element) {
   if (Array.isArray(element)) return element.flatMap(nodes);
   return [element, ...nodes(element.props?.children)];
 }
+function visibleNodes(element) {
+  if (!element || typeof element !== "object") return [];
+  if (Array.isArray(element)) return element.flatMap(visibleNodes);
+  if (element.props?.hidden) return [];
+  return [element, ...visibleNodes(element.props?.children)];
+}
 function text(element) {
   if (element == null || typeof element === "boolean") return "";
   if (Array.isArray(element)) return element.map(text).join("");
   return typeof element === "object" ? text(element.props?.children) : String(element);
 }
 const ok = (payload) => ({ ok: true, json: async () => payload });
-function harness(overrides = {}, request = async () => { throw new Error("Unexpected simulated request"); }) {
+function harness(overrides = {}, request = async () => { throw new Error("Unexpected simulated request"); }, environment = {}) {
   const hooks = [];
   let cursor = 0;
   let dirty = false;
@@ -108,11 +116,11 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
   };
   const Component = load("src/components/platform/OperatorCirclesManager.tsx", {
     ...dependencies, react: mockedReact,
-    "next/navigation": { useRouter: () => ({ refresh() { refreshes++; }, push(href, options) { navigations.push({ href, options }); } }) },
+    "next/navigation": { useRouter: () => ({ refresh() { refreshes++; }, push(href, options) { navigations.push({ href, options }); }, replace(href, options) { navigations.push({ href, options }); } }) },
   }, async (url, options) => {
     calls.push({ url, method: options.method, body: JSON.parse(options.body) });
     return request(url, options);
-  }).default;
+  }, environment).default;
   function draw() {
     let tree;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -124,24 +132,35 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
     throw new Error("Circle manager did not settle after effects");
   }
   function button(label, tree = draw()) {
-    const result = nodes(tree).find((node) => node.type === "button" && (node.props["aria-label"] === label || text(node).trim() === label));
+    const matches = (node) => node.type === "button" && (node.props["aria-label"] === label || text(node).trim() === label);
+    // Prefer what an operator can actually click when a hidden creation form
+    // and an open confirmation both contain Cancel. Retain the fallback for
+    // tests that deliberately invoke disabled/hidden handlers adversarially.
+    const result = visibleNodes(tree).find(matches) ?? nodes(tree).find(matches);
     assert.ok(result, `button ${label} exists`);
     return result;
   }
   function click(label) { return button(label).props.onClick(); }
   function addForm(circle, tree = draw()) {
-    const card = nodes(tree).find((node) => node.props?.id === `circle-${circle.id}`);
-    const result = nodes(card).find((node) => node.type === "form" && node.props.onSubmit);
+    const roster = nodes(tree).find((node) => node.props?.id === `roster-${circle.id}`);
+    const result = nodes(roster).find((node) => node.type === "form" && node.props.onSubmit);
     assert.ok(result, `add form for ${circle.name} exists`);
     return result;
   }
+  function dialog(tree = draw()) {
+    const result = nodes(tree).find((node) => node.type === dependencies["@/components/platform/OperatorDialog"].default && node.props.open);
+    assert.ok(result, "the selected Circle has one open management dialog");
+    return result;
+  }
   return {
-    draw, button, click, addForm, calls, navigations, refreshes: () => refreshes,
+    draw, button, click, addForm, dialog, calls, navigations, refreshes: () => refreshes,
+    close() { return dialog().props.onClose(); },
     update(changes) { props = { ...props, ...changes }; return draw(); },
-    open(circle) { return click(`Manage members — ${circle.name}`); },
+    open(circle) { return click(`Manage Circle — ${circle.name}`); },
     select(memberId, circle = firstCircle) { assert.equal(addForm(circle).props["data-member-id"], memberId, "the visible result's form is bound to its own member, without another selector"); },
     submitAdd(circle = firstCircle) { return addForm(circle).props.onSubmit({ preventDefault() {} }); },
     create(name) {
+      if (nodes(draw()).find((node) => node.props?.id === "create-circle").props.hidden) click("+ Create a Circle");
       const form = nodes(draw()).find((node) => node.type === "form" && nodes(node).some((child) => child.type === "input" && child.props.name === "name"));
       nodes(form).find((node) => node.type === "input").props.onChange({ target: { value: name } });
       return nodes(draw()).find((node) => node.type === "form" && nodes(node).some((child) => child.type === "input" && child.props.name === "name")).props.onSubmit({ preventDefault() {} });
@@ -149,27 +168,107 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
   };
 }
 
-test("cards keep their own complete roster, explicit controls, and visible create form", () => {
+test("compact Circle cards open one dialog without rendering other Circles' controls", () => {
   const page = render();
   const ids = elements(page).map((node) => attr(node, "id")).filter(Boolean);
   assert.equal(new Set(ids).size, ids.length);
   for (const [circle, included, excluded] of [[firstCircle, firstAssignment, secondAssignment], [secondCircle, secondAssignment, firstAssignment]]) {
     const card = byId(page, `circle-${circle.id}`);
-    const memberSearch = byId(card, `member-search-${circle.id}`);
+    assert.equal(byId(page, `roster-${circle.id}`), undefined);
+    const selectedPage = render({ initialCircleId: circle.id });
+    const roster = byId(selectedPage, `roster-${circle.id}`);
+    assert.ok(roster);
+    assert.equal(elements(selectedPage).filter((node) => node.tagName === "dialog").length, 1);
+    assert.equal(byId(card, `roster-${circle.id}`), undefined, "management content must not expand a single grid card");
+    const memberSearch = byId(roster, `member-search-${circle.id}`);
     assert.ok(memberSearch);
     assert.match(attr(memberSearch, "class"), /scroll-mt-/);
-    assert.match(visibleText(card), new RegExp(included.name));
-    assert.doesNotMatch(visibleText(card), new RegExp(excluded.name));
-    const toggle = elements(card).find((node) => attr(node, "aria-label") === `Manage members — ${circle.name}`);
+    assert.match(visibleText(roster), new RegExp(included.name));
+    assert.doesNotMatch(visibleText(roster), new RegExp(excluded.name));
+    const toggle = elements(card).find((node) => attr(node, "aria-label") === `Manage Circle — ${circle.name}`);
     assert.equal(attr(toggle, "aria-expanded"), "false");
-    assert.equal(attr(toggle, "aria-controls"), `roster-${circle.id}`);
-    assert.equal(attr(byId(card, `roster-${circle.id}`), "hidden"), "");
-    assert.ok(elements(card).some((node) => attr(node, "href") === `/ops/members/${included.memberId}`));
+    assert.equal(attr(toggle, "aria-haspopup"), "dialog");
+    assert.equal(attr(roster, "hidden"), undefined);
+    assert.ok(elements(roster).some((node) => attr(node, "href") === `/ops/members/${included.memberId}`));
+    assert.ok(elements(roster).some((node) => attr(node, "data-avatar-member") === included.memberId));
   }
   assert.equal(elements(page).some((node) => attr(node, "role") === "dialog"), false);
   assert.ok(byId(page, "assign-member"), "existing external member-placement anchors remain available");
   for (let node = byId(page, "create-circle"); node; node = node.parentNode) assert.notEqual(node.tagName, "details");
   assert.match(visibleText(page), /Shaper One|Block 01/);
+});
+
+test("Circle directory remains a responsive grid with the selected workspace in a dialog", () => {
+  const page = render({ initialCircleId: secondCircle.id });
+  const grid = byId(page, "circle-grid");
+  assert.ok(grid);
+  const classes = attr(grid, "class").split(/\s+/);
+  for (const className of ["grid", "grid-cols-1", "sm:grid-cols-2", "xl:grid-cols-3"]) assert.ok(classes.includes(className), className);
+  assert.equal(elements(grid).filter((node) => node.tagName === "article").length, 2);
+  const ordered = elements(page);
+  for (const circle of [firstCircle, secondCircle]) {
+    const card = byId(grid, `circle-${circle.id}`);
+    const roster = byId(page, `roster-${circle.id}`);
+    assert.ok(card);
+    assert.equal(byId(grid, `roster-${circle.id}`), undefined);
+    if (circle.id === secondCircle.id) {
+      assert.ok(ordered.indexOf(roster) > ordered.indexOf(byId(grid, `circle-${secondCircle.id}`)));
+      assert.equal(roster.parentNode.tagName, "dialog");
+      assert.equal(attr(roster, "aria-label"), `${circle.name} management`);
+    } else assert.equal(roster, undefined);
+  }
+  assert.equal(byId(page, `roster-${firstCircle.id}`), undefined);
+  assert.equal(attr(byId(page, `roster-${secondCircle.id}`), "hidden"), undefined);
+  assert.doesNotMatch(visibleText(page), /Manage members/);
+});
+
+test("one top creation action reveals a single form before the directory, and Cancel preserves the draft", () => {
+  const page = render();
+  const ordered = elements(page);
+  const creation = byId(page, "create-circle");
+  const trigger = ordered.find((node) => node.tagName === "button" && attr(node, "aria-controls") === "create-circle");
+  assert.equal(ordered.filter((node) => attr(node, "id") === "create-circle").length, 1);
+  assert.equal(ordered.filter((node) => node.tagName === "button" && visibleText(node) === "+ Create a Circle").length, 1);
+  assert.equal(ordered.filter((node) => node.tagName === "a" && attr(node, "href") === "#create-circle").length, 0);
+  assert.equal(attr(trigger, "aria-expanded"), "false");
+  assert.equal(attr(creation, "hidden"), "");
+  assert.equal(elements(creation).filter((node) => node.tagName === "form").length, 1);
+  assert.ok(ordered.indexOf(trigger) < ordered.indexOf(creation));
+  assert.ok(ordered.indexOf(creation) < ordered.indexOf(byId(page, "circle-grid")));
+  const fixture = harness();
+  const panel = () => nodes(fixture.draw()).find((node) => node.props?.id === "create-circle");
+  fixture.click("+ Create a Circle");
+  assert.equal(panel().props.hidden, false);
+  assert.equal(fixture.button("+ Create a Circle").props["aria-expanded"], true);
+  nodes(panel()).find((node) => node.type === "input" && node.props.name === "name").props.onChange({ target: { value: "New Circle draft" } });
+  fixture.click("Cancel");
+  assert.equal(panel().props.hidden, true);
+  assert.equal(fixture.button("+ Create a Circle").props["aria-expanded"], false);
+  fixture.click("+ Create a Circle");
+  assert.equal(nodes(panel()).find((node) => node.type === "input" && node.props.name === "name").props.value, "New Circle draft");
+  assert.deepEqual(fixture.calls, []);
+  assert.deepEqual(fixture.navigations, []);
+});
+
+test("incoming and subsequent create-circle hashes reveal the same form without creating a record", () => {
+  for (const initialHash of ["#create-circle", "#assign-member"]) {
+    const listeners = new Map();
+    const browserWindow = {
+      location: { hash: initialHash },
+      addEventListener(name, callback) { listeners.set(name, callback); },
+      removeEventListener(name) { listeners.delete(name); },
+    };
+    const fixture = harness({}, undefined, { window: browserWindow });
+    const panel = () => nodes(fixture.draw()).find((node) => node.props?.id === "create-circle");
+    assert.equal(panel().props.hidden, initialHash !== "#create-circle");
+    browserWindow.location.hash = "#create-circle";
+    listeners.get("hashchange")();
+    assert.equal(panel().props.hidden, false);
+    fixture.click("Cancel");
+    assert.equal(panel().props.hidden, true, "a cancelled deep-linked form does not reopen on every render");
+    assert.deepEqual(fixture.calls, []);
+    assert.deepEqual(fixture.navigations, []);
+  }
 });
 
 test("opening and switching Circles only changes the viewed roster and clears old removal confirmation", () => {
@@ -179,9 +278,26 @@ test("opening and switching Circles only changes the viewed roster and clears ol
   assert.ok(nodes(fixture.draw()).some((node) => node.props?.["aria-label"] === "Confirm member removal"));
   fixture.open(secondCircle);
   const tree = fixture.draw();
-  assert.equal(nodes(tree).find((node) => node.props?.id === `roster-${firstCircle.id}`).props.hidden, true);
-  assert.equal(nodes(tree).find((node) => node.props?.id === `roster-${secondCircle.id}`).props.hidden, false);
+  assert.equal(nodes(tree).find((node) => node.props?.id === `roster-${firstCircle.id}`), undefined);
+  assert.ok(nodes(tree).find((node) => node.props?.id === `roster-${secondCircle.id}`));
+  assert.equal(nodes(tree).filter((node) => node.props?.id?.startsWith("roster-")).length, 1);
   assert.equal(nodes(tree).some((node) => node.props?.["aria-label"] === "Confirm member removal"), false);
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("closing Circle management clears its confirmation and gives the dialog the correct focus-return target", () => {
+  const fixture = harness({ initialCircleId: firstCircle.id });
+  fixture.click(`Remove ${firstAssignment.name} from ${firstCircle.name}`);
+  assert.ok(nodes(fixture.draw()).some((node) => node.props?.["aria-label"] === "Confirm member removal"));
+  assert.equal(fixture.dialog().props.returnFocusId, `manage-${firstCircle.id}`);
+  assert.equal(fixture.dialog().props.title, firstCircle.name);
+  assert.equal(fixture.button(`Manage Circle — ${firstCircle.name}`).props.id, fixture.dialog().props.returnFocusId);
+  fixture.close();
+  const tree = fixture.draw();
+  assert.equal(nodes(tree).find((node) => node.props?.id === `roster-${firstCircle.id}`), undefined);
+  assert.equal(nodes(tree).some((node) => node.props?.["aria-label"] === "Confirm member removal"), false);
+  assert.equal(fixture.button(`Manage Circle — ${firstCircle.name}`).props["aria-expanded"], false);
+  assert.deepEqual(fixture.navigations.at(-1), { href: "/ops/circles", options: { scroll: false } });
   assert.deepEqual(fixture.calls, []);
 });
 
@@ -196,35 +312,49 @@ test("Circle workspace renders server-loaded resources only for their matching s
   const changed = fixture.draw();
   assert.equal(nodes(changed).some((node) => node.props?.["data-resources-for"]), false, "stale first-Circle controls never appear in the new workspace");
   const second = nodes(changed).find((node) => node.props?.id === `roster-${secondCircle.id}`);
-  assert.ok(nodes(second).some((node) => node.props?.href === `/ops/circles?circleId=${secondCircle.id}#circle-resources`));
+  const loadContext = nodes(second).find((node) => node.props?.href === `/ops/circles?circleId=${secondCircle.id}`);
+  assert.ok(loadContext);
+  assert.match(text(loadContext), /Load Shaper, meetings & resources/);
   const target = new URL(fixture.navigations.at(-1).href, "https://example.test");
   assert.equal(target.searchParams.get("circleId"), secondCircle.id);
   assert.equal(target.searchParams.get("memberQuery"), "A & B");
   assert.equal(target.searchParams.get("memberId"), candidate.memberId);
+  assert.equal(target.hash, "", "Manage Circle opens its dialog without scrolling the page to an old roster anchor");
+  assert.deepEqual(fixture.navigations.at(-1).options, { scroll: false });
   assert.deepEqual(fixture.calls, []);
   assert.equal(fixture.refreshes(), 0);
 });
 
-test("every Circle card has an explicit Chat & meetings destination keyed by ID, even with duplicate names", () => {
-  const page = render({ initialCircles: [firstCircle, { ...secondCircle, name: firstCircle.name }] });
+test("every Circle card has one Manage Circle action keyed by ID, even with duplicate names", () => {
+  const initialCircles = [firstCircle, { ...secondCircle, name: firstCircle.name }];
+  const page = render({ initialCircles });
+  const fixture = harness({ initialCircles });
   for (const circle of [firstCircle, secondCircle]) {
     const card = byId(page, `circle-${circle.id}`);
-    const action = elements(card).find((node) => node.tagName === "a" && visibleText(node) === "Chat & meetings");
+    const actions = elements(card).filter((node) => node.tagName === "button");
+    assert.equal(actions.length, 1);
+    const action = actions[0];
     assert.ok(action);
-    assert.equal(attr(action, "href"), `/ops/circles?circleId=${circle.id}#circle-communications`);
-    assert.match(attr(action, "aria-label"), /^Chat & meetings — /);
+    assert.equal(attr(action, "id"), `manage-${circle.id}`);
+    assert.equal(attr(action, "aria-haspopup"), "dialog");
+    assert.equal(elements(card).some((node) => node.tagName === "a" && /Chat & meetings/.test(visibleText(node))), false);
     for (let node = action; node && node !== card; node = node.parentNode) assert.equal(attr(node, "hidden"), undefined);
+    nodes(fixture.draw()).find((node) => node.type === "button" && node.props.id === `manage-${circle.id}`).props.onClick();
+    assert.ok(nodes(fixture.draw()).some((node) => node.props?.id === `roster-${circle.id}`));
+    assert.deepEqual(fixture.navigations.at(-1), { href: `/ops/circles?circleId=${circle.id}`, options: { scroll: false } });
+    nodes(fixture.draw()).find((node) => node.type === "button" && node.props.id === `manage-${circle.id}`).props.onClick();
+    assert.ok(nodes(fixture.draw()).some((node) => node.props?.id === `roster-${circle.id}`), "opening the same card keeps its dialog open rather than toggling a hidden panel");
   }
 });
 
-test("selected communications appear before roster content and never carry into a different Circle workspace", () => {
+test("members appear before selected communications, which never carry into a different Circle workspace", () => {
   const communications = React.createElement("div", { "data-communications-for": firstCircle.id }, "Selected Circle communication controls");
   const fixture = harness({ initialCircleId: firstCircle.id, communications });
   const selected = nodes(fixture.draw()).find((node) => node.props?.id === `roster-${firstCircle.id}`);
   const descendants = nodes(selected);
   const panelIndex = descendants.findIndex((node) => node.props?.id === "circle-communications");
   const firstRosterIndex = descendants.findIndex((node) => node.props?.href === `/ops/members/${firstAssignment.memberId}`);
-  assert.ok(panelIndex >= 0 && firstRosterIndex > panelIndex);
+  assert.ok(firstRosterIndex >= 0 && panelIndex > firstRosterIndex);
   assert.equal(descendants.filter((node) => node.props?.["data-communications-for"]).length, 1);
   fixture.open(secondCircle);
   assert.equal(nodes(fixture.draw()).some((node) => node.props?.["data-communications-for"]), false);
@@ -244,8 +374,10 @@ test("Circle search and status filters are view-only and keep an already open wo
   filter().props.onChange({ target: { value: "archived" } });
   query().props.onChange({ target: { value: "past block" } });
   assert.deepEqual(cards(), [`circle-${firstCircle.id}`, "circle-archived"]);
-  fixture.open(firstCircle);
+  fixture.close();
   assert.deepEqual(cards(), ["circle-archived"]);
+  assert.equal(nodes(fixture.draw()).filter((node) => node.props?.id?.startsWith("roster-")).length, 0, "closing the dialog unmounts its controls rather than keeping hidden rosters in the page");
+  assert.equal(visibleNodes(fixture.draw()).some((node) => node.props?.id?.startsWith("roster-")), false);
   query().props.onChange({ target: { value: "no matches" } });
   assert.deepEqual(cards(), []);
   assert.match(text(fixture.draw()), /No Circles match/);
@@ -343,7 +475,8 @@ test("adding posts the exact member and Circle once, then uses the real assignme
   const first = oldForm.props.onSubmit({ preventDefault() {} });
   await oldForm.props.onSubmit({ preventDefault() {} });
   assert.equal(fixture.calls.length, 1, "request guard also covers duplicate clicks before React rerenders");
-  assert.equal(fixture.button(`Manage members — ${secondCircle.name}`).props.disabled, true);
+  assert.equal(fixture.button(`Manage Circle — ${secondCircle.name}`).props.disabled, true);
+  assert.equal(fixture.button("+ Create a Circle").props.disabled, true);
   resolve(ok({ assignment: { id: "103", assignedAt: "2026-09-08T00:00:00Z", circleId: firstCircle.id, memberId: candidate.memberId, created: true } }));
   await first;
   assert.deepEqual(fixture.calls, [{ url: "/api/ops/circle-assignments", method: "POST", body: { memberId: candidate.memberId, circleId: firstCircle.id } }]);
@@ -363,9 +496,11 @@ test("removal is a separate confirmation bound to the displayed Circle and prese
   await fixture.click("Confirm removal");
   assert.deepEqual(fixture.calls, [{ url: "/api/ops/circle-assignments", method: "PATCH", body: { memberId: secondAssignment.memberId, circleId: secondCircle.id } }]);
   const tree = fixture.draw();
-  assert.ok(nodes(tree).some((node) => node.props?.href === `/ops/members/${firstAssignment.memberId}`));
+  assert.equal(nodes(tree).some((node) => node.props?.href === `/ops/members/${firstAssignment.memberId}`), false, "only the selected roster is mounted");
   assert.equal(nodes(tree).some((node) => node.props?.href === `/ops/members/${secondAssignment.memberId}`), false);
   assert.match(text(tree), /account and history are unchanged/);
+  fixture.open(firstCircle);
+  assert.ok(nodes(circleRoster(fixture, firstCircle)).some((node) => node.props?.href === `/ops/members/${firstAssignment.memberId}`));
 });
 
 test("a changed assignment invalidates an open removal confirmation before sending", async () => {
@@ -467,7 +602,14 @@ test("creation posts only a name and opens the new forming Circle without assign
   await fixture.create("  Circle 03  ");
   assert.deepEqual(fixture.calls, [{ url: "/api/ops/circles", method: "POST", body: { name: "Circle 03" } }]);
   const tree = fixture.draw();
-  assert.equal(nodes(tree).find((node) => node.props?.id === `roster-${newCircle.id}`).props.hidden, false);
+  assert.ok(nodes(tree).find((node) => node.props?.id === `roster-${newCircle.id}`));
+  assert.equal(fixture.dialog(tree).props.title, newCircle.name);
+  assert.equal(nodes(tree).filter((node) => node.props?.id?.startsWith("roster-")).length, 1);
+  const creation = nodes(tree).find((node) => node.props?.id === "create-circle");
+  assert.equal(creation.props.hidden, true);
+  assert.equal(fixture.button("+ Create a Circle").props["aria-expanded"], false);
+  assert.equal(nodes(creation).some((node) => node.props?.role === "status"), false, "success remains visible after the form closes");
+  assert.ok(nodes(tree).some((node) => node.props?.role === "status" && /Circle 03/.test(text(node))));
   assert.equal(fixture.button(`Activate ${newCircle.name}`).props.disabled, true);
 });
 
@@ -538,6 +680,9 @@ function selectDestination(fixture, id = secondCircle.id) {
 function namedCircle(fixture, circle) {
   return nodes(fixture.draw()).find((node) => node.props?.id === `circle-${circle.id}`);
 }
+function circleRoster(fixture, circle) {
+  return nodes(fixture.draw()).find((node) => node.props?.id === `roster-${circle.id}`);
+}
 function typeCircleName(fixture, value) {
   const input = nodes(fixture.draw()).find((node) => node.type === "input" && node.props["aria-label"] === "Circle name to confirm");
   assert.ok(input);
@@ -563,11 +708,13 @@ test("roster Move requires choosing another Circle, then posts its exact current
   } });
   resolve(ok(movedResponse));
   await moving;
-  assert.equal(nodes(namedCircle(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"), false);
-  assert.ok(nodes(namedCircle(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"));
-  assert.match(text(namedCircle(fixture, firstCircle)), /0\/10 members/);
-  assert.match(text(namedCircle(fixture, secondCircle)), /2\/10 members/);
+  assert.equal(nodes(circleRoster(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"), false);
+  assert.match(text(namedCircle(fixture, firstCircle)), /0\s*\/\s*10 members/);
+  assert.match(text(namedCircle(fixture, secondCircle)), /2\s*\/\s*10 members/);
   assert.match(text(fixture.draw()), /First Member moved from Circle 01 to Circle 02/);
+  fixture.open(secondCircle);
+  assert.ok(nodes(circleRoster(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"));
+  assert.ok(nodes(circleRoster(fixture, secondCircle)).some((node) => node.type === "li" && node.key === secondAssignment.assignmentId));
   assert.equal(fixture.refreshes(), 1);
 });
 
@@ -596,8 +743,8 @@ test("failed, ambiguous, or mismatched transfer results keep the original roster
     fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
     selectDestination(fixture);
     await fixture.click("Confirm move");
-    assert.ok(nodes(namedCircle(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"));
-    assert.equal(nodes(namedCircle(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"), false);
+    assert.ok(nodes(circleRoster(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"));
+    assert.equal(nodes(circleRoster(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"), false);
     assert.ok(nodes(fixture.draw()).some((node) => node.props?.role === "alert"));
     assert.equal(fixture.button("Confirm move").props.disabled, false);
     assert.equal(fixture.refreshes(), 0);
@@ -610,8 +757,17 @@ test("transfer blockers have direct next steps and no available destination mean
     fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
     assert.equal(fixture.button("Confirm move").props.disabled, true);
     assert.match(text(fixture.draw()), /No other Circles have an open place/);
-    assert.ok(nodes(fixture.draw()).some((node) => node.props?.href === "#create-circle"));
+    const createLink = nodes(fixture.draw()).find((node) => node.type === link.default && text(node) === "Create a Circle");
+    assert.ok(createLink, "creation is a real link so the surrounding modal guards navigation first");
+    assert.equal(createLink.props.href, "/ops/circles#create-circle");
     await fixture.click("Confirm move");
+    assert.deepEqual(fixture.calls, []);
+    let prevented = false;
+    createLink.props.onClick({ button: 0, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true, "after the dialog allows this click, use one explicit route replacement");
+    assert.equal(nodes(fixture.draw()).find((node) => node.props?.id === "create-circle").props.hidden, false);
+    assert.equal(nodes(fixture.draw()).some((node) => node.props?.id?.startsWith("roster-")), false);
+    assert.deepEqual(fixture.navigations.at(-1), { href: "/ops/circles#create-circle", options: { scroll: false } });
     assert.deepEqual(fixture.calls, []);
   }
   const inactive = moveFixture({ initialAssignments: [{ ...movableAssignment, billingState: "ended" }, secondAssignment] });
@@ -620,6 +776,22 @@ test("transfer blockers have direct next steps and no available destination mean
   assert.ok(nodes(inactive.draw()).some((node) => node.props?.href === `/ops/members/${movableAssignment.memberId}#membership`));
   await inactive.click("Confirm move");
   assert.deepEqual(inactive.calls, []);
+});
+
+test("the guarded Create Circle link preserves modified-click navigation without closing this workspace", () => {
+  for (const modifiers of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+    const fixture = moveFixture({ initialCircles: [firstCircle, { ...secondCircle, activeMembers: 10 }] });
+    fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+    const createLink = nodes(fixture.draw()).find((node) => node.type === link.default && text(node) === "Create a Circle");
+    assert.ok(createLink);
+    let prevented = false;
+    createLink.props.onClick({ button: 0, ...modifiers, preventDefault() { prevented = true; } });
+    assert.equal(prevented, false);
+    assert.equal(nodes(fixture.draw()).find((node) => node.props?.id === "create-circle").props.hidden, true);
+    assert.ok(fixture.dialog());
+    assert.deepEqual(fixture.navigations, []);
+    assert.deepEqual(fixture.calls, []);
+  }
 });
 
 test("changed assignment or newly full destination invalidates transfer before submitting", async () => {
@@ -661,7 +833,7 @@ test("cancel and switching viewed Circles clear a move destination without chang
 
 test("occupied Circles cannot be deleted or archived even if disabled controls are invoked directly", async () => {
   for (const [action, confirm] of [["Delete", "Permanently delete Circle"], ["Archive", "Confirm archive"]]) {
-    const fixture = harness();
+    const fixture = harness({ initialCircleId: firstCircle.id });
     assert.equal(fixture.button(`${action} ${firstCircle.name}`).props.disabled, true);
     fixture.click(`${action} ${firstCircle.name}`);
     typeCircleName(fixture, firstCircle.name);
@@ -700,7 +872,7 @@ test("failed deletion keeps the exact Circle, shows the blocker, and keeps archi
     ok({ circle: { id: empty.id, name: "Changed name", outcome: "deleted" } }),
     ok({ circle: { id: empty.id, name: empty.name, outcome: "archived" } }),
   ]) {
-    const fixture = harness({ initialCircles: [empty], initialAssignments: [] }, async () => response);
+    const fixture = harness({ initialCircles: [empty], initialAssignments: [], initialCircleId: empty.id }, async () => response);
     fixture.click(`Delete ${empty.name}`);
     typeCircleName(fixture, empty.name);
     await fixture.click("Permanently delete Circle");
@@ -713,7 +885,7 @@ test("failed deletion keeps the exact Circle, shows the blocker, and keeps archi
 
 test("cancelling deletion or switching Circles discards confirmation; a new name must be entered", () => {
   const empty = { ...firstCircle, activeMembers: 0 };
-  const fixture = harness({ initialCircles: [empty, secondCircle], initialAssignments: [secondAssignment] });
+  const fixture = harness({ initialCircles: [empty, secondCircle], initialAssignments: [secondAssignment], initialCircleId: empty.id });
   fixture.click(`Delete ${empty.name}`);
   typeCircleName(fixture, empty.name);
   fixture.click("Cancel");
@@ -731,11 +903,11 @@ test("preview transfer, delete and archive never call APIs or change the display
   fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
   selectDestination(fixture);
   await fixture.click("Confirm move");
-  assert.ok(nodes(namedCircle(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"));
+  assert.ok(nodes(circleRoster(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"));
   assert.deepEqual(fixture.calls, []);
   for (const [action, confirm] of [["Delete", "Permanently delete Circle"], ["Archive", "Confirm archive"]]) {
     const empty = { ...firstCircle, activeMembers: 0 };
-    const preview = harness({ preview: true, initialCircles: [empty], initialAssignments: [] });
+    const preview = harness({ preview: true, initialCircles: [empty], initialAssignments: [], initialCircleId: empty.id });
     preview.click(`${action} ${empty.name}`);
     typeCircleName(preview, empty.name);
     await preview.click(confirm);
@@ -746,7 +918,7 @@ test("preview transfer, delete and archive never call APIs or change the display
   }
 });
 
-test("retirement offers only valid lifecycle actions and opens confirmation beside the footer, not a hidden roster", () => {
+test("retirement offers only valid lifecycle actions and keeps confirmation inside the selected management section", () => {
   for (const status of ["forming", "active", "completed", "archived"]) {
     const circle = { ...firstCircle, activeMembers: 0, status };
     const fixture = harness({ initialCircles: [circle], initialAssignments: [], initialCircleId: circle.id });
@@ -761,8 +933,9 @@ test("retirement offers only valid lifecycle actions and opens confirmation besi
     fixture.click(`Archive ${circle.name}`);
     const updated = fixture.draw();
     const roster = nodes(updated).find((node) => node.props?.id === `roster-${circle.id}`);
-    assert.equal(roster.props.hidden, false, "retirement stays within the selected Circle workspace");
-    assert.equal(nodes(roster).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"), false);
+    assert.ok(roster, "retirement stays within the selected Circle dialog");
+    assert.equal(fixture.dialog(updated).props.title, circle.name);
+    assert.equal(nodes(roster).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"), true);
     assert.ok(nodes(updated).some((node) => node.props?.["aria-label"] === "Confirm Circle archive"));
     assert.deepEqual(fixture.calls, []);
   }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import OperatorProgress from "@/components/platform/OperatorProgress";
+import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
 import StateLabel from "@/components/platform/StateLabel";
 import {
   OPERATOR_FIELD_CLASS,
@@ -132,11 +133,14 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             aria-label={`Open ${member.name}’s member record`}
             key={member.memberId}
           >
-            <div className="min-w-0">
-              <h3 className="truncate font-[var(--font-display)] text-xl leading-none">
-                {member.name}
-              </h3>
-              {member.email ? <p className="mt-2 truncate text-sm text-black/50">{member.email}</p> : null}
+            <div className="flex min-w-0 items-center gap-3">
+              <OperatorMemberAvatar memberId={member.memberId} className="h-11 w-11" />
+              <div className="min-w-0">
+                <h3 className="truncate font-[var(--font-display)] text-xl leading-none">
+                  {member.name}
+                </h3>
+                {member.email ? <p className="mt-2 truncate text-sm text-black/50">{member.email}</p> : null}
+              </div>
             </div>
             <div className="text-sm leading-relaxed text-black/62">
               <span className="mb-1 block [font-family:var(--font-cadehandy2)] text-lg text-black/50 xl:sr-only">Circle + Block</span>

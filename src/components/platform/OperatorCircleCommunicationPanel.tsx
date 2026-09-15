@@ -35,13 +35,11 @@ export default function OperatorCircleCommunicationPanel({ circle, communication
         <h3 className={OPERATOR_LABEL_TEXT_CLASS}>Meetings</h3>
         {canSchedule ? <Link className={OPERATOR_PRIMARY_ACTION_CLASS} href={`${circleDirectory}#new-experience`}>Schedule a meeting</Link> : null}
       </div>
-      <p className="mb-4 text-sm leading-relaxed text-black/65">Choose a date for {circle.name}, save a draft, then review and publish. Use an existing Meet link or the Google invitation controls on the meeting.</p>
       {!directory ? <p role="status" className="mb-3 text-sm text-[var(--color-poster)]">Meetings could not be loaded. Open Experiences to retry.</p> : visible.length ? <>
         <p className="mb-2 text-xs font-semibold text-black/55">{upcoming.length ? "Upcoming & drafts" : "Most recent"}</p>
         <ul className="grid gap-3">{visible.map((meeting) => <li key={meeting.experienceId} className="rounded-[4px] bg-black/[0.035] p-4">
           <p className="text-xs text-black/55">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Denver" }).format(new Date(meeting.startsAt))} MT · {meeting.state === "draft" ? "Draft — not published" : meeting.state === "published" ? "Published" : "Completed"}</p>
           <h4 className="mt-1 text-base font-semibold">{meeting.title}</h4>
-          <p className="mt-2 text-sm text-black/60">{meeting.meetingUrl ? "Meeting link saved" : "No meeting link yet"}</p>
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold">
             <Link className="inline-flex min-h-11 items-center underline underline-offset-4" href={`/ops/experiences/${encodeURIComponent(meeting.experienceId)}#meeting-setup`}>{meeting.meetingUrl ? "Manage meeting link" : "Set meeting link"}</Link>
             <Link className="inline-flex min-h-11 items-center underline underline-offset-4" href={`/ops/experiences/${encodeURIComponent(meeting.experienceId)}#experience-calendar`}>Review invitations</Link>

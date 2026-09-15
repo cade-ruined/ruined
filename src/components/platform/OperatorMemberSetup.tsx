@@ -35,12 +35,12 @@ export default function OperatorMemberSetup({ record }: { record: OpsMemberRecor
         ) : circle ? (
           <p className="mt-3 text-sm leading-relaxed text-black/65">
             This placement is already saved. {circle.state === "forming"
-              ? "Open Manage members on this Circle, then confirm activation when it is ready to run. An active Circle is required to finish Foundations."
+              ? "Open Manage Circle, then confirm activation when it is ready to run. An active Circle is required to finish Foundations."
               : "There is no need to assign this member again when adding operator access."}
           </p>
         ) : (
           <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm leading-relaxed text-black/65">
-            <li>Choose a Circle with space, then open Manage members.</li>
+            <li>Choose a Circle with space, then open Manage Circle.</li>
             <li>Review this member’s current eligibility, then select Add when available.</li>
             <li>For a forming Circle, confirm activation in the same panel when ready.</li>
           </ol>

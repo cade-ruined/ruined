@@ -40,6 +40,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
   const router = useRouter();
   const [url, setUrl] = useState(initialUrl ?? "");
   const [draft, setDraft] = useState(initialUrl ?? "");
+  const [editing, setEditing] = useState(!initialUrl);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -54,7 +55,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
   const connected = Boolean(url);
   const name = kind === "chat" ? "Google Chat" : "Google Meet";
   const linkName = kind === "chat" ? "chat link" : "meeting link";
-  const label = kind === "chat" ? "Chat space link" : "Meet room link";
+  const label = kind === "chat" ? "Chat link" : "Meeting link";
   const placeholder = kind === "chat"
     ? "https://chat.google.com/room/…"
     : "https://meet.google.com/abc-defg-hij";
@@ -103,6 +104,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
       const savedUrl = saved.url ?? "";
       setUrl(savedUrl);
       setDraft(savedUrl);
+      setEditing(!savedUrl);
       setConfirmRemoval(false);
       setNotice(savedUrl ? `${kind === "chat" ? "Chat" : "Meeting"} link saved in Ruined. No invitation was sent.` : "Link removed from Ruined. Nothing was changed in Google.");
       router.refresh();
@@ -135,7 +137,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
     } catch {
       if (mounted.current) {
         setError(true);
-        setNotice("The link could not be copied. Select and copy the saved URL below.");
+        setNotice("The link could not be copied. Select and copy the saved URL.");
       }
     } finally {
       if (mounted.current) setCopying(false);
@@ -147,40 +149,40 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
     : "bg-[var(--color-verdigris)]/[0.12]";
 
   return (
-    <div className={`rounded-[4px] px-4 py-3 ${tone}`} data-google-communication={kind}>
+    <div
+      className={`rounded-[4px] px-4 py-3 ${tone}`}
+      data-google-communication={kind}
+      data-operator-dirty={editing && (draft !== url || confirmRemoval) ? "true" : undefined}
+      data-operator-pending={pending ? "true" : undefined}
+    >
       <div className="flex items-center justify-between gap-3">
         <p className="[font-family:var(--font-cadehandy2)] text-[1.2rem] leading-none text-black/72">
           {name}
         </p>
-        <p className="flex items-center gap-2 text-[0.66rem] font-medium text-black/58">
+        {!configured || !connected ? <p className="flex items-center gap-2 text-[0.66rem] font-medium text-black/58">
           <span
             aria-hidden="true"
             className={`size-1.5 rounded-full ${
               !configured
                 ? "bg-[var(--color-poster)]"
-                : connected
-                  ? "bg-[var(--color-verdigris)]"
-                  : "bg-black/28"
+                : "bg-black/28"
             }`}
           />
-          {!configured ? "Setup needed" : connected ? "Link saved" : "Not linked"}
-        </p>
+          {!configured ? "Setup needed" : "Not linked"}
+        </p> : null}
       </div>
 
-      <p className="mt-3 text-sm leading-relaxed text-black/60">
-        {!editable
-          ? "Open or copy the saved link below. Access to the Google space or meeting is managed in Google."
-          : kind === "chat"
-          ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
-          : "Paste an existing Google Meet link here. Saving it does not send invitations or change Google access; use Calendar invitations for that flow."}
-      </p>
-
-      {configured && connected ? <div className="mt-3 rounded-[4px] bg-[var(--color-bone)]/60 p-3">
-        <p className="text-xs text-black/50">Saved {linkName}</p>
-        <a className="mt-1 block break-all text-sm underline decoration-black/25 underline-offset-4" href={url} rel="noreferrer" target="_blank">{url}</a>
-        <div className="mt-2 flex flex-wrap gap-2">
+      {configured && connected ? <div className="mt-2">
+        <a className="block break-all text-sm text-black/65 underline decoration-black/25 underline-offset-4" href={url} rel="noreferrer" target="_blank">{url}</a>
+        <div className="flex flex-wrap items-center gap-2">
           <a className="inline-flex min-h-11 items-center px-2 text-sm font-semibold underline underline-offset-4" href={url} rel="noreferrer" target="_blank">{kind === "chat" ? "Open chat ↗" : "Open meeting ↗"}</a>
           <button className="min-h-11 px-2 text-sm underline underline-offset-4 disabled:opacity-45" disabled={copying} onClick={copyLink} type="button">{copying ? "Copying…" : "Copy link"}</button>
+          {editable && !editing ? <button
+            aria-label={`Edit ${linkName}`}
+            className="min-h-11 px-2 text-sm underline underline-offset-4"
+            onClick={() => { setDraft(url); setNotice(null); setError(false); setConfirmRemoval(false); setEditing(true); }}
+            type="button"
+          >Edit</button> : null}
         </div>
       </div> : null}
 
@@ -188,8 +190,13 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
         <p className="mt-2 text-xs leading-relaxed text-black/52">
           Choose test or live Google mode before adding links.
         </p>
-      ) : editable ? (
+      ) : editable && editing ? (
         <div className="mt-2">
+          <p className="text-sm leading-relaxed text-black/60">
+            {kind === "chat"
+              ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
+              : "Paste an existing Google Meet link here. Saving it does not send invitations or change Google access; use Calendar invitations for that flow."}
+          </p>
           <form className="mt-3 grid gap-3" onSubmit={submit}>
             <label htmlFor={`${kind}-${entityId}-url`}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>
@@ -216,6 +223,19 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
               >
                 {pending ? "Saving…" : kind === "chat" ? connected ? "Save chat link" : "Set chat link" : "Save meeting link"}
               </button>
+              {connected ? <button
+                className="min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-45"
+                disabled={pending}
+                onClick={() => {
+                  if (requestInFlight.current) return;
+                  setDraft(url);
+                  setConfirmRemoval(false);
+                  setNotice(null);
+                  setError(false);
+                  setEditing(false);
+                }}
+                type="button"
+              >Cancel</button> : null}
               {connected ? (
                 <button
                   className="min-h-10 rounded-[4px] px-3 py-2 text-xs text-black/52 underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)] disabled:cursor-not-allowed disabled:opacity-45"
@@ -240,10 +260,10 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
 
       <p
         aria-live="polite"
-        className={`mt-2 min-h-4 text-xs leading-relaxed ${error ? "text-[var(--color-poster)]" : "text-black/48"}`}
+        className={`${notice ? "mt-2" : ""} text-xs leading-relaxed ${error ? "text-[var(--color-poster)]" : "text-black/48"}`}
         role={error ? "alert" : "status"}
       >
-        {notice ?? " "}
+        {notice}
       </p>
     </div>
   );

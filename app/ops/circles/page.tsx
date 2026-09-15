@@ -130,7 +130,7 @@ export default async function OperationsCirclesPage({
     const selectedCircle = circles.find((circle) => circle.id === initialCircleId);
     return <OperatorPageFrame title="Circles">
       <OperatorCirclesManager
-        key={`${initialMemberId ?? ""}:${initialCircleId ?? ""}:${memberQuery}`}
+        key={`${initialMemberId ?? ""}:${memberQuery}`}
         initialCircles={circles}
         initialAssignments={assignments}
         candidates={placementMembers}
@@ -142,6 +142,7 @@ export default async function OperationsCirclesPage({
         initialCircleId={initialCircleId}
         memberQuery={memberQuery}
         preview={context.state === "preview"}
+        shaper={selectedCircle ? <OpsCircleManagementActions section="shaper" initialCircleId={initialCircleId} initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} /> : null}
         communications={selectedCircle ? <OperatorCircleCommunicationPanel
           circle={selectedCircle}
           communication={communicationCircles?.find((item) => item.id === selectedCircle.id)}
@@ -149,7 +150,7 @@ export default async function OperationsCirclesPage({
           preview={context.state === "preview"}
         /> : null}
       >
-        <OpsCircleManagementActions initialCircleId={initialCircleId} initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} />
+        <OpsCircleManagementActions section="resources" initialCircleId={initialCircleId} initialCircles={circles} resources={managementOptions.resources} shapers={managementOptions.shapers} preview={context.state === "preview"} />
       </OperatorCirclesManager>
     </OperatorPageFrame>;
   }

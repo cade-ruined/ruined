@@ -32,6 +32,7 @@ const stateLabel = { __esModule: true, default: ({ state }) => React.createEleme
 const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
   ...guidanceDeps,
   "@/components/platform/OperatorProgress": empty,
+  "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: ({ memberId }) => React.createElement("span", { "data-avatar-member": memberId }) },
   "@/components/platform/StateLabel": stateLabel,
   "@/components/platform/operatorStyles": {},
 }).default;

@@ -30,6 +30,11 @@ export function memberPhotoUrl(memberId: string, fileName: string): string | nul
   return `/api/member-photos/${memberId}/${fileName}`;
 }
 
+/** An operator can request a current portrait without receiving its private object key. */
+export function operatorMemberPhotoUrl(memberId: string): string | null {
+  return MEMBER_ID_PATTERN.test(memberId) ? `/api/ops/member-photos/${memberId}` : null;
+}
+
 /** Only our exact, owner-scoped object format is ever eligible for deletion. */
 export function ownedMemberPhotoPath(memberId: string, avatarUrl: string | null): string | null {
   if (!avatarUrl || !MEMBER_ID_PATTERN.test(memberId)) return null;

@@ -228,6 +228,8 @@ export default function OperatorExperienceRecord({
   const [error, setError] = useState<string | null>(null);
   const [editRegistrationMode, setEditRegistrationMode] = useState(experience.registrationMode);
   const [editVisibility, setEditVisibility] = useState(experience.visibility);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [reviewingCancellation, setReviewingCancellation] = useState(false);
   const registeredMemberIds = useMemo(
     () => new Set(experience.roster.map((item) => item.memberId).filter(Boolean)),
     [experience.roster],
@@ -276,6 +278,7 @@ export default function OperatorExperienceRecord({
         visibility,
         waitlistEnabled: data.get("waitlistEnabled") === "on",
       }, "PATCH");
+      setEditingDetails(false);
       await changed();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The Experience could not be saved.");
@@ -296,6 +299,7 @@ export default function OperatorExperienceRecord({
     try {
       await jsonRequest(`/api/ops/experiences/${experience.experienceId}/lifecycle`, { intent, reason });
       stateChanged = true;
+      setReviewingCancellation(false);
       await changed();
     } catch (requestError) {
       setError(requestError instanceof Error
@@ -357,7 +361,7 @@ export default function OperatorExperienceRecord({
         <a className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href="#meeting-setup">Set meeting link</a>
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-roster">Roster & attendance</a>
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-calendar">Calendar invitations</a>
-        {experience.canEdit && ["draft", "published"].includes(experience.state) ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#edit-experience">Edit details</a> : null}
+        {experience.canEdit && ["draft", "published"].includes(experience.state) ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#edit-experience" onClick={() => { if (!pending) { setEditingDetails(true); setEditRegistrationMode(experience.registrationMode); setEditVisibility(experience.visibility); } }}>Edit details</a> : null}
         {experience.canEdit ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#experience-actions">{experience.state === "draft" ? "Review & publish" : "Event status"}</a> : null}
       </nav>
 
@@ -430,16 +434,19 @@ export default function OperatorExperienceRecord({
                 {experience.state === "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("complete")} type="button">Complete</button> : null}
                 {["draft", "cancelled", "completed"].includes(experience.state) ? <button className={quietButton} disabled={pending} onClick={() => lifecycle("archive")} type="button">Archive</button> : null}
               </div>
-              {experience.state === "published" ? (
+              {experience.state === "published" && !reviewingCancellation ? <button className="mt-3 min-h-11 px-2 text-sm text-[var(--color-poster)] underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(true)} type="button">Cancel Experience</button> : null}
+              {experience.state === "published" && reviewingCancellation ? (
                 <form className="mt-4 grid gap-2" onSubmit={(event) => {
                   event.preventDefault();
                   const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
                   void lifecycle("cancel", reason);
                 }}>
+                  <p className="text-sm leading-relaxed text-black/65">Cancel {experience.title}? It will no longer appear as an upcoming Experience. If a Google invitation exists, its cancellation will be queued.</p>
                   <FormField label="Cancellation reason">
                     <input className={OPERATOR_FIELD_CLASS} minLength={3} name="reason" required />
                   </FormField>
-                  <button className={`${OPERATOR_BUTTON_CLASS} !border-[var(--color-poster)] !bg-[var(--color-poster)]`} disabled={pending} type="submit">Cancel Experience</button>
+                  <button className={`${OPERATOR_BUTTON_CLASS} !border-[var(--color-poster)] !bg-[var(--color-poster)]`} disabled={pending} type="submit">Confirm cancellation</button>
+                  <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(false)} type="button">Keep Experience</button>
                 </form>
               ) : null}
             </section>
@@ -450,8 +457,14 @@ export default function OperatorExperienceRecord({
 
       {experience.canEdit && ["draft", "published"].includes(experience.state) ? (
         <section className="mt-5 scroll-mt-28 rounded-[4px] bg-black/[0.035] px-5 py-4 sm:px-6" id="edit-experience" aria-labelledby="edit-experience-title">
-          <h2 className="py-3 font-[var(--font-display)] text-2xl" id="edit-experience-title">Edit details</h2>
-          <form className="grid gap-4 pb-3 pt-5 sm:grid-cols-2 lg:grid-cols-4" onSubmit={save}>
+          <header className="flex flex-wrap items-center justify-between gap-3"><h2 className="py-3 font-[var(--font-display)] text-2xl" id="edit-experience-title">Details</h2>{!editingDetails ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setEditingDetails(true); setEditRegistrationMode(experience.registrationMode); setEditVisibility(experience.visibility); }} type="button">Edit details</button> : null}</header>
+          {!editingDetails ? <div className="space-y-3 pb-2 text-sm leading-relaxed text-black/65">
+            {experience.summary ? <p>{experience.summary}</p> : null}
+            {experience.details ? <p className="whitespace-pre-line">{experience.details}</p> : null}
+            <p>{experience.registrationMode === "internal" ? `Registration managed in Ruined${experience.waitlistEnabled ? " · Waitlist enabled" : ""}` : experience.registrationMode === "external" ? "Registration with an external provider" : "No reservation required"} · {experience.timezone}</p>
+            {experience.registrationOpensAt ? <p>Registration opens {formatDate(experience.registrationOpensAt, experience.timezone)}</p> : null}
+            {experience.registrationClosesAt ? <p>Registration closes {formatDate(experience.registrationClosesAt, experience.timezone)}</p> : null}
+          </div> : <form className="grid gap-4 pb-3 pt-5 sm:grid-cols-2 lg:grid-cols-4" onSubmit={save}>
             <FormField className="sm:col-span-2" label="Title">
               <input className={OPERATOR_FIELD_CLASS} defaultValue={experience.title} maxLength={200} name="title" required />
             </FormField>
@@ -556,7 +569,8 @@ export default function OperatorExperienceRecord({
               <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} defaultValue={experience.details ?? ""} maxLength={20000} name="details" />
             </FormField>
             <button className={`${OPERATOR_BUTTON_CLASS} sm:col-span-2`} disabled={pending} type="submit">{pending ? "Saving" : "Save changes"}</button>
-          </form>
+            <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => setEditingDetails(false)} type="button">Cancel edits</button>
+          </form>}
         </section>
       ) : null}
 

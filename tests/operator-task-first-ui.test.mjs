@@ -216,20 +216,30 @@ test("announcement retraction needs confirmation and a reason; preview confirmat
   assert.equal(requests.length, 1);
 });
 
-test("profile correction is visible, stops preview writes, and recovers from a failed transport", async (t) => {
+test("profile details are read-first, edits stop preview writes and recover from a failed transport", async (t) => {
   const requests = captureRequests(t, () => { throw new Error("Network unavailable"); });
   const profile = { preferredName: "Example", displayName: "Example Member", version: 3 };
   const deps = { "@/lib/membership/phone": { SHIPPING_COUNTRY_OPTIONS: [{ code: "US", name: "United States" }] } };
   const preview = hookFixture("src/components/platform/OperatorProfileSupport.tsx", { memberId: "member-one", profile, preview: true }, deps);
   assert.equal(nodes(preview.draw()).some((node) => node.type === "details"), false);
+  assert.equal(nodes(preview.draw()).some((node) => node.type === "form"), false);
+  preview.button("Edit profile detail").props.onClick();
   await nodes(preview.draw()).find((node) => node.type === "form").props.onSubmit({ preventDefault() {}, get currentTarget() { throw new Error("Preview read"); } });
   assert.equal(requests.length, 0);
   const f = hookFixture("src/components/platform/OperatorProfileSupport.tsx", { memberId: "member-one", profile }, deps);
+  assert.match(text(f.draw()), /Location.*Shipping/s);
+  assert.equal(nodes(f.draw()).filter((node) => node.type === "dt").some((node) => /Preferred name|Mobile/.test(text(node))), false, "Contact owns name and phone; the support snapshot does not duplicate them");
+  assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
+  f.button("Edit profile detail").props.onClick();
+  assert.ok(nodes(f.draw()).some((node) => node.type === "option" && node.props.value === "preferredName"), "all correction fields remain available on demand");
   await nodes(f.draw()).find((node) => node.type === "form").props.onSubmit(event({ value: "Updated", reason: "Confirmed with member" }));
   assert.equal(requests.length, 1);
   assert.deepEqual(JSON.parse(requests[0].body), { preferredName: "Updated", expectedVersion: 3, reason: "Confirmed with member" });
   assert.equal(f.button("Correct Preferred name").props.disabled, false);
   assert.match(text(f.draw()), /Reload saved profile before retrying/);
+  f.button("Cancel").props.onClick();
+  assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
+  assert.equal(requests.length, 1);
 });
 
 test("member record action anchors have visible authorized destinations and never add global permissions", () => {

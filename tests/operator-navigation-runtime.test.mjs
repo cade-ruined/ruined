@@ -390,7 +390,11 @@ test("public event detail keeps audience tabs inside its frame and website links
       assert.match(attr(websiteLink, "rel"), /noopener/);
       assert.ok(nodes(tree, "a").some((node) => attr(node, "href") === "/ops/experiences?view=community"), "operator back link stays local");
       assert.ok(nodes(tree, "section").some((node) => attr(node, "id") === "registrations"));
-      assert.ok(nodes(tree, "button").some((node) => text(node) === "Save event"));
+      const eventDetails = nodes(tree, "section").find((node) => attr(node, "aria-label") === "Event details");
+      assert.ok(eventDetails, "saved event details remain visible beside registration management");
+      assert.ok(nodes(eventDetails, "button").some((node) => text(node) === "Edit event"));
+      assert.equal(nodes(eventDetails, "form").length, 0, "editing is an explicit action, not a duplicate of the saved details");
+      assert.equal(nodes(tree, "button").some((node) => text(node) === "Save event"), false);
     }
     assert.equal(paths.length, 2);
   } finally {

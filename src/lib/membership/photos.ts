@@ -14,6 +14,7 @@ import {
   MEMBER_PHOTO_MAX_PIXELS,
   canViewMemberPhoto,
   memberPhotoUrl,
+  operatorMemberPhotoUrl,
   ownedMemberPhotoPath,
   validateMemberPhotoFile,
 } from "@/lib/membership/photo-policy";
@@ -200,7 +201,28 @@ export async function getAuthorizedMemberPhoto(authUserId: string, memberId: str
       : [],
   })) return null;
 
-  const { data, error } = await portraitStore().download(ownedMemberPhotoPath(memberId, requestedUrl)!);
+  return downloadMemberPhoto(ownedMemberPhotoPath(memberId, requestedUrl)!);
+}
+
+/** Preserve the existing Administrator photo permission; knowing a member ID is not access. */
+export async function getAuthorizedOperatorMemberPhoto(authUserId: string, memberId: string): Promise<Blob | null> {
+  if (!operatorMemberPhotoUrl(memberId)) return null;
+  if (await getOperatorRole(authUserId) !== "ops_admin") return null;
+
+  const rows = await getApplicationDatabase()<Array<{ avatar_storage_path: string | null }>>`
+    select profile.avatar_storage_path
+    from ruined_members member
+    join person_profiles profile on profile.person_id = member.person_id
+    where member.id = ${memberId}::uuid
+    limit 1
+  `;
+  const path = ownedMemberPhotoPath(memberId, rows[0]?.avatar_storage_path ?? null);
+  if (!path) return null;
+  return downloadMemberPhoto(path);
+}
+
+async function downloadMemberPhoto(path: string): Promise<Blob | null> {
+  const { data, error } = await portraitStore().download(path);
   if (error) {
     if ("statusCode" in error && String(error.statusCode) === "404") return null;
     throw new MemberPhotoError(503, "This photo is temporarily unavailable.");

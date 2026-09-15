@@ -48,6 +48,64 @@ test("Circle setup preselects only the authorized open Circle, without selecting
   const otherSelects = nodes(tree).filter((node) => node.tagName === "select" && attr(node, "name") !== "circleId");
   for (const select of otherSelects) assert.equal(attr(nodes(select).find((node) => node.tagName === "option" && attr(node, "selected") !== undefined), "value"), "");
 });
+
+test("split Shaper section is saved-state first and does not repeat Circle or resource selectors", async () => {
+  const f = fixture({ initialCircleId: "led", section: "shaper" });
+  assert.match(elementText(f.draw()), /Shaper/);
+  assert.equal(elements(f.draw()).some((node) => node.type === "form"), false);
+  assert.equal(elements(f.draw()).some((node) => node.type === "select"), false);
+  f.click("Edit Shaper");
+  assert.equal(elements(f.draw()).some((node) => node.type === "form"), false, "Edit never silently removes the current Shaper");
+  f.click("Remove Shaper");
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.draw().props["data-operator-dirty"], "true");
+  assert.ok(elements(f.form("endShaper")).some((node) => node.type === "input" && node.props.type === "hidden" && node.props.value === "shaper-assignment"));
+  f.click("Cancel");
+  assert.equal(f.form("endShaper"), undefined);
+  assert.equal(f.requests.length, 0);
+});
+
+test("split Shaper assignment retains exact scope and the pending/dirty modal guards", async () => {
+  let resolve;
+  const f = fixture({ initialCircleId: "forming", section: "shaper" }, () => new Promise((done) => { resolve = done; }));
+  f.click("Assign Shaper");
+  assert.equal(f.select("assignShaper", "circleId"), undefined, "there is no second Circle choice inside its manager");
+  f.change("assignShaper", "shaperAuthUserId", "one");
+  assert.equal(f.draw().props["data-operator-dirty"], "true");
+  await f.submit("assignShaper", { circleId: "led", shaperAuthUserId: "one" });
+  assert.equal(f.requests.length, 0);
+  const saving = f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "one" });
+  assert.equal(f.draw().props["data-operator-pending"], "true");
+  resolve(Response.json({ assignment: { assignmentId: "new-shaper", assignedAt: "2026-09-15" } }));
+  await saving;
+  assert.deepEqual(f.requests[0].body, { circleId: "forming", shaperAuthUserId: "one" });
+  assert.equal(f.form("assignShaper"), undefined);
+  assert.equal(f.draw().props["data-operator-pending"], undefined);
+  assert.equal(f.draw().props["data-operator-dirty"], undefined);
+  assert.match(elementText(f.draw()), /Shaper One/);
+});
+
+test("split resources show saved titles and only explicit Add/Remove reveals a scoped form", async () => {
+  const f = fixture({ initialCircleId: "forming", section: "resources" });
+  assert.match(elementText(f.draw()), /First lesson/);
+  assert.doesNotMatch(elementText(f.draw()), /Second lesson|Circle 02/);
+  assert.equal(elements(f.draw()).some((node) => node.type === "form"), false);
+  f.click("Add resource");
+  f.change("assignResource", "resourceId", "resource-two");
+  assert.equal(f.select("assignResource", "circleId"), undefined);
+  await f.submit("assignResource", { circleId: "led", resourceId: "resource-two" });
+  assert.equal(f.requests.length, 0);
+  f.click("Cancel");
+  assert.equal(f.draw().props["data-operator-dirty"], undefined);
+  f.click("Remove First lesson");
+  assert.equal(f.requests.length, 0);
+  assert.match(elementText(f.draw()), /version history is kept/);
+  await f.submit("endResource", { assignmentId: "resource-assignment-two" });
+  assert.equal(f.requests.length, 0);
+  await f.submit("endResource", { assignmentId: "resource-assignment-one" });
+  assert.deepEqual(f.requests[0].body, { assignmentId: "resource-assignment-one" });
+  assert.match(elementText(f.draw()), /No resources shared yet/);
+});
 test("an existing Shaper cannot be overwritten by a Circle deep link", () => {
   assert.deepEqual(selectedCircleValues("led").values, ["", "led"]);
 });
@@ -81,6 +139,7 @@ test("explicit Circle context restricts both creation and destructive assignment
 });
 
 const elements = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(elements) : [node, ...elements(node.props?.children)];
+const elementText = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(elementText).join("") : typeof node === "object" ? elementText(node.props?.children) : String(node);
 function fixture(patch = {}, respond = () => Response.json({ assignment: { assignmentId: "saved", assignedAt: "2026-09-09", created: true } })) {
   let props = { initialCircles: circles, resources: [resourceOne, resourceTwo], shapers: [{ authUserId: "one", name: "Shaper One" }, { authUserId: "two", name: "Shaper Two" }], preview: false, ...patch };
   const slots = [];
@@ -124,6 +183,11 @@ function fixture(patch = {}, respond = () => Response.json({ assignment: { assig
   const form = (action, tree = draw()) => elements(tree).find((node) => node.type === "form" && node.props.onSubmit.name === action);
   const select = (action, name, tree) => elements(form(action, tree)).find((node) => node.type === "select" && node.props.name === name);
   return { draw, form, select, requests,
+    click(label) {
+      const button = elements(draw()).find((node) => node.type === "button" && (node.props["aria-label"] === label || elementText(node) === label));
+      assert.ok(button, `${label} is visible`);
+      return button.props.onClick();
+    },
     change(action, name, value) { select(action, name).props.onChange({ target: { value } }); return draw(); },
     rerender(patch, flush = true) { props = { ...props, ...patch }; return draw(flush); },
     submit(action, fields) { return form(action).props.onSubmit({ preventDefault() {}, currentTarget: { fields, reset() {} } }); },

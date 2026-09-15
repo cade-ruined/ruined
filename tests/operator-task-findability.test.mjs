@@ -94,7 +94,7 @@ function harness(path, name, props, request = async () => ({ ok: true, json: asy
   } })(path);
   const Component = loaded[name];
   const draw = () => { cursor = 0; return Component(props); };
-  return { draw, calls, state, refreshes: () => refreshes, invoke: (fn, input) => { cursor = 0; state.length = 0; return fn(input); } };
+  return { draw, calls, state, refreshes: () => refreshes, invoke: (fn, input, reset = true) => { cursor = 0; if (reset) state.length = 0; return fn(input); } };
 }
 const previewEvent = { preventDefault() {}, get currentTarget() { throw new Error("Preview must return before reading or resetting form data"); } };
 
@@ -127,6 +127,7 @@ test("Experience record exposes meeting setup, details and roster tasks without 
   const tree = render("OperatorExperienceRecord", { directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, experience: editable, preview: true });
   anchorsResolve(tree);
   exposed(byId(tree, "edit-experience"));
+  assert.equal(elements(byId(tree, "edit-experience")).some((node) => node.tagName === "form"), false, "saved details are not repeated as an always-open edit form");
   exposed(byId(tree, "experience-roster"));
   exposed(byId(tree, "meeting-setup"));
   assert.ok(elements(tree).some((node) => node.tagName === "a" && attr(node, "href") === "#meeting-setup" && text(node) === "Set meeting link"));
@@ -141,6 +142,31 @@ test("Experience record exposes meeting setup, details and roster tasks without 
   assert.equal(elements(restricted).some((node) => node.tagName === "button" && /Confirm place|Save|Cancel place/.test(text(node))), false);
 });
 
+test("Experience edits and cancellation open only on request, preserve failure state, and never mutate on Cancel", async () => {
+  const fixture = harness("src/components/platform/OperatorExperienceRecord.tsx", "default", {
+    directory: experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY,
+    experience: { ...experience, canEdit: true, state: "published" },
+  }, async () => ({ ok: false, json: async () => ({ error: "Save failed. Retry your changes." }) }));
+  const button = (label) => nodes(fixture.draw()).find((node) => node.type === "button" && reactText(node) === label);
+  assert.equal(nodes(fixture.draw()).some((node) => node.type === "form" && node.props.onSubmit.name === "save"), false);
+  button("Edit details").props.onClick();
+  const form = nodes(fixture.draw()).find((node) => node.type === "form" && node.props.onSubmit.name === "save");
+  assert.ok(form);
+  await form.props.onSubmit({ preventDefault() {}, currentTarget: { title: "Updated gathering", startsAt: "2026-09-20T10:00", timezone: "America/Denver", circleId: experience.circleId } });
+  assert.equal(fixture.calls.length, 1);
+  assert.ok(nodes(fixture.draw()).some((node) => node.type === "form" && node.props.onSubmit.name === "save"));
+  assert.match(reactText(fixture.draw()), /Save failed/);
+  button("Cancel edits").props.onClick();
+  assert.equal(nodes(fixture.draw()).some((node) => node.type === "form" && node.props.onSubmit.name === "save"), false);
+  button("Cancel Experience").props.onClick();
+  assert.ok(button("Confirm cancellation"));
+  assert.ok(nodes(fixture.draw()).some((node) => node.type === "input" && node.props.name === "reason" && node.props.required));
+  assert.equal(fixture.calls.length, 1, "showing the review does not cancel an Experience or send invitations");
+  button("Keep Experience").props.onClick();
+  assert.equal(button("Confirm cancellation"), undefined);
+  assert.equal(fixture.calls.length, 1);
+});
+
 test("meeting links stay visible and editable only when neither Calendar ownership nor operator permissions block them", () => {
   const fullLoad = loader({ realCommunicationFields: true });
   const Record = fullLoad("src/components/platform/OperatorExperienceRecord.tsx").default;
@@ -153,8 +179,9 @@ test("meeting links stay visible and editable only when neither Calendar ownersh
   const setup = byId(manual, "meeting-setup");
   exposed(setup);
   anchorsResolve(manual);
-  assert.ok(elements(setup).some((node) => node.tagName === "form"));
-  assert.ok(elements(setup).some((node) => node.tagName === "input" && attr(node, "value") === base.meetingUrl));
+  assert.equal(elements(setup).some((node) => node.tagName === "form"), false, "saved meeting links do not repeat as edit fields");
+  assert.ok(elements(setup).some((node) => node.tagName === "a" && attr(node, "href") === base.meetingUrl));
+  assert.ok(elements(setup).some((node) => node.tagName === "button" && attr(node, "aria-label") === "Edit meeting link"));
   assert.ok(elements(manual).some((node) => node.tagName === "a" && attr(node, "href") === `/ops/circles?circleId=${base.circleId}#circle-communications`));
   for (const calendar of [
     { ...base.calendar, status: "synced", googleEventId: "owned-calendar-event" },
@@ -279,7 +306,13 @@ test("all five Artifact preview forms return before form reads or requests", asy
   const forms = nodes(fixture.draw()).filter((node) => typeof node.type === "function" && node.type.name.endsWith("Form"));
   assert.equal(forms.length, 5);
   for (const node of forms) {
-    const form = fixture.invoke(node.type, node.props);
+    let form = fixture.invoke(node.type, node.props);
+    if (!nodes(form).some((child) => child.type === "form")) {
+      const edit = nodes(form).find((child) => child.type === "button" && /Edit|Connect/.test(reactText(child)));
+      assert.ok(edit, `${node.type.name} has an explicit edit action`);
+      edit.props.onClick();
+      form = fixture.invoke(node.type, node.props, false);
+    }
     await nodes(form).find((child) => child.type === "form").props.onSubmit(previewEvent);
     assert.deepEqual(fixture.calls, [], node.type.name);
     assert.ok(fixture.state.some((value) => typeof value === "string" && value.includes("Preview only")), node.type.name);

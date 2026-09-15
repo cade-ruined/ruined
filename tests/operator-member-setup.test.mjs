@@ -45,6 +45,8 @@ test("administrator gets two separate, named setup paths without a submit action
   ]);
   assert.equal(nodes.filter((node) => ["form", "input", "button"].includes(node.tagName)).length, 0);
   assert.match(text(view), /Administrator access does not require a Circle/);
+  assert.match(text(view), /Manage Circle/);
+  assert.doesNotMatch(text(view), /Manage members/);
   assert.match(text(view), /if asked, verifies the newest code/);
   assert.doesNotMatch(text(view), /must sign out|must verify a new code/i);
 });
@@ -60,6 +62,7 @@ test("already placed members are not instructed to assign again", () => {
   const active = render({ circle: { circleId: "preview-circle", name: "Circle 01", state: "active" } });
   assert.match(text(forming), /This placement is already saved/);
   assert.match(text(forming), /Review Circle activation/);
+  assert.match(text(forming), /Manage Circle/);
   assert.ok(elements(forming).some((node) => attr(node, "href") === "/ops/circles?circleId=preview-circle&memberId=preview-unassigned#circle-preview-circle"));
   assert.match(text(active), /no need to assign this member again/);
   assert.ok(elements(active).some((node) => attr(node, "href") === "/ops/circles?circleId=preview-circle&memberId=preview-unassigned#circle-preview-circle"));

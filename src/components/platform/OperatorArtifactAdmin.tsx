@@ -110,6 +110,7 @@ function ShopifyBindingForm({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [product, setProduct] = useState<ArtifactProductSelection | null>(productGid && productHandle ? { id: productGid, handle: productHandle, title: productHandle.replaceAll("-", " ") } : null);
+  const [editing, setEditing] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,6 +125,7 @@ function ShopifyBindingForm({
         productHandle: String(data.get("productHandle") ?? ""),
       }, "PATCH");
       setMessage("New version published.");
+      setEditing(false);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The binding could not be updated.");
@@ -132,6 +134,10 @@ function ShopifyBindingForm({
     }
   }
 
+  if (!editing) return <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+    <div><p className="text-sm text-black/65">{productGid && productHandle ? `Shopify · ${productHandle.replaceAll("-", " ")}` : "No Shopify product connected"}</p>{message ? <Notice message={message} /> : null}</div>
+    <button className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setMessage(""); setProduct(productGid && productHandle ? { id: productGid, handle: productHandle, title: productHandle.replaceAll("-", " ") } : null); }} type="button">{productGid && productHandle ? "Edit product" : "Connect product"}</button>
+  </div>;
   return (
     <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_0.7fr_auto] sm:items-end" onSubmit={submit}>
       <OperatorArtifactProductPicker selected={product} onSelect={setProduct} disabled={submitting} preview={preview} />
@@ -140,6 +146,7 @@ function ShopifyBindingForm({
           <input className="size-4 accent-black" defaultChecked={livemode ?? true} name="livemode" type="checkbox" /> Live
         </label>
         <button className={OPERATOR_BUTTON_CLASS} disabled={submitting || !product} type="submit">Save product</button>
+        <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={submitting} onClick={() => { setEditing(false); setMessage(""); }} type="button">Cancel</button>
       </div>
       <Notice message={message} />
     </form>
@@ -312,6 +319,7 @@ function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["sh
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
   async function update(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) { setMessage("Preview only — no Artifact or shipment was changed."); return; }
@@ -329,6 +337,7 @@ function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["sh
         trackingUrl: String(data.get("trackingUrl") ?? ""),
       }, "PATCH");
       setMessage("Shipment and evidence updated.");
+      setEditing(false);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Shipment could not be updated.");
@@ -338,6 +347,7 @@ function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["sh
   }
   const statusOptions = SHIPMENT_STATUS_OPTIONS[shipment.status]
     ?? [{ label: shipment.status.replaceAll("_", " "), value: shipment.status }];
+  if (!editing) return <div className="flex flex-wrap items-center justify-between gap-3"><Notice message={message} /><button className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setMessage(""); }} type="button">Edit shipment</button></div>;
   return (
     <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={update}>
       <label className={OPERATOR_LABEL_CLASS}>
@@ -369,6 +379,7 @@ function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["sh
       <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2 lg:col-span-3">
         <Notice message={message} />
         <button className={`${OPERATOR_BUTTON_CLASS} min-h-10 px-3 py-2`} disabled={submitting} type="submit">Save shipment</button>
+        <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={submitting} onClick={() => { setEditing(false); setMessage(""); }} type="button">Cancel</button>
       </div>
     </form>
   );
@@ -426,7 +437,7 @@ export default function OperatorArtifactAdmin({
           <ShipmentCreateForm artifacts={artifacts} />
           {data.shipments.map((shipment) => (
             <article className="space-y-4 rounded-[4px] bg-white/35 p-4" key={shipment.shipmentId}>
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><strong className="ui-heading text-sm font-semibold">{shipment.memberName}</strong><p className="mt-1 text-xs text-black/48">{shipment.carrier}{shipment.serviceLevel ? ` · ${shipment.serviceLevel}` : ""} · {shipment.trackingNumber}</p></div>{shipment.trackingUrl ? <a className="text-sm underline underline-offset-4" href={shipment.trackingUrl} rel="noreferrer" target="_blank">Open tracking ↗</a> : <span className="text-xs text-black/40">No tracking link</span>}</div>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><strong className="ui-heading text-sm font-semibold">{shipment.memberName}</strong><p className="mt-1 text-xs text-black/48">{shipment.carrier}{shipment.serviceLevel ? ` · ${shipment.serviceLevel}` : ""} · {shipment.trackingNumber}</p><p className={`mt-2 text-sm capitalize ${shipment.status === "exception" ? "text-[var(--color-poster)]" : "text-black/65"}`}>{shipment.status.replaceAll("_", " ")}</p></div>{shipment.trackingUrl ? <a className="text-sm underline underline-offset-4" href={shipment.trackingUrl} rel="noreferrer" target="_blank">Open tracking ↗</a> : <span className="text-xs text-black/40">No tracking link</span>}</div>
               <ShipmentUpdateForm shipment={shipment} />
             </article>
           ))}

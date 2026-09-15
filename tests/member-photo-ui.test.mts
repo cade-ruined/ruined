@@ -66,3 +66,47 @@ test("unconfigured storage disables upload without blocking the independent prof
   assert.match(html, /You can save your details without a photo/);
   assert.doesNotMatch(html, /Photo upload will open when/);
 });
+
+const { default: OperatorMemberAvatar } = await load("src/components/platform/OperatorMemberAvatar.tsx", {
+  "@/lib/membership/photo-policy": policy,
+  "next/image": ({ src, alt, unoptimized }: { src: string; alt: string; unoptimized: boolean }) => React.createElement("img", { src, alt, "data-unoptimized": String(unoptimized) }),
+});
+
+test("operator portraits use ID-only private endpoints and a decorative silhouette beside the visible name", () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const html = renderToStaticMarkup(React.createElement(OperatorMemberAvatar, { memberId }));
+  assert.match(html, /src="\/api\/ops\/member-photos\/11111111-1111-4111-8111-111111111111"/);
+  assert.match(html, /data-unoptimized="true"/);
+  assert.match(html, /aria-hidden="true"/);
+  assert.match(html, /<svg/);
+  assert.doesNotMatch(html, /member-portraits|circle-preview-portraits|\.webp|<button|title=/);
+});
+
+test("operator portraits never invent preview people or issue photo requests for invalid member identifiers", () => {
+  for (const memberId of ["preview-01", "", "../member", "https://example.test/photo"]) {
+    const html = renderToStaticMarkup(React.createElement(OperatorMemberAvatar, { memberId }));
+    assert.match(html, /<svg/);
+    assert.doesNotMatch(html, /<img|src=|initials|preview-portraits/);
+  }
+});
+
+test("an unavailable operator portrait becomes a silhouette and a different member can still load their photo", async () => {
+  let failed: string | null = null;
+  let failImage: (() => void) | undefined;
+  const { default: Avatar } = await load("src/components/platform/OperatorMemberAvatar.tsx", {
+    "react": { ...React, useState: () => [failed, (value: string) => { failed = value; }] },
+    "@/lib/membership/photo-policy": policy,
+    "next/image": ({ src, onError }: { src: string; onError: () => void }) => {
+      failImage = onError;
+      return React.createElement("img", { src });
+    },
+  }) as unknown as { default: (props: { memberId: string }) => unknown };
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  assert.match(renderToStaticMarkup(Avatar({ memberId })), /<img/);
+  assert.ok(failImage);
+  failImage();
+  const unavailable = renderToStaticMarkup(Avatar({ memberId }));
+  assert.match(unavailable, /<svg/);
+  assert.doesNotMatch(unavailable, /<img/);
+  assert.match(renderToStaticMarkup(Avatar({ memberId: "22222222-2222-4222-8222-222222222222" })), /<img/);
+});

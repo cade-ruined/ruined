@@ -36,6 +36,7 @@ test("member directory records and pagination retain the canonical query, filter
   const stub = { __esModule: true, default: () => null };
   const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
     "@/components/platform/OperatorProgress": stub,
+    "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: ({ memberId }) => React.createElement("span", { "data-avatar-member": memberId }) },
     "@/components/platform/StateLabel": stub,
     "@/components/platform/operatorStyles": {},
     "@/lib/platform/operator-member-guidance": { guidanceForMemberSummary: () => ({ status: "Ready", actor: "Operator", title: "Review" }) },

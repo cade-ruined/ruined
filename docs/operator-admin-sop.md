@@ -2,11 +2,11 @@
 
 **For:** Administrators who operate the Ruined member experience
 
-**Version:** 1.6 — pending release
+**Version:** 1.6
 
-**Last reviewed:** 14 September 2026
+**Last reviewed:** 15 September 2026
 
-This revision describes the new operator controls awaiting deployment. Until the release is approved and verified, the live site may still show the earlier controls.
+This revision covers the Circle management window, member portraits, and saved details with editing on demand.
 
 ## The simple mental model
 
@@ -27,7 +27,7 @@ Navigation is the same on desktop and mobile: **Overview**, **People**, **Circle
 ### Where to click first
 
 - **Members:** search first, then **Open member record**. **Add member** is a separate, two-step action for someone new; it does not send an invitation email or create their sign-in account. Allow their email, then copy and share the joining instructions.
-- **Inside a member record:** use **Create task**, **Add internal note**, or **Correct profile detail** near the top. The linked forms are visible in the record; there is no extra “manage” drawer to find.
+- **Inside a member record:** use **Create task**, **Add internal note**, or **Correct profile detail** near the top. Tasks and notes open their forms in the record. Profile support shows saved details first; select **Edit profile detail** to make a correction.
 - **Operators:** **Choose existing member** opens a search on the same page. Find the person and select **Review access** to open their prefilled access review immediately. **View operator record** appears instead if they already have an operator record or invitation. **Add operator** opens an invitation by email; a saved invitation stays pending until the person accepts through `/access`.
 - **Messages → Board posts & alerts → Board posts:** save a draft, then use **Review & publish** and verify the audience before publishing. Edit or discard a draft; retract a published post if it should no longer appear. Retraction preserves history and cannot undo something a member already read.
 - **Messages → Board posts & alerts → Alerts:** check **Recent delivery**, then **Write notification → Review notification → Send notification**. Choose the audience explicitly. Notifications are in-app, not email or text. The old Announcements and Notifications links still work.
@@ -50,7 +50,7 @@ Use **Members → Pending joining** to find saved allowances after leaving or re
 
 For an existing member, open **Members → their record → Overview**:
 
-1. **Review Circle placement** opens **Circles** with that member in context when joining is ready for placement. Choose a Circle with space, open **Manage members** on that Circle, review the selected person, then deliberately select **Add to [Circle name]**. If setup is blocked, use **Review joining & billing** first. A **Forming** Circle can receive its first member before activation.
+1. **Review Circle placement** opens **Circles** with that member in context when joining is ready for placement. Choose a card with space, open **Manage Circle**, review the selected person in the Circle window, then deliberately select **Add to Circle**. If setup is blocked, use **Review joining & billing** first. A **Forming** Circle can receive its first member before activation.
 2. **Review operator access** opens their separate, prefilled access review directly. Choose the intended responsibility, review the areas they will manage, then deliberately send an invitation. For an existing pending or active operator, review the existing record instead of inviting them again.
 
 Opening either link does not assign a Circle, send an email, or grant access. You do not need to create a second account, repeat member onboarding, or change billing to invite an existing member as an operator. Member eligibility checks still apply to Circle placement.
@@ -178,7 +178,7 @@ The support queue is private to Administrators. Shaper or Guide access does not 
 | --- | --- | --- |
 | **Overview** | Find a member, choose one of the three starting tasks, or review attention items, recent activity, and upcoming Experiences | Administrators see Add a member, Manage Circles, and Add an operator. Shapers and Guides see tasks inside their existing Circle responsibilities. |
 | **Members** | Search and filter the directory, then open the complete member record and its next action | Administrators can search private email details and use Add member. Its two steps allow an email and prepare instructions to share; the allowance **does not send an email**. |
-| **Circles** | Search by Circle, Shaper, or Block; filter active, forming, or archived records; open **Manage members** for the roster, transfers, Shaper, resources, Chat, activation, and retirement controls together | **Create a Circle** remains below the list. A Circle holds up to ten members. An active Circle is required to finish Foundations. |
+| **Circles** | Search the card grid by Circle, Shaper, or Block; open **Manage Circle** for a focused window with the Shaper and member portraits first, followed by Chat, meetings, and resources | Choose **Add a member** to search, **Move** to transfer someone, or **Edit** to change saved information. **+ Create a Circle** appears once at the top. A Circle holds up to ten members and must be active to finish Foundations. |
 | **Foundations** | See who has not started, is moving, needs a Circle, or is complete | This is a progress and attention view. Operators do not manually complete Foundations. Completion requires the member-created Timeline, Future Letter, and a current assignment to an active Circle. |
 | **Experiences** | Choose **Member experiences** for Circle/member events, audiences, waitlists, attendance, Calendar and Meet; choose **Public community** for website event listings and BYOB rosters | The two tabs retain their separate registration records. **Publish + queue invitations** on a member Experience authorizes real communication; check Calendar status afterward. New public listings can link to external registration; they do not automatically get BYOB waivers or member Calendar invitations. |
 | **Work** | See prioritized member tasks, Artifact production work, and failed automations | Work highest urgency first. Claim, complete, or reopen tasks; retry an automation only when its cause is understood. The link is visible to every operator role, but the current combined queue is populated for Administrators only. |
@@ -245,18 +245,18 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 
 ### A. Place a member into a Circle
 
-1. Open **People → Members → the member's record → Overview → Review Circle placement**, or open **Circles → Circles** directly. If the record instead says **Review joining & billing**, resolve that prerequisite first. The member-record link carries the person into the Circle page; the banner asks you to choose a Circle and open **Manage members**.
-2. Find a **Forming** or **Active** Circle with space. Select **Manage members** on that Circle. Its roster and actions open directly underneath it—there is no separate global assignment form.
-3. Under **Add member**, review the selected person or choose another eligible member. Read any eligibility message, then select **Add to [Circle name]** once. Confirm the saved result and updated roster. Merely choosing a person or opening the panel does not change their placement.
-4. If a new Circle is needed, use the visible **Create a Circle** section below the Circle list. Enter its name and select **Create Circle**. It begins **Forming** with ten places; return to its **Manage members** panel to add the first member.
-5. On the intended Circle, select **Choose a Shaper** or **Manage Shaper & resources**. This opens the setup section inside that Circle's workspace. Check the Circle name before saving. Choose an existing active Shaper, or use **Invite someone as a Shaper**, select the Shaper responsibility and this Circle in the invitation, then verify the assignment after they accept. Do not assign the same Shaper twice. Use the resource form to share an approved, published lesson or document; each resource keeps its exact selected version.
-6. Select **Chat & meetings** beside that Circle. Under **Circle chat**, paste the private Google Chat space URL and select **Set chat link**. Once saved, **Open chat** and **Copy link** confirm which space is connected. Create the space and manage its participants in Google; Ruined does not do those tasks. To arrange the first meeting, select **Schedule a meeting** in the same panel—the Circle audience is already selected.
-7. When a forming Circle has at least one member and is ready to run, open its **Manage members** panel and select **Activate [Circle name]**, then **Confirm activation**. Review Shaper coverage, Chat, resources, and the first meeting beforehand. **Add members before activation.** Activation changes the whole Circle, not just the selected member.
+1. Open **People → Members → the member's record → Overview → Review Circle placement**, or open **Circles → Circles** directly. If the record instead says **Review joining & billing**, resolve that prerequisite first. The member-record link carries the person into the Circle page; the banner asks you to choose a Circle and open **Manage Circle**.
+2. Find a **Forming** or **Active** Circle card with space. Select **Manage Circle**. A window opens with the Circle name, Shaper, and roster. Close it with **×** or Escape to return to the grid; unsaved edits require confirmation before discarding.
+3. Open **Add a member**, review the selected person or search by name or email. Read any eligibility message, then select **Add to Circle** once. Confirm the saved result and updated roster. Merely choosing a person or opening the window does not change their placement.
+4. If a new Circle is needed, select **+ Create a Circle** at the top. Enter its name and select **Create Circle**, or choose **Cancel** without saving. It begins **Forming** with ten places and opens its management window for adding the first member.
+5. The **Shaper** appears first in the window. Choose an existing active Shaper when unassigned, or use **Edit Shaper** to review a current assignment. Removing the current Shaper requires confirmation before a replacement can be assigned. If needed, **Invite someone as a Shaper**, select this Circle in the invitation, then verify their assignment after acceptance. Under **Resources**, use **Add resource** to share an approved, published lesson or document; each resource keeps its exact selected version.
+6. Under **Circle chat**, paste the private Google Chat space URL and select **Set chat link**. A saved link shows **Open chat**, **Copy link**, and **Edit**; choose **Edit** only when changing or removing it. **Cancel** keeps the saved link. Create the space and manage its participants in Google; Ruined does not do those tasks. To arrange the first meeting, select **Schedule a meeting** in the same window—the Circle audience is already selected.
+7. When a forming Circle has at least one member and is ready to run, open **Manage Circle** and select **Activate [Circle name]**, then **Confirm activation**. Review Shaper coverage, Chat, resources, and the first meeting beforehand. **Add members before activation.** Activation changes the whole Circle, not just the selected member.
 8. Circle roster and Block changes queue Calendar audience updates for linked Experiences. Check the affected Experience's Calendar status; use **Sync invitations** when an immediate explicit sync is needed. A saved roster or pending update does not prove that Google has delivered invitations.
 
 Only unassigned members with an active account, active billing, and onboarding/active program state can be added. The server also verifies current membership and eligibility when saving. If a person is missing or blocked, review the stated prerequisite in their record; do not change payment or agreement evidence to bypass it. A current roster still includes people whose payment or account later changed, so their existing placements can be reviewed accurately.
 
-**To remove a member:** open **Manage members** on their Circle, find the person in its roster, and select **Remove** beside their name. Read the inline confirmation, then select **Confirm removal** only if that placement should end. **Cancel** leaves it unchanged. This ends the placement, not the account, operator role, or historical Foundations proof. If another operator has moved the person since you opened the page, refresh and review their new Circle instead of retrying the old removal.
+**To remove a member:** open **Manage Circle** on their Circle, find the person in its roster, and select **Remove** beside their name. Read the inline confirmation, then select **Confirm removal** only if that placement should end. **Cancel** leaves it unchanged. This ends the placement, not the account, operator role, or historical Foundations proof. If another operator has moved the person since you opened the page, refresh and review their new Circle instead of retrying the old removal.
 
 Ending the last current member assignment automatically archives an active Circle. If that leaves an active Block with fewer than two current Circles, the Block archives too. Ending a Circle's Block assignment can trigger the same Block closure, so check affected Experiences before confirming either action.
 
@@ -264,7 +264,7 @@ Foundations completion creates an automatic Artifact award and production job on
 
 ### B. Create and run an Experience
 
-1. For a Circle meeting, open **Circles → Chat & meetings → Schedule a meeting**. The Circle is preselected and members do not need to reserve a place. For other events, open **Experiences → New Experience**.
+1. For a Circle meeting, open **Circles → Manage Circle → Schedule a meeting**. The Circle is preselected and members do not need to reserve a place. For other events, open **Experiences → New Experience**.
 2. Choose the type and audience: all active members, public, invite only, Circle, or Block.
 3. Enter the start, end, timezone, place, and member-facing details.
 4. Choose registration:
@@ -281,7 +281,7 @@ For Circle, Block, and all-member Experiences, the system resolves the current e
 
 **Already have a meeting link?** Under the Circle's **Chat & meetings**, select **Set meeting link** or **Manage meeting link** beside the correct meeting. Paste its Google Meet URL into the visible **Meeting link** form and save. Saving a link does not invite anyone. If you subsequently use Calendar invitations, Google creates its own meeting link and replaces the manually entered one; once Calendar manages a meeting, use its invitation controls instead of editing that link manually.
 
-**Changing a Circle's chat:** return to its **Chat & meetings**, replace the URL, and select **Save chat link**. Removing the saved link only disconnects it from Ruined. It does not delete a Google space, remove participants, or change Google access. Add and remove Google Chat participants separately when Circle membership changes.
+**Changing a Circle's chat:** return to its **Chat & meetings**, select **Edit**, replace the URL, and select **Save chat link**. Removing the saved link requires confirmation and only disconnects it from Ruined. It does not delete a Google space, remove participants, or change Google access. Add and remove Google Chat participants separately when Circle membership changes.
 
 ### C. Publish Academy content
 
@@ -376,9 +376,9 @@ Before publishing or sending, read the audience out loud and verify it a second 
 | I added a member but they received no email | Add member allows their email; it does not send. Complete step 2: Copy message or Copy link, then send those instructions to the person yourself. |
 | I cannot find the person to invite as an operator | Open **People → Operators → Choose existing member**, search by name or email, and use **Review access**. An existing operator or invitation has **View operator record** instead. Do not create a second account. |
 | Operator is shown as suspended | The current operator screen has no Restore action. Escalate to the system owner; do not create a duplicate invitation. |
-| Circle placement keeps taking me back to Members | Open **Circles**, choose the intended Circle, and select **Manage members**. Choose the person under **Add member**, then select **Add to [Circle name]**. A member-record link only carries the person into this flow; it does not save a placement. |
+| Circle placement keeps taking me back to Members | Open **Circles**, choose the intended Circle, and select **Manage Circle**. Choose the person under **Add member**, then select **Add to [Circle name]**. A member-record link only carries the person into this flow; it does not save a placement. |
 | Member is missing from Circle assignment | Confirm active account, active billing, onboarding/active program state, and no current Circle. Read the eligibility message and review the member record rather than changing states as a shortcut. |
-| Cannot activate an empty Circle | Open that Circle's **Manage members**, add its first eligible member while it is **Forming**, then select **Activate [Circle name] → Confirm activation** when the group is ready. |
+| Cannot activate an empty Circle | Open **Manage Circle**, add its first eligible member while it is **Forming**, then select **Activate [Circle name] → Confirm activation** when the group is ready. |
 | Removal says the member's Circle changed | Refresh the roster and review the member's current Circle. The old request was rejected without removing their new placement. |
 | Existing member still shows Invitation pending | Have them open `/access` on the same deployment; verify the newest code only if asked. Refresh Operators and check for Active before considering another invitation. |
 | Administrator invitation seems to require a Circle | Check the selected responsibility. Administrator requires no Circle; Shaper and Guide require an operator Circle scope, separate from their personal member placement. |
@@ -395,7 +395,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 1. **5 minutes — Access:** sign in through `/access`, switch from the member profile to **Operations**, and explain numeric codes, environment labels, and sign out.
 2. **5 minutes — Navigation:** show Overview search and its three tasks, then People, Circles, Learning & events, Messages, and Settings. Selecting a group reveals its pages without navigating away. Demonstrate the same paths on mobile; there is no separate Administration menu to learn.
 3. **10 minutes — Member record:** find a member, read the five sections, create a test task, and explain private notes and corrections.
-4. **10 minutes — Circle:** open one Circle's **Manage members**, show the roster and add/remove/activation confirmations, then show the visible creation, Shaper, resource, and Chat setup controls below. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
+4. **10 minutes — Circle:** choose a card and open **Manage Circle**, show the roster and add/remove/activation confirmations, then the Shaper, resource, and Chat setup controls. Show the top **+ Create a Circle** form and cancel it. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
 5. **10 minutes — Experience:** build a draft event, inspect roster/waitlist/attendance, and explain what **Publish + queue invitations** does and where to check its status. Do not publish during training unless using approved test recipients.
 6. **5 minutes — Communications and System:** compare announcements, notifications, Calendar, and Chat; show where failed work appears.
 
