@@ -38,6 +38,14 @@ const { default: StoreGallery } = await compile("src/components/store/StoreGalle
   ...uiDependencies,
   "@/data/products": { PRODUCT_TONES: { warm: "#e5e0d5" } },
 });
+const { default: ProductPurchase } = await compile("src/components/store/ProductPurchase.tsx", {
+  ...uiDependencies,
+  "@/data/product-size-guides": { getProductSizeGuide: () => undefined, getProductSizeGuideConfig: () => undefined },
+  "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Free standard shipping over $150." },
+  "./BagLink": { default: () => null },
+  "./ProductSizeGuideDialog": { default: () => null },
+  "./bag-store": { useBag: () => ({ add: () => assert.fail("Rendering cannot add a bag item") }), isShopifyVariantId: (id) => id.startsWith("gid://shopify/ProductVariant/") },
+});
 const { JourneyStoreIndex, JourneyLobbyIndex } = await compile("src/components/sequence/JourneyIndexes.tsx", {
   ...uiDependencies,
   "./JourneyQuickBuy": { default: () => null },
@@ -125,6 +133,34 @@ test("available products preserve real product routes, price, and sold-out state
   assert.match(html, /\$ 48/);
   assert.match(html, /Sold out/);
   assert.doesNotMatch(html, /couldn’t load/);
+});
+
+test("a fully sold-out product says Sold out before required options are selected", () => {
+  for (const expectedShipDate of [undefined, "2026-09-14"]) {
+    const html = renderToStaticMarkup(React.createElement(ProductPurchase, { product: {
+      ...product, available: true, expectedShipDate,
+      options: [{ name: "Fit", values: ["Men's", "Women's"] }, { name: "Size", values: ["S", "M"] }],
+      variants: ["S", "M"].map((size, index) => ({
+        id: `gid://shopify/ProductVariant/${index + 1}`, available: false,
+        selectedOptions: [{ name: "Fit", value: "Men's" }, { name: "Size", value: size }],
+      })),
+    } }));
+    assert.match(html, /<button\b[^>]*disabled=""[^>]*>\s*<span aria-live="polite">Sold out<\/span>/);
+    assert.doesNotMatch(html, /<span aria-live="polite">(?:Select options|Preorder|Unavailable)<\/span>/);
+  }
+});
+
+test("a product with an available variant keeps its required-option prompt", () => {
+  const html = renderToStaticMarkup(React.createElement(ProductPurchase, { product: {
+    ...product, available: false,
+    options: [{ name: "Size", values: ["S", "M"] }],
+    variants: ["S", "M"].map((size, index) => ({
+      id: `gid://shopify/ProductVariant/${index + 1}`, available: index === 0,
+      selectedOptions: [{ name: "Size", value: size }],
+    })),
+  } }));
+  assert.match(html, /<button\b[^>]*disabled=""[^>]*>\s*<span aria-live="polite">Select size<\/span>/);
+  assert.doesNotMatch(html, /Sold out/);
 });
 
 test("the walk store receives an honest state and provides a direct catalog recovery route", () => {

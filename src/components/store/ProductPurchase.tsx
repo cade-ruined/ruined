@@ -65,6 +65,7 @@ export default function ProductPurchase({ product }: { product: Product }) {
   const selectedVariant = selectionComplete
     ? product.variants.find((variant) => variantMatches(variant, selection))
     : undefined;
+  const hasAvailableVariant = product.variants.some((variant) => variant.available);
   const purchasable = selectedVariant?.available === true;
   const expectedShipDate = formatExpectedShipDate(product.expectedShipDate);
   const isPreorder = Boolean(expectedShipDate);
@@ -185,11 +186,13 @@ export default function ProductPurchase({ product }: { product: Product }) {
         className="mt-8 w-full border border-white bg-white px-5 py-4 font-mono text-xs uppercase tracking-[0.28em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/35"
       >
         <span aria-live="polite">
-          {!selectionComplete
-            ? selectionPrompt
-            : purchasable
-              ? (added ? "Added to bag" : isPreorder ? "Preorder" : "Add to bag")
-              : "Unavailable"}
+          {!hasAvailableVariant
+            ? "Sold out"
+            : !selectionComplete
+              ? selectionPrompt
+              : purchasable
+                ? (added ? "Added to bag" : isPreorder ? "Preorder" : "Add to bag")
+                : "Unavailable"}
         </span>
       </button>
 
