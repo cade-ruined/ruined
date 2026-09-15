@@ -87,13 +87,13 @@ export default function JourneyQuickBuy({ product }: { product: Product }) {
     >
       <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
         {choices.map((option) => (
-          <label key={option.name} className="min-w-0">
+          <label key={option.name} className="relative block min-w-0">
             <span className="sr-only">{option.name} for {product.name}</span>
             <select
               value={selection[option.name] ?? ""}
               disabled={soldOut}
               onChange={(event) => choose(option.name, event.currentTarget.value)}
-              className="min-h-11 w-full min-w-0 rounded-none border border-white/30 bg-black px-1.5 font-sans text-base text-white [color-scheme:dark] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:text-white/35 sm:px-2"
+              className="min-h-11 w-full min-w-0 appearance-none rounded-none border border-white/30 bg-black py-2 pl-3 pr-9 font-sans text-base leading-5 text-white [color-scheme:dark] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:text-white/35 [@media(hover:hover)_and_(pointer:fine)]:text-sm"
             >
               <option value="" disabled>{option.name}</option>
               {option.values.map((value) => (
@@ -108,6 +108,14 @@ export default function JourneyQuickBuy({ product }: { product: Product }) {
                 </option>
               ))}
             </select>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="none"
+              className={`pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${soldOut ? "text-white/35" : "text-white/75"}`}
+            >
+              <path d="m3 6 5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </label>
         ))}
         <button
