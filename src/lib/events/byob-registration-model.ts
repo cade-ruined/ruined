@@ -47,8 +47,7 @@ export const BYOB_03_REGISTRATION: ByobRegistrationConfig = Object.freeze({
   registrationPath: "/community/byob-03/register", apiPath: "/api/events/byob-03/register",
   waiverTitle: BYOB_03_WAIVER_TITLE, waiverBody: BYOB_03_WAIVER_BODY,
   waiverVersion: BYOB_03_WAIVER_VERSION, waiverSha256: BYOB_03_WAIVER_SHA256,
-  // The existing Google Sheets mirror is exclusively for Nº 02.
-  syncToSheet: false, showTankOffer: false,
+  syncToSheet: true, showTankOffer: false,
 });
 
 export function getByobRegistrationConfig(eventKey: string): ByobRegistrationConfig | null {

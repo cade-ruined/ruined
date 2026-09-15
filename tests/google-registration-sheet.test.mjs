@@ -62,7 +62,7 @@ test("Google Sheet credentials and configuration stay server-only", async () => 
   assert.match(sheets, /GOOGLE_REGISTRATION_SHEET_ENABLED[\s\S]*?=== "true"/);
 });
 
-test("the Registrants tab has one exact minimal A:I projection", async () => {
+test("the Registrants tab preserves A:I and adds a shared event column J", async () => {
   const [model, sheets, sync] = await Promise.all([
     source(paths.model),
     source(paths.sheets),
@@ -84,12 +84,13 @@ test("the Registrants tab has one exact minimal A:I projection", async () => {
     "Waiver accepted",
     "Waiver version",
     "Registration ID",
+    "Event",
   ]);
   assert.match(combined, /REGISTRATION_SHEET_TAB\s*=\s*"Registrants"/);
   assert.match(sync, /from community_event_registrations/);
   assert.match(
     sync,
-    /import \{ BYOB_02_EVENT_KEY \} from "@\/lib\/events\/byob-registration-model"/,
+    /import \{ BYOB_02_EVENT_KEY, BYOB_03_EVENT_KEY \} from "@\/lib\/events\/byob-registration-model"/,
   );
   for (const column of [
     "id",
@@ -121,13 +122,13 @@ test("the Registrants tab has one exact minimal A:I projection", async () => {
   );
   assert.match(
     singleRegistrationQuery,
-    /where id = \$\{registrationId\}::uuid[\s\S]*?and event_key = \$\{BYOB_02_EVENT_KEY\}/,
-    "an outbox aggregate ID must not pull a registration from another event",
+    /where id = \$\{registrationId\}::uuid[\s\S]*?and event_key in \(\$\{BYOB_02_EVENT_KEY\}, \$\{BYOB_03_EVENT_KEY\}\)/,
+    "an outbox aggregate ID must only pull a registration from the two configured events",
   );
   assert.match(
     registrationListQuery,
-    /where event_key = \$\{BYOB_02_EVENT_KEY\}/,
-    "authoritative reconciliation must remain scoped to BYOB Nº 02",
+    /where event_key in \(\$\{BYOB_02_EVENT_KEY\}, \$\{BYOB_03_EVENT_KEY\}\)/,
+    "authoritative reconciliation must include both configured events",
   );
 
   const rowBuilderStart = model.search(/(?:function|const)\s+(?:build|to)[A-Za-z]*Registration[A-Za-z]*Row/i);
@@ -144,6 +145,7 @@ test("the Registrants tab has one exact minimal A:I projection", async () => {
     /waiverAcceptedAt/,
     /waiverVersion/,
     /(?:registrationId|\.id\b)/,
+    /eventKey/,
   ];
   let cursor = -1;
   for (const field of expectedOrder) {
@@ -166,8 +168,8 @@ test("Google writes use RAW values and hidden UUID column I for retry-safe upser
     "both appends and updates must disable formula interpretation",
   );
   assert.match(sync, /\$\{REGISTRATION_SHEET_TAB\}!I2:I/);
-  assert.match(sync, /\$\{REGISTRATION_SHEET_TAB\}!A\$\{[^}]+\}:I\$\{[^}]+\}/);
-  assert.match(sync, /\$\{REGISTRATION_SHEET_TAB\}!A:I/);
+  assert.match(sync, /\$\{REGISTRATION_SHEET_TAB\}!A\$\{[^}]+\}:J\$\{[^}]+\}/);
+  assert.match(sync, /\$\{REGISTRATION_SHEET_TAB\}!A:J/);
   assert.match(sheets, /insertDataOption:\s*"INSERT_ROWS"/);
   assert.match(sheets, /values\/[\s\S]*?:append|:append["'`]/);
   assert.match(sheets, /method:\s*"PUT"/);
@@ -239,10 +241,10 @@ test("reconciliation restores the exact canonical mirror and removes stale trail
 
   assert.ok(start >= 0, "the reconciliation entry point must be exported");
   assert.match(reconcile, /listCanonicalRegistrations\(\)/);
-  assert.match(reconcile, /getGoogleSheetValues\([^)]*A2:I/);
+  assert.match(reconcile, /getGoogleSheetValues\([^)]*A2:J/);
   assert.match(reconcile, /registrations\.map\(buildRegistrationSheetRow\)/);
   assert.match(reconcile, /ensureRegistrationSheetStructure\(spreadsheetId\)/);
-  assert.match(reconcile, /updateGoogleSheetValues\([\s\S]*?A2:I\$\{rows\.length \+ 1\}/);
+  assert.match(reconcile, /updateGoogleSheetValues\([\s\S]*?A2:J\$\{rows\.length \+ 1\}/);
   assert.match(reconcile, /existingRows\.length > rows\.length/);
   assert.match(reconcile, /clearGoogleSheetValues\([\s\S]*?rows\.length \+ 2[\s\S]*?existingRows\.length \+ 1/);
 });

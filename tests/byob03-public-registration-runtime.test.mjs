@@ -94,8 +94,17 @@ test("public registration keeps the same email and its waiver evidence separate 
   assert.equal(original03[0].waiver_acceptance_evidence.waiver_sha256, f.model.BYOB_03_WAIVER_SHA256);
   assert.deepEqual((await f.db.query("select * from community_event_registrations where event_key='byob-02'")).rows, original02);
   assert.deepEqual((await f.db.query("select * from community_event_registrations where event_key='byob-03'")).rows, original03);
-  assert.deepEqual((await f.db.query("select * from integration_outbox")).rows, outbox02);
+  const outbox = (await f.db.query("select * from integration_outbox order by id")).rows;
+  assert.deepEqual(outbox[0], outbox02[0], "enabling Nº.03 must not rewrite the original Nº.02 queue item");
   assert.equal(outbox02.length, 1);
+  assert.equal(outbox.length, 2, "repeated Nº.03 submissions must not duplicate delivery");
+  assert.deepEqual(outbox.map((row) => row.aggregate_id), [original02[0].id, original03[0].id]);
+  for (const row of outbox) {
+    assert.equal(row.destination, "google");
+    assert.equal(row.event_type, "community_event_registration.sheet_sync_requested");
+    assert.equal(row.dedupe_key, `google:community-event-registration:${row.aggregate_id}:created:v1`);
+    assert.deepEqual(row.payload, {}, "legal evidence and email remain canonical, outside the queue payload");
+  }
   const public03 = (await f.repository.getPublicCommunityEvents()).find((event) => event.id === "byob-03");
   assert.equal(public03.registration.href, "/community/byob-03/register");
   assert.equal(public03.registration.status, "Open");
@@ -164,7 +173,7 @@ test("the public writer and database reject cross-event waivers and incomplete N
   await assert.rejects(f.db.query("update community_event_registrations set waiver_version=$1", [f.model.BYOB_02_WAIVER_VERSION]), /foreign key constraint/);
   await assert.rejects(f.db.exec("update community_event_waiver_versions set title='Changed' where event_key='byob-03'"), /append-only/);
   assert.deepEqual((await f.db.query("select * from community_event_registrations")).rows, original);
-  assert.equal((await f.db.query("select count(*)::int as count from integration_outbox")).rows[0].count, 0);
+  assert.equal((await f.db.query("select count(*)::int as count from integration_outbox")).rows[0].count, 1);
 });
 
 test("Nº.03 migration keeps attendee data private and admits only the two configured native event keys", async (t) => {

@@ -24,7 +24,7 @@ const legacyCredentials = Buffer.from(JSON.stringify({
   private_key: "-----BEGIN PRIVATE KEY-----\ntest-fixture-only\n-----END PRIVATE KEY-----",
 })).toString("base64");
 
-function fixture(environment = {}) {
+function fixture(environment = {}, respond = null) {
   const authOptions = [];
   const federationOptions = [];
   const oidcCalls = [];
@@ -54,7 +54,7 @@ function fixture(environment = {}) {
       if (this.options.authClient) {
         subjectTokens.push(await this.options.authClient.retrieveSubjectToken());
       }
-      return { data: { values: [["existing row"]] } };
+      return respond ? respond(options) : { data: { values: [["existing row"]] } };
     }
   }
   const dependencies = {
@@ -187,4 +187,35 @@ test("federation does not bypass the enable switch or spreadsheet validation", (
     "GOOGLE_REGISTRATION_SHEET_ENABLED",
     "GOOGLE_REGISTRATION_SPREADSHEET_ID (invalid)",
   ]);
+});
+
+test("the existing Registrants table widens to Event J and grows for new rows without shrinking or replacing it", async () => {
+  const table = { tableId: "existing-registration-table", range: {
+    sheetId: 42, startRowIndex: 0, startColumnIndex: 0, endRowIndex: 16, endColumnIndex: 9,
+  } };
+  const state = fixture(federationEnvironment, (request) => {
+    if (request.method === "GET") return { data: { sheets: [{
+      properties: { sheetId: 42, title: "Registrants" }, tables: [table],
+    }] } };
+    const updates = request.data.requests;
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].updateTable.fields, "range");
+    assert.equal(updates[0].updateTable.table.tableId, table.tableId);
+    table.range = updates[0].updateTable.table.range;
+    return { data: {} };
+  });
+  await state.client.extendGoogleSheetTableToRow("registration-sheet", "Registrants", 1, 10);
+  assert.deepEqual(table.range, {
+    sheetId: 42, startRowIndex: 0, startColumnIndex: 0, endRowIndex: 16, endColumnIndex: 10,
+  });
+  await state.client.extendGoogleSheetTableToRow("registration-sheet", "Registrants", 17, 10);
+  assert.equal(table.range.endRowIndex, 17);
+  assert.equal(table.range.endColumnIndex, 10);
+  const writes = () => state.requests.filter((request) => request.method === "POST");
+  assert.equal(writes().length, 2);
+  await state.client.extendGoogleSheetTableToRow("registration-sheet", "Registrants", 2, 9);
+  assert.equal(writes().length, 2, "an already large table needs no write");
+  assert.equal(table.range.endRowIndex, 17);
+  assert.equal(table.range.endColumnIndex, 10);
+  assert.doesNotMatch(JSON.stringify(writes()), /addTable|deleteTable|columnProperties|rowProperties|values/);
 });

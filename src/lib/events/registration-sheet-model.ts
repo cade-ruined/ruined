@@ -9,9 +9,11 @@ export const REGISTRATION_SHEET_HEADERS = [
   "Waiver accepted",
   "Waiver version",
   "Registration ID",
+  "Event",
 ] as const;
 
 export const REGISTRATION_ID_COLUMN_INDEX = 8;
+export const REGISTRATION_EVENT_COLUMN_INDEX = 9;
 export const REGISTRATION_SHEET_TIME_ZONE = "America/Denver";
 
 const GOOGLE_SHEETS_UNIX_EPOCH_OFFSET_DAYS = 25_569;
@@ -55,6 +57,7 @@ export type RegistrationSheetRow = [
   waiverAcceptedAt: number,
   waiverVersion: string,
   registrationId: string,
+  eventKey: string,
 ];
 
 function asMountainTimeGoogleSerial(value: Date): number {
@@ -110,6 +113,7 @@ export function buildRegistrationSheetRow(
     asMountainTimeGoogleSerial(record.waiverAcceptedAt),
     record.waiverVersion,
     record.id,
+    record.eventKey,
   ];
 }
 

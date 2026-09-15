@@ -45,7 +45,7 @@ test("Nº.03 has an independent exact waiver identity and preserves the Nº.02 c
   }
   assert.equal(config02.syncToSheet, true);
   assert.equal(config02.showTankOffer, true);
-  assert.equal(config03.syncToSheet, false);
+  assert.equal(config03.syncToSheet, true);
   assert.equal(config03.showTankOffer, false);
 });
 
@@ -124,7 +124,7 @@ async function routeFixture(t) {
   return { calls, state, routes, request };
 }
 
-test("fixed route configuration ignores submitted event keys and Nº.03 never schedules Nº.02 Sheets work or tank offers", async (t) => {
+test("fixed route configuration ignores submitted event keys and both events schedule shared Sheets work with independent offers", async (t) => {
   const f = await routeFixture(t);
   const response03 = await f.routes["byob-03"].POST(f.request({ ...input(), eventKey: "byob-02", eventId: "byob-02" }));
   assert.equal(response03.status, 200);
@@ -135,17 +135,19 @@ test("fixed route configuration ignores submitted event keys and Nº.03 never sc
   assert.equal(f.calls.registrations[0][0].waiverVersion, model.BYOB_03_WAIVER_VERSION);
   assert.equal("eventKey" in f.calls.registrations[0][0], false);
   assert.equal(f.calls.rateLimits[0][1], "byob-03");
-  assert.equal(f.calls.deferred.length, 0);
+  assert.equal(f.calls.deferred.length, 1);
   assert.equal(f.calls.sheets.length, 0);
+  await f.calls.deferred[0]();
+  assert.deepEqual(f.calls.sheets, [[3]]);
   const response02 = await f.routes["byob-02"].POST(f.request(input(model.BYOB_02_REGISTRATION)));
   assert.equal(response02.status, 200);
   assert.deepEqual(await response02.json(), { ok: true, tankHref: model.BYOB_02_TANK_HREF });
   assert.equal(f.calls.registrations[1][1], model.BYOB_02_REGISTRATION);
   assert.equal(f.calls.rateLimits[1][1], "byob-02");
   assert.notEqual(f.calls.rateLimits[0][0], f.calls.rateLimits[1][0], "request fingerprints include the event domain");
-  assert.equal(f.calls.deferred.length, 1);
-  await f.calls.deferred[0]();
-  assert.equal(f.calls.sheets.length, 1);
+  assert.equal(f.calls.deferred.length, 2);
+  await f.calls.deferred[1]();
+  assert.deepEqual(f.calls.sheets, [[3], [3]]);
 });
 
 test("Nº.03 retains origin, JSON, size, honeypot and cross-event waiver guards before persistence", async (t) => {

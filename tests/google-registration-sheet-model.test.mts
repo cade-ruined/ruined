@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   REGISTRATION_ID_COLUMN_INDEX,
+  REGISTRATION_EVENT_COLUMN_INDEX,
   REGISTRATION_SHEET_HEADERS,
   REGISTRATION_SHEET_TIME_ZONE,
   buildRegistrationSheetRow,
@@ -32,9 +33,10 @@ function registration(
   };
 }
 
-test("the pure row model preserves the exact A:I contract with Mountain wall-time serials", () => {
+test("the pure row model preserves A:I and appends event identity in J with Mountain wall-time serials", () => {
   assert.equal(REGISTRATION_SHEET_TIME_ZONE, "America/Denver");
   assert.equal(REGISTRATION_ID_COLUMN_INDEX, 8);
+  assert.equal(REGISTRATION_EVENT_COLUMN_INDEX, 9);
   assert.deepEqual([...REGISTRATION_SHEET_HEADERS], [
     "Registered at",
     "First name",
@@ -45,10 +47,11 @@ test("the pure row model preserves the exact A:I contract with Mountain wall-tim
     "Waiver accepted",
     "Waiver version",
     "Registration ID",
+    "Event",
   ]);
 
   const row = buildRegistrationSheetRow(registration());
-  assert.equal(row.length, 9);
+  assert.equal(row.length, 10);
   assert.ok(Math.abs(row[0] - 46_258.5) < 1e-9, "August UTC input should render as Denver MDT noon");
   assert.deepEqual(row.slice(1, 6), [
     "Cade",
@@ -64,7 +67,21 @@ test("the pure row model preserves the exact A:I contract with Mountain wall-tim
   assert.deepEqual(row.slice(7), [
     "byob-02-risk-acknowledgment-v3",
     REGISTRATION_ID,
+    "byob-02",
   ]);
+});
+
+test("the same email in both events retains independent UUID, waiver and event columns", () => {
+  const row02 = buildRegistrationSheetRow(registration());
+  const row03 = buildRegistrationSheetRow(registration({
+    id: OTHER_REGISTRATION_ID,
+    eventKey: "byob-03",
+    waiverVersion: "byob-03-risk-acknowledgment-v1",
+  }));
+  assert.equal(row02[3], row03[3]);
+  assert.deepEqual(row03.slice(7), ["byob-03-risk-acknowledgment-v1", OTHER_REGISTRATION_ID, "byob-03"]);
+  assert.equal(findRegistrationSheetRowNumber([[row02[8]], [row03[8]]], OTHER_REGISTRATION_ID), 3);
+  assert.equal(findRegistrationSheetRowNumber([[row02[8]], [row03[8]]], REGISTRATION_ID), 2);
 });
 
 test("RAW-safe row projection preserves strings and uses restrained legacy fallbacks", () => {
