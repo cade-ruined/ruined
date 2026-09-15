@@ -40,11 +40,14 @@ async function fixture(t, { schema = true, configured = true, fail = false } = {
   const events = await load("src/data/events.ts", {
     "@/data/eventGalleries": gallery, "@/lib/events/byob-registration-model": byobModel,
   });
-  const model = await load("src/lib/events/community-event-model.ts", { "@/data/events": events });
+  const model = await load("src/lib/events/community-event-model.ts", {
+    "@/data/events": events, "@/lib/events/byob-registration-model": byobModel,
+  });
   const repository = await load("src/lib/events/community-event-repository.ts", {
     "@/data/events": events,
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/events/community-event-model": model,
+    "@/lib/events/byob-registration-model": byobModel,
   }, { process: { env: configured ? { DATABASE_URL: "isolated" } : {} } });
   const byob = await load("src/lib/events/byob-registration-repository.ts", {
     "@/lib/database/server": { getApplicationDatabase: () => sql },
@@ -99,7 +102,7 @@ test("canonical listings retain exact legacy labels/gallery while filtering priv
 test("draft/archived and intentionally empty published sets never revive static defaults", async (t) => {
   const f = await fixture(t);
   await f.db.exec("update community_event_listings set publication_state='draft' where event_key='byob-02'");
-  assert.deepEqual((await f.repository.getPublicCommunityEvents()).map((event) => event.id), ["byob-01"]);
+  assert.deepEqual((await f.repository.getPublicCommunityEvents()).map((event) => event.id), f.events.EVENTS.filter((event) => event.id !== "byob-02").map((event) => event.id));
   await f.db.exec("update community_event_listings set publication_state='archived'");
   assert.deepEqual(await f.repository.getPublicCommunityEvents(), []);
 });
@@ -122,6 +125,9 @@ test("legacy schema fallback is permitted, but configured failures reject feed a
 
 test("registration checks a share-locked listing inside the same transaction before persistence", async (t) => {
   const f = await fixture(t);
+  // Exercise the historical acceptance contract even after the static Nº.02
+  // listing is closed for the recap release.
+  await f.db.exec("update community_event_listings set event_state='Upcoming', registration_open=true where event_key='byob-02'");
   await f.byob.registerByob02Participant(f.submission);
   const lockIndex = f.queries.findIndex(({ query }) => /for share/.test(query));
   const writeIndex = f.queries.findIndex(({ query }) => /insert into community_event_registrations/.test(query));
@@ -194,12 +200,12 @@ test("all public entry points use the canonical source, without operator access 
     assert.match(code, /usePublicEvents\(/);
     assert.doesNotMatch(code, /import \{ EVENTS/);
   }
-  for (const path of ["app/community/page.tsx", "app/community/byob-02/register/page.tsx"]) {
+  for (const path of ["app/community/page.tsx", "app/community/byob-02/register/page.tsx", "app/community/byob-03/register/page.tsx"]) {
     assert.match(await source(path), /await getPublicCommunityEvents\(\)/);
   }
   const signup = await source("app/community/byob-02/register/page.tsx");
   assert.match(signup, /event\.registration\?\.status === "Open" && event\.status !== "Ended"/);
-  assert.match(await source("app/api/events/byob-02/register/route.ts"), /error instanceof CommunityEventRegistrationClosedError[\s\S]*?409/);
+  assert.match(await source("src/lib/events/byob-registration-handler.ts"), /error instanceof CommunityEventRegistrationClosedError[\s\S]*?409/);
   const repository = await source("src/lib/events/community-event-repository.ts");
   assert.doesNotMatch(repository, /ops-operating|requireAdmin|saveCommunityEvent|getCommunityRoster|recordCommunityAttendance/);
 });

@@ -40,6 +40,7 @@ const { default: StoreGallery } = await compile("src/components/store/StoreGalle
 });
 const { JourneyStoreIndex, JourneyLobbyIndex } = await compile("src/components/sequence/JourneyIndexes.tsx", {
   ...uiDependencies,
+  "./JourneyQuickBuy": { default: () => null },
   "@/data/navigation": { EXPLORE_ROOMS: [] },
   "@/data/public-membership": { MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members" } },
 });
@@ -130,7 +131,7 @@ test("the walk store receives an honest state and provides a direct catalog reco
   const unavailable = renderToStaticMarkup(React.createElement(JourneyStoreIndex, { products: [], catalogStatus: "unavailable" }));
   assert.match(unavailable, /We couldn’t load the catalog/);
   assert.match(unavailable, /href="\/store"/);
-  assert.match(unavailable, /Try the catalog again/);
+  assert.match(unavailable, /try the catalog again/i);
   const empty = renderToStaticMarkup(React.createElement(JourneyStoreIndex, { products: [], catalogStatus: "empty" }));
   assert.match(empty, /No pieces listed right now/);
   assert.doesNotMatch(empty, /couldn’t load/);

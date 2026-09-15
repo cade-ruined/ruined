@@ -10,6 +10,7 @@ import type { StudioEvent } from "@/data/events";
 import { EXPLORE_ROOMS, type ExploreRoom } from "@/data/navigation";
 import { MEMBERSHIP_INTRO } from "@/data/public-membership";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
+import JourneyQuickBuy from "./JourneyQuickBuy";
 
 const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
@@ -139,7 +140,7 @@ export function JourneyLobbyIndex({
   products: Product[];
 }) {
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
-  const byobTwo = events.find((candidate) => candidate.id === "byob-02");
+  const nextByob = events.find((candidate) => candidate.id.startsWith("byob-") && candidate.registration?.status === "Open" && candidate.status !== "Ended");
   const tank = products.find(
     (candidate) => candidate.id === "byob-tank"
   );
@@ -170,14 +171,14 @@ export function JourneyLobbyIndex({
       image: tankImage?.url,
       alt: tankImage?.alt ?? tank.name,
     }] : []),
-    ...(byobOne && byobTwo?.registration
+    ...(byobOne && nextByob?.registration
       ? [
           {
-            key: `events-${byobTwo.id}`,
-            href: byobTwo.registration.href,
+            key: `events-${nextByob.id}`,
+            href: nextByob.registration.href,
             realm: "Community" as const,
-            title: byobTwo.title,
-            meta: `Register · ${byobTwo.date}`,
+            title: nextByob.title,
+            meta: `Register · ${nextByob.date}`,
             image: byobOne.image,
             alt: "The BYOB community gathered beneath storm clouds in the mountains.",
           },
@@ -438,9 +439,25 @@ export function JourneyStoreIndex({
       : productCount === 2
         ? "mx-auto max-w-[38rem]"
         : "w-full";
+  const rackHeadingSizeClass = productCount <= 1
+    ? "text-[1.375rem] sm:text-[1.5rem]"
+    : "text-[1.75rem] sm:text-[2.25rem]";
 
   return (
     <div data-journey-store-index className="w-full">
+      <div className={`mb-2 flex items-center justify-between gap-3 text-[var(--color-bone)] ${shelfWidthClass}`}>
+        <h2 className={`shrink-0 whitespace-nowrap ![font-family:var(--font-cadehandy2)] !font-normal leading-none !tracking-normal ${rackHeadingSizeClass}`}>
+          On the Rack
+        </h2>
+        <Link
+          href="/store"
+          aria-label={productCount === 0 && notice.retry ? "Off the Rack — try the catalog again" : "Off the Rack — view the full catalog"}
+          className="inline-flex min-h-11 shrink-0 items-center gap-2 font-sans text-xs text-white underline decoration-white/40 underline-offset-4 transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:text-sm"
+        >
+          <span>Off the Rack</span>
+          <span aria-hidden="true">↗</span>
+        </Link>
+      </div>
       {productCount === 0 && (
         <div data-catalog-status={catalogStatus} className="mx-auto max-w-sm rounded-sm bg-black/80 px-5 py-4 text-[var(--color-bone)]">
           <p className="ui-heading text-base">{notice.heading}</p>
@@ -463,52 +480,50 @@ export function JourneyStoreIndex({
               : undefined;
 
             return (
-              <Link
+              <article
                 key={product.id}
-                href={`/store/${product.id}`}
-                className={JOURNEY_CARD_CLASS}
+                data-journey-product-card={product.id}
+                aria-label={product.name}
+                className="flex min-w-0 flex-col bg-black/85 text-[var(--color-bone)]"
               >
-                {product.image && (
-                  <Image
-                    src={product.image.url}
-                    alt={product.image.alt}
-                    fill
-                    sizes="(min-width: 640px) 22rem, 28vw"
-                    className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
-                  />
-                )}
-                <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
-                <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
-                  {index === 0 ? "Featured · " : ""}
-                  {product.code}
-                </span>
-                <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-                  <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
-                    {product.name}
-                  </strong>
-                  <span className="mt-1 block font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
-                    {product.price}
-                  </span>
-                  {shipDate && (
-                    <span className="mt-1 block font-sans text-[clamp(0.38rem,0.82vw,0.5rem)] uppercase tracking-[0.08em] text-[var(--color-poster)] sm:tracking-[0.13em]">
-                      Preorder · Est. ship {shipDate}
-                    </span>
+                <Link
+                  href={`/store/${product.id}`}
+                  className={`${JOURNEY_CARD_CLASS} block focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white`}
+                >
+                  {product.image && (
+                    <Image
+                      src={product.image.url}
+                      alt={product.image.alt}
+                      fill
+                      sizes="(min-width: 640px) 22rem, 28vw"
+                      className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+                    />
                   )}
-                </span>
-              </Link>
+                  <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
+                  <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
+                    {index === 0 ? "Featured · " : ""}
+                    {product.code}
+                  </span>
+                  <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
+                    <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
+                      {product.name}
+                    </strong>
+                    <span className="mt-1 block font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
+                      {product.price}
+                    </span>
+                    {shipDate && (
+                      <span className="mt-1 block font-sans text-[clamp(0.38rem,0.82vw,0.5rem)] uppercase tracking-[0.08em] text-[var(--color-poster)] sm:tracking-[0.13em]">
+                        Preorder · Est. ship {shipDate}
+                      </span>
+                    )}
+                  </span>
+                </Link>
+                <JourneyQuickBuy product={product} />
+              </article>
             );
           })}
         </div>
       )}
-      <div className={`mt-2 flex justify-end ${shelfWidthClass}`}>
-        <Link
-          href="/store"
-          className="ui-heading inline-flex items-center gap-3 border-b border-white/35 pb-1 text-[0.58rem] text-white transition-colors hover:border-[var(--color-poster)] hover:text-[var(--color-poster)] sm:text-[0.62rem]"
-        >
-          <span>{productCount === 0 && notice.retry ? "Try the catalog again" : "View catalogue"}</span>
-          <span aria-hidden="true">→</span>
-        </Link>
-      </div>
     </div>
   );
 }

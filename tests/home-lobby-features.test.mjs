@@ -20,7 +20,7 @@ test("the home marquee places the live tank before BYOB registration and preserv
   ]);
 
   const byobRegistrationPosition = indexSource.indexOf(
-    "key: `events-${byobTwo.id}`"
+    "key: `events-${nextByob.id}`"
   );
   const castPosition = indexSource.indexOf('key: "meet-the-cast"');
   const aboutPosition = indexSource.indexOf('key: "what-is-this"');
@@ -32,27 +32,27 @@ test("the home marquee places the live tank before BYOB registration and preserv
   assert.ok(byobRegistrationPosition < castPosition);
   assert.ok(castPosition < aboutPosition);
   assert.match(indexSource, /candidate\.id === "byob-01"/);
-  assert.match(indexSource, /candidate\.id === "byob-02"/);
+  assert.match(indexSource, /candidate\.registration\?\.status === "Open" && candidate\.status !== "Ended"/);
   assert.match(
     indexSource,
     /products\.find\([\s\S]*?candidate\.id === (?:"byob-tank"|BYOB_TANK_FEATURE_FALLBACK\.id)[\s\S]*?\)/
   );
-  assert.match(indexSource, /href: byobTwo\.registration\.href/);
-  assert.match(indexSource, /title: byobTwo\.title/);
-  assert.match(indexSource, /meta: `Register · \$\{byobTwo\.date\}`/);
+  assert.match(indexSource, /href: nextByob\.registration\.href/);
+  assert.match(indexSource, /title: nextByob\.title/);
+  assert.match(indexSource, /meta: `Register · \$\{nextByob\.date\}`/);
   assert.match(indexSource, /image: byobOne\.image/);
   assert.match(
     indexSource,
-    /key: `events-\$\{byobTwo\.id\}`[\s\S]*?alt: "The BYOB community gathered beneath storm clouds in the mountains\."/
+    /key: `events-\$\{nextByob\.id\}`[\s\S]*?alt: "The BYOB community gathered beneath storm clouds in the mountains\."/
   );
   assert.doesNotMatch(
     indexSource,
-    /key: `events-\$\{byobTwo\.id\}`[\s\S]*?alt: [^\n]*BYOB Nº 01/
+    /key: `events-\$\{nextByob\.id\}`[\s\S]*?alt: [^\n]*BYOB Nº 01/
   );
   assert.doesNotMatch(indexSource, /href: `\/community#\$\{byobOne\.id\}`/);
   assert.match(
     eventsSource,
-    /registration: isRegistrationEvent[\s\S]*?href: "\/community\/byob-02\/register"[\s\S]*?label: "Register"[\s\S]*?status: "Open"/
+    /registration: isRegistrationEvent[\s\S]*?href: `\/community\/\$\{id\}\/register`[\s\S]*?label: "Register"[\s\S]*?status: isSecondEvent \? "Closed" : "Open"/
   );
   assert.match(indexSource, /title:\s*tank\.name/);
   assert.match(indexSource, /href:\s*`\/store\/\$\{tank\.id\}`/);

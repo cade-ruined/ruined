@@ -4,19 +4,21 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { assertCommunityEventRegistrationOpen } from "@/lib/events/community-event-repository";
 import {
   BYOB_02_EVENT_KEY,
-  BYOB_02_WAIVER_BODY,
-  BYOB_02_WAIVER_SHA256,
-  BYOB_02_WAIVER_TITLE,
-  BYOB_02_WAIVER_VERSION,
+  BYOB_02_REGISTRATION,
+  getByobRegistrationConfig,
+  type ByobEventKey,
   type Byob02RegistrationSubmission,
+  type ByobRegistrationConfig,
+  type ByobRegistrationSubmission,
 } from "@/lib/events/byob-registration-model";
 
 const REGISTRATION_ATTEMPTS_PER_HOUR = 8;
 
 export async function consumeByobRegistrationRateLimit(
   fingerprintHash: string,
+  eventKey: ByobEventKey = BYOB_02_EVENT_KEY,
 ): Promise<boolean> {
-  if (!/^[0-9a-f]{64}$/.test(fingerprintHash)) return false;
+  if (!/^[0-9a-f]{64}$/.test(fingerprintHash) || !getByobRegistrationConfig(eventKey)) return false;
 
   const sql = getApplicationDatabase();
   const rows = await sql<Array<{ attempts: number }>>`
@@ -30,7 +32,7 @@ export async function consumeByobRegistrationRateLimit(
       window_started_at,
       attempts
     ) values (
-      ${BYOB_02_EVENT_KEY},
+      ${eventKey},
       ${fingerprintHash},
       date_trunc('hour', now()),
       1
@@ -50,15 +52,26 @@ export async function consumeByobRegistrationRateLimit(
 export async function registerByob02Participant(
   submission: Byob02RegistrationSubmission,
 ): Promise<void> {
+  return registerByobParticipant(submission, BYOB_02_REGISTRATION);
+}
+
+export async function registerByobParticipant(
+  submission: ByobRegistrationSubmission,
+  config: ByobRegistrationConfig,
+): Promise<void> {
+  // Configuration comes from the fixed server route, never the submitted body.
+  if (getByobRegistrationConfig(config.eventKey) !== config || submission.waiverVersion !== config.waiverVersion) {
+    throw new Error("Invalid event registration configuration.");
+  }
   const sql = getApplicationDatabase();
 
   await sql.begin(async (tx) => {
     // Lock the public listing while accepting a registration so an operator
     // closing it cannot race a later accepted submission. Database outages throw.
-    await assertCommunityEventRegistrationOpen(tx, BYOB_02_EVENT_KEY);
+    await assertCommunityEventRegistrationOpen(tx, config.eventKey);
     await tx`
       select pg_advisory_xact_lock(
-        hashtext(${BYOB_02_EVENT_KEY}),
+        hashtext(${config.eventKey}),
         hashtext(${submission.emailNormalized})
       )
     `;
@@ -73,19 +86,19 @@ export async function registerByob02Participant(
         body,
         content_sha256 as "contentSha256"
       from community_event_waiver_versions
-      where event_key = ${BYOB_02_EVENT_KEY}
-        and version = ${BYOB_02_WAIVER_VERSION}
+      where event_key = ${config.eventKey}
+        and version = ${config.waiverVersion}
       limit 1
     `;
     const waiver = waiverRows[0];
 
     if (
       !waiver ||
-      waiver.title !== BYOB_02_WAIVER_TITLE ||
-      waiver.body !== BYOB_02_WAIVER_BODY ||
-      waiver.contentSha256 !== BYOB_02_WAIVER_SHA256
+      waiver.title !== config.waiverTitle ||
+      waiver.body !== config.waiverBody ||
+      waiver.contentSha256 !== config.waiverSha256
     ) {
-      throw new Error("BYOB Nº 02 waiver is not configured.");
+      throw new Error(`${config.title} waiver is not configured.`);
     }
 
     const registrationRows = await tx<Array<{ id: string }>>`
@@ -100,7 +113,7 @@ export async function registerByob02Participant(
         waiver_accepted_at,
         waiver_acceptance_evidence
       ) values (
-        ${BYOB_02_EVENT_KEY},
+        ${config.eventKey},
         ${submission.registrantName},
         ${submission.registrantFirstName},
         ${submission.registrantLastName},
@@ -114,7 +127,7 @@ export async function registerByob02Participant(
           'participant', 'registrant',
           'age_confirmation', '18_or_older',
           'carpool_disclosure_presented', true,
-          'waiver_sha256', ${BYOB_02_WAIVER_SHA256}::text
+          'waiver_sha256', ${config.waiverSha256}::text
         )
       )
       on conflict (event_key, email_normalized) do nothing
@@ -125,6 +138,7 @@ export async function registerByob02Participant(
     // A repeated submission must not reveal that the address already exists or
     // let anyone who knows an email address replace the stored acknowledgment.
     if (!registration) return;
+    if (!config.syncToSheet) return;
 
     await tx`
       insert into integration_outbox (

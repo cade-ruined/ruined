@@ -443,17 +443,17 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
   assert.match(indexes, /events\.find\(\(candidate\) => candidate\.id === "byob-01"\)/);
-  assert.match(indexes, /events\.find\(\(candidate\) => candidate\.id === "byob-02"\)/);
+  assert.match(indexes, /candidate\.registration\?\.status === "Open" && candidate\.status !== "Ended"/);
   const lobbyIndex = indexes.slice(
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
   );
   assert.match(lobbyIndex, /priority=\{index === 0\}/);
   assert.match(lobbyIndex, /fetchPriority=\{index === 0 \? "high" : "low"\}/);
-  assert.match(lobbyIndex, /key: `events-\$\{byobTwo\.id\}`/);
-  assert.match(lobbyIndex, /href: byobTwo\.registration\.href/);
-  assert.match(lobbyIndex, /title: byobTwo\.title/);
-  assert.match(lobbyIndex, /meta: `Register · \$\{byobTwo\.date\}`/);
+  assert.match(lobbyIndex, /key: `events-\$\{nextByob\.id\}`/);
+  assert.match(lobbyIndex, /href: nextByob\.registration\.href/);
+  assert.match(lobbyIndex, /title: nextByob\.title/);
+  assert.match(lobbyIndex, /meta: `Register · \$\{nextByob\.date\}`/);
   assert.match(lobbyIndex, /image: byobOne\.image/);
   assert.match(lobbyIndex, /key: "what-is-this"/);
   assert.match(lobbyIndex, /href: "#about"/);
@@ -473,7 +473,8 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(indexes, /productCount === 2[\s\S]*max-w-\[38rem\]/);
   assert.match(indexes, /href=\{`\/store\/\$\{product\.id\}`\}/);
   assert.match(indexes, /product\.expectedShipDate[\s\S]*Preorder · Est\. ship \{shipDate\}/);
-  assert.match(indexes, /href="\/store"[\s\S]*View catalogue/);
+  assert.match(indexes, /href="\/store"[\s\S]*Off the Rack/);
+  assert.doesNotMatch(indexes, /View catalogue/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /const visibleEvents = events\.slice\(0, 3\)/);
   assert.match(indexes, /visibleEvents\.length === 2[\s\S]*"sm:mx-auto sm:w-2\/3"/);
@@ -843,6 +844,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(searchData, /productDocuments/);
   assert.match(searchData, /PROJECT_DOCUMENTS/);
   assert.match(searchData, /eventDocuments\(events\)/);
+  assert.match(searchRoute, /getPublicCommunityEvents\(\)/);
   assert.match(searchData, /const PAGES/);
   assert.match(searchRoute, /getProducts\(\)/);
   assert.match(searchRoute, /searchSite\(products, query, events\)/);
@@ -998,10 +1000,10 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
       ).metadata(),
     ]);
 
-  assert.match(events, /Array\.from\(\{ length: 2 \}/);
+  assert.match(events, /Array\.from\(\{ length: 3 \}/);
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
   assert.match(events, /image: isFirstEvent \? BYOB_01_FEATURE_IMAGE : "\/events\/byob-key-art\.png"/);
-  assert.match(events, /status: isFirstEvent \? "Ended" : "Upcoming"/);
+  assert.match(events, /status: index < 2 \? "Ended" : "Upcoming"/);
   assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);

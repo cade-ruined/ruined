@@ -10,7 +10,7 @@ const paths = {
   env: ".env.example",
   form: "src/components/events/BYOBRegistrationForm.tsx",
   model: "src/lib/events/registration-sheet-model.ts",
-  publicApi: "app/api/events/byob-02/register/route.ts",
+  publicApi: "src/lib/events/byob-registration-handler.ts",
   route: "app/api/internal/integrations/google-sheets/process/route.ts",
   sheets: "src/lib/google/sheets.ts",
   sync: "src/lib/events/registration-sheet-sync.ts",
@@ -294,5 +294,5 @@ test("registrants and integration state have no browser or Supabase Data API rea
   assert.doesNotMatch(publicSurface, /registrationId|spreadsheetId|sheetUrl|syncStatus/);
   assert.doesNotMatch(publicSurface, /GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON_BASE64/);
   assert.doesNotMatch(`${sheets}\n${sync}`, /SUPABASE_SECRET_KEY|NEXT_PUBLIC_SUPABASE/);
-  assert.match(publicApi, /const SUCCESS_RESPONSE = \{[\s\S]*?ok:\s*true,[\s\S]*?tankHref:\s*BYOB_02_TANK_HREF,[\s\S]*?\}/);
+  assert.match(publicApi, /const SUCCESS_RESPONSE = config\.showTankOffer \? \{\s*ok:\s*true,\s*tankHref:\s*BYOB_02_TANK_HREF\s*\} : \{\s*ok:\s*true\s*\}/);
 });

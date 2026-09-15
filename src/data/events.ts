@@ -2,7 +2,6 @@ import {
   BYOB_01_GALLERY,
   type EventGalleryImage,
 } from "@/data/eventGalleries";
-import { BYOB_02_EVENT_KEY } from "@/lib/events/byob-registration-model";
 
 export type EventRegistration = {
   href: string;
@@ -39,7 +38,7 @@ function secondFriday(year: number, month: number) {
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY[0]?.src ?? "/events/byob-key-art.png";
 
-export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
+export const EVENTS: StudioEvent[] = Array.from({ length: 3 }, (_, index) => {
   const monthIndex = 7 + index;
   const year = 2026 + Math.floor(monthIndex / 12);
   const month = monthIndex % 12;
@@ -48,7 +47,8 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
   const number = String(index + 1).padStart(2, "0");
   const isFirstEvent = index === 0;
   const id = `byob-${number}`;
-  const isRegistrationEvent = id === BYOB_02_EVENT_KEY;
+  const isSecondEvent = index === 1;
+  const isRegistrationEvent = index > 0;
   return {
     id,
     title: `BYOB Nº ${number}`,
@@ -71,18 +71,18 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 2 }, (_, index) => {
     summary: "Bring Your Own (Bell or bodyweight).",
     timezone: "America/Denver",
     image: isFirstEvent ? BYOB_01_FEATURE_IMAGE : "/events/byob-key-art.png",
-    video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : undefined,
+    video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : isSecondEvent ? "/events/byob-02-recap.mp4" : undefined,
     videoPoster: isFirstEvent
       ? "/events/byob-01-recap-poster.webp?v=2"
-      : undefined,
+      : isSecondEvent ? "/events/byob-02-recap-poster.webp" : undefined,
     gallery: isFirstEvent ? BYOB_01_GALLERY : undefined,
     registration: isRegistrationEvent
       ? {
-          href: "/community/byob-02/register",
+          href: `/community/${id}/register`,
           label: "Register",
-          status: "Open",
+          status: isSecondEvent ? "Closed" : "Open",
         }
       : undefined,
-    status: isFirstEvent ? "Ended" : "Upcoming",
+    status: index < 2 ? "Ended" : "Upcoming",
   };
 });

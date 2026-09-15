@@ -3,6 +3,7 @@ import "server-only";
 import type postgres from "postgres";
 import { EVENTS } from "@/data/events";
 import { getApplicationDatabase } from "@/lib/database/server";
+import { BYOB_02_EVENT_KEY } from "@/lib/events/byob-registration-model";
 import { studioEventFromCommunityEvent, type CommunityEventInput, type CommunityEventRecord } from "@/lib/events/community-event-model";
 
 export class CommunityEventRegistrationClosedError extends Error {
@@ -48,7 +49,8 @@ export async function getPublicCommunityEvents() {
 
 export async function assertCommunityEventRegistrationOpen(tx: postgres.TransactionSql, eventKey: string) {
   const schema = await tx<Array<{ ready: boolean }>>`select to_regclass('public.community_event_listings') is not null as ready`;
-  if (!schema[0]?.ready) return; // Existing registration before the additive listing migration.
+  if (!schema[0]?.ready && eventKey === BYOB_02_EVENT_KEY) return; // Only the original route predates listings.
+  if (!schema[0]?.ready) throw new CommunityEventRegistrationClosedError();
   const rows = await tx<Array<{ event_key: string }>>`
     select event_key from community_event_listings
     where event_key = ${eventKey} and publication_state = 'published'
