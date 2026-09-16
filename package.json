@@ -17,6 +17,7 @@
     "google:calendar:authorize": "node scripts/bootstrap-google-calendar-oauth.mjs",
     "assets:scenes": "node scripts/optimize-scenes.mjs",
     "assets:brand": "node scripts/gen-brand-assets.mjs",
+    "assets:sharing": "node scripts/gen-sharing-previews.mjs",
     "sequences": "node scripts/build-mobile-sequences.mjs && node scripts/build-sequences.mjs"
   },
   "dependencies": {

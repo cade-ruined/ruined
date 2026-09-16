@@ -11,6 +11,7 @@ import {
 } from "@/data/products";
 import { SITE_URL } from "@/lib/site";
 import { getProducts } from "@/lib/shopify";
+import { privateSharingMetadata, sharingMetadata } from "@/lib/sharing";
 
 // Product visibility can change independently of a Vercel deployment. Resolve
 // the active Headless catalogue at request time rather than from build output.
@@ -33,18 +34,17 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { handle } = await params;
   const product = (await getProducts()).find((item) => item.id === handle);
-  if (!product) return {};
+  if (!product) return privateSharingMetadata;
 
-  const images = editorialImages(product);
   return {
     title: product.name,
     description: product.description,
     alternates: { canonical: `/store/${handle}` },
-    openGraph: {
-      title: `${product.name} — Ruined`,
+    ...sharingMetadata({
+      title: product.name,
       description: product.description,
-      images: images.length ? images.map((image) => image.url) : undefined,
-    },
+      path: `/store/${handle}`,
+    }),
   };
 }
 

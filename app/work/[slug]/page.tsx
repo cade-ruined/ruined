@@ -3,11 +3,24 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PROJECTS, projectSlug } from "@/data/projects";
+import { privateSharingMetadata, sharingMetadata } from "@/lib/sharing";
 
 const tones = { warm: "linear-gradient(150deg,#2c1a0d,#4a2f17 45%,#0a0707)", shadow: "linear-gradient(160deg,#14110f,#241d18 50%,#0b0908)", atelier: "linear-gradient(135deg,#1a1611,#34291b 45%,#0a0807)" };
 
 export function generateStaticParams() { return PROJECTS.map((project) => ({ slug: projectSlug(project) })); }
-export async function generateMetadata({params}:{params:Promise<{slug:string}>}):Promise<Metadata> { const {slug}=await params; const p=PROJECTS.find((item)=>projectSlug(item)===slug); return p ? {title:p.title,description:p.overview??p.brief,alternates:{canonical:`/work/${slug}`}} : {}; }
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const project = PROJECTS.find((item) => projectSlug(item) === slug);
+  if (!project) return privateSharingMetadata;
+
+  const description = "Artifacts from Ruined are coming soon.";
+  return {
+    title: "Artifacts",
+    description,
+    alternates: { canonical: `/work/${slug}` },
+    ...sharingMetadata({ title: "Artifacts", description, path: `/work/${slug}` }),
+  };
+}
 
 export default async function ProjectPage({params}:{params:Promise<{slug:string}>}) {
   const {slug}=await params; const project=PROJECTS.find((item)=>projectSlug(item)===slug); if(!project) notFound();

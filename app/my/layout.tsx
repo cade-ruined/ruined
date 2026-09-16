@@ -9,8 +9,10 @@ import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
+import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
+  ...privateSharingMetadata,
   robots: { follow: false, index: false },
 };
 

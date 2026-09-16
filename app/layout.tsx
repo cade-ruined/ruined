@@ -6,6 +6,7 @@ import WebVitals from "@/components/WebVitals";
 import SiteFooter from "@/components/SiteFooter";
 import BrandCursor from "@/components/BrandCursor";
 import { SITE_URL } from "@/lib/site";
+import { sharingMetadata } from "@/lib/sharing";
 import "@fontsource-variable/inter";
 
 const cadeHandy2 = localFont({
@@ -19,7 +20,7 @@ const cadeHandy2 = localFont({
 
 const SITE_NAME = "Ruined";
 const SITE_DESC =
-  "Ruined refines potential into identity through clothing, brands, products, and experiences. Based in Alpine, Utah.";
+  "Ruined refines potential into identity through apparel, brands, products, and experiences. Based in Alpine, Utah.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -44,27 +45,7 @@ export const metadata: Metadata = {
     },
     other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#080605" }],
   },
-  openGraph: {
-    type: "website",
-    siteName: SITE_NAME,
-    title: SITE_NAME,
-    description: SITE_DESC,
-    url: SITE_URL,
-    images: [
-      {
-        url: "/opengraph-image.jpg",
-        width: 1200,
-        height: 630,
-        alt: "The Ruined Project",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: SITE_NAME,
-    description: SITE_DESC,
-    images: ["/twitter-image.jpg"],
-  },
+  ...sharingMetadata({ title: SITE_NAME, description: SITE_DESC, path: "/" }),
 };
 
 export const viewport: Viewport = {

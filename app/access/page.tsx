@@ -6,10 +6,18 @@ import { completePlatformSignIn, getSupportSignInDestination } from "@/lib/auth/
 import { getSupportReturnTo } from "@/lib/auth/support-return";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
+import { sharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
   robots: { follow: false, index: false },
-  title: "Access Ruined",
+  title: "Members",
+  description: "Sign in to Ruined Membership.",
+  alternates: { canonical: "https://members.theruinedproject.com/access" },
+  ...sharingMetadata({
+    title: "Members",
+    description: "Sign in to Ruined Membership.",
+    path: "https://members.theruinedproject.com/access",
+  }),
 };
 export const dynamic = "force-dynamic";
 

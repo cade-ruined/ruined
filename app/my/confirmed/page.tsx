@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 
 import MemberEmailConfirmationStatus from "@/components/platform/MemberEmailConfirmationStatus";
+import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
+  ...privateSharingMetadata,
   title: "Email confirmation",
   description: "Review the status of a Ruined Membership email confirmation.",
   referrer: "no-referrer",

@@ -1,19 +1,15 @@
 import sharp from "sharp";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { generateSharingPreviews } from "./gen-sharing-previews.mjs";
 
 // Generates the versioned public icons declared in app/layout.tsx:
 //   public/favicon-ruined-mark-v2.png        — favicon / app icon
 //   public/apple-touch-icon-ruined-mark-v2.png — iOS home-screen icon
-//   app/opengraph-image.png + app/twitter-image.png — link-share card
-//
-// The OG card is the lead hero photo, cropped to 1200×630 with a scrim and the
-// RUINED lockup screen-printed over it, so a shared link looks like the site.
+// Sharing cards use the same approved renderer as `npm run assets:sharing`.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const app = join(root, "app");
 const pub = join(root, "public");
 
-const POSTER = "#d0312d";
 const BONE = "#e5e0d5";
 const INK = "#0b0908";
 
@@ -29,29 +25,6 @@ const iconSvg = (size) => `
   <g fill="${BONE}" transform="translate(94.3 25.6) scale(1.152)">${markPaths}</g>
 </svg>`;
 
-// ── OG / Twitter card overlay (1200×630) ────────────────────────────
-const ogOverlay = `
-<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#000" stop-opacity="0.30"/>
-      <stop offset="55%" stop-color="#000" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#000" stop-opacity="0.88"/>
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="630" fill="url(#scrim)"/>
-  <g font-family="'Courier New', monospace">
-    <circle cx="84" cy="92" r="9" fill="${POSTER}"/>
-    <text x="108" y="100" font-size="30" letter-spacing="10" fill="${BONE}">RUINED</text>
-  </g>
-  <text x="80" y="430" font-family="Georgia, 'Times New Roman', serif" font-weight="700"
-        font-size="170" fill="${BONE}" letter-spacing="2">RUINED</text>
-  <text x="86" y="500" font-family="Georgia, serif" font-style="italic"
-        font-size="58" fill="${POSTER}">After the Fear</text>
-  <text x="86" y="565" font-family="'Courier New', monospace" font-size="24"
-        letter-spacing="8" fill="${BONE}" fill-opacity="0.7">DROP 01 · SS / MMXXVI · RUINED.STUDIO</text>
-</svg>`;
-
 async function run() {
   await sharp(Buffer.from(iconSvg(512))).png().toFile(join(pub, "favicon-ruined-mark-v2.png"));
   await sharp(Buffer.from(iconSvg(180))).png().toFile(join(pub, "apple-touch-icon-ruined-mark-v2.png"));
@@ -59,14 +32,7 @@ async function run() {
 
   if (process.argv.includes("--icons-only")) return;
 
-  const og = await sharp(join(pub, "ruined-hero-1.jpg"))
-    .resize(1200, 630, { fit: "cover", position: "centre" })
-    .composite([{ input: Buffer.from(ogOverlay) }])
-    .jpeg({ quality: 82, progressive: true })
-    .toBuffer();
-  await sharp(og).toFile(join(app, "opengraph-image.jpg"));
-  await sharp(og).toFile(join(app, "twitter-image.jpg"));
-  console.log("share card   -> app/opengraph-image.jpg, app/twitter-image.jpg");
+  await generateSharingPreviews();
 }
 
 run().catch((e) => {

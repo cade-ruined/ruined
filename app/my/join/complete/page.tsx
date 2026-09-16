@@ -4,8 +4,10 @@ import { redirect } from "next/navigation";
 
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getMemberPageContext } from "@/lib/platform/page-data";
+import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
+  ...privateSharingMetadata,
   title: "Payment confirmation",
   robots: { index: false, follow: false },
 };

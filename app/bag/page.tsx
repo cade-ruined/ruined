@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import BagPageClient from "@/components/store/BagPageClient";
 import { getProducts } from "@/lib/shopify";
+import { privateSharingMetadata } from "@/lib/sharing";
 
 // Bag display values are reconciled against Shopify on every request so the
 // price, availability, and preorder date cannot come from a stale deployment.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
+  ...privateSharingMetadata,
   title: "Bag",
   description: "Review selected Ruined pieces and continue to checkout.",
   robots: { index: false, follow: true },
