@@ -26,8 +26,7 @@ test("production metadata uses the brand domain and restrained positioning", asy
   assert.match(env, /NEXT_PUBLIC_SITE_URL=https:\/\/theruinedproject\.com/);
   assert.match(layout, /A Creative Company in Alpine, Utah/);
   assert.match(layout, /Ruined refines potential into identity/);
-  assert.match(layout, /openGraph:[\s\S]*title: SITE_NAME/);
-  assert.match(layout, /twitter:[\s\S]*title: SITE_NAME/);
+  assert.match(layout, /sharingMetadata\(\{ title: SITE_NAME, description: SITE_DESC/);
   assert.doesNotMatch(layout, /keywords:/);
   assert.match(layout, /"@type": "PostalAddress"/);
   assert.match(layout, /https:\/\/www\.instagram\.com\/theruinedproject/);
@@ -93,15 +92,17 @@ test("About is crawlable content and internal Foundations is noindex", async () 
 });
 
 test("the live Store is crawlable while dormant Artifacts stays out of search", async () => {
-  const [storeLayout, storeOpenGraph, workLayout] = await Promise.all([
+  const [storeLayout, previews, workLayout] = await Promise.all([
     read("app/store/layout.tsx"),
-    read("app/store/opengraph-image.tsx"),
+    read("src/lib/sharing-previews.json"),
     read("app/work/layout.tsx"),
   ]);
 
   assert.doesNotMatch(storeLayout, /robots:/);
-  assert.doesNotMatch(storeOpenGraph, /COMING SOON/i);
-  assert.match(storeOpenGraph, /CURRENT PIECES/);
+  const sharing = JSON.parse(previews);
+  assert.equal(sharing.source, "sharing/ruined-cassette-v1.jpg");
+  assert.match(sharing.alt, /cassette/i);
+  assert.doesNotMatch(sharing.alt, /COMING SOON|garments/i);
   assert.match(workLayout, /robots: \{ index: false, follow: true \}/);
 });
 
@@ -190,8 +191,8 @@ test("Community uses collection metadata until events have leaf URLs", async () 
   const community = await read("app/community/page.tsx");
 
   assert.match(community, /"@type": "CollectionPage"/);
-  assert.match(community, /openGraph:/);
-  assert.match(community, /twitter:/);
+  assert.match(community, /sharingMetadata\(/);
+  assert.doesNotMatch(community, /image: "community"/);
   assert.doesNotMatch(community, /"@type": "Event"/);
   assert.doesNotMatch(community, /\/community#/);
 });

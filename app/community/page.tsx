@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import EventsIndex from "@/components/events/EventsIndex";
 import { SITE_URL } from "@/lib/site";
 import { getPublicCommunityEvents } from "@/lib/events/community-event-repository";
+import { sharingMetadata } from "@/lib/sharing";
 
 export const dynamic = "force-dynamic";
 
@@ -12,26 +13,11 @@ export const metadata: Metadata = {
   title: "Community Gatherings",
   description,
   alternates: { canonical: "/community" },
-  openGraph: {
-    type: "website",
-    title: "Community Gatherings — Ruined",
+  ...sharingMetadata({
+    title: "Community Gatherings",
     description,
-    url: "/community",
-    images: [
-      {
-        url: "/opengraph-image.jpg",
-        width: 1200,
-        height: 630,
-        alt: "The Ruined Project",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Community Gatherings — Ruined",
-    description,
-    images: ["/twitter-image.jpg"],
-  },
+    path: "/community",
+  }),
 };
 
 export default async function CommunityPage() {

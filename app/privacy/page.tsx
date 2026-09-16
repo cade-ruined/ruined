@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import EditorialPage from "@/components/EditorialPage";
+import { sharingMetadata } from "@/lib/sharing";
 const contact = <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a>;
-export const metadata: Metadata = { title: "Privacy", alternates: { canonical: "/privacy" } };
+const description = "How Ruined collects, uses, and protects personal information.";
+export const metadata: Metadata = {
+  title: "Privacy",
+  description,
+  alternates: { canonical: "/privacy" },
+  ...sharingMetadata({ title: "Privacy", description, path: "/privacy" }),
+};
 export default function Page() { return <EditorialPage eyebrow="Effective August 19, 2026" title="Privacy" intro="The Ruined Project respects your privacy and collects only the information needed to operate this site, communicate with you, and fulfill future orders." sections={[
   { title: "Information we collect", body: <p>We may collect contact details you submit, your communication preferences and consent history, form and correspondence content, account and membership information, order and fulfillment information, and limited technical data needed for security and site performance. Event registration may also include an optional Instagram handle when you want to be tagged and a record of your liability-waiver acknowledgment.</p> },
   { title: "How we use it", body: <p>We use personal data to answer submissions, honor communication preferences, send updates you requested, operate memberships and commerce, provide customer service, prevent fraud, maintain security, and comply with law. We use event registration contact data to manage attendance, logistics, and safety communications. We use an Instagram handle only for event-related tagging when you voluntarily provide one.</p> },

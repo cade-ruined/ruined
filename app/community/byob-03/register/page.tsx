@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import BYOBRegistrationForm from "@/components/events/BYOBRegistrationForm";
 import { getPublicCommunityEvents } from "@/lib/events/community-event-repository";
 import { BYOB_03_EVENT_KEY } from "@/lib/events/byob-registration-model";
+import { sharingMetadata } from "@/lib/sharing";
 
 const description =
   "Register for BYOB Nº 03 from The Ruined Project.";
@@ -14,12 +15,11 @@ export const metadata: Metadata = {
   description,
   alternates: { canonical: "/community/byob-03/register" },
   robots: { index: false, follow: true },
-  openGraph: {
-    type: "website",
-    title: "Register for BYOB Nº 03 — Ruined",
+  ...sharingMetadata({
+    title: "Register for BYOB Nº 03",
     description,
-    url: "/community/byob-03/register",
-  },
+    path: "/community/byob-03/register",
+  }),
 };
 
 export const dynamic = "force-dynamic";

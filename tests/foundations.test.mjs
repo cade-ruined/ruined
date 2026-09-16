@@ -92,7 +92,8 @@ test("foundations route is local, private by default, and presentation-ready", a
   const shell = sources[3];
 
   assert.match(page, /title: "Foundations"/);
-  assert.match(page, /canonical: "\/foundations"/);
+  assert.match(page, /\.\.\.privateSharingMetadata/);
+  assert.doesNotMatch(page, /canonical: "\/foundations"/);
   assert.match(shell, /ArrowRight/);
   assert.match(shell, /ArrowLeft/);
   assert.match(shell, /event\.code === "Space"/);

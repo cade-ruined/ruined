@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import EditorialPage from "@/components/EditorialPage";
+import { sharingMetadata } from "@/lib/sharing";
 
 const description =
   "Ruined exists to refine potential into identity through clothing, brands, products, and experiences.";
@@ -8,26 +9,11 @@ export const metadata: Metadata = {
   title: "About",
   description,
   alternates: { canonical: "/about" },
-  openGraph: {
-    type: "website",
-    title: "About Ruined",
+  ...sharingMetadata({
+    title: "About",
     description,
-    url: "/about",
-    images: [
-      {
-        url: "/opengraph-image.jpg",
-        width: 1200,
-        height: 630,
-        alt: "The Ruined Project",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "About Ruined",
-    description,
-    images: ["/twitter-image.jpg"],
-  },
+    path: "/about",
+  }),
 };
 
 export default function AboutPage() {

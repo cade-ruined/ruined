@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import ParallaxHero from "./parallax-hero";
 import styles from "./lp.module.css";
+import { sharingMetadata } from "@/lib/sharing";
 
 // Dormant for launch. Rename this file to `page.tsx` when the programme returns.
 
@@ -11,12 +12,12 @@ export const metadata: Metadata = {
   description:
     "A private six-week working group for founders and creative leaders ready to make a consequential decision and build the next 90 days around it.",
   alternates: { canonical: "/lp" },
-  openGraph: {
+  ...sharingMetadata({
     title: "After the Fear — A Private Six-Week Working Group",
     description:
       "Six weeks. Twelve seats. A live decision, a clear direction, and a 90-day field plan.",
-    images: [{ url: "/after-the-fear-hero.webp", width: 2400, height: 1600 }],
-  },
+    path: "/lp",
+  }),
 };
 
 const programmeFacts = [

@@ -5,8 +5,10 @@ import PlatformShell from "@/components/platform/PlatformShell";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
+import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
+  ...privateSharingMetadata,
   robots: { follow: false, index: false },
 };
 

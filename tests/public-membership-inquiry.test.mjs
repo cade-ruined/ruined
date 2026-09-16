@@ -44,6 +44,7 @@ test("direct and intercepted contact routes preserve membership context and safe
   ]) {
     const route = load(file, {
       ...dependencies,
+      "@/lib/sharing": { sharingMetadata: () => ({}) },
       [dependency]: { __esModule: true, default: ({ initialTopic }) => React.createElement("span", { "data-topic": initialTopic }) },
     }).default;
     for (const [value, expected] of [["membership", "membership"], [undefined, "general"], [["membership", "general"], "general"], ["bad-topic", "general"]]) {

@@ -2,10 +2,15 @@ import type { Metadata } from "next";
 
 import ContactSurface from "@/components/contact/ContactSurface";
 import { contactTopicFromQuery } from "@/lib/contact-topic";
+import { sharingMetadata } from "@/lib/sharing";
+
+const description = "Get in touch with Ruined about a project, apparel, or an experience.";
 
 export const metadata: Metadata = {
   title: "Contact",
+  description,
   alternates: { canonical: "/contact" },
+  ...sharingMetadata({ title: "Contact", description, path: "/contact" }),
 };
 
 export default async function ContactPage({

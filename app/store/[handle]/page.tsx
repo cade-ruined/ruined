@@ -9,6 +9,7 @@ import {
 } from "@/data/products";
 import { SITE_URL } from "@/lib/site";
 import { getProducts } from "@/lib/shopify";
+import { privateSharingMetadata, sharingMetadata } from "@/lib/sharing";
 import { getProductColorHref, getProductColorImages, getProductColorOption } from "@/lib/store/product-colors";
 
 // Product visibility can change independently of a Vercel deployment. Resolve
@@ -37,19 +38,18 @@ export async function generateMetadata({
 }: ProductPageProps): Promise<Metadata> {
   const { handle } = await params;
   const product = (await getProducts()).find((item) => item.id === handle);
-  if (!product) return {};
+  if (!product) return privateSharingMetadata;
 
   const color = selectedColor(product, (await searchParams).color);
-  const images = editorialImages(product, color);
   return {
     title: product.name,
     description: product.description,
     alternates: { canonical: `/store/${handle}` },
-    openGraph: {
-      title: `${product.name} — Ruined`,
+    ...sharingMetadata({
+      title: product.name,
       description: product.description,
-      images: images.length ? images.map((image) => image.url) : undefined,
-    },
+      path: getProductColorHref(product, color),
+    }),
   };
 }
 

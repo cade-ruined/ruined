@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
+  ...privateSharingMetadata,
   title: "Payment confirmation",
   robots: { index: false, follow: false },
 };

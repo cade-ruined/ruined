@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import EditorialPage from "@/components/EditorialPage";
 import { getShopPolicies } from "@/lib/shopify";
+import { sharingMetadata } from "@/lib/sharing";
 
 export const revalidate = 3600;
 
@@ -15,11 +16,14 @@ function PolicyBody({ html }: { html: string }) {
 
 export async function generateMetadata(): Promise<Metadata> {
   const { shipping, returns } = await getShopPolicies();
+  const description = "Shipping, returns, and refunds for Ruined orders.";
 
   return {
     title: "Shipping + Returns",
+    description,
     alternates: { canonical: "/shipping-returns" },
     robots: shipping || returns ? undefined : { index: false, follow: true },
+    ...sharingMetadata({ title: "Shipping + Returns", description, path: "/shipping-returns" }),
   };
 }
 
