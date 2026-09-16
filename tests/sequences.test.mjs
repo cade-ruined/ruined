@@ -1000,7 +1000,7 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
 
   assert.match(events, /Array\.from\(\{ length: 3 \}/);
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
-  assert.match(events, /image: isFirstEvent \? BYOB_01_FEATURE_IMAGE : "\/events\/byob-key-art\.png"/);
+  assert.match(events, /image: isFirstEvent\s*\? BYOB_01_FEATURE_IMAGE\s*: isSecondEvent \? "\/events\/byob-02-recap-poster\.webp" : "\/events\/byob-key-art\.png"/);
   assert.match(events, /status: index < 2 \? "Ended" : "Upcoming"/);
   assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);

@@ -17,8 +17,10 @@ test('October BYOB has its own signup after the two recap events',async()=>{
  const recap=events.find(e=>e.id==='byob-02');
  assert.equal(recap.video,'/events/byob-02-recap.mp4');
  assert.equal(recap.videoPoster,'/events/byob-02-recap-poster.webp');
+ assert.equal(recap.image,recap.videoPoster);
  assert.equal(recap.registration.status,'Closed');
  const upcoming=events.find(e=>e.id==='byob-03');
+ assert.equal(upcoming.image,'/events/byob-key-art.png');
  assert.equal(upcoming.dateTime,'2026-10-09T14:00:00.000Z');
  assert.equal(upcoming.timezone,'America/Denver');
  assert.deepEqual(upcoming.registration,{href:'/community/byob-03/register',label:'Register',status:'Open'});

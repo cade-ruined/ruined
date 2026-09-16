@@ -70,7 +70,9 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 3 }, (_, index) => {
     admission: "",
     summary: "Bring Your Own (Bell or bodyweight).",
     timezone: "America/Denver",
-    image: isFirstEvent ? BYOB_01_FEATURE_IMAGE : "/events/byob-key-art.png",
+    image: isFirstEvent
+      ? BYOB_01_FEATURE_IMAGE
+      : isSecondEvent ? "/events/byob-02-recap-poster.webp" : "/events/byob-key-art.png",
     video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : isSecondEvent ? "/events/byob-02-recap.mp4" : undefined,
     videoPoster: isFirstEvent
       ? "/events/byob-01-recap-poster.webp?v=2"
