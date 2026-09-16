@@ -393,7 +393,7 @@ export function JourneyStoreIndex({
         <Link
           href="/store"
           aria-label={productCount === 0 && notice.retry ? "Off the Rack — try the catalog again" : "Off the Rack — view the full catalog"}
-          className="inline-flex min-h-11 shrink-0 items-center gap-2 bg-black px-3 py-2 font-sans text-xs text-white transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-4 sm:text-sm"
+          className="inline-flex min-h-11 shrink-0 items-center gap-2 bg-black px-2 py-2 font-sans text-xs text-white transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-4 sm:text-sm"
         >
           <span>Off the Rack</span>
           <span aria-hidden="true">↗</span>
