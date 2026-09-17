@@ -57,15 +57,13 @@ export default async function JoinMyRuinedPage() {
   return (
     <main className="member-journey-page member-entry-page min-h-[72vh]">
       <MembershipEntryProgressProvider initialStage={initialStage}>
-        <MembershipEntryProgress complimentary={complimentary} />
-
-        <section className="member-entry-artwork relative isolate overflow-hidden" data-member-artwork>
+        <header className="member-entry-artwork relative isolate overflow-hidden" data-member-artwork>
           <Image
             alt="A figure moving through a monumental concrete passage toward the light."
             className="object-cover object-center"
             fill
             priority
-            sizes="(min-width: 1536px) 1472px, calc(100vw - 2rem)"
+            sizes="100vw"
             src="/after-the-fear-hero.webp"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
@@ -74,15 +72,10 @@ export default async function JoinMyRuinedPage() {
               Your place begins here.
             </span>
           </h1>
-        </section>
+        </header>
 
-        <section className="mx-auto mt-9 w-full max-w-4xl sm:mt-12" aria-labelledby="membership-entry-title">
-          <h2 className="member-page-title" id="membership-entry-title">
-            Membership entry
-          </h2>
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">
-            These details stay private and never appear on your Circle profile.
-          </p>
+        <section className="member-entry-fields" aria-label="Membership entry">
+          <MembershipEntryProgress complimentary={complimentary} />
           <JoinForm
             checkoutDisabledReason={checkoutDisabledReason}
             checkoutEnabled={checkoutEnabled}

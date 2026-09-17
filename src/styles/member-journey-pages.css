@@ -29,7 +29,11 @@
 [data-member-journey] .member-label{color:var(--member-red)}
 [data-member-journey] .member-field{color:var(--member-ink);background:var(--member-soft);border-color:var(--member-rule)}
 @media(max-width:800px){[data-member-journey] .member-access-page{grid-template-columns:1fr;gap:35px;min-height:auto}[data-member-journey] .member-access-form{padding:24px}[data-member-journey] .member-access-intro h1{font-size:clamp(2.6rem,10vw,4.5rem)}}
-[data-member-journey] .member-entry-artwork{height:clamp(240px,32vw,400px);margin-top:28px}
+[data-member-journey] .member-entry-page{max-width:none}
+[data-member-journey] .member-entry-artwork{width:100%;height:clamp(240px,32vw,440px);margin:0}
+[data-member-journey] .member-entry-fields{width:100%;max-width:960px;margin-inline:auto;padding:16px clamp(24px,4vw,64px) 0}
+@media(max-width:1023px){[data-member-journey] .member-entry-fields{padding-inline:24px}}
+@media(max-width:480px){[data-member-journey] .member-entry-fields{padding-inline:16px}}
 [data-member-journey] .member-entry-artwork h1{color:#e5e0d5;font-size:clamp(2.6rem,6vw,5rem);max-width:850px}
 [data-member-journey] .member-entry-title{color:#e5e0d5;background:none;font-family:var(--font-display);font-weight:500;line-height:1.03;letter-spacing:-.04em}
 [data-member-journey] .member-support-page [class*="text-black/"]{color:var(--member-muted)}

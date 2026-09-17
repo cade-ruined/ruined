@@ -22,3 +22,4 @@
 @media(prefers-reduced-motion:reduce){.journey *{scroll-behavior:auto!important}}
 
 .appearanceToggle{min-height:44px;padding:8px;font-size:11px;text-decoration:underline;text-underline-offset:4px}
+.entryContent{max-width:none;padding:0}

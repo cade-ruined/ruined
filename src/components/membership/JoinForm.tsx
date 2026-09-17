@@ -340,12 +340,13 @@ export default function JoinForm({
     <div className="mt-8">
       {stage === "profile" ? (
         <form className="grid gap-8" onSubmit={saveProfile}>
-          <h3 className="font-[var(--font-display)] text-4xl tracking-[-0.03em]" ref={stageHeadingRef} tabIndex={-1}>Profile</h3>
+          <h2 className="sr-only" ref={stageHeadingRef} tabIndex={-1}>Profile</h2>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <label className={fieldLabelClass} htmlFor="member-legal-name">
               <span className={fieldLabelTextClass}>Full name</span>
               <input
+                aria-describedby="member-legal-name-visibility"
                 autoCapitalize="words"
                 autoComplete="name"
                 autoCorrect="off"
@@ -357,10 +358,12 @@ export default function JoinForm({
                 required
                 spellCheck={false}
               />
+              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-legal-name-visibility">Private · For your membership records.</span>
             </label>
             <label className={fieldLabelClass} htmlFor="member-preferred-name">
               <span className={fieldLabelTextClass}>Preferred name</span>
               <input
+                aria-describedby="member-preferred-name-visibility"
                 autoCapitalize="words"
                 autoComplete="nickname"
                 autoCorrect="off"
@@ -372,6 +375,7 @@ export default function JoinForm({
                 required
                 spellCheck={false}
               />
+              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-preferred-name-visibility">Public · The name shown on your profile.</span>
             </label>
             <label className={fieldLabelClass} htmlFor="member-email">
               <span className={fieldLabelTextClass}>Confirmed email</span>
@@ -541,6 +545,7 @@ export default function JoinForm({
 
           <div>
             <p className={fieldLabelTextClass}>Profile photo / Optional</p>
+            <p className="mt-2 text-xs leading-relaxed text-[var(--member-muted)]">Public · If you add a photo, it will appear on your public profile.</p>
             <MemberPhotoUpload
               avatarUrl={onboarding.profile.avatarUrl}
               available={photoStorageReady}
