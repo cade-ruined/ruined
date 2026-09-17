@@ -61,7 +61,7 @@ function ChatCard({ chat }: Pick<CircleRoomCommunicationProps, "chat">) {
   );
 
   const cardClassName =
-    "group flex min-h-[17rem] flex-col rounded-[4px] bg-[#B7CBDD] p-5 shadow-[7px_8px_0_#15120f] sm:p-6";
+    "group flex min-h-[17rem] flex-col rounded-none bg-[#B7CBDD] p-5 sm:p-6";
 
   return ready && chat.href ? (
     <Link
@@ -86,7 +86,7 @@ function MeetCard({ meeting }: Pick<CircleRoomCommunicationProps, "meeting">) {
   if (!meeting) {
     return (
       <article
-        className="flex min-h-[17rem] flex-col rounded-[4px] bg-[#3B5D4F] p-5 text-[var(--color-bone)] shadow-[7px_8px_0_#15120f] sm:p-6"
+        className="flex min-h-[17rem] flex-col rounded-none bg-[#3B5D4F] p-5 text-[var(--color-bone)] sm:p-6"
         data-circle-meet-card
         data-state="unscheduled"
       >
@@ -109,7 +109,7 @@ function MeetCard({ meeting }: Pick<CircleRoomCommunicationProps, "meeting">) {
 
   return (
     <article
-      className="flex min-h-[17rem] flex-col rounded-[4px] bg-[#3B5D4F] p-5 text-[var(--color-bone)] shadow-[7px_8px_0_#15120f] sm:p-6"
+      className="flex min-h-[17rem] flex-col rounded-none bg-[#3B5D4F] p-5 text-[var(--color-bone)] sm:p-6"
       data-circle-meet-card
       data-state={meeting.meetingUrl ? "ready" : "scheduled"}
     >
@@ -157,11 +157,11 @@ export default function CircleRoomCommunication({
   return (
     <section aria-labelledby="circle-room-title" className="mt-12 sm:mt-14" data-circle-communications>
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h2 className="ui-heading text-[clamp(2rem,4vw,3.5rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[#191613]" id="circle-room-title">
+        <h2 className="ui-heading text-[clamp(2rem,4vw,3.5rem)] font-black uppercase leading-[0.84] tracking-[-0.05em] text-[var(--member-ink)]" id="circle-room-title">
           The room
         </h2>
         <Link
-          className="inline-flex min-h-11 items-center font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.045em] text-black/58 transition-colors hover:text-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
+          className="inline-flex min-h-11 items-center font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.045em] text-[var(--member-muted)] transition-colors hover:text-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
           href="/my/experiences"
         >
           All experiences →

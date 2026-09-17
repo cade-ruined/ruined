@@ -69,8 +69,8 @@ test("Circle is a completion condition, not a condition for starting or progress
     "lifecycle and both completion history events must share the durable completion time",
   );
 
-  assert.match(home, /A Circle is not required to begin or continue/);
-  assert.match(home, /required only when you complete the final moment/);
+  assert.match(home, /An active Circle is required to complete/);
+  assert.match(home, /disabled=\{pending\}/);
   assert.match(shell, /COMPLETION BEGINS WITH A CIRCLE/);
   assert.match(shell, /Complete Foundations/);
 });
@@ -136,7 +136,7 @@ test("member journey saves only sequential moment position and cannot arrow past
 });
 
 test("reflection content remains ephemeral while resume position is persisted", () => {
-  assert.match(home, /only your place in the path is saved/);
+  assert.match(home, /Only your place in the path is saved/);
   assert.match(shell, /YOUR WORDS STAY IN THIS MOMENT/);
   assert.doesNotMatch(experience, /responses|reflection|textarea|localStorage|sessionStorage/);
   assert.doesNotMatch(apiRoute, /responses|reflection|answer|fieldId/);

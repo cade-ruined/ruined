@@ -80,14 +80,7 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.match(joinPage, /src="\/after-the-fear-hero\.webp"/);
   assert.match(joinPage, /Your place begins here\./);
   assert.match(theme, /--color-highlight:\s*#FFCA2C;/);
-  assert.match(
-    joinPage,
-    /ui-heading[^"\n]*bg-\[var\(--color-highlight\)\][^"\n]*uppercase/,
-  );
-  assert.equal(
-    (`${joinPage}\n${joinForm}`.match(/bg-\[var\(--color-highlight\)\]/g) ?? []).length,
-    1,
-  );
+  assert.match(joinPage, /member-entry-title/);
   assert.doesNotMatch(joinForm, /color-highlight/);
   assert.doesNotMatch(joinPage, /<main className="[^"]*border-t/);
   assert.match(joinForm, />Profile<\/h3>/);
@@ -105,7 +98,7 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.doesNotMatch(joinForm, /Photo upload will open/);
 
   const progressIndex = joinPage.indexOf("<MembershipEntryProgress complimentary={complimentary} />");
-  const heroIndex = joinPage.indexOf('<section className="relative isolate');
+  const heroIndex = joinPage.indexOf('member-entry-artwork');
   assert.ok(progressIndex >= 0 && heroIndex > progressIndex);
   assert.doesNotMatch(joinForm, /StageLine|Membership progress/);
 });
@@ -125,9 +118,9 @@ test("member entry uses a live accessible step rail beneath the header", () => {
     'aria-atomic="true"',
     'aria-label="Membership entry steps"',
     'aria-current={status === "current" ? "step" : undefined}',
-    "bg-[var(--color-verdigris)]",
-    "bg-[var(--color-poster)]",
-    "bg-white/15",
+    "bg-[var(--member-ink)]",
+    "bg-[var(--member-yellow)]",
+    "bg-[var(--member-rule)]",
     "max-w-4xl",
   ]) {
     assert.ok(entryProgress.includes(token), `missing progress token: ${token}`);

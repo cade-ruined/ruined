@@ -36,6 +36,7 @@ import type {
   MemberLearningSnapshot,
   MemberOnboardingSnapshot,
   MemberProfileSnapshot,
+  MemberRecordSummary,
   MemberDirectoryPreferences,
   MemberTimelineSnapshot,
   MemberUpdateItem,
@@ -2681,6 +2682,122 @@ export async function getMemberFoundationRequirements(
   };
 }
 
+export async function getMemberRecord(
+  authUserId: string,
+): Promise<MemberRecordSummary | undefined> {
+  const identity = await requireMemberIdentity(authUserId);
+  const access = requireMemberCapability(identity, "home.read");
+  if (access.mode === "entry" || access.mode === "limited" || access.mode === "suspended") {
+    return undefined;
+  }
+  const sql = getApplicationDatabase();
+  const rows = await sql<Array<{
+    milestones: MemberRecordSummary["milestones"];
+    attended_experiences: MemberRecordSummary["attendedExperiences"];
+    milestone_count: number | string;
+    attended_count: number | string;
+    credited_count: number | string;
+    artifact_count: number | string;
+  }>>`
+    with visible_awards as (
+      select award.id
+      from artifact_awards award
+      where award.member_id = ${identity.memberId}::uuid
+        and award.person_id = ${identity.personId}::uuid
+        and award.status in ('awarded', 'in_fulfillment', 'fulfilled')
+        and award.revoked_at is null
+        and award.awarded_at <= statement_timestamp()
+    ), visible_milestones as (
+      select milestone.id, milestone.milestone_type, milestone.title, milestone.occurred_at
+      from member_milestones milestone
+      where milestone.member_id = ${identity.memberId}::uuid
+        and milestone.person_id = ${identity.personId}::uuid
+        and milestone.visibility in ('member', 'circle')
+        and milestone.occurred_at <= statement_timestamp()
+        and (
+          milestone.source_entity_type is distinct from 'artifact_award'
+          or exists (
+            select 1 from visible_awards award
+            where award.id::text = milestone.source_entity_id
+          )
+        )
+    ), latest_attendance as (
+      -- Select the correction first, including person-linked events recorded
+      -- before membership. Filtering states here would resurrect revoked visits.
+      select distinct on (attendance.experience_id, attendance.person_id)
+        attendance.experience_id, attendance.member_id,
+        attendance.event_type, attendance.occurred_at
+      from experience_attendance_events attendance
+      where attendance.person_id = ${identity.personId}::uuid
+        and attendance.occurred_at <= statement_timestamp()
+      order by attendance.experience_id, attendance.person_id,
+        attendance.occurred_at desc, attendance.id desc
+    ), confirmed_experiences as (
+      select experience.id, experience.title, experience.kind,
+        experience.starts_at, experience.timezone, experience.location_label,
+        attendance.event_type, attendance.occurred_at
+      from latest_attendance attendance
+      join experiences experience on experience.id = attendance.experience_id
+      where (attendance.member_id = ${identity.memberId}::uuid or attendance.member_id is null)
+        and attendance.event_type in ('attended', 'credited')
+        and experience.starts_at <= statement_timestamp()
+    )
+    select
+      (select count(*) from visible_milestones) as milestone_count,
+      (select count(*) from confirmed_experiences where event_type = 'attended') as attended_count,
+      (select count(*) from confirmed_experiences where event_type = 'credited') as credited_count,
+      (select count(*) from visible_awards) as artifact_count,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', recent.id,
+          'type', recent.milestone_type,
+          'title', recent.title,
+          'occurredAt', recent.occurred_at
+        ) order by recent.occurred_at desc, recent.id desc)
+        from (
+          select * from visible_milestones
+          order by occurred_at desc, id desc
+          limit 24
+        ) recent
+      ), '[]'::jsonb) as milestones,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', recent.id,
+          'title', recent.title,
+          'kind', recent.kind,
+          'startsAt', recent.starts_at,
+          'timezone', recent.timezone,
+          'locationLabel', recent.location_label,
+          'attendanceState', recent.event_type,
+          'recordedAt', recent.occurred_at
+        ) order by recent.starts_at desc, recent.id desc)
+        from (
+          select * from confirmed_experiences
+          order by starts_at desc, id desc
+          limit 24
+        ) recent
+      ), '[]'::jsonb) as attended_experiences
+  `;
+  const row = rows[0];
+  return {
+    milestones: (row?.milestones ?? []).map((milestone) => ({
+      ...milestone,
+      occurredAt: toIso(milestone.occurredAt)!,
+    })),
+    attendedExperiences: (row?.attended_experiences ?? []).map((experience) => ({
+      ...experience,
+      startsAt: toIso(experience.startsAt)!,
+      recordedAt: toIso(experience.recordedAt)!,
+    })),
+    totals: {
+      milestones: Number(row?.milestone_count ?? 0),
+      attendedExperiences: Number(row?.attended_count ?? 0),
+      creditedExperiences: Number(row?.credited_count ?? 0),
+      artifacts: Number(row?.artifact_count ?? 0),
+    },
+  };
+}
+
 export async function getMemberHome(
   authUserId: string,
 ): Promise<MemberHomeSnapshot | null> {
@@ -2745,6 +2862,7 @@ export async function getMemberHome(
     requirements,
     foundationRows,
     memberSinceRows,
+    record,
   ] = await Promise.all([
       getMemberProfile(authUserId),
       getMemberCircle(authUserId),
@@ -2754,6 +2872,7 @@ export async function getMemberHome(
       getMemberFoundationRequirements(authUserId),
       foundationRowsPromise,
       memberSinceRowsPromise,
+      getMemberRecord(authUserId),
     ]);
   if (!profile || !circle || !experiences || !artifacts || !updates) return null;
   const foundationRow = foundationRows[0] ?? {
@@ -2903,6 +3022,7 @@ export async function getMemberHome(
       preferredName: profile.directory.preferredName?.trim() || null,
       timezone: profile.directory.timezone,
     },
+    record: suppressPrivateHighlights ? undefined : record,
     unreadUpdates: suppressPrivateHighlights ? 0 : updates.unreadCount,
     upcomingExperiences: visibleUpcomingExperiences,
   };

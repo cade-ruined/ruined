@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function MyRuinedEmailConfirmedPage() {
   return (
-    <main className="grid min-h-[68vh] gap-14 border-t border-white/15 pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-24">
+    <main className="member-journey-page member-confirmation-page grid min-h-[68vh] gap-14 border-t border-[var(--member-rule)] pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-24">
       <div>
         <p className="font-[var(--font-handwritten)] text-xl text-[var(--color-poster)]">
           RUINED MEMBERSHIP / EMAIL

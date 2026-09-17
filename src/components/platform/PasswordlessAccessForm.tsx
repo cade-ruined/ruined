@@ -82,14 +82,14 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
     return (
       <form className="mt-8 grid gap-5" onSubmit={requestCode}>
         <label className="grid gap-2">
-          <span className="font-cadehandy2 text-xl leading-none text-[var(--color-poster)]">
+          <span className="font-cadehandy2 text-xl leading-none text-[var(--member-red)]">
             Your email
           </span>
           <input
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect="off"
-            className="min-h-13 rounded-[4px] border border-black/28 bg-white/24 px-4 text-base text-[#201d19] outline-none placeholder:text-black/28 focus:border-black focus:ring-2 focus:ring-[var(--color-shop)] disabled:opacity-40"
+            className="min-h-13 rounded-[4px] border border-[var(--member-rule)] bg-white/24 px-4 text-base text-[var(--member-ink)] outline-none placeholder:text-[var(--member-muted)] focus:border-black focus:ring-2 focus:ring-[var(--color-shop)] disabled:opacity-40"
             disabled={!enabled || pending}
             name="email"
             onChange={(event) => setEmail(event.target.value)}
@@ -101,10 +101,10 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
           />
         </label>
 
-        {error ? <p aria-live="polite" className="text-sm text-[var(--color-poster)]">{error}</p> : null}
+        {error ? <p aria-live="polite" className="text-sm text-[var(--member-red)]">{error}</p> : null}
 
         <button
-          className="min-h-13 rounded-[4px] bg-[#201d19] px-5 text-sm font-semibold text-[var(--color-bone)] shadow-[4px_4px_0_var(--color-shop)] transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#201d19] disabled:cursor-not-allowed disabled:bg-black/35 disabled:shadow-none motion-reduce:transition-none"
+          className="min-h-13 rounded-[4px] bg-[var(--member-yellow)] px-5 text-sm font-semibold text-[#2a2a2a]  transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#201d19] disabled:cursor-not-allowed disabled:bg-black/35 disabled:shadow-none motion-reduce:transition-none"
           disabled={!enabled || pending}
           type="submit"
         >
@@ -122,17 +122,17 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
 
   return (
     <form className="mt-8 grid gap-5" onSubmit={verifyCode}>
-      <p className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-sm leading-relaxed text-black/58" role="status">
-        Request received for <span className="font-medium text-black">{email.trim().toLowerCase()}</span>. An active account or current invitation is needed to receive a code. Check your inbox and spam folder, then enter the newest code below.
+      <p className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-sm leading-relaxed text-[var(--member-muted)]" role="status">
+        Request received for <span className="font-medium text-[var(--member-muted)]">{email.trim().toLowerCase()}</span>. An active account or current invitation is needed to receive a code. Check your inbox and spam folder, then enter the newest code below.
       </p>
       <label className="grid gap-2">
-        <span className="font-cadehandy2 text-xl leading-none text-[var(--color-poster)]">
+        <span className="font-cadehandy2 text-xl leading-none text-[var(--member-red)]">
           Access code
         </span>
         <input
           autoComplete="one-time-code"
           autoFocus
-          className="min-h-14 rounded-[4px] border border-black/28 bg-white/24 px-4 font-mono text-xl tracking-[0.28em] text-[#201d19] outline-none focus:border-black focus:ring-2 focus:ring-[var(--color-shop)]"
+          className="min-h-14 rounded-[4px] border border-[var(--member-rule)] bg-white/24 px-4 font-mono text-xl tracking-[0.28em] text-[var(--member-ink)] outline-none focus:border-black focus:ring-2 focus:ring-[var(--color-shop)]"
           inputMode="numeric"
           maxLength={10}
           minLength={6}
@@ -142,10 +142,10 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
         />
       </label>
 
-      {error ? <p aria-live="polite" className="text-sm text-[var(--color-poster)]">{error}</p> : null}
+      {error ? <p aria-live="polite" className="text-sm text-[var(--member-red)]">{error}</p> : null}
 
       <button
-        className="min-h-13 rounded-[4px] bg-[#201d19] px-5 text-sm font-semibold text-[var(--color-bone)] shadow-[4px_4px_0_var(--color-shop)] transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#201d19] disabled:cursor-wait disabled:opacity-50 motion-reduce:transition-none"
+        className="min-h-13 rounded-[4px] bg-[var(--member-yellow)] px-5 text-sm font-semibold text-[#2a2a2a]  transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#201d19] disabled:cursor-wait disabled:opacity-50 motion-reduce:transition-none"
         disabled={pending}
         type="submit"
       >
@@ -172,7 +172,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
           {resendDelay > 0 ? `Send again in ${resendDelay}s` : "Send a new code"}
         </button>
       </div>
-      <div className="text-sm leading-relaxed text-black/65">
+      <div className="text-sm leading-relaxed text-[var(--member-muted)]">
         <p>Still no code? Your invitation may have expired, or email delivery may need attention. <a className="underline underline-offset-4" href={`mailto:connect@theruinedproject.com?subject=${encodeURIComponent("Sign-in help")}&body=${encodeURIComponent(`I could not receive a sign-in code for ${email.trim().toLowerCase()}. Request reference: ${requestId ?? "not available"}.`)}`}>Contact connect@theruinedproject.com</a>.</p>
         {requestId ? <p className="mt-2 break-all text-xs">Request reference: {requestId}</p> : null}
       </div>

@@ -1,13 +1,13 @@
 .root {
-  --timeline-ground: #ebe5da;
-  --timeline-panel: #0a0a09;
-  --timeline-ink: #0a0a09;
-  --timeline-rule: #bcb5a9;
-  --timeline-faint: #ddd7cc;
-  --timeline-muted: #6c675f;
-  --timeline-panel-rule: #635e56;
-  --timeline-panel-muted: #aaa398;
-  color-scheme: light;
+  --timeline-ground: var(--member-paper);
+  --timeline-panel: var(--member-panel);
+  --timeline-ink: var(--member-ink);
+  --timeline-rule: var(--member-rule);
+  --timeline-faint: var(--member-subtle);
+  --timeline-muted: var(--member-muted);
+  --timeline-panel-rule: var(--member-rule);
+  --timeline-panel-muted: var(--member-muted);
+  color-scheme: inherit;
   width: 100%;
   max-width: 88rem;
   margin: 0 auto;
@@ -50,10 +50,10 @@
 .uiHeading,
 .toolTitle {
   margin: 0;
-  font-family: var(--font-header) !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.045em;
-  text-transform: uppercase;
+  font-family: var(--font-display) !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.035em;
+  text-transform: none;
 }
 
 .toolTitle {
@@ -168,8 +168,8 @@
   padding: clamp(1.25rem, 3vw, 2.25rem);
   border-right: 0;
   background: var(--timeline-panel);
-  color: var(--timeline-ground);
-  color-scheme: dark;
+  color: var(--timeline-ink);
+  color-scheme: inherit;
 }
 
 .editorIntro {
@@ -277,7 +277,7 @@ textarea.formControl {
 
 .error {
   margin: 0.8rem 0 0;
-  color: #f0a58f;
+  color: var(--member-red);
   font-size: 0.72rem;
   line-height: 1.4;
 }
@@ -329,7 +329,7 @@ textarea.formControl {
 
 .removeButton {
   margin-left: auto;
-  color: #f0a58f;
+  color: var(--member-red);
 }
 
 .indexPanel {

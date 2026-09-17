@@ -110,7 +110,7 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
   });
 
   return (
-    <main className={styles.academy} data-member-academy>
+    <main className={`member-journey-page ${styles.academy}`} data-member-academy>
       <header className={styles.academyHeader}>
         <div>
           <p className={styles.handNote}>use what moves the work</p>

@@ -52,8 +52,8 @@ test("Circle Chat and Meet share one restrained, branded room surface", () => {
   assert.match(communication, /data-circle-meet-card/);
   assert.match(communication, /Join Google Meet/);
   assert.match(communication, /bg-\[#3B5D4F\]/);
-  assert.match(communication, /rounded-\[4px\]/);
-  assert.match(communication, /shadow-\[7px_8px_0_#15120f\]/);
+  assert.match(communication, /rounded-none/);
+  assert.doesNotMatch(communication, /shadow-\[7px_8px_0_#15120f\]/);
   assert.match(communication, /meeting\.meetingUrl \? "Join Google Meet ↗" : "View gathering →"/);
   assert.match(communication, /target="_blank"/);
   assert.match(communication, /target=\{meeting\.meetingUrl \? "_blank" : undefined\}/);
@@ -100,14 +100,12 @@ test("preview shows ten distinct fictional portraits without fabricating connect
   assert.match(repository, /members,/);
 });
 
-test("profile preview, Circle cluster, and person dossier share one ID-based portrait renderer", () => {
+test("Circle cluster and person dossier share one ID-based portrait renderer", () => {
   assert.doesNotMatch(portrait, /"use client"/);
   assert.match(cluster, /import CircleMemberPortrait/);
   assert.match(cluster, /<CircleMemberPortrait/);
   assert.match(personProfile, /import CircleMemberPortrait/);
   assert.match(personProfile, /<CircleMemberPortrait/);
-  assert.match(home, /import CircleMemberPortrait/);
-  assert.match(home, /<CircleMemberPortrait/);
   assert.doesNotMatch(cluster, /function initials/);
   assert.doesNotMatch(personProfile, /function initials/);
   assert.doesNotMatch(home, /function initials/);
@@ -119,7 +117,6 @@ test("Circle shares the profile paper shell and member home no longer invents a 
   assert.match(shell, /memberHome \|\| memberCircle[\s\S]*?"member-profile-paper"/);
   assert.doesNotMatch(home, />Accountability</i);
   assert.doesNotMatch(home, /member\.partner/);
-  assert.match(home, /!circleAccess \? "Membership required" : member\.circleName \? [^\n]*\$\{member\.circleMembers\.length\} members[^\n]* : "Not assigned yet"/);
 });
 
 test("Circle member and Shaper links resolve through the viewer's privacy-safe Circle snapshot", () => {

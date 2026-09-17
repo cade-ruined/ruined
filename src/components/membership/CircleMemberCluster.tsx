@@ -61,11 +61,11 @@ export default function CircleMemberCluster({
 
   if (!selected) {
     return (
-      <div className="rounded-[4px] bg-black/[0.045] px-5 py-10" data-circle-empty-roster>
-        <p className="[font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none text-[var(--color-poster)]">
+      <div className="rounded-[4px] bg-[var(--member-soft)] px-5 py-10" data-circle-empty-roster>
+        <p className="[font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none text-[var(--member-red)]">
           The room is forming
         </p>
-        <p className="ui-heading mt-2 text-2xl font-black uppercase leading-[0.9] tracking-[-0.04em] text-black/72">
+        <p className="ui-heading mt-2 text-2xl font-black uppercase leading-[0.9] tracking-[-0.04em] text-[var(--member-muted)]">
           No members are visible yet.
         </p>
       </div>
@@ -98,35 +98,35 @@ export default function CircleMemberCluster({
       </ol>
 
       <article aria-live="polite" className="min-w-0 lg:pb-5" data-circle-member-profile>
-        <p className="[font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none text-[var(--color-poster)] sm:text-[1.65rem]">
+        <p className="[font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none text-[var(--member-red)] sm:text-[1.65rem]">
           {selected.isSelf ? "You" : `Member ${String(selectedIndex + 1).padStart(2, "0")}`}
         </p>
-        <h2 className="ui-heading mt-2 break-words text-[clamp(2rem,5vw,4.5rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[#15120f]">
+        <h2 className="ui-heading mt-2 break-words text-[clamp(2rem,5vw,4.5rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[var(--member-ink)]">
           {selected.displayName}
         </h2>
         {selected.location ? (
-          <p className="mt-3 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-black/48">
+          <p className="mt-3 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-[var(--member-muted)]">
             {selected.location}
           </p>
         ) : null}
         {selected.buildingNow ? (
           <div className="mt-6 max-w-lg">
-            <p className="[font-family:var(--font-cadehandy2)] text-[1.28rem] leading-none text-[var(--color-poster)]">
+            <p className="[font-family:var(--font-cadehandy2)] text-[1.28rem] leading-none text-[var(--member-red)]">
               What they&apos;re building
             </p>
-            <p className="mt-2 font-[var(--font-display)] text-xl leading-[1.06] tracking-[-0.02em] text-black/82 sm:text-2xl">
+            <p className="mt-2 font-[var(--font-display)] text-xl leading-[1.06] tracking-[-0.02em] text-[var(--member-muted)] sm:text-2xl">
               {selected.buildingNow}
             </p>
           </div>
         ) : null}
         {selected.bio ? (
-          <p className="mt-4 max-w-lg font-[var(--font-body)] text-sm leading-relaxed text-black/58">
+          <p className="mt-4 max-w-lg font-[var(--font-body)] text-sm leading-relaxed text-[var(--member-muted)]">
             {selected.bio}
           </p>
         ) : null}
         <div className="mt-6 flex flex-wrap gap-2.5 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em]">
             <Link
-              className="rounded-[4px] bg-[var(--color-highlight)] px-4 py-3 text-[#15120f] transition-colors hover:bg-[#f3bd18] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+              className="rounded-[4px] bg-[var(--color-highlight)] px-4 py-3 text-[var(--member-ink)] transition-colors hover:bg-[#f3bd18] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
               data-circle-profile-link
               href={`/my/circle/people/${encodeURIComponent(selected.id)}`}
             >
@@ -138,7 +138,7 @@ export default function CircleMemberCluster({
               </a>
             ) : null}
             {selected.phone ? (
-              <a className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-black/72 transition-colors hover:bg-black/[0.09] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]" href={`tel:${selected.phone}`}>
+              <a className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-[var(--member-muted)] transition-colors hover:bg-black/[0.09] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]" href={`tel:${selected.phone}`}>
                 Call
               </a>
             ) : null}

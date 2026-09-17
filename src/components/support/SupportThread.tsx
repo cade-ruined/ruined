@@ -166,5 +166,5 @@ export default function SupportThread({ initialTicket, writable, operator = fals
     </div>
   );
 
-  return operator ? <OperatorPageFrame title={ticket.subject}>{content}</OperatorPageFrame> : <main>{content}</main>;
+  return operator ? <OperatorPageFrame title={ticket.subject}>{content}</OperatorPageFrame> : <main className="member-journey-page member-support-page">{content}</main>;
 }

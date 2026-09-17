@@ -56,7 +56,7 @@ export function MembershipEntryProgress({ complimentary = false }: { complimenta
   return (
     <section
       aria-labelledby="membership-entry-progress-label"
-      className="mx-auto w-full max-w-4xl py-3"
+      className="member-entry-progress mx-auto w-full max-w-4xl py-4"
     >
       <div
         aria-atomic="true"
@@ -65,12 +65,12 @@ export function MembershipEntryProgress({ complimentary = false }: { complimenta
         role="status"
       >
         <p
-          className="text-[0.68rem] font-medium uppercase tracking-[0.05em] text-white/76"
+          className="text-[0.68rem] font-medium uppercase tracking-[0.05em] text-[var(--member-muted)]"
           id="membership-entry-progress-label"
         >
           {complimentary && current.id === "payment" ? "Activation" : current.label}
         </p>
-        <p className="text-[0.66rem] uppercase tracking-[0.05em] text-white/38">
+        <p className="text-[0.66rem] uppercase tracking-[0.05em] text-[var(--member-muted)]">
           Step {currentIndex + 1} of 3
         </p>
       </div>
@@ -96,10 +96,10 @@ export function MembershipEntryProgress({ complimentary = false }: { complimenta
                 aria-hidden="true"
                 className={`block w-full ${
                   status === "complete"
-                    ? "h-[2px] bg-[var(--color-verdigris)]"
+                    ? "h-[3px] bg-[var(--member-ink)]"
                     : status === "current"
-                      ? "h-[2px] bg-[var(--color-poster)]"
-                      : "h-px bg-white/15"
+                      ? "h-[3px] bg-[var(--member-yellow)]"
+                      : "h-px bg-[var(--member-rule)]"
                 }`}
               />
             </li>

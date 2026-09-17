@@ -77,7 +77,7 @@ export default function MemberPhotoUpload({
             </svg>
           </div>
         )}
-        {pending ? <div className="absolute inset-0 grid place-items-center bg-black/55 text-sm text-white" role="status">Saving photo…</div> : null}
+        {pending ? <div className="absolute inset-0 grid place-items-center bg-[var(--member-soft)] text-sm text-white" role="status">Saving photo…</div> : null}
       </div>
       <input
         accept={MEMBER_PHOTO_ACCEPT}
@@ -99,7 +99,7 @@ export default function MemberPhotoUpload({
       </div>
       <p className="text-xs leading-relaxed opacity-60" id={`${inputId}-help`}>JPG, PNG, or WebP · Up to 3 MB.<br />Your profile-sharing settings apply.</p>
       {!available ? <p className="mt-2 text-xs leading-relaxed opacity-60">{enabled ? "Photo upload is temporarily unavailable. You can save your details without a photo." : "Photo upload is unavailable in this view."}</p> : null}
-      {error ? <p className="mt-2 text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-[var(--member-red)]" role="alert">{error}</p> : null}
       {message ? <p className="mt-2 text-sm" role="status">{message}</p> : null}
     </div>
   );

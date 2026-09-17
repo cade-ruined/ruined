@@ -16,18 +16,18 @@ export default function MemberPageHeader({
   title: string;
 }) {
   return (
-    <header className="grid items-end gap-10 border-t border-black/20 pt-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(20rem,0.92fr)] lg:gap-16">
+    <header className="member-editorial-header grid items-end gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(15rem,0.8fr)] lg:gap-10">
       <div className="pb-2 lg:pb-10">
-        <p className="font-[var(--font-body)] text-[0.66rem] font-medium uppercase tracking-[0.18em] text-black/52">
+        <p className="font-[var(--font-body)] text-[0.66rem] font-medium uppercase tracking-[0.18em] text-[var(--member-muted)]">
           {eyebrow}
         </p>
-        <p className="mt-12 font-[var(--font-handwritten)] text-2xl leading-none text-[var(--color-poster)] sm:text-3xl">
+        <p className="mt-5 font-[var(--font-handwritten)] text-2xl leading-none text-[var(--member-red)] sm:text-3xl">
           {note}
         </p>
-        <h1 className="mt-4 max-w-[12ch] font-[var(--font-display)] text-[clamp(3.7rem,9vw,8.8rem)] font-medium leading-[0.8] tracking-[-0.055em]">
+        <h1 className="member-page-title mt-3">
           {title}
         </h1>
-        <p className="mt-8 max-w-xl font-[var(--font-body)] text-base leading-relaxed text-black/58 sm:text-lg">
+        <p className="mt-5 max-w-xl font-[var(--font-body)] text-base leading-relaxed text-[var(--member-muted)] sm:text-lg">
           {summary}
         </p>
       </div>
@@ -51,14 +51,14 @@ export function MemberEmptyRoom({
   title: string;
 }) {
   return (
-    <div className="border-y border-black/20 py-12 sm:py-16">
-      <p className="font-[var(--font-handwritten)] text-2xl text-[var(--color-poster)]">
+    <div className="border-y border-[var(--member-rule)] py-12 sm:py-16">
+      <p className="font-[var(--font-handwritten)] text-2xl text-[var(--member-red)]">
         not filled for the sake of filling
       </p>
       <h2 className="mt-5 max-w-2xl font-[var(--font-display)] text-4xl leading-[0.95] tracking-[-0.035em] sm:text-5xl">
         {title}
       </h2>
-      <p className="mt-6 max-w-xl font-[var(--font-body)] text-sm leading-relaxed text-black/55 sm:text-base">
+      <p className="mt-6 max-w-xl font-[var(--font-body)] text-sm leading-relaxed text-[var(--member-muted)] sm:text-base">
         {body}
       </p>
     </div>

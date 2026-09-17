@@ -107,10 +107,10 @@ function EmbeddedCheckout({
 }
 
 const fieldClass =
-  "min-h-12 w-full rounded-[4px] border border-white/20 bg-transparent px-3 py-3 font-[var(--font-body)] text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[var(--color-poster)]";
+  "min-h-12 w-full rounded-[4px] border border-[var(--member-rule)] bg-transparent px-3 py-3 font-[var(--font-body)] text-sm text-white outline-none transition-colors placeholder:text-[var(--member-muted)] focus:border-[var(--color-poster)]";
 const fieldLabelClass = "grid gap-2";
 const fieldLabelTextClass =
-  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none tracking-normal text-[var(--color-poster)] [transform:rotate(-2deg)]";
+  "inline-block w-fit origin-left [font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none tracking-normal text-[var(--member-red)] [transform:rotate(-2deg)]";
 
 function savedString(value: Record<string, unknown> | null, key: string) {
   return value && typeof value[key] === "string" ? String(value[key]) : "";
@@ -377,7 +377,7 @@ export default function JoinForm({
               <span className={fieldLabelTextClass}>Confirmed email</span>
               <input
                 autoComplete="email"
-                className={`${fieldClass} text-white/45`}
+                className={`${fieldClass} text-[var(--member-muted)]`}
                 disabled
                 id="member-email"
                 value={onboarding.email}
@@ -550,7 +550,7 @@ export default function JoinForm({
             />
           </div>
 
-          {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/72">{error ?? disabledReason}</p> : null}
+          {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
           <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending} type="submit">{submitting ? "Saving profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
@@ -558,16 +558,16 @@ export default function JoinForm({
       {stage === "agreement" ? (
         <form className="mt-9 grid gap-6" onSubmit={acceptAgreement}>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">Second / Exact agreement</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Second / Exact agreement</p>
             <h3 className="mt-4 font-[var(--font-display)] text-4xl tracking-[-0.03em]" ref={stageHeadingRef} tabIndex={-1}>{onboarding.agreement.title ?? "Agreement not published"}</h3>
-            {onboarding.agreement.version ? <p className="mt-3 text-xs uppercase tracking-[0.13em] text-white/38">Version {onboarding.agreement.version}</p> : null}
+            {onboarding.agreement.version ? <p className="mt-3 text-xs uppercase tracking-[0.13em] text-[var(--member-muted)]">Version {onboarding.agreement.version}</p> : null}
           </div>
           {onboarding.agreement.body && onboarding.agreement.id ? (
-            <div aria-label="Published membership agreement" className="max-h-[26rem] overflow-y-auto rounded-[4px] bg-white/[0.035] p-5 sm:p-7" role="region" tabIndex={0}>
+            <div aria-label="Published membership agreement" className="max-h-[26rem] overflow-y-auto rounded-[4px] bg-[var(--member-soft)] p-5 sm:p-7" role="region" tabIndex={0}>
               <AgreementText body={onboarding.agreement.body} />
             </div>
           ) : (
-            <p className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/68">Ruined has not published the membership agreement yet. Entry remains closed until the approved copy is available.</p>
+            <p className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">Ruined has not published the membership agreement yet. Entry remains closed until the approved copy is available.</p>
           )}
           <label className={fieldLabelClass}>
             <span className={fieldLabelTextClass}>Type the full name you entered</span>
@@ -581,12 +581,12 @@ export default function JoinForm({
               spellCheck={false}
             />
           </label>
-          <div className="grid gap-4 text-sm leading-relaxed text-white/68">
+          <div className="grid gap-4 text-sm leading-relaxed text-[var(--member-muted)]">
             <label className="grid grid-cols-[1rem_1fr] items-start gap-3"><input className="mt-1 size-4 accent-[var(--color-poster)]" name="age-confirmed" required type="checkbox" /><span>I confirm that I am at least {minimumAge} years old.</span></label>
             <label className="grid grid-cols-[1rem_1fr] items-start gap-3"><input className="mt-1 size-4 accent-[var(--color-poster)]" name="agreement-accepted" required type="checkbox" /><span>I have read and accept this exact published Ruined Membership Agreement. A durable receipt will be kept with my account.</span></label>
           </div>
-          <p className="text-xs leading-relaxed text-white/38">Ruined’s separate <Link className="underline underline-offset-4" href="/privacy">privacy policy</Link> explains how personal information is handled.</p>
-          {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/72">{error ?? disabledReason}</p> : null}
+          <p className="text-xs leading-relaxed text-[var(--member-muted)]">Ruined’s separate <Link className="underline underline-offset-4" href="/privacy">privacy policy</Link> explains how personal information is handled.</p>
+          {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
           <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || !onboarding.agreement.id || !onboarding.agreement.body || submitting} type="submit">{submitting ? "Recording acceptance" : "Accept & continue"}</button>
         </form>
       ) : null}
@@ -594,7 +594,7 @@ export default function JoinForm({
       {stage === "payment" && complimentary ? (
         <section className="mt-9" aria-labelledby="complimentary-membership-title">
           <h3 className="font-[var(--font-display)] text-4xl" id="complimentary-membership-title" ref={stageHeadingRef} tabIndex={-1}>You’re ready.</h3>
-          <p className="mt-4 text-base leading-relaxed text-white/72">Your operator access includes complimentary membership. Your profile and agreement are saved—no payment is needed.</p>
+          <p className="mt-4 text-base leading-relaxed text-[var(--member-muted)]">Your operator access includes complimentary membership. Your profile and agreement are saved—no payment is needed.</p>
           {error || disabledReason ? <p className="mt-4 text-sm" role="status">{error ?? disabledReason}</p> : null}
           <button className="mt-6 min-h-12 rounded-[4px] bg-[var(--color-signal)] px-6 py-3 font-bold text-black disabled:opacity-50" disabled={!enabled || submitting} onClick={activateComplimentaryMembership} type="button">{submitting ? "Activating membership…" : "Activate my membership"}</button>
         </section>
@@ -602,25 +602,25 @@ export default function JoinForm({
 
       {stage === "payment" && !complimentary ? (
         <section className="mt-9" aria-labelledby="secure-payment-title">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-poster)]">{testCheckout ? "Final / Test checkout" : "Final / Secure payment"}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">{testCheckout ? "Final / Test checkout" : "Final / Secure payment"}</p>
           <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4">
             <h3 className="font-[var(--font-display)] text-4xl" id="secure-payment-title" ref={stageHeadingRef} tabIndex={-1}>{testCheckout ? "Test checkout" : "Membership payment"}</h3>
-            <span className="text-sm text-white/48">{onboarding.email}</span>
+            <span className="text-sm text-[var(--member-muted)]">{onboarding.email}</span>
           </div>
-          <p className="mt-5 text-sm leading-relaxed text-white/72">{testCheckout ? "Your profile and agreement are saved. This is a test checkout—no real charge will occur. Do not enter a real payment card." : "Your profile and agreement are saved. Payment is the final step."}</p>
+          <p className="mt-5 text-sm leading-relaxed text-[var(--member-muted)]">{testCheckout ? "Your profile and agreement are saved. This is a test checkout—no real charge will occur. Do not enter a real payment card." : "Your profile and agreement are saved. Payment is the final step."}</p>
           {testCheckout ? (
-            <dl className="mt-4 grid gap-2 text-sm leading-relaxed text-white/72">
+            <dl className="mt-4 grid gap-2 text-sm leading-relaxed text-[var(--member-muted)]">
               <div><dt className="inline font-semibold text-white">Test card: </dt><dd className="inline font-mono [font-variant-numeric:tabular-nums]">4242 4242 4242 4242</dd></div>
               <div><dt className="inline font-semibold text-white">Expiry: </dt><dd className="inline">Any future date</dd></div>
               <div><dt className="inline font-semibold text-white">CVC: </dt><dd className="inline">Any 3-digit number</dd></div>
             </dl>
           ) : null}
-          {error || checkoutDisabledReason ? <p aria-live="polite" className="mt-6 border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-white/72">{error ?? checkoutDisabledReason}</p> : null}
+          {error || checkoutDisabledReason ? <p aria-live="polite" className="mt-6 border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? checkoutDisabledReason}</p> : null}
           {!clientSecret ? (
             <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!checkoutEnabled || !publishableKey || submitting} onClick={openCheckout} type="button">{submitting ? testCheckout ? "Preparing test checkout" : "Preparing payment" : checkoutEnabled && publishableKey ? testCheckout ? "Open test checkout" : "Open secure payment" : "Payment not connected"}</button>
           ) : null}
           {clientSecret && publishableKey ? <EmbeddedCheckout clientSecret={clientSecret} publishableKey={publishableKey} setError={setError} /> : null}
-          <p className="mt-4 text-xs leading-relaxed text-white/40">{testCheckout ? "Test checkout is provided by Stripe. Store purchases remain separate." : "Payment is handled securely by Stripe. Store purchases remain separate."}</p>
+          <p className="mt-4 text-xs leading-relaxed text-[var(--member-muted)]">{testCheckout ? "Test checkout is provided by Stripe. Store purchases remain separate." : "Payment is handled securely by Stripe. Store purchases remain separate."}</p>
         </section>
       ) : null}
 

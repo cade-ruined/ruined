@@ -162,14 +162,10 @@ test("membership preview derives public events without requiring a permanent nam
   );
 });
 
-test("every profile Upcoming row opens its canonical event detail", () => {
-  const upcoming = section(
-    memberHome,
-    "member.upcomingExperiences.slice(0, 3).map",
-    "</ol>",
-  );
-  assert.match(upcoming, /<Link[\s\S]*?href=\{experience\.detailHref\}[\s\S]*?<article/);
-  assert.doesNotMatch(upcoming, /href=\{experience\.registrationHref\}/);
+test("profile next actions use their server-selected canonical destination", () => {
+  assert.match(memberHome, /const next=member.nextAction/);
+  assert.match(memberHome, /href=\{next.href\}/);
+  assert.doesNotMatch(memberHome, /href=\{.*meetingUrl/);
 });
 
 test("member calendar selects snapshot events and preserves canonical detail links", () => {

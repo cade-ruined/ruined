@@ -175,6 +175,33 @@ export type MemberAnnouncementSummary = {
   title: string;
 };
 
+/** The signed-in member's durable record; never a shared directory payload. */
+export type MemberRecordSummary = {
+  milestones: Array<{
+    id: string;
+    type: string;
+    title: string;
+    occurredAt: string;
+  }>;
+  attendedExperiences: Array<{
+    id: string;
+    title: string;
+    kind: string;
+    startsAt: string;
+    timezone: string;
+    locationLabel: string | null;
+    attendanceState: "attended" | "credited";
+    recordedAt: string;
+  }>;
+  /** Full record counts, independent of the bounded recent item lists. */
+  totals: {
+    milestones: number;
+    attendedExperiences: number;
+    creditedExperiences: number;
+    artifacts: number;
+  };
+};
+
 export type MemberHomeSnapshot = {
   access: MemberAccessPolicy;
   announcement: MemberAnnouncementSummary | null;
@@ -201,6 +228,7 @@ export type MemberHomeSnapshot = {
     preferredName: string | null;
     timezone: string | null;
   };
+  record?: MemberRecordSummary;
   unreadUpdates: number;
   upcomingExperiences: MemberExperienceSummary[];
 };

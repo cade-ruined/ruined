@@ -89,7 +89,7 @@ test("approved examples remain presentation-only and in chronological order", ()
 
 test("My Timeline is named consistently across member navigation, profile, and page", async () => {
   const [navigation, home, page, component, repository] = await Promise.all([
-    readFile(new URL("../src/components/platform/MemberNavigationFab.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/membership/navigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/RuinedTimeline.tsx", import.meta.url), "utf8"),
@@ -97,8 +97,8 @@ test("My Timeline is named consistently across member navigation, profile, and p
   ]);
 
   assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "My Timeline"/);
-  assert.match(home, /title: "My Timeline"/);
-  assert.match(home, /case "timeline": return "Open My Timeline"/);
+  assert.match(home, /"journal","timeline","saved","about"/);
+  assert.match(home, /Your timeline is private/);
   assert.match(page, /title: "My Timeline \| Foundations"/);
   assert.match(component, /: "My Timeline"\}/);
   assert.match(repository, /title: "Build My Timeline\."/);

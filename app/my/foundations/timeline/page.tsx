@@ -17,10 +17,10 @@ export default async function MyTimelinePage() {
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   return (
-    <RuinedTimeline
+    <main><RuinedTimeline
       initialTimeline={context.data}
       preview={context.state === "preview"}
       writable={context.state === "authenticated" && memberCan(context.data.access, "foundations.write")}
-    />
+    /></main>
   );
 }

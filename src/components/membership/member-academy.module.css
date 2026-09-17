@@ -1,6 +1,6 @@
 .academy {
-  --academy-ink: #171411;
-  --academy-soft-ink: rgba(23, 20, 17, 0.58);
+  --academy-ink: var(--member-ink);
+  --academy-soft-ink: var(--member-muted);
   color: var(--academy-ink);
   padding: 1rem 0 6.5rem;
 }
@@ -14,16 +14,16 @@
 }
 
 .academyHeader h1 {
-  font-family: var(--font-body) !important;
+  font-family: var(--font-display) !important;
   font-size: clamp(2.8rem, 6vw, 5.8rem);
-  font-weight: 900 !important;
+  font-weight: 500 !important;
   letter-spacing: -0.075em;
-  line-height: 0.82;
-  text-transform: uppercase;
+  line-height: 1.02;
+  text-transform: none;
 }
 
 .handNote {
-  color: var(--color-poster);
+  color: var(--member-red);
   font-family: var(--font-handwritten);
   font-size: clamp(1.1rem, 1.6vw, 1.45rem);
   line-height: 1;
@@ -33,8 +33,8 @@
 
 .search {
   align-items: center;
-  background: rgba(255, 255, 255, 0.36);
-  border: 1px solid rgba(23, 20, 17, 0.18);
+  background: var(--member-soft);
+  border: 1px solid var(--member-rule);
   border-radius: 0.35rem;
   display: flex;
   min-height: 3rem;
@@ -99,7 +99,7 @@
 
 .categoryRail button[aria-pressed="true"] {
   background: var(--academy-ink);
-  color: var(--color-bone);
+  color: var(--member-paper);
 }
 
 .categoryRail button:focus-visible,
@@ -112,9 +112,8 @@
 }
 
 .featured {
-  background: var(--academy-ink);
-  border-radius: 0.5rem;
-  box-shadow: 0.45rem 0.45rem 0 #8b8378;
+  background: #2a2a2a;
+  border-radius: 0;
   color: var(--color-bone);
   display: grid;
   grid-template-columns: minmax(0, 1.68fr) minmax(17rem, 0.72fr);
@@ -130,13 +129,13 @@
 }
 
 .featuredCopy h2 {
-  font-family: var(--font-body) !important;
+  font-family: var(--font-display) !important;
   font-size: clamp(2rem, 3.2vw, 3.65rem);
-  font-weight: 900 !important;
+  font-weight: 500 !important;
   letter-spacing: -0.065em;
-  line-height: 0.94;
+  line-height: 1.05;
   margin-top: 0.7rem;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .featuredCopy > p:not(.kicker) {
@@ -249,12 +248,12 @@
 }
 
 .sectionHeading h2 {
-  font-family: var(--font-body) !important;
+  font-family: var(--font-display) !important;
   font-size: clamp(1.75rem, 2.6vw, 2.8rem);
-  font-weight: 900 !important;
+  font-weight: 500 !important;
   letter-spacing: -0.055em;
   line-height: 0.95;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .sectionHeading > p {
@@ -267,7 +266,7 @@
 
 .kicker,
 .cardMeta {
-  color: var(--color-poster);
+  color: var(--member-red);
   font-family: var(--font-body);
   font-size: 0.58rem;
   font-weight: 800;
@@ -298,7 +297,7 @@
 .lessonCardCopy { padding: 0.8rem 0.12rem 0.25rem; }
 
 .lessonCard h3 {
-  font-family: var(--font-body) !important;
+  font-family: var(--font-display) !important;
   font-size: clamp(1rem, 1.35vw, 1.3rem);
   font-weight: 800 !important;
   letter-spacing: -0.035em;
@@ -345,13 +344,13 @@
 .emptyLibrary { margin-top: 1.5rem; }
 
 .emptyLibrary h2 {
-  font-family: var(--font-body) !important;
+  font-family: var(--font-display) !important;
   font-size: clamp(2rem, 4vw, 4.6rem);
-  font-weight: 900 !important;
+  font-weight: 500 !important;
   letter-spacing: -0.065em;
   line-height: 0.9;
   margin-top: 0.8rem;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .emptyLibrary > p:last-child {

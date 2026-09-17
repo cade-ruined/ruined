@@ -427,7 +427,7 @@ export default function RuinedTimeline({
   const detailsCountVisible = form.details.length >= Math.floor(TIMELINE_LIMITS.details * 0.8);
 
   return (
-    <main aria-labelledby={`${rawId}-title`} className={styles.root}>
+    <section aria-labelledby={`${rawId}-title`} className={`member-journey-page member-timeline-page ${styles.root}`}>
       <section aria-label="Timeline events and image generator" className={styles.app}>
         <div className={styles.setup}>
           <aside className={styles.editor}>
@@ -689,6 +689,6 @@ export default function RuinedTimeline({
 
         <p aria-live="polite" className={styles.srOnly}>{liveMessage}</p>
       </section>
-    </main>
+    </section>
   );
 }

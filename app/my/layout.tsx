@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import MemberPreviewSwitcher from "@/components/membership/MemberPreviewSwitcher";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario } from "@/lib/membership/preview-scenarios";
 
-import PlatformShell from "@/components/platform/PlatformShell";
+import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
@@ -36,14 +36,13 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
   }
 
   return (
-    <PlatformShell
+    <MemberJourneyShell
       configuration={configuration}
       operatorRole={operatorRole}
-      surface="member"
       viewerLabel={configuration.mode === "preview" ? "Preview member" : viewer?.email}
     >
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
-    </PlatformShell>
+    </MemberJourneyShell>
   );
 }

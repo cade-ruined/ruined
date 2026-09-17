@@ -1,149 +1,65 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import MemberIcon from "@/components/membership/MemberIcon";
+import type { MemberAppearance } from "@/components/membership/MemberJourneyShell";
+import type { OperatorNavigationRole } from "@/lib/platform/operations-navigation";
+import { currentMemberDestination, findMemberDestinations } from "@/lib/membership/navigation";
+import styles from "./MemberNavigationFab.module.css";
 
-const MEMBER_DESTINATIONS = [
-  { href: "/my", label: "Profile" },
-  { href: "/my/foundations", label: "Foundations" },
-  { href: "/my/foundations/timeline", label: "My Timeline" },
-  { href: "/my/circle", label: "Circle" },
-  { href: "/my/experiences", label: "Experiences" },
-  { href: "/my/learn", label: "Learn" },
-  { href: "/my/artifacts", label: "Artifacts" },
-  { href: "/my/updates", label: "Updates" },
-  { href: "/my/profile", label: "Edit profile" },
-  { href: "/my/account", label: "Account" },
-  { href: "/my/support", label: "Support" },
-] as const;
-
-function isCurrentPath(pathname: string, href: string): boolean {
-  if (pathname === href) return true;
-  if (href === "/my") return false;
-  return pathname.startsWith(`${href}/`);
-}
-
-export default function MemberNavigationFab() {
+export default function MemberNavigationFab({appearance = "system", onAppearanceChange, preview, operatorRole, viewerLabel, trigger = "search"}: {
+  appearance?: MemberAppearance; onAppearanceChange?: (value: MemberAppearance) => void;
+  preview?: boolean; operatorRole?: OperatorNavigationRole | null; viewerLabel?: string | null; trigger?: "search" | "settings";
+} = {}) {
   const pathname = usePathname();
-  const currentHref = [...MEMBER_DESTINATIONS]
-    .filter((destination) => isCurrentPath(pathname, destination.href))
-    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const currentHref = currentMemberDestination(pathname);
   const menuId = useId();
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const firstLinkRef = useRef<HTMLAnchorElement>(null);
-
+  const searchRef = useRef<HTMLInputElement>(null);
+  const destinations = findMemberDestinations(query);
+  useEffect(() => { setOpen(false); }, [pathname]);
   useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const frame = requestAnimationFrame(() => {
-      const currentLink = rootRef.current?.querySelector<HTMLAnchorElement>(
-        'a[aria-current="page"]'
-      );
-      (currentLink ?? firstLinkRef.current)?.focus({ preventScroll: true });
-    });
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-      requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
-    };
-    const closeOutside = (event: PointerEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-
-    window.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("pointerdown", closeOutside);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("pointerdown", closeOutside);
-    };
-  }, [open]);
-
-  return (
-    <div
-      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-4 z-[65] flex flex-col items-end gap-3 sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:right-6"
-      ref={rootRef}
-    >
-      {open ? (
-        <nav
-          aria-label="Membership"
-          className="max-h-[min(40rem,calc(100dvh-7rem-env(safe-area-inset-bottom,0px)))] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain border border-white/15 bg-[#080605] p-2 text-[var(--color-bone)] shadow-[0_24px_70px_rgba(0,0,0,0.34)]"
-          id={menuId}
-        >
-          <div className="flex items-center justify-between border-b border-white/15 px-4 py-3">
-            <span className="font-[var(--font-body)] text-[0.65rem] font-medium uppercase tracking-[0.18em] text-white/55">
-              Ruined Membership
-            </span>
-            <span className="font-[var(--font-handwritten)] text-lg leading-none text-[var(--color-poster)]">
-              enter here
-            </span>
-          </div>
-          <ol className="py-1">
-            {MEMBER_DESTINATIONS.map((destination, index) => {
-              const current = destination.href === currentHref;
-              return (
-                <li key={destination.href}>
-                  <Link
-                    aria-current={current ? "page" : undefined}
-                    className={`group grid min-h-12 grid-cols-[2rem_1fr_auto] items-center gap-3 px-4 py-3 font-[var(--font-body)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] ${
-                      current
-                        ? "bg-[var(--color-bone)] text-[#171411]"
-                        : "text-white/72 hover:bg-white/[0.06] hover:text-white"
-                    }`}
-                    href={destination.href}
-                    ref={index === 0 ? firstLinkRef : undefined}
-                  >
-                    <span className="text-[0.6rem] tracking-[0.12em] opacity-45">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="text-base tracking-[-0.015em]">{destination.label}</span>
-                    <span aria-hidden="true" className="text-sm opacity-45 transition-transform group-hover:translate-x-0.5">
-                      →
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ol>
-        </nav>
-      ) : null}
-
-      <button
-        aria-controls={menuId}
-        aria-expanded={open}
-        aria-label={open ? "Close membership navigation" : "Open membership navigation"}
-        className="group grid size-[4.25rem] place-items-center border border-white/15 bg-[#080605] text-[var(--color-bone)] shadow-[0_14px_38px_rgba(0,0,0,0.28)] transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)] motion-reduce:transition-none sm:size-[4.75rem]"
-        onClick={() => setOpen((value) => !value)}
-        ref={triggerRef}
-        type="button"
-      >
-        {open ? (
-          <span aria-hidden="true" className="relative block size-6">
-            <span className="absolute left-1/2 top-1/2 h-px w-6 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-current" />
-            <span className="absolute left-1/2 top-1/2 h-px w-6 -translate-x-1/2 -translate-y-1/2 -rotate-45 bg-current" />
-          </span>
-        ) : (
-          <Image
-            alt=""
-            aria-hidden="true"
-            className="size-11 transition-transform duration-300 group-hover:scale-[1.04] motion-reduce:transition-none sm:size-12"
-            height={48}
-            priority
-            src="/favicon-ruined-mark-v2.svg"
-            width={48}
-          />
-        )}
-      </button>
-    </div>
-  );
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      setQuery("");
+      if (!dialog.open) dialog.showModal();
+      if (trigger === "search") searchRef.current?.focus({ preventScroll: true });
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = previousOverflow; };
+    }
+    if (dialog.open) dialog.close();
+  }, [open, trigger]);
+  return <>
+    <button className={styles.trigger} aria-label={trigger === "search" ? "Search member pages" : "Settings and appearance"} title={trigger === "search" ? "Search member pages" : "Settings and appearance"} aria-haspopup="dialog" aria-controls={menuId} aria-expanded={open} onClick={() => setOpen(true)} ref={triggerRef} type="button"><MemberIcon name={trigger} /></button>
+    <dialog className={styles.sheet} id={menuId} ref={dialogRef} aria-labelledby={`${menuId}-title`} onCancel={() => setOpen(false)} onClose={() => { setOpen(false); triggerRef.current?.focus({ preventScroll: true }); }} onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }} onKeyDown={(event) => {
+      if (event.key !== "Tab") return;
+      const controls = event.currentTarget.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])');
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }}>
+      <div className={styles.sheetBody}>
+        <header className={styles.heading}><h2 id={`${menuId}-title`}>{trigger === "search" ? "Find your way" : "Make yourself at home"}</h2><button className={styles.close} aria-label="Close menu" type="button" onClick={() => setOpen(false)}>×</button></header>
+        {trigger === "settings" ? <>
+          <fieldset className={styles.appearance}><legend>Appearance</legend><div>{(["paper", "ink", "system"] as const).map(value => <label key={value}><input type="radio" name={`${menuId}-appearance`} value={value} checked={appearance === value} onChange={() => onAppearanceChange?.(value)} /><span>{value === "paper" ? "Paper" : value === "ink" ? "Ink" : "System"}</span></label>)}</div></fieldset>
+          <nav aria-label="Account settings" className={styles.account}><Link href="/my/profile" onClick={() => setOpen(false)}>Edit profile & privacy <span>↗</span></Link><Link href="/my/account" onClick={() => setOpen(false)}>Membership & billing <span>↗</span></Link><Link href="/my/support" onClick={() => setOpen(false)}>Support <span>↗</span></Link>{operatorRole ? <Link href="/ops">Operations <span>↗</span></Link> : null}</nav>
+          {viewerLabel ? <p className={styles.viewer}>{viewerLabel}</p> : null}
+          {viewerLabel && !preview ? <form method="post" action="/api/auth/sign-out?next=/access"><button className="member-button" type="submit">Sign out</button></form> : null}
+        </> : <>
+          <label className={styles.search}><span className={styles.srOnly}>Find a membership page</span><MemberIcon name="search"/><input ref={searchRef} type="search" autoComplete="off" placeholder="Profile, billing, events…" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setOpen(false); } }} /></label>
+          <nav aria-label="Membership" className={styles.destinations}>{(["Your record", "Your membership", "Your account"] as const).map(group => {
+            const items = destinations.filter(destination => destination.group === group);
+            return items.length ? <section key={group}><h3>{group}</h3><ul>{items.map(({href,label}) => <li key={href}><Link href={href} aria-current={currentHref === href ? "page" : undefined} onClick={() => setOpen(false)}><span>{label}</span><span aria-hidden="true">↗</span></Link></li>)}</ul></section> : null;
+          })}{!destinations.length ? <p role="status">No matching pages. Try “profile”, “events”, or “help”.</p> : null}</nav>
+        </>}
+      </div>
+    </dialog>
+  </>;
 }

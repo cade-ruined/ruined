@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import AccessPage from "@/components/platform/AccessPage";
 import { completePlatformSignIn, getSupportSignInDestination } from "@/lib/auth/platform-access";
 import { getSupportReturnTo } from "@/lib/auth/support-return";
@@ -40,5 +41,5 @@ export default async function RuinedAccessPage({ searchParams }: {
 
   if (redirectTo) redirect(redirectTo);
 
-  return <AccessPage enabled={configuration.mode === "connected"} returnTo={returnTo ?? undefined} />;
+  return <MemberJourneyShell configuration={configuration}><AccessPage enabled={configuration.mode === "connected"} returnTo={returnTo ?? undefined} /></MemberJourneyShell>;
 }

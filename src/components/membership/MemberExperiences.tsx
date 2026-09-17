@@ -11,6 +11,8 @@ import type {
   MemberExperiencesSnapshot,
 } from "@/lib/membership/model";
 
+import styles from "./MemberExperiences.module.css";
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 type CalendarMonth = {
@@ -147,14 +149,14 @@ function publicEventFor(experience: MemberExperienceSummary, events: StudioEvent
 function markerClass(experience: MemberExperienceSummary) {
   if (experience.kind.includes("circle")) return "bg-[var(--color-shop)]";
   if (experience.audienceLabel.toLowerCase().includes("block")) return "bg-[var(--color-workwear)]";
-  if (experience.kind.includes("public")) return "bg-[var(--color-highlight)]";
+  if (experience.kind.includes("public")) return "bg-[var(--member-red)]";
   return "bg-[var(--color-verdigris)]";
 }
 
 function posterClass(experience: MemberExperienceSummary) {
-  if (experience.kind.includes("circle")) return "bg-[var(--color-shop)] text-[#171411]";
-  if (experience.audienceLabel.toLowerCase().includes("block")) return "bg-[var(--color-workwear)] text-[#171411]";
-  if (experience.kind.includes("public")) return "bg-[var(--color-highlight)] text-[#171411]";
+  if (experience.kind.includes("circle")) return "bg-[var(--color-shop)] text-[#2a2a2a]";
+  if (experience.audienceLabel.toLowerCase().includes("block")) return "bg-[var(--color-workwear)] text-[#2a2a2a]";
+  if (experience.kind.includes("public")) return "bg-[var(--member-blue)] text-[#2a2a2a]";
   return "bg-[var(--color-verdigris)] text-[var(--color-bone)]";
 }
 
@@ -200,7 +202,7 @@ function EventArtwork({ experience }: { experience: MemberExperienceSummary }) {
 
   if (publicEvent?.image) {
     return (
-      <div className="relative aspect-[4/3] overflow-hidden rounded-[4px] bg-black">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-[4px] bg-black" data-member-artwork>
         <Image
           alt={publicEvent.gallery?.[0]?.alt ?? `${experience.title} event artwork`}
           className="object-cover saturate-[0.88] contrast-[1.03]"
@@ -209,7 +211,7 @@ function EventArtwork({ experience }: { experience: MemberExperienceSummary }) {
           src={publicEvent.image}
         />
         <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10" />
-        <span className="absolute inset-x-4 top-4 flex items-center justify-between font-[var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.06em] text-white/78 sm:inset-x-5 sm:top-5">
+        <span className="absolute inset-x-4 top-4 flex items-center justify-between font-[var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.06em] text-[var(--color-bone)] sm:inset-x-5 sm:top-5">
           <span>{stamp}</span>
           <span>{experience.audienceLabel}</span>
         </span>
@@ -250,11 +252,21 @@ export default function MemberExperiences({
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "calendar">("list");
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const allExperiences = useMemo(
     () => [...experiences.upcoming, ...experiences.past]
       .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt)),
     [experiences],
+  );
+  const upcoming = useMemo(
+    () => [...experiences.upcoming].sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt)),
+    [experiences.upcoming],
+  );
+  const past = useMemo(
+    () => [...experiences.past].sort((left, right) => Date.parse(right.startsAt) - Date.parse(left.startsAt)),
+    [experiences.past],
   );
   const selected = allExperiences.find((experience) => experience.id === selectedId) ?? null;
   const pastIds = useMemo(() => new Set(experiences.past.map((experience) => experience.id)), [experiences.past]);
@@ -270,10 +282,16 @@ export default function MemberExperiences({
 
   useEffect(() => {
     function selectFromHash() {
-      const id = decodeURIComponent(window.location.hash.slice(1)).replace(/^experience-/, "");
+      let id: string;
+      try {
+        id = decodeURIComponent(window.location.hash.slice(1)).replace(/^experience-/, "");
+      } catch {
+        return;
+      }
       const match = allExperiences.find((experience) => experience.id === id);
       if (!match) return;
       setSelectedId(match.id);
+      setDetailOpen(true);
       setCalendarMonth(monthForExperience(match));
       window.requestAnimationFrame(() => {
         document.getElementById(`experience-${match.id}`)?.scrollIntoView({ block: "start" });
@@ -291,6 +309,7 @@ export default function MemberExperiences({
 
   function selectExperience(experience: MemberExperienceSummary, scroll = true) {
     setSelectedId(experience.id);
+    setDetailOpen(true);
     setCalendarMonth(monthForExperience(experience));
     setError(null);
     window.history.replaceState(
@@ -312,6 +331,7 @@ export default function MemberExperiences({
     );
     setCalendarMonth(nextMonth);
     setSelectedId(firstInMonth?.id ?? null);
+    setDetailOpen(false);
     setError(null);
     window.history.replaceState(
       null,
@@ -355,37 +375,80 @@ export default function MemberExperiences({
     }
   }
 
+  function eventRow(experience: MemberExperienceSummary) {
+    const date = dateParts(experience.startsAt, experience.timezone);
+    const month = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+      .format(new Date(Date.UTC(date.year, date.month, 1)));
+    const isSelected = detailOpen && selectedId === experience.id;
+    return (
+      <li className={styles.eventRow} data-selected={isSelected || undefined} key={experience.id}>
+        <time className={styles.date} dateTime={experience.startsAt} aria-label={formatDate(experience.startsAt, experience.timezone)}>
+          <span>{String(date.day).padStart(2, "0")}</span>
+          <span>{month}</span>
+        </time>
+        <div className={styles.rowContent}>
+          <h3>{experience.title}</h3>
+          <p>{experience.audienceLabel} <span aria-hidden="true">·</span> {formatTime(experience.startsAt, experience.timezone)}</p>
+          {["registered", "waitlisted"].includes(experience.registrationState) ? (
+            <span className={styles.reservation}>{registrationLabel(experience.registrationState)}</span>
+          ) : null}
+        </div>
+        <button
+          aria-controls="experience-detail"
+          aria-label={`Details for ${experience.title}`}
+          aria-expanded={isSelected}
+          className={styles.detailsButton}
+          onClick={() => selectExperience(experience)}
+          type="button"
+        >
+          Details
+        </button>
+      </li>
+    );
+  }
+
   return (
-    <main className="member-profile-dossier mx-auto max-w-[82rem] pb-20 pt-1 sm:pb-24 sm:pt-2" data-member-experiences>
-      <header className="mt-5 flex items-end justify-between gap-5 sm:mt-7">
-        <h1 className="ui-heading inline-block bg-[var(--color-highlight)] px-[0.26em] py-[0.14em] text-[clamp(1.9rem,4vw,3.6rem)] font-black uppercase leading-[0.88] tracking-[-0.05em] text-[#080605]">
-          Experiences
-        </h1>
-        <p className="pb-1 text-right font-[var(--font-body)] text-[0.62rem] font-bold uppercase leading-snug tracking-[0.04em] text-black/48">
-          {String(experiences.upcoming.length).padStart(2, "0")} upcoming
-          <br />
-          {String(experiences.past.length).padStart(2, "0")} past
-        </p>
+    <main className={`member-journey-page member-events-page ${styles.page}`} data-member-experiences>
+      <header className={styles.header}>
+        <p className={`member-handwritten ${styles.kicker}`}>Come together</p>
+        <h1 className="member-page-title">Be there.</h1>
+        <p className={styles.intro}>A few reasons to get out of your head.</p>
       </header>
 
-      {allExperiences.length ? (
-        <>
-          <section aria-labelledby="calendar-month" className="mt-6 rounded-[4px] bg-black/[0.035] p-2 sm:mt-7 sm:p-3" data-experiences-calendar>
+      <section aria-label="Browse events" className={styles.browse}>
+        <div className={styles.sectionHeader}>
+          <h2 className={`member-handwritten ${styles.sectionTitle}`}>{view === "list" ? "Upcoming" : "Your calendar"}</h2>
+          <div aria-label="Event view" className={styles.viewSwitch}>
+            <button aria-pressed={view === "list"} onClick={() => setView("list")} type="button">List</button>
+            <button aria-pressed={view === "calendar"} onClick={() => setView("calendar")} type="button">Calendar</button>
+          </div>
+        </div>
+        {view === "list" ? (
+          upcoming.length ? (
+            <ol className={styles.eventList}>{upcoming.map(eventRow)}</ol>
+          ) : (
+            <div className={styles.empty}>
+              <h3>Nothing scheduled yet.</h3>
+              <p>The next Circle room or Ruined gathering will appear here when it is ready.</p>
+            </div>
+          )
+        ) : (
+          <section aria-labelledby="calendar-month" className={styles.calendar} data-experiences-calendar>
             <div className="flex items-center justify-between gap-4 px-1 pb-2 sm:px-2 sm:pb-3">
               <button
                 aria-label="Previous month"
-                className="grid size-11 place-items-center rounded-full bg-black/[0.055] text-lg text-black/64 transition-colors hover:bg-black hover:text-[var(--color-bone)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+                className="grid size-11 place-items-center rounded-full bg-[var(--member-soft)] text-lg text-[var(--member-muted)] transition-colors hover:bg-black hover:text-[var(--color-bone)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
                 onClick={() => moveCalendar(-1)}
                 type="button"
               >
                 ←
               </button>
-              <h2 className="ui-heading text-center text-[clamp(1.35rem,3vw,2.15rem)] font-black uppercase leading-none tracking-[-0.035em]" id="calendar-month">
+              <h2 className={styles.calendarTitle} id="calendar-month">
                 {monthLabel(calendarMonth)}
               </h2>
               <button
                 aria-label="Next month"
-                className="grid size-11 place-items-center rounded-full bg-black/[0.055] text-lg text-black/64 transition-colors hover:bg-black hover:text-[var(--color-bone)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+                className="grid size-11 place-items-center rounded-full bg-[var(--member-soft)] text-lg text-[var(--member-muted)] transition-colors hover:bg-black hover:text-[var(--color-bone)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
                 onClick={() => moveCalendar(1)}
                 type="button"
               >
@@ -398,7 +461,7 @@ export default function MemberExperiences({
               <thead>
                 <tr>
                   {WEEKDAYS.map((weekday) => (
-                    <th className="pb-1 text-center font-[var(--font-body)] text-[0.55rem] font-black uppercase tracking-[0.04em] text-black/38" key={weekday} scope="col">
+                    <th className="pb-1 text-center font-[var(--font-body)] text-[0.55rem] font-black uppercase tracking-[0.04em] text-[var(--member-muted)]" key={weekday} scope="col">
                       {weekday}
                     </th>
                   ))}
@@ -423,18 +486,18 @@ export default function MemberExperiences({
                               aria-controls="experience-detail"
                               aria-label={`${calendarDateLabel(cellDate)}: ${events.map((experience) => experience.title).join(", ")}`}
                               aria-pressed={selectedHere}
-                              className={`group flex h-[3.25rem] w-full flex-col rounded-[3px] p-1.5 text-left transition-[background-color,box-shadow,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] sm:h-[4.5rem] sm:p-2 ${selectedHere ? "bg-[#171411] text-[var(--color-bone)] shadow-[3px_4px_0_var(--color-poster)]" : "bg-white/45 text-black/72 hover:bg-white/80"}`}
+                              className={`group flex h-[3.25rem] w-full flex-col rounded-[3px] p-1.5 text-left transition-[background-color,box-shadow,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] sm:h-[4.5rem] sm:p-2 ${selectedHere ? "bg-[var(--member-subtle)] text-[var(--member-ink)] shadow-[inset_0_-3px_0_#d0312d]" : "bg-[var(--member-soft)] text-[var(--member-muted)] hover:bg-[var(--member-soft)]"}`}
                               onClick={() => selectExperience(events[0])}
                               type="button"
                             >
                               <span className="font-[var(--font-body)] text-[0.62rem] font-black tabular-nums sm:text-xs">{String(day).padStart(2, "0")}</span>
-                              <span className={`mt-1 hidden text-pretty font-[var(--font-body)] text-[0.58rem] font-bold leading-[1.05] sm:line-clamp-2 ${selectedHere ? "text-white/72" : "text-black/54"}`}>{events[0].title}</span>
+                              <span className={`mt-1 hidden text-pretty font-[var(--font-body)] text-[0.58rem] font-bold leading-[1.05] sm:line-clamp-2 ${selectedHere ? "text-[var(--member-muted)]" : "text-[var(--member-muted)]"}`}>{events[0].title}</span>
                               <span aria-hidden="true" className="mt-auto flex gap-1">
                                 {events.slice(0, 3).map((experience) => <span className={`h-1.5 w-3 rounded-full ${markerClass(experience)}`} key={experience.id} />)}
                               </span>
                             </button>
                           ) : (
-                            <span className="block h-[3.25rem] rounded-[3px] bg-white/18 p-1.5 font-[var(--font-body)] text-[0.6rem] font-semibold tabular-nums text-black/24 sm:h-[4.5rem] sm:p-2 sm:text-xs">
+                            <span className="block h-[3.25rem] rounded-[3px] bg-[var(--member-soft)] p-1.5 font-[var(--font-body)] text-[0.6rem] font-semibold tabular-nums text-[var(--member-muted)] sm:h-[4.5rem] sm:p-2 sm:text-xs">
                               {String(day).padStart(2, "0")}
                             </span>
                           )}
@@ -446,23 +509,40 @@ export default function MemberExperiences({
               </tbody>
             </table>
           </section>
+        )}
+      </section>
 
-          {selected ? (
+      {past.length ? (
+        <details className={styles.past}>
+          <summary>Previously <span>{String(past.length).padStart(2, "0")}</span><span className={styles.pastToggle} aria-hidden="true">+</span></summary>
+          <ol className={styles.eventList}>{past.map(eventRow)}</ol>
+        </details>
+      ) : null}
+
+          {selected && detailOpen ? (
             <section
               aria-labelledby="selected-experience-title"
               aria-live="polite"
-              className="scroll-mt-24 pt-8 sm:pt-10"
+              className={styles.detail}
               data-experience-detail
               id="experience-detail"
             >
               <span aria-hidden="true" className="block scroll-mt-24" id={`experience-${selected.id}`} />
+              <div className={styles.detailHeading}>
+                <p className="member-handwritten">The details</p>
+                <button className={styles.detailsButton} onClick={() => {
+                  setDetailOpen(false);
+                  setError(null);
+                  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+                }} type="button">Close <span aria-hidden="true">×</span></button>
+              </div>
               {selectedDayExperiences.length > 1 ? (
                 <div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Events on this date">
-                  <span className="[font-family:var(--font-cadehandy2)] text-xl leading-none text-[var(--color-poster)]">On this day</span>
+                  <span className="[font-family:var(--font-cadehandy2)] text-xl leading-none text-[var(--member-red)]">On this day</span>
                   {selectedDayExperiences.map((experience) => (
                     <button
                       aria-pressed={experience.id === selected.id}
-                      className={`min-h-11 rounded-full px-4 font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.035em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] ${experience.id === selected.id ? "bg-black text-[var(--color-bone)]" : "bg-black/[0.055] text-black/60 hover:bg-black/10"}`}
+                      className={`min-h-11 rounded-full px-4 font-[var(--font-body)] text-[0.62rem] font-black uppercase tracking-[0.035em] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] ${experience.id === selected.id ? "bg-black text-[var(--color-bone)]" : "bg-[var(--member-soft)] text-[var(--member-muted)] hover:bg-[var(--member-soft)]"}`}
                       key={experience.id}
                       onClick={() => selectExperience(experience, false)}
                       type="button"
@@ -478,53 +558,53 @@ export default function MemberExperiences({
 
                 <div className="min-w-0 lg:pt-1">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="[font-family:var(--font-cadehandy2)] text-[1.35rem] leading-none text-[var(--color-poster)]">
+                    <p className="[font-family:var(--font-cadehandy2)] text-[1.35rem] leading-none text-[var(--member-red)]">
                       {pastIds.has(selected.id) ? "Previously held" : "Coming up"}
                     </p>
-                    <span className="inline-flex items-center gap-2 font-[var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.035em] text-black/52">
+                    <span className="inline-flex items-center gap-2 font-[var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.035em] text-[var(--member-muted)]">
                       <span aria-hidden="true" className={`size-1.5 rounded-full ${markerClass(selected)}`} />
                       {registrationLabel(selected.registrationState)}
                     </span>
                   </div>
 
-                  <h2 className="ui-heading mt-3 text-balance text-[clamp(2.5rem,5vw,5rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[#171411]" id="selected-experience-title">
+                  <h2 className={styles.detailTitle} id="selected-experience-title">
                     {selected.title}
                   </h2>
 
                   {selected.summary ? (
-                    <p className="mt-5 max-w-2xl font-[var(--font-body)] text-sm leading-relaxed text-black/62 sm:text-base">
+                    <p className="mt-5 max-w-2xl font-[var(--font-body)] text-sm leading-relaxed text-[var(--member-muted)] sm:text-base">
                       {selected.summary}
                     </p>
                   ) : null}
 
-                  <dl className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[4px] bg-black/[0.04] p-3">
-                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--color-poster)]">Date</dt>
-                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-black/68"><time dateTime={selected.startsAt}>{formatDate(selected.startsAt, selected.timezone)}</time></dd>
+                  <dl className={styles.facts}>
+                    <div className={styles.fact}>
+                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--member-red)]">Date</dt>
+                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-[var(--member-muted)]"><time dateTime={selected.startsAt}>{formatDate(selected.startsAt, selected.timezone)}</time></dd>
                     </div>
-                    <div className="rounded-[4px] bg-black/[0.04] p-3">
-                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--color-poster)]">Time</dt>
-                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-black/68">{formatTimeRange(selected)}</dd>
+                    <div className={styles.fact}>
+                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--member-red)]">Time</dt>
+                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-[var(--member-muted)]">{formatTimeRange(selected)}</dd>
                     </div>
-                    <div className="rounded-[4px] bg-black/[0.04] p-3">
-                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--color-poster)]">Place</dt>
-                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-black/68">{selected.locationLabel ?? "Details to come"}</dd>
+                    <div className={styles.fact}>
+                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--member-red)]">Place</dt>
+                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-[var(--member-muted)]">{selected.locationLabel ?? "Details to come"}</dd>
                     </div>
-                    <div className="rounded-[4px] bg-black/[0.04] p-3">
-                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--color-poster)]">For</dt>
-                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-black/68">{selected.audienceLabel}</dd>
+                    <div className={styles.fact}>
+                      <dt className="[font-family:var(--font-cadehandy2)] text-[1.05rem] leading-none text-[var(--member-red)]">For</dt>
+                      <dd className="mt-1.5 font-[var(--font-body)] text-xs font-semibold leading-snug text-[var(--member-muted)]">{selected.audienceLabel}</dd>
                     </div>
                   </dl>
 
-                  {error ? <p aria-live="assertive" className="mt-4 rounded-[4px] bg-[var(--color-poster)]/10 px-4 py-3 font-[var(--font-body)] text-sm text-black/68" role="alert">{error}</p> : null}
+                  {error ? <p aria-live="assertive" className="mt-4 rounded-[4px] bg-[var(--color-poster)]/10 px-4 py-3 font-[var(--font-body)] text-sm text-[var(--member-muted)]" role="alert">{error}</p> : null}
 
                   <div className="mt-6 flex flex-wrap gap-3">
                     {selected.registrationState === "external" && selected.registrationHref ? (
-                      <a className="inline-flex min-h-11 items-center rounded-[3px] bg-black px-5 font-[var(--font-body)] text-[0.65rem] font-black uppercase tracking-[0.045em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)]" href={selected.registrationHref} rel="noreferrer" target="_blank">Register ↗</a>
+                      <a className={styles.primaryAction} href={selected.registrationHref} rel="noreferrer" target="_blank">Register ↗</a>
                     ) : selected.registrationHref && selected.registrationState !== "closed" ? (
                       <button
                         aria-busy={pendingId === selected.id}
-                        className="inline-flex min-h-11 items-center rounded-[3px] bg-black px-5 font-[var(--font-body)] text-[0.65rem] font-black uppercase tracking-[0.045em] text-[var(--color-bone)] transition-colors hover:bg-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)] disabled:cursor-wait disabled:opacity-45"
+                        className={["registered", "waitlisted"].includes(selected.registrationState) ? styles.detailsButton : styles.primaryAction}
                         disabled={!writable || Boolean(pendingId)}
                         onClick={() => changeRegistration(selected, ["registered", "waitlisted"].includes(selected.registrationState) ? "cancel" : "register")}
                         type="button"
@@ -538,7 +618,7 @@ export default function MemberExperiences({
                     ) : null}
 
                     {!selected.detailHref.startsWith("/my/experiences#") ? (
-                      <Link className="inline-flex min-h-11 items-center rounded-[3px] bg-black/[0.055] px-5 font-[var(--font-body)] text-[0.65rem] font-black uppercase tracking-[0.045em] text-black/66 transition-colors hover:bg-[var(--color-shop)] hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)]" href={selected.detailHref}>
+                      <Link className="inline-flex min-h-11 items-center rounded-[3px] bg-[var(--member-soft)] px-5 font-[var(--font-body)] text-[0.65rem] font-black uppercase tracking-[0.045em] text-[var(--member-muted)] transition-colors hover:bg-[var(--color-shop)] hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)]" href={selected.detailHref}>
                         {selected.detailHref.startsWith("/community") ? "Community page" : selected.detailHref.startsWith("/my/circle") ? "Open Circle" : "Open details"} →
                       </Link>
                     ) : null}
@@ -546,20 +626,7 @@ export default function MemberExperiences({
                 </div>
               </article>
             </section>
-          ) : (
-            <section aria-live="polite" className="mt-8 rounded-[4px] bg-black/[0.04] px-5 py-10 text-center" id="experience-detail">
-              <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--color-poster)]">Nothing on this page</p>
-              <p className="mt-2 font-[var(--font-body)] text-sm text-black/52">Choose another month to find an experience.</p>
-            </section>
-          )}
-        </>
-      ) : (
-        <section className="mt-8 rounded-[4px] bg-black/[0.04] px-5 py-12 sm:py-16">
-          <p className="[font-family:var(--font-cadehandy2)] text-2xl leading-none text-[var(--color-poster)]">The calendar is clear</p>
-          <h2 className="ui-heading mt-3 text-3xl font-black uppercase leading-[0.9] tracking-[-0.04em]">Nothing scheduled yet.</h2>
-          <p className="mt-3 max-w-lg font-[var(--font-body)] text-sm leading-relaxed text-black/52">The next Circle room or Ruined gathering will appear here when it is ready.</p>
-        </section>
-      )}
+          ) : <div id="experience-detail" hidden />}
     </main>
   );
 }

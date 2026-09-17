@@ -55,11 +55,11 @@ export default async function JoinMyRuinedPage() {
   );
 
   return (
-    <main className="min-h-[72vh]">
+    <main className="member-journey-page member-entry-page min-h-[72vh]">
       <MembershipEntryProgressProvider initialStage={initialStage}>
         <MembershipEntryProgress complimentary={complimentary} />
 
-        <section className="relative isolate min-h-[22rem] overflow-hidden sm:min-h-[26rem] lg:min-h-[28rem]">
+        <section className="member-entry-artwork relative isolate overflow-hidden" data-member-artwork>
           <Image
             alt="A figure moving through a monumental concrete passage toward the light."
             className="object-cover object-center"
@@ -70,17 +70,17 @@ export default async function JoinMyRuinedPage() {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
           <h1 className="absolute inset-x-5 bottom-7 max-w-6xl sm:inset-x-10 sm:bottom-10">
-            <span className="ui-heading inline-block max-w-full bg-[var(--color-highlight)] px-[0.3em] py-[0.2em] text-[clamp(2rem,5.2vw,4.75rem)] uppercase leading-[0.92] tracking-[-0.045em] text-[#080605]">
+            <span className="member-entry-title">
               Your place begins here.
             </span>
           </h1>
         </section>
 
-        <section className="mx-auto mt-14 w-full max-w-4xl sm:mt-20" aria-labelledby="membership-entry-title">
-          <h2 className="font-[var(--font-display)] text-4xl tracking-[-0.03em] sm:text-5xl" id="membership-entry-title">
+        <section className="mx-auto mt-9 w-full max-w-4xl sm:mt-12" aria-labelledby="membership-entry-title">
+          <h2 className="member-page-title" id="membership-entry-title">
             Membership entry
           </h2>
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/52">
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">
             These details stay private and never appear on your Circle profile.
           </p>
           <JoinForm
