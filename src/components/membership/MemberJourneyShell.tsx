@@ -68,7 +68,13 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
         <Link href={threshold ? publicWebsiteHref("/") : "/my"} aria-label={threshold ? "Ruined home" : "My Ruined profile"} className={styles.mobileBrand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
         <div className={styles.breadcrumb}><span>My Ruined</span><span aria-hidden="true">/</span><strong>{pageLabel}</strong></div>
         <div className={styles.tools}>
-          <button type="button" className={styles.appearanceToggle} onClick={() => changeAppearance(theme === "paper" ? "ink" : "paper")} aria-label={`Switch to ${theme === "paper" ? "Ink" : "Paper"} appearance`}>{theme === "paper" ? "Ink" : "Paper"}</button>
+          <button type="button" className={styles.appearanceToggle} role="switch" aria-checked={theme === "ink"} aria-label="Dark mode" title={`Switch to ${theme === "paper" ? "dark" : "light"} mode`} onClick={() => changeAppearance(theme === "paper" ? "ink" : "paper")}>
+            <span className={styles.appearanceTrack} aria-hidden="true">
+              <span className={styles.appearanceThumb} />
+              <MemberIcon name="sun" className={styles.appearanceSun} />
+              <MemberIcon name="moon" className={styles.appearanceMoon} />
+            </span>
+          </button>
           {hasNavigation ? <MemberNavigationFab {...menuProps} trigger="search" /> : <Link className={styles.quietLink} href={focused ? "/my/foundations" : "mailto:connect@theruinedproject.com"}>{focused ? "Back to Foundations" : "Support"}</Link>}
           {hasNavigation ? <Link className={styles.iconButton} aria-label="Updates" title="Updates" href="/my/updates"><MemberIcon name="bell" /></Link> : null}
           <MemberNavigationFab {...menuProps} trigger="settings" />

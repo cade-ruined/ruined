@@ -9,6 +9,8 @@ export default function MemberIcon({ name, ...props }: SVGProps<SVGSVGElement> &
     {name === "search" ? <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></> : null}
     {name === "settings" ? <><path d="m9 3-.6 2-2 .9-1.9-.5-2 3.3 1.4 1.5-.1 2.5-1.3 1.5 2 3.3 1.9-.5 2 .9.6 2h4l.6-2 2-.9 1.9.5 2-3.3-1.3-1.5-.1-2.5L20.5 8l-2-3.3-1.9.5-2-.9-.6-2Z" /><circle cx="11" cy="11.5" r="3" /></> : null}
     {name === "bell" ? <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></> : null}
+    {name === "sun" ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4m0-14.2-1.4 1.4M6.3 17.7l-1.4 1.4" /></> : null}
+    {name === "moon" ? <path d="M20.5 13.2A8.5 8.5 0 0 1 10.8 3.5a8.5 8.5 0 1 0 9.7 9.7Z" /> : null}
     {name === "arrow" ? <path d="M5 12h14m-6-6 6 6-6 6" /> : null}
   </svg>;
 }

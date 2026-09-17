@@ -52,7 +52,8 @@ async function fixture(context, { migrate = true } = {}) {
   `);
   for (const [name, role] of [["admin", "ops_admin"], ["guide", "guide"], ["member", "member"], ["shaper", "circle_leader"], ["inactive", "ops_admin"], ["revoked", "ops_admin"], ["otherAdmin", "ops_admin"]]) {
     await db.query("insert into platform_users(auth_user_id,email_normalized,status) values ($1,$2,$3)", [ids[name], `${name.toLowerCase()}@example.test`, name === "inactive" ? "suspended" : "active"]);
-    await db.query("insert into platform_role_grants(auth_user_id,role_slug,revoked_at) values ($1,$2,$3)", [ids[name], role, name === "revoked" ? new Date() : null]);
+    // Use one database timestamp so revocation cannot precede the grant.
+    await db.query("insert into platform_role_grants(auth_user_id,role_slug,granted_at,revoked_at) values ($1,$2,statement_timestamp(),case when $3 then statement_timestamp() end)", [ids[name], role, name === "revoked"]);
   }
   if (migrate) await db.exec(await source(migrationPath));
   const assign = async (authUserId, role = "circle_leader", circleId = ids.circle) => (await db.query(`
