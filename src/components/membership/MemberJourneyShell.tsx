@@ -30,6 +30,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   const [systemDark, setSystemDark] = useState(false);
   const threshold = pathname === "/access" || ["/my/access", "/my/confirmed", "/my/join"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
   const focused = pathname.startsWith("/my/foundations/experience");
+  const cardRoom = pathname === "/my/card" || pathname === "/my/invitation";
   const membershipEntry = pathname === "/my/join";
   const hasNavigation = !threshold && !focused;
   const preview = configuration.mode === "preview";
@@ -57,6 +58,8 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   }
 
   const menuProps = { appearance, onAppearanceChange: changeAppearance, preview, operatorRole, viewerLabel };
+  if (cardRoom) return <div className={`${styles.journey} ${styles.cardRoom}`} data-member-journey data-member-theme="ink" data-platform-surface="member">{children}</div>;
+
   return <div className={`${styles.journey} ${!hasNavigation ? styles.focused : ""}`} data-member-journey data-member-theme={theme} data-platform-surface="member" data-platform-member-home={pathname === "/my" ? "true" : undefined} data-platform-threshold={threshold ? "true" : undefined}>
     {hasNavigation ? <aside className={styles.sidebar}>
       <Link href="/my" aria-label="My Ruined profile" className={styles.brand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>

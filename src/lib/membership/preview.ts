@@ -242,6 +242,7 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
 };
 
 export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
+  revision: "0".repeat(64),
   access,
   directory: {
     avatarUrl: null,
@@ -251,6 +252,7 @@ export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
     location: "Alpine, Utah",
     preferredName: "Preview",
     timezone: "America/Denver",
+    websiteUrl: null,
   },
   email: PREVIEW_MEMBER_IDENTITY.email,
   foundationsState: PREVIEW_MEMBER_IDENTITY.foundationsState,

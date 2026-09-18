@@ -20,9 +20,11 @@ function load(path, dependencies = {}, document) {
 }
 
 const navigation = load("src/lib/membership/navigation.ts");
-const { MEMBER_DESTINATIONS, currentMemberDestination, findMemberDestinations } = navigation;
+const { MEMBER_DESTINATIONS, currentMemberDestination, currentMemberPrimaryDestination, findMemberDestinations } = navigation;
 const expectedDestinations = {
   "/my": "Profile",
+  "/my/card": "My Card",
+  "/my/invitation": "My Invitation",
   "/my/foundations/timeline": "My Timeline",
   "/my/artifacts": "Artifacts",
   "/my/circle": "Circle",
@@ -132,9 +134,9 @@ function fixture(initialPath = "/my") {
   };
 }
 
-test("Member navigation retains all eleven named destinations and each page exists", () => {
+test("Member navigation retains all thirteen named destinations and each page exists", () => {
   assert.deepEqual(Object.fromEntries(MEMBER_DESTINATIONS.map(({ href, label }) => [href, label])), expectedDestinations);
-  assert.equal(new Set(MEMBER_DESTINATIONS.map(({ href }) => href)).size, 11);
+  assert.equal(new Set(MEMBER_DESTINATIONS.map(({ href }) => href)).size, 13);
   for (const { href } of MEMBER_DESTINATIONS) assert.ok(readFileSync(new URL(`../app${href}/page.tsx`, import.meta.url), "utf8").length, href);
 });
 
@@ -145,13 +147,13 @@ test("Member route selection chooses the longest matching page and respects segm
   }
   assert.equal(currentMemberDestination("/my/foundations/timeline/export"), "/my/foundations/timeline");
   assert.equal(currentMemberDestination("/my/foundations/experience"), "/my/foundations");
-  for (const path of ["/my/learning", "/my/circles", "/my/profile-other", "/my/supporting", "/my/unknown", "/my-other", "/ops"]) {
+  for (const path of ["/my/learning", "/my/circles", "/my/cards", "/my/card-other", "/my/profile-other", "/my/supporting", "/my/unknown", "/my-other", "/ops"]) {
     assert.equal(currentMemberDestination(path), undefined, path);
   }
 });
 
 test("Member page search supports common task terms, whitespace, case, and multiple words", () => {
-  assert.equal(findMemberDestinations("  ").length, 11);
+  assert.equal(findMemberDestinations("  ").length, 13);
   for (const [query, hrefs] of [
     ["BILLING", ["/my/account"]],
     ["  profile   photo ", ["/my/profile"]],
@@ -159,6 +161,9 @@ test("Member page search supports common task terms, whitespace, case, and multi
     ["help", ["/my/support"]],
     ["unread", ["/my/updates"]],
     ["timeline export", ["/my/foundations/timeline"]],
+    ["  PUBLIC   share ", ["/my/card"]],
+    ["card download", ["/my/card"]],
+    ["invitation joined", ["/my/invitation"]],
     ["zz-no-page", []],
   ]) assert.deepEqual(findMemberDestinations(query).map(({ href }) => href), hrefs, query);
 });
@@ -172,6 +177,21 @@ test("The topbar search trigger is labeled and controls a closed native dialog",
   assert.equal(f.dialog.open,false);
   assert.equal(f.document.body.style.overflow,"clip");
   assert.equal(f.all().some(node=>node.props?.role==="menu"),false);
+});
+
+test("The member card is searchable, marks its own destination current, and keeps Profile as its primary room", () => {
+  const f = fixture("/my/card");
+  assert.equal(currentMemberPrimaryDestination("/my/card"), "/my");
+  f.trigger().props.onClick(); f.draw();
+  const current = nodes(f.menu()).filter((node) => node.props?.["aria-current"] === "page");
+  assert.equal(current.length, 1);
+  assert.equal(current[0].props.href, "/my/card");
+  assert.equal(text(current[0]).trim(), "My Card↗");
+  f.search().props.onChange({ target: { value: "public share" } }); f.draw();
+  const results = nodes(f.menu()).filter((node) => node.type === "a");
+  assert.deepEqual(results.map((node) => node.props.href), ["/my/card"]);
+  assert.equal(results[0].props["aria-current"], "page");
+  f.unmount();
 });
 
 test("Opening the menu calls showModal, focuses search, and exposes every destination with one current page", () => {
@@ -209,7 +229,7 @@ test("Search changes the rendered pages, announces no matches, and resets when r
   assert.equal(f.focused().label, "Search member pages");
   f.trigger().props.onClick(); f.draw();
   assert.equal(f.search().props.value, "");
-  assert.equal(nodes(f.menu()).filter((node) => node.type === "a").length, 11);
+  assert.equal(nodes(f.menu()).filter((node) => node.type === "a").length, 13);
 });
 
 test("Native Escape closes the menu, restores scrolling and focus, and allows reopening", () => {

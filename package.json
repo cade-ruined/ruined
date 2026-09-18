@@ -29,6 +29,7 @@
     "@stripe/stripe-js": "9.14.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
+    "@vercel/oidc": "3.8.5",
     "google-auth-library": "11.0.2",
     "gsap": "^3.15.0",
     "i18n-iso-countries": "7.14.0",

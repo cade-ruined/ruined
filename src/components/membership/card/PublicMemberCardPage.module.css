@@ -1,0 +1,24 @@
+.page{position:relative;isolation:isolate;min-height:100svh;overflow:hidden;background:#141413;color:#e8e3d4;font-family:var(--font-body),sans-serif;padding:0 clamp(16px,4vw,64px);display:flex;flex-direction:column}
+.archive{position:fixed;inset:0;z-index:0;pointer-events:none;background:#141413}
+.archive picture,.archive img{display:block;width:100%;height:100%}
+.archive img{object-fit:cover;object-position:50% 50%;animation:roomReveal 900ms ease-out both}
+.archive::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#08080780 0%,#08080712 20%,transparent 54%,#08080724 73%,#080807d9 100%),radial-gradient(ellipse at 50% 40%,transparent 28%,#08080740 100%)}
+.particles{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+.tableShadow{position:fixed;inset:0;width:100%;height:100%;z-index:1;visibility:hidden;overflow:hidden;pointer-events:none;mix-blend-mode:multiply}
+.header,.content,.footer,.status{position:relative;z-index:2}
+.header{height:84px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #e5dfce18;text-shadow:0 1px 12px #000}
+.header>a:first-child{width:112px;flex-shrink:0}.header img{width:100%;height:auto;filter:brightness(0) invert(.88)}.header>span{font-size:9px;letter-spacing:.19em;color:#b8b2a3}.header>button,.header>a:last-child{display:inline-flex;align-items:center;min-height:44px;font-size:11px;background:none;border:0;cursor:pointer;color:#e0dccf}
+.content{width:100%;margin:auto;display:flex;justify-content:center;padding:8px 0 0}.caption{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.card{min-width:0;width:min(100%,780px);--member-card-stage-height:clamp(390px,calc(100svh - 322px),660px)}
+.card :global([data-member-card]){--card-muted:#d1c9b8;text-shadow:0 1px 10px #0009}
+.card :global(details){background:#0d0c0a80;border-radius:2px;padding:0 14px;backdrop-filter:blur(8px)}
+.footer{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:72px;flex-shrink:0;border-top:1px solid #e5dfce18;font-size:10px;color:#bcb4a3;text-shadow:0 1px 10px #000}.footer a{display:flex;align-items:center;gap:34px;min-height:44px;color:#e0dacb}.status{text-align:center;min-height:0;font-size:11px;color:#d3cbbb;margin:0}.status:empty{display:none}.page :is(a,button):focus-visible{outline:2px solid #e6e4d1;outline-offset:6px}
+@keyframes roomReveal{from{opacity:0}to{opacity:1}}
+@media(max-width:780px){.header{height:72px}.header>span{display:none}.header>a:first-child{width:100px}.content{max-width:550px}.footer{font-size:9px;min-height:64px}.footer a{gap:12px}}
+@media(max-width:600px){.card{--member-card-stage-height:clamp(365px,calc(100svh - 300px),550px)}.archive::after{background:linear-gradient(180deg,#08080787,transparent 25%,transparent 55%,#08080740 76%,#080807e6 100%)}.card :global(details){padding-inline:10px}}
+@media(max-width:359px){.page{padding-inline:12px}.header>a:first-child{width:88px}.header>button,.header>a:last-child{font-size:10px}.footer{flex-wrap:wrap;gap:0;padding:8px 0}}
+@media(prefers-reduced-motion:reduce){.archive img{animation:none}}
+@media(forced-colors:active){.archive,.particles,.tableShadow{display:none}.page{background:Canvas;color:CanvasText}.header,.footer{border-color:CanvasText}.header a,.header button,.footer a,.footer,.header>span{color:CanvasText;text-shadow:none}.card :global(details){background:Canvas;backdrop-filter:none}}
+.headerActions,.footerActions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 22px;max-width:60%}.headerActions a,.headerActions button,.footerActions button{display:inline-flex;align-items:center;min-height:44px;font-size:11px;color:#e0dccf;background:none;border:0;cursor:pointer}.headerActions button:disabled,.footerActions button:disabled{opacity:.5;cursor:wait}.belowCard{position:relative;z-index:2;width:min(100%,620px);margin:0 auto 30px}.footer>div:first-child{max-width:65%;line-height:1.6}
+@media(max-width:480px){.header{height:auto;min-height:72px;padding-block:10px;gap:10px}.headerActions{gap:0 14px}.footer{align-items:flex-start;padding-block:14px}.footer>div:first-child{max-width:100%}.footerActions{max-width:100%;justify-content:flex-start}.belowCard{margin-bottom:22px}}
+
+.footer>div,.belowCard{min-width:0;overflow-wrap:anywhere}

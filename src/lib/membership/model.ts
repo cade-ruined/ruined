@@ -245,6 +245,7 @@ export type MemberDirectoryPreferences = {
 };
 
 export type MemberProfileSnapshot = {
+  revision: string;
   access: MemberAccessPolicy;
   directory: {
     avatarUrl: string | null;
@@ -254,6 +255,7 @@ export type MemberProfileSnapshot = {
     location: string | null;
     preferredName: string | null;
     timezone: string | null;
+    websiteUrl: string | null;
   };
   email: string;
   foundationsState: FoundationsState;

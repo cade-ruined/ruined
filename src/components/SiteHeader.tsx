@@ -201,7 +201,7 @@ export default function SiteHeader() {
     if (!window.dispatchEvent(request)) event.preventDefault();
   };
 
-  if (isLanding || isFoundations || isAuth || isOperations || pathname === "/my" || pathname.startsWith("/my/")) return null;
+  if (isLanding || isFoundations || isAuth || isOperations || pathname === "/my" || pathname.startsWith("/my/") || (pathname.startsWith("/card/") || pathname.startsWith("/invitation/") || pathname === "/my/card" || pathname === "/my/invitation")) return null;
 
   const overlayOpen = menuOpen || searchOpen;
 

@@ -10,6 +10,7 @@ import OperatorMemberSetup from "@/components/platform/OperatorMemberSetup";
 import OperatorProfileSupport from "@/components/platform/OperatorProfileSupport";
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
+import OperatorMemberReferrals from "@/components/platform/OperatorMemberReferrals";
 import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspace";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
@@ -126,6 +127,7 @@ export default function OperatorMemberRecord({
       <section className="scroll-mt-36" id="overview">
         <SectionHeading title="Overview" />
         <OperatorMemberSetup record={record} />
+        {canManageSetup ? <OperatorMemberReferrals memberId={header.memberId} preview={preview} /> : null}
         {!canManageSetup ? <p className="mt-4 text-sm text-black/60">Review this member’s joining, progress, and Circle below. An Administrator manages Circle placement and operator access.</p> : null}
       </section>
 

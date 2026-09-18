@@ -35,7 +35,7 @@ const NATIVE_CURSOR_SELECTOR = [
 export default function BrandCursor() {
   const cursorRef = useRef<HTMLDivElement>(null);
   const pathname = useBackgroundPathname();
-  const disabled = pathname.startsWith("/ops");
+  const disabled = pathname.startsWith("/ops") || (pathname.startsWith("/card/") || pathname.startsWith("/invitation/") || pathname === "/my/card" || pathname === "/my/invitation");
 
   useEffect(() => {
     if (disabled) {

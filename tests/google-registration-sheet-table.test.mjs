@@ -28,7 +28,12 @@ test("the existing Registrants table gains Event J and grows without shrinking o
       return { data: {} };
     }
   }
-  const dependencies = { "server-only": {}, "node:buffer": { Buffer }, "google-auth-library": { GoogleAuth: MockGoogleAuth } };
+  const dependencies = {
+    "server-only": {},
+    "node:buffer": { Buffer },
+    "@vercel/oidc": { getVercelOidcToken: () => assert.fail("Service-account configuration must not request an OIDC token") },
+    "google-auth-library": { GoogleAuth: MockGoogleAuth },
+  };
   const loaded = { exports: {} };
   const credentials = Buffer.from(JSON.stringify({
     type: "service_account", client_email: "registrations@fixture.iam.gserviceaccount.com",

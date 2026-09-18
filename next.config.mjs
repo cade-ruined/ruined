@@ -56,9 +56,15 @@ const nextConfig = {
     // Prefer modern formats for any next/image usage; the hero <picture>
     // already serves AVIF/WebP directly.
     formats: ["image/avif", "image/webp"],
-    // Sequence stills carry a content-version query. Explicitly allow local
-    // image URLs with queries while retaining the existing all-local policy.
-    localPatterns: [{ pathname: "/**" }],
+    // Optimize static assets only. The optimizer caches upstream image bytes even
+    // when their response says no-store; public card consent must stay revocable.
+    // Omitted search preserves versioned sequence URLs. Member media uses unoptimized.
+    localPatterns: [
+      { pathname: "/*.{avif,gif,ico,jpg,jpeg,png,svg,webp}" },
+      { pathname: "/_next/static/media/**" },
+      ...["art", "catalog", "cursor", "events", "fonts", "media", "membership", "sequences", "sharing", "store", "textures", "work"]
+        .map((directory) => ({ pathname: `/${directory}/**` })),
+    ],
     remotePatterns: [
       { protocol: "https", hostname: "cdn.shopify.com", pathname: "/**" },
     ],
@@ -101,6 +107,11 @@ const nextConfig = {
         ],
       })),
       { source: "/(.*)", headers: securityHeaders },
+      ...["/card/:path*", "/invitation/:path*"].map(source => ({ source, headers: [
+        { key: "Cache-Control", value: "private, no-store, max-age=0" },
+        { key: "Referrer-Policy", value: "no-referrer" },
+        { key: "X-Robots-Tag", value: "noindex, nofollow" },
+      ] })),
     ];
   },
 };

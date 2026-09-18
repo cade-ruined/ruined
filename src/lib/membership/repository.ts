@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { MemberCardInput } from "./public-card-model";
 import parsePhoneNumber from "libphonenumber-js/min";
 import type postgres from "postgres";
 
@@ -1099,14 +1100,27 @@ type ProfileRow = {
   preferred_name: string | null;
   preference_version: number | null;
   timezone: string | null;
+  website_url: string | null;
 };
+
+async function profileRevision(row: ProfileRow): Promise<string> {
+  // Include only fields this form can overwrite. Immediate photo uploads do not
+  // invalidate a form that never submits the portrait storage path.
+  const fields = [row.display_name, row.preferred_name, row.timezone, row.location_label, row.bio,
+    row.building_now, row.website_url, row.accessibility_notes, row.directory_status, row.avatar_visible,
+    row.location_visible, row.bio_visible, row.building_visible, row.email_scope, row.phone_scope, row.preference_version];
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(fields)));
+  return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+}
 
 export async function getMemberProfile(
   authUserId: string,
+  sql: ReturnType<typeof getApplicationDatabase> | postgres.TransactionSql = getApplicationDatabase(),
+  knownIdentity?: MemberIdentity,
 ): Promise<MemberProfileSnapshot | null> {
-  const identity = await requireMemberIdentity(authUserId);
+  const identity = knownIdentity ?? await requireMemberIdentity(authUserId);
   const access = requireMemberCapability(identity, "profile.read");
-  const rows = await getApplicationDatabase()<Array<ProfileRow>>`
+  const rows = await sql<Array<ProfileRow>>`
     select
       profile.display_name,
       profile.preferred_name,
@@ -1115,6 +1129,7 @@ export async function getMemberProfile(
       profile.location_label,
       profile.bio,
       profile.building_now,
+      profile.website_url,
       private_profile.legal_name,
       private_profile.mobile_e164,
       private_profile.birth_date,
@@ -1140,6 +1155,7 @@ export async function getMemberProfile(
   if (!row) return null;
   const displayName = row.display_name?.trim() || row.preferred_name?.trim() || "Member";
   return {
+    revision: await profileRevision(row),
     access,
     directory: {
       avatarUrl: safeMemberAvatarUrl(row.avatar_storage_path),
@@ -1149,6 +1165,7 @@ export async function getMemberProfile(
       location: row.location_label,
       preferredName: row.preferred_name,
       timezone: row.timezone,
+      websiteUrl: row.website_url,
     },
     email: identity.email,
     foundationsState: identity.foundationsState,
@@ -1175,6 +1192,9 @@ export async function getMemberProfile(
 }
 
 export type MemberProfileInput = {
+  revision: string;
+  websiteUrl: string;
+  card?: MemberCardInput;
   accessibilityNotes: string;
   bio: string;
   buildingNow: string;
@@ -1197,6 +1217,9 @@ export async function saveMemberProfile(
   const location = input.location.trim().slice(0, 160) || null;
   const bio = input.bio.trim().slice(0, 1200) || null;
   const buildingNow = input.buildingNow.trim().slice(0, 500) || null;
+  const { normalizeCardWebsite } = await import("./public-card-model");
+  const websiteUrl = normalizeCardWebsite(input.websiteUrl) || null;
+  if (!/^[0-9a-f]{64}$/.test(input.revision)) throw new MembershipInputError("Reload your profile before saving.");
   const accessibilityNotes = input.accessibilityNotes.trim().slice(0, 2000) || null;
   if (!['hidden', 'circle_visible'].includes(input.directory.directoryStatus)) {
     throw new MembershipInputError("The Circle directory choice is not valid.");
@@ -1210,6 +1233,12 @@ export async function saveMemberProfile(
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 44)`;
+    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
+    await tx`select person_id from person_profiles where person_id = ${identity.personId}::uuid for update`;
+    await tx`select person_id from person_private_profiles where person_id = ${identity.personId}::uuid for update`;
+    await tx`select member_id from member_directory_preferences where member_id = ${identity.memberId}::uuid for update`;
+    const current = await getMemberProfile(authUserId, tx, identity);
+    if (current?.revision !== input.revision) throw new MembershipConflictError("Your profile changed in another tab. Reload before saving so those changes are not overwritten.");
     await tx`
       insert into person_profiles (
         person_id,
@@ -1218,7 +1247,8 @@ export async function saveMemberProfile(
         timezone,
         location_label,
         bio,
-        building_now
+        building_now,
+        website_url
       ) values (
         ${identity.personId}::uuid,
         ${displayName},
@@ -1226,7 +1256,8 @@ export async function saveMemberProfile(
         ${timezone},
         ${location},
         ${bio},
-        ${buildingNow}
+        ${buildingNow},
+        ${websiteUrl}
       )
       on conflict (person_id) do update
       set
@@ -1236,6 +1267,7 @@ export async function saveMemberProfile(
         location_label = excluded.location_label,
         bio = excluded.bio,
         building_now = excluded.building_now,
+        website_url = excluded.website_url,
         updated_at = statement_timestamp()
     `;
     await tx`
@@ -1331,6 +1363,10 @@ export async function saveMemberProfile(
         ${`member-directory:${identity.memberId}:${crypto.randomUUID()}`}
       )
     `;
+    if (input.card) {
+      const { saveProfileCardSettings } = await import("./public-card-repository");
+      await saveProfileCardSettings(tx, identity, true, input.card);
+    }
   });
   const profile = await getMemberProfile(authUserId);
   if (!profile) throw new Error("Saved member profile could not be reloaded.");

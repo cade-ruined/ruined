@@ -4,6 +4,8 @@ import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
 import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
+import MemberPublicSharingSettings from "@/components/membership/MemberPublicSharingSettings";
+import type { MemberCardSnapshot } from "@/lib/membership/public-card-model";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
 import type { MemberProfileSnapshot } from "@/lib/membership/model";
@@ -18,24 +20,32 @@ function scopeLabel(value: string) {
 
 export default function MemberProfileEditor({
   initialProfile,
+  initialCard = null,
   photoStorageReady,
   writable,
   preview = false,
 }: {
   initialProfile: MemberProfileSnapshot;
+  initialCard?: MemberCardSnapshot | null;
   photoStorageReady: boolean;
   writable: boolean;
   preview?: boolean;
 }) {
   const [profile, setProfile] = useState(initialProfile);
+  const [card, setCard] = useState(initialCard);
+  const [choices, setChoices] = useState(initialCard?.settings ?? null);
+  const [conflict, setConflict] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [photoPending, setPhotoPending] = useState(false);
+  const photoScopePending = Boolean(card && choices && (
+    card.settings.publicEnabled !== choices.publicEnabled || card.settings.showPortrait !== choices.showPortrait
+  ));
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!writable || pending || photoPending) return;
+    if (!writable || pending || photoPending || conflict) return;
     setPending(true);
     setError(null);
     setSaved(false);
@@ -43,6 +53,9 @@ export default function MemberProfileEditor({
     try {
       const response = await fetch("/api/my/profile", {
         body: JSON.stringify({
+          revision: profile.revision,
+          websiteUrl: String(form.get("website-url") ?? ""),
+          ...(card && choices ? { card: { ...choices, version: card.version } } : {}),
           accessibilityNotes: String(form.get("accessibility-notes") ?? ""),
           bio: String(form.get("bio") ?? ""),
           buildingNow: String(form.get("building-now") ?? ""),
@@ -69,11 +82,14 @@ export default function MemberProfileEditor({
       const payload = (await response.json()) as {
         error?: string;
         profile?: MemberProfileSnapshot;
+        card?: MemberCardSnapshot | null;
       };
       if (!response.ok || !payload.profile) {
+        if (response.status === 409) setConflict(true);
         throw new Error(payload.error || "Your profile could not be saved.");
       }
       setProfile(payload.profile);
+      setCard(payload.card ?? null); setChoices(payload.card?.settings ?? null);
       setSaved(true);
     } catch (requestError) {
       setError(
@@ -88,11 +104,11 @@ export default function MemberProfileEditor({
 
   return (
     <main className="member-journey-page member-profile-editor mx-auto max-w-[78rem] pb-24 font-[var(--font-body)] text-[var(--member-ink)]">
-      <MemberSettingsHeader title="Edit profile" />
+      <MemberSettingsHeader title="Edit profile" /><p className="mb-6 text-sm"><Link className="underline underline-offset-4" href="/my/card">My Card ↗</Link></p>
       {!writable ? <p className="mb-6 rounded-[4px] bg-[var(--member-soft)] p-4 text-base leading-relaxed" role="status">{preview ? "Preview only. Profile changes are not saved." : profile.access.reason ?? "Your profile is read only. Contact support if you need to update it."} {!preview ? <Link className="underline underline-offset-4" href="/my/support">Get help</Link> : null}</p> : null}
 
-      <form onSubmit={save}>
-        <fieldset className="m-0 min-w-0 space-y-8 border-0 p-0" disabled={!writable || pending}>
+      <form onSubmit={save} onChange={() => setSaved(false)}>
+        <fieldset className="m-0 min-w-0 space-y-8 border-0 p-0" disabled={!writable || pending || photoPending}>
         <legend className="sr-only">Profile details and sharing preferences</legend>
         <section className="grid items-start gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
           <div>
@@ -102,10 +118,11 @@ export default function MemberProfileEditor({
               <MemberPhotoUpload
                 avatarUrl={profile.directory.avatarUrl}
                 available={photoStorageReady}
-                enabled={writable && !pending}
+                enabled={writable && !pending && !photoScopePending}
                 onBusyChange={setPhotoPending}
                 onChange={(avatarUrl) => setProfile((current) => ({ ...current, directory: { ...current.directory, avatarUrl } }))}
               />
+              {photoScopePending ? <p className="mt-3 text-xs leading-relaxed text-[var(--member-muted)]">Save your sharing choices before changing your photo.</p> : null}
             </div>
           </div>
 
@@ -134,8 +151,14 @@ export default function MemberProfileEditor({
               Short biography
               <textarea className={fieldClass} defaultValue={profile.directory.bio ?? ""} maxLength={1200} name="bio" rows={5} />
             </label>
+            <label className={SUPPORT_LABEL_CLASS + " sm:col-span-2"}>
+              Website / Optional
+              <input className={fieldClass} defaultValue={profile.directory.websiteUrl ?? ""} maxLength={300} name="website-url" type="url" inputMode="url" placeholder="https://" pattern="https?://.+" autoComplete="url" />
+            </label>
           </div>
         </section>
+
+        <MemberPublicSharingSettings snapshot={card} value={choices} onChange={setChoices} />
 
         <section className="grid gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
           <div>
@@ -194,7 +217,7 @@ export default function MemberProfileEditor({
         <section className="grid gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
           <div>
             <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Private notes</h2>
-            <p className="mt-3 max-w-md text-base leading-relaxed text-[var(--member-muted)]">For Ruined’s access and support planning. Never shown to your Circle.</p>
+            <p className="mt-3 max-w-md text-base leading-relaxed text-[var(--member-muted)]">For Ruined’s access and support planning. Never shown to your Circle or public card.</p>
           </div>
           <label className={SUPPORT_LABEL_CLASS}>
             Accessibility notes / Optional
@@ -206,9 +229,10 @@ export default function MemberProfileEditor({
         <div className="mt-6 flex flex-wrap items-center justify-between gap-5">
           <div>
             {error ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 font-[var(--font-body)] text-sm text-[var(--member-muted)]">{error}</p> : null}
+            {conflict ? <p className="mt-3 text-sm">Reload to review the latest profile. This discards unsaved edits. <button type="button" className="underline underline-offset-4" onClick={() => window.location.reload()}>Reload profile</button></p> : null}
             {saved ? <p aria-live="polite" className="font-[var(--font-body)] text-sm text-[var(--member-muted)]">Profile saved.</p> : null}
           </div>
-          <button className={SUPPORT_ACTION_CLASS} disabled={!writable || pending || photoPending} type="submit">{pending ? "Saving…" : writable ? "Save profile" : "Read only"}</button>
+          <button className={SUPPORT_ACTION_CLASS} disabled={!writable || pending || photoPending || conflict} type="submit">{pending ? "Saving…" : writable ? "Save profile" : "Read only"}</button>
         </div>
       </form>
 

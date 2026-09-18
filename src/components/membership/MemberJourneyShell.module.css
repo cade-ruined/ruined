@@ -31,3 +31,5 @@
 @media(max-width:359px){.mobileBrand{width:88px}.quietLink{max-width:76px;line-height:1.25}}
 @media(prefers-reduced-motion:reduce){.appearanceThumb{transition:none}}
 .entryContent{max-width:none;padding:0}
+
+.journey.cardRoom{display:block;padding:0;background:#141413}

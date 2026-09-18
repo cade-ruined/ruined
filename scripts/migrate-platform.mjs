@@ -40,6 +40,10 @@ const migrations = [
   "../db/migrations/20260915161147_byob_03_registration.sql",
   "../db/migrations/20260915174319_circle_shaper_admin_eligibility.sql",
   "../db/migrations/20260916230000_member_journal.sql",
+  "../db/migrations/20260914225359_membership_waitlist.sql",
+  "../db/migrations/20260917200000_public_member_cards.sql",
+  "../db/migrations/20260919210000_member_profile_card_sync.sql",
+  "../db/migrations/20260919211000_member_referrals.sql",
 ];
 
 function migrationBody(migration, migrationName) {

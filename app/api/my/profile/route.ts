@@ -5,10 +5,13 @@ import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import {
   MembershipAccessDeniedError,
   MembershipInputError,
+  MembershipConflictError,
   saveMemberProfile,
   type MemberProfileInput,
 } from "@/lib/membership/repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
+import { PublicCardError, validateMemberCardInput } from "@/lib/membership/public-card-model";
+import { getOwnMemberCard } from "@/lib/membership/public-card-repository";
 
 export const runtime = "nodejs";
 
@@ -40,7 +43,12 @@ function isDirectory(value: unknown): value is MemberProfileInput["directory"] {
 function isProfileInput(value: unknown): value is MemberProfileInput {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
+  if (candidate.card !== undefined) {
+    try { validateMemberCardInput(candidate.card); } catch { return false; }
+  }
   return (
+    typeof candidate.revision === "string" && /^[0-9a-f]{64}$/.test(candidate.revision) &&
+    typeof candidate.websiteUrl === "string" &&
     typeof candidate.accessibilityNotes === "string" &&
     typeof candidate.bio === "string" &&
     typeof candidate.buildingNow === "string" &&
@@ -52,6 +60,9 @@ function isProfileInput(value: unknown): value is MemberProfileInput {
     Object.keys(candidate).every((key) =>
       [
         "accessibilityNotes",
+        "revision",
+        "websiteUrl",
+        "card",
         "bio",
         "buildingNow",
         "directory",
@@ -75,12 +86,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON is required." }, { status: 415 });
   }
   const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > 12_000) {
+  if (Number.isFinite(contentLength) && contentLength > 24_000) {
     return NextResponse.json({ error: "That profile is too large." }, { status: 413 });
   }
   let body: unknown;
   try {
-    body = await request.json();
+    const reader = request.body?.getReader();
+    if (!reader) throw new Error("Missing profile");
+    const chunks: Uint8Array[] = []; let length = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        length += value.length;
+        if (length > 24_000) { await reader.cancel(); return NextResponse.json({ error: "That profile is too large." }, { status: 413 }); }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+    const bytes = new Uint8Array(length); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    body = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return NextResponse.json({ error: "A valid profile is required." }, { status: 400 });
   }
@@ -93,8 +117,12 @@ export async function POST(request: Request) {
   }
   try {
     const profile = await saveMemberProfile(viewer.authUserId, body);
-    return NextResponse.json({ profile }, { headers: { "Cache-Control": "no-store" } });
+    const card = await getOwnMemberCard(viewer.authUserId).catch(() => null);
+    return NextResponse.json({ profile, card }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof MembershipConflictError || error instanceof PublicCardError) {
+      return NextResponse.json({ error: error.message }, { status: error instanceof PublicCardError ? error.status : 409 });
+    }
     if (error instanceof MembershipInputError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

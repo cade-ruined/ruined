@@ -32,7 +32,7 @@ async function fixture() {
   // Read paths use the real SQL against a small isolated relational fixture.
   // The profile audit table below is taken verbatim from the shipped migration.
   await pg.exec(`
-    create schema private;
+    create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key, status text default 'active');
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
@@ -83,6 +83,13 @@ async function fixture() {
     await pg.query("insert into circle_resources(circle_id,learning_resource_version_id) values($1,$2)", [circle, version]);
     await pg.query("insert into learning_resource_targets(learning_resource_id,audience_type) values($1,'all_members')", [resource]);
   }
+  await pg.exec(`
+    alter table ruined_members add column membership_activated_at timestamptz default '2020-01-01';
+    create table member_milestones(id uuid primary key, member_id uuid, person_id uuid, title text, visibility text, occurred_at timestamptz, source_entity_type text, source_entity_id text);
+    create table artifact_awards(id uuid primary key, member_id uuid, person_id uuid, status text, revoked_at timestamptz, awarded_at timestamptz);
+  `);
+  await pg.exec(await readFile(new URL("../db/migrations/20260917200000_public_member_cards.sql", import.meta.url), "utf8"));
+  await pg.exec(await readFile(new URL("../db/migrations/20260919210000_member_profile_card_sync.sql", import.meta.url), "utf8"));
   const identity = { account_state: "active", administrative_onboarding_state: "completed", auth_user_id: ids.auth, billing_state: "active", cancellation_effective_at: null, email: "member@example.test", foundations_state: "in_progress", member_id: ids.member, person_id: ids.person, program_state: "onboarding", standing_state: "active" };
   const makeDb = (engine) => {
     // postgres-js tags are lazy, composable query objects. A nested tag is SQL,
@@ -125,7 +132,11 @@ async function fixture() {
   const experienceAccess = await loadModule("src/lib/platform/experience-member-access.ts", {
     "@/lib/membership/access-policy": policy,
   });
+  const cardModel = await loadModule("src/lib/membership/public-card-model.ts", {});
+  let cardRepository;
   const repository = await loadModule("src/lib/membership/repository.ts", {
+    "./public-card-model": cardModel,
+    "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },
     "libphonenumber-js/min": require("libphonenumber-js/min"),
     "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
     "@/lib/membership/access-policy": policy,
@@ -139,13 +150,21 @@ async function fixture() {
     "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/platform/experience-member-access": experienceAccess,
   });
-  return { pg, identity, repository };
+  cardRepository = await loadModule("src/lib/membership/public-card-repository.ts", {
+    "node:crypto": require("node:crypto"), "@supabase/supabase-js": {},
+    "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
+    "@/lib/membership/access-policy": policy,
+    "@/lib/membership/repository": { getMemberIdentity: repository.getMemberIdentity },
+    "@/lib/membership/photo-policy": await loadModule("src/lib/membership/photo-policy.ts", {}),
+    "./public-card-model": cardModel,
+  });
+  return { pg, identity, repository, cardRepository, cardModel };
 }
 
 test("profile save commits typed privacy snapshots and reloads its changes through real PostgreSQL", async () => {
   const { pg, repository } = await fixture();
   try {
-    const saved = await repository.saveMemberProfile(ids.auth, { displayName: "Updated name", preferredName: "Updated", timezone: "America/Denver", location: "Utah", bio: "Updated bio", buildingNow: "New work", accessibilityNotes: "Private note", directory: { directoryStatus: "circle_visible", avatarVisible: true, locationVisible: true, bioVisible: true, buildingVisible: false, emailScope: "none", phoneScope: "none" } });
+    const saved = await repository.saveMemberProfile(ids.auth, { revision: (await repository.getMemberProfile(ids.auth)).revision, websiteUrl: "https://example.test", displayName: "Updated name", preferredName: "Updated", timezone: "America/Denver", location: "Utah", bio: "Updated bio", buildingNow: "New work", accessibilityNotes: "Private note", directory: { directoryStatus: "circle_visible", avatarVisible: true, locationVisible: true, bioVisible: true, buildingVisible: false, emailScope: "none", phoneScope: "none" } });
     assert.equal(saved.directory.displayName, "Updated name");
     assert.equal(saved.preferences.directoryStatus, "circle_visible");
     assert.equal(saved.privateProfile.accessibilityNotes, "Private note");
@@ -302,5 +321,35 @@ test("legacy progression events retain exact-match admission without bypassing t
     assert.deepEqual(await repository.setMemberExperienceRegistration(ids.auth, ids.allEvent, "register"), { status: "registered" });
     await pg.exec("update member_lifecycle set current_progression_level_slug='different'");
     await assert.rejects(() => repository.setMemberExperienceRegistration(ids.auth, ids.allEvent, "register"), repository.MembershipAccessDeniedError);
+  } finally { await pg.close(); }
+});
+
+
+test("profile text and public choices commit together; stale sharing and profile versions roll back every field", async () => {
+  const { pg, repository, cardRepository } = await fixture();
+  try {
+    const initialProfile = await repository.getMemberProfile(ids.auth);
+    const initialCard = await cardRepository.getOwnMemberCard(ids.auth);
+    const input = {
+      revision: initialProfile.revision, displayName: "N".repeat(120), preferredName: "Preferred", timezone: "America/Denver", location: "L".repeat(160),
+      bio: "B".repeat(1200), buildingNow: "W".repeat(500), websiteUrl: "https://example.test/", accessibilityNotes: "PRIVATE NOTES",
+      directory: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" },
+      card: { ...initialCard.settings, publicEnabled: true, showBio: true, showBuilding: true, showWebsite: true, version: initialCard.version },
+    };
+    const saved = await repository.saveMemberProfile(ids.auth, input);
+    assert.equal(saved.directory.displayName.length, 120); assert.equal(saved.directory.bio.length, 1200); assert.equal(saved.directory.buildingNow.length, 500);
+    const publicState = await cardRepository.getOwnMemberCard(ids.auth), token = publicState.publicUrl.split("/").pop();
+    assert.equal((await cardRepository.getPublicMemberCard(token)).bio, input.bio);
+    const hiding = { ...input, revision: saved.revision, bio: "NEW PRIVATE BIO", card: { ...publicState.settings, showBio: false, version: publicState.version } };
+    const hidden = await repository.saveMemberProfile(ids.auth, hiding);
+    assert.equal(hidden.directory.bio, "NEW PRIVATE BIO"); assert.equal((await cardRepository.getPublicMemberCard(token)).bio, null);
+    await assert.rejects(repository.saveMemberProfile(ids.auth, { ...input, bio: "STALE PROFILE" }), { name: "MembershipConflictError" });
+    const currentCard = await cardRepository.getOwnMemberCard(ids.auth);
+    await cardRepository.saveOwnMemberCard(ids.auth, { ...currentCard.settings, publicEnabled: false, version: currentCard.version });
+    await assert.rejects(repository.saveMemberProfile(ids.auth, { ...hiding, revision: hidden.revision, bio: "SHOULD ROLL BACK", accessibilityNotes: "SHOULD ALSO ROLL BACK", card: { ...currentCard.settings, version: currentCard.version } }), { status: 409 });
+    const latest = await repository.getMemberProfile(ids.auth);
+    assert.equal(latest.directory.bio, "NEW PRIVATE BIO"); assert.equal(latest.privateProfile.accessibilityNotes, "PRIVATE NOTES");
+    assert.equal(latest.revision, hidden.revision); assert.equal(await cardRepository.getPublicMemberCard(token), null);
+    assert.equal((await pg.query("select count(*)::int as count from member_directory_preference_events")).rows[0].count, 2);
   } finally { await pg.close(); }
 });

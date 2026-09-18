@@ -256,11 +256,13 @@ test("member record action anchors have visible authorized destinations and neve
   const preview = load("src/lib/platform/ops-preview.ts");
   const record = preview.getPreviewOpsMemberRecord("preview-01");
   const component = () => null;
+  const Referrals = () => null;
   const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
     "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
     "@/components/platform/OperatorMemberSetup": { __esModule: true, default: component },
+    "@/components/platform/OperatorMemberReferrals": { __esModule: true, default: Referrals },
     "@/components/platform/OperatorMemberWorkspace": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },
     "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: () => null },
     "@/components/platform/OperatorProfileSupport": { __esModule: true, default: component },
@@ -284,6 +286,8 @@ test("member record action anchors have visible authorized destinations and neve
   assert.equal(nodes(restricted).some((node) => node.props?.id === "new-member-task"), false);
   assert.equal(nodes(restricted).some((node) => node.props?.id === "new-member-note"), false);
   assert.doesNotMatch(renderToStaticMarkup(restricted), /Record a state correction/);
+  assert.equal(list.some(node => node.type === Referrals), true);
+  assert.equal(nodes(restricted).some(node => node.type === Referrals), false, "referral records stay administrator-only");
 });
 
 test("operator guide distinguishes email allowance, acceptance, member placement, and explicit communication review", () => {
