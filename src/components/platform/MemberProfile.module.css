@@ -1,21 +1,27 @@
 
 .profile { min-width:0; max-width:1200px; margin:0 auto; color:var(--member-ink); }
-.identity { display:grid; grid-template-columns:144px minmax(0,1fr); column-gap:32px; row-gap:16px; align-items:start; padding:0 0 32px; }
-.memberRow { grid-column:1/-1; margin-bottom:16px; }
-.memberBadge { display:flex; align-items:center; gap:10px; color:var(--member-muted); font-size:11px; letter-spacing:.09em; text-transform:uppercase; }
-.memberBadge img { width:16px; height:24px; object-fit:contain; filter:brightness(0); }
-:global([data-member-theme="ink"]) .memberBadge img { filter:brightness(0) invert(.87); }
-.polaroid { position:relative; width:144px; aspect-ratio:1750/2120; grid-column:1; grid-row:2/5; filter:drop-shadow(0 6px 7px #0003); margin-top:4px; }
+.identity { display:grid; grid-template-columns:208px minmax(0,1fr); column-gap:40px; row-gap:18px; align-items:start; padding:0 0 32px; }
+.memberBadge { display:flex; align-items:center; gap:12px; margin-top:14px; color:var(--member-ink); font-size:12px; letter-spacing:.07em; line-height:1.5; text-transform:uppercase; min-width:0; }
+.badgeDetails { display:flex; align-items:center; flex-wrap:wrap; gap:3px 8px; min-width:0; }
+.badgeLabel,.badgeNumber { white-space:nowrap; }
+.badgeNumber { color:var(--member-muted); font-variant-numeric:tabular-nums; }
+.badgeDivider { margin-right:8px; }
+.memberLeaf { flex-shrink:0; width:21px; height:31px; background:var(--member-accent); mask-size:contain; mask-repeat:no-repeat; mask-position:center; }
+.polaroid { position:relative; width:208px; aspect-ratio:1750/2120; grid-column:1; grid-row:1/5; filter:drop-shadow(0 6px 7px #0003); margin:0; }
 .photo { position:absolute; left:4.9%; top:7.3%; height:71.3%; width:89.2%; overflow:hidden; background:#171512; }
 .photo img { object-fit:cover; }
 .frame { pointer-events:none; object-fit:contain; }
-.polaroid figcaption { position:absolute; bottom:5.1%; left:8%; right:8%; font-family:var(--font-cadehandy2); font-size:17px; line-height:1; color:#2a2a2a; }
-.nameBlock { min-width:0; grid-column:2; align-self:center; }
-.nameBlock h1 { font-family:var(--font-display)!important; font-size:clamp(44px,5.5vw,76px); font-weight:500!important; line-height:.98; letter-spacing:-.045em; overflow-wrap:anywhere; }
-.memberTag { margin-top:12px; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--member-muted); overflow-wrap:anywhere; }
+.polaroid figcaption { position:absolute; bottom:5.1%; left:8%; right:8%; font-family:var(--font-cadehandy2); font-size:20px; line-height:1; color:#2a2a2a; }
+.nameBlock { min-width:0; grid-column:2; grid-row:1; align-self:center; }
+.nameBlock h1 { margin:0; line-height:.95; text-transform:uppercase; overflow-wrap:anywhere; }
+.firstName { display:block; font-family:var(--font-body); font-weight:700; font-size:clamp(40px,4.5vw,60px); font-style:normal; line-height:.95; letter-spacing:-.045em; }
+.surname { display:block; font-family:var(--font-display); font-weight:500; font-style:italic; font-size:clamp(30px,3.2vw,42px); line-height:.95; letter-spacing:-.035em; }
+.memberTag { margin-top:12px; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--member-red); overflow-wrap:anywhere; }
 .bio { min-width:0; overflow-wrap:anywhere; grid-column:2; max-width:65ch; white-space:pre-wrap; font-size:15px; line-height:1.65; }
-.identityActions { grid-column:2; display:flex; align-items:center; flex-wrap:wrap; gap:16px 24px; }
-.identityActions>span { font-size:11px; color:var(--member-muted); }
+.identityActions { grid-column:2; display:flex; align-items:center; flex-wrap:nowrap; gap:10px; min-width:0; }
+.identityActions :global(.member-button) { min-width:0; min-height:44px; padding:10px 12px; gap:6px; white-space:nowrap; }
+.identityActions svg { flex-shrink:0; }
+.memberSince { grid-column:2; font-size:11px; line-height:1.5; color:var(--member-muted); }
 .tabs { display:flex; border-top:1px solid var(--member-rule); border-bottom:1px solid var(--member-rule); gap:34px; margin-bottom:28px; }
 .tabs button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:56px; position:relative; font-size:13px; color:var(--member-muted); }
 .tabs button[aria-selected="true"] { color:var(--member-ink); font-weight:500; }
@@ -33,18 +39,22 @@
 .about{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:44px 40px}.facts{margin:20px 0;display:grid;gap:18px}.facts dt{font-size:10px;color:var(--member-muted);margin-bottom:5px}.facts dd{font-size:14px;line-height:1.65;overflow-wrap:anywhere;white-space:pre-wrap}.full{grid-column:1/-1}.sectionLine{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}.sectionLine>a,.sectionLine>span{font-size:11px;color:var(--member-muted)}.recordList{list-style:none;margin-top:20px;padding:0}.recordList li{display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid var(--member-rule);padding:18px 0;font-size:14px}.recordList time{flex-shrink:0;font-size:10px;color:var(--member-muted)}.recordNote{display:block;font-size:10px;color:var(--member-muted);margin-top:5px}.smallTitle{font-size:24px;margin-top:28px}.muted{font-size:12px;line-height:1.7;color:var(--member-muted);margin-top:12px}.artifacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;padding:0;gap:16px;margin-top:20px}.artifacts li{padding:22px;background:var(--member-soft);border:1px solid var(--member-rule)}.artifacts span,.artifacts p{font-size:10px;color:var(--member-muted)}.artifacts h3{font-size:25px;margin:16px 0}.timelineHeader{margin-bottom:28px}.profile [role="tabpanel"]:focus-visible{outline-offset:8px}.profile [hidden]{display:none!important}
 
 @media(max-width:700px) {
-  .identity { grid-template-columns:88px minmax(0,1fr); gap:18px 20px; padding:2px 0 14px; }
-  .memberRow { margin-bottom:11px; }
-  .memberBadge { font-size:10px; gap:9px; }
-  .memberBadge img { width:15px; height:23px; }
-  .polaroid { width:88px; grid-row:2; align-self:center; margin-top:0; }
-  .polaroid figcaption { font-size:12px; }
-  .nameBlock h1 { font-size:clamp(36px,11.3vw,56px); line-height:1.01; letter-spacing:-.045em; }
-  .bio,.identityActions { grid-column:1/-1; }
+  .identity { grid-template-columns:156px minmax(0,1fr); gap:20px; padding:2px 0 20px; }
+  .memberBadge { font-size:10px; gap:8px; letter-spacing:.025em; margin-top:14px; }
+  .badgeDetails { gap:2px 6px; }
+  .badgeDivider { display:none; }
+  .memberLeaf { width:18px; height:27px; }
+  .polaroid { width:156px; grid-row:1; align-self:start; }
+  .polaroid figcaption { font-size:16px; }
+  .firstName { font-size:clamp(34px,9.2vw,44px); }
+  .surname { font-size:clamp(26px,7vw,32px); }
+  .memberTag { margin-top:10px; font-size:13px; }
+  .bio,.identityActions,.memberSince { grid-column:1/-1; }
   .bio { font-size:15px; margin-top:1px; }
-  .identityActions { display:grid; gap:8px; }
-  .identityActions :global(.member-button) { width:100%; min-height:44px; padding:10px 14px; font-size:13px; }
-  .identityActions>span { font-size:12px; line-height:1.7; }
+  .identityActions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .identityActions :global(.member-button) { width:100%; min-height:44px; padding:10px 6px; gap:5px; font-size:12px; }
+  .identityActions svg { width:13px; height:13px; }
+  .memberSince { margin-top:-6px; font-size:11px; }
   .tabs { justify-content:space-between; gap:0; margin-bottom:20px; }
   .tabs button { font-size:13px; min-width:52px; min-height:50px; }
   .nextAction { margin-top:22px; padding-top:22px; gap:20px; }
@@ -57,9 +67,14 @@
   .recordList li { font-size:13px; }
 }
 @media(max-width:359px) {
-  .identity { grid-template-columns:80px minmax(0,1fr); column-gap:16px; }
-  .polaroid { width:80px; }
-  .nameBlock h1 { font-size:35px; }
+  .identity { grid-template-columns:128px minmax(0,1fr); column-gap:16px; }
+  .polaroid { width:128px; }
+  .polaroid figcaption { font-size:14px; }
+  .firstName { font-size:32px; }
+  .surname { font-size:24px; }
   .memberBadge { font-size:9px; }
+  .identityActions { gap:6px; }
+  .identityActions :global(.member-button) { padding-inline:4px; gap:4px; font-size:11px; }
+  .identityActions svg { width:12px; height:12px; }
   .tabs button { font-size:12px; }
 }

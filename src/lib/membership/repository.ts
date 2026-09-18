@@ -557,6 +557,9 @@ export async function acceptPublishedMembershipAgreement(
 
   const result = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 42)`;
+    // Renewed agreement acceptance can touch an already-completed lifecycle.
+    // Keep member before private profile/lifecycle, like other profile writers.
+    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
     const profileRows = await tx<Array<{ birth_date: Date | string | null; legal_name: string | null }>>`
       select private_profile.birth_date, private_profile.legal_name
       from person_private_profiles private_profile
@@ -803,6 +806,8 @@ export async function completeMemberAdministrativeOnboarding(
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 43)`;
     await tx`select private.ruined_lock_member_operator_funding(${identity.memberId}::uuid)`;
+    // Billing activation and permanent number allocation lock member before lifecycle.
+    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
     const lifecycleRows = await tx<
       Array<{
         administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
@@ -2924,9 +2929,9 @@ export async function getMemberHome(
       `
     : Promise.resolve([]);
   const memberSinceRowsPromise = sql<
-    Array<{ member_since: Date | string | null }>
+    Array<{ member_since: Date | string | null; member_number: number | null }>
   >`
-    select membership_activated_at as member_since
+    select membership_activated_at as member_since, member_number
     from ruined_members
     where id = ${identity.memberId}::uuid
     limit 1
@@ -3086,6 +3091,7 @@ export async function getMemberHome(
     displayName: profile.directory.displayName,
     foundations,
     identity,
+    memberNumber: memberSinceRows[0]?.member_number ?? null,
     memberSince: toIso(memberSinceRows[0]?.member_since),
     nextAction,
     nextExperience,

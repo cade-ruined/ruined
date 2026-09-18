@@ -228,6 +228,7 @@ export const PREVIEW_MEMBER_HOME: MemberHomeSnapshot = {
     state: "in_progress",
   },
   identity: PREVIEW_MEMBER_IDENTITY,
+  memberNumber: 1,
   memberSince: "2026-08-01T16:00:00.000Z",
   nextAction: {
     body: "Continue from the place you last left it. Your Circle is already in place.",

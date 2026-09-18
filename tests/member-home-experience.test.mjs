@@ -6,6 +6,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
+import * as memberNumber from "../src/lib/membership/member-number.ts";
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8");
@@ -22,6 +23,7 @@ new Function("require", "module", "exports", compiled)((name) => {
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
   if (name === "next/image") return { __esModule: true, default: ({ src, alt }) => React.createElement("img", { src, alt }) };
   if (name === "@/components/membership/CircleMemberPortrait") return { __esModule: true, default: ({ person }) => React.createElement("span", null, person.displayName) };
+  if (name === "@/lib/membership/member-number") return memberNumber;
   if (name === "@/lib/membership/access-policy") return { memberCan: (access, capability) => access.capabilities.includes(capability) };
   if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
   throw new Error(`Unexpected MemberHome dependency: ${name}`);
@@ -42,7 +44,7 @@ function memberFixture() {
     announcement: { id: "announcement-1", title: "A note for your Circle", body: "Private announcement body", href: "/my/updates", publishedAt: "2026-01-12T12:00:00.000Z" },
     artifact, artifacts: [artifact], avatarUrl: null, blockName: "Our Block", circleMembers: [{ id: "person-2", displayName: "Circle person", avatarUrl: null }], circleName: "Our Circle", displayName: "Alex",
     foundations: { state: "completed", progressPercent: 100, requirements: { activeCircle: { completed: true, name: "Our Circle" }, futureLetter: { completed: true, completedAt: "2026-01-09T12:00:00.000Z" }, timeline: { completed: true, completedAt: "2026-01-08T12:00:00.000Z", entryCount: 4 }, moments: { completed: 5, total: 5 } } },
-    identity: { standingState: "active", email: "alex@example.com" }, memberSince: "2026-01-01T12:00:00.000Z",
+    memberNumber: null, identity: { standingState: "active", email: "alex@example.com" }, memberSince: "2026-01-01T12:00:00.000Z",
     nextAction: { kind: "circle", title: "Meet your Circle", body: "", href: "/my/circle" }, nextExperience: futureMeeting, nextMeeting: futureMeeting,
     profile: { preferredName: "Alex", fullName: "Alex Member", displayName: "Alex", bio: null, buildingNow: null, directoryStatus: "hidden", location: null, timezone: "America/Denver" },
     record: {
@@ -88,4 +90,36 @@ test("artifacts preserve earned, gifted, and purchased distinctions",()=>{
  const member=memberFixture();member.artifacts.push({...member.artifacts[0],awardId:"gift",name:"Gifted piece",acquisitionType:"gifted"},{...member.artifacts[0],awardId:"purchase",name:"Purchased piece",acquisitionType:"purchased"});const tree=render(member);
  assert.match(text(tree),/EarnedFirst artifact/);assert.match(text(tree),/GiftedGifted piece/);assert.match(text(tree),/PurchasedPurchased piece/);
  assert.ok(elements(tree).some(node=>attr(node,"href")==="/my/artifacts"));
+});
+
+test("the owner header uses full name for a generated tag without changing public identity", () => {
+  const member = memberFixture();
+  member.displayName = member.profile.displayName = "@alex";
+  member.profile.memberTag = "alex";
+  member.profile.fullName = "Alex de Morgan";
+  const before = JSON.stringify(member);
+  const tree = render(member);
+  const heading = elements(tree).find(node => node.tagName === "h1");
+  assert.equal(attr(heading, "aria-label"), "Alex de Morgan");
+  assert.deepEqual(elements(heading).filter(node => node.tagName === "span").map(text), ["Alex", "de Morgan"]);
+  assert.equal(elements(tree).filter(node => attr(node, "class") === "memberTag").map(text).join(), "@alex");
+  assert.equal(JSON.stringify(member), before, "private header presentation must not mutate shared profile data");
+  member.profile.displayName = member.displayName = "Authored Name";
+  assert.equal(attr(elements(render(member)).find(node => node.tagName === "h1"), "aria-label"), "Authored Name");
+  member.profile.displayName = member.displayName = "@alex";
+  member.profile.fullName = null;
+  assert.equal(attr(elements(render(member)).find(node => node.tagName === "h1"), "aria-label"), "My profile");
+});
+
+test("profile badge uses the permanent number and leaves unassigned members unnumbered", () => {
+  for (const [number, label, display] of [[5,"Founders","0005"],[6,"Originals","0006"],[51,"Pillars","0051"],[101,"Builders","0101"],[201,"Members","0201"]]) {
+    const member=memberFixture();member.memberNumber=number;
+    const tree=render(member), badge=elements(tree).find(node=>attr(node,"class")==="memberBadge");
+    assert.match(text(badge),new RegExp(`${label}.*No\\. ${display}`));
+  }
+  const member=memberFixture();
+  const rendered=renderToStaticMarkup(React.createElement(MemberHome,{member,preview:true}));
+  assert.doesNotMatch(rendered,/No\. 0001|Founder/);
+  const tree=render(member), actions=elements(tree).find(node=>attr(node,"class")==="identityActions");
+  assert.deepEqual(elements(actions).filter(node=>node.tagName==="a").map(node=>attr(node,"href")),["/my/profile","/my/card","/my/invitation"]);
 });

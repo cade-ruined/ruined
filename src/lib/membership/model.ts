@@ -215,6 +215,7 @@ export type MemberHomeSnapshot = {
   displayName: string;
   foundations: FoundationSummary;
   identity: MemberIdentity;
+  memberNumber: number | null;
   memberSince: string | null;
   nextAction: MemberNextAction;
   nextExperience: MemberExperienceSummary | null;

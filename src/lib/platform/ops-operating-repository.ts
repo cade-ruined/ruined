@@ -2730,6 +2730,8 @@ export async function recordOpsMemberStateOverride(input: {
       memberId,
       requireAdmin: true,
     });
+    // Match billing/completion order before a correction can allocate a member number.
+    await tx`select id from ruined_members where id = ${memberId}::uuid for update`;
     const lifecycleRows = await tx<Array<LifecycleOverrideRow>>`
       select
         account_state,
