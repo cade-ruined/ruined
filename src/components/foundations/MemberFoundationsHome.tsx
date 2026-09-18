@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -77,48 +78,61 @@ export default function MemberFoundationsHome({
 
   return (
     <main className={`member-journey-page ${styles.page}`}>
-      <header className={styles.header}>
-        <p className={`member-handwritten ${styles.eyebrow}`}>Your practice</p>
-        <h1 className="member-page-title">Foundations</h1>
-        <p className={styles.intro}>
-          {completed ? "A beginning you can come back to." : "Make room for what matters."}
-        </p>
-      </header>
-
-      <section aria-label="Your Foundations progress" className={styles.practice}>
-        <div className={styles.progressLabel}>
-          <span>{completed ? "Completed" : state.enrollmentId ? "Your place" : "A shared beginning"}</span>
-          <span>{state.completedUnits} / {state.totalUnits} moments</span>
+      <div className={styles.opening}>
+        <div aria-hidden="true" className={styles.artwork}>
+          <Image
+            alt=""
+            aria-hidden="true"
+            className={styles.photograph}
+            fill
+            priority
+            sizes="(max-width: 600px) 100vw, (max-width: 1023px) 90vw, 1100px"
+            src="/membership/foundations/beginning.webp"
+          />
         </div>
-        <div
-          aria-label="Foundations moments complete"
-          aria-valuemax={state.totalUnits}
-          aria-valuemin={0}
-          aria-valuenow={state.completedUnits}
-          aria-valuetext={`${state.completedUnits} of ${state.totalUnits} moments complete`}
-          className={styles.progress}
-          role="progressbar"
-        >
-          <span style={{ width: `${progress}%` }} />
-        </div>
-
-        <div className={styles.resume}>
-          <p className={styles.moment}>
-            {completed ? "Foundations, at your own pace." : nextMoment?.label ?? "A shared beginning"}
+        <header className={styles.header}>
+          <p className={`member-handwritten ${styles.eyebrow}`}>Your practice</p>
+          <h1 className="member-page-title">Foundations</h1>
+          <p className={styles.intro}>
+            {completed ? "A beginning you can come back to." : "Make room for what matters."}
           </p>
-          <button
-            className={`member-button member-button-primary ${styles.continue}`}
-            disabled={pending}
-            onClick={enterFoundations}
-            type="button"
+        </header>
+
+        <section aria-label="Your Foundations progress" className={styles.practice}>
+          <div className={styles.progressLabel}>
+            <span>{completed ? "Completed" : state.enrollmentId ? "Your place" : "A shared beginning"}</span>
+            <span>{state.completedUnits} / {state.totalUnits} moments</span>
+          </div>
+          <div
+            aria-label="Foundations moments complete"
+            aria-valuemax={state.totalUnits}
+            aria-valuemin={0}
+            aria-valuenow={state.completedUnits}
+            aria-valuetext={`${state.completedUnits} of ${state.totalUnits} moments complete`}
+            className={styles.progress}
+            role="progressbar"
           >
-            <span>{pending ? "Opening…" : actionLabel(state)}</span>
-            <span aria-hidden="true">→</span>
-          </button>
-        </div>
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        <p className={styles.privacy}>Only your place in the path is saved.</p>
-      </section>
+            <span style={{ width: `${progress}%` }} />
+          </div>
+
+          <div className={styles.resume}>
+            <p className={styles.moment}>
+              {completed ? "Foundations, at your own pace." : nextMoment?.label ?? "A shared beginning"}
+            </p>
+            <button
+              className={`member-button member-button-primary ${styles.continue}`}
+              disabled={pending}
+              onClick={enterFoundations}
+              type="button"
+            >
+              <span>{pending ? "Opening…" : actionLabel(state)}</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          {error ? <p role="alert" className={styles.error}>{error}</p> : null}
+          <p className={styles.privacy}>Only your place in the path is saved.</p>
+        </section>
+      </div>
 
       <aside className={styles.circle} aria-label="Circle status">
         <p>

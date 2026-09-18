@@ -1,7 +1,44 @@
 .page.page {
-  max-width: 760px;
+  max-width: 1100px;
   margin-inline: 0;
   padding-top: 12px;
+}
+
+.opening {
+  --member-ink: #f5f3ee;
+  --member-muted: #e0ddd5;
+  --member-rule: rgba(245, 243, 238, .32);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: clamp(680px, 80svh, 880px);
+  padding: clamp(24px, 4vw, 48px);
+  color: var(--member-ink);
+  background: #101920;
+}
+
+.artwork {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.artwork::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(5, 12, 17, .68), rgba(5, 12, 17, .12) 38%, rgba(5, 12, 17, .06) 52%, rgba(5, 12, 17, .86) 82%, rgba(5, 12, 17, .92));
+}
+
+.photograph {
+  object-fit: cover;
+  object-position: 50% 74%;
+  pointer-events: none;
 }
 
 .header {
@@ -10,6 +47,10 @@
 
 .eyebrow {
   margin-bottom: 24px;
+}
+
+.opening .eyebrow {
+  color: var(--member-ink);
 }
 
 .intro {
@@ -77,7 +118,7 @@
 
 .error {
   margin-top: 20px;
-  color: var(--member-red);
+  color: #ffc5bd;
   font-size: 14px;
   line-height: 1.6;
 }
@@ -130,6 +171,24 @@
 @media (max-width: 600px) {
   .page.page {
     padding-top: 4px;
+  }
+
+  .opening {
+    min-height: 720px;
+    padding: 24px 20px;
+  }
+
+  .artwork {
+    bottom: auto;
+    height: clamp(450px, 120vw, 540px);
+  }
+
+  .artwork::after {
+    background: linear-gradient(180deg, rgba(5, 12, 17, .55), rgba(5, 12, 17, .08) 36%, rgba(5, 12, 17, .06) 60%, #101920);
+  }
+
+  .photograph {
+    object-position: 50% 64%;
   }
 
   .eyebrow {
