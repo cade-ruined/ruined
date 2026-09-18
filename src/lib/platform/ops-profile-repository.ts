@@ -179,6 +179,7 @@ export async function getOpsMemberProfileSupport(
       left join person_private_profiles private_profile on private_profile.person_id = member.person_id
       left join member_directory_preferences preference on preference.member_id = member.id
       where member.id = ${memberId}::uuid
+        and member.deleted_at is null
     `;
     const row = rows[0];
     if (!row) return null;
@@ -285,6 +286,7 @@ export async function updateOpsMemberProfileSupport(input: {
       select member.person_id
       from ruined_members member
       where member.id = ${memberId}::uuid
+        and member.deleted_at is null
       for update
     `;
     const member = memberRows[0];

@@ -295,6 +295,17 @@ async function createArtifactJob(action: WorkflowAction): Promise<Record<string,
   if (!awardId) throw new Error("Artifact award target is required.");
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
+    // Account deletion locks the member before its awards. Match that order
+    // before the insert guard checks whether this member still owns an account.
+    const [owner] = await tx<Array<{ member_id: string }>>`
+      select member_record.id as member_id
+      from artifact_awards award
+      join ruined_members member_record on member_record.id = award.member_id
+      where award.id = ${awardId}::uuid
+        and member_record.deleted_at is null
+      for update of member_record
+    `;
+    if (!owner) throw new Error("Artifact award is not production-ready.");
     const awards = await tx<Array<{
       address: postgres.JSONValue | null;
       input: postgres.JSONValue;
@@ -311,6 +322,8 @@ async function createArtifactJob(action: WorkflowAction): Promise<Record<string,
       left join person_private_profiles private_profile
         on private_profile.person_id = member_record.person_id
       where award.id = ${awardId}::uuid
+        and award.member_id = ${owner.member_id}::uuid
+        and member_record.deleted_at is null
         and award.status <> 'revoked'
       limit 1
       for update of award
@@ -479,6 +492,7 @@ async function sendAnnouncementNotifications(
           on platform_user.person_id = member_record.person_id
           and platform_user.status = 'active'
         where lifecycle.account_state = 'active'
+          and member_record.deleted_at is null
           and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member_record.id))
           and lifecycle.administrative_onboarding_state = 'completed'
           and lifecycle.standing_state in ('active', 'cancellation_requested')

@@ -20,12 +20,13 @@ function fixture({ admin = true, hash = "", preview = false } = {}) {
     if (name === "react") return { ...React, useEffect(fn) { effects.push(fn); }, useRef(initial) { const i = cursor++; return state[i] ??= { current: initial }; }, useState(initial) { const i = cursor++; if (!(i in state)) state[i] = initial; return [state[i], next => state[i] = next]; } };
     if (name === "react/jsx-runtime") return require(name);
     if (name === "next/navigation") return { useRouter: () => ({ refresh() { refreshes++; } }) };
+    if (name === "next/link") return { __esModule: true, default: "a" };
     if (name.endsWith("OperatorDialog")) return { default: "dialog-stub", __esModule: true };
     if (name.endsWith("OpsActions")) return { OpsInvitationActions: "invitation-stub" };
     if (name.endsWith("operatorStyles")) return { OPERATOR_PRIMARY_ACTION_CLASS: "primary" };
     throw Error(name);
   }, mod, mod.exports, win);
-  const draw = () => { cursor = 0; return mod.exports.default({ children: "Member list", pendingJoining: admin ? "Pending list" : undefined, preview }); };
+  const draw = () => { cursor = 0; return mod.exports.default({ children: "Member list", pendingJoining: admin ? "Pending list" : undefined, preview, showHistory: admin }); };
   const button = label => { const match = nodes(draw()).find(node => node.type === "button" && text(node) === label); assert.ok(match, label); return match; };
   return { draw, button, effects, win, listeners, refreshes: () => refreshes, pending(value) { nodes(draw()).find(node => node.props?.id === "pending-joining-panel").props.ref.current = { querySelector(selector) { assert.equal(selector, '[data-operator-pending="true"]'); return value ? {} : null; } }; } };
 }
@@ -60,6 +61,21 @@ test("pending joining requests block a view switch, and settled reviews remain m
   f.button("Add member").props.onClick();
   assert.equal(nodes(pending).some(node => node.type === "dialog-stub"), false, "the active dialog never lives in a hidden tab panel");
   assert.equal(nodes(f.draw()).find(node => node.type === "dialog-stub").props.returnFocusId, "add-member-trigger");
+});
+
+test("only administrators see historical navigation and pending joining writes block leaving", () => {
+  const f = fixture();
+  const historyLink = () => nodes(f.draw()).find(node => node.type === "a" && node.props.href === "/ops/members/history");
+  assert.ok(historyLink());
+  let prevented = 0;
+  f.pending(true);
+  historyLink().props.onClick({ preventDefault() { prevented++; } });
+  assert.equal(prevented, 1);
+  assert.match(text(f.draw()), /Wait for the current change to finish/);
+  f.pending(false);
+  historyLink().props.onClick({ preventDefault() { prevented++; } });
+  assert.equal(prevented, 1);
+  assert.equal(nodes(fixture({ admin: false }).draw()).some(node => node.props?.href === "/ops/members/history"), false);
 });
 
 test("Add opens the guarded dialog and keeps preview safety and refresh behavior", () => {

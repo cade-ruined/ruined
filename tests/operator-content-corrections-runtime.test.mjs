@@ -35,7 +35,7 @@ async function fixture(t, { migrate = true } = {}) {
     create table platform_users(auth_user_id uuid primary key, status text);
     create table platform_role_grants(auth_user_id uuid references platform_users, role_slug text, revoked_at timestamptz);
     create table people(id uuid primary key);
-    create table ruined_members(id uuid primary key, person_id uuid references people, unique(id,person_id));
+    create table ruined_members(id uuid primary key, person_id uuid references people, deleted_at timestamptz, unique(id,person_id));
     create table member_lifecycle(member_id uuid references ruined_members, account_state text);
     create table circles(id uuid primary key, status text);
     create table membership_blocks(id uuid primary key, status text);
@@ -48,7 +48,7 @@ async function fixture(t, { migrate = true } = {}) {
     insert into platform_users values ('${ids.admin}','active'),('${ids.guide}','active');
     insert into platform_role_grants values ('${ids.admin}','ops_admin',null),('${ids.guide}','guide',null);
     insert into people values ('${ids.person}');
-    insert into ruined_members values ('${ids.member}','${ids.person}');
+    insert into ruined_members(id,person_id) values ('${ids.member}','${ids.person}');
     insert into member_lifecycle values ('${ids.member}','active');
     insert into circles values ('${ids.circle}','active');
   `);

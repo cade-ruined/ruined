@@ -111,6 +111,10 @@ export async function saveMemberPhoto(authUserId: string, file: File): Promise<{
   try {
     priorUrl = await getApplicationDatabase().begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 41)`;
+      // Lock membership before its profile, matching permanent account removal.
+      const members = await tx`select id from ruined_members where id = ${identity.memberId}::uuid and deleted_at is null for key share`;
+      if (!members[0]) throw new MemberPhotoError(403, "This account is no longer available.");
+      await tx`select id from people where id = ${identity.personId}::uuid for key share`;
       const rows = await tx<Array<{ avatar_storage_path: string | null }>>`
         select avatar_storage_path from person_profiles
         where person_id = ${identity.personId}::uuid for update
@@ -156,6 +160,10 @@ export async function deleteMemberPhoto(authUserId: string): Promise<{ avatarUrl
   const identity = await writableIdentity(authUserId);
   const priorUrl = await getApplicationDatabase().begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 41)`;
+    // Lock membership before its profile, matching permanent account removal.
+    const members = await tx`select id from ruined_members where id = ${identity.memberId}::uuid and deleted_at is null for key share`;
+    if (!members[0]) throw new MemberPhotoError(403, "This account is no longer available.");
+    await tx`select id from people where id = ${identity.personId}::uuid for key share`;
     const rows = await tx<Array<{ avatar_storage_path: string | null }>>`
       select avatar_storage_path from person_profiles
       where person_id = ${identity.personId}::uuid for update
@@ -177,7 +185,7 @@ export async function getAuthorizedMemberPhoto(authUserId: string, memberId: str
     select profile.avatar_storage_path
     from ruined_members member
     join person_profiles profile on profile.person_id = member.person_id
-    where member.id = ${memberId}::uuid
+    where member.id = ${memberId}::uuid and member.deleted_at is null
     limit 1
   `;
   const currentUrl = rows[0]?.avatar_storage_path ?? null;
@@ -213,7 +221,7 @@ export async function getAuthorizedOperatorMemberPhoto(authUserId: string, membe
     select profile.avatar_storage_path
     from ruined_members member
     join person_profiles profile on profile.person_id = member.person_id
-    where member.id = ${memberId}::uuid
+    where member.id = ${memberId}::uuid and member.deleted_at is null
     limit 1
   `;
   const path = ownedMemberPhotoPath(memberId, rows[0]?.avatar_storage_path ?? null);

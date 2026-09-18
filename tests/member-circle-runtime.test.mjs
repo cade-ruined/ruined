@@ -36,7 +36,7 @@ async function fixture() {
     create table people(id uuid primary key, status text default 'active');
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
-    create table ruined_members(id uuid primary key, person_id uuid);
+    create table ruined_members(id uuid primary key, person_id uuid, deleted_at timestamptz);
     create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'in_progress', program_state text default 'onboarding', standing_state text default 'active');
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, timezone text, location_label text, bio text, building_now text, updated_at timestamptz);
     create table person_private_profiles(person_id uuid primary key, legal_name text, mobile_e164 text, birth_date date, default_fulfillment_address jsonb, apparel_sizing jsonb, accessibility_notes text, updated_at timestamptz);
@@ -64,7 +64,7 @@ async function fixture() {
   await pg.query("insert into platform_users values($1,$2,'active',$3,'member@example.test'),($4,$5,'active',$6,'shaper@example.test')", [ids.auth, ids.person, ids.member, ids.shaperAuth, ids.shaperPerson, ids.shaperMember]);
   await pg.query("insert into platform_role_grants values($1,'circle_leader',null)", [ids.shaperAuth]);
   await pg.query("insert into platform_role_grants values($1,'member',null)", [ids.auth]);
-  await pg.query("insert into ruined_members values($1,$2),($3,$4)", [ids.member, ids.person, ids.shaperMember, ids.shaperPerson]);
+  await pg.query("insert into ruined_members(id,person_id) values($1,$2),($3,$4)", [ids.member, ids.person, ids.shaperMember, ids.shaperPerson]);
   await pg.query("insert into member_lifecycle(member_id) values($1)", [ids.member]);
   await pg.query("insert into person_profiles(person_id,display_name,preferred_name,avatar_storage_path,bio,location_label,building_now) values($1,'Member One','One',null,'Member bio','Utah','Building'),($2,'Circle Shaper','Shaper','/api/member-photos/' || $3 || '/portrait.webp','Private by choice','Utah','Shaping')", [ids.person, ids.shaperPerson, ids.shaperMember]);
   await pg.query("insert into person_private_profiles(person_id,mobile_e164) values($1,'+12025550123')", [ids.shaperPerson]);
@@ -209,6 +209,20 @@ test("Circle Shaper IDs cannot collide with member IDs and optional fields requi
   } finally { await pg.close(); }
 });
 
+test("Circle roster excludes a deleted member even when a historical placement remains open", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    await pg.query("insert into circle_member_assignments(member_id,circle_id) values($1,$2)", [ids.shaperMember, ids.circle]);
+    const before = await repository.getMemberCircle(ids.auth);
+    assert.equal(before.members.length, 2);
+    await pg.query("update ruined_members set deleted_at=now() where id=$1", [ids.shaperMember]);
+    const after = await repository.getMemberCircle(ids.auth);
+    assert.equal(after.members.length, 1);
+    assert.equal(after.members[0].id, before.members[0].id);
+    assert.equal((await pg.query("select count(*)::int as count from circle_member_assignments where ended_at is null")).rows[0].count, 2, "the read filter preserves historical placement records");
+  } finally { await pg.close(); }
+});
+
 test("an administrator assigned as Shaper appears without a second role grant and keeps directory privacy", async () => {
   const { pg, repository } = await fixture();
   try {
@@ -283,7 +297,7 @@ test("member cancellation skips ineligible waitlisted people before promoting th
     await repository.setMemberExperienceRegistration(ids.auth, ids.event, "register");
     for (const member of [uuid(21), uuid(22), uuid(23)]) {
       await pg.query("insert into people(id) values($1)", [member]);
-      await pg.query("insert into ruined_members values($1,$1)", [member]);
+      await pg.query("insert into ruined_members(id,person_id) values($1,$1)", [member]);
       await pg.query("insert into platform_users values($1,$1,'active',$1,'waiting@example.test')", [member]);
       await pg.query("insert into platform_role_grants values($1,'member',null)", [member]);
       await pg.query("insert into member_lifecycle(member_id,billing_state) values($1,$2)", [member, member === uuid(21) ? "pending" : "active"]);

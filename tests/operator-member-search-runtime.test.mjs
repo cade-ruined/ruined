@@ -29,7 +29,7 @@ test("member search uses saved names, visible statuses and paginated results wit
     create table people (id uuid primary key, status text default 'active');
     create table platform_users (auth_user_id uuid primary key, member_id uuid, status text, person_id uuid);
     create table platform_role_grants (auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
-    create table ruined_members (id uuid primary key, person_id uuid, email text, membership_state text, created_at timestamptz default now());
+    create table ruined_members (id uuid primary key, person_id uuid, email text, membership_state text, deleted_at timestamptz, created_at timestamptz default now());
     create table member_lifecycle (member_id uuid primary key, account_state text, billing_state text, standing_state text, program_state text, foundations_state text, artifact_state text, administrative_onboarding_state text default 'completed', cancellation_effective_at timestamptz);
     create table user_profiles (auth_user_id uuid primary key, display_name text);
     create table person_profiles (person_id uuid primary key, preferred_name text, display_name text);
@@ -57,7 +57,7 @@ test("member search uses saved names, visible statuses and paginated results wit
   function wrap(engine) {
     const sql = async (parts, ...values) => {
       const query = parts.reduce((result, part, n) => result + (n ? `$${n}` : "") + part, "");
-      assert.match(query.trim(), /^select\s/i, "the search reader must never mutate records");
+      assert.match(query.trim(), /^(select|with)\s/i, "the search reader must never mutate records");
       queries.push(query);
       return (await engine.query(query, values)).rows;
     };
@@ -116,4 +116,18 @@ test("member search uses saved names, visible statuses and paginated results wit
     assert.equal(await search("tae", {}, guide), null);
     assert.ok(queries.every((query) => !/^\s*(insert|update|delete)/i.test(query)));
   });
+  await t.test("historical members never appear in current directory counts, search or exact lookup", async () => {
+    await db.query("update ruined_members set deleted_at=now() where id=$1", [id(1)]);
+    assert.equal((await search("tae")).totalResults, 0);
+    assert.equal((await search("member1@example.test")).members.length, 0);
+    assert.equal((await search("", { memberId: id(1) })).totalResults, 0);
+    const current = await search("");
+    assert.equal(current.totalResults, 29);
+    assert.ok(current.members.every(member => member.memberId !== id(1)));
+    const dashboard = await repository.getOperatorDashboard(admin);
+    assert.equal(dashboard.dashboard.totalMembers, 29);
+    assert.equal(dashboard.dashboard.activeMembers, 29);
+    assert.ok(dashboard.dashboard.members.every(member => member.memberId !== id(1)));
+  });
+
 });

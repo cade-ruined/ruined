@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import { OpsInvitationActions } from "@/components/platform/OpsActions";
 import { OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 
 /** Keep browsing people separate from changing their access. */
-export default function OperatorPeopleWorkspace({ children, pendingJoining, preview = false }: {
+export default function OperatorPeopleWorkspace({ children, pendingJoining, preview = false, showHistory = false }: {
   children: ReactNode;
   pendingJoining?: ReactNode;
   preview?: boolean;
+  showHistory?: boolean;
 }) {
   const router = useRouter();
   const [view, setView] = useState<"members" | "pending">("members");
@@ -41,7 +43,15 @@ export default function OperatorPeopleWorkspace({ children, pendingJoining, prev
   return <div className="mx-auto max-w-[88rem]">
     <header className="operator-record-header mb-3 flex flex-wrap items-center justify-between gap-3">
       <h2 className="operator-page-heading">Members</h2>
-      {pendingJoining ? <button className={OPERATOR_PRIMARY_ACTION_CLASS} id="add-member-trigger" onClick={() => setAdding(true)} type="button">Add member</button> : null}
+      <div className="flex flex-wrap items-center gap-3">
+        {showHistory ? <Link className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4" href="/ops/members/history" onClick={(event) => {
+          if (pendingPanel.current?.querySelector('[data-operator-pending="true"]')) {
+            event.preventDefault();
+            setNavigationNotice("Wait for the current change to finish before switching views.");
+          }
+        }}>Historical members</Link> : null}
+        {pendingJoining ? <button className={OPERATOR_PRIMARY_ACTION_CLASS} id="add-member-trigger" onClick={() => setAdding(true)} type="button">Add member</button> : null}
+      </div>
     </header>
     {pendingJoining ? <nav className="mb-3 flex gap-1" aria-label="Member directory views">
       {([['members', 'Members'], ['pending', 'Pending joining']] as const).map(([key, label]) => <button type="button" key={key} aria-controls={key === "members" ? "member-directory-panel" : "pending-joining-panel"} aria-pressed={view === key} onClick={() => switchView(key)} className={`min-h-11 rounded-[4px] px-4 text-sm font-medium ${view === key ? 'bg-black/[0.08] text-black' : 'text-black/60 hover:bg-black/[0.04]'}`}>{label}</button>)}

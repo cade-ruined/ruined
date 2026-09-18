@@ -10,6 +10,7 @@ import OperatorMemberSetup from "@/components/platform/OperatorMemberSetup";
 import OperatorProfileSupport from "@/components/platform/OperatorProfileSupport";
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
+import OperatorMemberDeleteAction from "@/components/platform/OperatorMemberDeleteAction";
 import OperatorMemberReferrals from "@/components/platform/OperatorMemberReferrals";
 import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspace";
 import StateLabel from "@/components/platform/StateLabel";
@@ -436,6 +437,7 @@ export default function OperatorMemberRecord({
             {canManageTasks ? <div className="scroll-mt-36 operator-bento-card" id="new-member-task"><OperatorTaskCreateAction memberId={header.memberId} preview={preview} /></div> : null}
             {canWriteNote ? <div className="scroll-mt-36 operator-bento-card" id="new-member-note"><OperatorNoteAction memberId={header.memberId} preview={preview} /></div> : null}
             {canOverride ? <div className="operator-bento-card lg:col-span-2"><OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} preview={preview} /></div> : null}
+            {canOverride ? <div className="operator-bento-card lg:col-span-2"><OperatorMemberDeleteAction key={header.memberId} memberId={header.memberId} preview={preview} /></div> : null}
           </section>
         ) : null}
 

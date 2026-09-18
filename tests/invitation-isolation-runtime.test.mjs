@@ -55,7 +55,7 @@ async function fixture(t) {
     );
     create table ruined_members (
       id uuid primary key, person_id uuid references people(id), email text,
-      email_normalized text unique, membership_state text default 'pending', updated_at timestamptz default now()
+      email_normalized text unique, membership_state text default 'pending', deleted_at timestamptz, updated_at timestamptz default now()
     );
     create table platform_users (
       auth_user_id uuid primary key, member_id uuid references ruined_members(id), person_id uuid references people(id),

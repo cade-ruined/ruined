@@ -45,6 +45,7 @@ const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
   "@/components/platform/OperatorMemberAvatar": empty,
   "@/components/platform/OperatorPageFrame": { __esModule: true, default: ({ children }) => React.createElement("main", null, children) },
   "@/components/platform/OperatorMemberActions": { OperatorNoteAction: () => null, OperatorTaskCreateAction: () => null, OperatorOverrideAction: () => null },
+  "@/components/platform/OperatorMemberDeleteAction": { __esModule: true, default: () => null },
   "@/components/platform/OperatorProfileSupport": empty,
   "@/components/platform/OperatorProgress": empty,
   "@/components/platform/StateLabel": stateLabel,

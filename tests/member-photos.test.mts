@@ -41,6 +41,7 @@ async function photoModule(options: {
   databaseFails?: boolean;
   commitAckLost?: boolean;
   recoveryReadFails?: boolean;
+  deletedDuringUpload?: boolean;
 } = {}) {
   const calls: Array<{ name: string; value?: unknown }> = [];
   const readQueries: Array<{ query: string; values: unknown[] }> = [];
@@ -55,6 +56,7 @@ async function photoModule(options: {
     }
     if (query.includes("select")) {
       readQueries.push({ query, values });
+      if (options.deletedDuringUpload && query.includes("select id from ruined_members")) return [];
       if (transactionFinished && options.recoveryReadFails) throw new Error("Database outcome unknown");
       return [{ avatar_storage_path: current }];
     }
@@ -227,6 +229,17 @@ test("storage swaps only after an owner-scoped transaction and removes only the 
   assert.deepEqual(calls[4].value, [`${memberId}/${fileName}`]);
   assert.equal(current(), result.avatarUrl);
   assert.ok(policy.ownedMemberPhotoPath(memberId, result.avatarUrl));
+});
+
+test("an account deleted during upload cannot recreate its profile and removes only its new object", async () => {
+  const { photos, calls, current } = await photoModule({ deletedDuringUpload: true });
+  const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).png().toBuffer();
+  await assert.rejects(photos.saveMemberPhoto(memberId, new File([bytes], "photo.png", { type: "image/png" })), { status: 403 });
+  assert.equal(calls.some(call => call.name === "persist"), false);
+  assert.equal(current(), avatarUrl);
+  const removed = calls.find(call => call.name === "remove");
+  assert.ok(removed);
+  assert.notDeepEqual(removed.value, [`${memberId}/${fileName}`]);
 });
 
 test("failed persistence cleans the new object without touching the prior photo", async () => {

@@ -103,7 +103,7 @@ export async function getPasswordlessAccessEligibility(
           and member_grant.role_slug = 'member'
           and member_grant.revoked_at is null
         join ruined_members member on member.person_id = platform_user.person_id
-        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
         where platform_user.email_normalized = ${emailNormalized}
           and platform_user.status = 'active'
           and lifecycle.account_state = 'active'
@@ -145,7 +145,7 @@ export async function requireActivePlatformMemberLink(
       and member_grant.role_slug = 'member'
       and member_grant.revoked_at is null
     join ruined_members member on member.person_id = platform_user.person_id
-    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
     where platform_user.auth_user_id = ${viewer.authUserId}::uuid
       and platform_user.email_normalized = ${emailNormalized}
       and platform_user.status = 'active'
@@ -197,7 +197,7 @@ export async function claimPlatformMemberForViewer(
       >`
         select member.person_id, lifecycle.account_state
         from ruined_members member
-        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
         join platform_role_grants member_grant
           on member_grant.auth_user_id = ${viewer.authUserId}::uuid
           and member_grant.role_slug = 'member'
@@ -280,6 +280,7 @@ export async function claimPlatformMemberForViewer(
       select id, membership_state, person_id
       from ruined_members
       where id = ${invitation.member_id}::uuid
+        and deleted_at is null
         and email_normalized = ${emailNormalized}
       limit 1
       for update
@@ -555,7 +556,7 @@ export async function getMemberPlatformSnapshot(
       and member_grant.role_slug = 'member'
       and member_grant.revoked_at is null
     join ruined_members member on member.person_id = platform_user.person_id
-    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
     left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
     left join lateral (
       select assignment.circle_id
@@ -755,7 +756,7 @@ export async function getOperatorMemberDirectoryPage(
     const countRows = await tx<Array<{ total_results: number | string }>>`
       select count(*) as total_results
       from ruined_members member
-      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
       left join platform_users platform_user on platform_user.member_id = member.id
       left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
       left join person_profiles person_profile on person_profile.person_id = member.person_id
@@ -846,7 +847,7 @@ export async function getOperatorMemberDirectoryPage(
         circle.status as circle_status,
         enrollment.progress_percent as foundations_progress
       from ruined_members member
-      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
       left join platform_users platform_user on platform_user.member_id = member.id
       left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
       left join person_profiles person_profile on person_profile.person_id = member.person_id
@@ -986,7 +987,7 @@ export async function getOperatorDashboard(
       circle.status as circle_status,
       enrollment.progress_percent as foundations_progress
     from ruined_members member
-    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
     left join platform_users platform_user on platform_user.member_id = member.id
     left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
     left join lateral (
@@ -1050,7 +1051,7 @@ export async function getOperatorDashboard(
         lifecycle.billing_state,
         lifecycle.program_state
       from ruined_members member
-      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
       where ${role} = 'ops_admin'
         or exists (
           select 1

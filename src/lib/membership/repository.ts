@@ -1642,6 +1642,7 @@ export async function getMemberCircle(
         limit 1
       ) primary_email on true
       where assignment.circle_id = ${circle.circle_id}::uuid
+        and target_member.deleted_at is null
         and assignment.ended_at is null
         and assignment.assigned_at <= statement_timestamp()
       order by assignment.assigned_at, assignment.id

@@ -243,6 +243,7 @@ export async function getOpsArtifactControlData(
         left join person_profiles profile on profile.person_id = member.person_id
         left join person_private_profiles private_profile on private_profile.person_id = member.person_id
         where lifecycle.account_state = 'active'
+          and member.deleted_at is null
           and lifecycle.standing_state in ('active', 'pre_active', 'paused')
         order by member_name, member.id
       `,

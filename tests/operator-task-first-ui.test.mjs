@@ -261,6 +261,7 @@ test("member record action anchors have visible authorized destinations and neve
     "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
+    "@/components/platform/OperatorMemberDeleteAction": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberSetup": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberReferrals": { __esModule: true, default: Referrals },
     "@/components/platform/OperatorMemberWorkspace": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },

@@ -108,7 +108,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
   await db.exec(`
     create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key,status text);
-    create table ruined_members(id uuid primary key,person_id uuid references people(id),email text,email_normalized text,unique(id,person_id));
+    create table ruined_members(id uuid primary key,person_id uuid references people(id),email text,email_normalized text,deleted_at timestamptz,unique(id,person_id));
     create table platform_users(auth_user_id uuid primary key,member_id uuid,person_id uuid,status text,email_normalized text);
     create table platform_role_grants(id bigint generated always as identity primary key,auth_user_id uuid references platform_users,role_slug text,revoked_at timestamptz);
     create table member_lifecycle(member_id uuid primary key,account_state text default 'active',administrative_onboarding_state text default 'completed',billing_state text default 'active',cancellation_effective_at timestamptz,foundations_state text default 'completed',program_state text default 'active',standing_state text default 'active',current_progression_level_slug text);
@@ -136,7 +136,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
   async function reset() {
     await db.exec("truncate people,ruined_members,platform_users,member_lifecycle,person_profiles,person_email_addresses,circles,membership_blocks,circle_member_assignments,block_circle_assignments,circle_staff_assignments,experiences,operator_audit_events restart identity cascade");
     await db.query("insert into people values ($1,'active')", [ids.person]);
-    await db.query("insert into ruined_members values ($1,$2,'member@example.test','member@example.test')", [ids.member, ids.person]);
+    await db.query("insert into ruined_members(id,person_id,email,email_normalized) values ($1,$2,'member@example.test','member@example.test')", [ids.member, ids.person]);
     await db.query("insert into platform_users values ($1,null,null,'active','operator@example.test'),($2,$3,$4,'active','member@example.test')", [ids.admin, ids.auth, ids.member, ids.person]);
     await db.query("insert into platform_role_grants(auth_user_id,role_slug) values ($1,'ops_admin'),($2,'member')", [ids.admin, ids.auth]);
     await db.query("insert into member_lifecycle(member_id) values ($1)", [ids.member]);
@@ -182,6 +182,13 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     assert.ok(queries.some((query) => query.includes("ruined_lock_member_operator_funding")));
     assert.ok(queries.some((query) => query.includes("for share of member, person, lifecycle, account, member_grant")));
     assert.ok(queries.some((query) => query.includes("for share of assignment, circle")));
+  });
+
+  await t.test("Experience member picker excludes deletion tombstones independently of active lifecycle fields", async () => {
+    await reset();
+    assert.equal((await record()).memberOptions.length, 1);
+    await db.query("update ruined_members set deleted_at=now() where id=$1", [ids.member]);
+    assert.deepEqual((await record()).memberOptions, []);
   });
 
   await t.test("snapshot and locking checks deny the same standing, identity, payment and Circle changes", async () => {

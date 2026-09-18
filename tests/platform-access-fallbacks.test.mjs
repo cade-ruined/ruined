@@ -58,7 +58,7 @@ test("every operator page context uses operator permission copy for denied accou
   ];
   const overview = await readFile(new URL("../app/ops/page.tsx", import.meta.url), "utf8");
 
-  assert.equal(pages.length, 16);
+  assert.equal(pages.length, 18);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
     const deniedFallback = contents.indexOf('reason="operator_access"');

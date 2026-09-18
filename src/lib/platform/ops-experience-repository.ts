@@ -908,6 +908,7 @@ export async function getOpsExperienceRecord(
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
       left join person_profiles profile on profile.person_id = member.person_id
       where lifecycle.account_state = 'active'
+        and member.deleted_at is null
         and lifecycle.standing_state in ('active', 'paused')
         and (
           ${access.isAdmin}

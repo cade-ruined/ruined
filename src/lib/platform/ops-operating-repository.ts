@@ -466,7 +466,7 @@ export async function getOpsMemberOperatingRecord(
         current_circle.block_name,
         current_circle.block_state
       from ruined_members member
-      join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
       left join person_profiles profile on profile.person_id = member.person_id
       left join member_directory_preferences directory on directory.member_id = member.id
       left join lateral (
@@ -498,7 +498,7 @@ export async function getOpsMemberOperatingRecord(
         order by circle_assignment.assigned_at desc
         limit 1
       ) current_circle on true
-      where member.id = ${memberId}::uuid
+      where member.id = ${memberId}::uuid and member.deleted_at is null
       limit 1
     `;
     const base = baseRows[0];
@@ -1418,7 +1418,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           current_circle.circle_id,
           current_circle.circle_state
         from ruined_members member
-        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
         left join lateral (
           select circle.id as circle_id, circle.status as circle_state
           from circle_member_assignments assignment
@@ -1520,7 +1520,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
             case when ${isAdmin} then nullif(split_part(member.email, '@', 1), '') end,
             'Member'
           ) as member_name
-        from ruined_members member
+        from (select * from ruined_members where deleted_at is null) member
         left join person_profiles profile on profile.person_id = member.person_id
         where ${isAdmin}
           or exists (
@@ -2536,7 +2536,7 @@ export async function getOpsAnnouncements(actorAuthUserId: string): Promise<{
           member.id,
           coalesce(profile.preferred_name, profile.display_name, private_profile.legal_name, 'Member') as label
         from ruined_members member
-        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
         left join person_profiles profile on profile.person_id = member.person_id
         left join person_private_profiles private_profile on private_profile.person_id = member.person_id
         where lifecycle.account_state = 'active'
@@ -2652,7 +2652,7 @@ export async function appendOpsMemberNote(input: {
     const memberRows = await tx<Array<{ id: string }>>`
       select id
       from ruined_members
-      where id = ${memberId}::uuid
+      where id = ${memberId}::uuid and deleted_at is null
       for update
     `;
     if (!memberRows[0]) throw new OpsOperatingRepositoryError("not_found", "Member not found.");
@@ -2731,7 +2731,8 @@ export async function recordOpsMemberStateOverride(input: {
       requireAdmin: true,
     });
     // Match billing/completion order before a correction can allocate a member number.
-    await tx`select id from ruined_members where id = ${memberId}::uuid for update`;
+    const memberRows = await tx`select id from ruined_members where id = ${memberId}::uuid and deleted_at is null for update`;
+    if (!memberRows[0]) throw new OpsOperatingRepositoryError("not_found", "Member not found.");
     const lifecycleRows = await tx<Array<LifecycleOverrideRow>>`
       select
         account_state,
@@ -2962,7 +2963,7 @@ export async function createOpsTask(input: {
         order by circle_assignment.assigned_at desc
         limit 1
       ) current_circle on true
-      where member.id = ${memberId}::uuid
+      where member.id = ${memberId}::uuid and member.deleted_at is null
       for update of member
     `;
     const member = memberRows[0];
@@ -3377,7 +3378,7 @@ export async function createOpsAnnouncement(input: {
       const rows = await tx<Array<{ id: string }>>`
         select member.id
         from ruined_members member
-        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
         where member.id = ${targetId}::uuid and lifecycle.account_state = 'active'
         for update of member, lifecycle
       `;
@@ -3486,7 +3487,7 @@ export async function correctOpsAnnouncement(input: {
         const found = await tx`select id from membership_blocks where id = ${targetId}::uuid and status <> 'archived' for update`;
         if (!found[0]) throw new OpsOperatingRepositoryError("not_found", "Block not found.");
       } else if (targetKind === "member") {
-        const found = await tx`select member.id from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id where member.id = ${targetId}::uuid and lifecycle.account_state = 'active' for update of member, lifecycle`;
+        const found = await tx`select member.id from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null where member.id = ${targetId}::uuid and lifecycle.account_state = 'active' for update of member, lifecycle`;
         if (!found[0]) throw new OpsOperatingRepositoryError("not_found", "Active member not found.");
       }
       await tx`delete from member_announcement_targets where announcement_id = ${announcementId}::uuid`;

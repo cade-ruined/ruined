@@ -116,7 +116,7 @@ export default async function OperationsMembersPage({
 
   return (
     <OperatorPageFrame title="Members">
-      <OperatorPeopleWorkspace pendingJoining={actions} preview={context.state === "preview"}>
+      <OperatorPeopleWorkspace pendingJoining={actions} preview={context.state === "preview"} showHistory={context.role === "ops_admin"}>
         <OperatorMemberDirectory directory={directory} />
       </OperatorPeopleWorkspace>
     </OperatorPageFrame>

@@ -794,6 +794,7 @@ async function reconcileAdministrativeOnboardingAfterPaidMembership(
     select webhook_event.event_id
     from stripe_webhook_events webhook_event
     join stripe_invoices invoice on invoice.id = webhook_event.object_id
+    join ruined_members member on member.id = invoice.member_id and member.deleted_at is null
     where webhook_event.event_id = ${input.sourceEventId}
       and webhook_event.event_type = 'invoice.paid'
       and invoice.member_id = ${input.memberId}::uuid

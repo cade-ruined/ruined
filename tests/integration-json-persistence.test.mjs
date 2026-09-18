@@ -85,7 +85,7 @@ async function seedArtifacts(db, fulfillmentAddress = address) {
   const awardColumn = automation.match(/alter table public\.artifact_jobs\s+add column if not exists artifact_award_id uuid;/)?.[0];
   assert.ok(awardColumn);
   await db.exec(`
-    create table ruined_members (id uuid primary key, person_id uuid not null);
+    create table ruined_members (id uuid primary key, person_id uuid not null, deleted_at timestamptz);
     create table platform_users (auth_user_id uuid primary key);
     create table artifact_template_versions (id uuid primary key);
     create table artifact_awards (id uuid primary key, member_id uuid, artifact_template_version_id uuid, member_input_snapshot jsonb, status text);
@@ -94,7 +94,7 @@ async function seedArtifacts(db, fulfillmentAddress = address) {
     ${awardColumn}
     ${exactTable(foundation, "artifact_job_events")}
   `);
-  await db.query("insert into ruined_members values ($1,$2)", [ids.member, ids.person]);
+  await db.query("insert into ruined_members(id,person_id) values ($1,$2)", [ids.member, ids.person]);
   await db.query("insert into artifact_template_versions values ($1)", [ids.template]);
   await db.query("insert into artifact_awards values ($1,$2,$3,$4::jsonb,'awarded')", [ids.award, ids.member, ids.template, JSON.stringify(input)]);
   await db.query("insert into person_private_profiles values ($1,$2::jsonb)", [ids.person, fulfillmentAddress === null ? null : JSON.stringify(fulfillmentAddress)]);
