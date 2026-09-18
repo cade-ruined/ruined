@@ -19,6 +19,7 @@ async function load(path, dependencies = {}, globals = {}) {
   }, loaded, loaded.exports, ...Object.values(globals));
   return loaded.exports;
 }
+const cardModel = await load("src/lib/membership/public-card-model.ts");
 const model = await load("src/lib/membership/invitation-model.ts");
 const token = "I".repeat(43);
 const card = model.invitationCard("Chosen <name>", "public-invitation-wear");
@@ -40,6 +41,7 @@ async function publicRoute(read) {
     "@/components/membership/MemberInvitation": { InvitationLanding: renderInvitation },
     "@/lib/membership/invitation-repository": { getPublicMemberInvitation: read },
     "@/lib/membership/invitation-model": model,
+    "@/lib/membership/public-card-model": cardModel,
   });
 }
 
@@ -91,6 +93,7 @@ test("owner invitation route checks authentication and never substitutes samples
       reads++; assert.equal(id, "verified-user"); if (failure) throw failure; return snapshot;
     } },
     "@/lib/membership/invitation-model": model,
+    "@/lib/membership/public-card-model": cardModel,
     "@/lib/membership/invitation-preview": { memberInvitationPreviewSnapshot: () => { sampleCalls++; return { ...snapshot, writable: false, joinedCount: 0 }; } },
   });
   await assert.rejects(page.default(), { href: "/my/access" });

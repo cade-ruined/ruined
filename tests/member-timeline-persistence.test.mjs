@@ -114,6 +114,7 @@ async function fixture(t) {
     "server-only": {}, "libphonenumber-js/min": {},
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/membership/access-policy": access,
+    "@/lib/membership/member-tag": await loadTypescript("src/lib/membership/member-tag.ts", {}),
     "@/lib/membership/phone": {}, "@/lib/membership/avatar-url": {},
     "@/lib/membership/artifact-products": {}, "@/lib/events/member-experiences": {},
     "@/lib/events/community-event-repository": {},

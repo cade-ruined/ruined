@@ -18,6 +18,7 @@ import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-pol
 import { shopifyArtifactProductFromSpecification } from "@/lib/membership/artifact-products";
 import { safeMemberAvatarUrl } from "@/lib/membership/avatar-url";
 import { supportedShippingCountry } from "@/lib/membership/phone";
+import { isMemberTagConflict, MEMBER_TAG_UNAVAILABLE, MemberTagValidationError, normalizeMemberTag } from "@/lib/membership/member-tag";
 import {
   markOpsExperienceCalendarPending,
   syncMemberExperienceCalendar,
@@ -68,10 +69,23 @@ export class MembershipInputError extends Error {
 }
 
 export class MembershipConflictError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly code?: "member_tag_unavailable") {
     super(message);
     this.name = "MembershipConflictError";
   }
+}
+
+function cleanMemberTag(value: unknown): string | null {
+  try { return normalizeMemberTag(value); }
+  catch (error) {
+    if (error instanceof MemberTagValidationError) throw new MembershipInputError(error.message);
+    throw error;
+  }
+}
+
+function rethrowMemberTagConflict(error: unknown): never {
+  if (isMemberTagConflict(error)) throw new MembershipConflictError(MEMBER_TAG_UNAVAILABLE, "member_tag_unavailable");
+  throw error;
 }
 
 type IdentityRow = {
@@ -183,6 +197,7 @@ type OnboardingRow = {
   completed_at: Date | string | null;
   legal_name: string | null;
   mobile_e164: string | null;
+  member_tag: string | null;
   preferred_name: string | null;
   receipt_id: string | null;
   shipping_address: Record<string, unknown> | null;
@@ -205,7 +220,7 @@ function hasRequiredSizing(value: Record<string, unknown> | null): boolean {
 function onboardingFieldsComplete(row: OnboardingRow): boolean {
   return Boolean(
     row.legal_name?.trim() &&
-      row.preferred_name?.trim() &&
+      (row.member_tag?.trim() || row.preferred_name?.trim()) &&
       row.mobile_e164?.trim() &&
       row.birth_date &&
       hasRequiredAddress(row.shipping_address) &&
@@ -232,6 +247,7 @@ export async function getMemberOnboarding(
     select
       onboarding.state,
       onboarding.completed_at,
+      profile.member_tag,
       profile.preferred_name,
       profile.avatar_storage_path,
       private_profile.legal_name,
@@ -289,6 +305,7 @@ export async function getMemberOnboarding(
       fulfillmentAddress: row.shipping_address,
       legalName: row.legal_name,
       mobile: row.mobile_e164,
+      memberTag: row.member_tag ?? null,
       preferredName: row.preferred_name,
     },
     requiredFieldsComplete: onboardingFieldsComplete(row),
@@ -301,7 +318,7 @@ export type MemberOnboardingProfileInput = {
   birthDate: string;
   legalName: string;
   mobile: string;
-  preferredName: string;
+  memberTag: string;
   shippingAddress: {
     addressLine1: string;
     addressLine2: string | null;
@@ -326,7 +343,8 @@ function cleanRequired(value: string, label: string, max: number): string {
 
 function validateOnboardingProfile(input: MemberOnboardingProfileInput) {
   const legalName = cleanRequired(input.legalName, "Full name", 180);
-  const preferredName = cleanRequired(input.preferredName, "Preferred name", 120);
+  const memberTag = cleanMemberTag(input.memberTag);
+  if (!memberTag) throw new MembershipInputError("Choose your member tag.");
   const mobile = input.mobile.trim();
   const parsedMobile = mobile.startsWith("+")
     ? parsePhoneNumber(mobile, { extract: false })
@@ -366,7 +384,7 @@ function validateOnboardingProfile(input: MemberOnboardingProfileInput) {
   };
   const apparelTopSize = cleanRequired(input.apparelTopSize, "Apparel size", 40);
 
-  return { apparelTopSize, birthDate: input.birthDate, legalName, mobile, preferredName, shippingAddress };
+  return { apparelTopSize, birthDate: input.birthDate, legalName, mobile, memberTag, shippingAddress };
 }
 
 export async function saveMemberOnboardingProfile(
@@ -380,13 +398,18 @@ export async function saveMemberOnboardingProfile(
 
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 41)`;
+    await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 44)`;
+    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
     await tx`
-      insert into person_profiles (person_id, display_name, preferred_name)
-      values (${identity.personId}::uuid, ${clean.preferredName}, ${clean.preferredName})
+      insert into person_profiles (person_id, display_name, member_tag)
+      values (${identity.personId}::uuid, ${`@${clean.memberTag}`}, ${clean.memberTag})
       on conflict (person_id) do update
       set
-        display_name = excluded.display_name,
-        preferred_name = excluded.preferred_name,
+        display_name = case
+          when nullif(btrim(person_profiles.display_name), '') is null
+            or (person_profiles.member_tag is not null and person_profiles.display_name = '@' || person_profiles.member_tag)
+          then excluded.display_name else person_profiles.display_name end,
+        member_tag = excluded.member_tag,
         updated_at = statement_timestamp()
     `;
     await tx`
@@ -432,7 +455,7 @@ export async function saveMemberOnboardingProfile(
           birthDate: true,
           legalName: true,
           mobile: true,
-          preferredName: true,
+          memberTag: true,
           shippingAddress: true,
         })}::jsonb,
         statement_timestamp(),
@@ -477,7 +500,7 @@ export async function saveMemberOnboardingProfile(
         ${`member-profile:${identity.memberId}:${crypto.randomUUID()}`}
       )
     `;
-  });
+  }).catch(rethrowMemberTagConflict);
 
   const onboarding = await getMemberOnboarding(authUserId);
   if (!onboarding) throw new Error("Saved onboarding could not be reloaded.");
@@ -725,7 +748,7 @@ export async function acceptPublishedMembershipAgreement(
           birthDate: true,
           legalName: true,
           mobile: true,
-          preferredName: true,
+          memberTag: true,
           shippingAddress: true,
         })}::jsonb,
         (select accepted_at from membership_agreement_acceptances where id = ${acceptance.id}::uuid),
@@ -1097,6 +1120,7 @@ type ProfileRow = {
   location_visible: boolean | null;
   mobile_e164: string | null;
   phone_scope: MemberDirectoryPreferences["phoneScope"] | null;
+  member_tag: string | null;
   preferred_name: string | null;
   preference_version: number | null;
   timezone: string | null;
@@ -1106,7 +1130,7 @@ type ProfileRow = {
 async function profileRevision(row: ProfileRow): Promise<string> {
   // Include only fields this form can overwrite. Immediate photo uploads do not
   // invalidate a form that never submits the portrait storage path.
-  const fields = [row.display_name, row.preferred_name, row.timezone, row.location_label, row.bio,
+  const fields = [row.display_name, row.preferred_name, row.member_tag, row.timezone, row.location_label, row.bio,
     row.building_now, row.website_url, row.accessibility_notes, row.directory_status, row.avatar_visible,
     row.location_visible, row.bio_visible, row.building_visible, row.email_scope, row.phone_scope, row.preference_version];
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(fields)));
@@ -1123,6 +1147,7 @@ export async function getMemberProfile(
   const rows = await sql<Array<ProfileRow>>`
     select
       profile.display_name,
+      profile.member_tag,
       profile.preferred_name,
       profile.avatar_storage_path,
       profile.timezone,
@@ -1163,6 +1188,7 @@ export async function getMemberProfile(
       buildingNow: row.building_now,
       displayName,
       location: row.location_label,
+      memberTag: row.member_tag ?? null,
       preferredName: row.preferred_name,
       timezone: row.timezone,
       websiteUrl: row.website_url,
@@ -1201,7 +1227,7 @@ export type MemberProfileInput = {
   directory: Omit<MemberDirectoryPreferences, "version">;
   displayName: string;
   location: string;
-  preferredName: string;
+  memberTag: string;
   timezone: string;
 };
 
@@ -1212,7 +1238,7 @@ export async function saveMemberProfile(
   const identity = await requireMemberIdentity(authUserId);
   requireMemberCapability(identity, "profile.write");
   const displayName = cleanRequired(input.displayName, "Display name", 120);
-  const preferredName = cleanRequired(input.preferredName, "Preferred name", 120);
+  const memberTag = cleanMemberTag(input.memberTag);
   const timezone = input.timezone.trim().slice(0, 100) || "America/Denver";
   const location = input.location.trim().slice(0, 160) || null;
   const bio = input.bio.trim().slice(0, 1200) || null;
@@ -1234,16 +1260,24 @@ export async function saveMemberProfile(
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 44)`;
     await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
-    await tx`select person_id from person_profiles where person_id = ${identity.personId}::uuid for update`;
+    const profiles = await tx<Array<{ person_id: string; display_name: string | null; preferred_name: string | null }>>`
+      select person_id, display_name, preferred_name from person_profiles where person_id = ${identity.personId}::uuid for update`;
     await tx`select person_id from person_private_profiles where person_id = ${identity.personId}::uuid for update`;
     await tx`select member_id from member_directory_preferences where member_id = ${identity.memberId}::uuid for update`;
     const current = await getMemberProfile(authUserId, tx, identity);
     if (current?.revision !== input.revision) throw new MembershipConflictError("Your profile changed in another tab. Reload before saving so those changes are not overwritten.");
+    const legacyName = profiles[0]?.display_name?.trim() || profiles[0]?.preferred_name?.trim();
+    if (!memberTag && (!legacyName || current.directory.memberTag)) {
+      throw new MembershipInputError(current.directory.memberTag ? "Choose a member tag. Your existing tag cannot be cleared." : "Choose your member tag.");
+    }
+    const nextDisplayName = memberTag && current.directory.memberTag &&
+      current.directory.displayName === `@${current.directory.memberTag}` && displayName === current.directory.displayName
+      ? `@${memberTag}` : displayName;
     await tx`
       insert into person_profiles (
         person_id,
         display_name,
-        preferred_name,
+        member_tag,
         timezone,
         location_label,
         bio,
@@ -1251,8 +1285,8 @@ export async function saveMemberProfile(
         website_url
       ) values (
         ${identity.personId}::uuid,
-        ${displayName},
-        ${preferredName},
+        ${nextDisplayName},
+        ${memberTag},
         ${timezone},
         ${location},
         ${bio},
@@ -1262,7 +1296,7 @@ export async function saveMemberProfile(
       on conflict (person_id) do update
       set
         display_name = excluded.display_name,
-        preferred_name = excluded.preferred_name,
+        member_tag = excluded.member_tag,
         timezone = excluded.timezone,
         location_label = excluded.location_label,
         bio = excluded.bio,
@@ -1367,7 +1401,7 @@ export async function saveMemberProfile(
       const { saveProfileCardSettings } = await import("./public-card-repository");
       await saveProfileCardSettings(tx, identity, true, input.card);
     }
-  });
+  }).catch(rethrowMemberTagConflict);
   const profile = await getMemberProfile(authUserId);
   if (!profile) throw new Error("Saved member profile could not be reloaded.");
   return profile;
@@ -1460,6 +1494,7 @@ type CircleBaseRow = {
 };
 
 type DirectoryRow = {
+  member_tag: string | null;
   avatar_storage_path: string | null;
   bio: string | null;
   building_now: string | null;
@@ -1477,6 +1512,7 @@ function directoryPerson(row: DirectoryRow): PrivacySafePersonSummary {
     bio: row.bio,
     buildingNow: row.building_now,
     displayName: row.display_name?.trim() || "Member",
+    memberTag: row.member_tag ?? null,
     email: row.email,
     id: row.directory_id,
     isSelf: row.is_self,
@@ -1548,6 +1584,9 @@ export async function getMemberCircle(
         'member:' || assignment.id::text as directory_id,
         target_member.id = ${identity.memberId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Member') as display_name,
+        case when target_member.id = ${identity.memberId}::uuid
+          or preference.directory_status = 'circle_visible'
+          then profile.member_tag end as member_tag,
         case
           when target_member.id = ${identity.memberId}::uuid
             or (preference.directory_status = 'circle_visible' and preference.avatar_visible)
@@ -1607,6 +1646,9 @@ export async function getMemberCircle(
         'shaper:' || staff_assignment.id::text as directory_id,
         platform_user.auth_user_id = ${authUserId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Shaper') as display_name,
+        case when platform_user.auth_user_id = ${authUserId}::uuid
+          or preference.directory_status = 'circle_visible'
+          then profile.member_tag end as member_tag,
         case when platform_user.auth_user_id = ${authUserId}::uuid
           or (preference.directory_status = 'circle_visible' and preference.avatar_visible)
           then profile.avatar_storage_path end as avatar_storage_path,
@@ -3041,7 +3083,7 @@ export async function getMemberHome(
     blockName: suppressPrivateHighlights ? null : circle.block?.name ?? null,
     circleMembers: visibleCircleMembers,
     circleName: suppressPrivateHighlights ? null : circle.circle?.name ?? null,
-    displayName: profile.directory.preferredName?.trim() || profile.directory.displayName,
+    displayName: profile.directory.displayName,
     foundations,
     identity,
     memberSince: toIso(memberSinceRows[0]?.member_since),
@@ -3055,6 +3097,7 @@ export async function getMemberHome(
       displayName: profile.directory.displayName,
       fullName: profile.privateProfile.legalName,
       location: profile.directory.location,
+      memberTag: profile.directory.memberTag,
       preferredName: profile.directory.preferredName?.trim() || null,
       timezone: profile.directory.timezone,
     },

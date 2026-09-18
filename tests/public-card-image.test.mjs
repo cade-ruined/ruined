@@ -10,7 +10,7 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 const headers = { "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow" };
 const fixture = (changes = {}) => ({
-  name: "Alex Morgan", avatarUrl: null, memberSince: "2026-08-12T20:10:00Z", location: null,
+  name: "Alex Morgan", memberTag: "alex_morgan", avatarUrl: null, memberSince: "2026-08-12T20:10:00Z", location: null,
   bio: null, buildingNow: null, websiteUrl: null, labels: [], wearSeed: "test-seed", ...changes,
 });
 
@@ -64,6 +64,7 @@ test("image projection excludes optional biography/contact data and never reques
   await renderer.renderPublicMemberCardImage(card, null);
   const visible = text(tree);
   assert.match(visible, /Alex Morgan/);
+  assert.equal(visible.match(/@alex_morgan/g)?.length, 2, "both name blocks show the canonical tag");
   assert.doesNotMatch(visible, /SINCE|2026|Sensitive address|Private notes|Private project|private@example/);
   for (const node of nodes(tree).filter((node) => node.type === "img")) assert.match(node.props.src, /^data:image\/(?:svg\+xml|jpeg);base64,/);
 });
@@ -116,7 +117,7 @@ test("unknown and revoked tokens return generic no-store 404 without downloading
 });
 
 test("image route checks consent again after rendering and fails closed when sharing changes", async () => {
-  for (const changed of [null, fixture({ memberSince: null }), fixture({ avatarUrl: null })]) {
+  for (const changed of [null, fixture({ memberSince: null }), fixture({ memberTag: "changed_tag" }), fixture({ avatarUrl: null })]) {
     let reads = 0;
     const published = fixture({ avatarUrl: "/api/cards/test/portrait" });
     const endpoint = await route({
@@ -142,4 +143,26 @@ test("successful PNG and backend failures use no-store headers without leaking e
   assert.equal(failure.status, 503);
   assert.equal(await failure.text(), "Card unavailable.");
   assert.match(failure.headers.get("cache-control"), /no-store/);
+});
+
+ test("social image does not duplicate a tag used as the display name", async () => {
+  let tree;
+  class Capture extends Response { constructor(node) { super("rendered"); tree = node; } }
+  const renderer = await imageModule(Capture);
+  await renderer.renderPublicMemberCardImage(fixture({ name: "@alex_morgan" }), null);
+  assert.equal(text(tree).match(/@alex_morgan/g)?.length, 2);
+});
+
+test("a full display name keeps its print space when the tag is present", async () => {
+  let tree;
+  class Capture extends Response { constructor(node) { super("rendered"); tree = node; } }
+  const renderer = await imageModule(Capture);
+  const name = "W".repeat(120);
+  await renderer.renderPublicMemberCardImage(fixture({ name, memberTag: "w".repeat(24) }), null);
+  const nameBlock = nodes(tree).find(node => node.props?.children === name && node.props.style.height === 87);
+  assert.ok(nameBlock, "the card retains the full name area");
+  assert.ok(nodes(tree).some(node => node.props?.style?.width === 296 && node.props.style.height === 170), "portrait yields space for the tag");
+  const actual = await imageModule();
+  const png = Buffer.from(await actual.renderPublicMemberCardImage(fixture({ name, memberTag: "w".repeat(24) }), null));
+  assert.equal((await sharp(png).metadata()).width, 1200);
 });

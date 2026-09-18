@@ -29,7 +29,7 @@ async function fixture() {
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active');
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz);
     create table member_lifecycle(member_id uuid primary key, account_state text default 'active', billing_state text default 'active', program_state text default 'active', foundations_state text default 'completed', administrative_onboarding_state text default 'completed', standing_state text default 'active', cancellation_effective_at timestamptz);
-    create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, location_label text, bio text, building_now text);
+    create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text, avatar_storage_path text, location_label text, bio text, building_now text);
     create table member_milestones(id uuid primary key, member_id uuid, person_id uuid, title text, visibility text, occurred_at timestamptz, source_entity_type text, source_entity_id text, evidence jsonb);
     create table artifact_awards(id uuid primary key, member_id uuid, person_id uuid, status text, revoked_at timestamptz, awarded_at timestamptz);
     create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql stable as 'select false';
@@ -44,11 +44,12 @@ async function fixture() {
     await pg.query("insert into person_profiles(person_id,display_name,preferred_name,avatar_storage_path,location_label,bio,building_now) values($1,$2,'PRIVATE PREFERRED',$3,'PRIVATE LOCATION','PRIVATE BIO','PRIVATE BUILDING')", [person.person, person === self ? "Cade" : "Other", `/api/member-photos/${person.member}/${uuid(90)}.webp`]);
   }
   const queries = [];
+  let afterQuery = null;
   function makeSql(client) {
     const sql = (strings, ...params) => {
       const text = strings.reduce((result, part, i) => result + (i ? `$${i}` : "") + part, "");
       queries.push(text);
-      return client.query(text, params).then(result => result.rows);
+      return client.query(text, params).then(async result => { if (afterQuery) await afterQuery(text); return result.rows; });
     };
     sql.json = JSON.stringify;
     sql.begin = callback => client.transaction(tx => callback(makeSql(tx)));
@@ -83,7 +84,7 @@ async function fixture() {
     const snapshot = await repository.getOwnMemberCard(self.auth);
     return { ...snapshot.settings, version: snapshot.version, ...changes };
   }
-  return { pg, sql, repository, queries, input, milestone, downloaded, setStorageHook: value => { storageHook = value; } };
+  return { pg, sql, repository, queries, input, milestone, downloaded, setStorageHook: value => { storageHook = value; }, setAfterQuery: value => { afterQuery = value; } };
 }
 
 test("public settings start private with every optional field off; publication projects only chosen fields", async () => {
@@ -91,7 +92,7 @@ test("public settings start private with every optional field off; publication p
   try {
     const snapshot = await f.repository.getOwnMemberCard(self.auth);
     assert.equal(snapshot.publicUrl, null); assert.equal(snapshot.version, 0); assert.equal(snapshot.eligible, true);
-    assert.deepEqual(snapshot.card, { name: "Cade", avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [], wearSeed: snapshot.card.wearSeed });
+    assert.deepEqual(snapshot.card, { name: "Cade", memberTag: null, avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [], wearSeed: snapshot.card.wearSeed });
     assert.equal(snapshot.settings.publicEnabled, false);
     await f.pg.query("update person_profiles set display_name='Public Cade',bio='Approved words' where person_id=$1", [self.person]);
     const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, showBio: true }));
@@ -99,12 +100,57 @@ test("public settings start private with every optional field off; publication p
     assert.equal(saved.card.wearSeed, snapshot.card.wearSeed);
     const card = await f.repository.getPublicMemberCard(token);
     assert.equal(card.name, "Public Cade"); assert.equal(card.bio, "Approved words");
-    assert.deepEqual(Object.keys(card).sort(), ["name", "avatarUrl", "memberSince", "location", "bio", "buildingNow", "websiteUrl", "labels", "wearSeed"].sort());
+    assert.deepEqual(Object.keys(card).sort(), ["name", "memberTag", "avatarUrl", "memberSince", "location", "bio", "buildingNow", "websiteUrl", "labels", "wearSeed"].sort());
     assert.doesNotMatch(JSON.stringify(card), /PRIVATE|memberId|personId|email|version|settings|00000000-0000/);
     assert.equal((await f.repository.getOwnMemberCard(other.auth)).publicUrl, null);
     await assert.rejects(f.repository.getOwnMemberCard(uuid(999)), { status: 403 });
     await assert.rejects(f.repository.saveOwnMemberCard(uuid(999), await f.input()), { status: 403 });
   } finally { await f.pg.close(); }
+});
+
+test("chosen member tags follow the profile without changing names, sharing scope or card links", async () => {
+  const f = await fixture();
+  try {
+    const initial = await f.repository.getOwnMemberCard(self.auth);
+    assert.equal(initial.source.memberTag, null, "legacy preferred names are never converted into tags");
+    await f.pg.query("update person_profiles set member_tag='cade' where person_id=$1", [self.person]);
+    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
+    const token = saved.publicUrl.split("/").pop();
+    assert.equal((await f.repository.getPublicMemberCard(token)).memberTag, "cade");
+    await f.pg.query("update person_profiles set member_tag='cade_studio' where person_id=$1", [self.person]);
+    const current = await f.repository.getOwnMemberCard(self.auth);
+    const card = await f.repository.getPublicMemberCard(token);
+    assert.equal(current.source.memberTag, "cade_studio"); assert.equal(card.memberTag, "cade_studio");
+    assert.equal(card.name, "Cade"); assert.equal(current.publicUrl, saved.publicUrl); assert.equal(current.version, saved.version);
+    assert.deepEqual(current.settings, saved.settings); assert.equal(card.wearSeed, saved.card.wearSeed);
+    assert.notEqual(current.sourceRevision, saved.sourceRevision, "tag changes participate in stale-source protection");
+    assert.deepEqual({ ...card, memberTag: "cade" }, saved.card);
+    assert.doesNotMatch(JSON.stringify(card), /PRIVATE|email|preferred|personId|memberId/);
+    await f.repository.saveOwnMemberCard(self.auth, { ...current.settings, publicEnabled: false, version: current.version });
+    assert.equal(await f.repository.getPublicMemberCard(token), null, "a chosen tag never enables sharing");
+  } finally { await f.pg.close(); }
+});
+
+test("a tag changed during public projection does not return a stale public identity", async () => {
+  const f = await fixture();
+  try {
+    await f.pg.query("update person_profiles set member_tag='before' where person_id=$1", [self.person]);
+    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
+    const token = saved.publicUrl.split("/").pop();
+    f.setAfterQuery(async query => {
+      if (!query.includes("from member_milestones milestone")) return;
+      f.setAfterQuery(null);
+      await f.pg.query("update person_profiles set member_tag='after' where person_id=$1", [self.person]);
+    });
+    assert.equal(await f.repository.getPublicMemberCard(token), null);
+    assert.equal((await f.repository.getPublicMemberCard(token)).memberTag, "after");
+  } finally { await f.pg.close(); }
+});
+
+test("public identity formatting keeps tags exact and avoids repeated tag names", () => {
+  assert.equal(model.publicMemberCardIdentity({ name: "Cade", memberTag: null }), "Cade");
+  assert.equal(model.publicMemberCardIdentity({ name: "Cade", memberTag: "cade_studio" }), "Cade (@cade_studio)");
+  assert.equal(model.publicMemberCardIdentity({ name: "@cade_studio", memberTag: "cade_studio" }), "@cade_studio");
 });
 
 test("revocation, membership changes and auth-role withdrawal close card and portrait access", async () => {
@@ -185,7 +231,7 @@ test("only selected verified milestone labels survive, including award revocatio
 
 test("validation rejects excess public fields, non-boolean consent, unsafe URLs, oversize streamed requests", async () => {
   const base = { ...model.defaultMemberCardSettings({ name: "Cade", bio: "", buildingNow: "", avatarUrl: null, memberSince: null, location: null }), version: 0 };
-  for (const change of [{ memberId: self.member }, { publicEnabled: "true" }, { publicName: " " }, { cardBio: "x".repeat(181) }, { labelIds: [uuid(20), uuid(20)] }, { labelIds: [uuid(20), uuid(21), uuid(22)] }, { version: -1 }, { publicWebsite: "javascript:alert(1)" }, { publicWebsite: "https://user:pass@example.test" }, { publicWebsite: "data:text/html,hello" }]) {
+  for (const change of [{ memberId: self.member }, { memberTag: "spoofed_tag" }, { publicEnabled: "true" }, { publicName: " " }, { cardBio: "x".repeat(181) }, { labelIds: [uuid(20), uuid(20)] }, { labelIds: [uuid(20), uuid(21), uuid(22)] }, { version: -1 }, { publicWebsite: "javascript:alert(1)" }, { publicWebsite: "https://user:pass@example.test" }, { publicWebsite: "data:text/html,hello" }]) {
     assert.throws(() => model.validateMemberCardInput({ ...base, ...change }), { status: 400 });
   }
   assert.equal(model.normalizeCardWebsite("https://example.test"), "https://example.test/");
@@ -298,7 +344,7 @@ test("normal profile API accepts sharing scope atomically, rejects duplicate car
     "@/lib/membership/repository": { MembershipInputError, MembershipAccessDeniedError, MembershipConflictError,
       saveMemberProfile: async (_auth, input) => { calls++; if (failConflict) throw new MembershipConflictError("Reload before saving."); assert.equal(input.bio.length, 1200); assert.equal(input.card.showBio, false); return profile; } },
   });
-  const input = { revision: "0".repeat(64), displayName: "Cade", preferredName: "Cade", bio: "B".repeat(1200), buildingNow: "W".repeat(500), websiteUrl: "https://example.test", accessibilityNotes: "Private", timezone: "UTC", location: "Utah",
+  const input = { revision: "0".repeat(64), displayName: "Cade", memberTag: "cade", bio: "B".repeat(1200), buildingNow: "W".repeat(500), websiteUrl: "https://example.test", accessibilityNotes: "Private", timezone: "UTC", location: "Utah",
     directory: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" },
     card: { ...model.defaultMemberCardSettings(), version: 0 } };
   const request = body => new Request("https://ruined.test/api/my/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

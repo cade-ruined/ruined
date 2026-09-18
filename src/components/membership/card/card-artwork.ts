@@ -246,7 +246,9 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
   const metadataHeight = (card.memberSince ? 58 : 0) + (locationLayout ? 36 + locationLayout.height : 0);
   const metadataTop = Math.min(1110, 1306 - metadataHeight);
   const nameRule = metadataTop - 38;
-  const nameTop = nameRule - 28 - nameLayout.height;
+  const tag = card.memberTag && card.name !== `@${card.memberTag}` ? `@${card.memberTag}` : null;
+  const tagHeight = tag ? 52 : 0;
+  const nameTop = nameRule - 28 - nameLayout.height - tagHeight;
   const px = 53, py = 154, pw = 902, ph = Math.min(766, nameTop - py - 50);
   f.fillStyle = palette.panel; f.fillRect(px, py, pw, ph);
   if (portrait) {
@@ -261,6 +263,7 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
   }
   f.strokeStyle = palette.rule; f.lineWidth = 3; f.strokeRect(px, py, pw, ph);
   printText(f, nameLayout, 64, nameTop, palette.bone, true);
+  if (tag) printText(f, textLayout(f, tag, 880, 40, 29, 29), 66, nameTop + nameLayout.height + 16, palette.muted);
   f.strokeStyle = palette.rule; f.lineWidth = 1; f.beginPath(); f.moveTo(64, nameRule); f.lineTo(944, nameRule); f.stroke();
   let bottom = metadataTop;
   if (card.memberSince) { label(f, "MEMBER SINCE", 64, bottom + 20, palette.muted, 16); label(f, new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince)), 582, bottom + 20, palette.bone, 23); bottom += 58; }

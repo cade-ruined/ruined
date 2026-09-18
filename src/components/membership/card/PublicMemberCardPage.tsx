@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import type { PublicMemberCard } from "@/lib/membership/public-card-model";
+import { publicMemberCardIdentity, type PublicMemberCard } from "@/lib/membership/public-card-model";
 import MemberCard from "./MemberCard";
 import AmbientParticles from "./AmbientParticles";
 import type { ArchiveShadow } from "./archive-lighting";
@@ -31,7 +31,7 @@ export default function PublicMemberCardPage({ card, preview = false, variant = 
   }, []);
   async function share() {
     try {
-      if (navigator.share) await navigator.share({ title: `${card.name} / Ruined`, url: window.location.href });
+      if (navigator.share) await navigator.share({ title: `${publicMemberCardIdentity(card)} / Ruined`, url: window.location.href });
       else { await navigator.clipboard.writeText(window.location.href); setStatus("Link copied."); }
     } catch (error) { if (!(error instanceof Error && error.name === "AbortError")) setStatus("Copy this page’s address to share the card."); }
   }
@@ -45,7 +45,7 @@ export default function PublicMemberCardPage({ card, preview = false, variant = 
     <svg ref={tableShadow} className={styles.tableShadow} preserveAspectRatio="none" aria-hidden="true"><polygon ref={shadowShape} fill="#050403" /></svg>
     <AmbientParticles className={styles.particles} archive />
     <header className={styles.header}><Link href="/" aria-label="Ruined home"><img src="/ruined-wordmark.svg" width={120} height={36} alt="Ruined" /></Link><span>{title ?? (preview ? "MEMBERS’ ARCHIVE / PREVIEW" : "THE MEMBERS’ ARCHIVE")}</span><div className={styles.headerActions}>{headerActions !== undefined ? headerActions : preview ? <Link href="/my/card">My Card ↗</Link> : <button type="button" onClick={share}>Share card ↗</button>}</div></header>
-    <div className={styles.content}><div className={styles.caption}><h1>{variant === "invitation" ? `An invitation from ${card.name}` : `${card.name} — Ruined member card`}</h1></div><div className={styles.card}><MemberCard card={card} variant={variant} archive onArchiveShadow={updateShadow} /></div></div>
+    <div className={styles.content}><div className={styles.caption}><h1>{variant === "invitation" ? `An invitation from ${publicMemberCardIdentity(card)}` : `${publicMemberCardIdentity(card)} — Ruined member card`}</h1></div><div className={styles.card}><MemberCard card={card} variant={variant} archive onArchiveShadow={updateShadow} /></div></div>
     <p className={styles.status} role="status">{status}</p>
     {children ? <div className={styles.belowCard}>{children}</div> : null}
     <footer className={styles.footer}><div>{footerNote ?? (preview ? "Example details. Nothing is published." : "Shared by its owner.")}</div><div className={styles.footerActions}>{footerActions !== undefined ? footerActions : <a href="https://theruinedproject.com/#members">Find your people <span aria-hidden="true">↗</span></a>}</div></footer>

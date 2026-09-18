@@ -23,9 +23,9 @@ export function validateMemberInvitationInput(value: unknown): MemberInvitationI
   }
   return { enabled: input.enabled, version: input.version as number };
 }
-/** Explicit invitation consent covers only the current display name. */
-export function invitationCard(name: string, wearSeed: string): PublicMemberCard {
-  return { name: name.trim() || "Member", wearSeed, avatarUrl: null, memberSince: null, location: null,
+/** Explicit invitation consent covers only the current display name and chosen member tag. */
+export function invitationCard(name: string, wearSeed: string, memberTag: string | null = null): PublicMemberCard {
+  return { name: name.trim() || "Member", memberTag, wearSeed, avatarUrl: null, memberSince: null, location: null,
     bio: null, buildingNow: null, websiteUrl: null, labels: [] };
 }
 export async function readMemberInvitationJson(request: Request): Promise<unknown> {

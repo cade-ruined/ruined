@@ -49,7 +49,7 @@ const platformShell = await readFile(
 test("member entry exposes native identity and shipping autofill", () => {
   for (const token of [
     "name",
-    "nickname",
+    "username",
     "email",
     "bday",
     "shipping address-line1",
@@ -185,7 +185,7 @@ test("phone input remains readable while changing country", () => {
 
 test("member entry submits normalized E.164 instead of a raw visible value", () => {
   assert.match(joinForm, /mobileToE164\(/);
-  assert.match(joinForm, /mobile,\s*preferredName/);
+  assert.match(joinForm, /mobile,\s*memberTag/);
   assert.match(joinForm, /setCustomValidity\(/);
   assert.match(joinForm, /reportValidity\(\)/);
   assert.doesNotMatch(joinForm, /mobile:\s*String\(form\.get\("mobile"\)/);

@@ -22,7 +22,7 @@ type CardRow = {
   show_bio: boolean; show_building: boolean; show_website: boolean; label_ids: string[]; version: number;
 };
 type SourceRow = {
-  display_name: string | null; preferred_name: string | null; avatar_storage_path: string | null;
+  display_name: string | null; preferred_name: string | null; member_tag: string | null; avatar_storage_path: string | null;
   membership_activated_at: Date | string | null; location_label: string | null; bio: string | null; building_now: string | null; website_url: string | null;
 };
 type PublicRow = CardRow & SourceRow & {
@@ -60,7 +60,7 @@ async function owner(authUserId: string, write = false) {
 }
 async function cardSource(memberId: string, sql: CardSql = getApplicationDatabase()): Promise<MemberCardSource> {
   const [row] = await sql<SourceRow[]>`
-    select profile.display_name, profile.preferred_name, profile.avatar_storage_path,
+    select profile.display_name, profile.preferred_name, profile.member_tag, profile.avatar_storage_path,
       member.membership_activated_at, profile.location_label, profile.bio, profile.building_now, profile.website_url
     from ruined_members member left join person_profiles profile on profile.person_id = member.person_id
     where member.id = ${memberId}::uuid limit 1
@@ -71,6 +71,7 @@ async function cardSource(memberId: string, sql: CardSql = getApplicationDatabas
 function rowSource(row: SourceRow, memberId: string): MemberCardSource {
   return {
     name: row.display_name?.trim() || row.preferred_name?.trim() || "Member",
+    memberTag: row.member_tag,
     avatarUrl: ownedMemberPhotoPath(memberId, row.avatar_storage_path) ? row.avatar_storage_path : null,
     memberSince: iso(row.membership_activated_at), location: row.location_label,
     bio: row.bio ?? "", buildingNow: row.building_now ?? "", websiteUrl: row.website_url ?? "",
@@ -174,7 +175,7 @@ async function publicCardRow(token: string): Promise<PublicRow | null> {
   if (!MEMBER_CARD_TOKEN.test(token)) return null;
   const [row] = await getApplicationDatabase()<PublicRow[]>`
     select card.*, member.person_id, member.membership_activated_at,
-      profile.display_name, profile.preferred_name, profile.avatar_storage_path,
+      profile.display_name, profile.preferred_name, profile.member_tag, profile.avatar_storage_path,
       profile.location_label, profile.bio, profile.building_now, profile.website_url,
       lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
       lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,

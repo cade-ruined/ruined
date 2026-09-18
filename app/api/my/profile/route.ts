@@ -55,7 +55,7 @@ function isProfileInput(value: unknown): value is MemberProfileInput {
     isDirectory(candidate.directory) &&
     typeof candidate.displayName === "string" &&
     typeof candidate.location === "string" &&
-    typeof candidate.preferredName === "string" &&
+    typeof candidate.memberTag === "string" &&
     typeof candidate.timezone === "string" &&
     Object.keys(candidate).every((key) =>
       [
@@ -68,7 +68,7 @@ function isProfileInput(value: unknown): value is MemberProfileInput {
         "directory",
         "displayName",
         "location",
-        "preferredName",
+        "memberTag",
         "timezone",
       ].includes(key),
     )
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ profile, card }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof MembershipConflictError || error instanceof PublicCardError) {
-      return NextResponse.json({ error: error.message }, { status: error instanceof PublicCardError ? error.status : 409 });
+      return NextResponse.json({ error: error.message, ...(error instanceof MembershipConflictError && error.code ? { code: error.code } : {}) }, { status: error instanceof PublicCardError ? error.status : 409 });
     }
     if (error instanceof MembershipInputError) {
       return NextResponse.json({ error: error.message }, { status: 400 });

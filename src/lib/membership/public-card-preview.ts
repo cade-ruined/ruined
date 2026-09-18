@@ -6,6 +6,7 @@ import type { MemberProfileSnapshot } from "./model";
 export function memberCardPreviewSnapshot(profile: MemberProfileSnapshot = PREVIEW_MEMBER_PROFILE): MemberCardSnapshot {
   const source: MemberCardSource = {
     name: profile.directory.displayName,
+    memberTag: profile.directory.memberTag,
     avatarUrl: profile.directory.avatarUrl,
     memberSince: null,
     location: profile.directory.location,

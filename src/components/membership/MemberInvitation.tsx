@@ -74,11 +74,11 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
   if (!snapshot?.card) return <main className={styles.empty}><Link href="/my">↖ My profile</Link><h1>My Invitation</h1>{error ? <><p role="alert">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Try again</button></> : <p role="status">Preparing your invitation…</p>}</main>;
   return <PublicMemberCardPage card={snapshot.card} variant="invitation" title={preview ? "MY INVITATION / PREVIEW" : "MY INVITATION"}
     headerActions={<><Link href="/my">My profile ↗</Link><Link href="/my/card">My Card ↗</Link></>}
-    footerNote={preview ? "Preview only. Nothing is published." : snapshot.enabled ? "Your name appears on this invitation. Profile edits keep it current." : "Your invitation is private until you enable sharing."}
+    footerNote={preview ? "Preview only. Nothing is published." : snapshot.enabled ? "Your display name and member tag appear on this invitation. Profile edits keep it current." : "Your invitation is private until you enable sharing."}
     footerActions={<Link href="/my/profile">Edit profile ↗</Link>}>
     <section className={styles.panel} aria-labelledby="my-invitation-title">
       <div className={styles.heading}><div><p className={styles.eyebrow}>A personal introduction</p><h2 id="my-invitation-title">Bring someone in.</h2></div><p className={styles.count}><strong>{snapshot.joinedCount}</strong><span>{snapshot.joinedCount === 1 ? "person has" : "people have"} joined through your invitation</span></p></div>
-      <p>Share your invitation with someone you’d like to see here. Your display name appears on it and stays synced with your profile.</p>
+      <p>Share your invitation with someone you’d like to see here. Your display name and member tag appear on it and stay synced with your profile.</p>
       {snapshot.enabled && snapshot.url ? <>
         <div className={styles.actions}><button type="button" disabled={busy} onClick={() => void share()}>Share invitation ↗</button><button type="button" disabled={busy} onClick={() => void share(true)}>Copy link</button><a href={snapshot.url} target="_blank" rel="noreferrer">View invitation ↗</a></div>
         <label className={styles.linkLabel}>Your invitation link<input readOnly value={origin ? new URL(snapshot.url, origin).href : snapshot.url} onFocus={event => event.target.select()} /></label>

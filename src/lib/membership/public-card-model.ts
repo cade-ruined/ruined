@@ -1,6 +1,7 @@
 /** The only data shape allowed across the public member-card boundary. */
 export type PublicMemberCard = {
   name: string;
+  memberTag: string | null;
   avatarUrl: string | null;
   memberSince: string | null;
   location: string | null;
@@ -10,6 +11,9 @@ export type PublicMemberCard = {
   labels: string[];
   wearSeed: string;
 };
+export function publicMemberCardIdentity(card: Pick<PublicMemberCard, "name" | "memberTag">): string {
+  return !card.memberTag || card.name === `@${card.memberTag}` ? card.name : `${card.name} (@${card.memberTag})`;
+}
 export type MemberCardSettings = {
   publicEnabled: boolean;
   showPortrait: boolean;
@@ -22,6 +26,7 @@ export type MemberCardSettings = {
 };
 export type MemberCardSource = {
   name: string;
+  memberTag: string | null;
   avatarUrl: string | null;
   memberSince: string | null;
   location: string | null;
@@ -91,6 +96,7 @@ export function defaultMemberCardSettings(): MemberCardSettings {
 export function projectMemberCard(settings: MemberCardSettings, source: MemberCardSource, labels: MemberCardLabel[], wearSeed: string): PublicMemberCard {
   return {
     name: source.name,
+    memberTag: source.memberTag,
     avatarUrl: settings.showPortrait ? source.avatarUrl : null,
     memberSince: settings.showMemberSince ? source.memberSince : null,
     location: settings.showLocation ? source.location : null,

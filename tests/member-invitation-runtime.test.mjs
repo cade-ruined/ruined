@@ -28,7 +28,7 @@ async function fixture(t) {
     create table ruined_members(id uuid primary key, person_id uuid references people(id), email_normalized text unique);
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active');
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz);
-    create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, bio text default 'PRIVATE BIO', avatar_storage_path text default 'PRIVATE PHOTO');
+    create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text, bio text default 'PRIVATE BIO', avatar_storage_path text default 'PRIVATE PHOTO');
     create table person_email_addresses(person_id uuid, email_normalized text primary key, verification_state text, retired_at timestamptz);
     create table member_lifecycle(member_id uuid primary key, account_state text default 'active', billing_state text default 'pending', program_state text default 'prospect', foundations_state text default 'not_started', administrative_onboarding_state text default 'in_progress', standing_state text default 'pre_active', cancellation_effective_at timestamptz, access_started_at timestamptz);
     create table member_onboardings(member_id uuid primary key, state text default 'in_progress', profile_completed_at timestamptz, agreement_completed_at timestamptz);
@@ -88,7 +88,7 @@ async function fixture(t) {
   return { db, sql, repository, waitlist, ops, opsReferrals, addMember, activate, enable, submit };
 }
 
-test("an invitation is private by default, independent of card sharing, and publishes only the current display name", async t => {
+test("an invitation is private by default, independent of card sharing, and publishes only the current display name and chosen tag", async t => {
   const f = await fixture(t);
   const initial = await f.repository.getOwnMemberInvitation(first.auth);
   assert.equal(initial.enabled, false); assert.equal(initial.version, 0); assert.equal(initial.url, null); assert.equal(initial.joinedCount, 0);
@@ -98,9 +98,13 @@ test("an invitation is private by default, independent of card sharing, and publ
   const publicInvite = await f.repository.getPublicMemberInvitation(token);
   assert.deepEqual(Object.keys(publicInvite), ["card"]);
   assert.deepEqual(publicInvite.card, model.invitationCard("Member 1", publicInvite.card.wearSeed));
+  assert.equal(publicInvite.card.memberTag, null, "legacy preferred names are never promoted to tags");
   assert.doesNotMatch(JSON.stringify(publicInvite), /PRIVATE|email|member_id|person_id|joinedCount|00000000-0000/);
-  await f.db.query("update person_profiles set display_name='Current Name' where person_id=$1", [first.person]);
-  assert.equal((await f.repository.getPublicMemberInvitation(token)).card.name, "Current Name");
+  await f.db.query("update person_profiles set display_name='Current Name',member_tag='current_tag' where person_id=$1", [first.person]);
+  assert.deepEqual((await f.repository.getPublicMemberInvitation(token)).card, model.invitationCard("Current Name", publicInvite.card.wearSeed, "current_tag"));
+  const updated = await f.repository.getOwnMemberInvitation(first.auth);
+  assert.equal(updated.card.memberTag, "current_tag"); assert.equal(updated.url, enabled.url);
+  assert.equal(updated.enabled, enabled.enabled); assert.equal(updated.version, enabled.version);
   assert.equal((await f.repository.getOwnMemberInvitation(second.auth)).enabled, false);
   await assert.rejects(f.repository.getOwnMemberInvitation(uuid(999)), { status: 403 });
   await assert.rejects(f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: 0 }), { status: 409 });
@@ -113,6 +117,29 @@ test("an invitation is private by default, independent of card sharing, and publ
   await assert.rejects(f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, version: paused.version }), { status: 403 });
   assert.equal((await f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: paused.version })).enabled, false, "withdrawal remains available while paused");
   assert.equal(await f.repository.getPublicMemberInvitation(first.member), null);
+});
+
+test("member tag changes keep invitation tokens and verified referral attribution stable", async t => {
+  const f = await fixture(t);
+  await f.db.query("update person_profiles set member_tag='first_tag' where person_id=$1", [first.person]);
+  const enabled = await f.enable(), token = enabled.url.split("/").pop();
+  await f.submit(newcomer, token);
+  const captured = (await f.db.query("select * from member_referrals")).rows[0];
+  await f.db.query("update person_profiles set member_tag='renamed_tag' where person_id=$1", [first.person]);
+  const publicInvite = await f.repository.getPublicMemberInvitation(token);
+  assert.equal(publicInvite.card.name, "Member 1"); assert.equal(publicInvite.card.memberTag, "renamed_tag");
+  assert.deepEqual(Object.keys(publicInvite.card).sort(), ["name", "memberTag", "avatarUrl", "memberSince", "location", "bio", "buildingNow", "websiteUrl", "labels", "wearSeed"].sort());
+  assert.deepEqual((await f.db.query("select * from member_referrals")).rows[0], captured);
+  await f.addMember(newcomer, false, true); await f.activate(newcomer);
+  const joined = (await f.db.query("select * from member_referrals")).rows[0];
+  const current = await f.repository.getOwnMemberInvitation(first.auth);
+  assert.equal(joined.inviter_member_id, first.member); assert.equal(joined.referred_member_id, newcomer.member);
+  assert.ok(joined.joined_at); assert.equal(current.joinedCount, 1); assert.equal(current.url, enabled.url);
+  assert.equal(current.version, enabled.version); assert.equal(current.enabled, true);
+  assert.doesNotMatch(JSON.stringify(publicInvite), /PRIVATE|email|member_id|person_id|joinedCount|00000000-0000/);
+  await f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: current.version });
+  assert.equal(await f.repository.getPublicMemberInvitation(token), null);
+  assert.equal((await f.repository.getOwnMemberInvitation(first.auth)).joinedCount, 1);
 });
 
 test("first interest pins the inviter; verification and completed activation count once through retries and renewal", async t => {
@@ -194,7 +221,7 @@ test("referrals, counts and helper functions are unavailable to public database 
 
 test("input validation bounds bodies and does not accept caller-selected identity or counts", async () => {
   assert.deepEqual(model.validateMemberInvitationInput({ enabled: true, version: 0 }), { enabled: true, version: 0 });
-  for (const input of [null, [], {}, { enabled: 1, version: 0 }, { enabled: true, version: -1 }, { enabled: true, version: 0, memberId: first.member }, { enabled: true, version: 0, joinedCount: 8 }]) {
+  for (const input of [null, [], {}, { enabled: 1, version: 0 }, { enabled: true, version: -1 }, { enabled: true, version: 0, memberId: first.member }, { enabled: true, version: 0, memberTag: "spoofed_tag" }, { enabled: true, version: 0, joinedCount: 8 }]) {
     assert.throws(() => model.validateMemberInvitationInput(input), { status: 400 });
   }
   assert.equal(waitlistModel.parseMembershipWaitlistInput({ name: "Test", email: "t@example.test", invitationToken: "bad" }), null);

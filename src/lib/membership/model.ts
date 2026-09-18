@@ -118,6 +118,7 @@ export type PrivacySafePersonSummary = {
   id: string;
   isSelf: boolean;
   location: string | null;
+  memberTag: string | null;
   phone: string | null;
 };
 
@@ -225,6 +226,7 @@ export type MemberHomeSnapshot = {
     displayName: string;
     fullName: string | null;
     location: string | null;
+    memberTag: string | null;
     preferredName: string | null;
     timezone: string | null;
   };
@@ -253,6 +255,7 @@ export type MemberProfileSnapshot = {
     buildingNow: string | null;
     displayName: string;
     location: string | null;
+    memberTag: string | null;
     preferredName: string | null;
     timezone: string | null;
     websiteUrl: string | null;
@@ -294,6 +297,7 @@ export type MemberOnboardingSnapshot = {
     | "mobile"
   > & {
     avatarUrl: string | null;
+    memberTag: string | null;
     preferredName: string | null;
   };
   requiredFieldsComplete: boolean;

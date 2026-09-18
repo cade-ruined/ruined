@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   type ChangeEvent,
+  type ClipboardEvent,
   type Dispatch,
   type FormEvent,
   type SetStateAction,
@@ -42,6 +43,7 @@ type AgreementResponse = {
 };
 
 type OnboardingResponse = {
+  code?: string;
   error?: string;
   onboarding?: MemberOnboardingSnapshot;
 };
@@ -137,6 +139,9 @@ export default function JoinForm({
 }) {
   const checkoutAttempt = useRef<string | null>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
+  const memberTagRef = useRef<HTMLInputElement>(null);
+  const [memberTag, setMemberTag] = useState(initialOnboarding.profile.memberTag ?? "");
+  const [memberTagError, setMemberTagError] = useState<string | null>(null);
   const [onboarding, setOnboarding] = useState(initialOnboarding);
   const [acceptanceId, setAcceptanceId] = useState(initialOnboarding.agreement.acceptanceId);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -191,6 +196,18 @@ export default function JoinForm({
     setPhoneCountry((current) => phoneCountryFromInput(formatted, current));
   }
 
+  function changeMemberTag(value: string) {
+    setMemberTag(value.trim().replace(/^@/, "").toLowerCase());
+    setMemberTagError(null);
+    setError(null);
+  }
+
+  function pasteMemberTag(event: ClipboardEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    event.preventDefault();
+    changeMemberTag(input.value.slice(0, input.selectionStart ?? 0) + event.clipboardData.getData("text") + input.value.slice(input.selectionEnd ?? input.value.length));
+  }
+
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (photoPending) return;
@@ -198,6 +215,13 @@ export default function JoinForm({
     setError(null);
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
+    const tag = String(form.get("member-tag") ?? "").trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9_]{3,24}$/.test(tag)) {
+      setMemberTagError("Use 3–24 letters, numbers, or underscores.");
+      memberTagRef.current?.focus();
+      setSubmitting(false);
+      return;
+    }
     try {
       const selectedPhoneCountry =
         supportedPhoneCountry(String(form.get("mobile-country") ?? "")) ?? phoneCountry;
@@ -220,7 +244,7 @@ export default function JoinForm({
           birthDate: String(form.get("birth-date") ?? ""),
           legalName: String(form.get("legal-name") ?? ""),
           mobile,
-          preferredName: String(form.get("preferred-name") ?? ""),
+          memberTag: tag,
           shippingAddress: {
             addressLine1: String(form.get("address-line-1") ?? ""),
             addressLine2: String(form.get("address-line-2") ?? "").trim() || null,
@@ -235,6 +259,10 @@ export default function JoinForm({
       });
       const payload = (await response.json()) as OnboardingResponse;
       if (!response.ok || !payload.onboarding) {
+        if (payload.code === "member_tag_unavailable") {
+          setMemberTagError(payload.error || "That member tag is already taken. Choose another.");
+          memberTagRef.current?.focus();
+        }
         throw new Error(payload.error || "Your member profile could not be saved.");
       }
       setOnboarding(payload.onboarding);
@@ -360,22 +388,34 @@ export default function JoinForm({
               />
               <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-legal-name-visibility">Private · For your membership records.</span>
             </label>
-            <label className={fieldLabelClass} htmlFor="member-preferred-name">
-              <span className={fieldLabelTextClass}>Preferred name</span>
-              <input
-                aria-describedby="member-preferred-name-visibility"
-                autoCapitalize="words"
-                autoComplete="nickname"
-                autoCorrect="off"
-                className={fieldClass}
-                defaultValue={onboarding.profile.preferredName ?? ""}
-                id="member-preferred-name"
-                maxLength={120}
-                name="preferred-name"
-                required
-                spellCheck={false}
-              />
-              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-preferred-name-visibility">Public · The name shown on your profile.</span>
+            <label className={fieldLabelClass} htmlFor="member-tag">
+              <span className={fieldLabelTextClass}>Member tag</span>
+              <span className="relative block">
+                <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[var(--member-muted)]">@</span>
+                <input
+                  aria-describedby="member-tag-help member-tag-error"
+                  aria-invalid={Boolean(memberTagError)}
+                  autoCapitalize="none"
+                  autoComplete="username"
+                  autoCorrect="off"
+                  className={`${fieldClass} !pl-8`}
+                  id="member-tag"
+                  maxLength={24}
+                  minLength={3}
+                  name="member-tag"
+                  onChange={(event) => changeMemberTag(event.currentTarget.value)}
+                  onPaste={pasteMemberTag}
+                  onInvalid={() => setMemberTagError("Use 3–24 letters, numbers, or underscores.")}
+                  pattern="[a-z0-9_]{3,24}"
+                  ref={memberTagRef}
+                  required
+                  spellCheck={false}
+                  title="Use 3–24 letters, numbers, or underscores."
+                  value={memberTag}
+                />
+              </span>
+              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-tag-help">Your unique @tag. Use 3–24 letters, numbers, or underscores. It appears alongside your display name when you share your card or invitation.</span>
+              <span className="text-xs leading-relaxed text-[var(--member-red)]" id="member-tag-error" role="status">{memberTagError}</span>
             </label>
             <label className={fieldLabelClass} htmlFor="member-email">
               <span className={fieldLabelTextClass}>Confirmed email</span>

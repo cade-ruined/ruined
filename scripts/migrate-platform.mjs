@@ -44,6 +44,7 @@ const migrations = [
   "../db/migrations/20260917200000_public_member_cards.sql",
   "../db/migrations/20260919210000_member_profile_card_sync.sql",
   "../db/migrations/20260919211000_member_referrals.sql",
+  "../db/migrations/20260920200000_member_tags.sql",
 ];
 
 function migrationBody(migration, migrationName) {

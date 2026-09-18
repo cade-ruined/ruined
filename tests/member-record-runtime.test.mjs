@@ -69,6 +69,7 @@ async function fixture() {
     "@/lib/membership/access-policy": policy,
     "@/lib/membership/artifact-products": {},
     "@/lib/membership/avatar-url": {},
+    "@/lib/membership/member-tag": await load("src/lib/membership/member-tag.ts", {}),
     "@/lib/membership/phone": {},
     "@/lib/platform/ops-calendar-repository": {},
     "@/lib/platform/calendar-audience-invalidation": {},

@@ -23,12 +23,12 @@ export async function getOwnMemberInvitation(authUserId: string): Promise<Member
   const sql = getApplicationDatabase();
   const [rows, names, counts, eligibility] = await Promise.all([
     sql<InvitationRow[]>`select member_id, public_token, enabled, version from member_invitations where member_id = ${identity.memberId}::uuid`,
-    sql<Array<{ name: string }>>`select coalesce(nullif(btrim(display_name), ''), nullif(btrim(preferred_name), ''), 'Member') as name from person_profiles where person_id = ${identity.personId}::uuid`,
+    sql<Array<{ name: string; member_tag: string | null }>>`select coalesce(nullif(btrim(display_name), ''), nullif(btrim(preferred_name), ''), 'Member') as name, member_tag from person_profiles where person_id = ${identity.personId}::uuid`,
     sql<Array<{ total: number }>>`select count(*)::integer as total from member_referrals where inviter_member_id = ${identity.memberId}::uuid and joined_at is not null`,
     sql<Array<{ eligible: boolean }>>`select private.ruined_member_can_share_invitation(${identity.memberId}::uuid) as eligible`,
   ]);
   const row = rows[0], eligible = eligibility[0]?.eligible === true;
-  return { card: invitationCard(names[0]?.name ?? "Member", wearSeed(identity.memberId)), enabled: row?.enabled ?? false,
+  return { card: invitationCard(names[0]?.name ?? "Member", wearSeed(identity.memberId), names[0]?.member_tag ?? null), enabled: row?.enabled ?? false,
     eligible, writable, version: row?.version ?? 0, joinedCount: counts[0]?.total ?? 0,
     url: row?.enabled && eligible ? `/invitation/${row.public_token}` : null };
 }
@@ -61,13 +61,13 @@ export async function saveOwnMemberInvitation(authUserId: string, value: MemberI
 }
 export async function getPublicMemberInvitation(token: string): Promise<PublicMemberInvitation | null> {
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
-  const [row] = await getApplicationDatabase()<Array<{ member_id: string; name: string }>>`
-    select invitation.member_id, coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') as name
+  const [row] = await getApplicationDatabase()<Array<{ member_id: string; name: string; member_tag: string | null }>>`
+    select invitation.member_id, coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') as name, profile.member_tag
     from member_invitations invitation join ruined_members member on member.id = invitation.member_id
     left join person_profiles profile on profile.person_id = member.person_id
     where invitation.public_token = ${token} and invitation.enabled
       and private.ruined_member_can_share_invitation(invitation.member_id)
     limit 1
   `;
-  return row ? { card: invitationCard(row.name, wearSeed(row.member_id)) } : null;
+  return row ? { card: invitationCard(row.name, wearSeed(row.member_id), row.member_tag) } : null;
 }

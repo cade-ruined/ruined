@@ -104,6 +104,7 @@ export default function CircleMemberCluster({
         <h2 className="ui-heading mt-2 break-words text-[clamp(2rem,5vw,4.5rem)] font-black uppercase leading-[0.82] tracking-[-0.055em] text-[var(--member-ink)]">
           {selected.displayName}
         </h2>
+          {selected.memberTag && selected.displayName !== `@${selected.memberTag}` ? <p className="mt-3 break-all font-[var(--font-body)] text-sm text-[var(--member-muted)]">@{selected.memberTag}</p> : null}
         {selected.location ? (
           <p className="mt-3 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em] text-[var(--member-muted)]">
             {selected.location}

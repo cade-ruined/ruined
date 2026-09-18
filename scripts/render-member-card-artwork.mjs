@@ -48,19 +48,23 @@ function load(file) {
   return mod.exports;
 }
 const artworkModule = load(resolve("src/components/membership/card/card-artwork.ts"));
-const base = { name: "Alex Morgan", avatarUrl: null, memberSince: "2026-08-01T00:00:00Z", location: "Alpine, Utah", buildingNow: "A more deliberate creative practice.", bio: "Making space for the work, people, and experiences worth keeping.", websiteUrl: "https://theruinedproject.com/", labels: ["Foundations completed"], wearSeed: "sample-member-card-artwork" };
+const base = { name: "Alex Morgan", memberTag: "alex_morgan", avatarUrl: null, memberSince: "2026-08-01T00:00:00Z", location: "Alpine, Utah", buildingNow: "A more deliberate creative practice.", bio: "Making space for the work, people, and experiences worth keeping.", websiteUrl: "https://theruinedproject.com/", labels: ["Foundations completed"], wearSeed: "sample-member-card-artwork" };
 const cases = [
   ["sample", base],
-  ["maximum", { ...base, name: "W".repeat(64), location: "W".repeat(160), bio: "W".repeat(180), buildingNow: "W".repeat(100), websiteUrl: `https://${"w".repeat(60)}.${"w".repeat(60)}.example/`, labels: ["An exceptionally long verified milestone title that must remain readable without escaping the card edge", "Another recorded milestone for testing the lower border"] }],
+  ["maximum", { ...base, memberTag: "w".repeat(24), name: "W".repeat(64), location: "W".repeat(160), bio: "W".repeat(180), buildingNow: "W".repeat(100), websiteUrl: `https://${"w".repeat(60)}.${"w".repeat(60)}.example/`, labels: ["An exceptionally long verified milestone title that must remain readable without escaping the card edge", "Another recorded milestone for testing the lower border"] }],
   ["profile", { ...base, name: "W".repeat(120), location: "W".repeat(160), buildingNow: "W".repeat(500), bio: "W".repeat(1200) }],
-  ["invitation", { ...base, name: "Alex Morgan", avatarUrl: null, location: null, memberSince: null, labels: [] }, "invitation"],
+  ["invitation", { ...base, name: "Alex Morgan", memberTag: "alex_morgan", avatarUrl: null, location: null, memberSince: null, labels: [] }, "invitation"],
   ["invitation-long-name", { ...base, name: "W".repeat(120), avatarUrl: null, location: null, memberSince: null, labels: [] }, "invitation"],
+  ["tag-as-name", { ...base, name: "@alex_morgan" }],
+  ["legacy", { ...base, memberTag: null }],
   ["minimal", { ...base, name: "Alex", avatarUrl: null, memberSince: null, location: null, buildingNow: null, bio: null, websiteUrl: null, labels: [] }],
 ];
 await mkdir("output/member-card/qa", { recursive: true });
 const layoutChecks = [];
 for (const [name, card, variant] of cases) {
   const artwork = await artworkModule.createCardArtwork(card, variant);
+  const printedTag = artwork.front.printedText.filter(item => item.text === `@${card.memberTag}`);
+  assert.equal(printedTag.length, card.memberTag ? 1 : 0, `${name} must print the tag exactly once.`);
   for (const side of ["front", "back"]) await writeFile(`output/member-card/qa/artwork-${name}-${side}.png`, artwork[side].toBuffer("image/png"));
   if (name === "sample") {
     const { width, height } = artwork.front;

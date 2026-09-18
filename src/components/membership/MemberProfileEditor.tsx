@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type ClipboardEvent, type FormEvent, useRef, useState } from "react";
 
 import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
 import MemberPublicSharingSettings from "@/components/membership/MemberPublicSharingSettings";
@@ -32,6 +32,9 @@ export default function MemberProfileEditor({
   preview?: boolean;
 }) {
   const [profile, setProfile] = useState(initialProfile);
+  const memberTagRef = useRef<HTMLInputElement>(null);
+  const [memberTag, setMemberTag] = useState(initialProfile.directory.memberTag ?? "");
+  const [memberTagError, setMemberTagError] = useState<string | null>(null);
   const [card, setCard] = useState(initialCard);
   const [choices, setChoices] = useState(initialCard?.settings ?? null);
   const [conflict, setConflict] = useState(false);
@@ -43,6 +46,19 @@ export default function MemberProfileEditor({
     card.settings.publicEnabled !== choices.publicEnabled || card.settings.showPortrait !== choices.showPortrait
   ));
 
+  function changeMemberTag(value: string) {
+    setMemberTag(value.trim().replace(/^@/, "").toLowerCase());
+    setMemberTagError(null);
+    setError(null);
+    setSaved(false);
+  }
+
+  function pasteMemberTag(event: ClipboardEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    event.preventDefault();
+    changeMemberTag(input.value.slice(0, input.selectionStart ?? 0) + event.clipboardData.getData("text") + input.value.slice(input.selectionEnd ?? input.value.length));
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!writable || pending || photoPending || conflict) return;
@@ -50,6 +66,13 @@ export default function MemberProfileEditor({
     setError(null);
     setSaved(false);
     const form = new FormData(event.currentTarget);
+    const tag = String(form.get("member-tag") ?? "").trim().replace(/^@/, "").toLowerCase();
+    if ((tag || profile.directory.memberTag) && !/^[a-z0-9_]{3,24}$/.test(tag)) {
+      setMemberTagError("Use 3–24 letters, numbers, or underscores.");
+      memberTagRef.current?.focus();
+      setPending(false);
+      return;
+    }
     try {
       const response = await fetch("/api/my/profile", {
         body: JSON.stringify({
@@ -73,22 +96,28 @@ export default function MemberProfileEditor({
           },
           displayName: String(form.get("display-name") ?? ""),
           location: String(form.get("location") ?? ""),
-          preferredName: String(form.get("preferred-name") ?? ""),
+          memberTag: tag,
           timezone: String(form.get("timezone") ?? ""),
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
       const payload = (await response.json()) as {
+        code?: string;
         error?: string;
         profile?: MemberProfileSnapshot;
         card?: MemberCardSnapshot | null;
       };
       if (!response.ok || !payload.profile) {
-        if (response.status === 409) setConflict(true);
+        if (payload.code === "member_tag_unavailable") {
+          setMemberTagError(payload.error || "That member tag is already taken. Choose another.");
+          memberTagRef.current?.focus();
+        } else if (response.status === 409) setConflict(true);
         throw new Error(payload.error || "Your profile could not be saved.");
       }
       setProfile(payload.profile);
+      setMemberTag(payload.profile.directory.memberTag ?? "");
+      setMemberTagError(null);
       setCard(payload.card ?? null); setChoices(payload.card?.settings ?? null);
       setSaved(true);
     } catch (requestError) {
@@ -129,11 +158,36 @@ export default function MemberProfileEditor({
           <div className="grid gap-6 sm:grid-cols-2">
             <label className={SUPPORT_LABEL_CLASS}>
               Display name
-              <input className={fieldClass} defaultValue={profile.directory.displayName} maxLength={120} name="display-name" required />
+              <input className={fieldClass} defaultValue={profile.directory.displayName} key={profile.directory.displayName} maxLength={120} name="display-name" required />
             </label>
-            <label className={SUPPORT_LABEL_CLASS}>
-              Preferred name
-              <input className={fieldClass} defaultValue={profile.directory.preferredName ?? ""} maxLength={120} name="preferred-name" required />
+            <label className={SUPPORT_LABEL_CLASS} htmlFor="profile-member-tag">
+              Member tag
+              <span className="relative mt-2 block">
+                <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center [font-family:var(--font-body)] text-base text-[var(--member-muted)]">@</span>
+                <input
+                  aria-describedby="profile-member-tag-help profile-member-tag-error"
+                  aria-invalid={Boolean(memberTagError)}
+                  autoCapitalize="none"
+                  autoComplete="username"
+                  autoCorrect="off"
+                  className={`${fieldClass} !mt-0 !pl-8`}
+                  id="profile-member-tag"
+                  maxLength={24}
+                  minLength={3}
+                  name="member-tag"
+                  onChange={(event) => changeMemberTag(event.currentTarget.value)}
+                  onPaste={pasteMemberTag}
+                  onInvalid={() => setMemberTagError("Use 3–24 letters, numbers, or underscores.")}
+                  pattern="[a-z0-9_]{3,24}"
+                  ref={memberTagRef}
+                  required={Boolean(profile.directory.memberTag)}
+                  spellCheck={false}
+                  title="Use 3–24 letters, numbers, or underscores."
+                  value={memberTag}
+                />
+              </span>
+              <span className="mt-2 block [font-family:var(--font-body)] font-normal normal-case tracking-normal text-xs leading-relaxed text-[var(--member-muted)]" id="profile-member-tag-help">Use 3–24 letters, numbers, or underscores. Your unique @tag appears alongside your display name when your public card or invitation is enabled.{!profile.directory.memberTag ? " You can leave this blank for now." : ""}</span>
+              <span className="mt-2 block [font-family:var(--font-body)] font-normal normal-case tracking-normal text-xs leading-relaxed text-[var(--member-red)]" id="profile-member-tag-error" role="status">{memberTagError}</span>
             </label>
             <label className={SUPPORT_LABEL_CLASS}>
               Location

@@ -47,7 +47,7 @@ function isOnboardingAction(value: unknown): value is OnboardingAction {
     typeof candidate.birthDate === "string" &&
     typeof candidate.legalName === "string" &&
     typeof candidate.mobile === "string" &&
-    typeof candidate.preferredName === "string" &&
+    typeof candidate.memberTag === "string" &&
     isAddress(candidate.shippingAddress) &&
     Object.keys(candidate).every((key) =>
       [
@@ -56,7 +56,7 @@ function isOnboardingAction(value: unknown): value is OnboardingAction {
         "birthDate",
         "legalName",
         "mobile",
-        "preferredName",
+        "memberTag",
         "shippingAddress",
       ].includes(key),
     )
@@ -68,7 +68,7 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof MembershipConflictError) {
-    return NextResponse.json({ error: error.message }, { status: 409 });
+    return NextResponse.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, { status: 409 });
   }
   if (error instanceof MembershipAccessDeniedError) {
     return NextResponse.json({ error: error.message }, { status: 403 });

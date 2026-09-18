@@ -57,7 +57,7 @@ function request() {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({
       action: "save_profile", apparelTopSize: "M", birthDate: "1990-01-01",
-      legalName: "Test Member", preferredName: "Test", mobile: "+12025550123",
+      legalName: "Test Member", memberTag: "test_member", mobile: "+12025550123",
       shippingAddress: { addressLine1: "Test street", addressLine2: null, city: "Test", region: "UT", countryCode: "US", postalCode: "84004" },
     }),
   });
@@ -97,6 +97,14 @@ test("expected onboarding validation, conflict, and permission failures keep the
     assert.deepEqual(await response.json(), { error: "Expected member-facing error" });
     assert.deepEqual(route.logs, []);
   }
+});
+
+test("an unavailable tag stays a retryable 409 with a distinct code", async () => {
+  const route = await loadRoute(Object.assign(new MembershipConflictError("That member tag is already taken. Choose another."), { code: "member_tag_unavailable" }));
+  const response = await route.POST(request());
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "That member tag is already taken. Choose another.", code: "member_tag_unavailable" });
+  assert.deepEqual(route.logs, []);
 });
 
 test("member phone constraint accepts valid international numbers and fails safely in isolated PostgreSQL", async () => {

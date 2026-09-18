@@ -12,6 +12,7 @@
 .polaroid figcaption { position:absolute; bottom:5.1%; left:8%; right:8%; font-family:var(--font-cadehandy2); font-size:17px; line-height:1; color:#2a2a2a; }
 .nameBlock { min-width:0; grid-column:2; align-self:center; }
 .nameBlock h1 { font-family:var(--font-display)!important; font-size:clamp(44px,5.5vw,76px); font-weight:500!important; line-height:.98; letter-spacing:-.045em; overflow-wrap:anywhere; }
+.memberTag { margin-top:12px; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--member-muted); overflow-wrap:anywhere; }
 .bio { min-width:0; overflow-wrap:anywhere; grid-column:2; max-width:65ch; white-space:pre-wrap; font-size:15px; line-height:1.65; }
 .identityActions { grid-column:2; display:flex; align-items:center; flex-wrap:wrap; gap:16px 24px; }
 .identityActions>span { font-size:11px; color:var(--member-muted); }

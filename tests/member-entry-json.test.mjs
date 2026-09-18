@@ -21,7 +21,7 @@ const ids = {
   acceptance: "66666666-6666-4666-8666-666666666666",
 };
 const profileInput = {
-  apparelTopSize: "L", birthDate: "1990-01-15", legalName: "Test Member", mobile: "+12025550123", preferredName: "Test",
+  apparelTopSize: "L", birthDate: "1990-01-15", legalName: "Test Member", mobile: "+12025550123", memberTag: "test_member",
   shippingAddress: { addressLine1: "100 Test Street", addressLine2: null, city: "Test City", countryCode: "US", postalCode: "84000", region: "UT" },
 };
 const agreementInput = {
@@ -45,11 +45,13 @@ async function loadModule(path, dependencies) {
 }
 
 const accessPolicy = await loadModule("src/lib/membership/access-policy.ts", {});
+const memberTags = await loadModule("src/lib/membership/member-tag.ts", {});
 async function loadEntryRepository(database) {
   return loadModule("src/lib/membership/repository.ts", {
     "libphonenumber-js/min": require("libphonenumber-js/min"),
     "@/lib/database/server": { getApplicationDatabase: () => database },
     "@/lib/membership/access-policy": accessPolicy,
+    "@/lib/membership/member-tag": memberTags,
     "@/lib/membership/phone": { supportedShippingCountry: (country) => country === "US" ? "US" : null },
     "@/lib/membership/avatar-url": { safeMemberAvatarUrl: (url) => url },
     "@/lib/events/member-experiences": {},
@@ -98,7 +100,7 @@ function fakeEntryDatabase(birthDate = new Date("1990-01-15T00:00:00.000Z")) {
     }];
     if (query.includes("with current_agreement as")) return [{
       state: completed ? "completed" : "in_progress", completed_at: completed ? new Date() : null,
-      preferred_name: "Test", avatar_storage_path: null, legal_name: profileInput.legalName,
+      preferred_name: "Test", member_tag: profileInput.memberTag, avatar_storage_path: null, legal_name: profileInput.legalName,
       mobile_e164: profileInput.mobile, birth_date: birthDate, shipping_address: profileInput.shippingAddress,
       apparel_sizing: { top: profileInput.apparelTopSize }, agreement_id: ids.agreement,
       agreement_version: 1, agreement_title: "Membership", agreement_body: "Test agreement", agreement_published_at: new Date(),
@@ -245,6 +247,7 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
       for each row execute function private.fixture_acceptance_precision();
     `);
     await db.exec(phoneMigration);
+    await db.exec(await readFile(new URL("../db/migrations/20260920200000_member_tags.sql", import.meta.url), "utf8"));
     await db.query("insert into people (id) values ($1)", [ids.person]);
     await db.query("insert into ruined_members values ($1,$2,$3)", [ids.member, ids.person, "member@example.test"]);
     await db.query("insert into platform_users (auth_user_id,person_id,status,member_id) values ($1,$2,'active',$3)", [ids.auth, ids.person, ids.member]);
@@ -266,11 +269,28 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
     const repository = await loadEntryRepository(wrap(db));
     const saved = await repository.saveMemberOnboardingProfile(ids.auth, profileInput);
     assert.equal(saved.requiredFieldsComplete, true);
+    assert.equal(saved.profile.memberTag, "test_member");
+    assert.equal(saved.profile.preferredName, null);
+    assert.deepEqual((await db.query("select display_name,preferred_name,member_tag from person_profiles")).rows[0],
+      { display_name: "@test_member", preferred_name: null, member_tag: "test_member" });
     assert.equal(saved.profile.birthDate, "1990-01-15");
     assert.deepEqual(saved.profile.apparelSizing, { top: "L" });
     assert.deepEqual(saved.profile.fulfillmentAddress, profileInput.shippingAddress);
     const updated = await repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, apparelTopSize: "XL" });
     assert.deepEqual(updated.profile.apparelSizing, { top: "XL" });
+    await repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, memberTag: " @Renamed_Tag " });
+    assert.equal((await db.query("select display_name from person_profiles")).rows[0].display_name, "@renamed_tag");
+    await db.exec("update person_profiles set display_name='Chosen public name',preferred_name='Legacy preferred name'");
+    await repository.saveMemberOnboardingProfile(ids.auth, profileInput);
+    assert.deepEqual((await db.query("select display_name,preferred_name from person_profiles")).rows[0],
+      { display_name: "Chosen public name", preferred_name: "Legacy preferred name" });
+    const otherPerson = "77777777-7777-4777-8777-777777777777";
+    await db.query("insert into people(id) values($1)", [otherPerson]);
+    await db.query("insert into person_profiles(person_id,display_name,member_tag) values($1,'Other public name','taken_tag')", [otherPerson]);
+    await assert.rejects(repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, memberTag: "Taken_Tag", legalName: "Should not save" }),
+      error => error instanceof repository.MembershipConflictError && error.code === "member_tag_unavailable");
+    assert.equal((await db.query("select legal_name from person_private_profiles where person_id=$1", [ids.person])).rows[0].legal_name, profileInput.legalName);
+    assert.equal((await repository.getMemberOnboarding(ids.auth)).profile.memberTag, "test_member");
     const accepted = await repository.acceptPublishedMembershipAgreement(ids.auth, agreementInput);
     assert.ok(accepted.acceptance.id);
     assert.equal(accepted.onboarding.agreement.acceptanceId, accepted.acceptance.id);
@@ -289,6 +309,10 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
     await db.query("update member_onboardings set agreement_completed_at=$1::timestamptz where member_id=$2", [new Date(precision.accepted_at).toISOString(), ids.member]);
     await assert.rejects(() => repository.completeMemberAdministrativeOnboarding(ids.auth), /durable agreement acceptance/);
     await db.query("update member_onboardings set agreement_completed_at=(select accepted_at from membership_agreement_acceptances where id=$1) where member_id=$2", [accepted.acceptance.id, ids.member]);
+    if (funding === "self") {
+      await db.query("update person_profiles set member_tag=null where person_id=$1", [ids.person]);
+      assert.equal((await repository.getMemberOnboarding(ids.auth)).requiredFieldsComplete, true, "legacy preferred name keeps an in-flight joining ready");
+    }
     const completed = await repository.completeMemberAdministrativeOnboarding(ids.auth);
     assert.equal(completed.state, "completed");
     assert.equal(completed.requiredFieldsComplete, true);

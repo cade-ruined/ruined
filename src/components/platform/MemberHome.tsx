@@ -37,12 +37,13 @@ export default function MemberHome({member,preview=false,timeline}:{member:Membe
   useEffect(()=>{function synchronize(){const value=window.location.hash.slice(1);if(tabs.includes(value as Tab)){setTab(value as Tab);if(value==="timeline")setTimelineVisited(true);}}synchronize();window.addEventListener("hashchange",synchronize);return()=>window.removeEventListener("hashchange",synchronize);},[]);
   function select(value:Tab){setTab(value);if(value==="timeline")setTimelineVisited(true);window.history.replaceState(null,"",`#${value}`);}
   function keyNavigate(event:KeyboardEvent,index:number){const target=event.key==="ArrowRight"?(index+1)%tabs.length:event.key==="ArrowLeft"?(index+tabs.length-1)%tabs.length:event.key==="Home"?0:event.key==="End"?tabs.length-1:null;if(target!==null){event.preventDefault();select(tabs[target]);tabRefs.current[target]?.focus();}}
+  const tag=member.profile.memberTag?`@${member.profile.memberTag}`:null;
   const next=member.nextAction;const needsAttention=["onboarding","billing","account","foundations"].includes(next.kind);
   return <main className={styles.profile} data-member-profile>
     <header className={styles.identity}>
       <div className={styles.memberRow}><span className={styles.memberBadge}><Image src="/ruined-mark.svg" alt="" width={17} height={22}/>{member.identity.standingState==="active"?"Member":"My Ruined"}</span></div>
       <figure className={styles.polaroid} aria-label={member.avatarUrl?"Member portrait":"Portrait not added"} data-member-polaroid><div className={styles.photo}><Image src={member.avatarUrl??"/membership/portrait-pending-editorial.webp"} alt="" fill sizes="150px" priority unoptimized/></div><Image className={styles.frame} src="/membership/polaroid-frame.png" alt="" fill sizes="150px" priority unoptimized/><figcaption>{member.avatarUrl?"This is you":"Photo pending"}</figcaption></figure>
-      <div className={styles.nameBlock}><h1>{member.displayName}</h1></div>
+      <div className={styles.nameBlock}><h1>{member.displayName}</h1>{tag&&member.displayName.trim().toLowerCase()!==tag?<p className={styles.memberTag}>{tag}</p>:null}</div>
       {member.profile.bio?<p className={styles.bio}>{member.profile.bio}</p>:<p className={styles.bio}>A little space of your own.</p>}
       <div className={styles.identityActions}><Link className="member-button" href="/my/profile"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="m13 3 4 4M3 13 14 2l4 4L7 17l-5 1Z"/></svg>Edit profile</Link><Link className="member-button" href="/my/card">My Card ↗</Link><Link className="member-button" href="/my/invitation">My Invitation ↗</Link>{member.memberSince?<span>Member since {new Date(member.memberSince).getUTCFullYear()}</span>:null}</div>
     </header>

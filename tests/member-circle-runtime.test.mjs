@@ -90,6 +90,7 @@ async function fixture() {
   `);
   await pg.exec(await readFile(new URL("../db/migrations/20260917200000_public_member_cards.sql", import.meta.url), "utf8"));
   await pg.exec(await readFile(new URL("../db/migrations/20260919210000_member_profile_card_sync.sql", import.meta.url), "utf8"));
+  await pg.exec(await readFile(new URL("../db/migrations/20260920200000_member_tags.sql", import.meta.url), "utf8"));
   const identity = { account_state: "active", administrative_onboarding_state: "completed", auth_user_id: ids.auth, billing_state: "active", cancellation_effective_at: null, email: "member@example.test", foundations_state: "in_progress", member_id: ids.member, person_id: ids.person, program_state: "onboarding", standing_state: "active" };
   const makeDb = (engine) => {
     // postgres-js tags are lazy, composable query objects. A nested tag is SQL,
@@ -131,6 +132,7 @@ async function fixture() {
   const policy = await loadModule("src/lib/membership/access-policy.ts", {});
   const experienceAccess = await loadModule("src/lib/platform/experience-member-access.ts", {
     "@/lib/membership/access-policy": policy,
+    "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
   });
   const cardModel = await loadModule("src/lib/membership/public-card-model.ts", {});
   let cardRepository;
@@ -140,6 +142,7 @@ async function fixture() {
     "libphonenumber-js/min": require("libphonenumber-js/min"),
     "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
     "@/lib/membership/access-policy": policy,
+    "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
     "@/lib/membership/phone": {},
     "@/lib/membership/avatar-url": { safeMemberAvatarUrl: (value) => value },
     "@/lib/events/member-experiences": { mergeUpcomingPublicMemberExperiences: (items) => items, publicEventDetailHref: (slug) => `/community#${slug}` },
@@ -154,6 +157,7 @@ async function fixture() {
     "node:crypto": require("node:crypto"), "@supabase/supabase-js": {},
     "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
     "@/lib/membership/access-policy": policy,
+    "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
     "@/lib/membership/repository": { getMemberIdentity: repository.getMemberIdentity },
     "@/lib/membership/photo-policy": await loadModule("src/lib/membership/photo-policy.ts", {}),
     "./public-card-model": cardModel,
@@ -164,7 +168,7 @@ async function fixture() {
 test("profile save commits typed privacy snapshots and reloads its changes through real PostgreSQL", async () => {
   const { pg, repository } = await fixture();
   try {
-    const saved = await repository.saveMemberProfile(ids.auth, { revision: (await repository.getMemberProfile(ids.auth)).revision, websiteUrl: "https://example.test", displayName: "Updated name", preferredName: "Updated", timezone: "America/Denver", location: "Utah", bio: "Updated bio", buildingNow: "New work", accessibilityNotes: "Private note", directory: { directoryStatus: "circle_visible", avatarVisible: true, locationVisible: true, bioVisible: true, buildingVisible: false, emailScope: "none", phoneScope: "none" } });
+    const saved = await repository.saveMemberProfile(ids.auth, { revision: (await repository.getMemberProfile(ids.auth)).revision, websiteUrl: "https://example.test", displayName: "Updated name", memberTag: "updated", timezone: "America/Denver", location: "Utah", bio: "Updated bio", buildingNow: "New work", accessibilityNotes: "Private note", directory: { directoryStatus: "circle_visible", avatarVisible: true, locationVisible: true, bioVisible: true, buildingVisible: false, emailScope: "none", phoneScope: "none" } });
     assert.equal(saved.directory.displayName, "Updated name");
     assert.equal(saved.preferences.directoryStatus, "circle_visible");
     assert.equal(saved.privateProfile.accessibilityNotes, "Private note");
@@ -178,13 +182,17 @@ test("profile save commits typed privacy snapshots and reloads its changes throu
 test("Circle Shaper IDs cannot collide with member IDs and optional fields require explicit sharing", async () => {
   const { pg, repository } = await fixture();
   try {
+    await pg.query("update person_profiles set member_tag='circle_shaper' where person_id=$1", [ids.shaperPerson]);
+    await pg.query("update person_profiles set member_tag='my_private_tag' where person_id=$1", [ids.person]);
     let circle = await repository.getMemberCircle(ids.auth);
     assert.equal(circle.members[0].id, "member:1");
+    assert.equal(circle.members[0].memberTag, "my_private_tag", "the owner can see their own tag while their directory profile is hidden");
     assert.equal(circle.shaper.id, "shaper:1");
     assert.equal(circle.members.some((member) => member.id === circle.shaper.id), false);
-    for (const field of ["avatarUrl", "bio", "location", "buildingNow", "email", "phone"]) assert.equal(circle.shaper[field], null, field);
+    for (const field of ["avatarUrl", "bio", "location", "buildingNow", "email", "phone", "memberTag"]) assert.equal(circle.shaper[field], null, field);
     await pg.query("update member_directory_preferences set directory_status='circle_visible',avatar_visible=true,bio_visible=true,email_scope='circle',phone_scope='circle' where member_id=$1", [ids.shaperMember]);
     circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.shaper.memberTag, "circle_shaper");
     assert.equal(circle.shaper.email, "shaper@example.test");
     assert.equal(circle.shaper.phone, "+12025550123");
     assert.equal(circle.shaper.bio, "Private by choice");
@@ -192,7 +200,9 @@ test("Circle Shaper IDs cannot collide with member IDs and optional fields requi
     assert.equal(circle.shaper.location, null);
     assert.equal(circle.shaper.buildingNow, null);
     await pg.query("update circle_staff_assignments set circle_id=$1", [ids.otherCircle]);
-    assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
+    circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.shaper, null);
+    assert.doesNotMatch(JSON.stringify(circle), /circle_shaper/, "a shared tag stays scoped to the member's Circle");
     await pg.query("update circle_staff_assignments set circle_id=$1", [ids.circle]);
     await pg.exec("update platform_role_grants set revoked_at=now()");
     assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
@@ -331,7 +341,7 @@ test("profile text and public choices commit together; stale sharing and profile
     const initialProfile = await repository.getMemberProfile(ids.auth);
     const initialCard = await cardRepository.getOwnMemberCard(ids.auth);
     const input = {
-      revision: initialProfile.revision, displayName: "N".repeat(120), preferredName: "Preferred", timezone: "America/Denver", location: "L".repeat(160),
+      revision: initialProfile.revision, displayName: "N".repeat(120), memberTag: "preferred", timezone: "America/Denver", location: "L".repeat(160),
       bio: "B".repeat(1200), buildingNow: "W".repeat(500), websiteUrl: "https://example.test/", accessibilityNotes: "PRIVATE NOTES",
       directory: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" },
       card: { ...initialCard.settings, publicEnabled: true, showBio: true, showBuilding: true, showWebsite: true, version: initialCard.version },
@@ -351,5 +361,84 @@ test("profile text and public choices commit together; stale sharing and profile
     assert.equal(latest.directory.bio, "NEW PRIVATE BIO"); assert.equal(latest.privateProfile.accessibilityNotes, "PRIVATE NOTES");
     assert.equal(latest.revision, hidden.revision); assert.equal(await cardRepository.getPublicMemberCard(token), null);
     assert.equal((await pg.query("select count(*)::int as count from member_directory_preference_events")).rows[0].count, 2);
+  } finally { await pg.close(); }
+});
+
+function tagProfileInput(snapshot, changes = {}) {
+  return { revision: snapshot.revision, displayName: snapshot.directory.displayName, memberTag: snapshot.directory.memberTag ?? "",
+    websiteUrl: "", timezone: "America/Denver", location: "Utah", bio: "Original bio", buildingNow: "Original work", accessibilityNotes: "Private note",
+    directory: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" }, ...changes };
+}
+
+test("legacy profiles can remain untagged; claiming a canonical tag preserves names and cannot be silently cleared", async () => {
+  const { pg, identity, repository } = await fixture();
+  try {
+    const initial = await repository.getMemberProfile(ids.auth);
+    assert.equal(initial.directory.memberTag, null);
+    const legacy = await repository.saveMemberProfile(ids.auth, tagProfileInput(initial));
+    assert.equal(legacy.directory.memberTag, null);
+    assert.equal(legacy.directory.preferredName, "One");
+    assert.equal(legacy.access.mode, "onboarding");
+    assert.equal(identity.administrative_onboarding_state, "completed");
+    const claimed = await repository.saveMemberProfile(ids.auth, tagProfileInput(legacy, { memberTag: " @Member_One " }));
+    assert.equal(claimed.directory.memberTag, "member_one");
+    assert.equal(claimed.directory.displayName, "Member One");
+    assert.equal(claimed.directory.preferredName, "One");
+    await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(claimed, { memberTag: "", bio: "Should not persist" })), repository.MembershipInputError);
+    assert.equal((await repository.getMemberProfile(ids.auth)).revision, claimed.revision);
+    for (const memberTag of ["ab", "tag with space", "@", "x".repeat(25)]) {
+      await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(claimed, { memberTag })), repository.MembershipInputError);
+    }
+  } finally { await pg.close(); }
+});
+
+test("tag duplicate, stale revision and sharing conflict roll back the complete profile save", async () => {
+  const { pg, repository, cardRepository } = await fixture();
+  try {
+    const saved = await repository.saveMemberProfile(ids.auth, tagProfileInput(await repository.getMemberProfile(ids.auth), { memberTag: "member_one" }));
+    await pg.query("update person_profiles set member_tag='already_taken' where person_id=$1", [ids.shaperPerson]);
+    await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(saved, { memberTag: "@Already_Taken", displayName: "Should roll back", accessibilityNotes: "Never persist" })),
+      error => error instanceof repository.MembershipConflictError && error.code === "member_tag_unavailable");
+    assert.equal((await repository.getMemberProfile(ids.auth)).revision, saved.revision);
+    await pg.query("update person_profiles set member_tag='updated_elsewhere' where person_id=$1", [ids.person]);
+    const refreshed = await repository.getMemberProfile(ids.auth);
+    assert.notEqual(refreshed.revision, saved.revision, "tag alone contributes to the profile revision");
+    await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(saved)), error => error instanceof repository.MembershipConflictError && !error.code);
+    const card = await cardRepository.getOwnMemberCard(ids.auth);
+    await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(refreshed, { memberTag: "rollback_tag", bio: "Never persist", accessibilityNotes: "Never persist",
+      card: { ...card.settings, publicEnabled: true, version: card.version + 1 } })), { status: 409 });
+    assert.equal((await repository.getMemberProfile(ids.auth)).revision, refreshed.revision);
+    assert.equal((await pg.query("select count(*)::int as count from person_profiles where member_tag='rollback_tag'")).rows[0].count, 0);
+    assert.equal((await pg.query("select count(*)::int as count from member_directory_preference_events")).rows[0].count, 1);
+  } finally { await pg.close(); }
+});
+
+test("generated display names follow renamed tags while an explicitly edited name wins", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    await pg.query("update person_profiles set member_tag='old_tag',display_name='@old_tag' where person_id=$1", [ids.person]);
+    const initial = await repository.getMemberProfile(ids.auth);
+    const renamed = await repository.saveMemberProfile(ids.auth, tagProfileInput(initial, { memberTag: "new_tag" }));
+    assert.equal(renamed.directory.displayName, "@new_tag");
+    const custom = await repository.saveMemberProfile(ids.auth, tagProfileInput(renamed, { memberTag: "another_tag", displayName: "An authored name" }));
+    assert.equal(custom.directory.displayName, "An authored name");
+    const unchanged = await repository.saveMemberProfile(ids.auth, tagProfileInput(custom, { memberTag: "last_tag" }));
+    assert.equal(unchanged.directory.displayName, "An authored name");
+  } finally { await pg.close(); }
+});
+
+test("new profile creation requires a tag and legacy names never become public legal names", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    await pg.query("delete from person_profiles where person_id=$1", [ids.person]);
+    const empty = await repository.getMemberProfile(ids.auth);
+    await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(empty)), repository.MembershipInputError);
+    assert.equal((await pg.query("select count(*)::int as count from person_profiles where person_id=$1", [ids.person])).rows[0].count, 0);
+    await pg.query("insert into person_profiles(person_id) values($1)", [ids.person]);
+    await assert.rejects(repository.saveMemberProfile(ids.auth, tagProfileInput(await repository.getMemberProfile(ids.auth))), repository.MembershipInputError);
+    const created = await repository.saveMemberProfile(ids.auth, tagProfileInput(empty, { memberTag: "new_member", displayName: "Chosen public name" }));
+    assert.equal(created.directory.memberTag, "new_member");
+    assert.equal(created.directory.preferredName, null);
+    assert.equal(created.directory.displayName, "Chosen public name");
   } finally { await pg.close(); }
 });

@@ -13,7 +13,7 @@ test("member profile preserves the supplied Polaroid frame byte for byte", async
   );
 });
 
-test("member home repository separates preferred greeting data and suppresses private arrays", () => {
+test("member home repository uses the editable display name and suppresses private arrays", () => {
   const loader = section(
     repository,
     "export async function getMemberHome",
@@ -22,7 +22,8 @@ test("member home repository separates preferred greeting data and suppresses pr
   assert.match(loader, /membership_activated_at as member_since/);
   assert.match(loader, /from ruined_members/);
   assert.doesNotMatch(loader, /coalesce\(membership_activated_at, created_at\)/);
-  assert.match(loader, /profile\.directory\.preferredName\?\.trim\(\) \|\| profile\.directory\.displayName/);
+  assert.doesNotMatch(loader, /displayName: profile\.directory\.preferredName/);
+  assert.match(loader, /memberTag: profile\.directory\.memberTag/);
   assert.match(loader, /displayName: profile\.directory\.displayName/);
   assert.match(loader, /fullName: profile\.privateProfile\.legalName/);
   assert.match(loader, /visibleArtifacts = suppressPrivateHighlights \? \[\] : artifacts\.awards/);

@@ -45,6 +45,7 @@ export default function CirclePersonProfile({
           <h1 className="ui-heading mt-2 break-words text-[clamp(2.7rem,7vw,6.8rem)] font-black uppercase leading-[0.8] tracking-[-0.06em] text-[#15120f]">
             {person.displayName}
           </h1>
+          {person.memberTag && person.displayName !== `@${person.memberTag}` ? <p className="mt-3 break-all font-[var(--font-body)] text-sm text-[var(--member-muted)]">@{person.memberTag}</p> : null}
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 font-[var(--font-body)] text-[0.68rem] font-bold uppercase tracking-[0.035em] text-[var(--member-muted)]">
             <span>{circleName}</span>
             {person.location ? <span>{person.location}</span> : null}
