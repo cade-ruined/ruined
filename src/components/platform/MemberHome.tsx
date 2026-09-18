@@ -48,7 +48,7 @@ export default function MemberHome({member,preview=false,timeline}:{member:Membe
   const next=member.nextAction;const needsAttention=["onboarding","billing","account","foundations"].includes(next.kind);
   return <main className={styles.profile} data-member-profile>
     <header className={styles.identity}>
-      <figure className={styles.polaroid} aria-label={member.avatarUrl?"Member portrait":"Portrait not added"} data-member-polaroid><div className={styles.photo}><Image src={member.avatarUrl??"/membership/portrait-pending-editorial.webp"} alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/></div><Image className={styles.frame} src="/membership/polaroid-frame.png" alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/><figcaption>{member.avatarUrl?"This is you":"Photo pending"}</figcaption></figure>
+      <figure className={styles.polaroid} aria-label={member.avatarUrl?"Member portrait":"Portrait not added"} data-member-polaroid><div className={styles.photo}><Image src={member.avatarUrl??"/membership/portrait-pending-editorial.webp"} alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/></div><Image className={styles.frame} src="/membership/polaroid-frame.png" alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/><figcaption>{member.avatarUrl?"the ruined project":"Photo pending"}</figcaption></figure>
       <div className={styles.nameBlock}>
         <h1 aria-label={profileName}><span className={styles.firstName}>{firstName}</span>{surname?<span className={styles.surname}>{surname}</span>:null}</h1>
         {tag?<p className={styles.memberTag}>{tag}</p>:null}
