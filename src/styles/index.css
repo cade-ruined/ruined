@@ -61,9 +61,19 @@ html {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  html.ruined-brand-cursor-active,
-  html.ruined-brand-cursor-active :where(body, body *) {
+  html.ruined-brand-cursor-active:where(:not(:has(dialog:modal))),
+  html.ruined-brand-cursor-active:where(:not(:has(dialog:modal))) :where(body, body *) {
     cursor: none !important;
+  }
+
+  /* Native modals paint above every document z-index, including the leaf.
+     Restore native cursors for the whole modal session, including its backdrop. */
+  html:has(dialog:modal) .ruined-brand-cursor {
+    display: none;
+  }
+
+  dialog:modal::backdrop {
+    cursor: auto;
   }
 
   html.ruined-brand-cursor-active :where(

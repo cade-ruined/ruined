@@ -1168,19 +1168,21 @@ test("the botanical mark owns the favicon and fine-pointer cursor", async () => 
   }
 });
 
-test("fine-pointer form fields retain native cursors", async () => {
+test("fine-pointer form fields and native modal sessions retain native cursors", async () => {
   const [cursor, siteStyles] = await Promise.all([
     fs.readFile(path.join(root, "src", "components", "BrandCursor.tsx"), "utf8"),
     fs.readFile(path.join(root, "src", "styles", "index.css"), "utf8"),
   ]);
 
   const hiddenCursorRule = siteStyles.match(
-    /html\.ruined-brand-cursor-active,\s*html\.ruined-brand-cursor-active\s+:where\(\s*body,\s*body\s+\*\s*\)\s*\{[^}]*cursor:\s*none\s*!important;[^}]*\}/s
+    /html\.ruined-brand-cursor-active:where\(:not\(:has\(dialog:modal\)\)\),\s*html\.ruined-brand-cursor-active:where\(:not\(:has\(dialog:modal\)\)\)\s+:where\(\s*body,\s*body\s+\*\s*\)\s*\{[^}]*cursor:\s*none\s*!important;[^}]*\}/s
   );
   assert.ok(
     hiddenCursorRule,
-    "the global cursor-hiding selector must keep descendant specificity low enough for native exceptions"
+    "cursor hiding must stop during native modal sessions and keep specificity low enough for native exceptions"
   );
+  assert.match(siteStyles, /html:has\(dialog:modal\)\s+\.ruined-brand-cursor\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(siteStyles, /dialog:modal::backdrop\s*\{\s*cursor:\s*auto;\s*\}/);
 
   const nativeCursorRule = siteStyles.match(
     /html\.ruined-brand-cursor-active\s+:where\(\s*([\s\S]*?)\s*\)\s*\{\s*cursor:\s*(?:auto|text|revert)\s*!important;\s*\}/

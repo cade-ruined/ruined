@@ -104,6 +104,7 @@ export default function BrandCursor() {
     window.addEventListener("scroll", refreshTarget, { passive: true });
     window.addEventListener("ruined:home-scene-change", refreshTarget);
     window.addEventListener("blur", hide);
+    document.addEventListener("close", refreshTarget, true);
     document.addEventListener("transitionend", refreshTarget, true);
     document.documentElement.addEventListener("pointerleave", hide);
 
@@ -118,6 +119,7 @@ export default function BrandCursor() {
       window.removeEventListener("scroll", refreshTarget);
       window.removeEventListener("ruined:home-scene-change", refreshTarget);
       window.removeEventListener("blur", hide);
+      document.removeEventListener("close", refreshTarget, true);
       document.removeEventListener("transitionend", refreshTarget, true);
       document.documentElement.removeEventListener("pointerleave", hide);
     };
