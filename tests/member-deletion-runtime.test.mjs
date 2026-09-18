@@ -9,7 +9,7 @@ const migrations = await Promise.all([...runner.matchAll(/"\.\.\/(db\/migrations
 const id = number => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const admin = id(1), member = id(2), auth = id(3), portrait = id(4), other = id(5);
 
-async function fixture(t) {
+async function fixture(t, accountState = "closed") {
   // The complete shipped schema runs only in memory, never on DATABASE_URL.
   const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite();
   t.after(() => db.close());
@@ -19,8 +19,9 @@ async function fixture(t) {
   await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [admin]);
   await db.query("insert into ruined_members(id,email,email_normalized) values($1,'member@example.test','member@example.test')", [member]);
   const person = (await db.query("select person_id from ruined_members where id=$1", [member])).rows[0].person_id;
-  await db.query("insert into member_lifecycle(member_id,account_state) values($1,'closed')", [member]);
-  await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,'member@example.test','disabled')", [auth,member,person]);
+  await db.query("insert into member_lifecycle(member_id,account_state) values($1,$2)", [member,accountState]);
+  const identityStatus = accountState === "active" ? "active" : accountState === "suspended" ? "suspended" : accountState === "closed" ? "disabled" : "invited";
+  await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,'member@example.test',$4)", [auth,member,person,identityStatus]);
   await db.query("insert into person_profiles(person_id,display_name,member_tag,bio,avatar_storage_path) values($1,'Former Member','former_member','Private biography',$2) on conflict(person_id) do update set display_name=excluded.display_name,member_tag=excluded.member_tag,bio=excluded.bio,avatar_storage_path=excluded.avatar_storage_path", [person,`/api/member-photos/${member}/${portrait}.webp`]);
   await db.query("insert into person_private_profiles(person_id,legal_name,birth_date) values($1,'Private Legal Name','1990-01-01')", [person]);
   const eligibility = async (actor = admin) => (await db.query("select private.ruined_member_deletion_eligibility($1,$2) as result", [actor,member])).rows[0].result;
@@ -28,8 +29,8 @@ async function fixture(t) {
   return { db,person,eligibility,remove };
 }
 
-test("administrator authorization, closed state, confirmation, version and reason are enforced without mutation", async t => {
-  const { db,eligibility,remove } = await fixture(t);
+test("administrator authorization, confirmation, version and reason remain mandatory and failure does not close an active account", async t => {
+  const { db,eligibility,remove } = await fixture(t,"active");
   const before = (await db.query("select to_jsonb(m) as row from ruined_members m where id=$1", [member])).rows;
   assert.equal((await eligibility()).allowed,true);
   await assert.rejects(eligibility(auth), error => error.code === "PT403");
@@ -39,9 +40,33 @@ test("administrator authorization, closed state, confirmation, version and reaso
   }
   assert.deepEqual((await db.query("select to_jsonb(m) as row from ruined_members m where id=$1", [member])).rows,before);
   assert.equal((await db.query("select count(*)::int n from private.member_deletion_jobs")).rows[0].n,0);
-  await db.query("update member_lifecycle set account_state='provisional' where member_id=$1", [member]);
-  assert.ok((await eligibility()).blockers.includes("account_not_closed"));
-  await assert.rejects(remove(), error => error.code === "PT409");
+  assert.equal((await db.query("select account_state from member_lifecycle where member_id=$1",[member])).rows[0].account_state,"active");
+  assert.equal((await db.query("select count(*)::int n from member_state_history")).rows[0].n,0);
+  await db.query("update platform_role_grants set revoked_at=statement_timestamp(),revoke_reason='Revoked during review' where auth_user_id=$1 and role_slug='ops_admin'",[admin]);
+  await assert.rejects(remove(),error=>error.code==="PT403");
+  assert.equal((await db.query("select account_state from member_lifecycle where member_id=$1",[member])).rows[0].account_state,"active");
+});
+
+test("Delete closes every account state atomically, records a real transition once and excludes the historical member from current counts",async t=>{
+  for(const state of ["active","provisional","suspended","invited","closed"]){
+    await t.test(state,async context=>{
+      const {db,person,eligibility,remove}=await fixture(context,state);
+      await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')",[auth]);
+      assert.equal((await eligibility()).allowed,true);
+      const result=await remove();
+      assert.equal(result.deleted,true);
+      const lifecycle=(await db.query("select account_state,standing_state,program_state,version from member_lifecycle where member_id=$1",[member])).rows[0];
+      assert.deepEqual(lifecycle,{account_state:"closed",standing_state:"inactive",program_state:"withdrawn",version:2});
+      const history=(await db.query("select previous_state,next_state,source,actor_auth_user_id,reason_code,metadata from member_state_history where member_id=$1 and dimension='account'",[member])).rows;
+      assert.deepEqual(history,state === "closed" ? [] : [{previous_state:state,next_state:"closed",source:"ops",actor_auth_user_id:admin,reason_code:"member_account_deleted",metadata:{cleanupId:result.cleanupId,reason:"account_removal"}}]);
+      assert.equal((await db.query("select count(*)::int n from ruined_members where deleted_at is null")).rows[0].n,0);
+      assert.equal((await db.query("select count(*)::int n from private.member_deletion_records where member_id=$1",[member])).rows[0].n,1);
+      assert.equal((await db.query("select count(*)::int n from person_profiles where person_id=$1",[person])).rows[0].n,0);
+      assert.equal((await db.query("select count(*)::int n from platform_role_grants where auth_user_id=$1 and revoked_at is null",[auth])).rows[0].n,0);
+      assert.deepEqual(await remove(),result);
+      assert.equal((await db.query("select count(*)::int n from member_state_history where member_id=$1 and dimension='account'",[member])).rows[0].n,state === "closed" ? 0 : 1);
+    });
+  }
 });
 
 test("removal erases live profiles and authored content, preserves original history and creates one historical record and cleanup job", async t => {
@@ -97,10 +122,12 @@ test("numbered former members and terminal live financial history are retained r
 });
 
 test("open billing, staff history, self deletion, shared identity and pending workflows block account removal", async t => {
-  const {db,person,eligibility,remove}=await fixture(t);
+  const {db,person,eligibility,remove}=await fixture(t,"active");
   await db.query("insert into stripe_subscriptions(id,member_id,stripe_customer_id,stripe_status,last_event_created) values('sub_test',$1,'cus_test','active',1)",[member]);
   assert.ok((await eligibility()).blockers.includes("stripe_not_terminal"));
   await assert.rejects(remove(), error=>error.code==="PT409");
+  assert.equal((await db.query("select account_state from member_lifecycle where member_id=$1",[member])).rows[0].account_state,"active");
+  assert.equal((await db.query("select count(*)::int n from member_state_history")).rows[0].n,0);
   await db.exec("update stripe_subscriptions set stripe_status='canceled'");
   await db.query("insert into platform_role_grants(auth_user_id,role_slug,revoked_at) values($1,'guide',statement_timestamp())",[auth]);
   assert.ok((await eligibility()).blockers.includes("operator_identity"));
@@ -118,7 +145,7 @@ test("open billing, staff history, self deletion, shared identity and pending wo
 });
 
 test("rollback leaves account, history and provider queue unchanged and scoped erasure never permits unrelated audit mutation", async t=>{
-  const {db,person,remove}=await fixture(t);
+  const {db,person,remove}=await fixture(t,"active");
   await db.query("insert into member_timeline_entries(member_id,entry_year,title) values($1,2020,'Personal event')",[member]);
   await assert.rejects(db.exec("delete from member_timeline_entry_versions"),/append-only/);
   await db.exec("select set_config('ruined.member_deletion_token','00000000-0000-4000-8000-000000000999',false)");
@@ -128,6 +155,8 @@ test("rollback leaves account, history and provider queue unchanged and scoped e
   assert.equal((await db.query("select display_name from person_profiles where person_id=$1",[person])).rows[0].display_name,"Former Member");
   assert.equal((await db.query("select count(*)::int n from private.member_deletion_jobs")).rows[0].n,0);
   assert.equal((await db.query("select count(*)::int n from member_timeline_entry_versions")).rows[0].n,1);
+  assert.equal((await db.query("select account_state from member_lifecycle where member_id=$1",[member])).rows[0].account_state,"active");
+  assert.equal((await db.query("select count(*)::int n from member_state_history")).rows[0].n,0);
   await remove();
   await assert.rejects(db.exec("delete from operator_audit_events"),/append-only/);
   await assert.rejects(db.exec("update operator_audit_events set reason='rewrite'"),/append-only/);
@@ -154,8 +183,8 @@ test("Foundation response erasure retains submission identity, progress and revi
   await assert.rejects(db.exec("delete from foundation_submissions"),/append-only/);
 });
 
-test("unknown restrictive content linkage fails closed and rolls back the receipt, markers and profile erasure",async t=>{
-  const {db,person,remove}=await fixture(t);
+test("unknown restrictive content linkage fails closed and rolls back closure, history, receipt, markers and profile erasure",async t=>{
+  const {db,person,remove}=await fixture(t,"suspended");
   await db.exec("create table future_profile_dependency(person_id uuid primary key references person_profiles(person_id) on delete restrict)");
   await db.query("insert into future_profile_dependency values($1)",[person]);
   await assert.rejects(remove(),error=>error.code==="PT409");
@@ -163,6 +192,8 @@ test("unknown restrictive content linkage fails closed and rolls back the receip
   assert.equal((await db.query("select count(*)::int n from private.member_deletion_records")).rows[0].n,0);
   assert.equal((await db.query("select count(*)::int n from private.member_deletion_jobs")).rows[0].n,0);
   assert.equal((await db.query("select display_name from person_profiles where person_id=$1",[person])).rows[0].display_name,"Former Member");
+  assert.deepEqual((await db.query("select account_state,version from member_lifecycle where member_id=$1",[member])).rows[0],{account_state:"suspended",version:1});
+  assert.equal((await db.query("select count(*)::int n from member_state_history")).rows[0].n,0);
 });
 
 test("deleted accounts cannot reopen, regain role grants or receive late profile and content writes; billing history can still update",async t=>{

@@ -27,7 +27,7 @@ function requireIds(actorId: string, memberId: string) {
 }
 
 const BLOCKERS: Record<string, string> = {
-  account_not_closed: "Close this member’s account under Record a state correction before deleting it.",
+  lifecycle_missing: "This member’s account state needs review before it can be deleted.",
   self_deletion: "You cannot delete your own member account.",
   operator_identity: "Operator accounts and their access history cannot be deleted here.",
   shared_identity: "This person’s identity is shared with other records and cannot be deleted here.",

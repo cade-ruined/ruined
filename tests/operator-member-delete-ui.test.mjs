@@ -155,6 +155,8 @@ test("eligibility is requested only on open, and preview never makes a request",
   assert.equal(requests[0].cache, "no-store");
   assert.equal(requests[0].method, undefined);
   assert.match(text(f.draw()), /does not cancel billing/);
+  assert.match(text(f.draw()), /This closes the account and removes sign-in access/);
+  assert.doesNotMatch(text(f.draw()), /eligible closed accounts/);
   assert.match(text(f.draw()), /Membership, financial and audit history are retained/);
   assert.doesNotMatch(text(f.draw()), /test or duplicate accounts only/);
   const preview = fixture({ preview: true });
@@ -210,7 +212,7 @@ test("editing confirmation invalidates even a previously captured final action",
   assert.equal(requests.length, 1);
 });
 
-test("ordinary closed-account removals and member requests have explicit reviewed reasons", async (t) => {
+test("ordinary account removals and member requests have explicit reviewed reasons", async (t) => {
   const requests = requestsFor(t, request => request.method === "DELETE" ? Response.json({ deleted: true }) : Response.json({ deletion: eligible() }));
   for (const [reason, label] of [["account_removal", "Account removal"], ["member_request", "Member request"]]) {
     const f = fixture();

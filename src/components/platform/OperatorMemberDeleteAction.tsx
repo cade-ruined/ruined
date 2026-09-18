@@ -228,7 +228,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="ui-heading text-base font-semibold">Delete member</h3>
-          <p className="mt-1 text-sm leading-relaxed text-black/60">For eligible closed accounts. The historical membership record stays.</p>
+          <p className="mt-1 text-sm leading-relaxed text-black/60">Closes and deletes the account. The historical membership record stays.</p>
         </div>
         <button aria-controls={panelId} aria-expanded={open} className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy) || deleted || open} onClick={openConfirmation} ref={trigger} type="button">Delete member</button>
       </div>
@@ -236,7 +236,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
         <div className="grid gap-4 border-t border-black/15 pt-4" id={panelId}>
           <div>
             <h4 className="ui-heading text-base font-semibold">Permanently delete member</h4>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/68">This removes sign-in access, the private profile, card, invitation, journal and uploads. It cannot be undone. Deletion does not cancel billing. Membership, financial and audit history are retained; this person will no longer appear in current member counts.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/68">This closes the account and removes sign-in access, the private profile, card, invitation, journal and uploads. It cannot be undone. Deletion does not cancel billing. Membership, financial and audit history are retained; this person will no longer appear in current member counts.</p>
           </div>
           {busy === "checking" ? <p role="status" className="text-sm text-black/60">Checking eligibility…</p> : null}
           {eligibility && !allowed ? (
@@ -263,7 +263,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
               </div>
               {review ? (
                 <div aria-label="Review member deletion" className="grid gap-3 rounded-[4px] border border-[var(--color-poster)]/35 bg-black/[0.025] p-4">
-                  <p className="break-words text-sm leading-relaxed">Permanently delete <strong>{eligibility.memberName}</strong>’s account ({review.email})? Reason: {REASONS[review.reason]}. The historical membership record stays. Account deletion cannot be undone.</p>
+                  <p className="break-words text-sm leading-relaxed">Close and permanently delete <strong>{eligibility.memberName}</strong>’s account ({review.email})? Reason: {REASONS[review.reason]}. The historical membership record stays. Account deletion cannot be undone.</p>
                   <div className="flex flex-wrap gap-2">
                     <button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy)} onClick={deleteMember} type="button">{busy === "deleting" ? "Deleting member…" : "Permanently delete member"}</button>
                     <button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy)} onClick={clearReview} type="button">Go back</button>
