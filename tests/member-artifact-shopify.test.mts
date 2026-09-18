@@ -149,7 +149,7 @@ test("membership keeps Shopify authoritative and previews The First Coin without
   assert.match(preview, /description: "A hand-forged artifact\."/);
   assert.match(preview, /product: null/);
   assert.match(preview, /PREVIEW_MEMBER_ARTIFACTS:[\s\S]*awards: \[previewArtifact\]/);
-  assert.match(homePage, /resolveMemberHomeArtifactProducts\(context\.data, await getProducts\(\)\)/);
+  assert.match(homePage, /resolveMemberHomeArtifactProducts\(/);
   assert.match(artifactsPage, /resolveMemberArtifactProducts\(context\.data, await getProducts\(\)\)/);
   assert.match(archive, /artifact\.product\?\.href/);
   assert.match(archive, /artifact\.imageUrl/);

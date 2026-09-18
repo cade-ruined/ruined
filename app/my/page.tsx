@@ -27,7 +27,11 @@ export default async function MyRuinedPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
 
-  const member = resolveMemberHomeArtifactProducts(context.data, await getProducts());
+  // Product imagery is optional; profiles without a linked Artifact need no shop request.
+  const hasArtifactProducts = Boolean(context.data.artifact?.product)
+    || context.data.artifacts.some((artifact) => Boolean(artifact.product));
+  const products = hasArtifactProducts ? await getProducts() : [];
+  const member = resolveMemberHomeArtifactProducts(context.data, products);
   let timeline = context.state === "preview" ? PREVIEW_MEMBER_TIMELINE : null;
   if (context.viewer && (memberCan(member.access, "foundations.write") || memberCan(member.access, "foundations.revisit"))) {
     try { timeline = await getMemberTimeline(context.viewer.authUserId); }

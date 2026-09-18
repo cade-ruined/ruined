@@ -305,7 +305,7 @@ export async function getProducts(): Promise<Product[]> {
   try {
     const { data, errors } = await client.request<SFProductsResponse>(
       PRODUCTS_QUERY,
-      { variables: { first: 50 } }
+      { variables: { first: 50 }, signal: AbortSignal.timeout(8000) }
     );
     const nodes = data?.products?.nodes;
     if (errors || !nodes?.length) return [];
