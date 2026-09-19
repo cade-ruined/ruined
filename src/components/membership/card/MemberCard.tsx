@@ -5,7 +5,7 @@
 import dynamic from "next/dynamic";
 import { Component, useCallback, useEffect, useId, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { publicMemberCardIdentity, type PublicMemberCard } from "@/lib/membership/public-card-model";
-import { createCardArtwork, downloadCardArtwork, type CardArtwork, type CardVariant } from "./card-artwork";
+import { cardArtworkFontRequests, createCardArtwork, downloadCardArtwork, type CardArtwork, type CardVariant } from "./card-artwork";
 import type { CardPose } from "./MemberCardScene";
 import type { ArchiveShadow } from "./archive-lighting";
 import AmbientParticles from "./AmbientParticles";
@@ -42,7 +42,7 @@ export default function MemberCard({ card, compact = false, archive = false, var
       if (cancelled) return;
       setArtworkResult({ card, variant, artwork: value });
       const fonts = document.fonts;
-      const hasFonts = () => fonts.check('400 72px "IvyOra Text"') && fonts.check('500 20px "Inter Variable"');
+      const hasFonts = () => cardArtworkFontRequests(variant).every(font => fonts.check(font));
       if (fonts && !hasFonts()) {
         await fonts.ready;
         if (cancelled || !hasFonts()) return;
@@ -138,7 +138,7 @@ export default function MemberCard({ card, compact = false, archive = false, var
     </div>
     <p className={styles.status} role="status">{status}</p>
     <details className={styles.details}><summary>{variant === "invitation" ? "Read invitation" : "Read card details"}<span aria-hidden="true">+</span></summary><div>
-      <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${publicMemberCardIdentity(card)}` : card.name}</p>{variant === "invitation" ? <p>A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining.</p> : null}
+      <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${publicMemberCardIdentity(card)}` : card.name}</p>{variant === "invitation" ? <><p>This is for you. You’re allowed to become someone new.</p><p>A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining.</p></> : null}
       <dl>{card.memberTag ? <div><dt>Member tag</dt><dd>@{card.memberTag}</dd></div> : null}{card.memberSince ? <div><dt>Member since</dt><dd>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince))}</dd></div> : null}{card.location ? <div><dt>Based in</dt><dd>{card.location}</dd></div> : null}{card.buildingNow ? <div><dt>Currently building</dt><dd>{card.buildingNow}</dd></div> : null}{card.bio ? <div><dt>About</dt><dd>{card.bio}</dd></div> : null}{card.labels.length ? <div><dt>Along the way</dt><dd>{card.labels.join(" · ")}</dd></div> : null}</dl>
       {card.websiteUrl ? <a href={card.websiteUrl} target="_blank" rel="noopener noreferrer">Visit website ↗</a> : null}
     </div></details>

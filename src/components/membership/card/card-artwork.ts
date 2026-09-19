@@ -51,10 +51,10 @@ function printText(ctx: CanvasRenderingContext2D, layout: CardTextLayout, x: num
   layout.lines.forEach((line, index) => ctx.fillText(line, x, y + layout.lineHeight * index)); ctx.restore();
 }
 
-function cover(ctx: CanvasRenderingContext2D, photo: HTMLImageElement, x: number, y: number, width: number, height: number) {
+function cover(ctx: CanvasRenderingContext2D, photo: HTMLImageElement, x: number, y: number, width: number, height: number, positionY = .4) {
   const scale = Math.max(width / photo.naturalWidth, height / photo.naturalHeight);
   const sw = width / scale, sh = height / scale;
-  ctx.drawImage(photo, (photo.naturalWidth - sw) / 2, (photo.naturalHeight - sh) * .4, sw, sh, x, y, width, height);
+  ctx.drawImage(photo, (photo.naturalWidth - sw) / 2, (photo.naturalHeight - sh) * positionY, sw, sh, x, y, width, height);
 }
 
 function inkBase(ctx: CanvasRenderingContext2D, photo: HTMLImageElement | null) {
@@ -74,16 +74,19 @@ function mark(ctx: CanvasRenderingContext2D, image: HTMLImageElement | null, x: 
 }
 
 type CardMaterial = { wear: HTMLCanvasElement; roughness: HTMLCanvasElement; bump: HTMLCanvasElement };
+type FoilPosition = { x: number; y: number; width: number; height: number };
 const foilPosition = { x: 779, y: 1106, width: 224 * 283.956 / 400, height: 224 } as const;
-type FoilStamp = { print: HTMLCanvasElement; mask: HTMLCanvasElement; roughness: HTMLCanvasElement; bump: HTMLCanvasElement };
-const foilCache = new WeakMap<HTMLImageElement, FoilStamp>();
+const invitationFrontFoil = { x: 766, y: 1106, width: 240 * 283.956 / 400, height: 240 } as const;
+const invitationBackFoil = { x: 327, y: 454, width: 500 * 283.956 / 400, height: 500 } as const;
+type FoilStamp = { print: HTMLCanvasElement; mask: HTMLCanvasElement; roughness: HTMLCanvasElement; bump: HTMLCanvasElement; position: FoilPosition };
+const foilCache = new WeakMap<HTMLImageElement, Map<FoilPosition, FoilStamp>>();
 const stampedMaterials = new WeakSet<HTMLCanvasElement>();
 
 /** A single supplied leaf silhouette; no badge outline or substitute geometry. */
-function authenticityFoil(leaf: HTMLImageElement | null): FoilStamp {
-  const cached = leaf ? foilCache.get(leaf) : null;
+function authenticityFoil(leaf: HTMLImageElement | null, position: FoilPosition = foilPosition): FoilStamp {
+  const cached = leaf ? foilCache.get(leaf)?.get(position) : null;
   if (cached) return cached;
-  const { x, y, width, height } = foilPosition;
+  const { x, y, width, height } = position;
   const shape = canvas(Math.ceil(width), height), s = shape.getContext("2d")!;
   mark(s, leaf, 0, 0, width, height, "#ffffff");
   const print = canvas(shape.width, height), p = print.getContext("2d")!;
@@ -100,16 +103,19 @@ function authenticityFoil(leaf: HTMLImageElement | null): FoilStamp {
     context.fillStyle = `rgb(${value},${value},${value})`; context.fillRect(0, 0, patch.width, patch.height);
     return patch;
   });
-  const result = { print, mask, roughness: patches[0], bump: patches[1] };
-  if (leaf) foilCache.set(leaf, result);
+  const result = { print, mask, roughness: patches[0], bump: patches[1], position };
+  if (leaf) {
+    const stamps = foilCache.get(leaf) ?? new Map<FoilPosition, FoilStamp>();
+    stamps.set(position, result); foilCache.set(leaf, stamps);
+  }
   return result;
 }
 
 function stampMaterial(material: CardMaterial, foil: FoilStamp) {
   if (stampedMaterials.has(material.roughness)) return;
   // Smooth foil only inside the exact leaf; preserve the worn paper everywhere else.
-  material.roughness.getContext("2d")!.drawImage(foil.roughness, foilPosition.x, foilPosition.y);
-  material.bump.getContext("2d")!.drawImage(foil.bump, foilPosition.x, foilPosition.y);
+  material.roughness.getContext("2d")!.drawImage(foil.roughness, foil.position.x, foil.position.y);
+  material.bump.getContext("2d")!.drawImage(foil.bump, foil.position.x, foil.position.y);
   stampedMaterials.add(material.roughness);
 }
 
@@ -156,7 +162,7 @@ function paperFibers(image: HTMLImageElement | null) {
   return detail;
 }
 
-function stockMaterial(seed: string, dark: boolean, fibers: Float32Array): CardMaterial {
+function stockMaterial(seed: string, dark: boolean, fibers: Float32Array, edgeWear = 0): CardMaterial {
   const w = CARD_WIDTH, h = CARD_HEIGHT, wear = canvas(), roughness = canvas(), bump = canvas();
   const a = wear.getContext("2d")!, r = roughness.getContext("2d")!, b = bump.getContext("2d")!;
   const surface = a.createImageData(w, h), finish = r.createImageData(w, h), height = b.createImageData(w, h);
@@ -172,7 +178,7 @@ function stockMaterial(seed: string, dark: boolean, fibers: Float32Array): CardM
     const cornerIndex = (x > w / 2 ? 1 : 0) + (y > h / 2 ? 2 : 0);
     const corner = Math.exp(-Math.hypot(Math.min(x, w - x), Math.min(y, h - y)) / 112) * corners[cornerIndex];
     const oxidation = Math.exp(-Math.max(edge, 0) / 19) * (.24 + region * .76);
-    const wornDepth = region * 1.2 + corner * (4 + region * 17) + Math.pow(fleck, 8) * 5;
+    const wornDepth = region * 1.2 + corner * (4 + region * 17) + Math.pow(fleck, 8) * 5 + edgeWear * (.45 + region * .8);
     const bare = edge < 0 ? 0 : clamp((wornDepth - edge + .5) / 2) * clamp(.2 + fleck * 1.1) * clamp(region * 2.15 - .2);
     const paper = fibers[dark ? (h - y - 1) * w + (w - x - 1) : index];
     const rubbed = Math.exp(-((x - rubX) ** 2 / 155 ** 2 + (y - rubY) ** 2 / 235 ** 2)) * Math.max(0, region - .2);
@@ -206,12 +212,15 @@ function stockMaterial(seed: string, dark: boolean, fibers: Float32Array): CardM
   return { wear, roughness, bump };
 }
 
-function cardMaterials(seed: string, photo: HTMLImageElement | null) {
-  const existing = materialCache.get(seed);
+function cardMaterials(seed: string, photo: HTMLImageElement | null, variant: CardVariant) {
+  // Each layout stamps its own foil positions without changing the physical wear.
+  const key = `${variant}:${seed}`;
+  const existing = materialCache.get(key);
   if (existing) return existing;
   const fibers = paperFibers(photo);
-  const material = { front: stockMaterial(seed, true, fibers), back: stockMaterial(`${seed}:back`, true, fibers) };
-  materialCache.set(seed, material);
+  const edgeWear = variant === "invitation" ? 3.5 : 0;
+  const material = { front: stockMaterial(seed, true, fibers, edgeWear), back: stockMaterial(`${seed}:back`, true, fibers, edgeWear) };
+  materialCache.set(key, material);
   // A live editor reuses its physical stock while the selected text changes.
   if (materialCache.size > 2) materialCache.delete(materialCache.keys().next().value!);
   return material;
@@ -221,24 +230,84 @@ function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
 
 export type CardVariant = "member" | "invitation";
 
+function handwritingFamily() {
+  return window.getComputedStyle(document.body).getPropertyValue("--font-cadehandy2").trim() || '"CadeHandy", cursive';
+}
+
+export function cardArtworkFontRequests(variant: CardVariant) {
+  return ['400 72px "IvyOra Text"', '500 20px "Inter Variable"', ...(variant === "invitation" ? ['700 38px "Inter Variable"', `400 118px ${handwritingFamily()}`] : [])];
+}
+
+/** The invitation is its own print layout, using only consented identity fields. */
+function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingContext2D, card: PublicMemberCard, photo: HTMLImageElement | null, wordmark: HTMLImageElement | null) {
+  const cream = "#fff9e9";
+  mark(front, wordmark, 52, 49, 266, 80, "#ffffff");
+  front.fillStyle = cream; front.font = '700 38px "Inter Variable", Inter, sans-serif';
+  front.textBaseline = "top"; front.textAlign = "right";
+  const year = String(new Date().getUTCFullYear());
+  front.fillText(year.slice(0, 2), 936, 52); front.fillText(year.slice(2), 936, 86);
+  front.textAlign = "left";
+
+  if (photo) cover(front, photo, 53, 154, 902, 646, .59);
+  front.strokeStyle = palette.rule; front.lineWidth = 2; front.strokeRect(53, 154, 902, 646);
+  // Match the actual visible handwriting bounds, including its low underline.
+  front.font = `400 112px ${handwritingFamily()}`; front.fillStyle = cream;
+  const handwritten = "This is for you.";
+  front.textBaseline = "alphabetic";
+  const handwritingMetrics = front.measureText(handwritten);
+  front.fillText(handwritten, 62 + handwritingMetrics.actualBoundingBoxLeft, 839 + handwritingMetrics.actualBoundingBoxAscent);
+
+  front.strokeStyle = palette.rule; front.lineWidth = 1;
+  front.beginPath(); front.moveTo(62, 1073); front.lineTo(944, 1073); front.stroke();
+  const identity = card.memberTag && card.name !== `@${card.memberTag}` ? `${card.name} @${card.memberTag}` : card.name;
+  const identityFont = (size: number) => `700 ${size}px "Inter Variable", Inter, sans-serif`;
+  const identityLayout = fitCardText(identity, { width: 674, height: 138, maxSize: 38, minSize: 20, leading: 1.16,
+    measure: (value, size) => { front.font = identityFont(size); return front.measureText(value).width; } });
+  const identityTop = Math.min(1206, 1274 - identityLayout.height);
+  printText(front, textLayout(front, "A personal invitation from", 674, 48, 40, 40, true), 62, identityTop - 50, cream, true);
+  front.fillStyle = cream; front.font = identityFont(identityLayout.size); front.textBaseline = "top";
+  identityLayout.lines.forEach((line, index) => front.fillText(line, 62, identityTop + index * identityLayout.lineHeight));
+  // Referral invitations are reusable until the member disables sharing.
+  // Never print a sample deadline that is not enforced by the invitation service.
+  front.font = '400 28px "Courier New", monospace'; front.letterSpacing = "3px";
+  front.fillText("THE RUINED PROJECT", 62, 1310); front.letterSpacing = "0px";
+
+  back.textAlign = "center";
+  printText(back, textLayout(back, "You’re allowed", 880, 70, 50, 50, true), CARD_WIDTH / 2, 235, cream, true);
+  printText(back, textLayout(back, "to become someone new.", 880, 70, 50, 50, true), CARD_WIDTH / 2, 1134, cream, true);
+  back.textAlign = "left";
+}
+
 export async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member"): Promise<CardArtwork> {
   const invitation = variant === "invitation";
-  const card = invitation ? { ...source, avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: "Find your people.", bio: "A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining." } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
-  const fonts = document.fonts ? Promise.allSettled([document.fonts.load('400 72px "IvyOra Text"'), document.fonts.load('500 20px "Inter Variable"')]) : Promise.resolve();
+  const card = invitation ? { ...source, avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
+  const fonts = document.fonts ? Promise.allSettled(cardArtworkFontRequests(variant).map(font => document.fonts.load(font))) : Promise.resolve();
   let fontTimer: ReturnType<typeof setTimeout> | undefined;
-  const [, [portrait, leaf, wordmark, paperPhoto, inkPhoto]] = await Promise.all([
+  const [, [portrait, leaf, wordmark, paperPhoto, inkPhoto, invitationPhoto]] = await Promise.all([
     Promise.race([fonts, new Promise<void>(resolve => { fontTimer = setTimeout(resolve, 1800); })]).finally(() => { if (fontTimer) clearTimeout(fontTimer); }),
-    Promise.all([card.avatarUrl ? loadImage(card.avatarUrl) : Promise.resolve(null), referenceImage("/ruined-mark.svg"), referenceImage("/ruined-wordmark.svg"), referenceImage("/membership/design/distressed-paper.jpg"), referenceImage("/membership/design/printers-ink.jpg")]),
+    Promise.all([card.avatarUrl ? loadImage(card.avatarUrl) : Promise.resolve(null), referenceImage("/ruined-mark.svg"), referenceImage("/ruined-wordmark.svg"), referenceImage("/membership/design/distressed-paper.jpg"), referenceImage("/membership/design/printers-ink.jpg"), invitation ? referenceImage("/membership/foundations/beginning.webp") : Promise.resolve(null)]),
   ]);
-  const materials = cardMaterials(card.wearSeed, paperPhoto);
-  const foil = authenticityFoil(leaf);
-  stampMaterial(materials.front, foil); stampMaterial(materials.back, foil);
+  const materials = cardMaterials(card.wearSeed, paperPhoto, variant);
+  const foil = authenticityFoil(leaf, invitation ? invitationFrontFoil : foilPosition);
+  const backFoil = invitation ? authenticityFoil(leaf, invitationBackFoil) : foil;
+  stampMaterial(materials.front, foil); stampMaterial(materials.back, backFoil);
   const front = canvas(), back = canvas(); const f = front.getContext("2d")!, b = back.getContext("2d")!;
   for (const ctx of [f, b]) { rounded(ctx, 0, 0, CARD_WIDTH, CARD_HEIGHT, 43); ctx.clip(); }
+  if (invitation) {
+    for (const ctx of [f, b]) {
+      inkBase(ctx, inkPhoto); ctx.strokeStyle = palette.edgeRule; ctx.lineWidth = 2;
+      rounded(ctx, 25, 25, CARD_WIDTH - 50, CARD_HEIGHT - 50, 24); ctx.stroke();
+    }
+    printInvitation(f, b, card, invitationPhoto, wordmark);
+    f.drawImage(materials.front.wear, 0, 0); b.drawImage(materials.back.wear, 0, 0);
+    f.drawImage(foil.print, foil.position.x, foil.position.y); b.drawImage(backFoil.print, backFoil.position.x, backFoil.position.y);
+    const roughness = canvas(512, 512); roughness.getContext("2d")!.drawImage(materials.front.roughness, 0, 0, 512, 512);
+    return { front, back, roughness, frontRoughness: materials.front.roughness, backRoughness: materials.back.roughness, frontBump: materials.front.bump, backBump: materials.back.bump, frontFoilMask: foil.mask, backFoilMask: backFoil.mask, materialSeed: card.wearSeed };
+  }
   inkBase(f, inkPhoto);
   f.strokeStyle = palette.edgeRule; f.lineWidth = 2; rounded(f, 25, 25, CARD_WIDTH - 50, CARD_HEIGHT - 50, 24); f.stroke();
   mark(f, wordmark, 64, 67, 196, 58.8, palette.bone);
-  label(f, invitation ? "INVITATION" : "MEMBERSHIP", 730, 106, palette.muted, 17);
+  label(f, "MEMBERSHIP", 730, 106, palette.muted, 17);
   // Let a full name or location claim space from the portrait, never from legibility.
   const nameLayout = textLayout(f, card.name, 880, 292, 92, 30, true, 1.12);
   // Reserve the lower-right corner for the larger foil seal on both faces.
@@ -256,11 +325,6 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
     f.fillStyle = "#1414130d"; f.fillRect(px, py, pw, ph);
     const shade = f.createLinearGradient(0, py, 0, py + ph); shade.addColorStop(0, "#14141308"); shade.addColorStop(.6, "#14141300"); shade.addColorStop(1, "#0808076b"); f.fillStyle = shade; f.fillRect(px, py, pw, ph); f.restore();
   }
-  if (invitation) {
-    const invitationType = textLayout(f, "A place for you.", 720, ph - 110, 112, 46, true, 1.06);
-    printText(f, invitationType, 110, py + (ph - invitationType.height) / 2, palette.bone, true);
-    label(f, "AN INVITATION FROM", 64, nameTop - 25, palette.muted, 14);
-  }
   f.strokeStyle = palette.rule; f.lineWidth = 3; f.strokeRect(px, py, pw, ph);
   printText(f, nameLayout, 64, nameTop, palette.bone, true);
   if (tag) printText(f, textLayout(f, tag, 880, 40, 29, 29), 66, nameTop + nameLayout.height + 16, palette.muted);
@@ -274,7 +338,7 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
 
   inkBase(b, inkPhoto);
   b.strokeStyle = palette.edgeRule; b.lineWidth = 2; rounded(b, 25, 25, CARD_WIDTH - 50, CARD_HEIGHT - 50, 24); b.stroke();
-  mark(b, wordmark, 65, 70, 196, 58.8, palette.bone); label(b, invitation ? "YOU’RE INVITED" : "A LITTLE ABOUT ME", 598, 108, palette.muted, 16);
+  mark(b, wordmark, 65, 70, 196, 58.8, palette.bone); label(b, "A LITTLE ABOUT ME", 598, 108, palette.muted, 16);
   b.strokeStyle = palette.rule; b.beginPath(); b.moveTo(64, 165); b.lineTo(944, 165); b.stroke();
   const labels = card.labels.slice(0, 2).map(value => abbreviateCardText(textLayout(b, value, 638, 68, 26, 26), 2, 638, measure(b)));
   const labelHeight = labels.reduce((total, value) => total + value.height + 27, 0);
@@ -285,12 +349,12 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
   const textHeight = contentHeight - (card.buildingNow ? 55 : 0) - (card.bio ? 45 : 0) - (both ? 45 : 0);
   let y = 235;
   if (card.buildingNow) {
-    label(b, invitation ? "RUINED / MEMBERSHIP" : "CURRENTLY BUILDING", 66, y + 18, palette.muted, 18); y += 55;
+    label(b, "CURRENTLY BUILDING", 66, y + 18, palette.muted, 18); y += 55;
     const layout = textLayout(b, card.buildingNow, 864, both ? textHeight * .46 : textHeight, 60, 36, true);
     printText(b, layout, 64, y, palette.bone, true); y += layout.height + (both ? 45 : 0);
   }
   if (card.bio) {
-    label(b, invitation ? "YOUR NEXT STEP" : "ABOUT", 66, y + 18, palette.muted, 18); y += 45;
+    label(b, "ABOUT", 66, y + 18, palette.muted, 18); y += 45;
     const layout = textLayout(b, card.bio, 864, contentBottom - y, 32, 28, false, 1.35);
     printText(b, layout, 64, y, palette.bone);
   }
