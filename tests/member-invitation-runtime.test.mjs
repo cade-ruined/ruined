@@ -9,16 +9,16 @@ const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const uuid = id => `00000000-0000-4000-8000-${String(id).padStart(12, "0")}`;
 const person = id => ({ member: uuid(id), person: uuid(id + 100), auth: uuid(id + 200), email: `member-${id}@example.test` });
 const first = person(1), second = person(2), newcomer = person(3);
-async function load(path, dependencies = {}) {
+async function load(path, dependencies = {}, globals = {}) {
   const output = ts.transpileModule(await source(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", output)(name => { assert.ok(name in dependencies, `Unexpected dependency: ${name}`); return dependencies[name]; }, loaded, loaded.exports);
+  new Function("require", "module", "exports", ...Object.keys(globals), output)(name => { assert.ok(name in dependencies, `Unexpected dependency: ${name}`); return dependencies[name]; }, loaded, loaded.exports, ...Object.values(globals));
   return loaded.exports;
 }
 const model = await load("src/lib/membership/invitation-model.ts");
 const waitlistModel = await load("src/lib/membership/waitlist-model.ts");
 const policy = await load("src/lib/membership/access-policy.ts");
-async function fixture(t) {
+async function fixture(t, { applyExpiry = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite(); t.after(() => db.close());
   const foundation = await source("db/migrations/20260819_platform_foundation.sql");
   const outbox = foundation.match(/create table if not exists integration_outbox \([\s\S]*?\n\);/)[0];
@@ -38,6 +38,7 @@ async function fixture(t) {
   `);
   await db.exec(await source("db/migrations/20260914225359_membership_waitlist.sql"));
   await db.exec(await source("db/migrations/20260919211000_member_referrals.sql"));
+  if (applyExpiry) await db.exec(await source("db/migrations/20260922200000_member_invitation_expiry.sql"));
   function wrap(client) {
     const sql = (strings, ...params) => client.query(strings.reduce((result, part, i) => result + (i ? `$${i}` : "") + part, ""), params).then(result => result.rows);
     sql.begin = callback => client.transaction(tx => callback(wrap(tx))); sql.json = JSON.stringify; return sql;
@@ -91,12 +92,13 @@ async function fixture(t) {
 test("an invitation is private by default, independent of card sharing, and publishes only the current display name and chosen tag", async t => {
   const f = await fixture(t);
   const initial = await f.repository.getOwnMemberInvitation(first.auth);
-  assert.equal(initial.enabled, false); assert.equal(initial.version, 0); assert.equal(initial.url, null); assert.equal(initial.joinedCount, 0);
+  assert.equal(initial.expiresAt, null); assert.equal(initial.enabled, false); assert.equal(initial.version, 0); assert.equal(initial.url, null); assert.equal(initial.joinedCount, 0);
   assert.equal((await f.db.query("select * from member_invitations")).rows.length, 0, "GET never creates or enables a link");
   const enabled = await f.enable(), token = enabled.url.split("/").pop();
   assert.match(token, model.MEMBER_INVITATION_TOKEN); assert.equal(enabled.eligible, true);
   const publicInvite = await f.repository.getPublicMemberInvitation(token);
-  assert.deepEqual(Object.keys(publicInvite), ["card"]);
+  assert.deepEqual(Object.keys(publicInvite), ["card", "expiresAt"]);
+  assert.equal(publicInvite.expiresAt, enabled.expiresAt);
   assert.deepEqual(publicInvite.card, model.invitationCard("Member 1", publicInvite.card.wearSeed));
   assert.equal(publicInvite.card.memberTag, null, "legacy preferred names are never promoted to tags");
   assert.doesNotMatch(JSON.stringify(publicInvite), /PRIVATE|email|member_id|person_id|joinedCount|00000000-0000/);
@@ -110,7 +112,7 @@ test("an invitation is private by default, independent of card sharing, and publ
   await assert.rejects(f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: 0 }), { status: 409 });
   const disabled = await f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: enabled.version });
   assert.equal(await f.repository.getPublicMemberInvitation(token), null);
-  assert.equal((await f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, version: disabled.version })).url, enabled.url);
+  assert.notEqual((await f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, version: disabled.version })).url, enabled.url);
   await f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1", [first.member]);
   assert.equal(await f.repository.getPublicMemberInvitation(token), null);
   const paused = await f.repository.getOwnMemberInvitation(first.auth);
@@ -198,8 +200,9 @@ test("withdrawn links reject new attribution but preserve earned history and pri
   const f = await fixture(t), invitation = await f.enable(), token = invitation.url.split("/").pop();
   await f.submit(newcomer, token);
   await f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: invitation.version });
-  await f.submit(person(4), token); await f.submit(person(5), "x".repeat(43));
-  assert.equal((await f.db.query("select * from membership_waitlist")).rows.length, 3);
+  await assert.rejects(f.submit(person(4), token), { code: "P4100" });
+  await assert.rejects(f.submit(person(5), "x".repeat(43)), { code: "P4100" });
+  assert.equal((await f.db.query("select * from membership_waitlist")).rows.length, 1);
   assert.equal((await f.db.query("select * from member_referrals")).rows.length, 1);
   await f.addMember(newcomer, false, true); await f.activate(newcomer);
   assert.equal((await f.repository.getOwnMemberInvitation(first.auth)).joinedCount, 1);
@@ -213,7 +216,7 @@ test("referrals, counts and helper functions are unavailable to public database 
       assert.equal(acl.allowed, false);
       assert.equal((await f.db.query("select relrowsecurity from pg_class where oid=$1::regclass", [table])).rows[0].relrowsecurity, true);
     }
-    for (const signature of ["private.ruined_capture_member_referral(uuid,text)", "private.ruined_bind_member_referral(uuid,text)", "private.ruined_record_member_referral_join(uuid)", "private.ruined_member_can_share_invitation(uuid)"]) {
+    for (const signature of ["private.ruined_require_member_invitation(text)", "private.ruined_capture_member_referral(uuid,text)", "private.ruined_bind_member_referral(uuid,text)", "private.ruined_record_member_referral_join(uuid)", "private.ruined_member_can_share_invitation(uuid)"]) {
       assert.equal((await f.db.query("select has_function_privilege($1,$2,'EXECUTE') as allowed", [role, signature])).rows[0].allowed, false);
     }
   }
@@ -221,7 +224,8 @@ test("referrals, counts and helper functions are unavailable to public database 
 
 test("input validation bounds bodies and does not accept caller-selected identity or counts", async () => {
   assert.deepEqual(model.validateMemberInvitationInput({ enabled: true, version: 0 }), { enabled: true, version: 0 });
-  for (const input of [null, [], {}, { enabled: 1, version: 0 }, { enabled: true, version: -1 }, { enabled: true, version: 0, memberId: first.member }, { enabled: true, version: 0, memberTag: "spoofed_tag" }, { enabled: true, version: 0, joinedCount: 8 }]) {
+  assert.deepEqual(model.validateMemberInvitationInput({ enabled: true, version: 1, renew: true }), { enabled: true, version: 1, renew: true });
+  for (const input of [null, [], {}, { enabled: true, version: 0, expiresAt: "2030-01-01" }, { enabled: true, version: 0, renew: 1 }, { enabled: false, version: 1, renew: true }, { enabled: false, version: 1, renew: false }, { enabled: 1, version: 0 }, { enabled: true, version: -1 }, { enabled: true, version: 0, memberId: first.member }, { enabled: true, version: 0, memberTag: "spoofed_tag" }, { enabled: true, version: 0, joinedCount: 8 }]) {
     assert.throws(() => model.validateMemberInvitationInput(input), { status: 400 });
   }
   assert.equal(waitlistModel.parseMembershipWaitlistInput({ name: "Test", email: "t@example.test", invitationToken: "bad" }), null);
@@ -288,4 +292,144 @@ test("only current ops administrators can read a bounded roster of completed joi
   await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [second.auth]);
   await f.db.query("update platform_users set status='suspended' where auth_user_id=$1", [second.auth]);
   await assert.rejects(f.opsReferrals.getOpsMemberReferrals(second.auth, first.member), { code: "forbidden" });
+});
+
+test("issuance is exactly 48 hours and reads, profile edits, and redundant enable never extend a link", async t => {
+  const f = await fixture(t), enabled = await f.enable(), token = enabled.url.split("/").pop();
+  const issued = (await f.db.query("select issued_at,expires_at from member_invitations where member_id=$1", [first.member])).rows[0];
+  assert.equal(issued.expires_at.getTime() - issued.issued_at.getTime(), 48 * 60 * 60 * 1000);
+  assert.equal(enabled.expiresAt, issued.expires_at.toISOString());
+  await f.db.query("update person_profiles set display_name='Edited name',member_tag='edited_tag' where person_id=$1", [first.person]);
+  for (let i = 0; i < 3; i++) {
+    const own = await f.repository.getOwnMemberInvitation(first.auth);
+    assert.equal(own.url, enabled.url, "copy/share read the same already-issued link");
+    assert.equal(own.expiresAt, enabled.expiresAt);
+    assert.equal((await f.repository.getPublicMemberInvitation(token)).expiresAt, enabled.expiresAt);
+  }
+  const redundant = await f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, version: enabled.version });
+  assert.equal(redundant.url, enabled.url); assert.equal(redundant.expiresAt, enabled.expiresAt);
+  assert.deepEqual((await f.db.query("select issued_at,expires_at from member_invitations where member_id=$1", [first.member])).rows[0], issued);
+  await f.submit(newcomer, token);
+  const priorAttribution = (await f.db.query("select * from member_referrals")).rows;
+  const renewed = await f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, renew: true, version: redundant.version });
+  assert.notEqual(renewed.url, enabled.url); assert.ok(Date.parse(renewed.expiresAt) > Date.parse(enabled.expiresAt));
+  assert.equal(await f.repository.getPublicMemberInvitation(token), null);
+  assert.deepEqual((await f.db.query("select * from member_referrals")).rows, priorAttribution);
+  await assert.rejects(f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, renew: true, version: redundant.version }), { status: 409 });
+  await f.addMember(newcomer, false, true); await f.activate(newcomer);
+  assert.equal((await f.repository.getOwnMemberInvitation(first.auth)).joinedCount, 1);
+  const replaced = (await f.db.query("select issued_at,expires_at from member_invitations where member_id=$1", [first.member])).rows[0];
+  assert.equal(replaced.expires_at.getTime() - replaced.issued_at.getTime(), 172800000);
+});
+
+test("expiry rejects public reads and new or repeated submissions while preserving legitimate earlier referrals", async t => {
+  const f = await fixture(t), invitation = await f.enable(), token = invitation.url.split("/").pop();
+  await f.submit(newcomer, token);
+  const priorInterest = (await f.db.query("select * from membership_waitlist")).rows;
+  const priorOutbox = (await f.db.query("select * from integration_outbox")).rows;
+  // Set the precise boundary from the database clock. At that instant and later,
+  // the invitation is expired rather than inclusive of its final timestamp.
+  await f.db.query("update member_invitations set expires_at=statement_timestamp(),issued_at=statement_timestamp()-interval '48 hours' where member_id=$1", [first.member]);
+  const own = await f.repository.getOwnMemberInvitation(first.auth);
+  assert.equal(own.enabled, true); assert.equal(own.url, null); assert.ok(own.expiresAt);
+  assert.equal(await f.repository.getPublicMemberInvitation(token), null);
+  await assert.rejects(f.submit(newcomer, token), { code: "P4100" });
+  await assert.rejects(f.submit(person(4), token), { code: "P4100" });
+  await assert.rejects(f.db.query("select private.ruined_capture_member_referral($1,$2)", [priorInterest[0].id, token]), { code: "P4100" });
+  assert.deepEqual((await f.db.query("select * from membership_waitlist")).rows, priorInterest);
+  assert.deepEqual((await f.db.query("select * from integration_outbox")).rows, priorOutbox);
+  await f.addMember(newcomer, false, true); await f.activate(newcomer);
+  assert.equal((await f.repository.getOwnMemberInvitation(first.auth)).joinedCount, 1, "a valid earlier acceptance may complete after expiration");
+  const refreshed = await f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, version: own.version });
+  assert.notEqual(refreshed.url, invitation.url); assert.ok(Date.parse(refreshed.expiresAt) > Date.parse(own.expiresAt));
+  assert.equal(refreshed.joinedCount, 1); assert.equal(await f.repository.getPublicMemberInvitation(token), null);
+});
+
+test("waitlist POST rejects expired, revoked, missing and malformed links consistently without new writes", async t => {
+  const f = await fixture(t), invitation = await f.enable(), token = invitation.url.split("/").pop();
+  await f.submit(newcomer, token);
+  const before = (await f.db.query("select * from membership_waitlist")).rows;
+  const deferred = [];
+  const route = await load("app/api/members/waitlist/route.ts", {
+    "node:crypto": crypto,
+    "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) }, after: callback => deferred.push(callback) },
+    "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
+    "@/lib/membership/waitlist-model": waitlistModel,
+    "@/lib/membership/waitlist-repository": f.waitlist,
+    "@/lib/membership/waitlist-sheet-sync": { processMembershipWaitlistSheetOutboxBatch: async () => {} },
+  }, { process: { env: { DATABASE_URL: "isolated-in-memory-only", COMMUNICATION_RATE_LIMIT_SECRET: "test-secret" } } });
+  let attempts = 0;
+  const post = invitationToken => route.POST(new Request("https://example.test/api/members/waitlist", {
+    method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": `test-${attempts++}` },
+    body: JSON.stringify({ name: "Attempted replacement", email: attempts % 2 ? newcomer.email : "new@example.test", invitationToken }),
+  }));
+  await f.db.query("update member_invitations set expires_at=statement_timestamp(),issued_at=statement_timestamp()-interval '48 hours' where member_id=$1", [first.member]);
+  const expected = { error: "This invitation is no longer available. Ask the member for a new invitation." };
+  for (const unavailable of [token, token, "X".repeat(43), "X".repeat(43), "bad", "bad", null, null]) {
+    const response = await post(unavailable);
+    assert.equal(response.status, 410); assert.deepEqual(await response.json(), expected);
+  }
+  const renewed = await f.repository.saveOwnMemberInvitation(first.auth, { enabled: true, version: invitation.version });
+  await f.repository.saveOwnMemberInvitation(first.auth, { enabled: false, version: renewed.version });
+  for (let i = 0; i < 2; i++) {
+    const response = await post(renewed.url.split("/").pop());
+    assert.equal(response.status, 410); assert.deepEqual(await response.json(), expected);
+  }
+  assert.deepEqual((await f.db.query("select * from membership_waitlist")).rows, before);
+  assert.equal((await f.db.query("select * from integration_outbox")).rows.length, 1);
+  assert.equal((await f.db.query("select * from member_referrals")).rows.length, 1);
+  assert.deepEqual(deferred, []);
+});
+
+test("capture rolls back a waitlist insert if the invitation expires after prevalidation", async t => {
+  const f = await fixture(t), invitation = await f.enable();
+  await f.db.exec(`create function expire_during_test_insert() returns trigger language plpgsql as $$
+    begin
+      update member_invitations set expires_at=statement_timestamp(),issued_at=statement_timestamp()-interval '48 hours';
+      return new;
+    end $$;
+    create trigger expire_during_test_insert before insert on membership_waitlist for each row execute function expire_during_test_insert();`);
+  await assert.rejects(f.submit(newcomer, invitation.url.split("/").pop()), { code: "P4100" });
+  assert.equal((await f.db.query("select * from membership_waitlist")).rows.length, 0);
+  assert.equal((await f.db.query("select * from member_referrals")).rows.length, 0);
+  assert.equal((await f.db.query("select * from integration_outbox")).rows.length, 0);
+});
+
+test("migration preserves original issue dates and uses 48 absolute hours across daylight saving changes", async t => {
+  const f = await fixture(t, { applyExpiry: false });
+  await f.db.exec("set timezone='America/Denver'");
+  await f.db.query("insert into member_invitations(member_id,public_token,enabled,created_at) values($1,$2,true,'2026-03-07 12:00:00-07'),($3,$4,true,'2026-10-31 12:00:00-06')", [first.member, "A".repeat(43), second.member, "B".repeat(43)]);
+  await f.db.exec(await source("db/migrations/20260922200000_member_invitation_expiry.sql"));
+  const rows = (await f.db.query("select issued_at=created_at as original,extract(epoch from expires_at-issued_at)::integer as duration from member_invitations")).rows;
+  assert.deepEqual(rows, [{ original: true, duration: 172800 }, { original: true, duration: 172800 }]);
+  assert.equal(await f.repository.getPublicMemberInvitation("A".repeat(43)), null, "an old invitation is not revived by the migration");
+  await assert.rejects(f.db.query("update member_invitations set expires_at=issued_at+interval '2 days' where member_id=$1", [first.member]), { code: "23514" });
+  await assert.rejects(f.db.query("update member_invitations set expires_at=issued_at+interval '48 hours 1 second' where member_id=$1", [first.member]), { code: "23514" });
+  await assert.rejects(f.db.query("update member_invitations set issued_at=null where member_id=$1", [first.member]), { code: "23502" });
+});
+
+
+test("capture rechecks expiry after waiting for the email attribution lock", async t => {
+  const f = await fixture(t), invitation = await f.enable();
+  // This isolated engine's clock advances to the deadline on the third read:
+  // prevalidation, capture before its email lock, then capture after that lock.
+  // Only the clock dependency is substituted in this isolated validator; the
+  // production capture function and its lock/recheck sequence run unchanged.
+  await f.db.exec(`create table invitation_test_clock(ticks integer not null);
+    insert into invitation_test_clock values(0);
+    create function private.invitation_test_now() returns timestamptz
+    language plpgsql volatile as $$
+    declare current_tick integer; deadline timestamptz;
+    begin
+      update public.invitation_test_clock set ticks=ticks+1 returning ticks into current_tick;
+      select expires_at into deadline from public.member_invitations limit 1;
+      return case when current_tick >= 3 then deadline else deadline-interval '1 second' end;
+    end $$;`);
+  const migration = await source("db/migrations/20260922200000_member_invitation_expiry.sql");
+  const validator = migration.match(/create function private\.ruined_require_member_invitation[\s\S]*?\n\$\$;/)[0];
+  await f.db.exec(validator.replace("create function", "create or replace function").replace("clock_timestamp()", "private.invitation_test_now()"));
+  await assert.rejects(f.submit(newcomer, invitation.url.split("/").pop()), { code: "P4100" });
+  assert.equal((await f.db.query("select * from membership_waitlist")).rows.length, 0);
+  assert.equal((await f.db.query("select * from member_referrals")).rows.length, 0);
+  assert.equal((await f.db.query("select * from integration_outbox")).rows.length, 0);
 });

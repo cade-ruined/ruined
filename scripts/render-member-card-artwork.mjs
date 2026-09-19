@@ -60,10 +60,16 @@ function proofCanvas() {
 }
 const document = { body: {}, createElement: proofCanvas, fonts: { load: () => Promise.resolve() } };
 const window = { setTimeout, clearTimeout, getComputedStyle: () => ({ getPropertyValue: name => name === "--font-cadehandy2" ? '"CadeHandy2"' : "" }) };
+const invitationExpiresAt = "2026-09-21T02:45:00.000Z";
+let proofNow = Date.parse(invitationExpiresAt) - 48 * 60 * 60 * 1000;
+class ProofDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [proofNow])); }
+  static now() { return proofNow; }
+}
 function load(file) {
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const mod = { exports: {} };
-  new Function("module", "exports", "document", "Image", "window", "require", code)(mod, mod.exports, document, LocalImage, window, name => name.startsWith("@/") ? load(resolve("src", `${name.slice(2)}.ts`)) : name.startsWith(".") ? load(resolve(dirname(file), `${name}.ts`)) : require(name));
+  new Function("module", "exports", "document", "Image", "window", "Date", "require", code)(mod, mod.exports, document, LocalImage, window, ProofDate, name => name.startsWith("@/") ? load(resolve("src", `${name.slice(2)}.ts`)) : name.startsWith(".") ? load(resolve(dirname(file), `${name}.ts`)) : require(name));
   return mod.exports;
 }
 const artworkModule = load(resolve("src/components/membership/card/card-artwork.ts"));
@@ -80,6 +86,7 @@ const cases = [
   ["invitation-legacy", { ...base, memberTag: null }, "invitation"],
   ["invitation-private-profile", { ...base, avatarUrl: privatePortrait, location: "PRIVATE LOCATION", labels: ["PRIVATE LABEL"], buildingNow: "PRIVATE BUILDING", bio: "PRIVATE BIOGRAPHY", websiteUrl: "https://private-website.example/" }, "invitation"],
   ["invitation-image-fallback", { ...base, avatarUrl: privatePortrait }, "invitation"],
+  ["invitation-unissued", { ...base }, "invitation", null],
   ["tag-as-name", { ...base, name: "@alex_morgan" }],
   ["legacy", { ...base, memberTag: null }],
   ["minimal", { ...base, name: "Alex", avatarUrl: null, memberSince: null, location: null, buildingNow: null, bio: null, websiteUrl: null, labels: [] }],
@@ -91,14 +98,14 @@ const materialKeys = ["frontRoughness", "backRoughness", "frontBump", "backBump"
 const fingerprint = surface => createHash("sha256").update(surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data).digest("hex");
 const fingerprints = artwork => Object.fromEntries(materialKeys.map(key => [key, fingerprint(artwork[key])]));
 let memberMaterials, publicInvitationPrint, publicInvitationText;
-for (const [name, card, variant] of cases) {
+for (const [name, card, variant, expiresAt = invitationExpiresAt] of cases) {
   const fallback = name === "invitation-image-fallback";
   // A fresh module avoids the successful reference-image cache masking failure.
   const renderer = fallback ? load(resolve("src/components/membership/card/card-artwork.ts")) : artworkModule;
   const requestStart = imageRequests.length;
   if (fallback) rejectedImages.add(invitationPhoto);
   let artwork;
-  try { artwork = await renderer.createCardArtwork(card, variant); }
+  try { artwork = await renderer.createCardArtwork(card, variant, variant === "invitation" ? expiresAt : null); }
   finally { rejectedImages.delete(invitationPhoto); }
   const invitation = variant === "invitation";
   const requested = imageRequests.slice(requestStart);
@@ -125,7 +132,7 @@ for (const [name, card, variant] of cases) {
       assert.deepEqual(textBySide, publicInvitationText, "An unavailable photo must retain the invitation headline, identity, and back message.");
       assert.notDeepEqual(artwork.front.toBuffer("image/png"), publicInvitationPrint[0], "The image failure must actually exercise the ink-only photo fallback.");
     }
-    invitationChecks.push({ name, staticPhoto: invitationPhoto, photoDraws: photoDraws.length, privatePortraitFetched: false, labelFont: invitationLabel[0].font, imageFallback: fallback });
+    invitationChecks.push({ name, staticPhoto: invitationPhoto, photoDraws: photoDraws.length, privatePortraitFetched: false, labelFont: invitationLabel[0].font, imageFallback: fallback, expiresAt });
   } else {
     assert.equal(requested.includes(invitationPhoto), false, `${name} member artwork must not fetch the invitation photograph.`);
     assert.equal(artwork.front.printedImages.some(item => item.source === invitationPhoto), false, `${name} member artwork must not render the invitation photograph.`);
@@ -178,7 +185,10 @@ for (const [name, card, variant] of cases) {
     assert.ok(handwriting?.font.includes("CadeHandy2"), "The invitation must use the supplied handwriting font.");
     assert.ok(handwriting.top >= 830 && handwriting.bottom < 1030, "The handwriting must sit below the photograph with space above the footer rule.");
     assert.deepEqual(artwork.back.printedText.map(item => item.text), ["You’re allowed", "to become someone new."], "The back must preserve the supplied message without member-only labels.");
-    assert.equal(artwork.front.printedText.some(item => /VALID UNTIL/.test(item.text)), false, "A reusable invitation must not print an invented expiry.");
+    const validity = artwork.front.printedText.filter(item => item.text.startsWith("VALID "));
+    assert.equal(validity.length, 1, `${name} must print exactly one validity line.`);
+    assert.equal(validity[0].text, expiresAt ? "VALID UNTIL SEP. 20 8:45PM MDT" : "VALID FOR 48 HOURS ONCE CREATED", `${name} must print its issued deadline or clearly identify an unissued card.`);
+    assert.ok(validity[0].left >= 60 && validity[0].right <= 738 && validity[0].top >= 1300 && validity[0].bottom <= 1350, `${name} validity line must remain below the identity and clear of the foil: ${JSON.stringify(validity[0])}`);
   }
   if (name === "invitation") {
     const reports = {};
@@ -247,14 +257,22 @@ for (const [name, card, variant] of cases) {
 // Exercise both cache orders. Rendering one variant must never stamp its foil
 // into material canvases already held by the other variant's live 3D scene.
 const isolationCard = { ...base, wearSeed: "invitation-first-material-isolation" };
-const firstInvitation = await artworkModule.createCardArtwork(isolationCard, "invitation");
+const firstInvitation = await artworkModule.createCardArtwork(isolationCard, "invitation", invitationExpiresAt);
 const invitationBefore = fingerprints(firstInvitation);
 const nextMember = await artworkModule.createCardArtwork(isolationCard, "member");
 const memberBefore = fingerprints(nextMember);
 assert.deepEqual(fingerprints(firstInvitation), invitationBefore, "Rendering a member card must not mutate an existing invitation's materials.");
-const repeatedInvitation = await artworkModule.createCardArtwork(isolationCard, "invitation");
+// Copying, revisiting, and even viewing after expiry retain the service's date;
+// another browser render must never invent a fresh 48-hour invitation window.
+proofNow += 72 * 60 * 60 * 1000;
+const repeatedInvitation = await artworkModule.createCardArtwork(isolationCard, "invitation", invitationExpiresAt);
 assert.deepEqual(fingerprints(nextMember), memberBefore, "Rendering an invitation must not mutate an existing member card's materials.");
 assert.deepEqual(fingerprints(repeatedInvitation), invitationBefore, "Invitation material generation must remain deterministic across cache orders.");
+for (const side of ["front", "back"]) assert.deepEqual(repeatedInvitation[side].toBuffer("image/png"), firstInvitation[side].toBuffer("image/png"), `Rendering the same issued invitation three days later must not change its ${side} print.`);
+const renewedInvitation = await artworkModule.createCardArtwork(isolationCard, "invitation", "2026-09-24T02:45:00.000Z");
+assert.equal(renewedInvitation.front.printedText.find(item => item.text.startsWith("VALID ")).text, "VALID UNTIL SEP. 23 8:45PM MDT", "Only a new service deadline changes the printed expiry.");
+assert.notDeepEqual(renewedInvitation.front.toBuffer("image/png"), firstInvitation.front.toBuffer("image/png"), "A new issued deadline must invalidate the rendered front print.");
+assert.deepEqual(fingerprints(renewedInvitation), invitationBefore, "A changed deadline must not alter the physical card materials.");
 assert.notEqual(invitationBefore.backFoilMask, memberBefore.backFoilMask, "Variant material isolation must preserve different back foil masks.");
 assert.deepEqual(fingerprints(memberMaterials.artwork), memberMaterials.fingerprints, "All proof variants must leave the original member materials unchanged.");
 await writeFile("output/member-card/qa/artwork-layout-checks.json", JSON.stringify(layoutChecks, null, 2));

@@ -21,9 +21,11 @@ async function load(path, dependencies = {}, globals = {}) {
 }
 const cardModel = await load("src/lib/membership/public-card-model.ts");
 const model = await load("src/lib/membership/invitation-model.ts");
+const expiry = await load("src/lib/membership/invitation-expiry.ts");
+const expiresAt = "2099-09-20T02:45:00.000Z";
 const token = "I".repeat(43);
 const card = model.invitationCard("Chosen <name>", "public-invitation-wear");
-const snapshot = { card, enabled: false, eligible: false, writable: true, url: null, joinedCount: 17, version: 2 };
+const snapshot = { card, expiresAt: null, enabled: false, eligible: false, writable: true, url: null, joinedCount: 17, version: 2 };
 const notFound = () => { throw Object.assign(new Error("Not found"), { status: 404 }); };
 const redirect = href => { throw Object.assign(new Error("Redirect"), { href }); };
 const renderInvitation = ({ card: value, children }) => React.createElement("article", null, value.name, children);
@@ -64,11 +66,11 @@ test("invalid and revoked invitations reveal no member details or sample content
 });
 
 test("public invitation routes pass the card and token without the owner's private count or identity", async () => {
-  let current = { card, joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL" };
+  let current = { card, expiresAt, joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL" };
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
   const rendered = await page.default(params(token));
-  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "token"]);
-  assert.deepEqual(rendered.props.card, card); assert.equal(rendered.props.token, token);
+  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "expiresAt", "token"]);
+  assert.equal(rendered.props.expiresAt, expiresAt); assert.deepEqual(rendered.props.card, card); assert.equal(rendered.props.token, token);
   assert.match(renderToStaticMarkup(rendered), /Chosen &lt;name&gt;/);
   assert.doesNotMatch(JSON.stringify(rendered.props), /7391|PRIVATE|joinedCount|personId|email/);
   const metadata = await page.generateMetadata(params(token));
@@ -146,15 +148,17 @@ test("public landing offers the attributed waitlist without owner controls or jo
     react: React, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
     "./card/PublicMemberCardPage": renderInvitation,
+    "@/lib/membership/invitation-expiry": expiry,
+    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
-  const landing = invitation.InvitationLanding({ card, token });
+  const landing = invitation.InvitationLanding({ card, token, expiresAt });
   assert.equal(landing.props.variant, "invitation");
   const waitlist = descendants(landing).find(item => item.type === renderWaitlist);
-  assert.deepEqual(waitlist.props, { invitationToken: token });
+  assert.deepEqual(waitlist.props, { invitationToken: token, disabled: false });
   const html = renderToStaticMarkup(landing);
   assert.match(html, /Chosen &lt;name&gt;/); assert.match(html, /Find your people/);
   assert.doesNotMatch(html, /joined through|completed memberships|Copy link|Turn off invitation|joinedCount|7391/);
-  const preview = invitation.InvitationLanding({ card, preview: true });
+  const preview = invitation.InvitationLanding({ card, expiresAt, preview: true });
   assert.equal(descendants(preview).some(item => item.type === renderWaitlist), false, "sample invitations cannot submit attributed joins");
 });
 
@@ -164,6 +168,8 @@ test("ineligible, read-only and preview owner views cannot enable invitation sha
     "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
     "./card/PublicMemberCardPage": renderInvitation,
+    "@/lib/membership/invitation-expiry": expiry,
+    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   for (const input of [
     { initialSnapshot: snapshot },
@@ -171,13 +177,56 @@ test("ineligible, read-only and preview owner views cannot enable invitation sha
     { initialSnapshot: { ...snapshot, eligible: true }, preview: true },
   ]) {
     const rendered = invitation.default(input);
-    const enable = descendants(rendered).find(item => item.type === "button" && /Enable my invitation/.test(textContent(item)));
+    const enable = descendants(rendered).find(item => item.type === "button" && /Create my invitation/.test(textContent(item)));
     assert.ok(enable); assert.equal(enable.props.disabled, true);
     assert.doesNotMatch(renderToStaticMarkup(rendered), /data-invitation-token/);
   }
   const loading = invitation.default({ initialSnapshot: null });
   assert.match(renderToStaticMarkup(loading), /Preparing your invitation/);
   assert.doesNotMatch(renderToStaticMarkup(loading), /Chosen|public-invitation-wear|joined through/);
+});
+
+test("expired public and owner views stop new use while retaining the original deadline and referral count", async () => {
+  const invitation = await load("src/components/membership/MemberInvitation.tsx", {
+    react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": link,
+    "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
+    "./card/PublicMemberCardPage": renderInvitation,
+    "@/lib/membership/invitation-expiry": expiry,
+    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
+  });
+  const elapsed = "2000-01-01T00:00:00.000Z";
+  const publicPage = invitation.InvitationLanding({ card, token, expiresAt: elapsed });
+  assert.equal(publicPage.props.invitationExpiresAt, elapsed);
+  assert.equal(descendants(publicPage).find(item => item.type === renderWaitlist).props.disabled, true);
+  assert.match(renderToStaticMarkup(publicPage), /This invitation has expired/);
+  const owner = invitation.default({ initialSnapshot: { ...snapshot, enabled: true, eligible: true, expiresAt: elapsed, url: `/invitation/${token}` } });
+  assert.equal(owner.props.invitationExpiresAt, elapsed);
+  const html = renderToStaticMarkup(owner);
+  assert.match(html, /Create new invitation/); assert.match(html, /17/);
+  assert.doesNotMatch(html, /Copy link|Share invitation|Your invitation link/);
+});
+
+test("copying never renews an invitation and explicit renewal sends no caller-selected date or token", async () => {
+  const calls = [], copied = [];
+  const active = { ...snapshot, enabled: true, eligible: true, expiresAt, url: `/invitation/${token}` };
+  const invitation = await load("src/components/membership/MemberInvitation.tsx", {
+    react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": link,
+    "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
+    "./card/PublicMemberCardPage": renderInvitation,
+    "@/lib/membership/invitation-expiry": expiry,
+    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
+  }, {
+    window: { location: { origin: "https://members.example.test" } },
+    navigator: { clipboard: { writeText: async value => copied.push(value) } },
+    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok: true, json: async () => ({ snapshot: active }) }; },
+  });
+  const rendered = invitation.default({ initialSnapshot: active });
+  descendants(rendered).find(item => item.type === "button" && textContent(item) === "Copy link").props.onClick();
+  await Promise.resolve();
+  assert.deepEqual(copied, [`https://members.example.test/invitation/${token}`]); assert.equal(calls.length, 0);
+  descendants(rendered).find(item => item.type === "button" && textContent(item) === "Create a new 48-hour invitation").props.onClick();
+  await Promise.resolve();
+  assert.deepEqual(calls, [{ url: "/api/my/invitation", body: { enabled: true, version: active.version, renew: true } }]);
 });
 
 test("invitation waitlist submission adds only its opaque token and keeps ordinary submissions unchanged", async () => {

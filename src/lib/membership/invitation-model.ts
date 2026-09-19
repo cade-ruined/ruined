@@ -1,11 +1,12 @@
 import type { PublicMemberCard } from "./public-card-model";
 
-export type PublicMemberInvitation = { card: PublicMemberCard };
-export type MemberInvitationSnapshot = PublicMemberInvitation & {
+export type PublicMemberInvitation = { card: PublicMemberCard; expiresAt: string };
+export type MemberInvitationSnapshot = Omit<PublicMemberInvitation, "expiresAt"> & {
+  expiresAt: string | null;
   enabled: boolean; eligible: boolean; writable: boolean;
   url: string | null; joinedCount: number; version: number;
 };
-export type MemberInvitationInput = { enabled: boolean; version: number };
+export type MemberInvitationInput = { enabled: boolean; version: number; renew?: boolean };
 export const MEMBER_INVITATION_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 export const MEMBER_INVITATION_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff",
@@ -17,11 +18,12 @@ export class MemberInvitationError extends Error {
 export function validateMemberInvitationInput(value: unknown): MemberInvitationInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new MemberInvitationError(400, "Choose whether to share your invitation.");
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !["enabled", "version"].includes(key)) || typeof input.enabled !== "boolean" ||
+  if (Object.keys(input).some(key => !["enabled", "version", "renew"].includes(key)) || typeof input.enabled !== "boolean" ||
+      (input.renew !== undefined && (typeof input.renew !== "boolean" || !input.enabled)) ||
       !Number.isSafeInteger(input.version) || Number(input.version) < 0 || Number(input.version) > 2_147_483_646) {
     throw new MemberInvitationError(400, "Check your invitation choices and try again.");
   }
-  return { enabled: input.enabled, version: input.version as number };
+  return { enabled: input.enabled, version: input.version as number, ...(input.renew !== undefined ? { renew: input.renew as boolean } : {}) };
 }
 /** Explicit invitation consent covers only the current display name and chosen member tag. */
 export function invitationCard(name: string, wearSeed: string, memberTag: string | null = null): PublicMemberCard {

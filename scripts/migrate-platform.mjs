@@ -48,6 +48,7 @@ const migrations = [
   "../db/migrations/20260920210000_member_numbers.sql",
   "../db/migrations/20260921210000_member_deletion.sql",
   "../db/migrations/20260921220000_member_deletion_closure.sql",
+  "../db/migrations/20260922200000_member_invitation_expiry.sql",
 ];
 
 function migrationBody(migration, migrationName) {

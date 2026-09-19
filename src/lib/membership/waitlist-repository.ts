@@ -24,6 +24,11 @@ export async function consumeMembershipWaitlistRateLimit(fingerprintHash: string
 export async function joinMembershipWaitlist(submission: MembershipWaitlistSubmission): Promise<void> {
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
+    // Validate before checking the email, so existing and new submissions receive
+    // the same expired/revoked response. The row lock also serializes renewal.
+    if (submission.invitationToken) {
+      await tx`select private.ruined_require_member_invitation(${submission.invitationToken})`;
+    }
     // Avoid consuming a spreadsheet row for routine retries. The unique email
     // constraint also handles simultaneous requests safely.
     const rows = await tx<Array<{ id: string }>>`

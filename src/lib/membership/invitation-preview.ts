@@ -6,6 +6,7 @@ export function memberInvitationPreviewSnapshot(): MemberInvitationSnapshot {
   const { card } = memberCardPreviewSnapshot();
   return {
     card: { name: card.name, memberTag: card.memberTag, wearSeed: card.wearSeed, avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [] },
+    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     enabled: false, eligible: false, writable: false, url: null, joinedCount: 0, version: 0,
   };
 }

@@ -20,5 +20,5 @@ export default async function InvitationPage({ params }: Props) {
   if (!MEMBER_INVITATION_TOKEN.test(token)) notFound();
   const invitation = await getPublicMemberInvitation(token);
   if (!invitation) notFound();
-  return <InvitationLanding card={invitation.card} token={token} />;
+  return <InvitationLanding card={invitation.card} expiresAt={invitation.expiresAt} token={token} />;
 }

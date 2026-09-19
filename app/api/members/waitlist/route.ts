@@ -55,6 +55,10 @@ export async function POST(request: Request) {
   if (body && typeof body === "object" && "website" in body && typeof body.website === "string" && body.website.trim()) {
     return json({ ok: true });
   }
+  if (body && typeof body === "object" && "invitationToken" in body &&
+      (typeof body.invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.invitationToken))) {
+    return json({ error: "This invitation is no longer available. Ask the member for a new invitation." }, 410);
+  }
   const submission = parseMembershipWaitlistInput(body);
   if (!submission) return json({ error: "Enter your name, a valid email, and a valid phone number if provided." }, 400);
 
@@ -79,7 +83,10 @@ export async function POST(request: Request) {
       }
     });
     return json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P4100") {
+      return json({ error: "This invitation is no longer available. Ask the member for a new invitation." }, 410);
+    }
     console.error("Membership waitlist submission failed.");
     return json({ error: "The waitlist is temporarily unavailable. Please try again shortly." }, 503);
   }

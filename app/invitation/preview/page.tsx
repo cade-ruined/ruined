@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Invitation preview", robots: { index: false, follow: false }, referrer: "no-referrer" };
 export default function InvitationPreviewPage() {
   if (getPlatformConfiguration().mode !== "preview") notFound();
-  const { card } = memberInvitationPreviewSnapshot();
+  const { card, expiresAt } = memberInvitationPreviewSnapshot();
   if (!card) notFound();
-  return <InvitationLanding card={card} preview />;
+  return <InvitationLanding card={card} expiresAt={expiresAt} preview />;
 }
