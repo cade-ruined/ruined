@@ -11,7 +11,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function fixture(behaviors = []) {
+function fixture(behaviors = [], { seedShared = true } = {}) {
   const source = readFileSync(new URL("../src/lib/database/server.ts", import.meta.url), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
@@ -21,7 +21,7 @@ function fixture(behaviors = []) {
   const timers = new Set();
   const timerDurations = [];
   const singleton = { end() { throw new Error("The shared write pool must remain untouched"); } };
-  const globalState = { ruinedApplicationDatabase: singleton };
+  const globalState = seedShared ? { ruinedApplicationDatabase: singleton } : {};
   const mod = { exports: {} };
   const postgres = (_url, options) => {
     const behavior = behaviors[pools.length] ?? {};
@@ -63,6 +63,19 @@ function fixture(behaviors = []) {
   );
   return { ...mod.exports, globalState, logs, pools, singleton, timerDurations, timers };
 }
+
+test("profile reads allow four connections without queuing pipelined queries on one connection", async () => {
+  const f = fixture([], { seedShared: false });
+  const shared = f.getApplicationDatabase();
+  assert.equal(shared.options.max_pipeline, undefined, "shared write connection behavior is preserved");
+  const result = await f.withFreshApplicationDatabaseRead("member-home", () => f.getApplicationDatabase()`select profile`);
+  assert.equal(result, "loaded");
+  assert.equal(f.pools[1].options.max_pipeline, 0, "one would still allow a second query behind the active query");
+  assert.equal(f.pools[1].options.max, 4);
+  assert.equal(f.pools[1].options.prepare, false);
+  assert.equal(f.getApplicationDatabase(), shared);
+  assert.equal(shared.ends.length, 0);
+});
 
 test("a poisoned member read retries once in a fresh pool and preserves the shared write pool", async () => {
   const f = fixture([{ hang: true }, { value: "member profile" }]);
