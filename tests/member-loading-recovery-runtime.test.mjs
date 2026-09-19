@@ -53,26 +53,30 @@ function homeFixture(overrides = {}) {
   };
 }
 
-function pageFixture(data, { state = "authenticated", products = [] } = {}) {
-  const calls = { products: 0, resolutions: [], timelines: 0 };
-  const viewer = state === "authenticated" ? { authUserId: "member-auth-id" } : null;
+function pageFixture(data, { state = "authenticated", products = [], viewer = state === "authenticated" ? { authUserId: "member-auth-id" } : null, timelineError = null } = {}) {
+  const calls = { products: 0, resolutions: [], timelines: 0, reads: [] };
   const { default: Page } = loadModule("app/my/page.tsx", {
     "next/navigation": { redirect: (href) => { throw new Error(`redirect:${href}`); } },
     "@/components/membership/RuinedTimeline": component("timeline"),
     "@/lib/membership/access-policy": { memberCan: (access, capability) => access.capabilities.includes(capability) },
     "@/components/platform/MemberHome": component("member-home"),
     "@/components/platform/PlatformUnavailable": component("platform-unavailable"),
+    "@/lib/database/server": {
+      withFreshApplicationDatabaseRead: async (stage, read) => { calls.reads.push(stage); return read(); },
+    },
     "@/lib/membership/artifact-products": {
       resolveMemberHomeArtifactProducts: (snapshot, catalog) => {
         calls.resolutions.push(catalog);
         return resolveMemberHomeArtifactProducts(snapshot, catalog);
       },
     },
-    "@/lib/membership/page-context": { getMembershipPageContext: async () => ({ data, state, viewer }) },
+    "@/lib/membership/page-context": { getMembershipPageContext: async (_, load) => ({
+      data: state === "authenticated" ? await load(viewer.authUserId) : data, state, viewer,
+    }) },
     "@/lib/membership/preview": { PREVIEW_MEMBER_HOME: {}, PREVIEW_MEMBER_TIMELINE: {} },
     "@/lib/membership/repository": {
       getMemberHome: async () => data,
-      getMemberTimeline: async () => { calls.timelines += 1; return {}; },
+      getMemberTimeline: async () => { calls.timelines += 1; if (timelineError) throw timelineError; return {}; },
     },
     "@/lib/shopify": { getProducts: async () => { calls.products += 1; return products; } },
   });
@@ -89,6 +93,27 @@ test("loading recovery is a native same-page link in server HTML without client 
   assert.equal(attr(retry, "href"), "");
   assert.equal(new URL(attr(retry, "href"), "https://members.theruinedproject.com/my?returnTo=profile").href,
     "https://members.theruinedproject.com/my?returnTo=profile");
+});
+
+test("profile and optional timeline reads use isolated recovery without blocking the profile on timeline failure", async () => {
+  const member = homeFixture({ access: { capabilities: ["home.read", "foundations.write"] } });
+  const f = pageFixture(member, { timelineError: new Error("Timeline unavailable") });
+  const result = await f.Page();
+  assert.equal(result.type, "member-home");
+  assert.equal(result.props.timeline, undefined);
+  assert.deepEqual(f.calls.reads, ["member-home", "member-timeline"]);
+});
+
+test("authenticated profile failures render native reload without asking the member to sign in again", async () => {
+  const f = pageFixture(null, { state: "unavailable", viewer: { authUserId: "private-member-id" } });
+  const markup = renderToStaticMarkup(await f.Page());
+  const nodes = elements(parseFragment(markup));
+  const retry = nodes.find((node) => node.tagName === "a" && content(node) === "Reload profile");
+  assert.equal(new URL(attr(retry, "href"), "https://members.theruinedproject.com/my").pathname, "/my");
+  assert.match(markup, /Your profile couldn’t load/);
+  assert.doesNotMatch(markup, /passwordless|sign.in|private-member-id/);
+  assert.equal(f.calls.products, 0);
+  assert.equal(f.calls.timelines, 0);
 });
 
 test("members without Shopify-linked artifacts render without requesting the storefront", async () => {
