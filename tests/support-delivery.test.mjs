@@ -212,6 +212,7 @@ test("the protected cron invokes support even when marketing is not configured",
     "next/server": { NextResponse: { json: (body, options = {}) => ({ body, status: options.status ?? 200 }) } },
     "@/lib/communications/worker": { processResendOutboxBatch: async () => { calls.push("marketing"); return { ready: false, missing: ["marketing disabled"] }; } },
     "@/lib/support/delivery": { processSupportEmailBatch: async () => { calls.push("support"); return { ready: true, sent: 1 }; } },
+    "@/lib/membership/personal-invitation-delivery": { processPersonalInvitationEmailBatch: async () => { calls.push("invitations"); return { ready: true, sent: 0 }; } },
   });
   await withEnvironment({ CRON_SECRET: "test-worker-secret" }, async () => {
     const denied = await routes.GET(new Request("https://example.com/api/internal/communications/process"));
@@ -220,6 +221,6 @@ test("the protected cron invokes support even when marketing is not configured",
     const accepted = await routes.POST(new Request("https://example.com/api/internal/communications/process", { headers: { authorization: "Bearer test-worker-secret" } }));
     assert.equal(accepted.status, 200);
     assert.equal(accepted.body.support.sent, 1);
-    assert.deepEqual(calls.sort(), ["marketing", "support"]);
+    assert.deepEqual(calls.sort(), ["invitations", "marketing", "support"]);
   });
 });

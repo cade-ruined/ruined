@@ -87,6 +87,9 @@ const cases = [
   ["invitation-private-profile", { ...base, avatarUrl: privatePortrait, location: "PRIVATE LOCATION", labels: ["PRIVATE LABEL"], buildingNow: "PRIVATE BUILDING", bio: "PRIVATE BIOGRAPHY", websiteUrl: "https://private-website.example/" }, "invitation"],
   ["invitation-image-fallback", { ...base, avatarUrl: privatePortrait }, "invitation"],
   ["invitation-unissued", { ...base }, "invitation", null],
+  ["invitation-personal", { ...base }, "invitation", invitationExpiresAt, "Taylor"],
+  ["invitation-personal-long", { ...base }, "invitation", invitationExpiresAt, "W".repeat(100)],
+  ["invitation-personal-name", { ...base }, "invitation", invitationExpiresAt, "Alexandra Marie Rodríguez Williams"],
   ["tag-as-name", { ...base, name: "@alex_morgan" }],
   ["legacy", { ...base, memberTag: null }],
   ["minimal", { ...base, name: "Alex", avatarUrl: null, memberSince: null, location: null, buildingNow: null, bio: null, websiteUrl: null, labels: [] }],
@@ -98,14 +101,14 @@ const materialKeys = ["frontRoughness", "backRoughness", "frontBump", "backBump"
 const fingerprint = surface => createHash("sha256").update(surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data).digest("hex");
 const fingerprints = artwork => Object.fromEntries(materialKeys.map(key => [key, fingerprint(artwork[key])]));
 let memberMaterials, publicInvitationPrint, publicInvitationText;
-for (const [name, card, variant, expiresAt = invitationExpiresAt] of cases) {
+for (const [name, card, variant, expiresAt = invitationExpiresAt, recipientName = null] of cases) {
   const fallback = name === "invitation-image-fallback";
   // A fresh module avoids the successful reference-image cache masking failure.
   const renderer = fallback ? load(resolve("src/components/membership/card/card-artwork.ts")) : artworkModule;
   const requestStart = imageRequests.length;
   if (fallback) rejectedImages.add(invitationPhoto);
   let artwork;
-  try { artwork = await renderer.createCardArtwork(card, variant, variant === "invitation" ? expiresAt : null); }
+  try { artwork = await renderer.createCardArtwork(card, variant, variant === "invitation" ? expiresAt : null, recipientName); }
   finally { rejectedImages.delete(invitationPhoto); }
   const invitation = variant === "invitation";
   const requested = imageRequests.slice(requestStart);
@@ -181,9 +184,13 @@ for (const [name, card, variant, expiresAt = invitationExpiresAt] of cases) {
   }
   if (invitation) {
     assert.deepEqual(fingerprints(memberMaterials.artwork), memberMaterials.fingerprints, "An invitation sharing a member wear seed must not mutate that member's material maps.");
-    const handwriting = artwork.front.printedText.find(item => item.text === "This is for you.");
-    assert.ok(handwriting?.font.includes("CadeHandy2"), "The invitation must use the supplied handwriting font.");
-    assert.ok(handwriting.top >= 830 && handwriting.bottom < 1030, "The handwriting must sit below the photograph with space above the footer rule.");
+    const handwriting = artwork.front.printedText.filter(item => item.font.includes("CadeHandy2"));
+    assert.ok(handwriting.length, "The invitation must use the supplied handwriting font.");
+    assert.equal(handwriting.map(item => item.text).join("").replace(/\s/g, ""),
+      (recipientName ? `This is for ${recipientName}.` : "This is for you.").replace(/\s/g, ""),
+      "The chosen recipient name must be printed completely.");
+    for (const line of handwriting) assert.ok(line.left >= 60 && line.right <= 946 && line.top >= 830 && line.bottom < 1073,
+      `The handwriting must stay below the photograph and above the footer rule: ${JSON.stringify(line)}`);
     assert.deepEqual(artwork.back.printedText.map(item => item.text), ["You’re allowed", "to become someone new."], "The back must preserve the supplied message without member-only labels.");
     const validity = artwork.front.printedText.filter(item => item.text.startsWith("VALID "));
     assert.equal(validity.length, 1, `${name} must print exactly one validity line.`);

@@ -7,7 +7,7 @@ import styles from "./MembershipWaitlistForm.module.css";
 
 const SEND_ERROR = "Your details didn’t send. Please try again.";
 
-export default function MembershipWaitlistForm({ tone = "dark", invitationToken, disabled = false }: { tone?: "dark" | "paper"; invitationToken?: string; disabled?: boolean } = {}) {
+export default function MembershipWaitlistForm({ tone = "dark", invitationToken, disabled = false, prefillName }: { tone?: "dark" | "paper"; invitationToken?: string; disabled?: boolean; prefillName?: string } = {}) {
   const fieldId = useId();
   const submitting = useRef(false);
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -67,7 +67,7 @@ export default function MembershipWaitlistForm({ tone = "dark", invitationToken,
             <legend className={styles.visuallyHidden}>Your details</legend>
             <div className={styles.field}>
               <label htmlFor={`${fieldId}-name`}>Name</label>
-              <input autoComplete="name" id={`${fieldId}-name`} maxLength={100} name="name" required />
+              <input autoComplete="name" id={`${fieldId}-name`} maxLength={100} name="name" defaultValue={prefillName ?? ""} required />
             </div>
             <div className={styles.field}>
               <label htmlFor={`${fieldId}-email`}>Email</label>

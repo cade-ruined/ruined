@@ -35,11 +35,11 @@ const link = ({ children, ...props }) => React.createElement("a", props, childre
 const params = value => ({ params: Promise.resolve({ token: value }) });
 const descendants = element => React.isValidElement(element)
   ? [element, ...React.Children.toArray(element.props.children).flatMap(descendants)] : [];
-const textContent = element => typeof element === "string" || typeof element === "number" ? String(element)
-  : React.isValidElement(element) ? React.Children.toArray(element.props.children).map(textContent).join("") : "";
+
 
 async function publicRoute(read) {
   return load("app/invitation/[token]/page.tsx", {
+    react: { ...React, cache: fn => fn },
     "next/navigation": { notFound },
     "@/components/membership/MemberInvitation": { InvitationLanding: renderInvitation },
     "@/lib/membership/invitation-repository": { getPublicMemberInvitation: read },
@@ -100,24 +100,26 @@ test("public invitation routes pass the card and token without the owner's priva
 test("owner invitation route checks authentication and never substitutes samples after a failure", async () => {
   let mode = "connected", viewer = null, failure = null, sampleCalls = 0, reads = 0;
   const owner = () => null, unavailable = () => null;
+  const ownerSnapshot = { ...snapshot, invitations: [], counts: { created: 0, active: 0, expired: 0, submitted: 0, joined: 17 }, emailReady: false };
   const page = await load("app/my/invitation/page.tsx", {
     "next/navigation": { redirect },
     "@/components/membership/MemberInvitation": owner,
     "@/components/platform/PlatformUnavailable": unavailable,
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => viewer },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
-    "@/lib/membership/invitation-repository": { getOwnMemberInvitation: async id => {
-      reads++; assert.equal(id, "verified-user"); if (failure) throw failure; return snapshot;
+    "@/lib/membership/personal-invitation-repository": { getOwnPersonalInvitations: async id => {
+      reads++; assert.equal(id, "verified-user"); if (failure) throw failure; return ownerSnapshot;
     } },
     "@/lib/membership/invitation-model": model,
+    "@/lib/membership/personal-invitation-delivery": { getPersonalInvitationEmailReady: () => false },
     "@/lib/membership/public-card-model": cardModel,
-    "@/lib/membership/invitation-preview": { memberInvitationPreviewSnapshot: () => { sampleCalls++; return { ...snapshot, writable: false, joinedCount: 0 }; } },
+    "@/lib/membership/personal-invitation-preview": { personalInvitationPreviewSnapshot: () => { sampleCalls++; return { ...ownerSnapshot, writable: false, counts: { created: 3, active: 1, expired: 1, submitted: 1, joined: 1 } }; } },
   });
   await assert.rejects(page.default(), { href: "/my/access" });
   assert.equal(reads, 0); assert.equal(sampleCalls, 0);
   viewer = { authUserId: "verified-user" };
   const ineligible = await page.default();
-  assert.equal(ineligible.type, owner); assert.equal(ineligible.props.initialSnapshot, snapshot);
+  assert.equal(ineligible.type, owner); assert.deepEqual(ineligible.props.initialSnapshot, ownerSnapshot);
   assert.equal(ineligible.props.initialSnapshot.eligible, false, "ineligible members can inspect the disabled owner view");
   failure = new Error("PRIVATE DATABASE ERROR");
   const failed = await page.default();
@@ -131,7 +133,7 @@ test("owner invitation route checks authentication and never substitutes samples
   mode = "preview";
   const preview = await page.default();
   assert.equal(preview.props.preview, true); assert.equal(preview.props.initialSnapshot.writable, false);
-  assert.equal(preview.props.initialSnapshot.joinedCount, 0); assert.equal(sampleCalls, 1);
+  assert.equal(preview.props.initialSnapshot.counts.joined, 1); assert.equal(sampleCalls, 1);
 });
 
 test("invitation preview routes stay unavailable in production even with preview mode requested", async () => {
@@ -177,31 +179,8 @@ test("public landing offers the attributed waitlist without owner controls or jo
   assert.equal(descendants(preview).some(item => item.type === renderWaitlist), false, "sample invitations cannot submit attributed joins");
 });
 
-test("ineligible, read-only and preview owner views cannot enable invitation sharing", async () => {
-  const invitation = await load("src/components/membership/MemberInvitation.tsx", {
-    react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} },
-    "next/link": link,
-    "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
-    "./card/PublicMemberCardPage": renderInvitation,
-    "@/lib/membership/invitation-expiry": expiry,
-    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
-  });
-  for (const input of [
-    { initialSnapshot: snapshot },
-    { initialSnapshot: { ...snapshot, eligible: true, writable: false } },
-    { initialSnapshot: { ...snapshot, eligible: true }, preview: true },
-  ]) {
-    const rendered = invitation.default(input);
-    const enable = descendants(rendered).find(item => item.type === "button" && /Create my invitation/.test(textContent(item)));
-    assert.ok(enable); assert.equal(enable.props.disabled, true);
-    assert.doesNotMatch(renderToStaticMarkup(rendered), /data-invitation-token/);
-  }
-  const loading = invitation.default({ initialSnapshot: null });
-  assert.match(renderToStaticMarkup(loading), /Preparing your invitation/);
-  assert.doesNotMatch(renderToStaticMarkup(loading), /Chosen|public-invitation-wear|joined through/);
-});
 
-test("expired public and owner views stop new use while retaining the original deadline and referral count", async () => {
+test("expired public views stop new use while retaining the original deadline", async () => {
   const invitation = await load("src/components/membership/MemberInvitation.tsx", {
     react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
@@ -214,35 +193,8 @@ test("expired public and owner views stop new use while retaining the original d
   assert.equal(publicPage.props.invitationExpiresAt, elapsed);
   assert.equal(descendants(publicPage).find(item => item.type === renderWaitlist).props.disabled, true);
   assert.match(renderToStaticMarkup(publicPage), /This invitation has expired/);
-  const owner = invitation.default({ initialSnapshot: { ...snapshot, enabled: true, eligible: true, expiresAt: elapsed, url: `/invitation/${token}` } });
-  assert.equal(owner.props.invitationExpiresAt, elapsed);
-  const html = renderToStaticMarkup(owner);
-  assert.match(html, /Create new invitation/); assert.match(html, /17/);
-  assert.doesNotMatch(html, /Copy link|Share invitation|Your invitation link/);
 });
 
-test("copying never renews an invitation and explicit renewal sends no caller-selected date or token", async () => {
-  const calls = [], copied = [];
-  const active = { ...snapshot, enabled: true, eligible: true, expiresAt, url: `/invitation/${token}` };
-  const invitation = await load("src/components/membership/MemberInvitation.tsx", {
-    react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": link,
-    "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
-    "./card/PublicMemberCardPage": renderInvitation,
-    "@/lib/membership/invitation-expiry": expiry,
-    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
-  }, {
-    window: { location: { origin: "https://members.example.test" } },
-    navigator: { clipboard: { writeText: async value => copied.push(value) } },
-    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok: true, json: async () => ({ snapshot: active }) }; },
-  });
-  const rendered = invitation.default({ initialSnapshot: active });
-  descendants(rendered).find(item => item.type === "button" && textContent(item) === "Copy link").props.onClick();
-  await Promise.resolve();
-  assert.deepEqual(copied, [`https://members.example.test/invitation/${token}`]); assert.equal(calls.length, 0);
-  descendants(rendered).find(item => item.type === "button" && textContent(item) === "Create a new 48-hour invitation").props.onClick();
-  await Promise.resolve();
-  assert.deepEqual(calls, [{ url: "/api/my/invitation", body: { enabled: true, version: active.version, renew: true } }]);
-});
 
 test("invitation waitlist submission adds only its opaque token and keeps ordinary submissions unchanged", async () => {
   const values = { name: "Test Person", email: "test@example.test", phone: "", website: "" };

@@ -240,7 +240,7 @@ export function cardArtworkFontRequests(variant: CardVariant) {
 }
 
 /** The invitation is its own print layout, using only consented identity fields. */
-function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingContext2D, card: PublicMemberCard, photo: HTMLImageElement | null, wordmark: HTMLImageElement | null, expiresAt: string | null) {
+function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingContext2D, card: PublicMemberCard, photo: HTMLImageElement | null, wordmark: HTMLImageElement | null, expiresAt: string | null, recipientName: string | null) {
   const cream = "#fff9e9";
   mark(front, wordmark, 52, 49, 266, 80, "#ffffff");
   front.fillStyle = cream; front.font = '700 38px "Inter Variable", Inter, sans-serif';
@@ -253,10 +253,20 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   front.strokeStyle = palette.rule; front.lineWidth = 2; front.strokeRect(53, 154, 902, 646);
   // Match the actual visible handwriting bounds, including its low underline.
   front.font = `400 112px ${handwritingFamily()}`; front.fillStyle = cream;
-  const handwritten = "This is for you.";
+  const handwritten = recipientName ? `This is for ${recipientName}.` : "This is for you.";
   front.textBaseline = "alphabetic";
-  const handwritingMetrics = front.measureText(handwritten);
-  front.fillText(handwritten, 62 + handwritingMetrics.actualBoundingBoxLeft, 839 + handwritingMetrics.actualBoundingBoxAscent);
+  if (recipientName) {
+    const layout = fitCardText(handwritten, { width: 870, height: 208, maxSize: 112, minSize: 28, leading: 1.12,
+      measure: (value, size) => { front.font = `400 ${size}px ${handwritingFamily()}`; const metrics = front.measureText(value); return Math.max(metrics.width, metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight); } });
+    front.font = `400 ${layout.size}px ${handwritingFamily()}`;
+    layout.lines.forEach((line, index) => {
+      const metrics = front.measureText(line);
+      front.fillText(line, 62 + metrics.actualBoundingBoxLeft, 839 + metrics.actualBoundingBoxAscent + index * layout.lineHeight);
+    });
+  } else {
+    const handwritingMetrics = front.measureText(handwritten);
+    front.fillText(handwritten, 62 + handwritingMetrics.actualBoundingBoxLeft, 839 + handwritingMetrics.actualBoundingBoxAscent);
+  }
 
   front.strokeStyle = palette.rule; front.lineWidth = 1;
   front.beginPath(); front.moveTo(62, 1073); front.lineTo(944, 1073); front.stroke();
@@ -282,7 +292,7 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   back.textAlign = "left";
 }
 
-export async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null): Promise<CardArtwork> {
+export async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null): Promise<CardArtwork> {
   const invitation = variant === "invitation";
   const card = invitation ? { ...source, avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
   const fonts = document.fonts ? Promise.allSettled(cardArtworkFontRequests(variant).map(font => document.fonts.load(font))) : Promise.resolve();
@@ -302,7 +312,7 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
       inkBase(ctx, inkPhoto); ctx.strokeStyle = palette.edgeRule; ctx.lineWidth = 2;
       rounded(ctx, 25, 25, CARD_WIDTH - 50, CARD_HEIGHT - 50, 24); ctx.stroke();
     }
-    printInvitation(f, b, card, invitationPhoto, wordmark, invitationExpiresAt);
+    printInvitation(f, b, card, invitationPhoto, wordmark, invitationExpiresAt, invitationRecipientName?.trim() || null);
     f.drawImage(materials.front.wear, 0, 0); b.drawImage(materials.back.wear, 0, 0);
     f.drawImage(foil.print, foil.position.x, foil.position.y); b.drawImage(backFoil.print, backFoil.position.x, backFoil.position.y);
     const roughness = canvas(512, 512); roughness.getContext("2d")!.drawImage(materials.front.roughness, 0, 0, 512, 512);

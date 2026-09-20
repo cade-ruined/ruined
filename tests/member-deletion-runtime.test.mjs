@@ -76,15 +76,19 @@ test("removal erases live profiles and authored content, preserves original hist
   await db.query("insert into member_journal_media(id,member_id,storage_path,mime_type,byte_size) values($1,$2,$3,'image/webp',12)",[id(12),member,`${member}/pending/${id(12)}`]);
   await db.query("insert into member_public_cards(member_id,public_token,wear_seed,public_enabled) values($1,$2,$3,true)",[member,"a".repeat(43),"b".repeat(24)]);
   await db.query("insert into member_invitations(member_id,public_token,enabled) values($1,$2,true)",[member,"c".repeat(43)]);
+  await db.query("insert into member_personal_invitations(id,member_id,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,delivery_payload) values($1,$2,$3,$4,'Private Recipient','recipient@example.test','Former Member',true,$5::jsonb)", [id(13),member,id(14),"p".repeat(43),JSON.stringify({to:"recipient@example.test",html:"Private invitation"})]);
+  await db.query("insert into membership_waitlist(id,name,email_normalized) values($1,'Recipient','recipient@example.test')", [id(15)]);
+  await db.query("insert into member_referrals(waitlist_id,inviter_member_id,personal_invitation_id) values($1,$2,$3)", [id(15),member,id(13)]);
   await db.query("insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,member_id,reason,before_snapshot,metadata) values($1,'member.state_override_applied','member',$2,$3,'Original reason','{\"evidence\":true}','{\"kept\":true}')",[admin,member,member]);
   const audit = (await db.query("select to_jsonb(a) as value from operator_audit_events a order by id")).rows;
   const history = (await db.query("select to_jsonb(h) as value from member_state_history h order by id")).rows;
   const result = await remove({email:"  MEMBER@example.test  "});
   assert.equal(result.deleted,true);
-  for (const table of ["person_profiles","person_private_profiles","person_email_addresses","member_journal_entries","member_journal_media","member_timeline_entries","member_timeline_entry_versions","member_public_cards","member_invitations"]) {
+  for (const table of ["person_profiles","person_private_profiles","person_email_addresses","member_journal_entries","member_journal_media","member_timeline_entries","member_timeline_entry_versions","member_public_cards","member_invitations","member_personal_invitations"]) {
     const column = table.startsWith("person_") ? "person_id" : "member_id";
     assert.equal((await db.query(`select count(*)::int n from ${table} where ${column}=$1`,[column === "person_id" ? person : member])).rows[0].n,0,table);
   }
+  assert.deepEqual((await db.query("select inviter_member_id,personal_invitation_id from member_referrals where waitlist_id=$1",[id(15)])).rows[0],{inviter_member_id:member,personal_invitation_id:null});
   assert.deepEqual((await db.query("select to_jsonb(a) as value from operator_audit_events a where action <> 'member.account_deleted' order by id")).rows,audit);
   assert.deepEqual((await db.query("select to_jsonb(h) as value from member_state_history h order by id")).rows,history);
   const saved = (await db.query("select * from private.member_deletion_records where member_id=$1",[member])).rows[0];

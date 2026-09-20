@@ -27,7 +27,7 @@ export async function joinMembershipWaitlist(submission: MembershipWaitlistSubmi
     // Validate before checking the email, so existing and new submissions receive
     // the same expired/revoked response. The row lock also serializes renewal.
     if (submission.invitationToken) {
-      await tx`select private.ruined_require_member_invitation(${submission.invitationToken})`;
+      await tx`select private.ruined_require_member_invitation(${submission.invitationToken}, ${submission.emailNormalized})`;
     }
     // Avoid consuming a spreadsheet row for routine retries. The unique email
     // constraint also handles simultaneous requests safely.
@@ -43,7 +43,12 @@ export async function joinMembershipWaitlist(submission: MembershipWaitlistSubmi
     const entry = rows[0];
     // Knowing an email address never lets a public request replace its details.
     // The route returns the same response for both existing and new entries.
-    if (!entry) return;
+    if (!entry) {
+      // The matching recipient may already be waiting. Record their response
+      // without editing their details or replacing the first referral owner.
+      if (submission.invitationToken) await tx`select private.ruined_mark_personal_invitation_submission(${submission.invitationToken}, ${submission.emailNormalized})`;
+      return;
+    }
 
     // Attribution belongs to the first actual submission. Repeated requests for
     // a known email cannot replace the inviter or manufacture another joining.

@@ -4,19 +4,20 @@ import MemberInvitation from "@/components/membership/MemberInvitation";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { getOwnMemberInvitation } from "@/lib/membership/invitation-repository";
+import { getOwnPersonalInvitations } from "@/lib/membership/personal-invitation-repository";
+import { getPersonalInvitationEmailReady } from "@/lib/membership/personal-invitation-delivery";
 import { MemberInvitationError } from "@/lib/membership/invitation-model";
-import { memberInvitationPreviewSnapshot } from "@/lib/membership/invitation-preview";
+import { personalInvitationPreviewSnapshot } from "@/lib/membership/personal-invitation-preview";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "My Invitation", robots: { index: false, follow: false }, referrer: "no-referrer" };
+export const metadata: Metadata = { title: "My Invitations", robots: { index: false, follow: false }, referrer: "no-referrer" };
 export default async function MyInvitationPage() {
   const configuration = getPlatformConfiguration();
-  if (configuration.mode === "preview") return <MemberInvitation initialSnapshot={memberInvitationPreviewSnapshot()} preview />;
+  if (configuration.mode === "preview") return <MemberInvitation initialSnapshot={personalInvitationPreviewSnapshot()} preview />;
   if (configuration.mode !== "connected") return <PlatformUnavailable accessHref="/my/access" />;
   const viewer = await getCurrentPlatformViewer();
   if (!viewer) redirect("/my/access");
-  try { return <MemberInvitation initialSnapshot={await getOwnMemberInvitation(viewer.authUserId)} />; }
+  try { return <MemberInvitation initialSnapshot={{ ...await getOwnPersonalInvitations(viewer.authUserId), emailReady: getPersonalInvitationEmailReady() }} />; }
   catch (error) {
     if (error instanceof MemberInvitationError && error.status === 403) return <PlatformUnavailable reason="member_access" />;
     return <MemberInvitation initialSnapshot={null} />;

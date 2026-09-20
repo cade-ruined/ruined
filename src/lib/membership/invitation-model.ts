@@ -1,6 +1,6 @@
 import type { PublicMemberCard } from "./public-card-model";
 
-export type PublicMemberInvitation = { card: PublicMemberCard; expiresAt: string };
+export type PublicMemberInvitation = { card: PublicMemberCard; expiresAt: string; recipientName?: string | null };
 export type MemberInvitationSnapshot = Omit<PublicMemberInvitation, "expiresAt"> & {
   expiresAt: string | null;
   enabled: boolean; eligible: boolean; writable: boolean;

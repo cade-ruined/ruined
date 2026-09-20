@@ -1,5 +1,6 @@
 import { publicMemberCardIdentity } from "@/lib/membership/public-card-model";
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { InvitationLanding } from "@/components/membership/MemberInvitation";
 import { getPublicMemberInvitation } from "@/lib/membership/invitation-repository";
@@ -10,9 +11,12 @@ export const revalidate = 0;
 type Props = { params: Promise<{ token: string }> };
 const origin = "https://members.theruinedproject.com";
 const shareMedia = `${origin}/membership/card/share/invitation-spin-v1`;
+// Metadata and the page share one read within this request only. Never cache a
+// token across requests: its deadline and the owner's withdrawal stay immediate.
+const readInvitation = cache(getPublicMemberInvitation);
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
-  const invitation = MEMBER_INVITATION_TOKEN.test(token) ? await getPublicMemberInvitation(token) : null;
+  const invitation = MEMBER_INVITATION_TOKEN.test(token) ? await readInvitation(token) : null;
   const title = invitation ? `An invitation from ${publicMemberCardIdentity(invitation.card)}` : "Invitation unavailable";
   const description = invitation ? "A personal invitation to Ruined." : "This invitation is unavailable.";
   // Messaging apps fetch these without running the interactive card. The media
@@ -42,7 +46,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function InvitationPage({ params }: Props) {
   const { token } = await params;
   if (!MEMBER_INVITATION_TOKEN.test(token)) notFound();
-  const invitation = await getPublicMemberInvitation(token);
+  const invitation = await readInvitation(token);
   if (!invitation) notFound();
-  return <InvitationLanding card={invitation.card} expiresAt={invitation.expiresAt} token={token} />;
+  return <InvitationLanding card={invitation.card} expiresAt={invitation.expiresAt} token={token}
+    {...(invitation.recipientName ? { recipientName: invitation.recipientName } : {})} />;
 }
