@@ -44,6 +44,7 @@ async function harness(options = {}) {
   };
   const component = await load("src/components/membership/PersonalInvitationAcceptance.tsx", {
     react: hooks, "@/lib/membership/invitation-expiry": expiry,
+    "@/lib/membership/personal-invitation-presentation": await load("src/lib/membership/personal-invitation-presentation.ts"),
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   }, {
     Date: Clock,
@@ -80,6 +81,20 @@ test("personal invitation accepts the entered email and verifies its code with t
   assert.deepEqual(ui.calls[1], { url: "/api/auth/otp/verify", method: "POST", body: { email: "alex@example.test", token: "123456", invitationToken: token } });
   assert.deepEqual(ui.redirects, ["/my/join"]);
   assert.doesNotMatch(JSON.stringify(ui.calls), /recipientName|inviterName|returnTo/);
+});
+
+test("complimentary acceptance explains ongoing or limited membership separately from the invitation deadline", async () => {
+  const ongoing = await harness({ props: { membershipType: "complimentary" } });
+  assert.match(text(ongoing.render()), /No payment is needed. Your complimentary membership is ongoing/);
+  assert.match(text(ongoing.render()), /complete your profile and accept the membership agreement/);
+  assert.match(text(ongoing.render()), /Accept by/);
+  const complimentaryEndsAt = "2027-01-01T06:59:59.999Z";
+  const limited = await harness({ props: { membershipType: "complimentary", complimentaryEndsAt } });
+  assert.match(text(limited.render()), /Dec 31, 2026, 11:59 PM MST/);
+  assert.deepEqual(descendants(limited.render()).filter(element => element.type === "time").map(element => element.props.dateTime), [complimentaryEndsAt, expiryAt]);
+  const standard = await harness();
+  assert.doesNotMatch(text(standard.render()), /Complimentary membership|No payment is needed/);
+  assert.equal(ongoing.calls.length + limited.calls.length + standard.calls.length, 0);
 });
 
 test("resending observes a real 60-second cooldown and keeps the invitation's deadline", async () => {

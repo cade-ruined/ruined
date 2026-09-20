@@ -24,10 +24,10 @@ async function loadPage(read) {
 
 test("personal invitation page shares the greeting but never recipient email, delivery details or owner counts", async () => {
   const token = "P".repeat(43), card = { name: "Inviter", memberTag: "inviter" };
-  const route = await loadPage(async () => ({ card, recipientName: "Taylor <Test>", recipientEmail: "PRIVATE@example.test", expiresAt: "2099-01-01T00:00:00Z", deliveryStatus: "PRIVATE DELIVERY", joinedCount: 91023 }));
+  const route = await loadPage(async () => ({ card, recipientName: "Taylor <Test>", recipientEmail: "PRIVATE@example.test", complimentaryReason: "PRIVATE NOTE", membershipType: "complimentary", complimentaryEndsAt: null, expiresAt: "2099-01-01T00:00:00Z", deliveryStatus: "PRIVATE DELIVERY", joinedCount: 91023 }));
   const props = { params: Promise.resolve({ token }) };
   const page = await route.default(props);
-  assert.deepEqual(page.props, { card, recipientName: "Taylor <Test>", token, expiresAt: "2099-01-01T00:00:00Z" });
+  assert.deepEqual(page.props, { card, recipientName: "Taylor <Test>", token, expiresAt: "2099-01-01T00:00:00Z", membershipType: "complimentary", complimentaryEndsAt: null });
   assert.doesNotMatch(JSON.stringify(page.props), /PRIVATE|recipientEmail|91023/);
   const metadata = await route.generateMetadata(props);
   assert.doesNotMatch(JSON.stringify(metadata), /Taylor|PRIVATE|recipientEmail|deliveryStatus|91023/,

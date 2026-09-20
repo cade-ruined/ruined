@@ -38,7 +38,7 @@ test("personal invitations create independently, normalize recipient details, an
   assert.equal(two.remainingToday, 18); assert.equal(two.invitations[0].deliveryStatus, "not_requested");
   assert.notEqual(two.invitations[0].url, invite.url);
   const pub = await f.repository.getPublicMemberInvitation(token(invite));
-  assert.deepEqual(Object.keys(pub).sort(), ["card", "expiresAt", "recipientName"]);
+  assert.deepEqual(Object.keys(pub).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "recipientName"]);
   assert.equal(pub.recipientName, "Alex Recipient"); assert.equal(pub.expiresAt, invite.expiresAt);
   assert.doesNotMatch(JSON.stringify(pub), /member-3|example.test|recipientEmail|PRIVATE|requestId|member_id/);
   assert.equal((await f.personalRepository.getOwnPersonalInvitations(second.auth)).invitations.length, 0);

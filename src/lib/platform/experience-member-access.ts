@@ -41,11 +41,11 @@ async function evaluateExperienceMemberAccess(
 ): Promise<boolean> {
   if (!memberId) return false;
   const funding = lockEvidence
-    ? await tx<Array<{ operator_funded: boolean }>>`
-        select private.ruined_lock_member_operator_funding(${memberId}::uuid) as operator_funded
+    ? await tx<Array<{ complimentary_funded: boolean }>>`
+        select private.ruined_lock_member_complimentary_funding(${memberId}::uuid) as complimentary_funded
       `
-    : await tx<Array<{ operator_funded: boolean }>>`
-        select private.ruined_member_has_operator_funding(${memberId}::uuid) as operator_funded
+    : await tx<Array<{ complimentary_funded: boolean }>>`
+        select private.ruined_member_has_complimentary_funding(${memberId}::uuid) as complimentary_funded
       `;
   const rows = await tx<Array<{
     account_state: MemberIdentity["accountState"];
@@ -81,7 +81,7 @@ async function evaluateExperienceMemberAccess(
   const row = rows[0];
   if (!row) return false;
   const access = deriveMemberAccessPolicy({
-    membershipFunding: funding[0]?.operator_funded ? "operator" : "self",
+    membershipFunding: funding[0]?.complimentary_funded ? "complimentary" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
     authUserId: row.auth_user_id,

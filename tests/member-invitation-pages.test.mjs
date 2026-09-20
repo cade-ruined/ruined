@@ -23,6 +23,7 @@ async function load(path, dependencies = {}, globals = {}) {
 const cardModel = await load("src/lib/membership/public-card-model.ts");
 const model = await load("src/lib/membership/invitation-model.ts");
 const expiry = await load("src/lib/membership/invitation-expiry.ts");
+const presentation = await load("src/lib/membership/personal-invitation-presentation.ts");
 const expiresAt = "2099-09-20T02:45:00.000Z";
 const token = "I".repeat(43);
 const card = model.invitationCard("Chosen <name>", "public-invitation-wear");
@@ -69,10 +70,11 @@ test("invalid and revoked invitations reveal no member details or sample content
 });
 
 test("public invitation routes pass the card and token without the owner's private count or identity", async () => {
-  let current = { card, expiresAt, joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL" };
+  let current = { card, expiresAt, membershipType: "complimentary", complimentaryEndsAt: "2099-12-31T06:59:59.999Z", complimentaryReason: "PRIVATE REASON", complimentaryAuthorizedByAuthUserId: "PRIVATE ACTOR", joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL" };
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
   const rendered = await page.default(params(token));
-  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "expiresAt", "token"]);
+  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "token"]);
+  assert.equal(rendered.props.membershipType, "complimentary"); assert.equal(rendered.props.complimentaryEndsAt, current.complimentaryEndsAt);
   assert.equal(rendered.props.expiresAt, expiresAt); assert.deepEqual(rendered.props.card, card); assert.equal(rendered.props.token, token);
   assert.match(renderToStaticMarkup(rendered), /Chosen &lt;name&gt;/);
   assert.doesNotMatch(JSON.stringify(rendered.props), /7391|PRIVATE|joinedCount|personId|email/);
@@ -116,23 +118,23 @@ test("owner invitation route checks authentication and never substitutes samples
     "@/lib/membership/public-card-model": cardModel,
     "@/lib/membership/personal-invitation-preview": { personalInvitationPreviewSnapshot: () => { sampleCalls++; return { ...ownerSnapshot, writable: false, counts: { created: 3, active: 1, expired: 1, accepted: 1, submitted: 1, joined: 1 } }; } },
   });
-  await assert.rejects(page.default(), { href: "/my/access" });
+  await assert.rejects(page.default({}), { href: "/my/access" });
   assert.equal(reads, 0); assert.equal(sampleCalls, 0);
   viewer = { authUserId: "verified-user" };
-  const ineligible = await page.default();
+  const ineligible = await page.default({});
   assert.equal(ineligible.type, owner); assert.deepEqual(ineligible.props.initialSnapshot, ownerSnapshot);
   assert.equal(ineligible.props.initialSnapshot.eligible, false, "ineligible members can inspect the disabled owner view");
   failure = new Error("PRIVATE DATABASE ERROR");
-  const failed = await page.default();
+  const failed = await page.default({});
   assert.equal(failed.type, owner); assert.equal(failed.props.initialSnapshot, null);
   assert.doesNotMatch(JSON.stringify(failed.props), /PRIVATE|Chosen/); assert.equal(sampleCalls, 0);
   failure = new model.MemberInvitationError(403, "PRIVATE ACCESS DETAIL");
-  const denied = await page.default();
+  const denied = await page.default({});
   assert.equal(denied.type, unavailable); assert.equal(denied.props.reason, "member_access");
   mode = "unavailable";
-  assert.equal((await page.default()).props.accessHref, "/my/access"); assert.equal(sampleCalls, 0);
+  assert.equal((await page.default({})).props.accessHref, "/my/access"); assert.equal(sampleCalls, 0);
   mode = "preview";
-  const preview = await page.default();
+  const preview = await page.default({});
   assert.equal(preview.props.preview, true); assert.equal(preview.props.initialSnapshot.writable, false);
   assert.equal(preview.props.initialSnapshot.counts.joined, 1); assert.equal(sampleCalls, 1);
 });
@@ -150,12 +152,14 @@ test("invitation preview routes stay unavailable in production even with preview
     });
     process.env.NODE_ENV = "production"; process.env.PLATFORM_MODE = "preview";
     for (const key of keys.slice(2)) delete process.env[key];
-    assert.throws(() => page.default(), { status: 404 });
+    await assert.rejects(page.default({}), { status: 404 });
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.test";
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "test"; process.env.DATABASE_URL = "test";
-    assert.throws(() => page.default(), { status: 404 }); assert.equal(samples, 0);
+    await assert.rejects(page.default({}), { status: 404 }); assert.equal(samples, 0);
     process.env.NODE_ENV = "development";
-    assert.equal(page.default().props.preview, true); assert.equal(samples, 1);
+    assert.equal((await page.default({})).props.preview, true); assert.equal(samples, 1);
+    const complimentary = await page.default({ searchParams: Promise.resolve({ membership: "complimentary" }) });
+    assert.equal(complimentary.props.membershipType, "complimentary"); assert.equal(complimentary.props.preview, true);
   } finally {
     for (const key of keys) { if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key]; }
   }
@@ -168,6 +172,7 @@ test("public landing offers the attributed waitlist without owner controls or jo
     "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
+    "@/lib/membership/personal-invitation-presentation": presentation,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   const landing = invitation.InvitationLanding({ card, token, expiresAt });
@@ -189,6 +194,7 @@ test("expired public views stop new use while retaining the original deadline", 
     "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
+    "@/lib/membership/personal-invitation-presentation": presentation,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   const elapsed = "2000-01-01T00:00:00.000Z";
@@ -205,6 +211,7 @@ test("personal landings route directly to email acceptance while legacy invitati
     "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
+    "@/lib/membership/personal-invitation-presentation": presentation,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   for (const preview of [false, true]) {
@@ -212,7 +219,7 @@ test("personal landings route directly to email acceptance while legacy invitati
     const elements = descendants(landing);
     assert.equal(elements.some(element => element.type === renderWaitlist), false);
     const acceptance = elements.find(element => element.type === renderAcceptance);
-    assert.deepEqual(acceptance.props, { invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, expiresAt, preview });
+    assert.deepEqual(acceptance.props, { invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, expiresAt, membershipType: "standard", complimentaryEndsAt: null, preview });
     assert.doesNotMatch(JSON.stringify(acceptance.props), /recipientEmail|personId|joinedCount/);
     if (!preview) assert.match(renderToStaticMarkup(landing.props.headerActions), /Accept invitation/);
   }

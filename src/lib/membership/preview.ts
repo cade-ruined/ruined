@@ -291,6 +291,7 @@ export const PREVIEW_MEMBER_PROFILE: MemberProfileSnapshot = {
 };
 
 export const PREVIEW_MEMBER_ONBOARDING: MemberOnboardingSnapshot = {
+  billingState: "pending",
   agreement: {
     acceptanceId: "preview-acceptance",
     acceptedAt: "2026-08-01T16:00:00.000Z",

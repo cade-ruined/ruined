@@ -2,7 +2,7 @@ import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-pol
 import { PREVIEW_MEMBER_IDENTITY, PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/membership/preview";
 import type { MemberIdentity } from "@/lib/membership/model";
 
-export const MEMBER_PREVIEW_SCENARIOS = ["foundations", "joining", "active", "operator", "limited"] as const;
+export const MEMBER_PREVIEW_SCENARIOS = ["foundations", "joining", "active", "operator", "complimentary", "limited"] as const;
 export type MemberPreviewScenario = typeof MEMBER_PREVIEW_SCENARIOS[number];
 export const MEMBER_PREVIEW_COOKIE = "ruined-member-preview";
 export function memberPreviewScenario(value: unknown): MemberPreviewScenario {
@@ -12,10 +12,11 @@ export function memberPreviewScenario(value: unknown): MemberPreviewScenario {
 // Presentation fixtures only. The server calls this exclusively in the
 // existing non-production preview mode; it never authorizes a real account.
 export function memberPreviewIdentity(scenario: MemberPreviewScenario) {
-  const identity = { ...PREVIEW_MEMBER_IDENTITY, membershipFunding: "self" as "self" | "operator" };
+  const identity = { ...PREVIEW_MEMBER_IDENTITY, membershipFunding: "self" as "self" | "operator" | "complimentary" };
   if (scenario === "joining") Object.assign(identity, { billingState: "pending", administrativeOnboardingState: "in_progress", standingState: "pre_active", programState: "prospect", foundationsState: "not_started" });
   if (scenario === "active" || scenario === "operator") Object.assign(identity, { programState: "active", foundationsState: "completed" });
   if (scenario === "operator") Object.assign(identity, { membershipFunding: "operator", billingState: "pending" });
+  if (scenario === "complimentary") Object.assign(identity, { membershipFunding: "complimentary", billingState: "pending" });
   if (scenario === "limited") Object.assign(identity, { standingState: "paused", programState: "paused" });
   return identity;
 }

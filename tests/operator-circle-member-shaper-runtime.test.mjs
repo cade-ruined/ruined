@@ -283,8 +283,8 @@ test("write lock order matches member transfers and operator role edits before C
   const find = (part) => f.queries.findIndex((query) => query.includes(part));
   const memberLock = f.queries.findIndex((query) => query.includes("pg_advisory_xact_lock(hashtext($1), 2)"));
   assert.ok(find("ruined-operator-admins") < memberLock);
-  assert.ok(memberLock < find("ruined_lock_member_operator_funding"));
-  assert.ok(find("ruined_lock_member_operator_funding") < find("select grant_row.id"));
+  assert.ok(memberLock < find("ruined_lock_member_complimentary_funding"));
+  assert.ok(find("ruined_lock_member_complimentary_funding") < find("select grant_row.id"));
   assert.ok(find("select grant_row.id") < find("for update of member, person, lifecycle"));
   assert.ok(find("for update of member, person, lifecycle") < find("select id from circle_member_assignments"));
   assert.ok(find("select id from circle_member_assignments") < find("select id, name, status from circles"));

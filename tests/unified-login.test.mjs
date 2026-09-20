@@ -139,6 +139,7 @@ async function routeModule(kind, options = {}) {
         calls.push("claim"); assert.deepEqual(input, viewer);
         if (context) calls.push({ claimContext: context });
         if (options.denied) throw new PlatformAccessDeniedError();
+        if (options.billingConflict) throw Object.assign(new Error("Existing billing"), { code: "P4102" });
         return { redirectTo: context ? "/my/join" : "/my" };
       },
       getSupportSignInDestination: supportAccess.getSupportSignInDestination,
@@ -271,6 +272,17 @@ test("personal acceptance never returns a session for invalid sources, mismatche
     if (options.personalEligible === false || options.personalUnavailable) assert.ok(!api.calls.includes("verify"));
     if (options.wrongEmail) assert.ok(!api.calls.includes("claim"));
   }
+});
+
+test("complimentary billing conflicts clear the verified session and explain the existing checkout without granting access", async () => {
+  const api = await routeModule("verify", { billingConflict: true });
+  const response = await api.POST(request("verify", { email: viewer.email, token: "123456", invitationToken: personalToken }));
+  assert.equal(response.status, 409);
+  const payload = await response.json();
+  assert.match(payload.error, /already have membership billing/);
+  assert.equal(payload.redirectTo, undefined);
+  assert.equal(response.cookies.get("test-session")?.value, "");
+  assert.ok(api.calls.includes("signout"));
 });
 
 test("personal invitation sign-in grants only membership even when another staff invitation exists", async () => {

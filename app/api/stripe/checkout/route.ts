@@ -70,8 +70,9 @@ export async function POST(request: Request) {
 
   try {
     const fundingViewer = await getCurrentPlatformViewer();
-    if (fundingViewer && (await getMemberIdentity(fundingViewer.authUserId))?.membershipFunding === "operator") {
-      return NextResponse.json({ error: "Your operator membership is complimentary. Return to membership entry to activate it." }, { status: 409 });
+    const funding = fundingViewer ? (await getMemberIdentity(fundingViewer.authUserId))?.membershipFunding : null;
+    if (funding === "operator" || funding === "complimentary") {
+      return NextResponse.json({ error: "Your membership is complimentary. Return to membership entry to activate it." }, { status: 409 });
     }
     const configuration = getPlatformConfiguration();
     if (!configuration.stripeCheckoutReady) {

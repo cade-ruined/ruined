@@ -89,6 +89,7 @@ function rethrowMemberTagConflict(error: unknown): never {
 }
 
 type IdentityRow = {
+  complimentary_funded: boolean;
   operator_funded: boolean;
   account_state: AccountState;
   administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
@@ -110,7 +111,7 @@ function toIso(value: Date | string | null | undefined): string | null {
 
 function identityFromRow(row: IdentityRow): MemberIdentity {
   return {
-    membershipFunding: row.operator_funded ? "operator" : "self",
+    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
     authUserId: row.auth_user_id,
@@ -138,6 +139,7 @@ export async function getMemberIdentity(
       lifecycle.account_state,
       lifecycle.billing_state,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state,
       lifecycle.foundations_state,
       lifecycle.administrative_onboarding_state,
@@ -296,6 +298,7 @@ export async function getMemberOnboarding(
       version: row.agreement_version === null ? null : String(row.agreement_version),
     },
     completedAt: toIso(row.completed_at),
+    billingState: identity.billingState,
     membershipFunding: identity.membershipFunding,
     email: identity.email,
     profile: {
@@ -805,7 +808,7 @@ export async function completeMemberAdministrativeOnboarding(
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 43)`;
-    await tx`select private.ruined_lock_member_operator_funding(${identity.memberId}::uuid)`;
+    await tx`select private.ruined_lock_member_complimentary_funding(${identity.memberId}::uuid)`;
     // Billing activation and permanent number allocation lock member before lifecycle.
     await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
     const lifecycleRows = await tx<
@@ -834,13 +837,14 @@ export async function completeMemberAdministrativeOnboarding(
         completion_evidence = onboarding.completion_evidence || jsonb_build_object(
           'source', 'member_entry_reconciliation',
           'funding', case when private.ruined_member_has_operator_funding(onboarding.member_id)
-            then 'operator' else 'self' end),
+            then 'operator' when private.ruined_member_has_complimentary_funding(onboarding.member_id)
+            then 'complimentary' else 'self' end),
         version = onboarding.version + 1,
         updated_at = statement_timestamp()
       from member_lifecycle lifecycle
       where onboarding.member_id = ${identity.memberId}::uuid
         and lifecycle.member_id = onboarding.member_id
-        and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(onboarding.member_id))
+        and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(onboarding.member_id))
         and lifecycle.account_state = 'active'
         and onboarding.profile_completed_at is not null
         and onboarding.agreement_completed_at is not null
@@ -848,7 +852,7 @@ export async function completeMemberAdministrativeOnboarding(
     `;
     if (!updated[0]) {
       throw new MembershipConflictError(
-        "Complete your profile and agreement, then confirm payment or complimentary operator access.",
+        "Complete your profile and agreement, then confirm payment or complimentary membership.",
       );
     }
     await tx`
@@ -3005,7 +3009,7 @@ export async function getMemberHome(
       kind: "onboarding",
       title: "Finish membership entry.",
     };
-  } else if (identity.billingState === "attention_required" && identity.membershipFunding !== "operator") {
+  } else if (identity.billingState === "attention_required" && identity.membershipFunding !== "operator" && identity.membershipFunding !== "complimentary") {
     nextAction = {
       body: "Restore the membership billing record before returning to the active rooms.",
       href: "/my/account",
@@ -3201,13 +3205,14 @@ function validateTimelineInput(input: MemberTimelineInput) {
 async function requireLockedFoundationAccess(tx: postgres.TransactionSql, identity: MemberIdentity) {
   // Recheck after waiting for the writer lock. Funding can be revoked while a
   // request is in flight; an earlier page/identity read is not authorization.
-  await tx`select private.ruined_lock_member_operator_funding(${identity.memberId}::uuid)`;
+  await tx`select private.ruined_lock_member_complimentary_funding(${identity.memberId}::uuid)`;
   await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
   await tx`select member_id from member_lifecycle where member_id = ${identity.memberId}::uuid for update`;
   const rows = await tx<Array<IdentityRow>>`
     select account.auth_user_id, member.id as member_id, member.person_id,
       member.email, lifecycle.account_state, lifecycle.billing_state,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state, lifecycle.foundations_state,
       lifecycle.administrative_onboarding_state, lifecycle.standing_state,
       lifecycle.cancellation_effective_at

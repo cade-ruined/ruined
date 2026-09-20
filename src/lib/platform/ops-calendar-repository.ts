@@ -243,7 +243,7 @@ async function requireCalendarMemberSyncActor(
       where platform_user.auth_user_id = ${actorAuthUserId}::uuid
         and platform_user.status = 'active'
         and lifecycle.account_state = 'active'
-        and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
+        and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(member.id))
         and lifecycle.administrative_onboarding_state = 'completed'
         and (lifecycle.standing_state = 'active' or (
           lifecycle.standing_state = 'cancellation_requested'
@@ -373,7 +373,7 @@ async function resolveCalendarAttendees(
        and block_assignment.ended_at is null
       where ${experience.visibility} in ('circle', 'block', 'all_members')
         and lifecycle.account_state = 'active'
-        and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
+        and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(member.id))
         and lifecycle.administrative_onboarding_state = 'completed'
         and lifecycle.standing_state in ('active', 'cancellation_requested')
         and (

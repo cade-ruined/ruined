@@ -17,7 +17,7 @@ import { getMemberIdentity } from "@/lib/membership/repository";
 type FoundationTransaction = postgres.TransactionSql;
 
 type LockedMember = {
-  membershipFunding: "self" | "operator";
+  membershipFunding: "self" | "operator" | "complimentary";
   accountState: "active" | "closed" | "invited" | "provisional" | "suspended";
   administrativeOnboardingState: "completed" | "in_progress" | "not_started";
   billingState: "active" | "attention_required" | "ended" | "pending";
@@ -117,8 +117,8 @@ async function lockMemberForFoundations(
   `;
   const memberId = links[0]?.member_id;
   if (!memberId) throw new FoundationAccessError();
-  const funding = await tx<Array<{ operator_funded: boolean }>>`
-    select private.ruined_lock_member_operator_funding(${memberId}::uuid) as operator_funded
+  const funding = await tx<Array<{ complimentary_funded: boolean }>>`
+    select private.ruined_lock_member_complimentary_funding(${memberId}::uuid) as complimentary_funded
   `;
 
   // Stripe locks ruined_members before member_lifecycle. Reuse that ordering so
@@ -158,7 +158,7 @@ async function lockMemberForFoundations(
   if (!lifecycle) throw new FoundationAccessError();
 
   const member: LockedMember = {
-    membershipFunding: funding[0]?.operator_funded ? "operator" : "self",
+    membershipFunding: funding[0]?.complimentary_funded ? "complimentary" : "self",
     accountState: lifecycle.account_state,
     administrativeOnboardingState: lifecycle.administrative_onboarding_state,
     billingState: lifecycle.billing_state,
@@ -310,7 +310,7 @@ export async function getMemberFoundationsState(
       and platform_user.status = 'active'
       and lifecycle.account_state = 'active'
       and lifecycle.administrative_onboarding_state = 'completed'
-      and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member.id))
+      and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(member.id))
       and lifecycle.standing_state in ('active', 'cancellation_requested')
       and (
         lifecycle.standing_state = 'active'

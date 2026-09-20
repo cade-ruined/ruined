@@ -101,12 +101,25 @@ async function fixture(t) {
     ${circleGate.slice(guardStart, guardEnd)}
     ${operatorMigration.slice(configStart, configEnd)}
     ${foundation.match(/create table if not exists integration_outbox \([\s\S]*?\n\);/)[0]}
-    create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql stable as 'select false';
+    create table stripe_subscriptions(member_id uuid, stripe_status text);
+    create table stripe_checkout_attempts(member_id uuid, status text);
+    create table stripe_checkout_sessions(member_id uuid, session_status text);
   `);
+  const operatorFunding = await source("db/migrations/20260914181653_operator_complimentary_membership.sql");
+  for (const name of ["private.ruined_member_has_operator_funding", "private.ruined_lock_member_operator_funding"]) {
+    const start = operatorFunding.indexOf(`create or replace function ${name}(`);
+    const end = operatorFunding.indexOf("$$;", start);
+    assert.ok(start >= 0 && end > start, `Missing shipped function ${name}`);
+    await db.exec(operatorFunding.slice(start, end + 3));
+  }
   for (const name of ['20260914225359_membership_waitlist','20260919211000_member_referrals',
     '20260922200000_member_invitation_expiry','20260923000000_personal_member_invitations','20260924000000_personal_invitation_admission']) {
     await db.exec(await source(`db/migrations/${name}.sql`));
   }
+  const complimentary = await source("db/migrations/20260925000000_complimentary_member_invitations.sql");
+  const fundingPredicateMarker = complimentary.indexOf("-- Replace only funding predicates.");
+  assert.ok(fundingPredicateMarker > 0, "Missing migration prefix boundary");
+  await db.exec(complimentary.slice(0, fundingPredicateMarker) + "\ncommit;");
   await db.query("insert into platform_users (auth_user_id,email_normalized,status,user_type) values ($1,'admin@example.test','active','staff')", [admin]);
   await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'ops_admin')", [admin]);
   await db.query("insert into circles values ($1,'Circle Test','active')", [circle]);
@@ -154,7 +167,7 @@ async function fixture(t) {
   const allowMember = (overrides = {}) => members.createOrReissueMemberInvitation({ actorAuthUserId: admin, email, ...overrides });
   const allowGuide = () => operators.createOrReissueOperatorInvitation({ actorAuthUserId: admin, email, displayName: "Test Guide", role: "guide", circleIds: [circle] });
   const grants = async () => (await db.query("select role_slug from platform_role_grants where auth_user_id=$1 and revoked_at is null order by role_slug", [auth])).rows.map((row) => row.role_slug);
-  async function personal({ recipient = email, expiresIn = '48 hours', owner = null } = {}) {
+  async function personal({ recipient = email, expiresIn = '48 hours', owner = null, complimentary = false, complimentaryEndsIn = null } = {}) {
     const memberId = owner ?? crypto.randomUUID(), personId = crypto.randomUUID(), inviterAuth = crypto.randomUUID();
     if (!owner) {
       await db.query('insert into people(id) values($1)', [personId]);
@@ -163,9 +176,10 @@ async function fixture(t) {
       await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [inviterAuth]);
       await db.query("insert into member_lifecycle(member_id,account_state,billing_state,program_state,administrative_onboarding_state,standing_state) values($1,'active','active','onboarding','completed','active')", [memberId]);
     }
+    if (complimentary) await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [inviterAuth]);
     const token = crypto.randomBytes(32).toString('base64url');
-    const result = await db.query(`insert into member_personal_invitations(member_id,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,issued_at,expires_at)
-      values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn]);
+    const result = await db.query(`insert into member_personal_invitations(member_id,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,issued_at,expires_at,membership_type,complimentary_reason,complimentary_ends_at,complimentary_authorized_by_auth_user_id)
+      values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval,$6,$7,case when $8::text is null then null else statement_timestamp()+$8::interval end,$9::uuid) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn,complimentary ? 'complimentary' : 'standard',complimentary ? 'Founding member' : null,complimentaryEndsIn,complimentary ? inviterAuth : null]);
     return { token, memberId, inviterAuth, ...result.rows[0] };
   }
   return { db, members, pending, operators, platform, admission, personal, allowMember, allowGuide, grants,
@@ -388,4 +402,54 @@ test("accepted invitation audit does not block account erasure and inviter erasu
   assert.equal((await f.db.query('select count(*)::int as count from member_personal_invitations where id=$1', [invite.id])).rows[0].count, 0);
   const referral = (await f.db.query('select inviter_member_id,referred_member_id,personal_invitation_id from member_referrals')).rows[0];
   assert.deepEqual(referral, { inviter_member_id: invite.memberId, referred_member_id: member.memberId, personal_invitation_id: null });
+});
+
+test("verified complimentary acceptance records one independent grant without staff roles or paid billing", async (t) => {
+  const f = await fixture(t), invite = await f.personal({ complimentary: true });
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), true);
+  assert.equal((await f.db.query('select count(*)::int as count from member_complimentary_grants')).rows[0].count, 0, "Preflight never grants funding");
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
+  assert.deepEqual(await f.grants(), ["member"]);
+  const [funding] = (await f.db.query('select * from member_complimentary_grants')).rows;
+  assert.equal(funding.member_id, member.memberId);
+  assert.equal(funding.source_invitation_id, invite.id);
+  assert.equal(funding.granted_by_auth_user_id, invite.inviterAuth);
+  assert.equal(funding.reason, "Founding member");
+  assert.equal(funding.ends_at, null);
+  assert.equal(funding.revoked_at, null);
+  const lifecycle = (await f.db.query('select billing_state,administrative_onboarding_state from member_lifecycle where member_id=$1', [member.memberId])).rows[0];
+  assert.deepEqual(lifecycle, { billing_state: "pending", administrative_onboarding_state: "in_progress" });
+  assert.equal((await f.db.query('select membership_state from ruined_members where id=$1', [member.memberId])).rows[0].membership_state, "pending");
+  assert.equal((await f.db.query('select private.ruined_member_has_complimentary_funding($1) as funded', [member.memberId])).rows[0].funded, true);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), member);
+  assert.deepEqual((await f.db.query('select * from member_complimentary_grants')).rows, [funding], "Replay preserves the exact original grant");
+  assert.equal((await f.db.query('select count(*)::int as count from member_referrals')).rows[0].count, 1);
+  assert.equal((await f.db.query('select joined_at from member_referrals')).rows[0].joined_at, null, "Acceptance does not pretend joining is complete");
+  await f.db.query('update member_complimentary_grants set revoked_at=clock_timestamp(),revoked_by_auth_user_id=$1 where id=$2', [invite.inviterAuth, funding.id]);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), false);
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), f.platform.PlatformAccessDeniedError);
+  assert.equal((await f.db.query('select private.ruined_member_has_complimentary_funding($1) as funded', [member.memberId])).rows[0].funded, false);
+  assert.equal((await f.db.query('select count(*)::int as count from member_complimentary_grants')).rows[0].count, 1);
+  await assert.rejects(f.db.query('update member_complimentary_grants set revoked_at=null,revoked_by_auth_user_id=null where id=$1', [funding.id]), /immutable/);
+});
+
+test("expired complimentary funding cannot be renewed by replaying its accepted invitation", async (t) => {
+  const f = await fixture(t), invite = await f.personal({ complimentary: true, complimentaryEndsIn: "1 hour" });
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
+  const before = (await f.db.query('select * from member_complimentary_grants')).rows;
+  // Move only the clock in the isolated shipped SQL predicates. This avoids
+  // sleeping in CI or weakening the immutable grant to simulate elapsed time.
+  const migration = await source("db/migrations/20260925000000_complimentary_member_invitations.sql");
+  for (const name of ["private.ruined_member_has_complimentary_funding", "private.ruined_personal_invitation_benefit_available"]) {
+    const match = migration.match(new RegExp(`create (?:or replace )?function ${name.replaceAll(".", "\\.")}\\([\\s\\S]*?\\$\\$;`))?.[0];
+    assert.ok(match, `Missing shipped clock predicate ${name}`);
+    await f.db.exec(match.replace(/^create (?:or replace )?function/, "create or replace function").replaceAll("clock_timestamp()", "(clock_timestamp()+interval '2 hours')"));
+  }
+  assert.equal((await f.db.query('select private.ruined_member_has_complimentary_funding($1) as funded', [member.memberId])).rows[0].funded, false);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), false);
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), f.platform.PlatformAccessDeniedError);
+  assert.deepEqual((await f.db.query('select * from member_complimentary_grants')).rows, before);
+  assert.deepEqual(await f.grants(), ["member"]);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }), member, "The original account can sign in without restoring its expired funding");
+  assert.equal((await f.db.query('select billing_state from member_lifecycle where member_id=$1', [member.memberId])).rows[0].billing_state, "pending");
 });

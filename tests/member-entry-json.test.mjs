@@ -1,3 +1,4 @@
+import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -184,7 +185,7 @@ function exactTable(source, name) {
   return definition;
 }
 
-for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts the agreement and completes against actual isolated PostgreSQL constraints (${funding})`, async () => {
+for (const funding of ["self", "operator", "complimentary"]) test(`entry saves, reloads, accepts the agreement and completes against actual isolated PostgreSQL constraints (${funding})`, async () => {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   const identitySchema = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_01_person_identity.sql", import.meta.url), "utf8");
@@ -192,10 +193,20 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
   const foundationSchema = await readFile(new URL("../db/migrations/20260819_platform_foundation.sql", import.meta.url), "utf8");
   const phoneMigration = await readFile(new URL("../db/migrations/20260903225243_member_phone_e164_constraint.sql", import.meta.url), "utf8");
   const jsonParameters = [];
+  let staleCheckoutProjection = false, staleProjectionObserved = false, freshFundingObserved = false;
   const wrap = (engine) => {
     const database = async (strings, ...values) => {
       const { query, parameters } = compiledQuery(strings, values, jsonParameters);
       const result = await engine.query(query, parameters);
+      if (staleCheckoutProjection && query.includes("ruined_lock_member_complimentary_funding") && query.includes("for update of member")) {
+        // Model the old statement snapshot returned after waiting for the member
+        // lock; the real isolated database already holds the committed grant.
+        staleProjectionObserved = true;
+        return result.rows.map(row => ({ ...row, complimentary_funded: false }));
+      }
+      if (staleCheckoutProjection && /^\s*select private\.ruined_member_has_complimentary_funding/.test(query)) {
+        freshFundingObserved = result.rows[0]?.complimentary_funded === true;
+      }
       return result.rows.map((row) => ({
         ...row,
         ...(row.birth_date ? { birth_date: new Date(row.birth_date) } : {}),
@@ -210,8 +221,8 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
     await db.exec(`
       create role anon; create role authenticated;
       create table people (id uuid primary key, status text default 'active');
-      create table ruined_members (id uuid primary key, person_id uuid not null references people(id), email text, unique(id,person_id));
-      create table platform_users (auth_user_id uuid primary key, person_id uuid, status text, member_id uuid);
+      create table ruined_members (id uuid primary key, person_id uuid not null references people(id), email text, membership_state text default 'pending', stripe_customer_id text, unique(id,person_id));
+      create table platform_users (auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text default 'member@example.test');
       create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, revoked_at timestamptz);
       create table person_email_addresses (person_id uuid, email text, verification_state text, retired_at timestamptz, is_primary boolean, created_at timestamptz);
       create table member_lifecycle (member_id uuid primary key, account_state text, billing_state text, program_state text,
@@ -234,6 +245,12 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
     await db.exec(`create schema private; ${lifecycleSchema.slice(guardStart, guardEnd)}`);
     await db.exec(`create function private.ruined_current_auth_user_id() returns uuid language sql as $$ select null::uuid $$`);
     await db.exec(await readFile(new URL("../db/migrations/20260914181653_operator_complimentary_membership.sql", import.meta.url), "utf8"));
+    await installComplimentaryFundingFunctions(db);
+    const complimentaryMigration = await readFile(new URL("../db/migrations/20260925000000_complimentary_member_invitations.sql", import.meta.url), "utf8");
+    const completionStart = complimentaryMigration.indexOf("create or replace function private.ruined_validate_member_onboarding_completion(");
+    const completionEnd = complimentaryMigration.indexOf("$$;", completionStart);
+    assert.ok(completionStart >= 0 && completionEnd > completionStart);
+    await db.exec(complimentaryMigration.slice(completionStart, completionEnd + 3));
     // Ensure sub-millisecond precision in this isolated fixture rather than
     // making the regression probabilistic on the database clock.
     await db.exec(`
@@ -264,6 +281,10 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
 
     if (funding === "operator") {
       await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'ops_admin')", [ids.auth]);
+      await db.exec("update member_lifecycle set billing_state='pending'");
+    }
+    if (funding === "complimentary") {
+      await db.query("insert into member_complimentary_grants(member_id) values ($1)", [ids.member]);
       await db.exec("update member_lifecycle set billing_state='pending'");
     }
     const repository = await loadEntryRepository(wrap(db));
@@ -313,14 +334,41 @@ for (const funding of ["self", "operator"]) test(`entry saves, reloads, accepts 
       await db.query("update person_profiles set member_tag=null where person_id=$1", [ids.person]);
       assert.equal((await repository.getMemberOnboarding(ids.auth)).requiredFieldsComplete, true, "legacy preferred name keeps an in-flight joining ready");
     }
+    if (funding === "complimentary") {
+      await db.exec("update member_complimentary_grants set ends_at=now()-interval '1 second'");
+      await assert.rejects(() => repository.completeMemberAdministrativeOnboarding(ids.auth), /confirm payment|complimentary membership/);
+      await db.exec("update member_complimentary_grants set ends_at=null,revoked_at=now()");
+      await assert.rejects(() => repository.completeMemberAdministrativeOnboarding(ids.auth), /confirm payment|complimentary membership/);
+      await db.exec("update member_complimentary_grants set revoked_at=null");
+    }
     const completed = await repository.completeMemberAdministrativeOnboarding(ids.auth);
     assert.equal(completed.state, "completed");
     assert.equal(completed.requiredFieldsComplete, true);
     assert.equal(completed.membershipFunding, funding);
-    if (funding === "operator") {
+    if (funding !== "self") {
       assert.equal((await db.query("select billing_state from member_lifecycle")).rows[0].billing_state, "pending");
       assert.equal((await db.query("select billing_confirmed_at from member_onboardings")).rows[0].billing_confirmed_at, null);
-      assert.equal((await db.query("select completion_evidence->>'funding' as funding from member_onboardings")).rows[0].funding, "operator");
+      assert.equal((await db.query("select completion_evidence->>'funding' as funding from member_onboardings")).rows[0].funding, funding);
+    }
+    if (funding === "complimentary") {
+      const billing = await loadModule("src/lib/stripe/billing-repository.ts", {
+        postgres, "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
+        "@/lib/stripe/membership-state": { normalizeEmail: email => email.trim().toLowerCase() },
+      });
+      await assert.rejects(() => billing.reserveMembershipCheckout({ acceptanceId: accepted.acceptance.id, attemptId: ids.attempt, authUserId: ids.auth, email: "member@example.test" }), error => error instanceof billing.MembershipCheckoutConflictError);
+      staleCheckoutProjection = true;
+      await assert.rejects(() => billing.reserveMembershipCheckout({ acceptanceId: accepted.acceptance.id, attemptId: ids.attempt, authUserId: ids.auth, email: "member@example.test" }), error => error instanceof billing.MembershipCheckoutConflictError);
+      assert.equal(staleProjectionObserved, true);
+      assert.equal(freshFundingObserved, true, "A grant committed during the member-lock wait must prevent checkout before any attempt is inserted");
+      staleCheckoutProjection = false;
+      assert.equal((await db.query("select membership_state from ruined_members where id=$1", [ids.member])).rows[0].membership_state, "pending", "Complimentary entry does not manufacture paid membership state");
+      assert.deepEqual((await db.query("select role_slug from platform_role_grants order by role_slug")).rows.map(row => row.role_slug), ["member"], "Payment waiver never creates staff access");
+      const allowed = async () => accessPolicy.memberCan(accessPolicy.deriveMemberAccessPolicy(await repository.getMemberIdentity(ids.auth)), "circle.read");
+      assert.equal(await allowed(), true);
+      await db.exec("update member_complimentary_grants set ends_at=now()-interval '1 second'");
+      assert.equal(await allowed(), false, "Expired complimentary funding removes ongoing access");
+      await db.exec("update member_lifecycle set billing_state='active'");
+      assert.equal(await allowed(), true, "Real paid membership survives complimentary expiry");
     }
     const stored = (await db.query("select jsonb_typeof(default_fulfillment_address) as address_type, jsonb_typeof(apparel_sizing) as sizing_type from person_private_profiles")).rows[0];
     assert.deepEqual(stored, { address_type: "object", sizing_type: "object" });

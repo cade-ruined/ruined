@@ -164,8 +164,8 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     assert.equal(result.title, "Circle Meeting"); assert.equal(result.calendar.attendeeCount, 1);
     assert.equal(result.memberOptions[0].id, ids.member);
     assert.ok(queries.some((query) => /set transaction isolation level repeatable read read only/i.test(query)));
-    assert.ok(queries.some((query) => query.includes("ruined_member_has_operator_funding")));
-    assert.ok(queries.every((query) => !/for (share|update)|ruined_lock_member_operator_funding/i.test(query)));
+    assert.ok(queries.some((query) => query.includes("ruined_member_has_complimentary_funding")));
+    assert.ok(queries.every((query) => !/for (share|update)|ruined_lock_member_complimentary_funding/i.test(query)));
     assert.deepEqual(await snapshot(), before); assert.deepEqual(providerCalls, []);
     config.ready = false; assert.equal((await record()).calendar.configured, false);
     assert.equal((await record()).calendar.attendeeCount, 1, "missing Google credentials do not block the event record");
@@ -179,7 +179,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     }), (error) => error.code === "25006" && /SELECT FOR SHARE/.test(error.message));
     assert.equal(await snapshotEligible(), true);
     queries.length = 0; assert.equal(await authorized(), true);
-    assert.ok(queries.some((query) => query.includes("ruined_lock_member_operator_funding")));
+    assert.ok(queries.some((query) => query.includes("ruined_lock_member_complimentary_funding")));
     assert.ok(queries.some((query) => query.includes("for share of member, person, lifecycle, account, member_grant")));
     assert.ok(queries.some((query) => query.includes("for share of assignment, circle")));
   });
@@ -227,6 +227,29 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     assert.equal(await snapshotEligible(), false); assert.equal(await authorized(), false);
   });
 
+  await t.test("personal complimentary grants admit only their current eligible member audience", async () => {
+    await reset();
+    await db.exec("update member_lifecycle set billing_state='pending',foundations_state='in_progress',program_state='onboarding'");
+    await db.query("insert into member_complimentary_grants(member_id) values ($1)", [ids.member]);
+    assert.equal(await snapshotEligible(), true); assert.equal(await authorized(), true);
+    assert.equal((await record()).calendar.attendeeCount, 1);
+    const global = { visibility: "all_members", circle_id: null, block_id: null };
+    assert.equal(await snapshotEligible(global), false); assert.equal(await authorized(global), false);
+    for (const [restrict, restore] of [
+      ["update member_complimentary_grants set ends_at=now()-interval '1 second'", "update member_complimentary_grants set ends_at=null"],
+      ["update member_complimentary_grants set revoked_at=now()", "update member_complimentary_grants set revoked_at=null"],
+      ["update member_complimentary_grants set starts_at=now()+interval '1 day'", "update member_complimentary_grants set starts_at=now()"],
+      ["update member_lifecycle set account_state='suspended'", "update member_lifecycle set account_state='active'"],
+      ["update platform_role_grants set revoked_at=now() where role_slug='member'", "update platform_role_grants set revoked_at=null where role_slug='member'"],
+    ]) {
+      await db.exec(restrict);
+      assert.equal(await snapshotEligible(), false, restrict); assert.equal(await authorized(), false, restrict);
+      assert.equal((await record()).calendar.attendeeCount, 0, restrict);
+      await db.exec(restore);
+    }
+    await db.exec("delete from member_complimentary_grants");
+  });
+
   await t.test("Block snapshots remain read-only and enforce current Circle and Block placement", async () => {
     await reset(); const audience = { visibility: "block", circle_id: null, block_id: ids.block };
     await db.query("update experiences set visibility='block',circle_id=null,block_id=$1", [ids.block]);
@@ -244,7 +267,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     const result = await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `snapshot-write-${crypto.randomUUID()}` });
     assert.equal(result.status, "synced"); assert.equal(providerCalls.length, 1);
     assert.equal(providerCalls[0].attendees.length, 1);
-    const fundingLock = queries.findIndex((query) => query.includes("ruined_lock_member_operator_funding"));
+    const fundingLock = queries.findIndex((query) => query.includes("ruined_lock_member_complimentary_funding"));
     const intentWrite = queries.findIndex((query) => /insert into operator_audit_events/i.test(query));
     assert.ok(fundingLock >= 0 && intentWrite > fundingLock);
     assert.ok(queries.some((query) => /for share of member, person, lifecycle, account, member_grant/.test(query)));

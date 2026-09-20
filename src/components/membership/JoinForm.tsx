@@ -149,7 +149,7 @@ export default function JoinForm({
   const [submitting, setSubmitting] = useState(false);
   const [photoPending, setPhotoPending] = useState(false);
   const profileComplete = onboarding.requiredFieldsComplete;
-  const complimentary = onboarding.membershipFunding === "operator";
+  const complimentary = (onboarding.membershipFunding === "operator" || onboarding.membershipFunding === "complimentary");
   const agreementComplete = Boolean(acceptanceId);
   const stage = membershipEntryStage(profileComplete, agreementComplete);
   const testCheckout = publishableKey?.startsWith("pk_test_") ?? false;
@@ -639,7 +639,7 @@ export default function JoinForm({
       {stage === "payment" && complimentary ? (
         <section className="mt-9" aria-labelledby="complimentary-membership-title">
           <h3 className="font-[var(--font-display)] text-4xl" id="complimentary-membership-title" ref={stageHeadingRef} tabIndex={-1}>You’re ready.</h3>
-          <p className="mt-4 text-base leading-relaxed text-[var(--member-muted)]">Your operator access includes complimentary membership. Your profile and agreement are saved—no payment is needed.</p>
+          <p className="mt-4 text-base leading-relaxed text-[var(--member-muted)]">Your membership is complimentary. Your profile and agreement are saved—no payment is needed.</p>
           {error || disabledReason ? <p className="mt-4 text-sm" role="status">{error ?? disabledReason}</p> : null}
           <button className="mt-6 min-h-12 rounded-[4px] bg-[var(--color-signal)] px-6 py-3 font-bold text-black disabled:opacity-50" disabled={!enabled || submitting} onClick={activateComplimentaryMembership} type="button">{submitting ? "Activating membership…" : "Activate my membership"}</button>
         </section>

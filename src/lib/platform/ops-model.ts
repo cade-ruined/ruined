@@ -56,7 +56,7 @@ export type OpsRequirementSummary = {
 };
 
 export type OpsMemberMembershipRecord = {
-  membershipFunding?: "self" | "operator";
+  membershipFunding?: "self" | "operator" | "complimentary";
   agreement: {
     acceptedAt: string | null;
     contentSha256: string | null;

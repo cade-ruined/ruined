@@ -30,13 +30,14 @@ export default async function JoinMyRuinedPage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  if (context.state === "authenticated" && context.data.state === "completed") {
+  const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
+  if (context.state === "authenticated" && context.data.state === "completed"
+    && (complimentary || context.data.billingState === "active")) {
     redirect("/my");
   }
 
   const publishableKey = getStripePublishableKey();
   const writable = context.state === "authenticated";
-  const complimentary = context.data.membershipFunding === "operator";
   const checkoutEnabled = writable && !complimentary && context.configuration.stripeCheckoutReady;
   const disabledReason =
     context.state === "preview"

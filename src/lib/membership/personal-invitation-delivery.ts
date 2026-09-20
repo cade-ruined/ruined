@@ -23,6 +23,7 @@ type Delivery = {
   expires_at: Date | string; revoked_at: Date | string | null; accepted_at: Date | string | null;
   delivery_attempts: number; first_attempt_at: Date | string | null;
   delivery_payload: EmailPayload | null; active: boolean; eligible: boolean;
+  membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null;
 };
 type Claimed = { id: string; member_id: string; delivery_attempts: number; first_attempt_at: Date | string | null };
 type BatchResult = { ready: boolean; claimed: number; sent: number; failed: number; cancelled: number; deferred: number };
@@ -96,11 +97,12 @@ async function withLockedDelivery<T>(sql: Database, claim: Claimed, lease: strin
   return sql.begin(async tx => {
     // Match revoke/deletion order. A concurrent revoke either wins before this
     // lock (and prevents sending), or waits until the provider call completes.
+    await tx`select private.ruined_lock_member_complimentary_funding(${claim.member_id}::uuid)`;
     await tx`select id from ruined_members where id = ${claim.member_id}::uuid for update`;
     await tx`select member_id from member_lifecycle where member_id = ${claim.member_id}::uuid for share`;
     const [delivery] = await tx<Delivery[]>`
       select invitation.*, expires_at > clock_timestamp() as active,
-             private.ruined_member_can_share_invitation(member_id) as eligible
+             (private.ruined_member_can_share_invitation(member_id) and private.ruined_personal_invitation_benefit_available(id)) as eligible
       from member_personal_invitations invitation
       where id = ${claim.id}::uuid and delivery_status = 'sending' and delivery_lock_token = ${lease}::uuid
       for update
@@ -162,6 +164,8 @@ export async function processPersonalInvitationEmailBatch(requestedLimit = 10,
               ...createPersonalInvitationEmail({
                 recipientName: delivery.recipient_name, inviterName: delivery.inviter_name, inviterTag: delivery.inviter_tag,
                 invitationUrl: new URL(`/invitation/${delivery.public_token}`, site).toString(),
+                membershipType: delivery.membership_type,
+                complimentaryEndsAt: delivery.complimentary_ends_at ? new Date(delivery.complimentary_ends_at).toISOString() : null,
                 expiresAt: new Date(delivery.expires_at).toISOString(), siteUrl: site,
               }),
             };

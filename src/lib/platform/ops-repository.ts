@@ -72,7 +72,7 @@ export type OpsCircleShaperAssignment = {
 };
 
 export type OpsCircleMemberAssignment = {
-  membershipFunding?: "self" | "operator";
+  membershipFunding?: "self" | "operator" | "complimentary";
   administrativeOnboardingState?: "completed" | "in_progress" | "not_started";
   standingState?: string;
   cancellationEffectiveAt?: string | null;
@@ -775,6 +775,7 @@ export async function getOpsCircleMemberAssignments(
 
     const rows = await tx<Array<{
       account_state: OpsCircleMemberAssignment["accountState"];
+      complimentary_funded: boolean;
       operator_funded: boolean;
       administrative_onboarding_state: OpsCircleMemberAssignment["administrativeOnboardingState"];
       standing_state: string;
@@ -802,6 +803,7 @@ export async function getOpsCircleMemberAssignments(
           'Member'
         ) as name,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.administrative_onboarding_state,
         lifecycle.standing_state,
         lifecycle.cancellation_effective_at,
@@ -823,7 +825,7 @@ export async function getOpsCircleMemberAssignments(
     return rows.map((row) => ({
       accountState: row.account_state,
       assignedAt: new Date(row.assigned_at).toISOString(),
-      membershipFunding: row.operator_funded ? "operator" : "self",
+      membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
       administrativeOnboardingState: row.administrative_onboarding_state,
       standingState: row.standing_state,
       cancellationEffectiveAt: row.cancellation_effective_at ? new Date(row.cancellation_effective_at).toISOString() : null,
@@ -998,6 +1000,7 @@ type CircleShaperMemberRow = {
   membership_state: string;
   program_state: string | null;
   standing_eligible: boolean;
+  complimentary_funded: boolean;
   operator_funded: boolean;
   member_access: boolean;
   admin_access: boolean;
@@ -1027,6 +1030,7 @@ async function getCircleShaperMemberRows(
         and lifecycle.cancellation_effective_at > statement_timestamp()
       ), false) as standing_eligible,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'member' and grant_row.revoked_at is null) as member_access,
       exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'ops_admin' and grant_row.revoked_at is null) as admin_access,
       exists (select 1 from platform_role_grants grant_row where grant_row.auth_user_id = platform_user.auth_user_id and grant_row.role_slug = 'circle_leader' and grant_row.revoked_at is null) as shaper_access,
@@ -1074,7 +1078,7 @@ function circleShaperMemberCandidate(row: CircleShaperMemberRow): OpsCircleShape
     unavailableReason = "This member needs to finish their membership entry first.";
   } else if (!row.standing_eligible || (row.program_state !== "active" && row.program_state !== "onboarding")) {
     unavailableReason = "Review this member’s standing before assigning them as Shaper.";
-  } else if (!row.operator_funded && (row.billing_state !== "active" || row.membership_state !== "active")) {
+  } else if (!row.complimentary_funded && (row.billing_state !== "active" || row.membership_state !== "active")) {
     unavailableReason = "Confirm this member’s active membership before granting Shaper access.";
   }
   return {
@@ -1187,7 +1191,7 @@ export async function assignShaperToCircle({
       // lifecycle and placement, before any Circle row. Never qualify a member
       // by the complimentary funding that this transaction is about to grant.
       await tx`select pg_advisory_xact_lock(hashtext(${memberId}), 2)`;
-      await tx`select private.ruined_lock_member_operator_funding(${memberId}::uuid)`;
+      await tx`select private.ruined_lock_member_complimentary_funding(${memberId}::uuid)`;
       await tx`
         select auth_user_id from platform_users
         where member_id = ${memberId}::uuid
@@ -2075,7 +2079,7 @@ export async function assignMemberToCircle({
     // assignment decision atomic even when two operators act concurrently.
     await tx`select pg_advisory_xact_lock(hashtext(${memberId}), 2)`;
 
-    await tx`select private.ruined_lock_member_operator_funding(${memberId}::uuid)`;
+    await tx`select private.ruined_lock_member_complimentary_funding(${memberId}::uuid)`;
 
     const memberRows = await tx<
       Array<{
@@ -2083,6 +2087,7 @@ export async function assignMemberToCircle({
         billing_state: string;
         membership_state: string;
         program_state: string;
+        complimentary_funded: boolean;
         operator_funded: boolean;
         administrative_onboarding_state: string;
         standing_state: string;
@@ -2095,6 +2100,7 @@ export async function assignMemberToCircle({
         lifecycle.program_state,
         member.membership_state,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.administrative_onboarding_state,
         lifecycle.standing_state,
         lifecycle.cancellation_effective_at
@@ -2112,7 +2118,7 @@ export async function assignMemberToCircle({
     const eligible =
       member.account_state === "active" &&
       member.administrative_onboarding_state === "completed" &&
-      (member.operator_funded || (member.billing_state === "active" && member.membership_state === "active")) &&
+      (member.complimentary_funded || (member.billing_state === "active" && member.membership_state === "active")) &&
       (member.standing_state === "active" || (member.standing_state === "cancellation_requested" && member.cancellation_effective_at !== null && new Date(member.cancellation_effective_at).getTime() > Date.now())) &&
       (member.program_state === "onboarding" || member.program_state === "active");
     if (!eligible) {
@@ -2234,14 +2240,15 @@ export async function transferMemberToCircle({
     // Match assignment/removal writers: member lock before assignment and Circle
     // locks. Both Circles are then locked in UUID order for opposite-direction moves.
     await tx`select pg_advisory_xact_lock(hashtext(${normalizedMemberId}), 2)`;
-    await tx`select private.ruined_lock_member_operator_funding(${normalizedMemberId}::uuid)`;
+    await tx`select private.ruined_lock_member_complimentary_funding(${normalizedMemberId}::uuid)`;
     const memberRows = await tx<Array<{
       account_state: string; billing_state: string; membership_state: string; program_state: string;
-      operator_funded: boolean; administrative_onboarding_state: string; standing_state: string;
+      complimentary_funded: boolean; operator_funded: boolean; administrative_onboarding_state: string; standing_state: string;
       cancellation_effective_at: Date | string | null;
     }>>`
       select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, member.membership_state,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.administrative_onboarding_state, lifecycle.standing_state, lifecycle.cancellation_effective_at
       from ruined_members member
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
@@ -2251,7 +2258,7 @@ export async function transferMemberToCircle({
     const member = memberRows[0];
     if (!member) throw new OpsRepositoryError("not_found", "That member could not be found.");
     if (member.account_state !== "active" || member.administrative_onboarding_state !== "completed"
-      || (!member.operator_funded && (member.billing_state !== "active" || member.membership_state !== "active"))
+      || (!member.complimentary_funded && (member.billing_state !== "active" || member.membership_state !== "active"))
       || !(member.standing_state === "active" || (member.standing_state === "cancellation_requested" && member.cancellation_effective_at !== null && new Date(member.cancellation_effective_at).getTime() > Date.now()))
       || !["onboarding", "active"].includes(member.program_state)) {
       throw new OpsRepositoryError("conflict", "Review this member's access before transferring them. Completed entry and active membership are required.");

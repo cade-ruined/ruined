@@ -30,6 +30,7 @@ export async function getPersonalInvitationAdmissionEligibility(email: string, t
       join ruined_members inviter on inviter.id = invitation.member_id and inviter.deleted_at is null
       where invitation.public_token = ${token} and invitation.recipient_email_normalized = ${normalized}
         and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
+        and private.ruined_personal_invitation_benefit_available(invitation.id)
         and private.ruined_member_can_share_invitation(invitation.member_id)
         and inviter.email_normalized <> ${normalized}
         and not exists (select 1 from person_email_addresses address
@@ -55,13 +56,9 @@ export async function lockPersonalInvitationClaim(tx: TransactionSql, viewer: Pl
   if (!TOKEN.test(token)) return deny();
   const [source] = await tx<Array<{ member_id: string }>>`select member_id from member_personal_invitations where public_token = ${token}`;
   if (!source) return deny();
-  // Complimentary inviter eligibility depends on current staff grants. Follow
-  // the funding writer's grant-before-member order and hold those grants too.
-  await tx`select grant_row.id from platform_role_grants grant_row
-    join platform_users viewer on viewer.auth_user_id = grant_row.auth_user_id
-    where viewer.member_id = ${source.member_id}::uuid
-      and grant_row.role_slug in ('ops_admin','circle_leader','guide') and grant_row.revoked_at is null
-    order by grant_row.role_slug, grant_row.id for share of grant_row`;
+  // Current staff or independent complimentary funding is locked before the
+  // source member, preventing a concurrent revocation from approving admission.
+  await tx`select private.ruined_lock_member_complimentary_funding(${source.member_id}::uuid)`;
   await tx`select id from ruined_members where id = ${source.member_id}::uuid for update`;
   await tx`select person.id from people person join ruined_members member on member.person_id = person.id
     where member.id = ${source.member_id}::uuid for share of person`;
@@ -81,6 +78,7 @@ async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: 
   const [row] = await tx<Array<{ eligible: boolean }>>`select exists (
     select 1 from member_personal_invitations invitation join ruined_members inviter on inviter.id = invitation.member_id
     where invitation.id = ${invitation.id}::uuid and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
+      and private.ruined_personal_invitation_benefit_available(invitation.id)
       and inviter.deleted_at is null and private.ruined_member_can_share_invitation(inviter.id)
       and inviter.email_normalized <> invitation.recipient_email_normalized
       and not exists (select 1 from person_email_addresses address where address.person_id = inviter.person_id
@@ -174,4 +172,5 @@ export async function completePersonalInvitationClaim(tx: TransactionSql, viewer
     where id = ${invitation.id}::uuid and accepted_at is null and revoked_at is null and expires_at > clock_timestamp()
     returning id`;
   if (!accepted) deny();
+  await tx`select private.ruined_redeem_complimentary_invitation(${invitation.id}::uuid, ${memberId}::uuid, ${viewer.authUserId}::uuid)`;
 }

@@ -155,11 +155,11 @@ export async function reserveMembershipCheckout({
         membership_state: MembershipState;
         person_id: string;
         stripe_customer_id: string | null;
-        operator_funded: boolean;
+        complimentary_funded: boolean;
       }>
     >`
       select member.id, member.membership_state, member.person_id, member.stripe_customer_id,
-        private.ruined_member_has_operator_funding(member.id) as operator_funded
+        private.ruined_lock_member_complimentary_funding(member.id) as complimentary_funded
       from platform_users platform_user
       join platform_role_grants member_grant
         on member_grant.auth_user_id = platform_user.auth_user_id
@@ -176,11 +176,18 @@ export async function reserveMembershipCheckout({
     `;
     const member = memberRows[0];
 
-    if (member?.operator_funded || member?.membership_state === "active" || member?.membership_state === "attention_required") {
+    if (!member) {
       throw new MembershipCheckoutConflictError();
     }
 
-    if (!member) {
+    // The projection above can be evaluated before FOR UPDATE finishes waiting.
+    // A personal invitation may commit its first funding grant during that wait.
+    // Read again in a new statement after holding the canonical member lock;
+    // redemption takes that same lock before checking for an open checkout.
+    const [funding] = await tx<Array<{ complimentary_funded: boolean }>>`
+      select private.ruined_member_has_complimentary_funding(${member.id}::uuid) as complimentary_funded
+    `;
+    if (!funding || funding.complimentary_funded || member.membership_state === "active" || member.membership_state === "attention_required") {
       throw new MembershipCheckoutConflictError();
     }
 

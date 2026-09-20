@@ -120,17 +120,17 @@ export default function OperatorCirclesManager({
   function placementIssue(member: OperatorMemberSummary) {
     const assignment = assignments.find((item) => item.memberId === member.memberId);
     if (assignment) return `Already in ${circles.find((item) => item.id === assignment.circleId)?.name ?? member.circleName ?? "a Circle"}.`;
-    if (member.membershipFunding !== "operator" && member.membershipState && member.membershipState !== "active") return `Membership is ${member.membershipState.replaceAll("_", " ")}. Review membership before adding this person.`;
+    if (member.membershipFunding !== "operator" && member.membershipFunding !== "complimentary" && member.membershipState && member.membershipState !== "active") return `Membership is ${member.membershipState.replaceAll("_", " ")}. Review membership before adding this person.`;
     return getCirclePlacementIssue(member);
   }
   const eligibleMembers = candidates.filter((member) => !placementIssue(member));
   const available = (circle: OpsCircleSummary) => (circle.status === "forming" || circle.status === "active") && circle.activeMembers < circle.capacity;
   function transferIssue(member: OpsCircleMemberAssignment) {
     const saved = candidates.find((candidate) => candidate.memberId === member.memberId);
-    if (member.membershipFunding !== "operator" && saved?.membershipState && saved.membershipState !== "active") return "Review this person’s membership before moving them.";
+    if (member.membershipFunding !== "operator" && member.membershipFunding !== "complimentary" && saved?.membershipState && saved.membershipState !== "active") return "Review this person’s membership before moving them.";
     if (member.administrativeOnboardingState && member.administrativeOnboardingState !== "completed") return "Complete this person’s profile and agreement before moving them.";
     if (member.standingState && member.standingState !== "active" && !(member.standingState === "cancellation_requested" && member.cancellationEffectiveAt && new Date(member.cancellationEffectiveAt).getTime() > Date.now())) return "Review this person’s membership standing before moving them.";
-    return member.accountState === "active" && (member.membershipFunding === "operator" || member.billingState === "active") && (member.programState === "onboarding" || member.programState === "active")
+    return member.accountState === "active" && ((member.membershipFunding === "operator" || member.membershipFunding === "complimentary") || member.billingState === "active") && (member.programState === "onboarding" || member.programState === "active")
       ? null : "An active account, active billing and an onboarding or active program are required to move Circles.";
   }
 

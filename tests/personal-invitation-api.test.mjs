@@ -21,7 +21,7 @@ async function fixture() {
   const state = { viewer: { authUserId: "owner-id" }, trusted: true, mode: "connected", ready: true };
   const calls = [], jobs = [];
   const snapshot = { invitations: [], counts: { created: 0 } };
-  const repository = Object.fromEntries(["getOwnPersonalInvitations", "createOwnPersonalInvitation", "revokeOwnPersonalInvitation", "retryOwnPersonalInvitationEmail"].map(name => [name, async (...args) => { calls.push({ name, args }); return snapshot; }]));
+  const repository = Object.fromEntries(["getOwnPersonalInvitations", "createOwnPersonalInvitation", "revokeOwnPersonalInvitation", "retryOwnPersonalInvitationEmail", "endOwnInvitationComplimentaryAccess"].map(name => [name, async (...args) => { calls.push({ name, args }); return snapshot; }]));
   const api = await load("src/lib/membership/personal-invitation-api.ts", {
     "next/server": { after: job => jobs.push(job), NextResponse: { json: (body, options) => Response.json(body, options) } },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => state.trusted },
@@ -75,7 +75,7 @@ test("bad input and unavailable provider do not create or send an invitation", a
   const f = await fixture();
   assert.equal((await f.handlePersonalInvitationRequest(f.request("POST", { ...input, recipientEmail: "broken" }))).status, 400);
   assert.equal((await f.handlePersonalInvitationRequest(f.request("POST", { ...input, extra: "ignored?" }))).status, 400);
-  assert.equal((await f.handlePersonalInvitationRequest(f.request("POST", { ...input, recipientName: "a".repeat(2000) }))).status, 413);
+  assert.equal((await f.handlePersonalInvitationRequest(f.request("POST", { ...input, recipientName: "a".repeat(5000) }))).status, 413);
   f.state.ready = false;
   assert.equal((await f.handlePersonalInvitationRequest(f.request("POST"))).status, 503);
   assert.equal(f.calls.length, 0); assert.equal(f.jobs.length, 0);
@@ -91,4 +91,12 @@ test("revocation never sends and a requested retry targets only the selected inv
   await f.jobs[0]();
   assert.deepEqual(f.calls.at(-1), { name: "send", args: [1, { invitationId: id }] });
   assert.equal((await f.handlePersonalInvitationRequest(f.request("PATCH", { action: "email_everyone", version: 1 }), id)).status, 400);
+});
+
+test("complimentary access termination uses the authenticated owner and never queues email", async () => {
+  const f = await fixture();
+  const response = await f.handlePersonalInvitationRequest(f.request("PATCH", { action: "end_complimentary", version: 2 }), id);
+  assert.equal(response.status, 200);
+  assert.deepEqual(f.calls, [{ name: "endOwnInvitationComplimentaryAccess", args: ["owner-id", id, { version: 2 }] }]);
+  assert.equal(f.jobs.length, 0);
 });

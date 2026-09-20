@@ -342,7 +342,7 @@ export function getCirclePlacementIssue(member: OperatorMemberSummary): string |
   if (member.circleName) return `Already assigned to ${member.circleName}. Open their Circle and choose Move to switch Circles.`;
   const missing: string[] = [];
   if (member.accountState !== "active") missing.push(`an active account (currently ${member.accountState})`);
-  if (member.membershipFunding !== "operator" && member.billingState !== "active") missing.push(`active billing (currently ${member.billingState.replaceAll("_", " ")})`);
+  if (member.membershipFunding !== "operator" && member.membershipFunding !== "complimentary" && member.billingState !== "active") missing.push(`active billing (currently ${member.billingState.replaceAll("_", " ")})`);
   if (member.administrativeOnboardingState && member.administrativeOnboardingState !== "completed") missing.push("completed profile and agreement");
   if (member.standingState && member.standingState !== "active" && !(member.standingState === "cancellation_requested" && member.cancellationEffectiveAt && new Date(member.cancellationEffectiveAt).getTime() > Date.now())) missing.push("active membership standing");
   if (member.programState !== "onboarding" && member.programState !== "active") {

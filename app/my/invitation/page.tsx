@@ -11,9 +11,9 @@ import { personalInvitationPreviewSnapshot } from "@/lib/membership/personal-inv
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "My Invitations", robots: { index: false, follow: false }, referrer: "no-referrer" };
-export default async function MyInvitationPage() {
+export default async function MyInvitationPage({ searchParams }: { searchParams?: Promise<{ preview?: string }> }) {
   const configuration = getPlatformConfiguration();
-  if (configuration.mode === "preview") return <MemberInvitation initialSnapshot={personalInvitationPreviewSnapshot()} preview />;
+  if (configuration.mode === "preview") return <MemberInvitation initialSnapshot={personalInvitationPreviewSnapshot({ canGrantComplimentary: (await searchParams)?.preview === "admin" })} preview />;
   if (configuration.mode !== "connected") return <PlatformUnavailable accessHref="/my/access" />;
   const viewer = await getCurrentPlatformViewer();
   if (!viewer) redirect("/my/access");

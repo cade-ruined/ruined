@@ -69,21 +69,24 @@ export async function saveOwnMemberInvitation(authUserId: string, value: MemberI
 export async function getPublicMemberInvitation(token: string): Promise<PublicMemberInvitation | null> {
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
   return withFreshApplicationDatabaseRead("member-invitations", async () => {
-    const [row] = await getApplicationDatabase()<Array<{ member_id: string; name: string; member_tag: string | null; expires_at: Date | string; recipient_name: string | null }>>`
-      select invitation.member_id, invitation.expires_at, invitation.recipient_name,
+    const [row] = await getApplicationDatabase()<Array<{ member_id: string; name: string; member_tag: string | null; expires_at: Date | string; recipient_name: string | null;
+      membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null }>>`
+      select invitation.member_id, invitation.expires_at, invitation.recipient_name, invitation.membership_type, invitation.complimentary_ends_at,
         coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') as name, profile.member_tag
       from (
-        select member_id, expires_at, null::text as recipient_name from member_invitations
+        select member_id, expires_at, null::text as recipient_name, 'standard'::text as membership_type, null::timestamptz as complimentary_ends_at from member_invitations
         where public_token = ${token} and enabled and expires_at > clock_timestamp()
         union all
-        select member_id, expires_at, recipient_name from member_personal_invitations
+        select member_id, expires_at, recipient_name, membership_type, complimentary_ends_at from member_personal_invitations
         where public_token = ${token} and revoked_at is null and expires_at > clock_timestamp()
+          and private.ruined_personal_invitation_benefit_available(id)
       ) invitation join ruined_members member on member.id = invitation.member_id
       left join person_profiles profile on profile.person_id = member.person_id
       where member.deleted_at is null and private.ruined_member_can_share_invitation(invitation.member_id)
       limit 1
     `;
     return row ? { card: invitationCard(row.name, wearSeed(row.member_id), row.member_tag), expiresAt: expiresAt(row.expires_at),
-      ...(row.recipient_name !== null ? { recipientName: row.recipient_name } : {}) } : null;
+      ...(row.recipient_name !== null ? { recipientName: row.recipient_name, membershipType: row.membership_type,
+        complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) } : null;
   });
 }

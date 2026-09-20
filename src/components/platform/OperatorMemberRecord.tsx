@@ -147,7 +147,7 @@ export default function OperatorMemberRecord({
               {membership.onboarding.requirements.map((requirement) => (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/25 px-3 py-2" key={requirement.key}>
                   <div>
-                    <p className="text-sm text-black/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? (membership.membershipFunding === "operator" ? requirement.label : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
+                    <p className="text-sm text-black/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? requirement.label : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
                     <p className="mt-1 text-xs text-black/38">
                       {requirement.state === "not_required" ? "Not required" : requirement.required ? "Required" : "Collected when needed"}
                     </p>
@@ -231,7 +231,7 @@ export default function OperatorMemberRecord({
                 </div>
               </dl>
             ) : (
-              <EmptyRow>{access.capabilities.includes("member.billing_detail.read") ? (membership.membershipFunding === "operator" ? "Complimentary operator membership. No subscription is required." : "No billing record yet.") : "Financial detail is restricted for this operator role."}</EmptyRow>
+              <EmptyRow>{access.capabilities.includes("member.billing_detail.read") ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? "Complimentary membership. No subscription is required." : "No billing record yet.") : "Financial detail is restricted for this operator role."}</EmptyRow>
             )}
             {membership.cancellation ? (
               <div className="mt-5 bg-[var(--color-poster)]/[0.07] px-4 py-4 text-sm leading-relaxed text-black/58">

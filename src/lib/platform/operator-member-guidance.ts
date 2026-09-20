@@ -12,7 +12,7 @@ export type OperatorMemberGuidance = {
 };
 
 type GuidanceState = {
-  membershipFunding?: "self" | "operator";
+  membershipFunding?: "self" | "operator" | "complimentary";
   projection: "summary" | "record";
   account: string;
   billing: string;
@@ -31,7 +31,7 @@ type GuidanceState = {
 // Presentation only. This never grants access or substitutes for the mutation's
 // current account, billing, program, assignment and capacity checks.
 function guidance(state: GuidanceState): OperatorMemberGuidance {
-  const operatorFunded = state.membershipFunding === "operator";
+  const complimentary = (state.membershipFunding === "operator" || state.membershipFunding === "complimentary");
   const result = (
     key: string, status: OperatorMemberGuidance["status"], actor: OperatorMemberGuidance["actor"],
     title: string, detail: string,
@@ -49,7 +49,7 @@ function guidance(state: GuidanceState): OperatorMemberGuidance {
   if (state.standing === "paused" || state.program === "paused") {
     return result("paused", "Blocked", "Support", "Review the membership pause", "Confirm the pause terms with an Administrator before restarting participation or changing Circle placement.");
   }
-  if (state.standing === "inactive" || (!operatorFunded && state.billing === "ended")) {
+  if (state.standing === "inactive" || (!complimentary && state.billing === "ended")) {
     return result("membership-ended", "Blocked", "Support", "Review the ended membership", "Ask an Administrator to review the membership and any return arrangements. A new Circle assignment does not reactivate membership.");
   }
   if (state.standing === "cancellation_requested") {
@@ -72,25 +72,25 @@ function guidance(state: GuidanceState): OperatorMemberGuidance {
   if (state.account !== "active") {
     return result("sign-in", "Waiting", "Member", "Sign in to start joining", "The member opens the shared sign-in page, requests their own code, and completes the joining steps. An operator cannot verify their email for them.");
   }
-  const required = state.requirements?.filter((item) => item.required && !(operatorFunded && item.key === "billing"));
+  const required = state.requirements?.filter((item) => item.required && !(complimentary && item.key === "billing"));
   const missing = required?.find((item) => item.state === "missing");
   const paymentRecorded = state.billing === "active" || state.latestInvoiceState === "paid"
     || required?.some((item) => item.key === "billing" && item.state === "complete");
-  if (!operatorFunded && ((state.billing === "pending" && paymentRecorded)
+  if (!complimentary && ((state.billing === "pending" && paymentRecorded)
     || (state.billing === "attention_required" && state.latestInvoiceState === "paid")
     || (state.billing === "pending" && state.onboarding === "completed")
     || (missing?.key === "billing" && paymentRecorded))) {
     return result("payment-confirmation", "Waiting", "Support", "Check payment confirmation", "Payment evidence or completed setup is already recorded, but the billing or joining checkpoints disagree. Ask Support to check the confirmation; do not ask the member to pay again.");
   }
-  if (!operatorFunded && state.billing === "attention_required") {
+  if (!complimentary && state.billing === "attention_required") {
     return result("payment-attention", "Waiting", "Member", "Update payment details", "The member reviews billing in their account. If payment already went through, ask Support to check confirmation before requesting another payment.");
   }
   if (((state.onboarding !== undefined && state.onboarding !== "completed") || state.standing === "pre_active") && required?.length && required.every((item) => item.state === "complete")) {
-    if (operatorFunded) return result("joining", "Waiting", "Member", "Finish joining", "Profile and agreement are complete. The member confirms complimentary operator membership in their account.");
+    if (complimentary) return result("joining", "Waiting", "Member", "Finish joining", "Profile and agreement are complete. The member confirms complimentary membership in their account.");
     return result("joining-confirmation", "Waiting", "Support", "Check joining confirmation", "All required joining steps are recorded as complete, but membership setup has not caught up. Ask Support to review the record rather than repeating agreement or payment steps.");
   }
-  if ((state.onboarding !== undefined && state.onboarding !== "completed") || (!operatorFunded && state.billing === "pending") || state.standing === "pre_active") {
-    if (operatorFunded) return result("joining", "Waiting", "Member", "Complete joining", "Complete the remaining profile and agreement steps, then confirm complimentary operator membership in your account.");
+  if ((state.onboarding !== undefined && state.onboarding !== "completed") || (!complimentary && state.billing === "pending") || state.standing === "pre_active") {
+    if (complimentary) return result("joining", "Waiting", "Member", "Complete joining", "Complete the remaining profile and agreement steps, then confirm complimentary membership in your account.");
     const steps: Record<string, string> = {
       verified_email: "Next, the member verifies their email using their own sign-in code.",
       private_profile: "Next, the member completes their profile in the joining form.",
@@ -102,7 +102,7 @@ function guidance(state: GuidanceState): OperatorMemberGuidance {
         ? "The member reviews any remaining joining details in their account. Payment is already recorded; ask Support to check any request to pay again."
         : "The member completes the remaining profile, agreement, and payment steps in their account."} Operators can review progress, but cannot accept the agreement or pay on the member’s behalf.`);
   }
-  if ((!operatorFunded && state.membership !== undefined && state.membership !== "active") || state.program === "prospect") {
+  if ((!complimentary && state.membership !== undefined && state.membership !== "active") || state.program === "prospect") {
     return result("setup-review", "Blocked", "Support", "Review the membership setup", "Account and billing are active, but the membership or program record is not ready for placement. Ask an Administrator to review the details; do not request payment again.");
   }
   if (state.projection === "summary" && (state.membership === undefined || state.program === undefined)) {

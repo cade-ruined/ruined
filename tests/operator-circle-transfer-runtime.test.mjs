@@ -1,3 +1,4 @@
+import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -107,6 +108,7 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
     create trigger circles_active_block_reconcile after update of status
       on circles for each row execute function private.ruined_reconcile_block_circle_status();
   `);
+  await installComplimentaryFundingFunctions(db);
   await db.query("insert into platform_users (auth_user_id,status) values ($1,'active')", [ids.admin]);
   await db.query("insert into platform_role_grants (auth_user_id,role_slug,revoked_at) values ($1,'ops_admin',null)", [ids.admin]);
   await db.query("insert into ruined_members (id,person_id,membership_state) values ($1,$1,'active'),($2,$2,'active')", [ids.member, ids.other]);
@@ -353,7 +355,7 @@ test("transfer API enforces origin/session/JSON, uses verified actor, maps domai
   assert.doesNotMatch(JSON.stringify(await unexpected.json()), /Private provider/);
 });
 
-test("complimentary Circle transfer requires current funding and completed unrestricted entry", async (t) => {
+for (const funding of ["operator", "complimentary"]) test(`Circle transfer requires current ${funding} funding and completed unrestricted entry`, async (t) => {
   const f = await fixture(t);
   await f.db.query("insert into people values ($1,'active')", [ids.member]);
   await f.db.query("insert into platform_users (auth_user_id,status,member_id,person_id) values ($1,'active',$1,$1)", [ids.member]);
@@ -363,12 +365,16 @@ test("complimentary Circle transfer requires current funding and completed unres
   const before = await f.snapshot();
   await assert.rejects(f.transfer(), (error) => error.code === "conflict");
   assert.deepEqual(await f.snapshot(), before, "Pending payment alone cannot authorize transfer");
-  await f.db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'guide')", [ids.member]);
+  if (funding === "operator") await f.db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'guide')", [ids.member]);
+  else await f.db.query("insert into member_complimentary_grants(member_id) values ($1)", [ids.member]);
   for (const [restrict, restore] of [
     ["update member_lifecycle set account_state='suspended' where member_id=$1", "update member_lifecycle set account_state='active' where member_id=$1"],
     ["update member_lifecycle set administrative_onboarding_state='in_progress' where member_id=$1", "update member_lifecycle set administrative_onboarding_state='completed' where member_id=$1"],
     ["update platform_users set status='suspended' where auth_user_id=$1", "update platform_users set status='active' where auth_user_id=$1"],
-    ["update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='guide'", "update platform_role_grants set revoked_at=null where auth_user_id=$1 and role_slug='guide'"],
+    funding === "operator"
+      ? ["update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='guide'", "update platform_role_grants set revoked_at=null where auth_user_id=$1 and role_slug='guide'"]
+      : ["update member_complimentary_grants set revoked_at=now() where member_id=$1", "update member_complimentary_grants set revoked_at=null where member_id=$1"],
+    ...(funding === "complimentary" ? [["update member_complimentary_grants set ends_at=now()-interval '1 second' where member_id=$1", "update member_complimentary_grants set ends_at=null where member_id=$1"]] : []),
   ]) {
     await f.db.query(restrict, [ids.member]);
     await assert.rejects(f.transfer(), (error) => error.code === "conflict", restrict);

@@ -92,7 +92,7 @@ function deriveBaseMemberAccessPolicy(
   }
 
   if (
-    (identity.billingState === "pending" && identity.membershipFunding !== "operator") ||
+    (identity.billingState === "pending" && identity.membershipFunding !== "operator" && identity.membershipFunding !== "complimentary") ||
     identity.administrativeOnboardingState !== "completed" ||
     identity.standingState === "pre_active"
   ) {
@@ -105,7 +105,7 @@ function deriveBaseMemberAccessPolicy(
   }
 
   if (
-    identity.membershipFunding !== "operator" && (
+    identity.membershipFunding !== "operator" && identity.membershipFunding !== "complimentary" && (
       identity.billingState === "attention_required" ||
       identity.billingState === "ended"
     )

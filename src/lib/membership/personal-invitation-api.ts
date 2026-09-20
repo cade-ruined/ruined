@@ -9,6 +9,7 @@ import { getPersonalInvitationEmailReady, processPersonalInvitationEmailBatch } 
 import {
   createOwnPersonalInvitation, getOwnPersonalInvitations,
   revokeOwnPersonalInvitation, retryOwnPersonalInvitationEmail,
+  endOwnInvitationComplimentaryAccess,
 } from "./personal-invitation-repository";
 
 const headers = { ...MEMBER_INVITATION_HEADERS, Vary: "Cookie" };
@@ -42,12 +43,14 @@ export async function handlePersonalInvitationRequest(request: Request, invitati
       const value = await readMemberInvitationJson(request);
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new MemberInvitationError(400, "Choose an invitation action.");
       const input = value as Record<string, unknown>;
-      if (Object.keys(input).some(key => key !== "action" && key !== "version") || !["revoke", "retry_email"].includes(String(input.action))) {
+      if (Object.keys(input).some(key => key !== "action" && key !== "version") || !["revoke", "retry_email", "end_complimentary"].includes(String(input.action))) {
         throw new MemberInvitationError(400, "Choose an invitation action.");
       }
       if (input.action === "retry_email" && !emailReady) throw new MemberInvitationError(503, "Email sending is temporarily unavailable.");
       const version = { version: input.version as number };
-      const snapshot = input.action === "revoke"
+      const snapshot = input.action === "end_complimentary"
+        ? await endOwnInvitationComplimentaryAccess(viewer.authUserId, invitationId, version)
+        : input.action === "revoke"
         ? await revokeOwnPersonalInvitation(viewer.authUserId, invitationId, version)
         : await retryOwnPersonalInvitationEmail(viewer.authUserId, invitationId, version);
       if (input.action === "retry_email") scheduleDelivery(invitationId);

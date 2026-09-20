@@ -493,7 +493,7 @@ async function sendAnnouncementNotifications(
           and platform_user.status = 'active'
         where lifecycle.account_state = 'active'
           and member_record.deleted_at is null
-          and (lifecycle.billing_state = 'active' or private.ruined_member_has_operator_funding(member_record.id))
+          and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(member_record.id))
           and lifecycle.administrative_onboarding_state = 'completed'
           and lifecycle.standing_state in ('active', 'cancellation_requested')
           and (

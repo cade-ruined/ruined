@@ -17,7 +17,7 @@ export default function MemberAccount({ account, billingConnected, preview = fal
   preview?: boolean;
 }) {
   const entry = account.access.mode === "entry";
-  const complimentary = account.membershipFunding === "operator";
+  const complimentary = (account.membershipFunding === "operator" || account.membershipFunding === "complimentary");
   const restricted = account.access.mode === "limited" || account.access.mode === "suspended";
   const standing = entry ? "Finish joining" : account.standingState.replaceAll("_", " ");
   const billing = { active: "Active", pending: "Not started", attention_required: "Needs attention", ended: "Ended" }[account.billingState];
@@ -39,9 +39,9 @@ export default function MemberAccount({ account, billingConnected, preview = fal
         </section>
         <section aria-labelledby="account-billing" className={sectionClass}>
           <h2 className={labelClass} id="account-billing">Billing</h2>
-          <p className="mt-3 text-2xl font-bold tracking-tight">{complimentary ? "Complimentary operator membership" : billing}</p>
+          <p className="mt-3 text-2xl font-bold tracking-tight">{complimentary ? "Complimentary membership" : billing}</p>
           <p className="mt-3 text-base leading-relaxed text-[var(--member-muted)]">{complimentary
-            ? "Your operator access includes membership. Complete your profile and agreement; no new membership payment is required."
+            ? "Your membership is complimentary. Complete your profile and agreement; no new membership payment is required."
             : entry
             ? "Complete your profile and agreement in membership entry, then continue to payment."
             : "Manage your payment method, subscription, and invoices."}</p>

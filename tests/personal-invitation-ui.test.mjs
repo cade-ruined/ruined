@@ -19,13 +19,15 @@ async function load(path, dependencies = {}, globals = {}) {
   return loaded.exports;
 }
 const expiry = await load("src/lib/membership/invitation-expiry.ts");
+const presentation = await load("src/lib/membership/personal-invitation-presentation.ts");
 const future = "2099-09-20T02:45:00.000Z", past = "2000-01-01T00:00:00.000Z";
-const record = { id: "personal-one", recipientName: "Alex <Rivera>", recipientEmail: "alex@example.test", url: "/invitation/personal-one", issuedAt: "2099-09-18T02:45:00.000Z", expiresAt: future, revokedAt: null, submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "queued", sentAt: null, version: 3 };
-const snapshot = { card: { name: "Inviter", memberTag: "inviter", wearSeed: "owner" }, invitations: [], counts: { created: 0, active: 0, expired: 0, accepted: 0, submitted: 0, joined: 0 }, eligible: true, writable: true, emailReady: true, dailyLimit: 20, remainingToday: 20, legacyInvitation: null };
+const record = { id: "personal-one", recipientName: "Alex <Rivera>", recipientEmail: "alex@example.test", url: "/invitation/personal-one", issuedAt: "2099-09-18T02:45:00.000Z", expiresAt: future, revokedAt: null, submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "queued", sentAt: null, version: 3, membershipType: "standard", complimentaryReason: null, complimentaryEndsAt: null, complimentaryGrant: null };
+const snapshot = { card: { name: "Inviter", memberTag: "inviter", wearSeed: "owner" }, invitations: [], counts: { created: 0, active: 0, expired: 0, accepted: 0, submitted: 0, joined: 0 }, eligible: true, writable: true, emailReady: true, dailyLimit: 20, remainingToday: 20, legacyInvitation: null, canGrantComplimentary: false };
 const descendants = element => React.isValidElement(element) ? [element, ...React.Children.toArray(element.props.children).flatMap(descendants)] : [];
 const text = element => typeof element === "string" || typeof element === "number" ? String(element) : React.isValidElement(element) ? React.Children.toArray(element.props.children).map(text).join("") : "";
 const find = (tree, type, label) => descendants(tree).find(element => element.type === type && text(element) === label);
 const input = (tree, name) => descendants(tree).find(element => element.type === "input" && element.props.name === name);
+const select = (tree, name) => descendants(tree).find(element => element.type === "select" && element.props.name === name);
 const form = tree => descendants(tree).find(element => element.type === "form");
 async function harness(initialSnapshot = snapshot, options = {}) {
   const hooks = []; let cursor = 0, uuids = 0;
@@ -41,6 +43,7 @@ async function harness(initialSnapshot = snapshot, options = {}) {
     "./PersonalInvitationAcceptance": () => null,
     "./card/PublicMemberCardPage": ({ children }) => React.createElement("main", null, children),
     "@/lib/membership/invitation-expiry": expiry,
+    "@/lib/membership/personal-invitation-presentation": presentation,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   }, {
     crypto: { randomUUID: () => `request-${++uuids}` },
@@ -64,6 +67,121 @@ test("creating a named invitation uses only recipient, delivery choice and retry
   assert.equal(created.props.invitationExpiresAt, future);
   assert.match(renderToStaticMarkup(created), /Their email is queued/);
   assert.equal(input(created, "recipientName").props.value, "");
+});
+
+test("only admin snapshots expose membership choice, directly after recipient email", async () => {
+  const member = await harness();
+  assert.equal(select(member.render(), "membershipType"), undefined);
+  assert.equal(input(member.render(), "complimentaryReason"), undefined);
+  const admin = await harness({ ...snapshot, canGrantComplimentary: true });
+  const tree = admin.render(), controls = descendants(tree).filter(element => element.type === "input" || element.type === "select");
+  assert.deepEqual(controls.slice(0, 3).map(element => element.props.name), ["recipientName", "recipientEmail", "membershipType"]);
+  assert.equal(select(tree, "membershipType").props.value, "standard");
+  assert.equal(input(tree, "complimentaryReason"), undefined);
+});
+
+test("admin complimentary invitations default to ongoing and preserve the 48-hour acceptance deadline", async () => {
+  const ui = await harness({ ...snapshot, canGrantComplimentary: true });
+  input(ui.render(), "recipientName").props.onChange({ target: { value: "Alex" } });
+  input(ui.render(), "recipientEmail").props.onChange({ target: { value: "alex@example.test" } });
+  select(ui.render(), "membershipType").props.onChange({ target: { value: "complimentary" } });
+  const tree = ui.render();
+  assert.equal(input(tree, "complimentaryReason").props.value, "Founding member");
+  assert.equal(input(tree, "complimentaryReason").props.required, true);
+  assert.equal(select(tree, "complimentaryDuration").props.value, "ongoing");
+  assert.equal(input(tree, "complimentaryEndDate"), undefined);
+  assert.match(text(tree), /The invitation still has 48 hours to be accepted/);
+  await form(tree).props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(ui.calls[0].body, { recipientName: "Alex", recipientEmail: "alex@example.test", requestId: "request-1", sendEmail: true, membershipType: "complimentary", complimentaryReason: "Founding member", complimentaryEndsAt: null });
+});
+
+test("date-limited complimentary invites save local end of day and edited terms use a new request identity", async () => {
+  const ui = await harness({ ...snapshot, canGrantComplimentary: true }, { fetch: async () => ({ ok: false, json: async () => ({ error: "Try again" }) }) });
+  input(ui.render(), "recipientName").props.onChange({ target: { value: "Alex" } });
+  input(ui.render(), "recipientEmail").props.onChange({ target: { value: "alex@example.test" } });
+  select(ui.render(), "membershipType").props.onChange({ target: { value: "complimentary" } });
+  select(ui.render(), "complimentaryDuration").props.onChange({ target: { value: "limited" } });
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.equal(ui.calls.length, 0, "an end date is required when duration is limited");
+  input(ui.render(), "complimentaryEndDate").props.onChange({ target: { value: "2099-09-30" } });
+  const end = presentation.complimentaryEndOfLocalDay("2099-09-30");
+  assert.match(text(ui.render()), /Saved deadline:/);
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.equal(ui.calls[0].body.complimentaryEndsAt, end);
+  assert.equal(ui.calls[0].body.requestId, ui.calls[1].body.requestId);
+  input(ui.render(), "complimentaryReason").props.onChange({ target: { value: "  Guest membership  " } });
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.notEqual(ui.calls[2].body.requestId, ui.calls[0].body.requestId);
+  assert.equal(ui.calls[2].body.complimentaryReason, "Guest membership");
+  select(ui.render(), "membershipType").props.onChange({ target: { value: "standard" } });
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.equal(ui.calls[3].body.membershipType, "standard");
+  assert.equal("complimentaryEndsAt" in ui.calls[3].body, false, "hidden complimentary terms must not leak into a standard invitation");
+});
+
+test("empty reasons and past or invalid complimentary dates cannot be submitted", async () => {
+  const ui = await harness({ ...snapshot, canGrantComplimentary: true });
+  input(ui.render(), "recipientName").props.onChange({ target: { value: "Alex" } });
+  input(ui.render(), "recipientEmail").props.onChange({ target: { value: "alex@example.test" } });
+  select(ui.render(), "membershipType").props.onChange({ target: { value: "complimentary" } });
+  input(ui.render(), "complimentaryReason").props.onChange({ target: { value: "   " } });
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.match(text(ui.render()), /Add a reason/);
+  input(ui.render(), "complimentaryReason").props.onChange({ target: { value: "Founding member" } });
+  select(ui.render(), "complimentaryDuration").props.onChange({ target: { value: "limited" } });
+  for (const date of ["2000-01-01", "2099-02-30", ""]) {
+    input(ui.render(), "complimentaryEndDate").props.onChange({ target: { value: date } });
+    await form(ui.render()).props.onSubmit({ preventDefault() {} });
+    assert.match(text(ui.render()), /Choose a future end date/);
+  }
+  assert.equal(ui.calls.length, 0);
+});
+
+test("accepted complimentary access has a separate confirmed end action, never a cancel-invitation action", async () => {
+  const complimentary = { ...record, membershipType: "complimentary", acceptedAt: past, complimentaryReason: "Founding member", complimentaryGrant: { id: "grant-1", startsAt: past, endsAt: null, revokedAt: null } };
+  const ui = await harness({ ...snapshot, canGrantComplimentary: true, invitations: [complimentary] });
+  assert.match(text(ui.render()), /Ongoing complimentary membership/);
+  assert.equal(find(ui.render(), "button", "Cancel invitation"), undefined);
+  find(ui.render(), "button", "End complimentary access").props.onClick();
+  assert.equal(ui.calls.length, 0);
+  assert.match(text(ui.render()), /Their member record and history stay in place/);
+  find(ui.render(), "button", "Keep complimentary access").props.onClick();
+  assert.equal(find(ui.render(), "button", "Yes, end complimentary access"), undefined);
+  find(ui.render(), "button", "End complimentary access").props.onClick();
+  await find(ui.render(), "button", "Yes, end complimentary access").props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(ui.calls[0].body, { action: "end_complimentary", version: 3 });
+  assert.equal(ui.calls[0].url, "/api/my/invitations/personal-one");
+  assert.equal(ui.calls[0].method, "PATCH");
+  assert.match(text(ui.render()), /Complimentary access for Alex <Rivera> ended/);
+});
+
+test("only admins can end current grants; ended and unaccepted complimentary records retain honest states", async () => {
+  const comp = { ...record, membershipType: "complimentary", complimentaryReason: "Founding member" };
+  const grant = { id: "grant-1", startsAt: past, endsAt: null, revokedAt: null };
+  const member = await harness({ ...snapshot, invitations: [{ ...comp, acceptedAt: past, complimentaryGrant: grant }] });
+  assert.equal(find(member.render(), "button", "End complimentary access"), undefined);
+  assert.doesNotMatch(text(member.render()), /Founding member/);
+  const admin = await harness({ ...snapshot, canGrantComplimentary: true, invitations: [comp, { ...comp, id: "ended", acceptedAt: past, complimentaryGrant: { ...grant, revokedAt: past } }, { ...comp, id: "elapsed", acceptedAt: past, complimentaryEndsAt: past, complimentaryGrant: { ...grant, endsAt: past } }] });
+  const rows = descendants(admin.render()).filter(element => element.type === "li");
+  assert.ok(find(rows[0], "button", "Cancel invitation"));
+  for (const row of rows) assert.equal(find(row, "button", "End complimentary access"), undefined);
+  assert.match(text(rows[1]), /Complimentary access ended/);
+  assert.match(text(rows[2]), /Complimentary access ended/);
+});
+
+test("complimentary local end dates retain calendar boundaries and account for daylight saving", () => {
+  const previous = process.env.TZ;
+  process.env.TZ = "America/Denver";
+  try {
+    assert.equal(presentation.complimentaryEndOfLocalDay("2026-09-30"), "2026-10-01T05:59:59.999Z");
+    assert.equal(presentation.complimentaryEndOfLocalDay("2026-12-31"), "2027-01-01T06:59:59.999Z");
+    assert.equal(presentation.complimentaryEndOfLocalDay("2026-03-08"), "2026-03-09T05:59:59.999Z");
+    assert.equal(presentation.complimentaryEndOfLocalDay("2026-11-01"), "2026-11-02T06:59:59.999Z");
+    assert.equal(presentation.complimentaryEndOfLocalDay("2028-02-29"), "2028-03-01T06:59:59.999Z");
+    for (const invalid of ["", "2026-02-29", "2026-13-01", "2026-00-00", "2026-9-30", "2026-09-30T00:00:00Z"]) assert.equal(presentation.complimentaryEndOfLocalDay(invalid), null);
+  } finally { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; }
 });
 
 test("a failed create retries the same request id and changed details create a new request", async () => {

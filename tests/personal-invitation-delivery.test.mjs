@@ -49,7 +49,11 @@ async function fixture(t) {
     create function private.ruined_member_can_share_invitation(uuid) returns boolean language sql as
       'select eligible from member_lifecycle where member_id=$1';
     ${table}
-    alter table member_personal_invitations add column accepted_at timestamptz;`);
+    alter table member_personal_invitations add column accepted_at timestamptz,
+      add column membership_type text default 'standard', add column complimentary_ends_at timestamptz;
+    create function private.ruined_lock_member_complimentary_funding(uuid) returns boolean language sql as 'select false';
+    create function private.ruined_personal_invitation_benefit_available(uuid) returns boolean language sql as
+      'select membership_type = ''standard'' or complimentary_ends_at is null or complimentary_ends_at > clock_timestamp() from member_personal_invitations where id=$1';`);
   await pg.query("insert into ruined_members(id) values($1)", [member]);
   await pg.query("insert into member_lifecycle(member_id) values($1)", [member]);
   await pg.query(`insert into member_personal_invitations(id,member_id,request_id,public_token,recipient_name,
@@ -199,4 +203,21 @@ test("five failures stop automatic retries and unavailable email configuration n
   assert.equal((await f.row()).next_attempt_at, null);
   assert.equal((await f.row()).delivery_attempts, 5);
   assert.equal((await f.worker.processPersonalInvitationEmailBatch()).claimed, 0);
+});
+
+test("complimentary email explains duration and no-payment activation without any private reason", () => {
+  const ongoing = email.createPersonalInvitationEmail({ ...input, membershipType: "complimentary" });
+  assert.match(ongoing.text, /complimentary, with no scheduled end date/);
+  assert.match(ongoing.html, /No payment or card is needed/);
+  const fixed = email.createPersonalInvitationEmail({ ...input, membershipType: "complimentary", complimentaryEndsAt: "2027-01-01T07:00:00.000Z" });
+  assert.match(fixed.text, /complimentary through JAN\. 1 12:00AM MST/);
+  assert.doesNotMatch(email.createPersonalInvitationEmail(input).text, /complimentary/);
+});
+
+test("an expired complimentary benefit cancels queued invitation delivery", async t => {
+  const f = await fixture(t);
+  await f.pg.query("update member_personal_invitations set membership_type='complimentary',complimentary_ends_at=now()-interval '1 second' where id=$1", [f.id]);
+  const result = await f.worker.processPersonalInvitationEmailBatch();
+  assert.equal(result.cancelled, 1); assert.equal(f.sends.length, 0);
+  assert.equal((await f.row()).delivery_status, "cancelled");
 });

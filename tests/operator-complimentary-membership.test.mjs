@@ -14,19 +14,19 @@ const { deriveMemberAccessPolicy, memberCan } = loadedModule.exports;
 const active = { accountState: "active", administrativeOnboardingState: "completed", billingState: "pending", cancellationEffectiveAt: null, programState: "onboarding", standingState: "active", membershipFunding: "operator" };
 
 test("complimentary funding bypasses payment only, never membership safeguards", () => {
-  for (const billingState of ["pending", "active", "attention_required", "ended"]) {
-    const access = deriveMemberAccessPolicy({ ...active, billingState });
+  for (const membershipFunding of ["operator", "complimentary"]) for (const billingState of ["pending", "active", "attention_required", "ended"]) {
+    const access = deriveMemberAccessPolicy({ ...active, membershipFunding, billingState });
     assert.equal(memberCan(access, "foundations.write"), true);
     assert.equal(memberCan(access, "circle.read"), true);
     assert.equal(memberCan(access, "experiences.member"), false, "Foundations Circle exception must not grant every experience");
   }
-  for (const restricted of [
+  for (const membershipFunding of ["operator", "complimentary"]) for (const restricted of [
     { accountState: "suspended" }, { accountState: "closed" },
     { administrativeOnboardingState: "in_progress" }, { standingState: "paused" },
     { standingState: "inactive" }, { standingState: "cancellation_requested" },
     { standingState: "cancellation_requested", cancellationEffectiveAt: "2000-01-01T00:00:00Z" },
     { programState: "withdrawn" }, { programState: "completed" },
-  ]) assert.equal(memberCan(deriveMemberAccessPolicy({ ...active, ...restricted }), "foundations.write"), false, JSON.stringify(restricted));
+  ]) assert.equal(memberCan(deriveMemberAccessPolicy({ ...active, membershipFunding, ...restricted }), "foundations.write"), false, JSON.stringify(restricted));
   assert.equal(memberCan(deriveMemberAccessPolicy({ ...active, membershipFunding: "self" }), "circle.read"), false);
   assert.equal(memberCan(deriveMemberAccessPolicy({ ...active, membershipFunding: "self", billingState: "active" }), "circle.read"), true);
 });
@@ -106,5 +106,5 @@ test("entry renders activation instead of checkout for operators and server reje
   assert.match(form, /stage === "payment" && complimentary/);
   assert.match(form, /stage === "payment" && !complimentary/);
   assert.match(form, /JSON.stringify\(\{ action: "complete" \}\)/);
-  assert.match(await source("src/lib/stripe/billing-repository.ts"), /if \(member\?\.operator_funded \|\|/);
+  assert.match(await source("src/lib/stripe/billing-repository.ts"), /funding\.complimentary_funded \|\|/);
 });

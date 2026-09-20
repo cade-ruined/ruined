@@ -386,14 +386,14 @@ async function requireGoogleCommunicationEntityAccess(
 }
 
 function nextDecision(input: {
-  membershipFunding?: "self" | "operator";
+  membershipFunding?: "self" | "operator" | "complimentary";
   administrativeOnboarding: string;
   billing: string;
   circleId: string | null;
   foundations: string;
   standing: string;
 }) {
-  if (input.membershipFunding !== "operator" && input.billing === "attention_required") return "Resolve payment standing without changing the member's history.";
+  if (input.membershipFunding !== "operator" && input.membershipFunding !== "complimentary" && input.billing === "attention_required") return "Resolve payment standing without changing the member's history.";
   if (input.administrativeOnboarding !== "completed") return "Complete the remaining administrative onboarding requirements.";
   if (input.standing === "paused") return "Confirm the pause terms and protect private Circle participation.";
   if (!input.circleId) return "Place the member in an active Circle before Foundations can be completed.";
@@ -402,6 +402,7 @@ function nextDecision(input: {
 }
 
 type MemberBaseRow = {
+  complimentary_funded: boolean;
   operator_funded: boolean;
   account_state: string;
   administrative_onboarding_state: string;
@@ -451,6 +452,7 @@ export async function getOpsMemberOperatingRecord(
         coalesce(directory.email_scope, 'none') as email_scope,
         coalesce(directory.phone_scope, 'none') as phone_scope,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+        private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.account_state,
         lifecycle.billing_state,
         lifecycle.foundations_state,
@@ -1061,7 +1063,7 @@ export async function getOpsMemberOperatingRecord(
         lifecycleVersion: Number(base.lifecycle_version),
         memberId: base.member_id,
         nextDecision: nextDecision({
-          membershipFunding: base.operator_funded ? "operator" : "self",
+          membershipFunding: base.operator_funded ? "operator" : base.complimentary_funded ? "complimentary" : "self",
           administrativeOnboarding: base.administrative_onboarding_state,
           billing: base.billing_state,
           circleId: base.circle_id,
@@ -1116,7 +1118,7 @@ export async function getOpsMemberOperatingRecord(
         },
       },
       membership: {
-        membershipFunding: base.operator_funded ? "operator" : "self",
+        membershipFunding: base.operator_funded ? "operator" : base.complimentary_funded ? "complimentary" : "self",
         agreement: {
           acceptedAt: asIso(agreement?.accepted_at),
           contentSha256: agreement?.agreement_content_sha256 ?? null,
@@ -1174,9 +1176,9 @@ export async function getOpsMemberOperatingRecord(
             {
               completedAt: asIso(onboarding?.billing_confirmed_at),
               key: "billing",
-              label: base.operator_funded ? "Complimentary operator membership" : "Membership payment",
-              required: !base.operator_funded,
-              state: base.operator_funded ? "not_required" : onboarding?.billing_confirmed_at ? "complete" : "missing",
+              label: base.complimentary_funded ? "Complimentary membership" : "Membership payment",
+              required: !base.complimentary_funded,
+              state: base.complimentary_funded ? "not_required" : onboarding?.billing_confirmed_at ? "complete" : "missing",
             },
           ],
           state: onboarding?.state ?? base.administrative_onboarding_state,
@@ -1408,6 +1410,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         select
           member.id,
           private.ruined_member_has_operator_funding(member.id) as operator_funded,
+          private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
           lifecycle.administrative_onboarding_state,
           lifecycle.cancellation_effective_at,
           lifecycle.account_state,
@@ -1464,7 +1467,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         count(*) filter (
           where account_state = 'active'
             and administrative_onboarding_state = 'completed'
-            and (billing_state = 'active' or operator_funded)
+            and (billing_state = 'active' or complimentary_funded)
             and (standing_state = 'active' or (standing_state = 'cancellation_requested' and cancellation_effective_at > now()))
             and program_state in ('onboarding', 'active')
         ) as active_members,
@@ -1476,7 +1479,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         count(*) filter (
           where account_state = 'active'
             and administrative_onboarding_state = 'completed'
-            and (billing_state = 'active' or operator_funded)
+            and (billing_state = 'active' or complimentary_funded)
             and (standing_state = 'active' or (standing_state = 'cancellation_requested' and cancellation_effective_at > now()))
             and program_state in ('onboarding', 'active')
             and circle_id is null

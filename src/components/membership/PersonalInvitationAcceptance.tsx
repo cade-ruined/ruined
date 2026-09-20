@@ -2,16 +2,19 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { memberInvitationDeadline, memberInvitationExpired } from "@/lib/membership/invitation-expiry";
+import { complimentaryMembershipDeadline } from "@/lib/membership/personal-invitation-presentation";
 import { useInvitationExpired } from "./use-invitation-expiry";
 import styles from "./MemberInvitation.module.css";
 
 type AuthResponse = { error?: string; redirectTo?: string; requestId?: string };
 
-export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, preview = false }: {
+export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, preview = false }: {
   invitationToken?: string;
   recipientName: string;
   inviterName: string;
   expiresAt: string | null;
+  membershipType?: "standard" | "complimentary";
+  complimentaryEndsAt?: string | null;
   preview?: boolean;
 }) {
   const expired = useInvitationExpired(expiresAt);
@@ -86,6 +89,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
     <p className={styles.eyebrow}>For {recipientName}</p>
     <h2 id="invitation-join-title">{requested ? "Verify your email." : "Accept your invitation."}</h2>
     <p>Your invitation from {inviterName} is your approval to join. Verify your email, then complete your profile and membership.</p>
+    {membershipType === "complimentary" ? <p className={styles.complimentaryNotice}><strong>Complimentary membership.</strong> {complimentaryEndsAt ? <>No payment is needed through <time dateTime={complimentaryEndsAt}>{complimentaryMembershipDeadline(complimentaryEndsAt)}</time>.</> : "No payment is needed. Your complimentary membership is ongoing."} You’ll still complete your profile and accept the membership agreement.</p> : null}
     {expired ? <p role="status">This invitation has expired. Ask {inviterName} for a new one.</p> : <p className={styles.note}>Accept by <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
     <form className={styles.form} onSubmit={requested ? verifyCode : submitEmail} aria-label={requested ? "Verify invitation email" : "Accept personal invitation"} aria-busy={pending}>
       {requested ? <>

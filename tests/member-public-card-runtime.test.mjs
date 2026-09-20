@@ -33,6 +33,7 @@ async function fixture() {
     create table member_milestones(id uuid primary key, member_id uuid, person_id uuid, title text, visibility text, occurred_at timestamptz, source_entity_type text, source_entity_id text, evidence jsonb);
     create table artifact_awards(id uuid primary key, member_id uuid, person_id uuid, status text, revoked_at timestamptz, awarded_at timestamptz);
     create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql stable as 'select false';
+    create function private.ruined_member_has_complimentary_funding(uuid) returns boolean language sql stable as 'select false';
   `);
   await pg.exec(await source("db/migrations/20260917200000_public_member_cards.sql"));
   await pg.exec(await source("db/migrations/20260919210000_member_profile_card_sync.sql"));

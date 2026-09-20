@@ -1,3 +1,4 @@
+import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -175,6 +176,8 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       assert.ok(start >= 0 && end > start);
       await db.exec(fundingMigration.slice(start, end + 4));
     }
+
+    await installComplimentaryFundingFunctions(db);
 
     await t.test("meeting directory exposes exact Circle IDs and only current authorized scheduling choices", async () => {
       await reset("ops_admin");

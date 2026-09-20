@@ -30,7 +30,7 @@ export type MemberPlatformSnapshot = {
 };
 
 export type OperatorMemberSummary = {
-  membershipFunding?: "self" | "operator";
+  membershipFunding?: "self" | "operator" | "complimentary";
   administrativeOnboardingState?: "completed" | "in_progress" | "not_started";
   standingState?: string;
   cancellationEffectiveAt?: string | null;
@@ -177,11 +177,11 @@ export function nextMemberAction({
   billingState: BillingState;
   foundationsState: FoundationsState;
   hasCircle: boolean;
-  membershipFunding?: "self" | "operator";
+  membershipFunding?: "self" | "operator" | "complimentary";
   administrativeOnboardingState?: string;
 }): string {
   if (administrativeOnboardingState && administrativeOnboardingState !== "completed") return "Complete membership entry";
-  if (membershipFunding !== "operator") {
+  if (membershipFunding !== "operator" && membershipFunding !== "complimentary") {
     if (billingState === "attention_required") return "Resolve membership billing";
     if (billingState === "ended") return "Review membership status";
     if (billingState === "pending") return "Complete membership entry";

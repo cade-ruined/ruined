@@ -1,6 +1,7 @@
 import type { PublicMemberCard } from "./public-card-model";
 
-export type PublicMemberInvitation = { card: PublicMemberCard; expiresAt: string; recipientName?: string | null };
+export type PublicMemberInvitation = { card: PublicMemberCard; expiresAt: string; recipientName?: string | null;
+  membershipType?: "standard" | "complimentary"; complimentaryEndsAt?: string | null };
 export type MemberInvitationSnapshot = Omit<PublicMemberInvitation, "expiresAt"> & {
   expiresAt: string | null;
   enabled: boolean; eligible: boolean; writable: boolean;
@@ -33,7 +34,7 @@ export function invitationCard(name: string, wearSeed: string, memberTag: string
 export async function readMemberInvitationJson(request: Request): Promise<unknown> {
   if (!/^application\/json(?:;|$)/i.test(request.headers.get("content-type") ?? "")) throw new MemberInvitationError(415, "JSON is required.");
   const length = request.headers.get("content-length");
-  if (length && (!/^\d+$/.test(length) || Number(length) > 1024)) throw new MemberInvitationError(413, "That request is too large.");
+  if (length && (!/^\d+$/.test(length) || Number(length) > 4096)) throw new MemberInvitationError(413, "That request is too large.");
   const reader = request.body?.getReader();
   if (!reader) throw new MemberInvitationError(400, "An invitation choice is required.");
   const chunks: Uint8Array[] = []; let size = 0;
@@ -41,7 +42,7 @@ export async function readMemberInvitationJson(request: Request): Promise<unknow
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       size += value.length;
-      if (size > 1024) { await reader.cancel(); throw new MemberInvitationError(413, "That request is too large."); }
+      if (size > 4096) { await reader.cancel(); throw new MemberInvitationError(413, "That request is too large."); }
       chunks.push(value);
     }
   } finally { reader.releaseLock(); }

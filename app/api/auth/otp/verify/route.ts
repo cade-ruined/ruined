@@ -25,8 +25,8 @@ type VerifyBody = {
   invitationToken?: unknown;
 };
 
-async function denyVerifiedSession(request: NextRequest, status: 401 | 503) {
-  const denialResponse = NextResponse.json({ error: ACCESS_DENIED_MESSAGE }, { status, headers: { "Cache-Control": "private, no-store" } });
+async function denyVerifiedSession(request: NextRequest, status: 401 | 409 | 503, message = ACCESS_DENIED_MESSAGE) {
+  const denialResponse = NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "private, no-store" } });
   const denialClient = createSupabaseCurrentResponseClient({
     request,
     response: denialResponse,
@@ -130,6 +130,9 @@ export async function POST(request: NextRequest) {
     authorizedResponse.headers.set("Cache-Control", "private, no-store");
     return authorizedResponse;
   } catch (authorizationError) {
+    if (authorizationError && typeof authorizationError === "object" && "code" in authorizationError && authorizationError.code === "P4102") {
+      return denyVerifiedSession(request, 409, "You already have membership billing. Contact Ruined to resolve your existing subscription before switching to complimentary membership.");
+    }
     const denied = authorizationError instanceof PlatformAccessDeniedError;
     if (!denied) {
       console.error("Verified passwordless access could not be authorized", {
