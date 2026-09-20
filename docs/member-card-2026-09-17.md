@@ -76,3 +76,11 @@ The shadow is a soft approximation projected from the transformed card bounds th
 ## Invitation expiry
 
 Migration `20260922200000_member_invitation_expiry.sql` must be applied before releasing the expiry code. The public page, API and waitlist attribution enforce the same server deadline. Open pages disable use at the deadline and recheck when a tab resumes. Cards and saved artwork display the stored expiry in America/Denver with MST/MDT; draft cards describe the 48-hour validity until a link is created. Local preview timestamps are example-only. No scheduled job is needed for expiration.
+
+## Invitation link preview
+
+Active invitation pages expose a versioned, brand-only spinning card MP4 through Open Graph video metadata and a JPEG poster for clients that display still previews. Apple Messages supports downloadable MP4 previews; animation remains controlled by the receiving app and its settings. A GIF of the same rotation is also shipped for direct use. Assets use the membership origin explicitly, since the root site's metadata base points to the separate public website.
+
+The current public inviter name remains in the preview title. Static media contains no member names, tags, token, or expiry date, and does not confer access. Invalid, expired, or withdrawn invitations expose no preview media or identity. Token pages retain private/no-store and noindex headers; only versioned generic media is publicly cacheable. Messaging clients may retain previously generated previews independently of the website.
+
+The offline generator is `scripts/render-invitation-share-preview.mjs`; it reuses the card artwork and exact supplied marks. Verify the poster, both faces in the rotation, MP4 playback, total resource size, and raw metadata in the initial HTML for preview crawlers before publishing.

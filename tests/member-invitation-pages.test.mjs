@@ -5,6 +5,7 @@ import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import sharp from "sharp";
 import nextConfig from "../next.config.mjs";
 
 async function load(path, dependencies = {}, globals = {}) {
@@ -59,6 +60,7 @@ test("invalid and revoked invitations reveal no member details or sample content
   const metadata = await page.generateMetadata(params(token));
   assert.equal(metadata.title, "Invitation unavailable");
   assert.deepEqual(metadata.openGraph.images, []); assert.deepEqual(metadata.twitter.images, []);
+  assert.deepEqual(metadata.openGraph.videos, []);
   assert.deepEqual(metadata.robots, { index: false, follow: false });
   assert.equal(metadata.referrer, "no-referrer"); assert.equal(metadata.alternates.canonical, null);
   assert.doesNotMatch(JSON.stringify(metadata), /Chosen|joinedCount|memberId|personId|public-invitation-wear/);
@@ -76,10 +78,23 @@ test("public invitation routes pass the card and token without the owner's priva
   const metadata = await page.generateMetadata(params(token));
   assert.match(metadata.title, /Chosen <name>/);
   assert.doesNotMatch(JSON.stringify(metadata), /7391|PRIVATE|joinedCount|personId|email|public-invitation-wear/);
-  assert.deepEqual(metadata.openGraph.images, []); assert.deepEqual(metadata.twitter.images, []);
+  const poster = metadata.openGraph.images[0];
+  const video = metadata.openGraph.videos[0];
+  assert.equal(poster.url, "https://members.theruinedproject.com/membership/card/share/invitation-spin-v1.jpg");
+  assert.equal(video.url, "https://members.theruinedproject.com/membership/card/share/invitation-spin-v1.mp4");
+  assert.equal(video.secureUrl, video.url); assert.equal(video.type, "video/mp4");
+  assert.equal(poster.type, "image/jpeg"); assert.ok(poster.width >= 900);
+  assert.equal(video.width, poster.width); assert.equal(video.height, poster.height);
+  assert.deepEqual(metadata.twitter.images, [poster]); assert.equal(metadata.twitter.card, "summary_large_image");
+  assert.equal(metadata.openGraph.url, `https://members.theruinedproject.com/invitation/${token}`);
+  assert.doesNotMatch(JSON.stringify([poster, video]), /Chosen|public-invitation-wear|expiresAt|2099|IIII/,
+    "cacheable share media must contain no invitation-specific data");
   current = null;
   await assert.rejects(page.default(params(token)), { status: 404 });
-  assert.equal((await page.generateMetadata(params(token))).title, "Invitation unavailable");
+  const unavailable = await page.generateMetadata(params(token));
+  assert.equal(unavailable.title, "Invitation unavailable");
+  assert.deepEqual(unavailable.openGraph.images, []); assert.deepEqual(unavailable.openGraph.videos, []);
+  assert.deepEqual(unavailable.twitter.images, []); assert.equal(unavailable.openGraph.url, undefined);
 });
 
 test("owner invitation route checks authentication and never substitutes samples after a failure", async () => {
@@ -272,4 +287,21 @@ test("public invitation tokens are protected from caching, indexing and outgoing
   const headers = Object.fromEntries(rules[index].headers.map(header => [header.key, header.value]));
   assert.match(headers["Cache-Control"], /private, no-store/);
   assert.equal(headers["X-Robots-Tag"], "noindex, nofollow"); assert.equal(headers["Referrer-Policy"], "no-referrer");
+});
+
+test("invitation preview media is decodable, lightweight, and ready for inline video playback", async () => {
+  const page = await publicRoute(async () => ({ card, expiresAt }));
+  const metadata = await page.generateMetadata(params(token));
+  const poster = metadata.openGraph.images[0], video = metadata.openGraph.videos[0];
+  const bytes = await Promise.all([poster.url, video.url, video.url.replace(/\.mp4$/, ".gif")].map(url =>
+    readFile(new URL(`../public${new URL(url).pathname}`, import.meta.url))));
+  assert.ok(bytes.reduce((total, file) => total + file.length, 0) < 9_500_000,
+    "leave room for icons under Messages' 10 MB total resource limit");
+  const image = await sharp(bytes[0]).metadata();
+  assert.equal(image.format, "jpeg"); assert.equal(image.width, poster.width); assert.equal(image.height, poster.height);
+  const gif = await sharp(bytes[2], { animated: true }).metadata();
+  assert.equal(gif.format, "gif"); assert.ok(gif.pages > 1); assert.equal(gif.loop, 0);
+  assert.equal(bytes[1].toString("ascii", 4, 8), "ftyp");
+  const movie = bytes[1].indexOf(Buffer.from("moov")), data = bytes[1].indexOf(Buffer.from("mdat"));
+  assert.ok(movie > 0 && movie < data, "MP4 movie metadata must precede video data for quick playback");
 });

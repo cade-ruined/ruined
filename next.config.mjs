@@ -96,6 +96,8 @@ const nextConfig = {
         "/events/byob-01-recap.mp4",
         "/events/byob-01-recap-poster.webp",
         "/events/byob-01/gallery/:path*",
+        // Versioned brand-only media; no member identity or invitation tokens.
+        "/membership/card/share/:path*",
       ].map((source) => ({
         source,
         headers: [
