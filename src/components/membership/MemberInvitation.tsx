@@ -82,7 +82,9 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
   const selected = snapshot?.invitations.find(invitation => invitation.id === selectedId);
   const draftName = useDeferredValue(recipientName.trim());
   // Re-render at the next deadline even when the owner leaves the history open.
-  const nextExpiry = snapshot?.invitations.flatMap(invitation => [invitation.expiresAt, ...(invitation.complimentaryGrant?.endsAt ? [invitation.complimentaryGrant.endsAt] : [])])
+  const nextExpiry = snapshot?.invitations.flatMap(invitation => [invitation.expiresAt,
+    ...(invitation.complimentaryEndsAt ? [invitation.complimentaryEndsAt] : []),
+    ...(invitation.complimentaryGrant?.endsAt ? [invitation.complimentaryGrant.endsAt] : [])])
     .concat(snapshot.legacyInvitation?.expiresAt ? [snapshot.legacyInvitation.expiresAt] : [])
     .filter(value => !memberInvitationExpired(value)).sort()[0] ?? null;
   useInvitationExpired(nextExpiry);

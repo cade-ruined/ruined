@@ -30,8 +30,9 @@ const input = (tree, name) => descendants(tree).find(element => element.type ===
 const select = (tree, name) => descendants(tree).find(element => element.type === "select" && element.props.name === name);
 const form = tree => descendants(tree).find(element => element.type === "form");
 async function harness(initialSnapshot = snapshot, options = {}) {
-  const hooks = []; let cursor = 0, uuids = 0;
-  const calls = [], copied = [];
+  const hooks = []; let cursor = 0, uuids = 0, clock = options.now ?? Date.now();
+  const calls = [], copied = [], watchedDeadlines = [];
+  const timedExpiry = { ...expiry, memberInvitationExpired: (value, now = clock) => expiry.memberInvitationExpired(value, now) };
   const fakeReact = { ...React,
     useState: initial => { const slot = cursor++; if (!(slot in hooks)) hooks[slot] = initial; return [hooks[slot], next => { hooks[slot] = typeof next === "function" ? next(hooks[slot]) : next; }]; },
     useRef: initial => { const slot = cursor++; if (!(slot in hooks)) hooks[slot] = { current: initial }; return hooks[slot]; },
@@ -42,9 +43,9 @@ async function harness(initialSnapshot = snapshot, options = {}) {
     "@/components/public-members/MembershipWaitlistForm": () => null,
     "./PersonalInvitationAcceptance": () => null,
     "./card/PublicMemberCardPage": ({ children }) => React.createElement("main", null, children),
-    "@/lib/membership/invitation-expiry": expiry,
+    "@/lib/membership/invitation-expiry": timedExpiry,
     "@/lib/membership/personal-invitation-presentation": presentation,
-    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
+    "./use-invitation-expiry": { useInvitationExpired: value => { watchedDeadlines.push(value); return timedExpiry.memberInvitationExpired(value); } },
   }, {
     crypto: { randomUUID: () => `request-${++uuids}` },
     window: { location: { origin: "https://members.example.test" } },
@@ -52,8 +53,26 @@ async function harness(initialSnapshot = snapshot, options = {}) {
     fetch: async (url, init) => { const call = { url, ...init, body: init.body ? JSON.parse(init.body) : undefined }; calls.push(call); return options.fetch ? options.fetch(call) : { ok: true, json: async () => ({ snapshot: { ...snapshot, invitations: [record], counts: { ...snapshot.counts, created: 1 } } }) }; },
   });
   const render = () => { cursor = 0; return component.default({ initialSnapshot, preview: options.preview }); };
-  return { render, calls, copied };
+  return { render, calls, copied, watchedDeadlines, advanceTo: value => { clock = Date.parse(value); } };
 }
+
+test("an unaccepted complimentary invitation schedules its earlier benefit deadline and leaves Active at that exact boundary", async () => {
+  const complimentaryEndsAt = "2099-09-19T05:59:59.999Z";
+  const invitation = { ...record, membershipType: "complimentary", complimentaryEndsAt, available: true, deliveryStatus: "not_requested" };
+  const ui = await harness({ ...snapshot, canGrantComplimentary: true, invitations: [invitation], counts: { ...snapshot.counts, created: 1, active: 1 } }, { now: Date.parse(complimentaryEndsAt) - 1 });
+  const before = ui.render();
+  assert.equal(ui.watchedDeadlines.at(-1), complimentaryEndsAt, "the owner must wake at the benefit deadline before the 48-hour invitation deadline");
+  assert.match(text(descendants(before).find(element => element.type === "dl")), /Created1Active1Expired0/);
+  assert.ok(find(before, "button", "Copy link"));
+  ui.advanceTo(complimentaryEndsAt);
+  const atDeadline = ui.render(), row = descendants(atDeadline).find(element => element.type === "li");
+  assert.match(text(row), /Unavailable/);
+  assert.equal(find(row, "button", "Copy link"), undefined);
+  assert.ok(find(row, "a", "Invite again ↗"));
+  assert.match(text(descendants(atDeadline).find(element => element.type === "dl")), /Created1Active0Expired0/);
+  assert.equal(ui.watchedDeadlines.at(-1), future, "the original invitation deadline remains unchanged");
+  assert.equal(ui.calls.length, 0, "the local deadline updates the status even without a server refresh");
+});
 
 test("creating a named invitation uses only recipient, delivery choice and retry-safe request identity", async () => {
   const ui = await harness();
