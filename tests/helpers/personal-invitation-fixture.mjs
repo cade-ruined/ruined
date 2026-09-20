@@ -25,7 +25,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
     create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key);
     create table ruined_members(id uuid primary key, person_id uuid references people(id), email_normalized text unique, deleted_at timestamptz);
-    create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active');
+    create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active', member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz);
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text, bio text default 'PRIVATE BIO', avatar_storage_path text default 'PRIVATE PHOTO');
     create table person_email_addresses(person_id uuid, email_normalized text primary key, verification_state text, retired_at timestamptz);
@@ -39,6 +39,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   await db.exec(await source("db/migrations/20260919211000_member_referrals.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260922200000_member_invitation_expiry.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260923000000_personal_member_invitations.sql"));
+  if (applyExpiry) await db.exec(await source("db/migrations/20260924000000_personal_invitation_admission.sql"));
   function wrap(client) {
     const sql = (strings, ...params) => client.query(strings.reduce((result, part, i) => result + (i ? `$${i}` : "") + part, ""), params).then(result => result.rows);
     sql.begin = callback => client.transaction(tx => callback(wrap(tx))); sql.json = JSON.stringify; return sql;
@@ -77,7 +78,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
     await db.query("insert into people values($1)", [who.person]);
     if (emailFirst) await db.query("insert into person_email_addresses values($1,$2,'verified',null)", [who.person, who.email]);
     await db.query("insert into ruined_members(id,person_id,email_normalized) values($1,$2,$3)", [who.member, who.person, who.email]);
-    await db.query("insert into platform_users values($1,$2,'active')", [who.auth, who.person]);
+    await db.query("insert into platform_users(auth_user_id,person_id,status,member_id,email_normalized) values($1,$2,'active',$3,$4)", [who.auth, who.person, who.member, who.email]);
     await db.query("insert into platform_role_grants values($1,'member',null)", [who.auth]);
     await db.query("insert into person_profiles(person_id,display_name,preferred_name) values($1,$2,'PRIVATE PREFERRED')", [who.person, `Member ${who.member.slice(-1)}`]);
     await db.query("insert into member_onboardings(member_id) values($1)", [who.member]);

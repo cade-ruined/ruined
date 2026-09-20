@@ -30,6 +30,7 @@ const snapshot = { card, expiresAt: null, enabled: false, eligible: false, writa
 const notFound = () => { throw Object.assign(new Error("Not found"), { status: 404 }); };
 const redirect = href => { throw Object.assign(new Error("Redirect"), { href }); };
 const renderInvitation = ({ card: value, children }) => React.createElement("article", null, value.name, children);
+const renderAcceptance = props => React.createElement("form", { "data-personal-invitation": props.invitationToken });
 const renderWaitlist = props => React.createElement("form", { "data-invitation-token": props.invitationToken });
 const link = ({ children, ...props }) => React.createElement("a", props, children);
 const params = value => ({ params: Promise.resolve({ token: value }) });
@@ -100,7 +101,7 @@ test("public invitation routes pass the card and token without the owner's priva
 test("owner invitation route checks authentication and never substitutes samples after a failure", async () => {
   let mode = "connected", viewer = null, failure = null, sampleCalls = 0, reads = 0;
   const owner = () => null, unavailable = () => null;
-  const ownerSnapshot = { ...snapshot, invitations: [], counts: { created: 0, active: 0, expired: 0, submitted: 0, joined: 17 }, emailReady: false };
+  const ownerSnapshot = { ...snapshot, invitations: [], counts: { created: 0, active: 0, expired: 0, accepted: 0, submitted: 0, joined: 17 }, emailReady: false };
   const page = await load("app/my/invitation/page.tsx", {
     "next/navigation": { redirect },
     "@/components/membership/MemberInvitation": owner,
@@ -113,7 +114,7 @@ test("owner invitation route checks authentication and never substitutes samples
     "@/lib/membership/invitation-model": model,
     "@/lib/membership/personal-invitation-delivery": { getPersonalInvitationEmailReady: () => false },
     "@/lib/membership/public-card-model": cardModel,
-    "@/lib/membership/personal-invitation-preview": { personalInvitationPreviewSnapshot: () => { sampleCalls++; return { ...ownerSnapshot, writable: false, counts: { created: 3, active: 1, expired: 1, submitted: 1, joined: 1 } }; } },
+    "@/lib/membership/personal-invitation-preview": { personalInvitationPreviewSnapshot: () => { sampleCalls++; return { ...ownerSnapshot, writable: false, counts: { created: 3, active: 1, expired: 1, accepted: 1, submitted: 1, joined: 1 } }; } },
   });
   await assert.rejects(page.default(), { href: "/my/access" });
   assert.equal(reads, 0); assert.equal(sampleCalls, 0);
@@ -164,6 +165,7 @@ test("public landing offers the attributed waitlist without owner controls or jo
   const invitation = await load("src/components/membership/MemberInvitation.tsx", {
     react: React, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
+    "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
@@ -184,6 +186,7 @@ test("expired public views stop new use while retaining the original deadline", 
   const invitation = await load("src/components/membership/MemberInvitation.tsx", {
     react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
+    "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
@@ -193,6 +196,26 @@ test("expired public views stop new use while retaining the original deadline", 
   assert.equal(publicPage.props.invitationExpiresAt, elapsed);
   assert.equal(descendants(publicPage).find(item => item.type === renderWaitlist).props.disabled, true);
   assert.match(renderToStaticMarkup(publicPage), /This invitation has expired/);
+});
+
+test("personal landings route directly to email acceptance while legacy invitations keep the waitlist", async () => {
+  const invitation = await load("src/components/membership/MemberInvitation.tsx", {
+    react: React, "next/link": link,
+    "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
+    "./PersonalInvitationAcceptance": renderAcceptance,
+    "./card/PublicMemberCardPage": renderInvitation,
+    "@/lib/membership/invitation-expiry": expiry,
+    "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
+  });
+  for (const preview of [false, true]) {
+    const landing = invitation.InvitationLanding({ card, token, expiresAt, recipientName: "Alex Rivera", preview });
+    const elements = descendants(landing);
+    assert.equal(elements.some(element => element.type === renderWaitlist), false);
+    const acceptance = elements.find(element => element.type === renderAcceptance);
+    assert.deepEqual(acceptance.props, { invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, expiresAt, preview });
+    assert.doesNotMatch(JSON.stringify(acceptance.props), /recipientEmail|personId|joinedCount/);
+    if (!preview) assert.match(renderToStaticMarkup(landing.props.headerActions), /Accept invitation/);
+  }
 });
 
 

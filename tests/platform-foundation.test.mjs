@@ -191,7 +191,7 @@ test("verified members enter membership checkout while paid states return home",
     authAccess,
     /access\.member === "invited" \? "\/my\/join" : "\/my"/,
   );
-  assert.match(authVerifyRoute, /const \{ redirectTo \} = await completePlatformSignIn/);
+  assert.match(authVerifyRoute, /await completePlatformSignIn\(\{ authUserId, email: verifiedEmail \}/);
 
   const completedRedirectIndex = memberJoinPage.indexOf('redirect("/my")');
   const checkoutEnabledIndex = memberJoinPage.indexOf("const checkoutEnabled =");

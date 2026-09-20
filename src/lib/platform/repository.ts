@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  completePersonalInvitationClaim, lockPersonalInvitationClaim, preparePersonalInvitationClaim,
+  PersonalInvitationAdmissionDeniedError,
+} from "@/lib/membership/personal-invitation-admission";
 import { markPersonEmailVerified } from "@/lib/identity/repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 import { getBillingDatabase } from "@/lib/stripe/database";
@@ -164,12 +168,15 @@ export async function requireActivePlatformMemberLink(
 
 export async function claimPlatformMemberForViewer(
   viewer: PlatformViewer,
+  invitationToken?: string,
 ): Promise<PlatformUserLink> {
   const sql = getBillingDatabase();
   const emailNormalized = normalizeEmail(viewer.email);
 
   return sql.begin(async (tx) => {
+    const personalInvitation = invitationToken === undefined ? null : await lockPersonalInvitationClaim(tx, viewer, invitationToken);
     await tx`select pg_advisory_xact_lock(hashtext(${emailNormalized}), 1)`;
+    const personalAllowanceId = personalInvitation ? await preparePersonalInvitationClaim(tx, viewer, personalInvitation) : null;
 
     const existingLinks = await tx<
       Array<{
@@ -223,6 +230,7 @@ export async function claimPlatformMemberForViewer(
         emailNormalized,
         personId: memberRows[0].person_id,
       });
+      if (personalInvitation) await completePersonalInvitationClaim(tx, viewer, personalInvitation, existingLink.member_id);
       return {
         authUserId: viewer.authUserId,
         memberId: existingLink.member_id,
@@ -258,6 +266,7 @@ export async function claimPlatformMemberForViewer(
       select id, invited_at, member_id
       from passwordless_account_invites
       where email_normalized = ${emailNormalized}
+        and (${personalInvitation !== null} = false or id = ${personalAllowanceId}::bigint)
         and intended_user_type = 'member'
         and member_id is not null
         and accepted_at is null
@@ -502,12 +511,19 @@ export async function claimPlatformMemberForViewer(
       actorAuthUserId: viewer.authUserId,
       memberId: member.id,
     });
+    if (personalInvitation) await completePersonalInvitationClaim(tx, viewer, personalInvitation, member.id);
 
     return {
       authUserId: viewer.authUserId,
       memberId: member.id,
       personId: member.person_id,
     };
+  }).catch((error: unknown) => {
+    if (error instanceof PersonalInvitationAdmissionDeniedError ||
+        (error && typeof error === "object" && "code" in error && error.code === "P4100")) {
+      throw new PlatformAccessDeniedError();
+    }
+    throw error;
   });
 }
 

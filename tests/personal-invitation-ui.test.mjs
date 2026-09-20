@@ -20,8 +20,8 @@ async function load(path, dependencies = {}, globals = {}) {
 }
 const expiry = await load("src/lib/membership/invitation-expiry.ts");
 const future = "2099-09-20T02:45:00.000Z", past = "2000-01-01T00:00:00.000Z";
-const record = { id: "personal-one", recipientName: "Alex <Rivera>", recipientEmail: "alex@example.test", url: "/invitation/personal-one", issuedAt: "2099-09-18T02:45:00.000Z", expiresAt: future, revokedAt: null, submittedAt: null, joinedAt: null, deliveryStatus: "queued", sentAt: null, version: 3 };
-const snapshot = { card: { name: "Inviter", memberTag: "inviter", wearSeed: "owner" }, invitations: [], counts: { created: 0, active: 0, expired: 0, submitted: 0, joined: 0 }, eligible: true, writable: true, emailReady: true, dailyLimit: 20, remainingToday: 20, legacyInvitation: null };
+const record = { id: "personal-one", recipientName: "Alex <Rivera>", recipientEmail: "alex@example.test", url: "/invitation/personal-one", issuedAt: "2099-09-18T02:45:00.000Z", expiresAt: future, revokedAt: null, submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "queued", sentAt: null, version: 3 };
+const snapshot = { card: { name: "Inviter", memberTag: "inviter", wearSeed: "owner" }, invitations: [], counts: { created: 0, active: 0, expired: 0, accepted: 0, submitted: 0, joined: 0 }, eligible: true, writable: true, emailReady: true, dailyLimit: 20, remainingToday: 20, legacyInvitation: null };
 const descendants = element => React.isValidElement(element) ? [element, ...React.Children.toArray(element.props.children).flatMap(descendants)] : [];
 const text = element => typeof element === "string" || typeof element === "number" ? String(element) : React.isValidElement(element) ? React.Children.toArray(element.props.children).map(text).join("") : "";
 const find = (tree, type, label) => descendants(tree).find(element => element.type === type && text(element) === label);
@@ -38,6 +38,7 @@ async function harness(initialSnapshot = snapshot, options = {}) {
   const component = await load("src/components/membership/MemberInvitation.tsx", {
     react: fakeReact, "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "@/components/public-members/MembershipWaitlistForm": () => null,
+    "./PersonalInvitationAcceptance": () => null,
     "./card/PublicMemberCardPage": ({ children }) => React.createElement("main", null, children),
     "@/lib/membership/invitation-expiry": expiry,
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
@@ -91,17 +92,25 @@ test("preview, inactive, read-only and daily-limit views cannot create or send",
 test("history preserves individual deadlines and accepted outcomes, with expired links unshareable", async () => {
   const expired = { ...record, id: "expired", recipientName: "Expired person", expiresAt: past };
   const requested = { ...expired, id: "requested", recipientName: "Requested person", submittedAt: past };
+  const accepted = { ...expired, id: "accepted", recipientName: "Accepted person", acceptedAt: past };
   const joined = { ...expired, id: "joined", recipientName: "Joined person", submittedAt: past, joinedAt: past };
   const cancelled = { ...record, id: "cancelled", recipientName: "Cancelled person", revokedAt: past };
-  const ui = await harness({ ...snapshot, invitations: [record, expired, requested, joined, cancelled], counts: { created: 5, active: 1, expired: 1, submitted: 2, joined: 1 } });
+  const ui = await harness({ ...snapshot, invitations: [record, expired, requested, joined, cancelled, accepted], counts: { created: 6, active: 1, expired: 1, accepted: 1, submitted: 2, joined: 1 } });
   const tree = ui.render(), rows = descendants(tree).filter(element => element.type === "li");
-  assert.equal(rows.length, 5);
+  assert.equal(rows.length, 6);
   for (const row of rows.slice(1)) assert.equal(find(row, "button", "Copy link"), undefined);
-  assert.match(text(rows[1]), /Expired/); assert.match(text(rows[2]), /Requested/); assert.match(text(rows[3]), /Joined/); assert.match(text(rows[4]), /Cancelled/);
+  assert.match(text(rows[1]), /Expired/); assert.match(text(rows[2]), /Requested/); assert.match(text(rows[3]), /Joined/); assert.match(text(rows[4]), /Cancelled/); assert.match(text(rows[5]), /Accepted/);
+  for (const row of [rows[3], rows[5]]) {
+    assert.equal(find(row, "button", "Cancel invitation"), undefined);
+    assert.equal(find(row, "button", "Retry email"), undefined);
+    assert.match(text(row), /Original deadline/);
+  }
   descendants(rows[1]).find(element => element.type === "button" && element.props["aria-label"] === "Preview invitation for Expired person").props.onClick();
   assert.equal(ui.render().props.invitationRecipientName, "Expired person"); assert.equal(ui.render().props.invitationExpiresAt, past);
   find(ui.render(), "button", "Expired").props.onClick();
   assert.equal(descendants(ui.render()).filter(element => element.type === "li").length, 1);
+  find(ui.render(), "button", "Accepted").props.onClick();
+  assert.match(text(descendants(ui.render()).find(element => element.type === "li")), /Accepted person/);
 });
 
 test("copy does not write or renew, cancellation is explicit and affects only its record", async () => {

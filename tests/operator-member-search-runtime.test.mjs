@@ -70,6 +70,7 @@ test("member search uses saved names, visible statuses and paginated results wit
   const model = await load("src/lib/platform/model.ts", {});
   const repository = await load("src/lib/platform/repository.ts", {
     "server-only": {}, "@/lib/platform/model": model,
+    "@/lib/membership/personal-invitation-admission": {},
     "@/lib/identity/repository": {}, "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/membership-state": {}, "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
   });

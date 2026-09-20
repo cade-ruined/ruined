@@ -5,12 +5,12 @@ export const PERSONAL_INVITATION_DAILY_LIMIT = 20;
 export type PersonalInvitationDeliveryStatus = "not_requested" | "queued" | "sending" | "sent" | "failed" | "cancelled";
 export type PersonalMemberInvitation = {
   id: string; recipientName: string; recipientEmail: string; url: string | null;
-  issuedAt: string; expiresAt: string; revokedAt: string | null; submittedAt: string | null;
+  issuedAt: string; expiresAt: string; revokedAt: string | null; submittedAt: string | null; acceptedAt: string | null;
   joinedAt: string | null; deliveryStatus: PersonalInvitationDeliveryStatus; sentAt: string | null; version: number;
 };
 export type PersonalMemberInvitationsSnapshot = {
   card: PublicMemberCard; eligible: boolean; writable: boolean; emailReady: boolean; invitations: PersonalMemberInvitation[];
-  counts: { created: number; active: number; expired: number; submitted: number; joined: number };
+  counts: { created: number; active: number; expired: number; submitted: number; accepted: number; joined: number };
   dailyLimit: number; remainingToday: number;
   legacyInvitation: { url: string | null; issuedAt: string; expiresAt: string; enabled: boolean; version: number } | null;
 };

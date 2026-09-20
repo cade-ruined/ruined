@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 
 import MemberEmailConfirmationStatus from "@/components/platform/MemberEmailConfirmationStatus";
+import { MEMBER_INVITATION_CONTEXT_COOKIE } from "@/lib/auth/request";
+import { MEMBER_INVITATION_TOKEN } from "@/lib/membership/invitation-model";
 import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
@@ -10,7 +13,13 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
-export default function MyRuinedEmailConfirmedPage() {
+export default async function MyRuinedEmailConfirmedPage() {
+  // This cookie supplies navigation context only. The invitation and verified
+  // recipient are checked again when the member accepts it.
+  const invitation = (await cookies()).get(MEMBER_INVITATION_CONTEXT_COOKIE)?.value;
+  const invitationToken = typeof invitation === "string" && MEMBER_INVITATION_TOKEN.test(invitation)
+    ? invitation
+    : undefined;
   return (
     <main className="member-journey-page member-confirmation-page grid min-h-[68vh] gap-14 border-t border-[var(--member-rule)] pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-24">
       <div>
@@ -22,7 +31,7 @@ export default function MyRuinedEmailConfirmedPage() {
         </h1>
       </div>
 
-      <MemberEmailConfirmationStatus />
+      <MemberEmailConfirmationStatus invitationToken={invitationToken} />
     </main>
   );
 }

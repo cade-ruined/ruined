@@ -123,15 +123,23 @@ async function routeModule(kind, options = {}) {
   });
   const api = await load(`app/api/auth/otp/${kind}/route.ts`, {
     "next/server": { NextResponse },
-    "@/lib/auth/request": { isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
+    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
+    "@/lib/membership/personal-invitation-admission": {
+      getPersonalInvitationAdmissionEligibility: async (email, token) => {
+        calls.push({ admission: { email, token } });
+        if (options.personalUnavailable) throw new Error("Database unavailable");
+        return options.personalEligible !== false;
+      },
+    },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
     "@/lib/platform/repository": { PlatformAccessDeniedError },
     "@/lib/auth/platform-access": {
-      getUnifiedAccessEligibility: async () => { calls.push("eligibility"); return { eligible: options.eligible !== false, shouldCreateUser: options.newIdentity === true }; },
-      completePlatformSignIn: async (input) => {
+      getUnifiedAccessEligibility: async () => { calls.push("eligibility"); return { eligible: options.eligible !== false, shouldCreateUser: options.newIdentity === true, member: options.member ?? "none", operator: options.operator ?? "none" }; },
+      completePlatformSignIn: async (input, context) => {
         calls.push("claim"); assert.deepEqual(input, viewer);
+        if (context) calls.push({ claimContext: context });
         if (options.denied) throw new PlatformAccessDeniedError();
-        return { redirectTo: "/my" };
+        return { redirectTo: context ? "/my/join" : "/my" };
       },
       getSupportSignInDestination: supportAccess.getSupportSignInDestination,
     },
@@ -207,6 +215,75 @@ test("changed permissions or mismatched verified email clear the new session and
     assert.ok(api.calls.includes("signout"));
     if (options.wrongEmail) assert.ok(!api.calls.includes("claim"));
   }
+});
+
+const personalToken = "P".repeat(43);
+test("personal invitation can request a code without a pre-existing allowance, but cannot grant access before verification", async () => {
+  const api = await routeModule("request", { eligible: false });
+  const response = await api.POST(request("request", { email: viewer.email, invitationToken: personalToken }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(api.calls, [
+    { admission: { email: viewer.email, token: personalToken } }, "eligibility",
+    { email: viewer.email, options: { shouldCreateUser: true, emailRedirectTo: "https://ruined.example/my/confirmed" } },
+  ]);
+  assert.equal(api.calls.includes("claim"), false);
+  assert.equal(response.cookies.get("ruined-invitation-context")?.value, personalToken);
+  assert.match(response.headers.get("set-cookie"), /HttpOnly/);
+  assert.match(response.headers.get("set-cookie"), /Path=\/my\/confirmed/);
+});
+
+test("personal invitation preserves returning Auth identities and rejects invalid, wrong-email, expired or unavailable sources before delivery", async () => {
+  const returning = await routeModule("request", { member: "returning" });
+  assert.equal((await returning.POST(request("request", { email: viewer.email, invitationToken: personalToken }))).status, 200);
+  assert.deepEqual(returning.calls.at(-1), { email: viewer.email, options: { shouldCreateUser: false } });
+  for (const invitationToken of [null, "", [], {}, "a".repeat(42), "a".repeat(44), "https://outside.test"]) {
+    const api = await routeModule("request");
+    assert.equal((await api.POST(request("request", { email: viewer.email, invitationToken }))).status, 400);
+    assert.deepEqual(api.calls, []);
+  }
+  for (const options of [{ personalEligible: false }, { personalUnavailable: true }]) {
+    const api = await routeModule("request", options);
+    const response = await api.POST(request("request", { email: viewer.email, invitationToken: personalToken }));
+    assert.equal(response.status, options.personalUnavailable ? 503 : 403);
+    assert.match(response.headers.get("cache-control"), /private, no-store/);
+    assert.equal(api.calls.length, 1);
+  }
+});
+
+test("verified personal acceptance claims the exact token and always enters membership setup", async () => {
+  const api = await routeModule("verify", { eligible: false });
+  const response = await api.POST(request("verify", { email: viewer.email, token: "123456", invitationToken: personalToken, returnTo: "/my/support", role: "ops_admin" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { redirectTo: "/my/join" });
+  assert.deepEqual(api.calls, [{ admission: { email: viewer.email, token: personalToken } }, "verify", "claim", { claimContext: { invitationToken: personalToken } }]);
+  assert.equal(response.cookies.get("test-session")?.value, "verified");
+  assert.equal(response.cookies.get("ruined-invitation-context")?.value, "");
+});
+
+test("personal acceptance never returns a session for invalid sources, mismatched verified email, or failed atomic claims", async () => {
+  for (const options of [{ personalEligible: false }, { wrongEmail: true }, { denied: true }, { personalUnavailable: true }]) {
+    const api = await routeModule("verify", options);
+    const response = await api.POST(request("verify", { email: viewer.email, token: "123456", invitationToken: personalToken }));
+    assert.equal(response.status, options.personalUnavailable ? 503 : 401);
+    assert.equal((await response.json()).redirectTo, undefined);
+    assert.equal(response.cookies.get("test-session")?.value, "");
+    assert.ok(api.calls.includes("signout"));
+    if (options.personalEligible === false || options.personalUnavailable) assert.ok(!api.calls.includes("verify"));
+    if (options.wrongEmail) assert.ok(!api.calls.includes("claim"));
+  }
+});
+
+test("personal invitation sign-in grants only membership even when another staff invitation exists", async () => {
+  const api = await accessModule("none", "invited", { repository: {
+    claimPlatformMemberForViewer: async (identity, token) => { assert.deepEqual(identity, viewer); assert.equal(token, personalToken); },
+  } });
+  assert.deepEqual(await api.completePlatformSignIn(viewer, { invitationToken: personalToken }), { redirectTo: "/my/join" });
+  assert.deepEqual(api.calls, [], "Personal admission must not consume staff invitations or create operator profiles");
+  const revoked = await accessModule("returning", "returning", { repository: {
+    claimPlatformMemberForViewer: async () => { throw new PlatformAccessDeniedError(); },
+  } });
+  await assert.rejects(revoked.completePlatformSignIn(viewer, { invitationToken: personalToken }), PlatformAccessDeniedError);
+  assert.deepEqual(revoked.calls, [], "A failed personal claim must not fall through to another access path");
 });
 
 test("untrusted requests and ineligible verification never reach Auth", async () => {

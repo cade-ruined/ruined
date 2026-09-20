@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { isTrustedPlatformOrigin } from "@/lib/auth/request";
+import { isTrustedPlatformOrigin, MEMBER_INVITATION_CONTEXT_COOKIE } from "@/lib/auth/request";
 import { completePlatformSignIn, getSupportSignInDestination, getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
+import { getPersonalInvitationAdmissionEligibility } from "@/lib/membership/personal-invitation-admission";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   PlatformAccessDeniedError,
@@ -21,10 +22,11 @@ type VerifyBody = {
   email?: unknown;
   token?: unknown;
   returnTo?: unknown;
+  invitationToken?: unknown;
 };
 
 async function denyVerifiedSession(request: NextRequest, status: 401 | 503) {
-  const denialResponse = NextResponse.json({ error: ACCESS_DENIED_MESSAGE }, { status });
+  const denialResponse = NextResponse.json({ error: ACCESS_DENIED_MESSAGE }, { status, headers: { "Cache-Control": "private, no-store" } });
   const denialClient = createSupabaseCurrentResponseClient({
     request,
     response: denialResponse,
@@ -61,14 +63,18 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as VerifyBody | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const invitationToken = body?.invitationToken;
 
-  if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email) || !TOKEN_PATTERN.test(token)) {
+  if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email) || !TOKEN_PATTERN.test(token)
+    || (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken)))) {
     return denyVerifiedSession(request, 401);
   }
 
   try {
-    const eligibility = await getUnifiedAccessEligibility(email);
-    if (!eligibility.eligible) {
+    const eligible = invitationToken
+      ? await getPersonalInvitationAdmissionEligibility(email, invitationToken)
+      : (await getUnifiedAccessEligibility(email)).eligible;
+    if (!eligible) {
       return denyVerifiedSession(request, 401);
     }
   } catch (error) {
@@ -104,8 +110,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { redirectTo } = await completePlatformSignIn({ authUserId, email: verifiedEmail });
-    const destination = body?.returnTo === undefined ? redirectTo : await getSupportSignInDestination(
+    const { redirectTo } = invitationToken
+      ? await completePlatformSignIn({ authUserId, email: verifiedEmail }, { invitationToken })
+      : await completePlatformSignIn({ authUserId, email: verifiedEmail });
+    const destination = invitationToken || body?.returnTo === undefined ? redirectTo : await getSupportSignInDestination(
       { authUserId, email: verifiedEmail }, body.returnTo, redirectTo,
     );
     const authorizedResponse = NextResponse.json({ redirectTo: destination });
@@ -115,6 +123,10 @@ export async function POST(request: NextRequest) {
       if (name !== "set-cookie" && name !== "content-type") authorizedResponse.headers.set(name, value);
     });
     response.cookies.getAll().forEach((cookie) => authorizedResponse.cookies.set(cookie));
+    if (invitationToken) authorizedResponse.cookies.set(MEMBER_INVITATION_CONTEXT_COOKIE, "", {
+      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
+      path: "/my/confirmed", maxAge: 0,
+    });
     authorizedResponse.headers.set("Cache-Control", "private, no-store");
     return authorizedResponse;
   } catch (authorizationError) {

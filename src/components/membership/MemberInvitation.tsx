@@ -8,35 +8,38 @@ import { useInvitationExpired } from "./use-invitation-expiry";
 import type { PublicMemberCard } from "@/lib/membership/public-card-model";
 import MembershipWaitlistForm from "@/components/public-members/MembershipWaitlistForm";
 import PublicMemberCardPage from "./card/PublicMemberCardPage";
+import PersonalInvitationAcceptance from "./PersonalInvitationAcceptance";
 import styles from "./MemberInvitation.module.css";
 
 export function InvitationLanding({ card, token, expiresAt, recipientName, preview = false }: { card: PublicMemberCard; token?: string; expiresAt: string | null; recipientName?: string | null; preview?: boolean }) {
   const expired = useInvitationExpired(expiresAt);
+  const personal = Boolean(recipientName);
   return <PublicMemberCardPage card={card} variant="invitation" invitationExpiresAt={expiresAt} invitationRecipientName={recipientName} preview={preview} title="AN INVITATION TO RUINED"
-    headerActions={preview ? <Link href="/my/invitation">My Invitation ↗</Link> : <a href="#join-ruined">Request to join ↗</a>}
+    headerActions={preview ? <Link href="/my/invitation">My Invitation ↗</Link> : <a href={personal ? "#accept-invitation" : "#join-ruined"}>{personal ? "Accept invitation ↗" : "Request to join ↗"}</a>}
     footerNote={preview ? "Example invitation. Nothing is sent or published." : `An invitation from ${card.name}.`}
     footerActions={<a href="https://theruinedproject.com/#members">About membership ↗</a>}>
-    <section id="join-ruined" className={styles.panel} aria-labelledby="invitation-join-title">
+    {personal ? <PersonalInvitationAcceptance invitationToken={token} recipientName={recipientName!} inviterName={card.name} expiresAt={expiresAt} preview={preview} /> : <section id="join-ruined" className={styles.panel} aria-labelledby="invitation-join-title">
       <p className={styles.eyebrow}>{recipientName ? `For ${recipientName}` : "Your next step"}</p><h2 id="invitation-join-title">Find your people.</h2>
       <p>Leave your details and we’ll be in touch about joining. Your invitation will stay connected to {card.name}.</p>
       {recipientName ? <p className={styles.note}>Use the email address this invitation was sent to.</p> : null}
       {expired ? <p role="status">This invitation has expired. Ask {card.name} for a new one.</p> : <p className={styles.note}>Valid until <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
       {preview ? <p className={styles.note}>Preview only. Visit your invitation to create a shareable link.</p> : <MembershipWaitlistForm invitationToken={token} disabled={expired} {...(recipientName ? { prefillName: recipientName } : {})} />}
-    </section>
+    </section>}
   </PublicMemberCardPage>;
 }
 
-type InvitationStatus = "active" | "expired" | "requested" | "joined" | "revoked";
-type HistoryFilter = "all" | "active" | "expired" | "joined";
-const statusLabels: Record<InvitationStatus, string> = { active: "Active", expired: "Expired", requested: "Requested", joined: "Joined", revoked: "Cancelled" };
+type InvitationStatus = "active" | "expired" | "accepted" | "requested" | "joined" | "revoked";
+type HistoryFilter = "all" | "active" | "expired" | "accepted" | "joined";
+const statusLabels: Record<InvitationStatus, string> = { active: "Active", expired: "Expired", accepted: "Accepted", requested: "Requested", joined: "Joined", revoked: "Cancelled" };
 function invitationStatus(invitation: PersonalMemberInvitation): InvitationStatus {
   if (invitation.joinedAt) return "joined";
+  if (invitation.acceptedAt) return "accepted";
   if (invitation.submittedAt) return "requested";
   if (invitation.revokedAt) return "revoked";
   return memberInvitationExpired(invitation.expiresAt) ? "expired" : "active";
 }
 function invitationActive(invitation: PersonalMemberInvitation) {
-  return !invitation.revokedAt && !memberInvitationExpired(invitation.expiresAt);
+  return !invitation.revokedAt && !invitation.acceptedAt && !invitation.joinedAt && !invitation.submittedAt && !memberInvitationExpired(invitation.expiresAt);
 }
 function canShare(invitation: PersonalMemberInvitation) {
   return Boolean(invitation.url && invitationActive(invitation));
@@ -163,7 +166,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
       <p className={styles.previewCaption}>{selected ? <>Showing the invitation for <strong>{selected.recipientName}</strong><button type="button" onClick={() => setSelectedId(null)}>Back to new invitation</button></> : <>Your next invitation{recipientName.trim() ? <>, for <strong>{recipientName.trim()}</strong></> : " starts here."}</>}</p>
       <section id="create-invitation" className={styles.panel} aria-labelledby="my-invitation-title">
         <p className={styles.eyebrow}>A personal introduction</p><h2 id="my-invitation-title">Bring someone in.</h2>
-        <p>Put their name on a card. Each person gets their own invitation, with 48 hours to request to join.</p>
+        <p>Put their name on a card. Each person gets their own invitation, with 48 hours to accept and verify their email.</p>
         <form className={styles.form} onSubmit={createInvitation} aria-label="Create a personal invitation" aria-busy={pending === "create"}>
           <fieldset className={styles.fields} disabled={busy || (!preview && !writable)}>
             <legend className={styles.visuallyHidden}>Who are you inviting?</legend>
@@ -173,7 +176,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
           {snapshot.emailReady ? <label className={styles.emailChoice}><input type="checkbox" checked={sendEmail} disabled={busy || !writable} onChange={event => { setSendEmail(event.target.checked); requestId.current = null; }} />Email this invitation</label> : <p className={styles.note}>Email delivery isn’t available right now. You can create an invitation and send its link yourself.</p>}
           <div className={styles.formFooter}><p className={styles.note}>{emailEnabled ? "We’ll email their personal link from Ruined." : "Their email is private. Only their name appears on the card."}</p><button className={styles.enable} type="submit" disabled={busy || !writable || snapshot.remainingToday < 1}>{pending === "create" ? "Creating…" : emailEnabled ? "Create & email invitation" : "Create invitation"}<span aria-hidden="true">↗</span></button></div>
         </form>
-        <p className={styles.note}>The 48 hours begin when you create it. Each invitation has its own link and deadline.</p>
+        <p className={styles.note}>Your invitation approves them to join. The 48 hours begin when you create it; after accepting, they complete their profile and membership.</p>
         {preview ? <p className={styles.note}>This is a preview with example names and counts. You can try a name on the card; creating and sending are disabled.</p> : !snapshot.eligible ? <p className={styles.note}>Invitations become available once membership entry is complete and your membership is active.</p> : !snapshot.writable ? <p className={styles.note}>Invitations are temporarily read-only. Please try again later.</p> : snapshot.remainingToday < 1 ? <p className={styles.note}>You’ve reached today’s limit of {snapshot.dailyLimit} invitations. Please try again later.</p> : null}
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
       </section>
@@ -181,17 +184,17 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
       {fallbackUrl ? <label className={`${styles.field} ${styles.panel}`}>Invitation link<input readOnly value={fallbackUrl} onFocus={event => event.target.select()} /></label> : null}
       <section className={styles.panel} aria-labelledby="invitation-history-title" aria-busy={loading}>
         <div className={styles.historyHeading}><div><p className={styles.eyebrow}>Your invitations</p><h2 id="invitation-history-title">Keep track.</h2></div><button className={styles.quiet} type="button" disabled={busy || preview} onClick={() => setRetry(value => value + 1)}>{loading ? "Refreshing…" : "Refresh"}</button></div>
-        <dl className={styles.statistics}><div><dt>Created</dt><dd>{snapshot.counts.created}</dd></div><div><dt>Active</dt><dd>{active}</dd></div><div><dt>Expired</dt><dd>{expired}</dd></div><div><dt>Joined</dt><dd>{snapshot.counts.joined}</dd></div></dl>
-        <p className={styles.note}>Requested means they submitted their details. Joined counts completed memberships, including earlier invitations.</p>
+        <dl className={styles.statistics}><div><dt>Created</dt><dd>{snapshot.counts.created}</dd></div><div><dt>Active</dt><dd>{active}</dd></div><div><dt>Expired</dt><dd>{expired}</dd></div><div><dt>Accepted</dt><dd>{snapshot.counts.accepted}</dd></div><div><dt>Joined</dt><dd>{snapshot.counts.joined}</dd></div></dl>
+        <p className={styles.note}>Accepted means they verified their email. Joined means they completed membership. Earlier waitlist submissions still appear as Requested.</p>
         {snapshot.invitations.length > 0 ? <>
-          <div className={styles.historyFilters} role="group" aria-label="Filter invitations">{(["all", "active", "expired", "joined"] as const).map(value => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : statusLabels[value]}</button>)}</div>
+          <div className={styles.historyFilters} role="group" aria-label="Filter invitations">{(["all", "active", "expired", "accepted", "joined"] as const).map(value => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : statusLabels[value]}</button>)}</div>
           {visibleInvitations.length > 0 ? <ul className={styles.history}>{visibleInvitations.map(invitation => {
             const state = invitationStatus(invitation), shareable = canShare(invitation), updating = pending === invitation.id;
-            const canCancel = shareable && !invitation.submittedAt && !invitation.joinedAt;
+            const canCancel = shareable;
             return <li key={invitation.id} data-selected={selectedId === invitation.id}>
               <div className={styles.recordHeading}><div className={styles.recipient}><button type="button" aria-label={`Preview invitation for ${invitation.recipientName}`} aria-pressed={selectedId === invitation.id} onClick={() => setSelectedId(invitation.id)}>{invitation.recipientName}</button><span>{invitation.recipientEmail}</span></div><span className={styles.badge} data-status={state}>{statusLabels[state]}</span></div>
-              <div className={styles.recordMeta}><p>Created <time dateTime={invitation.issuedAt}>{shortDate(invitation.issuedAt)}</time></p><p>{memberInvitationExpired(invitation.expiresAt) ? "Expired" : "Expires"} <time dateTime={invitation.expiresAt}>{memberInvitationDeadline(invitation.expiresAt)}</time></p></div>
-              <div className={styles.recordMeta}><p className={invitation.deliveryStatus === "failed" ? styles.failed : undefined}>{deliveryLabel(invitation)}{invitation.sentAt ? <> · <time dateTime={invitation.sentAt}>{shortDate(invitation.sentAt)}</time></> : null}</p>{invitation.submittedAt ? <p>Requested <time dateTime={invitation.submittedAt}>{shortDate(invitation.submittedAt)}</time></p> : null}{invitation.joinedAt ? <p>Joined <time dateTime={invitation.joinedAt}>{shortDate(invitation.joinedAt)}</time></p> : null}</div>
+              <div className={styles.recordMeta}><p>Created <time dateTime={invitation.issuedAt}>{shortDate(invitation.issuedAt)}</time></p><p>{invitation.acceptedAt || invitation.joinedAt || invitation.submittedAt ? "Original deadline" : memberInvitationExpired(invitation.expiresAt) ? "Expired" : "Expires"} <time dateTime={invitation.expiresAt}>{memberInvitationDeadline(invitation.expiresAt)}</time></p></div>
+              <div className={styles.recordMeta}><p className={invitation.deliveryStatus === "failed" ? styles.failed : undefined}>{deliveryLabel(invitation)}{invitation.sentAt ? <> · <time dateTime={invitation.sentAt}>{shortDate(invitation.sentAt)}</time></> : null}</p>{invitation.acceptedAt ? <p>Accepted <time dateTime={invitation.acceptedAt}>{shortDate(invitation.acceptedAt)}</time></p> : null}{invitation.submittedAt ? <p>Requested <time dateTime={invitation.submittedAt}>{shortDate(invitation.submittedAt)}</time></p> : null}{invitation.joinedAt ? <p>Joined <time dateTime={invitation.joinedAt}>{shortDate(invitation.joinedAt)}</time></p> : null}</div>
               <div className={styles.recordActions}>
                 {shareable ? <><button type="button" disabled={busy} onClick={() => void copyLink(invitation.url!, invitation.expiresAt)}>Copy link</button><a href={invitation.url!} target="_blank" rel="noreferrer">View invitation ↗</a></> : null}
                 {invitation.deliveryStatus === "failed" && shareable && snapshot.emailReady ? <button type="button" disabled={busy || !writable} onClick={() => void updateInvitation(invitation, "retry_email")}>{updating ? "Queuing…" : "Retry email"}</button> : null}

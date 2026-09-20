@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import {
   getMemberEmailConfirmationUrl,
   isTrustedPlatformOrigin,
+  MEMBER_INVITATION_CONTEXT_COOKIE,
 } from "@/lib/auth/request";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
+import { getPersonalInvitationAdmissionEligibility } from "@/lib/membership/personal-invitation-admission";
 import { createSupabaseCurrentResponseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -16,6 +18,7 @@ const MAX_EMAIL_LENGTH = 254;
 
 type RequestBody = {
   email?: unknown;
+  invitationToken?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -29,6 +32,11 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => null)) as RequestBody | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const invitationToken = body?.invitationToken;
+
+  if (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken))) {
+    return NextResponse.json({ error: "This invitation is unavailable or doesn’t match that email." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
+  }
 
   if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
@@ -46,13 +54,24 @@ export async function POST(request: NextRequest) {
   let eligibility: Awaited<ReturnType<typeof getUnifiedAccessEligibility>>;
 
   try {
+    if (invitationToken && !await getPersonalInvitationAdmissionEligibility(email, invitationToken)) {
+      return NextResponse.json({ error: "This invitation is unavailable or doesn’t match that email." }, { status: 403, headers: { "Cache-Control": "private, no-store" } });
+    }
     eligibility = await getUnifiedAccessEligibility(email);
+    if (invitationToken) {
+      // This read only permits delivery of a verification code. Admission is
+      // claimed atomically after Supabase verifies the invited email.
+      eligibility = { ...eligibility, eligible: true,
+        shouldCreateUser: eligibility.member !== "returning" && eligibility.operator !== "returning" };
+    }
   } catch (error) {
     console.error("Passwordless access eligibility could not be checked", {
       requestId,
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
-    return response;
+    return invitationToken
+      ? NextResponse.json({ error: "Your invitation could not be checked. Please try again." }, { status: 503, headers: { "Cache-Control": "private, no-store" } })
+      : response;
   }
 
   if (!eligibility.eligible) {
@@ -73,6 +92,15 @@ export async function POST(request: NextRequest) {
     // Either kind of durable invitation can create an authentication identity.
     // The role is granted only after verification claims that invitation.
     options = { emailRedirectTo, shouldCreateUser: true };
+  }
+
+  if (invitationToken) {
+    // Navigation context for providers that send an email-confirmation link.
+    // This grants no access; verified admission still requires the exact token.
+    response.cookies.set(MEMBER_INVITATION_CONTEXT_COOKIE, invitationToken, {
+      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
+      path: "/my/confirmed", maxAge: 3600,
+    });
   }
 
   try {

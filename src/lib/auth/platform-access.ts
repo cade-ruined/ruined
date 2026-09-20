@@ -42,7 +42,14 @@ export async function getUnifiedAccessEligibility(email: string) {
 /** Called only after Supabase has verified the identity, including existing sessions. */
 export async function completePlatformSignIn(
   viewer: PlatformViewer,
+  options?: { invitationToken: string },
 ): Promise<{ redirectTo: "/my" | "/my/join" | "/ops" }> {
+  if (options?.invitationToken !== undefined) {
+    // A personal invitation approves membership only. Its claim revalidates
+    // the exact recipient, deadline and eligibility in the same transaction.
+    await claimPlatformMemberForViewer(viewer, options.invitationToken);
+    return { redirectTo: "/my/join" };
+  }
   const access = await getUnifiedAccessEligibility(viewer.email);
   if (!access.eligible) throw new PlatformAccessDeniedError();
 

@@ -20,7 +20,7 @@ type Delivery = {
   recipient_name: string; recipient_email_normalized: string;
   inviter_name: string; inviter_tag: string | null;
   email_requested: boolean;
-  expires_at: Date | string; revoked_at: Date | string | null;
+  expires_at: Date | string; revoked_at: Date | string | null; accepted_at: Date | string | null;
   delivery_attempts: number; first_attempt_at: Date | string | null;
   delivery_payload: EmailPayload | null; active: boolean; eligible: boolean;
 };
@@ -106,7 +106,7 @@ async function withLockedDelivery<T>(sql: Database, claim: Claimed, lease: strin
       for update
     `;
     if (!delivery) return { kind: "deferred" as const };
-    if (!delivery.email_requested || delivery.revoked_at || !delivery.active || !delivery.eligible) {
+    if (!delivery.email_requested || delivery.revoked_at || delivery.accepted_at || !delivery.active || !delivery.eligible) {
       await tx`update member_personal_invitations
         set delivery_status = 'cancelled', last_error_code = 'invitation_unavailable', next_attempt_at = null,
             delivery_locked_at = null, delivery_lock_token = null

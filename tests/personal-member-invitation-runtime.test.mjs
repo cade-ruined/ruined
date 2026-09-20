@@ -202,3 +202,20 @@ test("a recipient submission crossing the deadline after insert rolls back track
   assert.equal((await f.db.query("select * from integration_outbox")).rows.length, 0);
   assert.equal((await f.personalRepository.getOwnPersonalInvitations(first.auth)).invitations[0].submittedAt, null);
 });
+
+test("accepted invitations are counted separately and cannot be cancelled or emailed again", async t => {
+  const f = await fixture(t), invite = (await create(f)).invitations[0];
+  await f.addMember(newcomer, false, false);
+  const accept = () => f.db.query(`update member_personal_invitations set accepted_at=clock_timestamp(),
+    accepted_by_auth_user_id=$2,accepted_member_id=$3,version=version+1 where id=$1`, [invite.id,newcomer.auth,newcomer.member]);
+  await assert.rejects(accept(), { code: 'P4100' }, 'Unverified email cannot produce acceptance evidence');
+  await f.db.query("update person_email_addresses set verification_state='verified' where person_id=$1", [newcomer.person]);
+  await accept();
+  const snapshot = await f.personalRepository.getOwnPersonalInvitations(first.auth);
+  assert.ok(snapshot.invitations[0].acceptedAt);
+  assert.equal(snapshot.invitations[0].url, null);
+  assert.equal(snapshot.counts.accepted, 1); assert.equal(snapshot.counts.active, 0); assert.equal(snapshot.counts.expired, 0);
+  await assert.rejects(f.personalRepository.revokeOwnPersonalInvitation(first.auth,invite.id,{version:2}), {status:409});
+  await assert.rejects(f.personalRepository.retryOwnPersonalInvitationEmail(first.auth,invite.id,{version:2}), {status:409});
+  assert.equal((await f.db.query('select revoked_at from member_personal_invitations where id=$1', [invite.id])).rows[0].revoked_at, null);
+});

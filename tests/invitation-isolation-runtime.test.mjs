@@ -47,7 +47,7 @@ async function fixture(t) {
   // identity/onboarding tables are minimal dependencies, not query mocks.
   await db.exec(`
     create role anon nologin; create role authenticated nologin; create schema private;
-    create table people (id uuid primary key);
+    create table people (id uuid primary key, status text default 'active');
     create table person_email_addresses (
       person_id uuid references people(id), email text, email_normalized text unique,
       verification_state text, verified_at timestamptz, source text, is_primary boolean,
@@ -72,11 +72,13 @@ async function fixture(t) {
     create table member_lifecycle (
       member_id uuid primary key references ruined_members(id), account_state text, billing_state text,
       program_state text, admission_state text, administrative_onboarding_state text,
-      standing_state text, version integer default 1, updated_at timestamptz default now()
+      standing_state text, cancellation_effective_at timestamptz, access_started_at timestamptz,
+      version integer default 1, updated_at timestamptz default now()
     );
     create table member_onboardings (
       member_id uuid primary key references ruined_members(id), state text, form_version text,
-      requirements_snapshot jsonb, invited_at timestamptz, started_at timestamptz, updated_at timestamptz default now()
+      requirements_snapshot jsonb, invited_at timestamptz, started_at timestamptz,
+      profile_completed_at timestamptz, agreement_completed_at timestamptz, updated_at timestamptz default now()
     );
     create table member_state_history (
       member_id uuid, dimension text, previous_state text, next_state text, reason_code text,
@@ -98,11 +100,18 @@ async function fixture(t) {
     alter table passwordless_account_invites add column revoked_by_auth_user_id uuid references platform_users(auth_user_id);
     ${circleGate.slice(guardStart, guardEnd)}
     ${operatorMigration.slice(configStart, configEnd)}
+    ${foundation.match(/create table if not exists integration_outbox \([\s\S]*?\n\);/)[0]}
+    create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql stable as 'select false';
   `);
+  for (const name of ['20260914225359_membership_waitlist','20260919211000_member_referrals',
+    '20260922200000_member_invitation_expiry','20260923000000_personal_member_invitations','20260924000000_personal_invitation_admission']) {
+    await db.exec(await source(`db/migrations/${name}.sql`));
+  }
   await db.query("insert into platform_users (auth_user_id,email_normalized,status,user_type) values ($1,'admin@example.test','active','staff')", [admin]);
   await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'ops_admin')", [admin]);
   await db.query("insert into circles values ($1,'Circle Test','active')", [circle]);
 
+  let testClock = null;
   const wrap = (engine) => {
     const sql = async (strings, ...values) => {
       let query = strings[0];
@@ -111,6 +120,9 @@ async function fixture(t) {
         if (value instanceof Parameter) return driver.options.serializers[value.type](value.value);
         return value instanceof Date ? types.date.serialize(value) : value;
       });
+      // Deterministic deadline crossings without racing the full suite's load.
+      // Date.toISOString is a validated test timestamp; production SQL is untouched.
+      if (testClock) query = query.replaceAll('clock_timestamp()', `'${testClock.toISOString()}'::timestamptz`);
       return (await engine.query(query, parameters)).rows;
     };
     sql.json = driver.json;
@@ -119,15 +131,21 @@ async function fixture(t) {
   };
   const basic = { "server-only": {}, "node:crypto": crypto };
   const identity = await load("src/lib/identity/repository.ts", basic);
+  const database = { getApplicationDatabase: () => wrap(db), withFreshApplicationDatabaseRead: (_stage, read) => read() };
+  const admission = await load("src/lib/membership/personal-invitation-admission.ts", {
+    ...basic, "@/lib/database/server": database, "@/lib/identity/repository": identity,
+  });
+  let beforeCommit = async () => {};
   const deps = {
     ...basic,
+    "@/lib/membership/personal-invitation-admission": admission,
     "@/lib/identity/repository": identity,
     "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
     "@/lib/stripe/membership-state": await load("src/lib/stripe/membership-state.ts"),
     "@/lib/platform/model": await load("src/lib/platform/model.ts"),
     // Calendar invalidation is unrelated to invitation access and cannot send
     // external messages; all identity, invitation and role SQL executes.
-    "@/lib/platform/calendar-audience-invalidation": { markCalendarAudiencesPendingForMember: async () => {} },
+    "@/lib/platform/calendar-audience-invalidation": { markCalendarAudiencesPendingForMember: (...args) => beforeCommit(...args) },
   };
   const platform = await load("src/lib/platform/repository.ts", deps);
   const members = await load("src/lib/platform/ops-repository.ts", deps);
@@ -136,7 +154,22 @@ async function fixture(t) {
   const allowMember = (overrides = {}) => members.createOrReissueMemberInvitation({ actorAuthUserId: admin, email, ...overrides });
   const allowGuide = () => operators.createOrReissueOperatorInvitation({ actorAuthUserId: admin, email, displayName: "Test Guide", role: "guide", circleIds: [circle] });
   const grants = async () => (await db.query("select role_slug from platform_role_grants where auth_user_id=$1 and revoked_at is null order by role_slug", [auth])).rows.map((row) => row.role_slug);
-  return { db, members, pending, operators, platform, allowMember, allowGuide, grants };
+  async function personal({ recipient = email, expiresIn = '48 hours', owner = null } = {}) {
+    const memberId = owner ?? crypto.randomUUID(), personId = crypto.randomUUID(), inviterAuth = crypto.randomUUID();
+    if (!owner) {
+      await db.query('insert into people(id) values($1)', [personId]);
+      await db.query("insert into ruined_members(id,person_id,email,email_normalized,membership_state) values($1,$2,$3,$3,'active')", [memberId, personId, `${memberId}@example.test`]);
+      await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status,user_type) values($1,$2,$3,$4,'active','member')", [inviterAuth, memberId, personId, `${memberId}@example.test`]);
+      await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [inviterAuth]);
+      await db.query("insert into member_lifecycle(member_id,account_state,billing_state,program_state,administrative_onboarding_state,standing_state) values($1,'active','active','onboarding','completed','active')", [memberId]);
+    }
+    const token = crypto.randomBytes(32).toString('base64url');
+    const result = await db.query(`insert into member_personal_invitations(member_id,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,issued_at,expires_at)
+      values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn]);
+    return { token, memberId, inviterAuth, ...result.rows[0] };
+  }
+  return { db, members, pending, operators, platform, admission, personal, allowMember, allowGuide, grants,
+    beforeCommit: callback => { beforeCommit = callback; }, clock: value => { testClock = new Date(value); } };
 }
 
 test("member reissue and revoke preserve the pending operator invitation and immutable scope", async (t) => {
@@ -226,4 +259,133 @@ test("exact pending joining renewal expires the old allowance, audits, and rejec
   await assert.rejects(f.allowMember({ expectedInvitationId: renewed.id }), /has changed/);
   await assert.rejects(f.pending.revokePendingMemberInvitation({ actorAuthUserId: admin, invitationId: renewed.id, email }), /has changed/);
   assert.deepEqual((await f.db.query("select * from passwordless_account_invites order by id")).rows, acceptedRows);
+});
+
+test("personal invitation preflight is read-only, email-bound and rejects legacy bearer links", async (t) => {
+  const f = await fixture(t), invite = await f.personal();
+  const before = (await f.db.query(`select (select count(*) from ruined_members) as members,
+    (select count(*) from platform_users) as users,(select count(*) from passwordless_account_invites) as allowances,
+    (select count(*) from platform_role_grants) as grants,(select count(*) from membership_waitlist) as sources`)).rows;
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(` ${email.toUpperCase()} `, invite.token), true);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility('wrong@example.test', invite.token), false);
+  const legacy = crypto.randomBytes(32).toString('base64url');
+  await f.db.query('insert into member_invitations(member_id,public_token,enabled) values($1,$2,true)', [invite.memberId, legacy]);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, legacy), false);
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, legacy), f.platform.PlatformAccessDeniedError);
+  const after = (await f.db.query(`select (select count(*) from ruined_members) as members,
+    (select count(*) from platform_users) as users,(select count(*) from passwordless_account_invites) as allowances,
+    (select count(*) from platform_role_grants) as grants,(select count(*) from membership_waitlist) as sources`)).rows;
+  assert.deepEqual(after, before);
+});
+
+test("verified personal acceptance creates pending membership atomically, preserves the deadline and credits only completed joining", async (t) => {
+  const f = await fixture(t), invite = await f.personal();
+  await f.db.query("update member_personal_invitations set delivery_status='queued',next_attempt_at=now() where id=$1", [invite.id]);
+  const claimed = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
+  assert.deepEqual(await f.grants(), ['member']);
+  const lifecycle = (await f.db.query('select account_state,billing_state,program_state,standing_state,administrative_onboarding_state from member_lifecycle where member_id=$1', [claimed.memberId])).rows[0];
+  assert.deepEqual(lifecycle, { account_state: 'active', billing_state: 'pending', program_state: 'prospect', standing_state: 'pre_active', administrative_onboarding_state: 'in_progress' });
+  const allowance = (await f.db.query("select * from passwordless_account_invites where provider_reference=$1", [`personal-invitation:${invite.id}`])).rows[0];
+  assert.equal(allowance.member_id, claimed.memberId);
+  assert.equal(allowance.invited_at.toISOString(), invite.issued_at.toISOString());
+  assert.equal(allowance.expires_at.toISOString(), invite.expires_at.toISOString());
+  assert.equal(allowance.intended_user_type, 'member');
+  const accepted = (await f.db.query('select * from member_personal_invitations where id=$1', [invite.id])).rows[0];
+  assert.ok(accepted.accepted_at); assert.equal(accepted.accepted_by_auth_user_id, auth); assert.equal(accepted.accepted_member_id, claimed.memberId);
+  assert.equal(accepted.delivery_status, 'cancelled'); assert.equal(accepted.next_attempt_at, null);
+  assert.equal((await f.db.query('select count(*)::int as count from integration_outbox')).rows[0].count, 0);
+  const referral = (await f.db.query('select * from member_referrals where personal_invitation_id=$1', [invite.id])).rows[0];
+  assert.equal(referral.referred_member_id, claimed.memberId); assert.equal(referral.joined_at, null);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), claimed);
+  assert.deepEqual((await f.db.query('select accepted_at,version from member_personal_invitations where id=$1', [invite.id])).rows[0], { accepted_at: accepted.accepted_at, version: accepted.version });
+  await f.db.query("update member_onboardings set state='completed',profile_completed_at=now(),agreement_completed_at=now() where member_id=$1", [claimed.memberId]);
+  await f.db.query("update member_lifecycle set billing_state='active',program_state='onboarding',standing_state='active',administrative_onboarding_state='completed',access_started_at=clock_timestamp() where member_id=$1", [claimed.memberId]);
+  assert.ok((await f.db.query('select joined_at from member_referrals where personal_invitation_id=$1', [invite.id])).rows[0].joined_at);
+});
+
+test("expired, revoked, mismatched and ineligible-inviter personal claims create no access", async (t) => {
+  for (const scenario of ['expired', 'revoked', 'wrong_email', 'inactive_inviter']) {
+    await t.test(scenario, async (subtest) => {
+      const f = await fixture(subtest), invite = await f.personal({ expiresIn: scenario === 'expired' ? '-1 second' : '48 hours' });
+      if (scenario === 'revoked') await f.db.query('update member_personal_invitations set revoked_at=now() where id=$1', [invite.id]);
+      if (scenario === 'inactive_inviter') await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [invite.memberId]);
+      const claimedEmail = scenario === 'wrong_email' ? 'wrong@example.test' : email;
+      assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(claimedEmail, invite.token), false);
+      await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email: claimedEmail }, invite.token), f.platform.PlatformAccessDeniedError);
+      assert.deepEqual(await f.grants(), []);
+      assert.equal((await f.db.query('select count(*)::int as count from passwordless_account_invites')).rows[0].count, 0);
+      assert.equal((await f.db.query('select count(*)::int as count from ruined_members where email_normalized=$1', [email])).rows[0].count, 0);
+    });
+  }
+});
+
+test("the final wall-clock deadline rolls back a claim that expires during verification work", async (t) => {
+  const f = await fixture(t), invite = await f.personal();
+  let reachedFinalization = false;
+  f.beforeCommit(async () => { reachedFinalization = true; f.clock(invite.expires_at); });
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), f.platform.PlatformAccessDeniedError);
+  assert.equal(reachedFinalization, true, 'The expiry occurred after the identity and grant work');
+  assert.deepEqual(await f.grants(), []);
+  for (const table of ['passwordless_account_invites','membership_waitlist','member_referrals']) {
+    assert.equal((await f.db.query(`select count(*)::int as count from ${table}`)).rows[0].count, 0, `${table} rolled back`);
+  }
+  assert.equal((await f.db.query('select accepted_at from member_personal_invitations where id=$1', [invite.id])).rows[0].accepted_at, null);
+});
+
+test("personal invitations cannot restore suspended, closed, deleted, merged or revoked member access", async (t) => {
+  for (const scenario of ['suspended', 'closed', 'deleted', 'merged', 'revoked']) {
+    await t.test(scenario, async (subtest) => {
+      const f = await fixture(subtest);
+      await f.allowMember();
+      const prior = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email });
+      const invite = await f.personal();
+      if (scenario === 'suspended' || scenario === 'closed') await f.db.query('update member_lifecycle set account_state=$2 where member_id=$1', [prior.memberId, scenario]);
+      if (scenario === 'deleted') await f.db.query('update ruined_members set deleted_at=now() where id=$1', [prior.memberId]);
+      if (scenario === 'merged') await f.db.query("update people set status='merged' where id=$1", [prior.personId]);
+      if (scenario === 'revoked') await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='member'", [auth]);
+      assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), false);
+      await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), f.platform.PlatformAccessDeniedError);
+      assert.equal((await f.db.query('select accepted_at from member_personal_invitations where id=$1', [invite.id])).rows[0].accepted_at, null);
+      assert.equal((await f.db.query('select count(*)::int as count from passwordless_account_invites')).rows[0].count, 1);
+    });
+  }
+});
+
+test("acceptance uses the exact personal allowance and preserves the first inviter when a second card is accepted", async (t) => {
+  const f = await fixture(t), first = await f.personal(), second = await f.personal();
+  await f.allowMember();
+  await f.allowGuide();
+  const staffBefore = (await f.db.query("select * from passwordless_account_invites where intended_user_type='staff'")).rows;
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, first.token);
+  assert.deepEqual(await f.grants(), ['member']);
+  assert.deepEqual((await f.db.query("select * from passwordless_account_invites where intended_user_type='staff'")).rows, staffBefore);
+  const chosen = (await f.db.query("select provider_reference from passwordless_account_invites where accepted_at is not null and intended_user_type='member'")).rows;
+  assert.deepEqual(chosen, [{ provider_reference: `personal-invitation:${first.id}` }]);
+  await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, second.token);
+  const references = (await f.db.query('select personal_invitation_id,referred_member_id from member_referrals')).rows;
+  assert.deepEqual(references, [{ personal_invitation_id: first.id, referred_member_id: member.memberId }]);
+  await assert.rejects(f.db.query('update member_personal_invitations set accepted_at=null,accepted_by_auth_user_id=null,accepted_member_id=null where id=$1', [first.id]), /immutable/);
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: crypto.randomUUID(), email }, first.token), f.platform.PlatformAccessDeniedError);
+});
+
+test("accepted accounts sign in normally after invitation expiry without renewing the original card", async (t) => {
+  const f = await fixture(t), invite = await f.personal();
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
+  f.clock(invite.expires_at);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), false);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }), member);
+  assert.equal((await f.db.query('select expires_at from member_personal_invitations where id=$1', [invite.id])).rows[0].expires_at.toISOString(), invite.expires_at.toISOString());
+});
+
+test("accepted invitation audit does not block account erasure and inviter erasure keeps historical referral credit", async (t) => {
+  const f = await fixture(t), invite = await f.personal();
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
+  await f.db.query('update ruined_members set deleted_at=clock_timestamp() where id=$1', [member.memberId]);
+  await f.db.query("update platform_users set status='disabled',member_id=null,email_normalized=$2 where auth_user_id=$1", [auth,`deleted+${auth}@members.invalid`]);
+  await f.db.query('delete from person_email_addresses where person_id=$1', [member.personId]);
+  assert.equal((await f.db.query('select accepted_member_id from member_personal_invitations where id=$1', [invite.id])).rows[0].accepted_member_id, member.memberId);
+  await f.db.query('update ruined_members set deleted_at=clock_timestamp() where id=$1', [invite.memberId]);
+  assert.equal((await f.db.query('select count(*)::int as count from member_personal_invitations where id=$1', [invite.id])).rows[0].count, 0);
+  const referral = (await f.db.query('select inviter_member_id,referred_member_id,personal_invitation_id from member_referrals')).rows[0];
+  assert.deepEqual(referral, { inviter_member_id: invite.memberId, referred_member_id: member.memberId, personal_invitation_id: null });
 });

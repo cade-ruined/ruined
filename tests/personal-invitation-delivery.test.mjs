@@ -48,7 +48,8 @@ async function fixture(t) {
     create table member_lifecycle(member_id uuid primary key, eligible boolean default true);
     create function private.ruined_member_can_share_invitation(uuid) returns boolean language sql as
       'select eligible from member_lifecycle where member_id=$1';
-    ${table}`);
+    ${table}
+    alter table member_personal_invitations add column accepted_at timestamptz;`);
   await pg.query("insert into ruined_members(id) values($1)", [member]);
   await pg.query("insert into member_lifecycle(member_id) values($1)", [member]);
   await pg.query(`insert into member_personal_invitations(id,member_id,request_id,public_token,recipient_name,
@@ -123,6 +124,14 @@ test("link-only invitations never send even if a queue flag is inconsistent", as
   await f.pg.query("update member_personal_invitations set delivery_status='queued' where id=$1", [f.id]);
   assert.equal((await f.worker.processPersonalInvitationEmailBatch()).cancelled, 1);
   assert.equal(f.sends.length, 0);
+});
+
+test("an invitation accepted through a copied link does not send a late invitation email", async t => {
+  const f = await fixture(t);
+  await f.pg.query("update member_personal_invitations set accepted_at=now() where id=$1", [f.id]);
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).cancelled, 1);
+  assert.equal(f.sends.length, 0);
+  assert.equal((await f.row()).delivery_status, "cancelled");
 });
 
 test("uncertain retries reuse the identical payload and provider key after configuration changes", async t => {

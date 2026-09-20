@@ -9,16 +9,17 @@ export function personalInvitationPreviewSnapshot(): PersonalInvitationSnapshot 
   const example = (id: string, recipientName: string, hoursAgo: number): PersonalMemberInvitation => ({
     id, recipientName, recipientEmail: `${recipientName.toLowerCase().replaceAll(" ", ".")}@example.test`,
     url: null, issuedAt: ago(hoursAgo), expiresAt: ago(hoursAgo - 48), revokedAt: null,
-    submittedAt: null, joinedAt: null, deliveryStatus: "not_requested", sentAt: null, version: 0,
+    submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "not_requested", sentAt: null, version: 0,
   });
   return {
     card, eligible: false, writable: false, emailReady: false,
     invitations: [
       example("preview-active", "Alex Rivera", 2),
       example("preview-expired", "Sam Morgan", 72),
-      { ...example("preview-joined", "Jordan Lee", 96), submittedAt: ago(95), joinedAt: ago(80) },
+      { ...example("preview-accepted", "Taylor Brooks", 50), acceptedAt: ago(12) },
+      { ...example("preview-joined", "Jordan Lee", 96), acceptedAt: ago(95), joinedAt: ago(80) },
     ],
-    counts: { created: 3, active: 1, expired: 1, submitted: 1, joined: 1 },
+    counts: { created: 4, active: 1, expired: 1, accepted: 2, submitted: 0, joined: 1 },
     dailyLimit: 20, remainingToday: 20, legacyInvitation: null,
   };
 }

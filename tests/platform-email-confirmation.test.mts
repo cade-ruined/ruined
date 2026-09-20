@@ -9,6 +9,7 @@ import {
 import {
   getMemberEmailConfirmationUrl,
   isTrustedPlatformOrigin,
+  MEMBER_INVITATION_CONTEXT_COOKIE,
 } from "../src/lib/auth/request.ts";
 
 const [confirmedPage, confirmationStatusComponent] = await Promise.all([
@@ -172,6 +173,31 @@ test("local development can derive the exact confirmation route from its own URL
   }
 });
 
+test("personal invitation context never changes the configured confirmation destination", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.NEXT_PUBLIC_SITE_URL = "https://members.example.com/ignored?email=private@example.test";
+    const request = new Request("https://attacker.example/api/auth/otp/request?invitation=PRIVATE&next=https://attacker.example", {
+      headers: { cookie: `${MEMBER_INVITATION_CONTEXT_COOKIE}=PRIVATE` },
+    });
+    assert.equal(
+      getMemberEmailConfirmationUrl(request),
+      "https://members.example.com/my/confirmed",
+    );
+    assert.equal(MEMBER_INVITATION_CONTEXT_COOKIE, "ruined-invitation-context");
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    assert.equal(getMemberEmailConfirmationUrl(request), null);
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+  }
+});
+
 test("successful Supabase callbacks report confirmation without consuming a session", () => {
   assert.equal(getMemberEmailConfirmationStatus("?code=pkce-code", ""), "confirmed");
   assert.equal(
@@ -251,6 +277,6 @@ test("the confirmation page and access link suppress referrer details", () => {
   assert.match(confirmedPage, /A place with your name on it\./);
   assert.match(confirmationStatusComponent, /Email confirmed\./);
   assert.match(confirmationStatusComponent, /Continue to Ruined access and request a one-time code\./);
-  assert.match(confirmationStatusComponent, /href="\/access"/);
+  assert.match(confirmationStatusComponent, /: "\/access"/);
   assert.match(confirmationStatusComponent, /referrerPolicy="no-referrer"/);
 });

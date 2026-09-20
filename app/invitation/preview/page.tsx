@@ -10,5 +10,5 @@ export default function InvitationPreviewPage() {
   if (getPlatformConfiguration().mode !== "preview") notFound();
   const { card, expiresAt } = memberInvitationPreviewSnapshot();
   if (!card) notFound();
-  return <InvitationLanding card={card} expiresAt={expiresAt} preview />;
+  return <InvitationLanding card={card} expiresAt={expiresAt} recipientName="Alex Rivera" preview />;
 }

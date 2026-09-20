@@ -15,7 +15,7 @@ const STATUS_COPY: Record<
   confirmed: {
     eyebrow: "Confirmation complete",
     message:
-      "Your email address is verified. Continue to Ruined access and request a one-time code.",
+      "Your email address is verified. Continue to Ruined access and request a one-time code. If you were invited by a member, reopen your invitation to continue joining.",
     title: "Email confirmed.",
   },
   error: {
@@ -32,7 +32,20 @@ const STATUS_COPY: Record<
   },
 };
 
-export default function MemberEmailConfirmationStatus() {
+const INVITATION_MESSAGES: Record<MemberEmailConfirmationStatus, string> = {
+  confirmed:
+    "Your email address is verified. Return to your invitation to sign in with a one-time code and accept it.",
+  error:
+    "We could not confirm your email from this link. It may have expired or already been used. Return to your invitation to request another email.",
+  neutral:
+    "Open the confirmation link in the email Ruined sent you. Visiting this page by itself does not confirm an email or grant access. Return to your invitation to continue.",
+};
+
+export default function MemberEmailConfirmationStatus({
+  invitationToken,
+}: {
+  invitationToken?: string;
+}) {
   const [status, setStatus] = useState<MemberEmailConfirmationStatus>("neutral");
   const consumed = useRef(false);
 
@@ -49,6 +62,8 @@ export default function MemberEmailConfirmationStatus() {
   }, []);
 
   const copy = STATUS_COPY[status];
+  const hasInvitation = typeof invitationToken === "string" && /^[A-Za-z0-9_-]{43}$/.test(invitationToken);
+  const destination = hasInvitation ? `/invitation/${invitationToken}#accept-invitation` : "/access";
 
   return (
     <section className="lg:pt-12" aria-live="polite" aria-labelledby="confirmation-status">
@@ -61,13 +76,17 @@ export default function MemberEmailConfirmationStatus() {
       >
         {copy.title}
       </h2>
-      <p className="mt-5 text-sm leading-relaxed text-white/50">{copy.message}</p>
+      <p className="mt-5 text-sm leading-relaxed text-white/50">
+        {hasInvitation ? INVITATION_MESSAGES[status] : copy.message}
+      </p>
       <Link
         className="mt-10 inline-flex min-h-12 items-center border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white"
-        href="/access"
+        href={destination}
         referrerPolicy="no-referrer"
       >
-        {status === "confirmed" ? "Continue to access" : "Return to access"}
+        {hasInvitation
+          ? status === "confirmed" ? "Continue to invitation" : "Return to invitation"
+          : status === "confirmed" ? "Continue to access" : "Return to access"}
       </Link>
     </section>
   );

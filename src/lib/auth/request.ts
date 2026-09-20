@@ -1,3 +1,5 @@
+export const MEMBER_INVITATION_CONTEXT_COOKIE = "ruined-invitation-context";
+
 function isLocalDevelopmentHost(hostname: string): boolean {
   return (
     hostname === "localhost" ||

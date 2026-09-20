@@ -15,7 +15,7 @@ import {
 type InvitationRow = {
   id: string; recipient_name: string; recipient_email_normalized: string; public_token: string;
   issued_at: Date | string; expires_at: Date | string; revoked_at: Date | string | null;
-  submitted_at: Date | string | null; joined_at: Date | string | null; active: boolean;
+  submitted_at: Date | string | null; accepted_at: Date | string | null; joined_at: Date | string | null; active: boolean;
   delivery_status: PersonalInvitationDeliveryStatus; sent_at: Date | string | null; version: number;
   email_requested: boolean; first_attempt_at: Date | string | null; delivery_attempts: number; retry_safe: boolean;
 };
@@ -59,7 +59,7 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
       where member.id = ${identity.memberId}::uuid and member.deleted_at is null`;
     if (!names) throw new MemberInvitationError(403, "Member access is required.");
     const rows = await sql<InvitationRow[]>`select invitation.*, referral.joined_at,
-      invitation.revoked_at is null and invitation.expires_at > clock_timestamp() as active
+      invitation.revoked_at is null and invitation.accepted_at is null and invitation.expires_at > clock_timestamp() as active
       from member_personal_invitations invitation left join member_referrals referral on referral.personal_invitation_id = invitation.id
       where invitation.member_id = ${identity.memberId}::uuid order by invitation.issued_at desc, invitation.id desc`;
     const [counts] = await sql<Array<{ joined: number; recent: number }>>`select
@@ -74,11 +74,11 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
       invitations: rows.map(row => ({ id: row.id, recipientName: row.recipient_name, recipientEmail: row.recipient_email_normalized,
         url: row.active && names.eligible ? `/invitation/${row.public_token}` : null,
         issuedAt: date(row.issued_at), expiresAt: date(row.expires_at), revokedAt: nullableDate(row.revoked_at),
-        submittedAt: nullableDate(row.submitted_at), joinedAt: nullableDate(row.joined_at),
+        submittedAt: nullableDate(row.submitted_at), acceptedAt: nullableDate(row.accepted_at), joinedAt: nullableDate(row.joined_at),
         deliveryStatus: row.delivery_status, sentAt: nullableDate(row.sent_at), version: row.version })),
-      counts: { created: rows.length, active: rows.filter(row => row.active).length,
-        expired: rows.filter(row => !row.active && !row.revoked_at && !row.submitted_at).length,
-        submitted: rows.filter(row => row.submitted_at).length, joined: counts?.joined ?? 0 },
+      counts: { created: rows.length, active: rows.filter(row => row.active && !row.submitted_at && !row.joined_at).length,
+        expired: rows.filter(row => !row.active && !row.revoked_at && !row.submitted_at && !row.accepted_at).length,
+        submitted: rows.filter(row => row.submitted_at).length, accepted: rows.filter(row => row.accepted_at).length, joined: counts?.joined ?? 0 },
       dailyLimit: PERSONAL_INVITATION_DAILY_LIMIT, remainingToday: Math.max(0, PERSONAL_INVITATION_DAILY_LIMIT - (counts?.recent ?? 0)),
       legacyInvitation: legacy ? { url: legacy.enabled && legacy.active && names.eligible ? `/invitation/${legacy.public_token}` : null,
         issuedAt: date(legacy.issued_at), expiresAt: date(legacy.expires_at), enabled: legacy.enabled, version: legacy.version } : null,
@@ -134,6 +134,7 @@ export async function revokeOwnPersonalInvitation(authUserId: string, id: string
     const [row] = await tx<InvitationRow[]>`select * from member_personal_invitations where id = ${id}::uuid and member_id = ${identity.memberId}::uuid for update`;
     if (!row) throw new MemberInvitationError(404, "Invitation not found.");
     if (row.version !== input.version) throw new MemberInvitationError(409, "This invitation changed in another tab. Reload before saving.");
+    if (row.accepted_at) throw new MemberInvitationError(409, "This invitation has already been accepted.");
     if (row.revoked_at) return;
     await tx`update member_personal_invitations set revoked_at = statement_timestamp(), version = version + 1, updated_at = statement_timestamp(),
       delivery_status = case when delivery_status in ('queued','sending','failed') then 'cancelled' else delivery_status end,
@@ -155,6 +156,7 @@ export async function retryOwnPersonalInvitationEmail(authUserId: string, id: st
       from member_personal_invitations where id = ${id}::uuid and member_id = ${identity.memberId}::uuid for update`;
     if (!row) throw new MemberInvitationError(404, "Invitation not found.");
     if (row.version !== input.version) throw new MemberInvitationError(409, "This invitation changed in another tab. Reload before saving.");
+    if (row.accepted_at) throw new MemberInvitationError(409, "This invitation has already been accepted.");
     if (!row.active || row.revoked_at) throw new MemberInvitationError(409, "Create a new invitation to send a fresh link.");
     if (!row.retry_safe || row.delivery_attempts >= 5) throw new MemberInvitationError(409, "The email cannot safely be retried. Share this invitation link instead.");
     if (!["failed", "queued"].includes(row.delivery_status)) throw new MemberInvitationError(409, "This email is already sent or being sent.");
