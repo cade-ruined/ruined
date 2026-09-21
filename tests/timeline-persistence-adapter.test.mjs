@@ -54,6 +54,16 @@ test("a failed Timeline request never resolves as a successful save", async () =
   assert.equal(f.calls.length, 1);
 });
 
+test("preview month edits and explicit year-only changes survive saved snapshots", async () => {
+  const f = fixture();
+  const adapter = f.createTimelinePersistenceAdapter({ preview: true, writable: false });
+  const saved = await adapter.save([{ ...entry, month: 9 }], current);
+  assert.equal(saved.entries[0].month, 9);
+  const cleared = await adapter.save([{ ...saved.entries[0], month: null }], saved);
+  assert.equal(cleared.entries[0].month, null);
+  assert.equal(f.calls.length, 0);
+});
+
 test("lost and unreadable successful responses require reconciliation instead of a blind retry", async () => {
   for (const response of [undefined, new Response("truncated", { status: 200 })]) {
     const f = fixture([response]);

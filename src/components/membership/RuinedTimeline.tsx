@@ -15,6 +15,8 @@ import {
   EMPTY_TIMELINE_FORM,
   TIMELINE_EXAMPLES,
   TIMELINE_LIMITS,
+  TIMELINE_MONTHS,
+  formatTimelineDate,
   formForTimelineEntry,
   fromMemberTimelineEntries,
   restoreDeletedTimelineEntry,
@@ -31,7 +33,7 @@ import styles from "./ruined-timeline.module.css";
 
 type TimelineMode = "examples" | "user";
 type PersistenceState = "error" | "saved" | "saving" | "session";
-type ErrorField = "details" | "title" | "year" | null;
+type ErrorField = "details" | "month" | "title" | "year" | null;
 type UndoState = { entry: TimelineDraftEntry } | null;
 
 function makeClientKey() {
@@ -206,6 +208,9 @@ export default function RuinedTimeline({
         message: `Use a year between ${TIMELINE_LIMITS.minimumYear} and ${TIMELINE_LIMITS.maximumYear}.`,
       };
     }
+    if (form.month !== "" && !/^(?:[1-9]|1[0-2])$/.test(form.month)) {
+      return { field: "month" as const, message: "Choose a month, or leave this as a year only." };
+    }
     if (!form.title.trim()) {
       return { field: "title" as const, message: "Give this moment a short title." };
     }
@@ -233,9 +238,10 @@ export default function RuinedTimeline({
       const local = orderedOptimistic[index];
       return {
         clientKey: local?.clientKey ?? entry.id,
-        createdOrder: local?.createdOrder ?? entry.position,
+        createdOrder: entry.position,
         details: entry.details ?? "",
         id: entry.id,
+        month: entry.month ?? null,
         position: entry.position,
         title: entry.title,
         year: entry.year,
@@ -332,6 +338,7 @@ export default function RuinedTimeline({
       createdOrder: existing?.createdOrder ?? Date.now(),
       details: form.details.trim(),
       id: existing?.id ?? null,
+      month: form.month === "" ? null : Number(form.month),
       position: existing?.position ?? entries.length + 1,
       title: form.title.trim(),
       year: Number(form.year),
@@ -483,8 +490,30 @@ export default function RuinedTimeline({
                   />
                 </div>
                 <div className={styles.field}>
+                  <label className={styles.formLabel} htmlFor={`${rawId}-month`}>
+                    <span>02</span><span>Month</span><small>Optional</small>
+                  </label>
+                  <select
+                    aria-describedby={errorField === "month" ? errorId : undefined}
+                    aria-invalid={errorField === "month" || undefined}
+                    className={styles.formControl}
+                    disabled={Boolean(pending) || (!writable && !preview)}
+                    id={`${rawId}-month`}
+                    name="month"
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, month: event.target.value }));
+                      setError(null);
+                      setErrorField(null);
+                    }}
+                    value={form.month}
+                  >
+                    <option value="">Year only</option>
+                    {TIMELINE_MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
+                  </select>
+                </div>
+                <div className={`${styles.field} ${styles.titleField}`}>
                   <label className={styles.formLabel} htmlFor={`${rawId}-title-field`}>
-                    <span>02</span><span>Title</span>
+                    <span>03</span><span>Title</span>
                     {titleCountVisible ? <small>{form.title.length} / {TIMELINE_LIMITS.title}</small> : null}
                   </label>
                   <input
@@ -511,7 +540,7 @@ export default function RuinedTimeline({
 
               <div className={styles.field}>
                 <label className={styles.formLabel} htmlFor={`${rawId}-details`}>
-                  <span>03</span><span>Details</span><small>Optional</small>
+                  <span>04</span><span>Details</span><small>Optional</small>
                 </label>
                 <textarea
                   aria-describedby={errorField === "details" ? errorId : undefined}
@@ -619,7 +648,11 @@ export default function RuinedTimeline({
                       <li className={styles.indexItem} key={entry.clientKey}>
                         <div className={styles.indexContent}>
                           <span className={styles.indexNumber}>{String(index + 1).padStart(2, "0")}</span>
-                          <span className={styles.indexDate}>{entry.year}</span>
+                          <time
+                            aria-label={formatTimelineDate(entry, true)}
+                            className={styles.indexDate}
+                            dateTime={entry.month == null ? String(entry.year) : `${entry.year}-${String(entry.month).padStart(2, "0")}`}
+                          >{formatTimelineDate(entry)}</time>
                           <span className={styles.indexCopy}>
                             <span className={styles.indexTitle}>{entry.title}</span>
                             {entry.details ? <span className={styles.indexDetail}>{entry.details}</span> : null}

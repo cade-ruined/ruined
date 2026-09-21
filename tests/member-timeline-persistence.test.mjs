@@ -18,7 +18,7 @@ const ids = {
   otherEnrollment: "77777777-7777-4777-8777-777777777777",
 };
 const event = (title = "A beginning", year = 2001) => ({ id: null, title, year, details: "A private detail." });
-const entriesForSave = (snapshot) => snapshot.entries.map(({ details, id, title, year }) => ({ details, id, title, year }));
+const entriesForSave = (snapshot) => snapshot.entries.map(({ details, id, month, title, year }) => ({ details, id, month, title, year }));
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 async function loadTypescript(path, dependencies = {}) {
@@ -33,7 +33,7 @@ async function loadTypescript(path, dependencies = {}) {
   return cjsModule.exports;
 }
 
-async function fixture(t) {
+async function fixture(t, { monthMigration = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   // Only the driver's actual Parameter/JSON serializers are used. No driver
@@ -62,6 +62,7 @@ async function fixture(t) {
     ${automation.slice(start, end)}
   `);
   await installOperatorFundingFunctions(db);
+  if (monthMigration) await db.exec(await source("db/migrations/20260927000000_timeline_entry_month.sql"));
   await db.query("insert into people (id) values ($1),($2)", [ids.person, ids.otherMember]);
   await db.query("insert into ruined_members (id,person_id) values ($1,$2),($3,$3)", [ids.member, ids.person, ids.otherMember]);
   await db.query("insert into platform_users (auth_user_id,member_id,person_id) values ($1,$2,$3),($4,$5,$5)", [ids.auth, ids.member, ids.person, ids.otherAuth, ids.otherMember]);
@@ -263,4 +264,90 @@ test("Timeline and Future Letter completions persist typed object evidence with 
     { requirement_slug: "timeline", evidence: { interaction: "member_confirmed_timeline" }, type: "object" },
   ]);
   await assert.rejects(() => db.query("update member_foundation_requirement_completions set evidence='{}'::jsonb"), /append.only/i);
+});
+
+test("optional months sort within each year, with unknown months last and original position resolving ties", async t => {
+  const { repository } = await fixture(t);
+  const saved = await repository.saveMemberTimeline(ids.auth, [
+    { ...event("Unknown first", 2020), month: null },
+    { ...event("Following year", 2021), month: 1 },
+    { ...event("December", 2020), month: 12 },
+    event("Previous year", 2019),
+    { ...event("January first", 2020), month: 1 },
+    { ...event("January second", 2020), month: 1 },
+    event("Unknown second", 2020),
+  ], "0");
+  assert.deepEqual(saved.entries.map(({ title, month, position }) => [title, month, position]), [
+    ["Previous year", null, 4], ["January first", 1, 5], ["January second", 1, 6], ["December", 12, 3],
+    ["Unknown first", null, 1], ["Unknown second", null, 7], ["Following year", 1, 2],
+  ]);
+  assert.deepEqual(await repository.getMemberTimeline(ids.auth), saved);
+});
+
+test("month-only edits version history; older clients preserve months, explicit null clears, and stale edits lose atomically", async t => {
+  const { db, repository, versionCount } = await fixture(t);
+  const first = await repository.saveMemberTimeline(ids.auth, [event()], "0");
+  assert.equal(first.entries[0].month, null);
+  const january = await repository.saveMemberTimeline(ids.auth, [{ ...entriesForSave(first)[0], month: 1 }], first.revision);
+  assert.equal(january.entries[0].month, 1);
+  assert.equal(await versionCount(), 2);
+  assert.ok(BigInt(january.revision) > BigInt(first.revision));
+  const { month: ignored, ...oldClientEntry } = entriesForSave(january)[0];
+  assert.equal(ignored, 1);
+  const unchanged = await repository.saveMemberTimeline(ids.auth, [oldClientEntry], january.revision);
+  assert.equal(unchanged.revision, january.revision);
+  assert.equal(unchanged.entries[0].month, 1);
+  const edited = await repository.saveMemberTimeline(ids.auth, [{ ...oldClientEntry, title: "Edited by an old client" }], unchanged.revision);
+  assert.equal(edited.entries[0].month, 1);
+  const cleared = await repository.saveMemberTimeline(ids.auth, [{ ...entriesForSave(edited)[0], month: null }], edited.revision);
+  assert.equal(cleared.entries[0].month, null);
+  assert.ok(BigInt(cleared.revision) > BigInt(edited.revision));
+  const beforeStale = await versionCount();
+  await assert.rejects(repository.saveMemberTimeline(ids.auth, [{ ...entriesForSave(january)[0], month: 12 }], january.revision), repository.MembershipConflictError);
+  assert.deepEqual(await repository.getMemberTimeline(ids.auth), cleared);
+  assert.equal(await versionCount(), beforeStale);
+  const deleted = await repository.saveMemberTimeline(ids.auth, [], cleared.revision);
+  assert.deepEqual(deleted.entries, []);
+  assert.deepEqual((await db.query("select version,action,entry_month from member_timeline_entry_versions order by id")).rows, [
+    { version: 1, action: "created", entry_month: null }, { version: 2, action: "updated", entry_month: 1 },
+    { version: 3, action: "updated", entry_month: 1 }, { version: 4, action: "updated", entry_month: null },
+    { version: 5, action: "deleted", entry_month: null },
+  ]);
+  await assert.rejects(db.exec("update member_timeline_entry_versions set entry_month=2"), /append.only/i);
+  await assert.rejects(db.exec("update member_timeline_entries set entry_month=2"), /deleted Timeline entry is immutable/);
+});
+
+test("repository and database reject invalid months without creating entry or history mutations", async t => {
+  const { db, repository, versionCount } = await fixture(t);
+  for (const month of [0, -1, 13, 1.5, Infinity, NaN, "2", true, {}, []]) {
+    await assert.rejects(repository.saveMemberTimeline(ids.auth, [{ ...event(), month }], "0"), repository.MembershipInputError);
+  }
+  assert.equal(await versionCount(), 0);
+  const saved = await repository.saveMemberTimeline(ids.auth, [{ ...event(), month: 12 }], "0");
+  for (const month of [0, -1, 13]) {
+    await assert.rejects(db.query("update member_timeline_entries set entry_month=$1 where id=$2", [month, saved.entries[0].id]), { code: "23514" });
+    await assert.rejects(db.query(`insert into member_timeline_entry_versions(timeline_entry_id,member_id,version,action,entry_year,entry_month,title,position)
+      values($1,$2,999,'updated',2020,$3,'Invalid month',1)`, [saved.entries[0].id, ids.member, month]), { code: "23514" });
+  }
+  assert.equal(await versionCount(), 1);
+  assert.deepEqual(await repository.getMemberTimeline(ids.auth), saved);
+});
+
+test("additive month migration preserves every existing entry/history field, identity guards and append-only protections", async t => {
+  const { db, repository } = await fixture(t, { monthMigration: false });
+  await db.query("insert into member_timeline_entries(member_id,entry_year,title,details,updated_by_auth_user_id) values($1,2000,'Before months','Private detail',$2)", [ids.member, ids.auth]);
+  const beforeEntries = (await db.query("select to_jsonb(e) as entry from member_timeline_entries e")).rows;
+  const beforeHistory = (await db.query("select to_jsonb(v) as version from member_timeline_entry_versions v")).rows;
+  const guards = () => db.query("select tgname,tgenabled from pg_trigger where not tgisinternal and tgrelid in ('member_timeline_entries'::regclass,'member_timeline_entry_versions'::regclass) order by tgname");
+  const beforeGuards = (await guards()).rows;
+  await db.exec(await source("db/migrations/20260927000000_timeline_entry_month.sql"));
+  assert.deepEqual((await db.query("select to_jsonb(e)-'entry_month' as entry from member_timeline_entries e")).rows, beforeEntries);
+  assert.deepEqual((await db.query("select to_jsonb(v)-'entry_month' as version from member_timeline_entry_versions v")).rows, beforeHistory);
+  assert.deepEqual((await guards()).rows, beforeGuards);
+  const loaded = await repository.getMemberTimeline(ids.auth);
+  assert.equal(loaded.entries[0].month, null);
+  assert.equal(loaded.revision, "1");
+  await assert.rejects(db.query("update member_timeline_entries set member_id=$1", [ids.otherMember]), /identity fields are immutable/);
+  await assert.rejects(db.exec("update member_timeline_entry_versions set entry_month=1"), /append.only/i);
+  await assert.rejects(db.exec("delete from member_timeline_entry_versions"), /append.only/i);
 });

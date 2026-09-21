@@ -79,3 +79,23 @@ test("Timeline save rejects foreign origins, unsigned users, invalid revisions a
   assert.equal((await unsigned.POST(request(payload))).status, 401);
   assert.equal(f.calls.length + unsigned.calls.length, 0);
 });
+
+test("Timeline accepts optional months without collapsing omission into explicit clearing", async () => {
+  for (const month of [undefined, null, 1, 9, 12]) {
+    const f = fixture();
+    const entry = { id: null, title: "A beginning", year: 2020, details: null, ...(month === undefined ? {} : { month }) };
+    const response = await f.POST(request({ action: "save", entries: [entry], expectedRevision: "5" }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(f.calls, [["save", "verified-account", [entry], "5"]]);
+    assert.equal(Object.hasOwn(f.calls[0][2][0], "month"), month !== undefined);
+  }
+});
+
+test("Timeline rejects noninteger, out-of-range and nonnumeric months before invoking persistence", async () => {
+  for (const month of [0, -1, 13, 1.5, "1", "", true, [], {}]) {
+    const f = fixture();
+    const response = await f.POST(request({ action: "save", entries: [{ id: null, title: "A beginning", year: 2020, details: null, month }], expectedRevision: "5" }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(f.calls, []);
+  }
+});

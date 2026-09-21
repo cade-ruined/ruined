@@ -426,6 +426,7 @@ export type MemberAccountSnapshot = {
 export type MemberTimelineEntry = {
   details: string | null;
   id: string;
+  month?: number | null;
   position: number;
   title: string;
   year: number;

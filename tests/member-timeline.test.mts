@@ -4,6 +4,11 @@ import test from "node:test";
 
 import {
   TIMELINE_EXAMPLES,
+  EMPTY_TIMELINE_FORM,
+  formatTimelineDate,
+  formForTimelineEntry,
+  fromMemberTimelineEntries,
+  timelineFormIsDirty,
   restoreDeletedTimelineEntry,
   sortTimelineEntries,
   toTimelineSaveEntries,
@@ -60,10 +65,39 @@ test("the API payload is compact, trimmed, and excludes client-only state", () =
     {
       details: null,
       id: null,
+      month: null,
       title: "A deliberate rebuild",
       year: 2023,
     },
   ]);
+});
+
+test("optional months sort within years without turning year-only memories into January", () => {
+  const input = [entry("year-only", 2020, 1), entry("december", 2020, 2, { month: 12 }),
+    entry("jan-first", 2020, 3, { month: 1 }), entry("jan-second", 2020, 4, { month: 1 }),
+    entry("earlier-year", 2019, 5, { month: 12 })];
+  const before = structuredClone(input);
+  assert.deepEqual(sortTimelineEntries(input).map(e => e.clientKey), ["earlier-year", "jan-first", "jan-second", "december", "year-only"]);
+  assert.deepEqual(input, before);
+  assert.equal(formatTimelineDate(input[0]!), "2020");
+  assert.equal(formatTimelineDate(input[1]!), "Dec 2020");
+  assert.equal(formatTimelineDate({ year: 2020, month: 9 }, true), "September 2020");
+});
+
+test("month survives edit, save, load and undo; changing only the month marks the form dirty", () => {
+  const saved = entry("saved", 2020, 1, { month: 9 });
+  const form = formForTimelineEntry(saved);
+  assert.equal(form.month, "9");
+  assert.equal(timelineFormIsDirty(form, { ...form, month: "8" }), true);
+  assert.equal(timelineFormIsDirty({ ...form, month: "" }, form), true);
+  assert.equal(timelineFormIsDirty(EMPTY_TIMELINE_FORM, { ...EMPTY_TIMELINE_FORM }), false);
+  const payload = toTimelineSaveEntries([saved])[0]!;
+  assert.equal(payload.month, 9);
+  const loaded = fromMemberTimelineEntries([{ ...payload, id: "saved-id", position: 1 }])[0]!;
+  assert.equal(formForTimelineEntry(loaded).month, "9");
+  assert.equal(restoreDeletedTimelineEntry(loaded).month, 9);
+  assert.equal(toTimelineSaveEntries([{ ...loaded, month: null }])[0]!.month, null);
+  assert.equal(formForTimelineEntry(entry("legacy", 2019, 1)).month, "");
 });
 
 test("undo reinserts a soft-deleted event instead of trying to revive its immutable row", () => {
@@ -152,5 +186,5 @@ test("the production port uses the member API, accessible controls, and no ifram
   assert.match(timelineStyles, /\.exportStudio\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
   assert.match(timelineStyles, /\.exportRail\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
   assert.match(page, /preview=\{context\.state === "preview"\}/);
-  assert.match(repository, /order by entry\.entry_year, entry\.position, entry\.created_at, entry\.id/);
+  assert.match(repository, /order by entry\.entry_year, coalesce\(entry\.entry_month, 13\), entry\.position, entry\.created_at, entry\.id/);
 });

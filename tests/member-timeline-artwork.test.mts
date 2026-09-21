@@ -112,6 +112,16 @@ test("carousel pages form one horizontal edge-connected Timeline", () => {
   }
 });
 
+test("every artwork format uses the same month ordering and keeps undated months unspecified", () => {
+  const input = [entry(1, { year: 2020, month: null }), entry(2, { year: 2020, month: 12 }), entry(3, { year: 2020, month: 1 })];
+  for (const format of TIMELINE_ARTWORK_FORMATS) {
+    const pages = paginateTimelineArtwork(input, format);
+    assert.deepEqual(pages.flatMap(page => page.entries.map(event => event.month)), [1, 12, null]);
+    const layout = buildTimelineArtworkLayout({ entries: pages[0]!.entries, format, pageIndex: 0 });
+    assert.deepEqual(layout.events.map(event => event.entry.month), [1, 12, null]);
+  }
+});
+
 test("carousel pagination balances the final slides instead of leaving an orphan", () => {
   const format = TIMELINE_ARTWORK_FORMATS[0]!;
   const pageSizes = (count: number) =>

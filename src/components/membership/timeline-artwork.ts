@@ -92,6 +92,7 @@ function orderTimelineArtworkEntries(entries: TimelineDraftEntry[]) {
     .sort(
       (left, right) =>
         left.year - right.year ||
+        (left.month ?? 13) - (right.month ?? 13) ||
         left.createdOrder - right.createdOrder ||
         left.clientKey.localeCompare(right.clientKey),
     )

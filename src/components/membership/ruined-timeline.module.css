@@ -21,6 +21,7 @@
 
 .root button,
 .root input,
+.root select,
 .root textarea {
   font: inherit;
 }
@@ -200,8 +201,12 @@
 
 .compactFields {
   display: grid;
-  grid-template-columns: minmax(92px, 110px) minmax(0, 1fr);
-  gap: 1rem;
+  grid-template-columns: minmax(72px, 0.7fr) minmax(0, 1.3fr);
+  column-gap: 1rem;
+}
+
+.titleField {
+  grid-column: 1 / -1;
 }
 
 .formLabel {
@@ -251,6 +256,21 @@
 textarea.formControl {
   min-height: 94px;
   resize: vertical;
+}
+
+select.formControl {
+  appearance: auto;
+  padding-right: 0.25rem;
+}
+
+select.formControl option {
+  background: var(--timeline-panel);
+  color: var(--timeline-ground);
+}
+
+.formControl:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .formControl::placeholder {

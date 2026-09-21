@@ -29,6 +29,7 @@ export function createTimelinePersistenceAdapter({ preview, writable }: {
           entries: entries.map((entry, index) => ({
             details: entry.details,
             id: entry.id ?? `preview-${crypto.randomUUID()}`,
+            month: entry.month ?? null,
             position: index + 1,
             title: entry.title,
             year: entry.year,

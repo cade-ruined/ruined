@@ -3124,6 +3124,7 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
   // empty Timeline, so a stale tab cannot overwrite newer work.
   const rows = await sql<Array<{
     details: string | null;
+    entry_month: number | null;
     entry_year: number;
     id: string | null;
     position: number;
@@ -3135,17 +3136,17 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
       from member_timeline_entry_versions
       where member_id = ${memberId}::uuid
     )
-    select entry.id, entry.entry_year, entry.title, entry.details, entry.position,
+    select entry.id, entry.entry_year, entry.entry_month, entry.title, entry.details, entry.position,
       timeline_revision.revision
     from timeline_revision
     left join member_timeline_entries entry
       on entry.member_id = ${memberId}::uuid and entry.status = 'active'
-    order by entry.entry_year, entry.position, entry.created_at, entry.id
+    order by entry.entry_year, coalesce(entry.entry_month, 13), entry.position, entry.created_at, entry.id
   `;
   return {
     entries: rows.flatMap((row) => row.id ? [{
       details: row.details, id: row.id, position: row.position,
-      title: row.title, year: row.entry_year,
+      title: row.title, year: row.entry_year, month: row.entry_month,
     }] : []),
     revision: rows[0]?.revision ?? "0",
   };
@@ -3173,6 +3174,7 @@ export async function getMemberTimeline(
 export type MemberTimelineInput = Array<{
   details: string | null;
   id: string | null;
+  month?: number | null;
   title: string;
   year: number;
 }>;
@@ -3193,12 +3195,16 @@ function validateTimelineInput(input: MemberTimelineInput) {
     if (!Number.isInteger(entry.year) || entry.year < 1900 || entry.year > 2200) {
       throw new MembershipInputError("Use a four-digit year between 1900 and 2200.");
     }
+    if (entry.month !== undefined && entry.month !== null
+      && (!Number.isInteger(entry.month) || entry.month < 1 || entry.month > 12)) {
+      throw new MembershipInputError("Choose a month from January through December, or leave it blank.");
+    }
     const title = cleanRequired(entry.title, "Timeline title", 200);
     const details = entry.details?.trim() || null;
     if (details && details.length > 4000) {
       throw new MembershipInputError("Timeline details must be 4,000 characters or fewer.");
     }
-    return { details, id: entry.id, position: index + 1, title, year: entry.year };
+    return { details, id: entry.id, month: entry.month, position: index + 1, title, year: entry.year };
   });
 }
 
@@ -3272,10 +3278,12 @@ export async function saveMemberTimeline(
           throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
         }
         retainedIds.add(entry.id);
+        // Older clients have no month field; only an explicit null clears it.
         await tx`
           update member_timeline_entries
           set
             entry_year = ${entry.year},
+            entry_month = case when ${entry.month === undefined} then entry_month else ${entry.month ?? null}::integer end,
             title = ${entry.title},
             details = ${entry.details},
             position = ${entry.position},
@@ -3289,6 +3297,7 @@ export async function saveMemberTimeline(
           insert into member_timeline_entries (
             member_id,
             entry_year,
+            entry_month,
             title,
             details,
             position,
@@ -3296,6 +3305,7 @@ export async function saveMemberTimeline(
           ) values (
             ${identity.memberId}::uuid,
             ${entry.year},
+            ${entry.month ?? null},
             ${entry.title},
             ${entry.details},
             ${entry.position},

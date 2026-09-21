@@ -25,9 +25,11 @@ function isTimelineEntry(value: unknown): value is MemberTimelineInput[number] {
   return (
     (candidate.id === null || typeof candidate.id === "string") &&
     typeof candidate.year === "number" &&
+    (candidate.month === undefined || candidate.month === null
+      || (typeof candidate.month === "number" && Number.isInteger(candidate.month) && candidate.month >= 1 && candidate.month <= 12)) &&
     typeof candidate.title === "string" &&
     (candidate.details === null || typeof candidate.details === "string") &&
-    Object.keys(candidate).every((key) => ["details", "id", "title", "year"].includes(key))
+    Object.keys(candidate).every((key) => ["details", "id", "month", "title", "year"].includes(key))
   );
 }
 

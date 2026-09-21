@@ -7,11 +7,22 @@ export const TIMELINE_LIMITS = {
   title: 90,
 } as const;
 
+export const TIMELINE_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+export function formatTimelineDate(entry: { year: number; month?: number | null }, longMonth = false): string {
+  const month = typeof entry.month === "number" ? TIMELINE_MONTHS[entry.month - 1] : undefined;
+  return month ? `${longMonth ? month : month.slice(0, 3)} ${entry.year}` : String(entry.year);
+}
+
 export type TimelineDraftEntry = {
   clientKey: string;
   createdOrder: number;
   details: string;
   id: string | null;
+  month?: number | null;
   position: number;
   title: string;
   year: number;
@@ -19,12 +30,14 @@ export type TimelineDraftEntry = {
 
 export type TimelineFormValue = {
   details: string;
+  month: string;
   title: string;
   year: string;
 };
 
 export const EMPTY_TIMELINE_FORM: TimelineFormValue = {
   details: "",
+  month: "",
   title: "",
   year: "",
 };
@@ -76,6 +89,7 @@ export function fromMemberTimelineEntries(
     createdOrder: entry.position || index + 1,
     details: entry.details ?? "",
     id: entry.id,
+    month: entry.month ?? null,
     position: entry.position || index + 1,
     title: entry.title,
     year: entry.year,
@@ -89,6 +103,7 @@ export function sortTimelineEntries(
     .sort(
       (left, right) =>
         left.year - right.year ||
+        (left.month ?? 13) - (right.month ?? 13) ||
         left.createdOrder - right.createdOrder ||
         left.clientKey.localeCompare(right.clientKey),
     )
@@ -99,6 +114,7 @@ export function toTimelineSaveEntries(entries: TimelineDraftEntry[]) {
   return sortTimelineEntries(entries).map((entry) => ({
     details: entry.details.trim() || null,
     id: entry.id,
+    month: entry.month ?? null,
     title: entry.title.trim(),
     year: entry.year,
   }));
@@ -109,6 +125,7 @@ export function formForTimelineEntry(
 ): TimelineFormValue {
   return {
     details: entry.details,
+    month: entry.month == null ? "" : String(entry.month),
     title: entry.title,
     year: String(entry.year),
   };
@@ -120,6 +137,7 @@ export function timelineFormIsDirty(
 ): boolean {
   return (
     form.year !== baseline.year ||
+    form.month !== baseline.month ||
     form.title !== baseline.title ||
     form.details !== baseline.details
   );

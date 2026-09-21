@@ -5,7 +5,7 @@ import {
   type TimelineArtworkPage,
   type TimelineArtworkPoint,
 } from "@/components/membership/timeline-artwork";
-import type { TimelineDraftEntry } from "@/components/membership/timeline-model";
+import { formatTimelineDate, type TimelineDraftEntry } from "@/components/membership/timeline-model";
 
 export const TIMELINE_PAPER_SRC = "/textures/ruined-timeline-paper.png";
 
@@ -426,9 +426,10 @@ function drawLabel({
     context.font = `800 ${metaSize}px ${fonts.header}`;
     context.textBaseline = "alphabetic";
     context.fillText(
-      `${String(event.entry.position).padStart(2, "0")} / ${event.entry.year}`,
+      `${String(event.entry.position).padStart(2, "0")} / ${formatTimelineDate(event.entry).toUpperCase()}`,
       event.labelX,
       blockTop,
+      event.labelWidth,
     );
 
     context.fillStyle = FADED;
@@ -484,9 +485,10 @@ function drawLabel({
   context.font = `800 ${metaSize}px ${fonts.header}`;
   context.textBaseline = "alphabetic";
   context.fillText(
-    `${String(event.entry.position).padStart(2, "0")} / ${event.entry.year}`,
+    `${String(event.entry.position).padStart(2, "0")} / ${formatTimelineDate(event.entry).toUpperCase()}`,
     event.labelX,
     blockTop,
+    event.labelWidth,
   );
 
   context.fillStyle = FADED;
