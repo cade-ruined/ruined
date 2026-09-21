@@ -38,6 +38,19 @@ export function isMemberPhotoStorageConfigured(): boolean {
   return storageConfiguration() !== null;
 }
 
+/** Log provider diagnostics without object paths, file names, messages, or credentials. */
+function reportPhotoStorageFailure(operation: "upload" | "download" | "cleanup", error: unknown) {
+  const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const label = (value: unknown) => typeof value === "string" && /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(value) ? value : undefined;
+  const status = String(details.statusCode ?? details.status ?? "");
+  console.error("Member photo storage failed", {
+    operation,
+    errorType: label(details.name) ?? "UnknownError",
+    errorCode: label(details.code),
+    status: /^[1-5][0-9]{2}$/.test(status) ? status : undefined,
+  });
+}
+
 function portraitStore() {
   const config = storageConfiguration();
   if (!config) throw new MemberPhotoError(503, "Photo uploads are temporarily unavailable. You can still save your profile.");
@@ -90,9 +103,9 @@ async function removeOwnedPhoto(memberId: string, avatarUrl: string | null) {
   if (!path) return;
   try {
     const { error } = await portraitStore().remove([path]);
-    if (error) console.error("Member photo cleanup failed", { errorType: error.name });
+    if (error) reportPhotoStorageFailure("cleanup", error);
   } catch (error) {
-    console.error("Member photo cleanup failed", { errorType: error instanceof Error ? error.name : "UnknownError" });
+    reportPhotoStorageFailure("cleanup", error);
   }
 }
 
@@ -104,8 +117,13 @@ export async function saveMemberPhoto(authUserId: string, file: File): Promise<{
   const avatarUrl = memberPhotoUrl(identity.memberId, fileName);
   if (!avatarUrl) throw new MemberPhotoError(500, "Your photo could not be saved.");
   const path = ownedMemberPhotoPath(identity.memberId, avatarUrl)!;
-  const { error } = await store.upload(path, photo, { contentType: "image/webp", upsert: false, cacheControl: "0" });
-  if (error) throw new MemberPhotoError(503, "Your photo could not be uploaded. Please try again.");
+  try {
+    const { error } = await store.upload(path, photo, { contentType: "image/webp", upsert: false, cacheControl: "0" });
+    if (error) throw error;
+  } catch (error) {
+    reportPhotoStorageFailure("upload", error);
+    throw new MemberPhotoError(503, "Your photo could not be uploaded. Keep it open and try again.");
+  }
 
   let priorUrl: string | null;
   try {
@@ -233,6 +251,7 @@ async function downloadMemberPhoto(path: string): Promise<Blob | null> {
   const { data, error } = await portraitStore().download(path);
   if (error) {
     if ("statusCode" in error && String(error.statusCode) === "404") return null;
+    reportPhotoStorageFailure("download", error);
     throw new MemberPhotoError(503, "This photo is temporarily unavailable.");
   }
   return data;

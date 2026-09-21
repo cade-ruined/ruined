@@ -42,12 +42,15 @@ async function photoModule(options: {
   commitAckLost?: boolean;
   recoveryReadFails?: boolean;
   deletedDuringUpload?: boolean;
+  uploadError?: object;
+  uploadThrows?: boolean;
 } = {}) {
   const calls: Array<{ name: string; value?: unknown }> = [];
   const readQueries: Array<{ query: string; values: unknown[] }> = [];
   let current = options.currentUrl === undefined ? avatarUrl : options.currentUrl;
   let transactionFinished = false;
   let transactionCount = 0;
+  const storedPhotos = new Map<string, Buffer>();
   const sql = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join("?");
     if (query.includes("pg_advisory_xact_lock")) {
@@ -91,10 +94,20 @@ async function photoModule(options: {
         upload: async (path: string, bytes: Buffer, uploadOptions: object) => {
           calls.push({ name: "upload", value: { path, uploadOptions } });
           assert.equal((await sharp(bytes).metadata()).format, "webp");
+          if (options.uploadThrows) throw new TypeError("Sensitive URL must not be logged: https://storage.test/object/member.jpg?token=secret");
+          if (options.uploadError) return { error: options.uploadError };
+          storedPhotos.set(path, bytes);
           return { error: null };
         },
-        remove: async (paths: string[]) => { calls.push({ name: "remove", value: paths }); return { error: null }; },
-        download: async (path: string) => { calls.push({ name: "download", value: path }); return { data: new Blob(["private"]), error: null }; },
+        remove: async (paths: string[]) => {
+          calls.push({ name: "remove", value: paths });
+          paths.forEach(path => storedPhotos.delete(path));
+          return { error: null };
+        },
+        download: async (path: string) => {
+          calls.push({ name: "download", value: path });
+          return { data: new Blob([storedPhotos.get(path) ?? "private"]), error: null };
+        },
       };
     } } }) },
   });
@@ -367,10 +380,14 @@ test("private fetch uses actual member capability and current Circle filtering, 
 });
 
 test("photo mutation routes reject foreign origins and anonymous requests before parsing or storage", async () => {
-  for (const fixture of [{ trusted: false, signedIn: true, status: 403 }, { trusted: true, signedIn: false, status: 401 }]) {
+  for (const fixture of [
+    { trusted: false, session: "authenticated", status: 403 },
+    { trusted: true, session: "signed_out", status: 401 },
+    { trusted: true, session: "unavailable", status: 503 },
+  ]) {
     const route = await load<typeof import("../app/api/my/profile/photo/route")>("app/api/my/profile/photo/route.ts", {
       "@/lib/auth/request": { isTrustedPlatformOrigin: () => fixture.trusted },
-      "@/lib/auth/session": { getCurrentPlatformViewer: async () => fixture.signedIn ? { authUserId: memberId } : null },
+      "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: fixture.session, viewer: { authUserId: memberId } }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
       "@/lib/membership/photo-policy": policy,
       "@/lib/membership/photos": { saveMemberPhoto: () => assert.fail("storage must not run"), deleteMemberPhoto: () => assert.fail("storage must not run") },
@@ -382,6 +399,96 @@ test("photo mutation routes reject foreign origins and anonymous requests before
       assert.equal(response.headers.get("vary"), "Cookie");
     }
   }
+});
+
+test("a cropped JPEG travels through multipart validation, real normalization and persistence to a private authorized photo", async () => {
+  const { photos, current, calls } = await photoModule({ currentUrl: null });
+  const route = await load<typeof import("../app/api/my/profile/photo/route")>("app/api/my/profile/photo/route.ts", {
+    "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
+    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: memberId } }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/membership/photo-policy": policy,
+    "@/lib/membership/photos": photos,
+  });
+  const jpeg = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: "#d24b34" } })
+    .withExif({ IFD0: { Artist: "Private camera owner" } }).jpeg({ quality: 90 }).toBuffer();
+  const form = new FormData();
+  form.set("photo", new File([jpeg], "cropped-photo.jpg", { type: "image/jpeg" }));
+  const request = uploadRequest(form);
+  request.headers.set("X-Ruined-Session-Owner", memberId);
+  const saved = await route.POST(request);
+  assert.equal(saved.status, 200);
+  const result = await saved.json() as { avatarUrl: string };
+  assert.deepEqual(Object.keys(result), ["avatarUrl"]);
+  assert.equal(result.avatarUrl, current());
+  assert.ok(policy.ownedMemberPhotoPath(memberId, result.avatarUrl));
+  assert.equal(saved.headers.get("cache-control"), "private, no-store");
+  assert.equal(saved.headers.get("vary"), "Cookie");
+  const savedFileName = result.avatarUrl.split("/").at(-1)!;
+  const portrait = await photos.getAuthorizedMemberPhoto(memberId, memberId, savedFileName);
+  assert.ok(portrait);
+  const metadata = await sharp(Buffer.from(await portrait.arrayBuffer())).metadata();
+  assert.equal(metadata.format, "webp");
+  assert.equal(metadata.width, 1024);
+  assert.equal(metadata.height, 1024);
+  assert.equal(metadata.exif, undefined);
+  assert.equal(metadata.icc, undefined);
+  assert.equal(await photos.getAuthorizedMemberPhoto(memberId, memberId, fileName), null, "A previous URL must not resolve to the new photo");
+  const removed = await route.DELETE(new Request("https://members.example.com/api/my/profile/photo", { method: "DELETE" }));
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), { avatarUrl: null });
+  assert.equal(current(), null);
+  assert.equal(await photos.getAuthorizedMemberPhoto(memberId, memberId, savedFileName), null);
+  assert.deepEqual(calls.filter(call => call.name === "remove").map(call => call.value), [[`${memberId}/${savedFileName}`]]);
+});
+
+test("a stale photo editor cannot upload to or delete from a different signed-in account", async () => {
+  const route = await load<typeof import("../app/api/my/profile/photo/route")>("app/api/my/profile/photo/route.ts", {
+    "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
+    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: memberId } }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/membership/photo-policy": policy,
+    "@/lib/membership/photos": { saveMemberPhoto: () => assert.fail("storage must not run"), deleteMemberPhoto: () => assert.fail("storage must not run") },
+  });
+  for (const method of [route.POST, route.DELETE]) {
+    for (const owner of [otherId, "", "invalid-owner"]) {
+      const response = await method(new Request("https://members.example.com/photo", {
+        method: "POST", headers: { "X-Ruined-Session-Owner": owner },
+      }));
+      assert.equal(response.status, 409);
+      assert.deepEqual(await response.json(), { error: "Your signed-in account changed. Reload before changing your photo." });
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+    }
+  }
+});
+
+test("storage rejection and interrupted upload preserve the previous photo and return a retryable error without private diagnostics", async context => {
+  const messages: unknown[][] = [];
+  context.mock.method(console, "error", (...args: unknown[]) => messages.push(args));
+  const jpeg = await sharp({ create: { width: 32, height: 32, channels: 3, background: "red" } }).jpeg().toBuffer();
+  for (const options of [
+    { uploadError: { name: "StorageApiError", code: "NoSuchBucket", statusCode: "404", message: "Sensitive bucket path/member/email@example.com" } },
+    { uploadThrows: true },
+  ]) {
+    const { photos, current, calls } = await photoModule(options);
+    const route = await load<typeof import("../app/api/my/profile/photo/route")>("app/api/my/profile/photo/route.ts", {
+      "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
+      "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: memberId } }) },
+      "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+      "@/lib/membership/photo-policy": policy,
+      "@/lib/membership/photos": photos,
+    });
+    const form = new FormData();
+    form.set("photo", new File([jpeg], "cropped-photo.jpg", { type: "image/jpeg" }));
+    const response = await route.POST(uploadRequest(form));
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "Your photo could not be uploaded. Keep it open and try again." });
+    assert.equal(current(), avatarUrl);
+    assert.deepEqual(calls.map(call => call.name), ["upload"]);
+  }
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages[0], ["Member photo storage failed", { operation: "upload", errorType: "StorageApiError", errorCode: "NoSuchBucket", status: "404" }]);
+  assert.doesNotMatch(JSON.stringify(messages), /Sensitive|email@|secret|https:|cropped-photo|11111111/);
 });
 
 test("private photo responses expose bytes only after authorization and never permit shared caching", async () => {

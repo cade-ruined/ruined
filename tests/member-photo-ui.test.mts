@@ -17,6 +17,7 @@ async function load(path: string, dependencies: Record<string, unknown> = {}) {
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", output)((name: string) => {
     if (name in dependencies) return dependencies[name];
+    if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     if (["react", "react/jsx-runtime"].includes(name)) return require(name);
     throw new Error(`Unexpected dependency ${name}`);
   }, cjsModule, cjsModule.exports);
@@ -24,6 +25,7 @@ async function load(path: string, dependencies: Record<string, unknown> = {}) {
 }
 
 const policy = await load("src/lib/membership/photo-policy.ts");
+const crop = await load("src/lib/membership/member-photo-crop.ts", { "./photo-policy": policy });
 const { safeMemberAvatarUrl } = await load("src/lib/membership/avatar-url.ts", { "./photo-policy": policy }) as unknown as { safeMemberAvatarUrl: (value: string | null) => string | null };
 const privateUrl = "/api/member-photos/11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222.webp";
 
@@ -37,14 +39,15 @@ test("avatar mapping preserves real portraits but rejects ambiguous and malforme
 });
 
 const { default: PhotoUpload } = await load("src/components/membership/MemberPhotoUpload.tsx", {
-  "@/lib/membership/photo-policy": policy,
+  "@/lib/membership/member-photo-crop": crop,
+  "@/components/membership/MemberPortraitState": { useMemberPortrait: (avatarUrl: string | null) => ({ avatarUrl, setAvatarUrl() {} }) },
   "next/image": ({ src, alt, unoptimized }: { src: string; alt: string; unoptimized: boolean }) => React.createElement("img", { src, alt, "data-unoptimized": String(unoptimized) }),
 });
 
 test("photo control renders accessible, square, independent upload controls without nested forms", () => {
   const html = renderToStaticMarkup(React.createElement(PhotoUpload, { avatarUrl: null, enabled: true, onChange: () => {} }));
   assert.match(html, /aspect-square/);
-  assert.match(html, /accept="image\/jpeg,image\/png,image\/webp"/);
+  assert.match(html, /accept="image\/jpeg,image\/png,image\/webp,image\/heic,image\/heif"/);
   assert.match(html, /aria-label="Choose profile photo"/);
   assert.match(html, /type="file"/);
   assert.match(html, /type="button"/);

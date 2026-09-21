@@ -20,6 +20,7 @@ const mod = { exports: {} };
 new Function("require", "module", "exports", compiled)((name) => {
   if (name === "react/jsx-runtime" || name === "react") return require(name);
   if (name === "@/components/membership/MemberJournal") return {__esModule:true,default:({writable})=>React.createElement("section",{"data-journal-writable":String(writable)})};
+  if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
   if (name === "next/image") return { __esModule: true, default: ({ src, alt }) => React.createElement("img", { src, alt }) };
   if (name === "@/components/membership/CircleMemberPortrait") return { __esModule: true, default: ({ person }) => React.createElement("span", null, person.displayName) };

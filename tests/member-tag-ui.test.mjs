@@ -65,6 +65,21 @@ test("joining requires a tag, retains private legal name, and never asks for ano
   assert.match(text(tree), /alongside your display name when you share your card or invitation/);
 });
 
+test("both profile forms protect unapplied photo drafts without disabling crop controls", async () => {
+  for (const kind of ["join", "profile"]) {
+    const view = await fixture(kind);
+    const photo = elements(view.render()).find(node => typeof node.props.onDraftChange === "function");
+    photo.props.onDraftChange(true);
+    const editing = view.render();
+    assert.equal(elements(editing).find(node => node.type === "button" && node.props.type === "submit").props.disabled, true);
+    assert.equal(elements(editing).some(node => node.type === "fieldset" && node.props.disabled), false);
+    assert.match(text(editing), /Use your photo or cancel the crop/);
+    await view.submit("valid_member"); assert.equal(view.calls.length, 0, "Enter-key submission must also preserve the photo draft");
+    photo.props.onDraftChange(false);
+    await view.submit("valid_member"); assert.equal(view.calls.length, 1);
+  }
+});
+
 test("both forms normalize pasted @tags before maxlength can consume the prefix", async () => {
   for (const kind of ["join", "profile"]) {
     const view = await fixture(kind), value = "A".repeat(24); let prevented = false;
@@ -118,7 +133,7 @@ test("taken tags can be corrected and retried while true profile version conflic
 
 test("home shows the saved display name and only adds a distinct secondary @tag", async () => {
   const state = hooks();
-  const Home = await load("src/components/platform/MemberHome.tsx", { react: state.react, "next/link": Stub, "next/image": Stub, "@/components/membership/MemberJournal": Stub, "@/components/membership/MemberProfileShare": Stub, "@/lib/membership/member-number": memberNumber, "@/lib/membership/access-policy": { memberCan: () => false }, "./MemberProfile.module.css": new Proxy({}, { get: (_, key) => key }) });
+  const Home = await load("src/components/platform/MemberHome.tsx", { react: state.react, "next/link": Stub, "next/image": Stub, "@/components/membership/MemberJournal": Stub, "@/components/membership/MemberPortraitState": { useMemberPortrait: avatarUrl => ({ avatarUrl }) }, "@/components/membership/MemberProfileShare": Stub, "@/lib/membership/member-number": memberNumber, "@/lib/membership/access-policy": { memberCan: () => false }, "./MemberProfile.module.css": new Proxy({}, { get: (_, key) => key }) });
   const render = (displayName, memberTag) => state.render(Home, { member: { displayName, profile: { memberTag, displayName }, circleMembers: [], identity: { standingState: "active" }, nextAction: { kind: "explore" } } });
   const named = render("Public Name", "member_tag");
   const heading = elements(named).find(node => node.type === "h1");

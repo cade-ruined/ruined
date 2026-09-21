@@ -42,6 +42,7 @@ export default function MemberProfileEditor({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [photoPending, setPhotoPending] = useState(false);
+  const [photoDraft, setPhotoDraft] = useState(false);
   const photoScopePending = Boolean(card && choices && (
     card.settings.publicEnabled !== choices.publicEnabled || card.settings.showPortrait !== choices.showPortrait
   ));
@@ -61,7 +62,7 @@ export default function MemberProfileEditor({
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!writable || pending || photoPending || conflict) return;
+    if (!writable || pending || photoPending || photoDraft || conflict) return;
     setPending(true);
     setError(null);
     setSaved(false);
@@ -149,6 +150,7 @@ export default function MemberProfileEditor({
                 available={photoStorageReady}
                 enabled={writable && !pending && !photoScopePending}
                 onBusyChange={setPhotoPending}
+                onDraftChange={setPhotoDraft}
                 onChange={(avatarUrl) => setProfile((current) => ({ ...current, directory: { ...current.directory, avatarUrl } }))}
               />
               {photoScopePending ? <p className="mt-3 text-xs leading-relaxed text-[var(--member-muted)]">Save your sharing choices before changing your photo.</p> : null}
@@ -285,8 +287,9 @@ export default function MemberProfileEditor({
             {error ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 font-[var(--font-body)] text-sm text-[var(--member-muted)]">{error}</p> : null}
             {conflict ? <p className="mt-3 text-sm">Reload to review the latest profile. This discards unsaved edits. <button type="button" className="underline underline-offset-4" onClick={() => window.location.reload()}>Reload profile</button></p> : null}
             {saved ? <p aria-live="polite" className="font-[var(--font-body)] text-sm text-[var(--member-muted)]">Profile saved.</p> : null}
+            {photoDraft ? <p className="mt-3 text-sm" role="status">Use your photo or cancel the crop before saving your profile.</p> : null}
           </div>
-          <button className={SUPPORT_ACTION_CLASS} disabled={!writable || pending || photoPending || conflict} type="submit">{pending ? "Saving…" : writable ? "Save profile" : "Read only"}</button>
+          <button className={SUPPORT_ACTION_CLASS} disabled={!writable || pending || photoPending || photoDraft || conflict} type="submit">{pending ? "Saving…" : writable ? "Save profile" : "Read only"}</button>
         </div>
       </form>
 

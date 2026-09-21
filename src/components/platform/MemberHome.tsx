@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import MemberJournal from "@/components/membership/MemberJournal";
+import { useMemberPortrait } from "@/components/membership/MemberPortraitState";
 import { memberCan } from "@/lib/membership/access-policy";
 import { memberTier } from "@/lib/membership/member-number";
 import type { MemberHomeSnapshot } from "@/lib/membership/model";
@@ -34,6 +35,7 @@ function MembershipRecord({member}:{member:MemberHomeSnapshot}){
   </div>;
 }
 export default function MemberHome({member,preview=false,timeline}:{member:MemberHomeSnapshot;preview?:boolean;timeline?:ReactNode}) {
+  const {avatarUrl}=useMemberPortrait(member.avatarUrl);
   const [tab,setTab]=useState<Tab>("journal");const [timelineVisited,setTimelineVisited]=useState(false);const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
   useEffect(()=>{function synchronize(){const value=window.location.hash.slice(1);if(tabs.includes(value as Tab)){setTab(value as Tab);if(value==="timeline")setTimelineVisited(true);}}synchronize();window.addEventListener("hashchange",synchronize);return()=>window.removeEventListener("hashchange",synchronize);},[]);
   function select(value:Tab){setTab(value);if(value==="timeline")setTimelineVisited(true);window.history.replaceState(null,"",`#${value}`);}
@@ -48,7 +50,7 @@ export default function MemberHome({member,preview=false,timeline}:{member:Membe
   const next=member.nextAction;const needsAttention=["onboarding","billing","account","foundations"].includes(next.kind);
   return <main className={styles.profile} data-member-profile>
     <header className={styles.identity}>
-      <figure className={styles.polaroid} aria-label={member.avatarUrl?"Member portrait":"Portrait not added"} data-member-polaroid><div className={styles.photo}><Image src={member.avatarUrl??"/membership/portrait-pending-editorial.webp"} alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/></div><Image className={styles.frame} src="/membership/polaroid-frame.png" alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/><figcaption>{member.avatarUrl?"the ruined project":"Photo pending"}</figcaption></figure>
+      <figure className={styles.polaroid} aria-label={avatarUrl?"Member portrait":"Portrait not added"} data-member-polaroid><div className={styles.photo}><Image src={avatarUrl??"/membership/portrait-pending-editorial.webp"} alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/></div><Image className={styles.frame} src="/membership/polaroid-frame.png" alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/><figcaption>{avatarUrl?"the ruined project":"Add your photo"}</figcaption>{!avatarUrl?<Link className="absolute inset-0 z-10" href="/my/profile" aria-label="Add your profile photo"/>:null}</figure>
       <div className={styles.nameBlock}>
         <h1 aria-label={profileName}><span className={styles.firstName}>{firstName}</span>{surname?<span className={styles.surname}>{surname}</span>:null}</h1>
         {tag?<p className={styles.memberTag}>{tag}</p>:null}

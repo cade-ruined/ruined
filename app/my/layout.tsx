@@ -6,6 +6,7 @@ import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario } from "@/lib/membership/p
 
 import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import MemberSessionContinuity from "@/components/membership/MemberSessionContinuity";
+import MemberPortraitState from "@/components/membership/MemberPortraitState";
 import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
@@ -40,6 +41,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
 
   return (
     <MemberSessionContinuity enabled={session?.status === "authenticated" || session?.status === "unavailable"} ownerId={viewer?.authUserId} initiallyUnavailable={session?.status === "unavailable"}>
+    <MemberPortraitState ownerId={viewer?.authUserId}>
     <MemberJourneyShell
       configuration={configuration}
       operatorRole={operatorRole}
@@ -48,6 +50,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
     </MemberJourneyShell>
+    </MemberPortraitState>
     </MemberSessionContinuity>
   );
 }

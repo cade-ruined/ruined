@@ -148,6 +148,7 @@ export default function JoinForm({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [photoPending, setPhotoPending] = useState(false);
+  const [photoDraft, setPhotoDraft] = useState(false);
   const profileComplete = onboarding.requiredFieldsComplete;
   const complimentary = (onboarding.membershipFunding === "operator" || onboarding.membershipFunding === "complimentary");
   const agreementComplete = Boolean(acceptanceId);
@@ -210,7 +211,7 @@ export default function JoinForm({
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (photoPending) return;
+    if (photoPending || photoDraft) return;
     if (!enabled || submitting) return;
     setError(null);
     setSubmitting(true);
@@ -591,12 +592,14 @@ export default function JoinForm({
               available={photoStorageReady}
               enabled={enabled && !submitting}
               onBusyChange={setPhotoPending}
+              onDraftChange={setPhotoDraft}
               onChange={(avatarUrl) => setOnboarding((current) => ({ ...current, profile: { ...current.profile, avatarUrl } }))}
             />
           </div>
 
           {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending} type="submit">{submitting ? "Saving profile" : "Save & review agreement"}</button>
+          {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft} type="submit">{submitting ? "Saving profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
 
