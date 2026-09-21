@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as crypto from "node:crypto";
+import postgres from "postgres";
 import ts from "typescript";
 import { loadPGliteForSchemaChecks } from "../../scripts/check-support-schema.mjs";
+import { Parameter, types as postgresTypes } from "../../node_modules/postgres/src/types.js";
 
 const source = path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 export const uuid = id => `00000000-0000-4000-8000-${String(id).padStart(12, "0")}`;
@@ -18,7 +20,11 @@ export const model = await load("src/lib/membership/invitation-model.ts");
 const waitlistModel = await load("src/lib/membership/waitlist-model.ts");
 const policy = await load("src/lib/membership/access-policy.ts");
 export async function fixture(t, { applyExpiry = true } = {}) {
-  const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite(); t.after(() => db.close());
+  const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite();
+  // This lazy client supplies only the real parameter helper and serializers.
+  // All queries execute in PGlite; no connection or provider call is opened.
+  const driver = postgres({ host: "127.0.0.1", port: 1, max: 1, prepare: false });
+  t.after(async () => { await db.close(); await driver.end(); });
   const foundation = await source("db/migrations/20260819_platform_foundation.sql");
   const outbox = foundation.match(/create table if not exists integration_outbox \([\s\S]*?\n\);/)[0];
   await db.exec(`
@@ -44,8 +50,17 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   if (applyExpiry) await db.exec(await source("db/migrations/20260924000000_personal_invitation_admission.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260925000000_complimentary_member_invitations.sql"));
   function wrap(client) {
-    const sql = (strings, ...params) => client.query(strings.reduce((result, part, i) => result + (i ? `$${i}` : "") + part, ""), params).then(result => result.rows);
-    sql.begin = callback => client.transaction(tx => callback(wrap(tx))); sql.json = JSON.stringify; return sql;
+    const sql = (strings, ...values) => {
+      const parameters = values.map((value, index) => {
+        if (value instanceof Parameter) return driver.options.serializers[value.type](value.value);
+        // PostgreSQL describes an untyped parameter cast to JSONB as OID 3802.
+        // postgres.js then serializes it as JSON, including quoted strings.
+        if (/^\s*::jsonb\b/.test(strings[index + 1]) && value !== null) return postgresTypes.json.serialize(value);
+        return value instanceof Date ? postgresTypes.date.serialize(value) : value;
+      });
+      return client.query(strings.reduce((result, part, i) => result + (i ? `$${i}` : "") + part, ""), parameters).then(result => result.rows);
+    };
+    sql.begin = callback => client.transaction(tx => callback(wrap(tx))); sql.json = driver.json; return sql;
   }
   const sql = wrap(db);
   async function identity(auth) {

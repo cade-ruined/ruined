@@ -3,14 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
-async function load(path, dependencies = {}) {
+async function load(path, dependencies = {}, globals = {}) {
   const output = ts.transpileModule(await readFile(new URL(`../${path}`, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", output)(name => {
+  new Function("require", "module", "exports", ...Object.keys(globals), output)(name => {
     assert.ok(name in dependencies, `Unexpected dependency: ${name}`); return dependencies[name];
-  }, loaded, loaded.exports);
+  }, loaded, loaded.exports, ...Object.values(globals));
   return loaded.exports;
 }
 const invitation = await load("src/lib/membership/invitation-model.ts");
@@ -18,10 +18,10 @@ const model = await load("src/lib/membership/personal-invitation-model.ts", { ".
 const id = "11111111-1111-4111-8111-111111111111";
 const input = { recipientName: "Alex", recipientEmail: "alex@example.test", requestId: id, sendEmail: true };
 async function fixture() {
-  const state = { viewer: { authUserId: "owner-id" }, trusted: true, mode: "connected", ready: true };
-  const calls = [], jobs = [];
+  const state = { viewer: { authUserId: "owner-id" }, trusted: true, mode: "connected", ready: true, failure: null };
+  const calls = [], jobs = [], logs = [];
   const snapshot = { invitations: [], counts: { created: 0 } };
-  const repository = Object.fromEntries(["getOwnPersonalInvitations", "createOwnPersonalInvitation", "revokeOwnPersonalInvitation", "retryOwnPersonalInvitationEmail", "endOwnInvitationComplimentaryAccess"].map(name => [name, async (...args) => { calls.push({ name, args }); return snapshot; }]));
+  const repository = Object.fromEntries(["getOwnPersonalInvitations", "createOwnPersonalInvitation", "revokeOwnPersonalInvitation", "retryOwnPersonalInvitationEmail", "endOwnInvitationComplimentaryAccess"].map(name => [name, async (...args) => { calls.push({ name, args }); if (state.failure) throw state.failure; return snapshot; }]));
   const api = await load("src/lib/membership/personal-invitation-api.ts", {
     "next/server": { after: job => jobs.push(job), NextResponse: { json: (body, options) => Response.json(body, options) } },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => state.trusted },
@@ -31,12 +31,25 @@ async function fixture() {
     "./personal-invitation-model": model,
     "./personal-invitation-repository": repository,
     "./personal-invitation-delivery": { getPersonalInvitationEmailReady: () => state.ready, processPersonalInvitationEmailBatch: async (...args) => { calls.push({ name: "send", args }); } },
-  });
+  }, { console: { error: (...args) => logs.push(args) } });
   const request = (method = "GET", body = input) => new Request("https://members.example.test/api/my/invitations", {
     method, ...(method !== "GET" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
   });
-  return { ...api, state, calls, jobs, request };
+  return { ...api, state, calls, jobs, logs, request };
 }
+
+test("database failures log a safe diagnostic code without recipient details or queued email", async () => {
+  const f = await fixture();
+  f.state.failure = Object.assign(new Error("private@example.test query details"), { name: "k", code: "23514", detail: "Private founding arrangement" });
+  const response = await f.handlePersonalInvitationRequest(f.request("POST"));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "Your invitations are temporarily unavailable. Try again." });
+  assert.deepEqual(f.logs, [["Personal invitation request failed", { errorType: "k", databaseCode: "23514" }]]);
+  assert.equal(f.jobs.length, 0);
+  f.state.failure.code = "private@example.test";
+  await f.handlePersonalInvitationRequest(f.request("POST"));
+  assert.deepEqual(f.logs.at(-1), ["Personal invitation request failed", { errorType: "k" }]);
+});
 
 test("personal invitation owner routes require sign-in, trusted writes and connected mode", async () => {
   const f = await fixture();

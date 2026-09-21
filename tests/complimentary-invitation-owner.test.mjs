@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fixture, first, second, newcomer, uuid } from "./helpers/personal-invitation-fixture.mjs";
 
@@ -8,9 +9,11 @@ async function setup(t) {
   const f = await fixture(t);
   await f.db.exec(`create table stripe_subscriptions(member_id uuid, stripe_status text);
     create table stripe_checkout_attempts(member_id uuid, status text);
-    create table stripe_checkout_sessions(member_id uuid, session_status text);
-    create table operator_audit_events(actor_auth_user_id uuid, action text, subject_type text, subject_id text,
-      reason text, after_snapshot jsonb, metadata jsonb, dedupe_key text unique);`);
+    create table stripe_checkout_sessions(member_id uuid, session_status text);`);
+  const operations = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_05_content_operations.sql", import.meta.url), "utf8");
+  const auditTable = operations.match(/create table if not exists public\.operator_audit_events \([\s\S]*?\n\);/)?.[0];
+  assert.ok(auditTable, "Use the actual audit JSON object constraints rather than a permissive mock table");
+  await f.db.exec(auditTable);
   const admin = who => f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [who.auth]);
   async function accept(invite) {
     await f.addMember(newcomer, false, true);
@@ -52,6 +55,9 @@ test("complimentary terms are fixed, private reasons never reach the recipient, 
     await assert.rejects(f.create({ ...value, ...change }), { status: 409 });
   }
   assert.equal((await f.db.query("select count(*)::int n from operator_audit_events")).rows[0].n, 1);
+  assert.deepEqual((await f.db.query("select after_snapshot,jsonb_typeof(after_snapshot) as type from operator_audit_events")).rows[0], {
+    after_snapshot: { membershipType: "complimentary", endsAt: value.complimentaryEndsAt }, type: "object",
+  }, "The real postgres.js serializer must retain a JSON object through invitation creation");
   assert.equal((await f.db.query("select count(*)::int n from member_complimentary_grants")).rows[0].n, 0, "Creating the invitation grants no access");
 });
 
@@ -87,4 +93,7 @@ test("ending redeemed complimentary access is owner-scoped, audited, irreversibl
   const grant = (await f.db.query("select * from member_complimentary_grants")).rows;
   assert.equal(grant.length, 1); assert.ok(grant[0].revoked_at);
   assert.equal((await f.db.query("select count(*)::int n from operator_audit_events where action='complimentary_invitation.ended'")).rows[0].n, 1);
+  assert.deepEqual((await f.db.query("select after_snapshot,jsonb_typeof(after_snapshot) as type from operator_audit_events where action='complimentary_invitation.ended'")).rows[0], {
+    after_snapshot: { grantId: ended.complimentaryGrant.id }, type: "object",
+  }, "Ending complimentary access uses the same correctly typed durable audit record");
 });

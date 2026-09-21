@@ -59,7 +59,11 @@ export async function handlePersonalInvitationRequest(request: Request, invitati
     return json({ error: "Method not allowed." }, 405);
   } catch (error) {
     if (error instanceof MemberInvitationError) return json({ error: error.message }, error.status);
-    console.error("Personal invitation request failed", { errorType: error instanceof Error ? error.name : "UnknownError" });
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    console.error("Personal invitation request failed", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+      ...(typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? { databaseCode: code } : {}),
+    });
     return json({ error: "Your invitations are temporarily unavailable. Try again." }, 503);
   }
 }

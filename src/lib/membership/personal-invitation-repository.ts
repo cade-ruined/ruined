@@ -57,9 +57,9 @@ async function requireComplimentaryAdministrator(tx: TransactionSql, authUserId:
   if (!row?.allowed) throw new MemberInvitationError(403, "Only an administrator can grant or end complimentary membership.");
 }
 
-async function auditComplimentary(tx: TransactionSql, authUserId: string, invitationId: string, action: string, reason: string, details: Record<string, unknown>) {
+async function auditComplimentary(tx: TransactionSql, authUserId: string, invitationId: string, action: string, reason: string, details: Record<string, string | null>) {
   await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,reason,after_snapshot,metadata,dedupe_key)
-    values(${authUserId}::uuid,${action},'member_personal_invitation',${invitationId},${reason},${JSON.stringify(details)}::jsonb,'{}'::jsonb,
+    values(${authUserId}::uuid,${action},'member_personal_invitation',${invitationId},${reason},${tx.json(details)}::jsonb,'{}'::jsonb,
       ${`${action}:${invitationId}`})`;
 }
 
