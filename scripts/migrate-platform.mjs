@@ -52,6 +52,7 @@ const migrations = [
   "../db/migrations/20260923000000_personal_member_invitations.sql",
   "../db/migrations/20260924000000_personal_invitation_admission.sql",
   "../db/migrations/20260925000000_complimentary_member_invitations.sql",
+  "../db/migrations/20260926000000_member_number_zero.sql",
 ];
 
 function migrationBody(migration, migrationName) {

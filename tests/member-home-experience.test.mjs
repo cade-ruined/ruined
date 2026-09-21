@@ -113,7 +113,7 @@ test("the owner header uses full name for a generated tag without changing publi
 });
 
 test("profile badge uses the permanent number and leaves unassigned members unnumbered", () => {
-  for (const [number, label, display] of [[5,"Founders","0005"],[6,"Originals","0006"],[51,"Pillars","0051"],[101,"Builders","0101"],[201,"Members","0201"]]) {
+  for (const [number, label, display] of [[0,"Founders","0000"],[4,"Founders","0004"],[5,"Founders","0005"],[6,"Originals","0006"],[51,"Pillars","0051"],[101,"Builders","0101"],[201,"Members","0201"]]) {
     const member=memberFixture();member.memberNumber=number;
     const tree=render(member), badge=elements(tree).find(node=>attr(node,"class")==="memberBadge");
     assert.match(text(badge),new RegExp(`${label}.*No\\. ${display}`));

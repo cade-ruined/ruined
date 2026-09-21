@@ -7,6 +7,7 @@ import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixt
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const migration = await read("db/migrations/20260920210000_member_numbers.sql");
+const zeroMigration = await read("db/migrations/20260926000000_member_number_zero.sql");
 const output = ts.transpileModule(await read("src/lib/membership/member-number.ts"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const loaded = { exports: {} };
 new Function("module", "exports", output)(loaded, loaded.exports);
@@ -35,7 +36,10 @@ async function fixture(t, migrate = true) {
     revoke all on ruined_members from public,anon,authenticated;
   `);
   await installOperatorFundingFunctions(db);
-  if (migrate) await db.exec(migration);
+  if (migrate) {
+    await db.exec(migration);
+    await db.exec(zeroMigration);
+  }
 
   async function add(n, { comped = false, completed = false, access = "2020-01-01", activated = null,
     completedAt = access, historicalComped = false, closed = false, legacy = false } = {}) {
@@ -66,10 +70,79 @@ async function fixture(t, migrate = true) {
 }
 
 test("tiers use exact approved ranges, pad without truncating, and never invent a missing number", () => {
-  for (const [number, label] of [[1,"Founders"],[5,"Founders"],[6,"Originals"],[50,"Originals"],[51,"Pillars"],[100,"Pillars"],[101,"Builders"],[200,"Builders"],[201,"Members"],[10000,"Members"]]) {
+  for (const [number, label] of [[0,"Founders"],[1,"Founders"],[5,"Founders"],[6,"Originals"],[50,"Originals"],[51,"Pillars"],[100,"Pillars"],[101,"Builders"],[200,"Builders"],[201,"Members"],[10000,"Members"]]) {
     assert.deepEqual(memberTier(number), { label, displayNumber: String(number).padStart(4, "0") });
   }
-  for (const invalid of [null,undefined,0,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1,"1"]) assert.equal(memberTier(invalid), null);
+  for (const invalid of [null,undefined,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1,"1"]) assert.equal(memberTier(invalid), null);
+});
+
+test("zero-number migration preserves assigned places and guards; assigned zero is permanent", async t => {
+  const { db, add, complete, number, counter } = await fixture(t, false);
+  await add(1, { comped: true, completed: true });
+  await db.exec(migration);
+  const before = (await db.query("select * from private.member_number_assignments order by member_number")).rows;
+  const guardState = async () => (await db.query(`select tgname,tgenabled from pg_trigger
+    where not tgisinternal and tgname in ('ruined_members_member_number_guard','member_number_assignment_guard','member_number_counter_guard')
+    order by tgname`)).rows;
+  const guards = await guardState();
+  await db.exec(zeroMigration);
+  assert.deepEqual((await db.query("select * from private.member_number_assignments order by member_number")).rows, before);
+  assert.deepEqual(await guardState(), guards);
+  assert.equal(await number(1), 1);
+  assert.equal(await counter(), 1);
+
+  await add(2, { comped: true });
+  await db.query("insert into private.member_number_assignments(member_number,member_id,activated_at) values(0,$1,'2020-01-01')", [id(2)]);
+  await db.query("update ruined_members set member_number=0 where id=$1", [id(2)]);
+  await complete(2);
+  assert.equal(await number(2), 0);
+  assert.equal(await counter(), 1, "zero must be recognized as an existing assignment");
+  for (const value of [null,2,-1]) {
+    await assert.rejects(db.query("update ruined_members set member_number=$1 where id=$2", [value,id(2)]), /permanent/);
+  }
+  await assert.rejects(db.exec("insert into private.member_number_assignments(member_number,activated_at) values(-1,'2020-01-01')"), { code: "23514" });
+  await assert.rejects(db.exec("insert into private.member_number_assignments(member_number,activated_at) values(0,'2020-01-01')"), { code: "23505" });
+  await assert.rejects(db.exec("delete from private.member_number_assignments where member_number=0"), /cannot be reused/);
+  await db.query("delete from ruined_members where id=$1", [id(2)]);
+  assert.equal((await db.query("select member_id from private.member_number_assignments where member_number=0")).rows[0].member_id, null);
+  await add(3, { comped: true });
+  await complete(3);
+  assert.equal(await number(3), 2);
+});
+
+test("founder places 0000 through 0004 retain reserved 0005; the next member gets 0006 transactionally", async t => {
+  const { db, add, complete, number, counter } = await fixture(t);
+  // Seed the authorized correction's final state through the same guarded
+  // ledger linkage used by normal allocation. No immutable guard is bypassed.
+  for (let founder = 1; founder <= 5; founder++) {
+    await add(founder, { comped: true });
+    await db.query("insert into private.member_number_assignments(member_number,member_id,activated_at) values($1,$2,'2020-01-01')", [founder - 1,id(founder)]);
+    await db.query("update ruined_members set member_number=$1 where id=$2", [founder - 1,id(founder)]);
+    await db.exec("update private.member_number_counter set last_number=last_number+1 where singleton");
+  }
+  await db.exec("insert into private.member_number_assignments(member_number,activated_at) values(5,'2020-01-01')");
+  const reservations = (await db.query("select member_number,member_id from private.member_number_assignments order by member_number")).rows;
+  assert.deepEqual(reservations.map(row => row.member_number), [0,1,2,3,4,5]);
+  assert.equal(reservations[5].member_id, null);
+  assert.equal(await counter(), 5);
+  await complete(1);
+  assert.equal(await number(1), 0);
+  assert.equal(await counter(), 5);
+
+  await add(6, { comped: true });
+  await assert.rejects(db.transaction(async tx => {
+    await complete(6, tx);
+    assert.equal((await tx.query("select member_number from ruined_members where id=$1", [id(6)])).rows[0].member_number, 6);
+    throw new Error("FOUNDER_ALLOCATION_ROLLBACK");
+  }), /FOUNDER_ALLOCATION_ROLLBACK/);
+  assert.equal(await number(6), null);
+  assert.equal(await counter(), 5);
+  assert.deepEqual((await db.query("select member_number,member_id from private.member_number_assignments order by member_number")).rows, reservations);
+  await complete(6);
+  await complete(6);
+  assert.equal(await number(6), 6);
+  assert.equal(await counter(), 6);
+  assert.deepEqual((await db.query("select member_number,member_id from private.member_number_assignments where member_number<=5 order by member_number")).rows, reservations);
 });
 
 test("backfill orders actual completed access deterministically, preserves historical comped members and excludes pending/test/unknown dates", async t => {
@@ -176,7 +249,7 @@ test("private allocation storage and functions deny browser roles", async t => {
   assert.equal(rows.length, 2); assert.ok(rows.every(row => row.relrowsecurity));
   for (const role of ["anon","authenticated"]) {
     await db.exec(`set role ${role}`);
-    for (const query of ["select * from private.member_number_assignments","select * from private.member_number_counter","select private.ruined_allocate_member_number('00000000-0000-4000-8000-000000000001')","update ruined_members set member_number=1"]) {
+    for (const query of ["select * from private.member_number_assignments","select * from private.member_number_counter","select private.ruined_allocate_member_number('00000000-0000-4000-8000-000000000001')","update ruined_members set member_number=0","insert into private.member_number_assignments(member_number,activated_at) values(0,now())"]) {
       await assert.rejects(db.exec(query), { code: "42501" });
     }
     await db.exec("reset role");

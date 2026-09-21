@@ -107,7 +107,7 @@ export async function getHistoricalMemberDirectory(actorAuthUserId: string, inpu
   const query = (input.query ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   const numberMatch = /^(?:no\.\s*)?(\d+)$/i.exec(query);
   const requestedNumber = numberMatch ? Number(numberMatch[1]) : NaN;
-  const memberNumber = Number.isSafeInteger(requestedNumber) && requestedNumber > 0 && requestedNumber <= 2147483647 ? requestedNumber : null;
+  const memberNumber = Number.isSafeInteger(requestedNumber) && requestedNumber >= 0 && requestedNumber <= 2147483647 ? requestedNumber : null;
   const requestedPage = Number.isSafeInteger(input.page) && (input.page ?? 0) > 0 ? input.page! : 1;
   return getApplicationDatabase().begin(async (tx) => {
     await tx`set transaction isolation level repeatable read read only`;

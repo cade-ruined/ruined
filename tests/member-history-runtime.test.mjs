@@ -105,6 +105,18 @@ test("historical counts and search include only saved deleted records and retain
   assert.equal(await repository.getHistoricalMemberRecord(admin,id(104)), null);
 });
 
+test("historical number search preserves the zero-numbered founder", async t => {
+  const { repository, add } = await fixture(t);
+  await add(101, { name: "Founding member", tag: "founder", number: 0 });
+  await add(102, { name: "Another member", tag: null, number: null });
+  for (const query of ["0", "0000", "No. 0000"]) {
+    const result = await repository.getHistoricalMemberDirectory(admin, { query });
+    assert.equal(result.totalResults, 1, query);
+    assert.equal(result.members[0].memberId, id(101));
+    assert.equal(result.members[0].memberNumber, 0);
+  }
+});
+
 test("historical directory paginates a stable separate count and clamps invalid or excessive pages", async t => {
   const { repository, add } = await fixture(t);
   for (let n = 101; n <= 127; n++) await add(n);
