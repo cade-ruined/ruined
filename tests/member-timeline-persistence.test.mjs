@@ -141,6 +141,8 @@ test("Timeline writers recheck actual entitlement after the initial identity rea
   ]) {
     for (const write of [
       () => f.repository.saveMemberTimeline(ids.auth, [], saved.revision),
+      () => f.repository.upsertMemberTimelineEntry(ids.auth, event(), saved.revision),
+      () => f.repository.deleteMemberTimelineEntry(ids.auth, saved.entries[0].id, saved.revision),
       () => f.repository.completeMemberFoundationRequirement(ids.auth, "timeline"),
       () => f.repository.completeMemberFoundationRequirement(ids.auth, "future_letter"),
     ]) {
@@ -350,4 +352,85 @@ test("additive month migration preserves every existing entry/history field, ide
   await assert.rejects(db.query("update member_timeline_entries set member_id=$1", [ids.otherMember]), /identity fields are immutable/);
   await assert.rejects(db.exec("update member_timeline_entry_versions set entry_month=1"), /append.only/i);
   await assert.rejects(db.exec("delete from member_timeline_entry_versions"), /append.only/i);
+});
+
+test("Timelines beyond100 entries support one-row editing and deletion without rewriting unrelated history or positions", async t => {
+  const { db, repository, versionCount, executedQueries } = await fixture(t);
+  const initial = await repository.saveMemberTimeline(ids.auth, Array.from({ length: 120 }, (_, index) => ({
+    ...event(`Moment ${index + 1}`, 2000 + index % 5), month: index % 12 + 1,
+  })), "0");
+  assert.equal(initial.entries.length, 120);
+  assert.equal(await versionCount(), 120);
+  const added = await repository.upsertMemberTimelineEntry(ids.auth, { ...event("One more", 1999), month: 1 }, initial.revision);
+  assert.equal(added.entries.length, 121);
+  const target = added.entries.find(entry => entry.title === "One more");
+  assert.equal(target.position, 121);
+  assert.equal(added.entries[0].id, target.id);
+  const untouched = () => db.query("select to_jsonb(e) as entry from member_timeline_entries e where id<>$1 order by id", [target.id]);
+  const untouchedHistory = () => db.query("select to_jsonb(v) as version from member_timeline_entry_versions v where timeline_entry_id<>$1 order by id", [target.id]);
+  const before = (await untouched()).rows;
+  const beforeHistory = (await untouchedHistory()).rows;
+  const previousQueries = executedQueries.length;
+  const edited = await repository.upsertMemberTimelineEntry(ids.auth, { ...target, month: 12 }, added.revision);
+  assert.equal(edited.entries.find(e => e.id === target.id).position, 121);
+  assert.equal(edited.entries.find(e => e.id === target.id).month, 12);
+  assert.equal(await versionCount(), 122);
+  assert.equal(executedQueries.slice(previousQueries).filter(query => /update member_timeline_entries/.test(query)).length, 1);
+  assert.deepEqual((await untouched()).rows, before);
+  assert.deepEqual((await untouchedHistory()).rows, beforeHistory);
+  const { month, ...legacyEntry } = edited.entries.find(e => e.id === target.id);
+  assert.equal(month, 12);
+  const noop = await repository.upsertMemberTimelineEntry(ids.auth, legacyEntry, edited.revision);
+  assert.deepEqual(noop, edited);
+  assert.equal(await versionCount(), 122);
+  const legacyEdit = await repository.upsertMemberTimelineEntry(ids.auth, { ...legacyEntry, title: "Old client title edit" }, noop.revision);
+  assert.equal(legacyEdit.entries.find(e => e.id === target.id).month, 12);
+  const cleared = await repository.upsertMemberTimelineEntry(ids.auth, { ...legacyEntry, month: null }, legacyEdit.revision);
+  assert.equal(cleared.entries.find(e => e.id === target.id).month, null);
+  const removed = await repository.deleteMemberTimelineEntry(ids.auth, target.id, cleared.revision);
+  assert.equal(removed.entries.length, 120);
+  assert.deepEqual((await untouched()).rows, before);
+  assert.deepEqual((await untouchedHistory()).rows, beforeHistory);
+  const next = await repository.upsertMemberTimelineEntry(ids.auth, event("After deletion", 2000), removed.revision);
+  assert.equal(next.entries.find(e => e.title === "After deletion").position, 122, "Soft-deleted positions are not recycled");
+  assert.equal(await versionCount(), 126);
+});
+
+test("single-entry mutations retain owner isolation, stale revision protection and one concurrent winner", async t => {
+  const { repository, versionCount } = await fixture(t);
+  const own = await repository.upsertMemberTimelineEntry(ids.auth, { ...event(), month: 3 }, "0");
+  const other = await repository.upsertMemberTimelineEntry(ids.otherAuth, event("Private other moment"), "0");
+  const versions = await versionCount();
+  for (const write of [
+    () => repository.upsertMemberTimelineEntry(ids.auth, other.entries[0], own.revision),
+    () => repository.deleteMemberTimelineEntry(ids.auth, other.entries[0].id, own.revision),
+    () => repository.deleteMemberTimelineEntry(ids.auth, own.entries[0].id, "0"),
+    () => repository.upsertMemberTimelineEntry(ids.auth, { ...own.entries[0], month: 10 }, "0"),
+  ]) await assert.rejects(write, repository.MembershipConflictError);
+  assert.equal(await versionCount(), versions);
+  assert.deepEqual(await repository.getMemberTimeline(ids.otherAuth), other);
+  assert.deepEqual(await repository.getMemberTimeline(ids.auth), own);
+  const results = await Promise.allSettled([1, 12].map(month => repository.upsertMemberTimelineEntry(ids.auth, { ...own.entries[0], month }, own.revision)));
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.ok(results.find(result => result.status === "rejected").reason instanceof repository.MembershipConflictError);
+  const winner = results.find(result => result.status === "fulfilled").value;
+  const removed = await repository.deleteMemberTimelineEntry(ids.auth, winner.entries[0].id, winner.revision);
+  await assert.rejects(repository.deleteMemberTimelineEntry(ids.auth, winner.entries[0].id, removed.revision), repository.MembershipConflictError);
+  await assert.rejects(repository.upsertMemberTimelineEntry(ids.auth, winner.entries[0], removed.revision), repository.MembershipConflictError);
+  assert.deepEqual(await repository.getMemberTimeline(ids.auth), removed);
+});
+
+test("single-entry actions reject invalid IDs, months and missing revisions without creating history", async t => {
+  const { repository, versionCount } = await fixture(t);
+  for (const revision of [undefined, null, "", "-1", "1.0", "invalid"]) {
+    await assert.rejects(repository.upsertMemberTimelineEntry(ids.auth, event(), revision), repository.MembershipConflictError);
+    await assert.rejects(repository.deleteMemberTimelineEntry(ids.auth, ids.member, revision), repository.MembershipConflictError);
+  }
+  for (const id of ["", "other", null, undefined]) {
+    await assert.rejects(repository.deleteMemberTimelineEntry(ids.auth, id, "0"), repository.MembershipInputError);
+  }
+  for (const month of [0, 13, 1.5, "2"]) {
+    await assert.rejects(repository.upsertMemberTimelineEntry(ids.auth, { ...event(), month }, "0"), repository.MembershipInputError);
+  }
+  assert.equal(await versionCount(), 0);
 });

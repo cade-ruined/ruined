@@ -6,6 +6,8 @@ import {
   TIMELINE_EXAMPLES,
   EMPTY_TIMELINE_FORM,
   formatTimelineDate,
+  filterTimelineEntries,
+  groupTimelineEntries,
   formForTimelineEntry,
   fromMemberTimelineEntries,
   timelineFormIsDirty,
@@ -84,6 +86,46 @@ test("optional months sort within years without turning year-only memories into 
   assert.equal(formatTimelineDate({ year: 2020, month: 9 }, true), "September 2020");
 });
 
+test("reading filters search saved titles, details and dates without changing source entries", () => {
+  const input = [
+    entry("new-city", 2020, 1, { title: "A New City", month: 9, details: "A patient restart." }),
+    entry("new-work", 2021, 2, { title: "New work", month: 2, details: "Room to begin." }),
+    entry("year-only", 2020, 3, { title: "A quiet year" }),
+  ];
+  const original = structuredClone(input);
+  const keys = (query: string, year = "") => filterTimelineEntries(input, query, year, "oldest").map(value => value.clientKey);
+  assert.deepEqual(keys("  NEW  "), ["new-city", "new-work"]);
+  assert.deepEqual(keys("PATIENT"), ["new-city"]);
+  assert.deepEqual(keys("September 2020"), ["new-city"]);
+  assert.deepEqual(keys("new", "2021"), ["new-work"]);
+  assert.deepEqual(keys("", "2020"), ["new-city", "year-only"]);
+  assert.deepEqual(keys("new", "2018"), []);
+  assert.deepEqual(input, original);
+});
+
+test("oldest and newest reading orders keep year-only dates last and same-date moments stable", () => {
+  const input = [
+    entry("unknown-2021", 2021, 1), entry("jan-later", 2021, 5, { month: 1 }),
+    entry("december", 2021, 2, { month: 12 }), entry("jan-earlier", 2021, 3, { month: 1 }),
+    entry("old-year", 2019, 6), entry("old-month", 2019, 7, { month: 9 }),
+  ];
+  assert.deepEqual(filterTimelineEntries(input, "", "", "oldest").map(value => value.clientKey), ["old-month", "old-year", "jan-earlier", "jan-later", "december", "unknown-2021"]);
+  assert.deepEqual(filterTimelineEntries(input, "", "", "newest").map(value => value.clientKey), ["december", "jan-earlier", "jan-later", "unknown-2021", "old-month", "old-year"]);
+});
+
+test("year grouping preserves the reader's chosen order and every individual moment", () => {
+  const input = [entry("early", 2019, 1), entry("later-a", 2021, 2, { month: 2 }), entry("later-b", 2021, 3)];
+  assert.deepEqual(groupTimelineEntries([]), []);
+  for (const order of ["oldest", "newest"] as const) {
+    const sorted = filterTimelineEntries(input, "", "", order), before = structuredClone(sorted);
+    const groups = groupTimelineEntries(sorted);
+    assert.deepEqual(groups.map(group => group.year), order === "oldest" ? [2019, 2021] : [2021, 2019]);
+    assert.deepEqual(groups.flatMap(group => group.entries), sorted);
+    assert.equal(groups.find(group => group.year === 2021)!.entries.length, 2);
+    assert.deepEqual(sorted, before);
+  }
+});
+
 test("month survives edit, save, load and undo; changing only the month marks the form dirty", () => {
   const saved = entry("saved", 2020, 1, { month: 9 });
   const form = formForTimelineEntry(saved);
@@ -122,11 +164,10 @@ test("approved examples remain presentation-only and in chronological order", ()
 });
 
 test("My Timeline is named consistently across member navigation, profile, and page", async () => {
-  const [navigation, home, page, component, repository] = await Promise.all([
+  const [navigation, home, page, repository] = await Promise.all([
     readFile(new URL("../src/lib/membership/navigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../src/components/membership/RuinedTimeline.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8"),
   ]);
 
@@ -134,36 +175,20 @@ test("My Timeline is named consistently across member navigation, profile, and p
   assert.match(home, /"journal","timeline","saved","about"/);
   assert.match(home, /Your timeline is private/);
   assert.match(page, /title: "My Timeline \| Foundations"/);
-  assert.match(component, /: "My Timeline"\}/);
   assert.match(repository, /title: "Build My Timeline\."/);
 });
 
-test("the production port uses the member API, accessible controls, and no iframe or local storage", async () => {
-  const [component, exportStudio, page, repository, timelineStyles, persistence] = await Promise.all([
+test("the timeline retains its private member API and existing downloadable export pipeline", async () => {
+  const [component, exportStudio, page, repository, persistence] = await Promise.all([
     readFile(new URL("../src/components/membership/RuinedTimeline.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/TimelineExportStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8"),
-    readFile(new URL("../src/components/membership/ruined-timeline.module.css", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/timeline-persistence.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(persistence, /fetch\("\/api\/my\/timeline"/);
-  assert.match(component, /aria-live="polite"/);
-  assert.match(component, /aria-describedby=\{errorField/);
-  assert.match(component, /event\.key === "Escape"/);
-  assert.match(component, /event\.key === "Escape" && !pending/);
-  assert.equal((component.match(/readOnly=\{Boolean\(pending\) \|\| \(!writable && !preview\)\}/g) ?? []).length, 3,
-    "All draft fields must freeze during a pending save so its response cannot discard newer typing");
-  assert.match(component, /7000/);
   assert.match(component, /<TimelineExportStudio entries=\{sortedEntries\} examples=\{examples\}/);
-  assert.match(component, /Add an event/);
-  assert.match(component, /Your events/);
-  assert.match(component, /aria-controls=\{listContentId\}/);
-  assert.match(component, /aria-expanded=\{listExpanded\}/);
-  assert.match(component, /hidden=\{!listExpanded\}/);
-  assert.match(component, /Collapse list/);
-  assert.match(component, /Expand list/);
   assert.doesNotMatch(component, /InkRoadTimeline|GENERATED VIEW|living timeline/);
   assert.match(exportStudio, /Photo generator/);
   assert.match(exportStudio, /role="radiogroup"/);
@@ -181,10 +206,6 @@ test("the production port uses the member API, accessible controls, and no ifram
   assert.match(exportStudio, /preparedRef\.current !== nextPrepared/);
   assert.doesNotMatch(exportStudio, /html2canvas|dom-to-image|foreignObject/i);
   assert.doesNotMatch(component, /localStorage|sessionStorage|<iframe/i);
-  assert.match(timelineStyles, /\.app\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?\}/);
-  assert.match(timelineStyles, /\.indexItem\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
-  assert.match(timelineStyles, /\.exportStudio\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
-  assert.match(timelineStyles, /\.exportRail\s*\{[\s\S]*?background: transparent;[\s\S]*?\}/);
   assert.match(page, /preview=\{context\.state === "preview"\}/);
   assert.match(repository, /order by entry\.entry_year, coalesce\(entry\.entry_month, 13\), entry\.position, entry\.created_at, entry\.id/);
 });

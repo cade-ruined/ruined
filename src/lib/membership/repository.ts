@@ -3180,8 +3180,8 @@ export type MemberTimelineInput = Array<{
 }>;
 
 function validateTimelineInput(input: MemberTimelineInput) {
-  if (!Array.isArray(input) || input.length > 50) {
-    throw new MembershipInputError("A Timeline can hold up to 50 entries.");
+  if (!Array.isArray(input)) {
+    throw new MembershipInputError("A valid list of Timeline entries is required.");
   }
   const seen = new Set<string>();
   return input.map((entry, index) => {
@@ -3333,6 +3333,74 @@ export async function saveMemberTimeline(
     return readTimelineRecord(tx, identity.memberId);
   });
   return { access, completedAt: requirements.timeline.completedAt, ...record };
+}
+
+/** Single-entry writes retain every other entry and its durable within-date position. */
+async function mutateMemberTimelineEntry(
+  authUserId: string,
+  mutation: { entry: MemberTimelineInput[number] } | { id: string },
+  expectedRevision: string,
+): Promise<MemberTimelineSnapshot> {
+  const identity = await requireMemberIdentity(authUserId);
+  const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
+  if (!memberCan(access, "foundations.write")) throw new MembershipAccessDeniedError();
+  if (typeof expectedRevision !== "string" || !/^\d{1,20}$/.test(expectedRevision)) {
+    throw new MembershipConflictError("Load the latest saved events before saving. Your draft has not been changed.");
+  }
+  const entry = "entry" in mutation ? validateTimelineInput([mutation.entry])[0]! : null;
+  const targetId = entry ? entry.id : (mutation as { id: string }).id;
+  if (!entry && (typeof targetId !== "string" || !UUID.test(targetId))) {
+    throw new MembershipInputError("A Timeline entry identifier is not valid.");
+  }
+  const requirements = await getMemberFoundationRequirements(authUserId);
+  const record = await getApplicationDatabase().begin(async tx => {
+    await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 45)`;
+    await requireLockedFoundationAccess(tx, identity);
+    const current = await readTimelineRecord(tx, identity.memberId);
+    if (current.revision !== expectedRevision) {
+      throw new MembershipConflictError("Your Timeline changed in another tab. Your draft is still here. Load the latest saved events before trying again.");
+    }
+    if (targetId && !current.entries.some(item => item.id === targetId)) {
+      throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
+    }
+    if (!entry) {
+      await tx`
+        update member_timeline_entries
+        set status = 'deleted', deleted_at = statement_timestamp(), updated_by_auth_user_id = ${authUserId}::uuid
+        where id = ${targetId}::uuid and member_id = ${identity.memberId}::uuid and status = 'active'
+      `;
+    } else if (targetId) {
+      // Missing month is compatible with older clients; explicit null clears it.
+      // Avoid even a no-op UPDATE so unrelated save metadata is not rewritten.
+      await tx`
+        update member_timeline_entries
+        set entry_year = ${entry.year},
+          entry_month = case when ${entry.month === undefined} then entry_month else ${entry.month ?? null}::integer end,
+          title = ${entry.title}, details = ${entry.details}, updated_by_auth_user_id = ${authUserId}::uuid
+        where id = ${targetId}::uuid and member_id = ${identity.memberId}::uuid and status = 'active'
+          and (entry_year is distinct from ${entry.year}
+            or (${entry.month !== undefined} and entry_month is distinct from ${entry.month ?? null}::integer)
+            or title is distinct from ${entry.title} or details is distinct from ${entry.details})
+      `;
+    } else {
+      await tx`
+        insert into member_timeline_entries(member_id,entry_year,entry_month,title,details,position,updated_by_auth_user_id)
+        select ${identity.memberId}::uuid, ${entry.year}, ${entry.month ?? null}, ${entry.title}, ${entry.details},
+          coalesce(max(position), 0) + 1, ${authUserId}::uuid
+        from member_timeline_entries where member_id = ${identity.memberId}::uuid
+      `;
+    }
+    return readTimelineRecord(tx, identity.memberId);
+  });
+  return { access, completedAt: requirements.timeline.completedAt, ...record };
+}
+
+export function upsertMemberTimelineEntry(authUserId: string, entry: MemberTimelineInput[number], expectedRevision: string) {
+  return mutateMemberTimelineEntry(authUserId, { entry }, expectedRevision);
+}
+
+export function deleteMemberTimelineEntry(authUserId: string, id: string, expectedRevision: string) {
+  return mutateMemberTimelineEntry(authUserId, { id }, expectedRevision);
 }
 
 export async function completeMemberFoundationRequirement(

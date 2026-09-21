@@ -1530,3 +1530,142 @@ select.formControl option {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* The saved story is the default view; capture stays one deliberate action away. */
+.readingHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1.5rem;
+  padding: 1rem 0 1.5rem;
+  border-bottom: 1px solid var(--timeline-rule);
+}
+.readingTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.8rem, 6vw, 4.8rem);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+.readingMeta, .readingSaveStatus {
+  color: var(--timeline-muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  line-height: 1.5;
+}
+.readingMeta { margin: 0.8rem 0 0; }
+.readingSaveStatus { margin: 1rem 0; font-size: 0.62rem; }
+.readingActions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.25rem; }
+.root .readingActions .button, .root .captureActions .button {
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  line-height: 1.3;
+}
+.readingTextButton, .momentEdit, .thisMonth, .editorClose {
+  min-height: 44px;
+  appearance: none;
+  border: 0;
+  padding: 0.5rem 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.root .readingTextButton, .root .momentEdit, .root .thisMonth { font-size: 0.82rem; line-height: 1.5; }
+.readingTextButton:hover, .momentEdit:hover, .thisMonth:hover { text-decoration: underline; text-underline-offset: 0.25em; }
+.root :is(.readingTextButton, .momentEdit, .thisMonth, .editorClose):disabled { opacity: 0.42; cursor: not-allowed; }
+.root :is(.readingTextButton, .momentEdit, .thisMonth, .editorClose, .captureControl, .readingFilters input, .readingFilters select, .momentStory summary):focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.readingNotice {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-left: 2px solid var(--color-poster);
+  background: var(--timeline-panel);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.readingNotice p { margin: 0 0 0.75rem; }
+.readingNotice .readingActions { gap: 1rem; }
+.readingLayout { display: grid; gap: 2rem; align-items: start; min-width: 0; }
+.reader { min-width: 0; }
+.readingFilters { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0.5rem 0 2rem; }
+.readingFilters label { min-width: 0; }
+.readingFilters label > span { display: block; margin-bottom: 0.35rem; color: var(--timeline-muted); font-size: 0.75rem; }
+.searchField { grid-column: 1 / -1; }
+.root .readingFilters :is(input, select) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.5rem;
+  border: 1px solid var(--timeline-rule);
+  border-radius: 0;
+  background: var(--timeline-panel);
+  color: var(--timeline-ink);
+  font-size: 16px;
+}
+.filterSummary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 1rem; font-size: 0.8rem; color: var(--timeline-muted); }
+.yearGroup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; padding: 1.25rem 0 1.75rem; border-bottom: 1px solid var(--timeline-rule); }
+.yearHeading { margin: 0; color: var(--timeline-muted); font-family: var(--font-header); font-size: 1rem; font-weight: 500; line-height: 1.6; }
+.moments { list-style: none; padding: 0; margin: 0; min-width: 0; }
+.moment { position: relative; min-width: 0; padding: 0.25rem 0; transition: background-color 180ms ease; }
+.moment + .moment { margin-top: 0.5rem; }
+.moment[data-recent] { background: var(--timeline-panel); }
+.momentStory { min-width: 0; }
+.momentStory summary { display: grid; grid-template-columns: minmax(0, 1fr) 24px; column-gap: 0.65rem; align-items: baseline; min-height: 44px; padding: 0.5rem 0; list-style: none; cursor: pointer; }
+.momentStory summary::-webkit-details-marker { display: none; }
+.momentDate { grid-column: 1; color: var(--timeline-muted); font-size: 0.7rem; line-height: 1.5; }
+.momentTitle { grid-column: 1; font-size: clamp(1.1rem, 2vw, 1.35rem); line-height: 1.5; overflow-wrap: anywhere; }
+.momentToggle { grid-column: 2; grid-row: 1 / 3; align-self: center; justify-self: center; color: var(--timeline-muted); font-size: 1.4rem; transition: transform 180ms ease; }
+.momentStory[open] .momentToggle { transform: rotate(45deg); }
+.momentDetails, .momentEmpty { margin: 0.75rem 0 0.5rem; max-width: 65ch; font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere; white-space: pre-wrap; }
+.momentEmpty { color: var(--timeline-muted); font-size: 0.85rem; }
+.momentEdit { color: var(--timeline-muted); padding-right: 1rem; }
+.moreMoments { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; margin-top: 1.5rem; }
+.moreMoments span { color: var(--timeline-muted); font-size: 0.7rem; font-weight: 400; }
+.readingEmpty { padding: clamp(2rem, 5vw, 5rem) 0; }
+.emptyHand { margin: 0 0 1rem; font-family: var(--font-handwritten); font-size: 1.8rem; line-height: 1.4; }
+.readingEmpty h2 { margin: 0; font-family: var(--font-display); font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 500; line-height: 1.15; }
+.readingEmpty > p:not(.emptyHand) { max-width: 36rem; color: var(--timeline-muted); line-height: 1.7; }
+.readingEmpty .button { margin-top: 0.75rem; }
+.noResults { padding: 2rem 0; color: var(--timeline-muted); line-height: 1.7; }
+.readingUndo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 1rem; padding: 0.5rem 1rem; background: var(--timeline-panel); font-size: 0.85rem; }
+.readingUndo span { overflow-wrap: anywhere; min-width: 0; }
+.readingEditor { order: -1; min-width: 0; padding: clamp(1rem, 3vw, 1.5rem); background: var(--timeline-panel); border: 1px solid var(--timeline-rule); scroll-margin-top: 2rem; }
+.editorHeading { display: flex; gap: 1rem; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.editorHeading h2 { margin: 0; font-family: var(--font-display); font-size: 2rem; font-weight: 500; line-height: 1.15; }
+.editorClose { flex-shrink: 0; width: 44px; text-align: center; font-size: 1.5rem !important; }
+.captureLabel { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin-bottom: 0.45rem; font-size: 0.8rem; font-weight: 500; }
+.captureLabel small { color: var(--timeline-muted); font-size: 0.68rem; font-weight: 400; }
+.root .captureControl { display: block; width: 100%; min-width: 0; min-height: 48px; padding: 0.7rem; border: 1px solid var(--timeline-rule); border-radius: 0; background: var(--timeline-ground); color: var(--timeline-ink); font-size: 16px; line-height: 1.5; }
+.root textarea.captureControl { resize: vertical; min-height: 140px; }
+.captureControl::placeholder { color: var(--timeline-muted); opacity: 0.8; }
+.captureControl[aria-invalid] { border-color: var(--color-poster); }
+.thisMonth { margin: -0.6rem 0 1rem; color: var(--timeline-muted); }
+.captureActions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem 1rem; margin-top: 1.25rem; }
+.captureRemove { margin-left: auto; }
+.readingFooter { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; margin-top: 2rem; padding: 1rem 0; color: var(--timeline-muted); font-size: 0.78rem; line-height: 1.6; }
+.readingExport { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--timeline-rule); }
+@media (min-width: 640px) {
+  .yearGroup { grid-template-columns: 5rem minmax(0, 1fr); gap: 1.5rem; }
+  .yearHeading { padding-top: 0.7rem; }
+  .readingFilters { grid-template-columns: minmax(0, 1fr) 8rem 10rem; }
+  .searchField { grid-column: auto; }
+}
+@media (min-width: 1100px) {
+  .readingLayout[data-editing] { grid-template-columns: minmax(0, 1fr) 340px; gap: 2.5rem; }
+  .readingEditor { order: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .moment, .momentToggle { transition: none; }
+}
+.root .readingEditor .captureActions button[data-add-another] {
+  background: transparent;
+  color: var(--timeline-ink);
+  border-color: var(--timeline-rule);
+}
+.root .readingEditor .captureActions button[data-add-another]:hover {
+  background: var(--timeline-ink);
+  color: var(--timeline-ground);
+}

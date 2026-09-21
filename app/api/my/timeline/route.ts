@@ -4,11 +4,13 @@ import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import {
   completeMemberFoundationRequirement,
+  deleteMemberTimelineEntry,
   getMemberTimeline,
   MembershipAccessDeniedError,
   MembershipConflictError,
   MembershipInputError,
   saveMemberTimeline,
+  upsertMemberTimelineEntry,
   type MemberTimelineInput,
 } from "@/lib/membership/repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
@@ -17,6 +19,8 @@ export const runtime = "nodejs";
 
 type TimelineAction =
   | { action: "complete" }
+  | { action: "upsert"; entry: MemberTimelineInput[number]; expectedRevision?: string }
+  | { action: "delete"; id: string; expectedRevision?: string }
   | { action: "save"; entries: MemberTimelineInput; expectedRevision?: string };
 
 function isTimelineEntry(value: unknown): value is MemberTimelineInput[number] {
@@ -38,6 +42,15 @@ function isTimelineAction(value: unknown): value is TimelineAction {
   const candidate = value as Record<string, unknown>;
   if (candidate.action === "complete") {
     return Object.keys(candidate).every((key) => key === "action");
+  }
+  if (candidate.expectedRevision !== undefined && typeof candidate.expectedRevision !== "string") return false;
+  if (candidate.action === "upsert") {
+    return isTimelineEntry(candidate.entry)
+      && Object.keys(candidate).every(key => ["action", "entry", "expectedRevision"].includes(key));
+  }
+  if (candidate.action === "delete") {
+    return typeof candidate.id === "string"
+      && Object.keys(candidate).every(key => ["action", "id", "expectedRevision"].includes(key));
   }
   return (
     candidate.action === "save" &&
@@ -88,13 +101,33 @@ export async function POST(request: Request) {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return NextResponse.json({ error: "JSON is required." }, { status: 415 });
   }
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > 250_000) {
+  const declaredLength = request.headers.get("content-length");
+  const contentLength = Number(declaredLength ?? "0");
+  if (declaredLength !== null && (!/^\d+$/.test(declaredLength) || !Number.isSafeInteger(contentLength) || contentLength > 250_000)) {
     return NextResponse.json({ error: "That Timeline is too large." }, { status: 413 });
   }
   let body: unknown;
   try {
-    body = await request.json();
+    const reader = request.body?.getReader();
+    if (!reader) throw new Error("Missing Timeline body");
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > 250_000) {
+          await reader.cancel();
+          return NextResponse.json({ error: "That Timeline request is too large. Save one moment at a time." }, { status: 413 });
+        }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     return NextResponse.json({ error: "A valid Timeline action is required." }, { status: 400 });
   }
@@ -113,8 +146,13 @@ export async function POST(request: Request) {
       );
       return NextResponse.json({ requirements }, { headers: { "Cache-Control": "no-store" } });
     }
-    const timeline = await saveMemberTimeline(viewer.authUserId, body.entries, body.expectedRevision ?? "");
-    return NextResponse.json({ timeline }, { headers: { "Cache-Control": "no-store" } });
+    const revision = body.expectedRevision ?? "";
+    const timeline = body.action === "upsert"
+      ? await upsertMemberTimelineEntry(viewer.authUserId, body.entry, revision)
+      : body.action === "delete"
+        ? await deleteMemberTimelineEntry(viewer.authUserId, body.id, revision)
+        : await saveMemberTimeline(viewer.authUserId, body.entries, revision);
+    return NextResponse.json({ timeline }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

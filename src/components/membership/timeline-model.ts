@@ -1,10 +1,10 @@
 import type { MemberTimelineEntry } from "@/lib/membership/model";
 
 export const TIMELINE_LIMITS = {
-  details: 800,
-  maximumYear: 2100,
+  details: 4000,
+  maximumYear: 2200,
   minimumYear: 1900,
-  title: 90,
+  title: 200,
 } as const;
 
 export const TIMELINE_MONTHS = [
@@ -15,6 +15,28 @@ export const TIMELINE_MONTHS = [
 export function formatTimelineDate(entry: { year: number; month?: number | null }, longMonth = false): string {
   const month = typeof entry.month === "number" ? TIMELINE_MONTHS[entry.month - 1] : undefined;
   return month ? `${longMonth ? month : month.slice(0, 3)} ${entry.year}` : String(entry.year);
+}
+
+export type TimelineReadingOrder = "oldest" | "newest";
+
+export function filterTimelineEntries(entries: TimelineDraftEntry[], query: string, year: string, order: TimelineReadingOrder) {
+  const search = query.trim().toLocaleLowerCase();
+  const filtered = entries.filter(entry => (!year || String(entry.year) === year)
+    && (!search || `${entry.title}\n${entry.details}\n${formatTimelineDate(entry, true)}`.toLocaleLowerCase().includes(search)));
+  return filtered.sort((left, right) => (order === "newest" ? right.year - left.year : left.year - right.year)
+    || (left.month == null ? 13 : order === "newest" ? 13 - left.month : left.month)
+      - (right.month == null ? 13 : order === "newest" ? 13 - right.month : right.month)
+    || left.createdOrder - right.createdOrder || left.clientKey.localeCompare(right.clientKey));
+}
+
+export function groupTimelineEntries(entries: TimelineDraftEntry[]) {
+  const groups: Array<{ year: number; entries: TimelineDraftEntry[] }> = [];
+  for (const entry of entries) {
+    const last = groups.at(-1);
+    if (last?.year === entry.year) last.entries.push(entry);
+    else groups.push({ year: entry.year, entries: [entry] });
+  }
+  return groups;
 }
 
 export type TimelineDraftEntry = {

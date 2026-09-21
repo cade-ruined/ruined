@@ -28,6 +28,18 @@ function fixture({ authenticated = true, mode = "connected", denied = false } = 
         if (revision !== "5") throw new MembershipConflictError("Load latest saved events");
         return timeline;
       },
+      upsertMemberTimelineEntry: async (auth, entry, revision) => {
+        calls.push(["upsert", auth, entry, revision]);
+        if (denied) throw new MembershipAccessDeniedError("Access denied");
+        if (revision !== "5") throw new MembershipConflictError("Load latest saved events");
+        return timeline;
+      },
+      deleteMemberTimelineEntry: async (auth, id, revision) => {
+        calls.push(["delete", auth, id, revision]);
+        if (denied) throw new MembershipAccessDeniedError("Access denied");
+        if (revision !== "5") throw new MembershipConflictError("Load latest saved events");
+        return timeline;
+      },
     },
   };
   const cjs = { exports: {} };
@@ -96,6 +108,63 @@ test("Timeline rejects noninteger, out-of-range and nonnumeric months before inv
     const f = fixture();
     const response = await f.POST(request({ action: "save", entries: [{ id: null, title: "A beginning", year: 2020, details: null, month }], expectedRevision: "5" }));
     assert.equal(response.status, 400);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test("single moment upsert and deletion use verified ownership, revision and private snapshots", async () => {
+  const entry = { id: null, year: 2020, month: 9, title: "A moment", details: null };
+  for (const payload of [{ action: "upsert", entry }, { action: "delete", id: "entry-id" }]) {
+    const f = fixture();
+    const response = await f.POST(request({ ...payload, expectedRevision: "5" }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.deepEqual(await response.json(), { timeline: f.timeline });
+    assert.deepEqual(f.calls, [[payload.action, "verified-account", payload.entry ?? payload.id, "5"]]);
+    for (const expectedRevision of [undefined, "4"]) {
+      assert.equal((await fixture().POST(request({ ...payload, expectedRevision }))).status, 409);
+    }
+    assert.equal((await fixture({ authenticated: false }).POST(request(payload))).status, 401);
+    assert.equal((await fixture({ denied: true }).POST(request({ ...payload, expectedRevision: "5" }))).status, 403);
+    const foreign = fixture();
+    assert.equal((await foreign.POST(request(payload, "https://outside.example.test"))).status, 403);
+    assert.deepEqual(foreign.calls, []);
+    assert.equal((await fixture().POST(request({ ...payload, memberId: "someone-else", expectedRevision: "5" }))).status, 400);
+  }
+});
+
+test("Timeline compatibility save accepts more than50 entries; single-moment actions reject injected fields", async () => {
+  const f = fixture();
+  const entry = { id: null, year: 2020, title: "A moment", details: null };
+  assert.equal((await f.POST(request({ action: "save", entries: Array.from({ length: 120 }, () => entry), expectedRevision: "5" }))).status, 200);
+  assert.equal(f.calls[0][2].length, 120);
+  for (const payload of [
+    { action: "upsert", entry: { ...entry, month: 13 } }, { action: "upsert", entry: { ...entry, memberId: "other" } },
+    { action: "upsert", entry: null }, { action: "delete", id: null }, { action: "delete", id: "id", entries: [] },
+  ]) assert.equal((await fixture().POST(request({ ...payload, expectedRevision: "5" }))).status, 400);
+});
+
+test("Timeline bounds actual request bytes, including chunked/lying lengths, before parsing or persistence", async () => {
+  for (const declared of [undefined, "1"]) {
+    let cancelled = false;
+    const stream = new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(250_001)); },
+      cancel() { cancelled = true; },
+    });
+    const f = fixture();
+    const response = await f.POST(new Request("https://members.example.test/api/my/timeline", {
+      method: "POST", body: stream, duplex: "half",
+      headers: { origin: "https://members.example.test", "content-type": "application/json", ...(declared ? { "content-length": declared } : {}) },
+    }));
+    assert.equal(response.status, 413);
+    assert.equal(cancelled, true);
+    assert.deepEqual(f.calls, []);
+  }
+  for (const declared of ["250001", "-1", "NaN", "Infinity"]) {
+    const f = fixture();
+    const req = request({ action: "complete" });
+    req.headers.set("content-length", declared);
+    assert.equal((await f.POST(req)).status, 413);
     assert.deepEqual(f.calls, []);
   }
 });

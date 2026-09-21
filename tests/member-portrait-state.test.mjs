@@ -163,7 +163,7 @@ test("home consumes the portrait override without mutating its cached member or 
 });
 
 test("layout scopes portrait memory to verified members inside session recovery and outside every page shell", async () => {
-  const Session = () => null, Portrait = () => null, Shell = () => null;
+  const Session = () => null, Portrait = () => null, Draft = () => null, Shell = () => null;
   for (const status of ["authenticated", "signed_out", "unavailable"]) {
     const layout = load("app/my/layout.tsx", {
       "next/navigation": { notFound: () => assert.fail("member area is visible") },
@@ -173,6 +173,7 @@ test("layout scopes portrait memory to verified members inside session recovery 
       "@/components/membership/MemberJourneyShell": Shell,
       "@/components/membership/MemberSessionContinuity": Session,
       "@/components/membership/MemberPortraitState": Portrait,
+      "@/components/membership/MemberTimelineDraftState": Draft,
       "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status, viewer: { authUserId: "verified-owner", email: "private@example.test" } }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
       "@/lib/platform/repository": { getOperatorRole: async () => null },
@@ -184,7 +185,10 @@ test("layout scopes portrait memory to verified members inside session recovery 
     const portrait = tree.props.children;
     assert.equal(portrait.type, Portrait);
     assert.equal(portrait.props.ownerId, status === "authenticated" ? "verified-owner" : undefined);
-    assert.equal(portrait.props.children.type, Shell);
+    assert.equal(portrait.props.children.type, Draft);
+    assert.equal(portrait.props.children.props.ownerId, status === "authenticated" ? "verified-owner" : undefined);
+    assert.equal(portrait.props.children.props.temporarilyUnavailable, status === "unavailable");
+    assert.equal(portrait.props.children.props.children.type, Shell);
     assert.equal(Object.hasOwn(portrait.props, "email"), false);
   }
 });
