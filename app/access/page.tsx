@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 
 import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import AccessPage from "@/components/platform/AccessPage";
+import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { completePlatformSignIn, getSupportSignInDestination } from "@/lib/auth/platform-access";
 import { getSupportReturnTo } from "@/lib/auth/support-return";
-import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
+import { PlatformAccessDeniedError } from "@/lib/platform/repository";
 import { sharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
@@ -27,19 +29,23 @@ export default async function RuinedAccessPage({ searchParams }: {
 }) {
   const returnTo = getSupportReturnTo((await searchParams).returnTo);
   const configuration = getPlatformConfiguration();
-  const viewer = configuration.mode === "connected" ? await getCurrentPlatformViewer() : null;
+  const session = configuration.mode === "connected" ? await resolveCurrentPlatformSession() : null;
   let redirectTo: string | null = null;
+  let unavailable = session?.status === "unavailable";
 
-  if (viewer) {
+  if (session?.status === "authenticated") {
     try {
+      const viewer = session.viewer;
       const access = await completePlatformSignIn(viewer);
       redirectTo = await getSupportSignInDestination(viewer, returnTo, access.redirectTo);
-    } catch {
-      // An incomplete or revoked account returns to the same neutral access form.
+    } catch (error) {
+      // An authorization denial can offer another sign-in. A failed connection
+      // is not evidence that the current identity needs to sign in again.
+      unavailable = !(error instanceof PlatformAccessDeniedError);
     }
   }
 
   if (redirectTo) redirect(redirectTo);
 
-  return <MemberJourneyShell configuration={configuration}><AccessPage enabled={configuration.mode === "connected"} returnTo={returnTo ?? undefined} /></MemberJourneyShell>;
+  return <MemberJourneyShell configuration={configuration}>{unavailable ? <PlatformUnavailable /> : <AccessPage enabled={configuration.mode === "connected"} returnTo={returnTo ?? undefined} />}</MemberJourneyShell>;
 }

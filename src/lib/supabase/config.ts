@@ -20,6 +20,9 @@ export type SupabaseConfigStatus = Readonly<{
 }>;
 
 export const SUPABASE_COOKIE_OPTIONS = {
+  // Persistent browser storage, matching Supabase SSR. Auth refresh, revocation,
+  // and server-side access checks still determine whether the session is valid.
+  maxAge: 400 * 24 * 60 * 60,
   httpOnly: false,
   path: "/",
   sameSite: "lax",

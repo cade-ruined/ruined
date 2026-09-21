@@ -4,6 +4,8 @@ import { isMyRuinedVisible } from "@/lib/platform/visibility";
 import { refreshSupabaseMiddlewareSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  // Installation metadata is public and must never carry session cookies.
+  if (request.nextUrl.pathname === "/my/manifest.webmanifest") return NextResponse.next();
   if (request.nextUrl.pathname.startsWith("/my") && !isMyRuinedVisible()) {
     return NextResponse.next();
   }

@@ -17,6 +17,6 @@ export async function POST(request: NextRequest) {
   if (getPlatformConfiguration().mode !== "connected") return response;
 
   const supabase = createSupabaseCurrentResponseClient({ request, response });
-  if (supabase) await supabase.auth.signOut();
+  if (supabase) await supabase.auth.signOut({ scope: "local" });
   return response;
 }

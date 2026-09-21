@@ -1,0 +1,100 @@
+.install {
+  min-width: 0;
+  padding: 22px 0;
+  border-top: 1px solid var(--member-rule, #2a2a2a30);
+  color: var(--member-ink, #2a2a2a);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 28px;
+  flex-wrap: wrap;
+}
+
+.copy {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.copy p,
+.instructions p {
+  margin: 0;
+  color: var(--member-muted, #60594e);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.copy .title {
+  margin-bottom: 3px;
+  color: var(--member-ink, #2a2a2a);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.actions button {
+  min-height: 44px;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.installButton {
+  color: var(--member-ink, #2a2a2a);
+  background: transparent;
+  border: 1px solid var(--member-rule, #2a2a2a30);
+}
+
+.installButton:hover {
+  background: var(--member-soft, #2a2a2a08);
+}
+
+.dismissButton {
+  color: var(--member-muted, #60594e);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.actions button:focus-visible {
+  outline: 2px solid var(--member-ink, #2a2a2a);
+  outline-offset: 3px;
+}
+
+.actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.instructions {
+  max-width: 560px;
+  padding-top: 20px;
+}
+
+.instructions ol {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.instructions strong {
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  .install { padding: 20px 0; }
+  .summary { gap: 12px; }
+  .actions { gap: 4px; }
+}

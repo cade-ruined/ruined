@@ -108,7 +108,7 @@ test("owner invitation route checks authentication and never substitutes samples
     "next/navigation": { redirect },
     "@/components/membership/MemberInvitation": owner,
     "@/components/platform/PlatformUnavailable": unavailable,
-    "@/lib/auth/session": { getCurrentPlatformViewer: async () => viewer },
+    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => viewer ? { status: "authenticated", viewer } : { status: "signed_out" } },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
     "@/lib/membership/personal-invitation-repository": { getOwnPersonalInvitations: async id => {
       reads++; assert.equal(id, "verified-user"); if (failure) throw failure; return ownerSnapshot;

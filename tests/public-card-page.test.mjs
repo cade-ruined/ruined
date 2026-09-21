@@ -99,7 +99,7 @@ test("owner route redirects signed-out visitors and connection failures never su
     "next/navigation": { redirect },
     "@/components/membership/MemberCardEditor": () => null,
     "@/components/platform/PlatformUnavailable": () => null,
-    "@/lib/auth/session": { getCurrentPlatformViewer: async () => viewer },
+    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => viewer ? { status: "authenticated", viewer } : { status: "signed_out" } },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
     "@/lib/membership/public-card-repository": { getOwnMemberCard: async id => {
       assert.equal(id, "verified-user"); if (fail) throw fail; return snapshot;

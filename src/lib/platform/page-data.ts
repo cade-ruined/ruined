@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration, type PlatformConfiguration } from "@/lib/platform/config";
 import {
   PREVIEW_MEMBER,
@@ -55,8 +55,9 @@ export async function getOperatorAccessContext(): Promise<Omit<OperatorPageConte
   if (configuration.mode === "unavailable") return { configuration, role: null, state: "unavailable", viewer: null };
   let viewer: PlatformViewer | null = null;
   try {
-    viewer = await getCurrentPlatformViewer();
-    if (!viewer) return { configuration, role: null, state: "signed_out", viewer: null };
+    const session = await resolveCurrentPlatformSession();
+    if (session.status !== "authenticated") return { configuration, role: null, state: session.status, viewer: null };
+    viewer = session.viewer;
     const role = await getOperatorRole(viewer.authUserId);
     return { configuration, role, state: role ? "authenticated" : "denied", viewer };
   } catch (error) {
@@ -75,10 +76,11 @@ export async function getMemberPageContext(): Promise<MemberPageContext> {
     return { configuration, member: null, state: "unavailable", viewer: null };
   }
 
-  const viewer = await getCurrentPlatformViewer();
-  if (!viewer) return { configuration, member: null, state: "signed_out", viewer: null };
-
+  let viewer: PlatformViewer | null = null;
   try {
+    const session = await resolveCurrentPlatformSession();
+    if (session.status !== "authenticated") return { configuration, member: null, state: session.status, viewer: null };
+    viewer = session.viewer;
     const member = await getMemberPlatformSnapshot(viewer.authUserId);
     return {
       configuration,
@@ -110,12 +112,13 @@ export async function getOperatorPageContext(): Promise<OperatorPageContext> {
     return { configuration, dashboard: null, role: null, state: "unavailable", viewer: null };
   }
 
-  const viewer = await getCurrentPlatformViewer();
-  if (!viewer) {
-    return { configuration, dashboard: null, role: null, state: "signed_out", viewer: null };
-  }
-
+  let viewer: PlatformViewer | null = null;
   try {
+    const session = await resolveCurrentPlatformSession();
+    if (session.status !== "authenticated") {
+      return { configuration, dashboard: null, role: null, state: session.status, viewer: null };
+    }
+    viewer = session.viewer;
     const access = await getOperatorDashboard(viewer.authUserId);
     if (!access) {
       return { configuration, dashboard: null, role: null, state: "denied", viewer };

@@ -10,7 +10,7 @@ type AuthResponse = {
   requestId?: string;
 };
 
-export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled: boolean; returnTo?: string }) {
+export default function PasswordlessAccessForm({ enabled, returnTo, onAuthenticated }: { enabled: boolean; returnTo?: string; onAuthenticated?: () => Promise<void> | void }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -71,7 +71,10 @@ export default function PasswordlessAccessForm({ enabled, returnTo }: { enabled:
       if (!response.ok || !payload.redirectTo) {
         throw new Error(payload.error || "That code could not be verified.");
       }
-      window.location.assign(payload.redirectTo);
+      if (onAuthenticated) {
+        await onAuthenticated();
+        setPending(false);
+      } else window.location.assign(payload.redirectTo);
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : "That code could not be verified.");
       setPending(false);

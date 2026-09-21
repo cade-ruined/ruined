@@ -86,7 +86,7 @@ test("preview is development-only and never fabricates an authenticated viewer",
 
   assert.match(pageData, /state: "preview", viewer: null/);
   assert.match(pageData, /dashboard: PREVIEW_OPERATOR_DASHBOARD[\s\S]*state: "preview"[\s\S]*viewer: null/);
-  assert.match(pageData, /const viewer = await getCurrentPlatformViewer\(\)/);
+  assert.match(pageData, /const session = await resolveCurrentPlatformSession\(\)/);
 
   assert.match(authSession, /await supabase\.auth\.getClaims\(\)/);
   assert.match(authSession, /return \{ authUserId, email: email\.trim\(\)\.toLowerCase\(\) \}/);
@@ -95,7 +95,7 @@ test("preview is development-only and never fabricates an authenticated viewer",
     supabaseMiddleware,
     /getPlatformConfiguration\(\)\.mode !== "connected"[\s\S]*claims: null, configured: false/,
   );
-  assert.match(memberLayout, /configuration\.mode === "connected" \? await getCurrentPlatformViewer\(\) : null/);
+  assert.match(memberLayout, /configuration\.mode === "connected" \? await resolveCurrentPlatformSession\(\) : null/);
   assert.match(opsLayout, /configuration\.mode === "connected" \? await getCurrentPlatformViewer\(\) : null/);
   assert.match(signOutRoute, /getPlatformConfiguration\(\)\.mode !== "connected"\) return response/);
 });

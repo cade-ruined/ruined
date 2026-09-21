@@ -58,7 +58,7 @@ function accessFixture({ mode = "connected", viewer = { authUserId: "admin", ema
   const context = load("src/lib/platform/page-data.ts", {
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
     "@/lib/platform/model": {},
-    "@/lib/auth/session": { getCurrentPlatformViewer: async () => { calls.push("viewer"); if (sessionFailure) throw Error("Sensitive session failure"); return viewer; } },
+    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => { calls.push("viewer"); if (sessionFailure) throw Error("Sensitive session failure"); return viewer ? { status: "authenticated", viewer } : { status: "signed_out" }; } },
     "@/lib/platform/repository": {
       getOperatorRole: async (id) => { calls.push(["role", id]); if (roleFailure) throw Error("Sensitive role failure"); return role; },
       getOperatorDashboard: () => { throw Error("System must not depend on the member dashboard"); },

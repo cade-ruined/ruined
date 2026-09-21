@@ -5,7 +5,8 @@ import MemberPreviewSwitcher from "@/components/membership/MemberPreviewSwitcher
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario } from "@/lib/membership/preview-scenarios";
 
 import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
-import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import MemberSessionContinuity from "@/components/membership/MemberSessionContinuity";
+import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
@@ -13,6 +14,7 @@ import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
   ...privateSharingMetadata,
+  manifest: "/my/manifest.webmanifest",
   robots: { follow: false, index: false },
 };
 
@@ -22,7 +24,8 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
   if (!isMyRuinedVisible()) notFound();
 
   const configuration = getPlatformConfiguration();
-  const viewer = configuration.mode === "connected" ? await getCurrentPlatformViewer() : null;
+  const session = configuration.mode === "connected" ? await resolveCurrentPlatformSession() : null;
+  const viewer = session?.status === "authenticated" ? session.viewer : null;
   const scenario = configuration.mode === "preview" ? memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value) : null;
   let operatorRole: OperatorRole | null = scenario === "operator" ? "ops_admin" : null;
   if (viewer) {
@@ -36,6 +39,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
   }
 
   return (
+    <MemberSessionContinuity enabled={session?.status === "authenticated" || session?.status === "unavailable"} ownerId={viewer?.authUserId} initiallyUnavailable={session?.status === "unavailable"}>
     <MemberJourneyShell
       configuration={configuration}
       operatorRole={operatorRole}
@@ -44,5 +48,6 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
     </MemberJourneyShell>
+    </MemberSessionContinuity>
   );
 }

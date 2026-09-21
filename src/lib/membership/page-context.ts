@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberPreviewSnapshot } from "@/lib/membership/preview-scenarios";
 
-import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import {
   getPlatformConfiguration,
   type PlatformConfiguration,
@@ -55,12 +55,13 @@ export async function getMembershipPageContext<T>(
     return { configuration, data: null, state: "unavailable", viewer: null };
   }
 
-  const viewer = await getCurrentPlatformViewer();
-  if (!viewer) {
-    return { configuration, data: null, state: "signed_out", viewer: null };
-  }
-
+  let viewer: PlatformViewer | null = null;
   try {
+    const session = await resolveCurrentPlatformSession();
+    if (session.status !== "authenticated") {
+      return { configuration, data: null, state: session.status, viewer: null };
+    }
+    viewer = session.viewer;
     const data = await load(viewer.authUserId);
     return {
       configuration,

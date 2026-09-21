@@ -154,7 +154,8 @@ async function routeModule(kind, options = {}) {
           response.headers.set("Cache-Control", "private, no-store");
           return { error: null, data: { user: { id: viewer.authUserId, email: options.wrongEmail ? "other@example.com" : viewer.email } } };
         },
-        signOut: async () => {
+        signOut: async (options) => {
+          assert.deepEqual(options, { scope: "local" }, "A failed login must not revoke sessions on other devices");
           calls.push("signout"); response.cookies.set("test-session", "", { maxAge: 0 });
           return { error: null };
         },

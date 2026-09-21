@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import MemberNavigationFab from "@/components/platform/MemberNavigationFab";
 import MemberIcon from "@/components/membership/MemberIcon";
+import InstallRuined from "@/components/membership/InstallRuined";
 import { currentMemberDestination, currentMemberPrimaryDestination, MEMBER_DESTINATIONS, MEMBER_PRIMARY_DESTINATIONS } from "@/lib/membership/navigation";
 import type { PlatformConfiguration } from "@/lib/platform/config";
 import type { OperatorNavigationRole } from "@/lib/platform/operations-navigation";
@@ -84,7 +85,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
         </div>
       </header>
       {configuration.mode !== "connected" ? <p className={styles.notice} role="status">{preview ? "Preview only. Changes here do not affect your membership." : "Membership is temporarily unavailable. Please try again shortly."}</p> : null}
-      <div className={`${styles.content} ${threshold ? styles.thresholdContent : ""} ${focused ? styles.experienceContent : ""} ${membershipEntry ? styles.entryContent : ""}`}>{children}</div>
+      <div className={`${styles.content} ${threshold ? styles.thresholdContent : ""} ${focused ? styles.experienceContent : ""} ${membershipEntry ? styles.entryContent : ""}`}>{children}{viewerLabel && (pathname === "/my" || pathname === "/my/account") ? <InstallRuined /> : null}</div>
       {!focused ? <footer className={styles.footer}><span>The Ruined Project</span><Link href={threshold ? "mailto:connect@theruinedproject.com" : "/my/support"}>Need a hand?</Link></footer> : null}
     </div>
     {hasNavigation ? <nav className={styles.mobileNavigation} aria-label="Member pages">{primaryLinks()}</nav> : null}
