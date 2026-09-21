@@ -32,6 +32,9 @@ const nextConfig = {
   async redirects() {
     return [{ source: "/members", destination: "/#members", permanent: false }];
   },
+  async rewrites() {
+    return [{ source: "/linkinbio", destination: "/linkinbio/index.html" }];
+  },
   images: {
     // Prefer modern formats for any next/image usage; the hero <picture>
     // already serves AVIF/WebP directly.
