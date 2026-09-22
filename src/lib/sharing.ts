@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import preview from "./sharing-previews.json";
 import { SITE_URL } from "./site";
 
-/** One approved image for every public link, including product links. */
+/** Default approved artwork for public links without a specific product photo. */
 export function sharingImage() {
   return {
     url: `${SITE_URL}/${preview.source}`,
@@ -19,16 +19,24 @@ function socialText(value: string) {
 }
 
 /** Next replaces nested metadata objects; always define both channels together. */
-export function sharingMetadata({ title, description, path }: {
+export function sharingMetadata({ title, description, path, image }: {
   title: string;
   description: string;
   path: string;
+  image?: {
+    url: string;
+    alt: string;
+    width?: number;
+    height?: number;
+  };
 }): Pick<Metadata, "openGraph" | "twitter"> {
   const cleanTitle = socialText(title);
   const socialTitle = /\bRuined\b/i.test(cleanTitle)
     ? cleanTitle : `${cleanTitle} — Ruined`;
   const socialDescription = socialText(description);
-  const socialImages = [sharingImage()];
+  const socialImages = [image
+    ? { ...image, url: new URL(image.url, SITE_URL).href }
+    : sharingImage()];
   return {
     openGraph: {
       type: "website",

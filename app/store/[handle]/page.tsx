@@ -49,6 +49,7 @@ export async function generateMetadata({
       title: product.name,
       description: product.description,
       path: getProductColorHref(product, color),
+      image: getProductColorImages(product, color)[0],
     }),
   };
 }

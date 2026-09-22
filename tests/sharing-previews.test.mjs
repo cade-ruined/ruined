@@ -53,7 +53,7 @@ const { sharingMetadata, sharingImage, privateSharingMetadata } = load("src/lib/
 const previews = JSON.parse(readFileSync(resolve(root, "src/lib/sharing-previews.json"), "utf8"));
 const imageUrls = (images) => images.map((image) => typeof image === "string" ? image : String(image.url));
 
-test("every public page shares the same cassette image with matching Open Graph and Twitter content", () => {
+test("nonproduct public pages share the cassette image with matching Open Graph and Twitter content", () => {
   for (const page of legacyKeys) {
     const path = page === "home" ? "/" : `/${page}`;
     const title = page === "home" ? "Ruined" : page;
@@ -85,24 +85,43 @@ test("social titles add the brand once and preserve titles already containing th
   }
 });
 
-test("page-specific and product image inputs cannot replace the approved cassette artwork", () => {
-  for (const images of [undefined, [], [{ url: "https://cdn.shopify.com/product-blue.jpg", alt: "Blue product" }]]) {
+test("product image overrides preserve photography, alt text, and dimensions in both social channels", () => {
+  const image = {
+    url: "https://cdn.shopify.com/product-blue.jpg?v=123&width=1600",
+    alt: "Blue product, front",
+    width: 1600,
+    height: 2000,
+  };
+  const metadata = sharingMetadata({
+    title: "Sunday Clothes Hoodie", description: "Product description", path: "/store/sunday-clothes-hoodie?color=Blue",
+    image,
+  });
+  assert.equal(metadata.openGraph.url, `${origin}/store/sunday-clothes-hoodie?color=Blue`);
+  assert.deepEqual(metadata.openGraph.images, [image]);
+  assert.deepEqual(metadata.twitter.images, metadata.openGraph.images);
+  assert.equal(metadata.twitter.card, "summary_large_image");
+});
+
+test("product image URLs are absolute without inheriting cassette dimensions", () => {
+  for (const [url, expected] of [
+    ["/store/product-cover.jpg", `${origin}/store/product-cover.jpg`],
+    ["https://cdn.shopify.com/product-cover.jpg", "https://cdn.shopify.com/product-cover.jpg"],
+  ]) {
     const metadata = sharingMetadata({
-      title: "Sunday Clothes Hoodie", description: "Product description", path: "/store/sunday-clothes-hoodie?color=Blue",
-      image: "store", images,
+      title: "Product", description: "Product description", path: "/store/product",
+      image: { url, alt: "Product cover" },
     });
-    assert.equal(metadata.openGraph.url, `${origin}/store/sunday-clothes-hoodie?color=Blue`);
-    assert.deepEqual(imageUrls(metadata.openGraph.images), [cassetteUrl]);
-    assert.deepEqual(imageUrls(metadata.twitter.images), imageUrls(metadata.openGraph.images));
+    assert.deepEqual(metadata.openGraph.images, [{ url: expected, alt: "Product cover" }]);
+    assert.deepEqual(metadata.twitter.images, metadata.openGraph.images);
   }
-  const metadata = sharingMetadata({ title: "Contact", description: "Contact Ruined", path: "/contact" });
-  assert.deepEqual(imageUrls(metadata.openGraph.images), [cassetteUrl]);
 });
 
 function productMetadataFixture(overrides = {}) {
   const photo = (color, view) => ({
     url: `https://cdn.shopify.com/s/files/1/1001/4077/7793/files/SundayClothes-${color}Hoodie${view}.png?v=1789413276&width=1600`,
     alt: `${color} hoodie, ${view.toLowerCase()}`,
+    width: 1600,
+    height: 2000,
   });
   const black = [photo("Black", "Front"), photo("Black", "Back")];
   const blue = [photo("Blue", "Front"), photo("Blue", "Back")];
@@ -130,19 +149,45 @@ function productMetadataFixture(overrides = {}) {
   };
 }
 
-test("the actual product metadata route preserves the selected color URL but always shares the cassette image", async () => {
+test("the actual product metadata route shares the selected color's front photo and product text", async () => {
   const fixture = productMetadataFixture();
   for (const [requested, expectedColor] of [["Blue", "Blue"], ["Black", "Black"], [undefined, "Black"], ["Chartreuse", "Black"], [["Blue"], "Black"]]) {
     const metadata = await fixture.metadata(requested);
     assert.equal(metadata.title, "Sunday Clothes Hoodie");
     assert.equal(metadata.openGraph.title, "Sunday Clothes Hoodie — Ruined");
     assert.equal(metadata.twitter.title, metadata.openGraph.title);
+    assert.equal(metadata.description, "Cotton hoodie.");
+    assert.equal(metadata.openGraph.description, metadata.description);
+    assert.equal(metadata.twitter.description, metadata.description);
     assert.equal(metadata.openGraph.url, `${origin}/store/sunday-clothes-hoodie?color=${expectedColor}`);
     assert.equal(metadata.alternates.canonical, "/store/sunday-clothes-hoodie");
-    assert.deepEqual(imageUrls(metadata.openGraph.images), [cassetteUrl]);
+    const expectedImage = expectedColor === "Blue" ? fixture.blue[0] : fixture.black[0];
+    assert.deepEqual(metadata.openGraph.images, [expectedImage]);
     assert.deepEqual(metadata.twitter.images, metadata.openGraph.images);
-    assert.equal(metadata.openGraph.images[0].alt, previews.alt);
   }
+});
+
+test("a product without color options shares its own title, description, and cover photo", async () => {
+  const cover = { url: "https://cdn.shopify.com/long-sleeve-crest-polo-front.jpg", alt: "Long Sleeve Crest Polo, front" };
+  const detail = { url: "https://cdn.shopify.com/long-sleeve-crest-polo-detail.jpg", alt: "Crest detail" };
+  const description = "Unisex collared sweatshirt in 320 gsm cotton with a loose fit and drop shoulders.";
+  const fixture = productMetadataFixture({
+    id: "long-sleeve-crest-polo", name: "Long Sleeve Crest Polo", description,
+    image: cover, images: [cover, detail],
+    options: [{ name: "Size", values: ["S", "M", "L", "XL", "2XL"] }],
+    variants: [],
+  });
+  const metadata = await fixture.metadata();
+  assert.equal(metadata.title, "Long Sleeve Crest Polo");
+  assert.equal(metadata.openGraph.title, "Long Sleeve Crest Polo — Ruined");
+  assert.equal(metadata.twitter.title, metadata.openGraph.title);
+  assert.equal(metadata.description, description);
+  assert.equal(metadata.openGraph.description, description);
+  assert.equal(metadata.twitter.description, description);
+  assert.equal(metadata.openGraph.url, `${origin}/store/long-sleeve-crest-polo`);
+  assert.equal(metadata.alternates.canonical, "/store/long-sleeve-crest-polo");
+  assert.deepEqual(metadata.openGraph.images, [cover]);
+  assert.deepEqual(metadata.twitter.images, metadata.openGraph.images);
 });
 
 test("products without any photography still share the same cassette image", async () => {
@@ -151,6 +196,14 @@ test("products without any photography still share the same cassette image", asy
   assert.equal(metadata.openGraph.url, `${origin}/store/sunday-clothes-hoodie?color=Blue`);
   assert.deepEqual(imageUrls(metadata.openGraph.images), [cassetteUrl]);
   assert.deepEqual(imageUrls(metadata.twitter.images), imageUrls(metadata.openGraph.images));
+});
+
+test("a selected color without associated photography does not share another color's cover", async () => {
+  const fixture = productMetadataFixture({ id: "another-hoodie" });
+  const metadata = await fixture.metadata("Blue");
+  assert.equal(metadata.openGraph.url, `${origin}/store/another-hoodie?color=Blue`);
+  assert.deepEqual(imageUrls(metadata.openGraph.images), [cassetteUrl]);
+  assert.deepEqual(metadata.twitter.images, metadata.openGraph.images);
 });
 
 test("an unknown product clears inherited marketing metadata before the page returns not found", async () => {
@@ -258,7 +311,10 @@ test("public route families share the same Open Graph and Twitter helper", () =>
       const options = node.arguments[0];
       assert.ok(options && ts.isObjectLiteralExpression(options), `${route} needs explicit sharing metadata`);
       assert.equal(options.properties.some((property) => property.name
-        && ["image", "images"].includes(property.name.getText())), false, `${route} must not select its own artwork`);
+        && property.name.getText() === "images"), false, `${route} must share one preview image`);
+      assert.equal(options.properties.some((property) => property.name
+        && property.name.getText() === "image"), route === "app/store/[handle]/page.tsx",
+      `${route}: only product pages select their own photography`);
     }
   }
 });
