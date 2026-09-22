@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import MemberJournal from "@/components/membership/MemberJournal";
 import { useMemberPortrait } from "@/components/membership/MemberPortraitState";
 import { memberCan } from "@/lib/membership/access-policy";
@@ -10,7 +10,8 @@ import { memberTier } from "@/lib/membership/member-number";
 import type { MemberHomeSnapshot } from "@/lib/membership/model";
 import styles from "./MemberProfile.module.css";
 
-const tabs=["journal","timeline","saved","about"] as const;
+const tabs=["journal","saved","about"] as const;
+type JournalMode="all"|"timeline";
 type Tab=typeof tabs[number];
 function date(value:string){return new Intl.DateTimeFormat("en-US",{month:"short",year:"numeric",timeZone:"UTC"}).format(new Date(value));}
 function MembershipRecord({member}:{member:MemberHomeSnapshot}){
@@ -34,11 +35,31 @@ function MembershipRecord({member}:{member:MemberHomeSnapshot}){
     {memberCan(member.access,"artifacts.read")?<section className={styles.full}><div className={styles.sectionLine}><h2 className="member-handwritten">Your artifacts</h2><Link href="/my/artifacts">View all ↗</Link></div>{member.artifacts.length?<ul className={styles.artifacts}>{member.artifacts.slice(0,3).map(item=><li key={item.awardId}><span>{item.acquisitionType==="earned"?"Earned":item.acquisitionType==="gifted"?"Gifted":"Purchased"}</span><h3>{item.name}</h3><p>{item.artifactState.replaceAll("_"," ")}</p></li>)}</ul>:<p className={styles.muted}>Your collection will appear here as it grows.</p>}</section>:null}
   </div>;
 }
-export default function MemberHome({member,preview=false,timeline}:{member:MemberHomeSnapshot;preview?:boolean;timeline?:ReactNode}) {
+export default function MemberHome({member,preview=false}:{member:MemberHomeSnapshot;preview?:boolean}) {
   const {avatarUrl}=useMemberPortrait(member.avatarUrl);
-  const [tab,setTab]=useState<Tab>("journal");const [timelineVisited,setTimelineVisited]=useState(false);const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
-  useEffect(()=>{function synchronize(){const value=window.location.hash.slice(1);if(tabs.includes(value as Tab)){setTab(value as Tab);if(value==="timeline")setTimelineVisited(true);}}synchronize();window.addEventListener("hashchange",synchronize);return()=>window.removeEventListener("hashchange",synchronize);},[]);
-  function select(value:Tab){setTab(value);if(value==="timeline")setTimelineVisited(true);window.history.replaceState(null,"",`#${value}`);}
+  const [tab,setTab]=useState<Tab>("journal");const [journalMode,setJournalMode]=useState<JournalMode>("all");const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
+  useEffect(()=>{
+    function synchronize(){
+      const value=window.location.hash.slice(1);
+      if(value==="timeline"){setTab("journal");setJournalMode("timeline");}
+      else if(value==="journal"||value===""){setTab("journal");setJournalMode("all");}
+      else if(tabs.includes(value as Tab))setTab(value as Tab);
+    }
+    synchronize();
+    window.addEventListener("hashchange",synchronize);
+    window.addEventListener("popstate",synchronize);
+    return()=>{window.removeEventListener("hashchange",synchronize);window.removeEventListener("popstate",synchronize);};
+  },[]);
+  function select(value:Tab){
+    setTab(value);
+    const hash=value==="journal"&&journalMode==="timeline"?"timeline":value;
+    window.history.replaceState(window.history.state,"",`#${hash}`);
+  }
+  function changeJournalMode(value:JournalMode){
+    setJournalMode(value);
+    setTab("journal");
+    window.history.replaceState(window.history.state,"",value==="timeline"?"#timeline":"#journal");
+  }
   function keyNavigate(event:KeyboardEvent,index:number){const target=event.key==="ArrowRight"?(index+1)%tabs.length:event.key==="ArrowLeft"?(index+tabs.length-1)%tabs.length:event.key==="Home"?0:event.key==="End"?tabs.length-1:null;if(target!==null){event.preventDefault();select(tabs[target]);tabRefs.current[target]?.focus();}}
   const tag=member.profile.memberTag?`@${member.profile.memberTag}`:null;
   const selectedName=member.profile.displayName?.trim()||member.displayName.trim();
@@ -64,9 +85,8 @@ export default function MemberHome({member,preview=false,timeline}:{member:Membe
       {member.memberSince?<p className={styles.memberSince}>Member since {new Date(member.memberSince).getUTCFullYear()}</p>:null}
     </header>
 
-    <div className={styles.tabs} role="tablist" aria-label="Your profile">{tabs.map((value,index)=><button type="button" role="tab" aria-selected={tab===value} aria-controls={`${id}-${value === "journal" || value === "saved" ? "entries" : value}-panel`} id={`${id}-${value}-tab`} tabIndex={tab===value?0:-1} onClick={()=>select(value)} onKeyDown={event=>keyNavigate(event,index)} ref={element=>{tabRefs.current[index]=element;}} key={value}>{value[0].toUpperCase()+value.slice(1)}{value==="timeline"||value==="saved"?<svg aria-label="Private" width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor"><rect x="1" y="6" width="10" height="7" rx="1"/><path d="M3 6V4a3 3 0 0 1 6 0v2"/></svg>:null}</button>)}</div>
-    <div role="tabpanel" id={`${id}-entries-panel`} aria-labelledby={`${id}-${tab==="saved"?"saved":"journal"}-tab`} hidden={tab!=="journal"&&tab!=="saved"} tabIndex={0}><MemberJournal preview={preview} writable={memberCan(member.access,"profile.write")} view={tab==="saved"?"saved":"journal"}/></div>
-    <div role="tabpanel" id={`${id}-timeline-panel`} aria-labelledby={`${id}-timeline-tab`} hidden={tab!=="timeline"} tabIndex={0}>{timelineVisited?<><div className={styles.timelineHeader}><h2 className="member-handwritten">Your story, so far</h2><p className={styles.muted}>Your timeline is private. Add the moments that shaped you.</p></div>{timeline??<div className="member-card"><p>Your timeline is available through Foundations.</p><Link href="/my/foundations" className="member-button">Open Foundations →</Link></div>}</>:null}</div>
+    <div className={styles.tabs} role="tablist" aria-label="Your profile">{tabs.map((value,index)=><button type="button" role="tab" aria-selected={tab===value} aria-controls={`${id}-${value === "journal" || value === "saved" ? "entries" : value}-panel`} id={`${id}-${value}-tab`} tabIndex={tab===value?0:-1} onClick={()=>select(value)} onKeyDown={event=>keyNavigate(event,index)} ref={element=>{tabRefs.current[index]=element;}} key={value}>{value[0].toUpperCase()+value.slice(1)}{value==="saved"?<svg aria-label="Private" width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor"><rect x="1" y="6" width="10" height="7" rx="1"/><path d="M3 6V4a3 3 0 0 1 6 0v2"/></svg>:null}</button>)}</div>
+    <div role="tabpanel" id={`${id}-entries-panel`} aria-labelledby={`${id}-${tab==="saved"?"saved":"journal"}-tab`} hidden={tab!=="journal"&&tab!=="saved"} tabIndex={0}><MemberJournal preview={preview} writable={memberCan(member.access,"profile.write")} view={tab==="saved"?"saved":"journal"} initialMode={journalMode} onModeChange={changeJournalMode}/></div>
     <div role="tabpanel" id={`${id}-about-panel`} aria-labelledby={`${id}-about-tab`} hidden={tab!=="about"} tabIndex={0}><MembershipRecord member={member}/></div>
     {next?<aside className={styles.nextAction} data-member-next-action aria-label="Your next step"><div><span className={styles.nextLabel}>{next.kind==="foundations"?"Pick up where you left off.":needsAttention?"Your next step":"Worth a look"}</span><p>{next.title}</p>{next.kind==="foundations" && memberCan(member.access,"foundations.summary") ? <div className={styles.progressTicks} role="progressbar" aria-label="Foundations progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100,Math.max(0,member.foundations.progressPercent))}>{Array.from({length:6},(_,index)=><span key={index} data-state={index<Math.floor(member.foundations.progressPercent/100*6)?"complete":index===Math.floor(member.foundations.progressPercent/100*6)?"next":"waiting"}/>)}</div> : needsAttention?<span className={styles.nextBody}>{next.body}</span>:null}</div><Link href={next.href} className={`member-button ${needsAttention?"member-button-primary":""}`}>{needsAttention?"Continue":"Open"}<span aria-hidden="true">→</span></Link></aside>:null}
   </main>;

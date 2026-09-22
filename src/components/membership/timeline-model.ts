@@ -12,9 +12,9 @@ export const TIMELINE_MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ] as const;
 
-export function formatTimelineDate(entry: { year: number; month?: number | null }, longMonth = false): string {
+export function formatTimelineDate(entry: { year: number; month?: number | null; day?: number | null }, longMonth = false): string {
   const month = typeof entry.month === "number" ? TIMELINE_MONTHS[entry.month - 1] : undefined;
-  return month ? `${longMonth ? month : month.slice(0, 3)} ${entry.year}` : String(entry.year);
+  return month ? `${longMonth ? month : month.slice(0, 3)}${entry.day ? ` ${entry.day},` : ""} ${entry.year}` : String(entry.year);
 }
 
 export type TimelineReadingOrder = "oldest" | "newest";
@@ -45,6 +45,7 @@ export type TimelineDraftEntry = {
   details: string;
   id: string | null;
   month?: number | null;
+  day?: number | null;
   position: number;
   title: string;
   year: number;
@@ -126,6 +127,7 @@ export function sortTimelineEntries(
       (left, right) =>
         left.year - right.year ||
         (left.month ?? 13) - (right.month ?? 13) ||
+        (left.day ?? 32) - (right.day ?? 32) ||
         left.createdOrder - right.createdOrder ||
         left.clientKey.localeCompare(right.clientKey),
     )

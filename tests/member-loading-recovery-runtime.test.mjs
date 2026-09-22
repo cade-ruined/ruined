@@ -53,12 +53,10 @@ function homeFixture(overrides = {}) {
   };
 }
 
-function pageFixture(data, { state = "authenticated", products = [], viewer = state === "authenticated" ? { authUserId: "member-auth-id" } : null, timelineError = null } = {}) {
+function pageFixture(data, { state = "authenticated", products = [], viewer = state === "authenticated" ? { authUserId: "member-auth-id" } : null } = {}) {
   const calls = { products: 0, resolutions: [], timelines: 0, reads: [] };
   const { default: Page } = loadModule("app/my/page.tsx", {
     "next/navigation": { redirect: (href) => { throw new Error(`redirect:${href}`); } },
-    "@/components/membership/RuinedTimeline": component("timeline"),
-    "@/lib/membership/access-policy": { memberCan: (access, capability) => access.capabilities.includes(capability) },
     "@/components/platform/MemberHome": component("member-home"),
     "@/components/platform/PlatformUnavailable": component("platform-unavailable"),
     "@/lib/database/server": {
@@ -73,10 +71,10 @@ function pageFixture(data, { state = "authenticated", products = [], viewer = st
     "@/lib/membership/page-context": { getMembershipPageContext: async (_, load) => ({
       data: state === "authenticated" ? await load(viewer.authUserId) : data, state, viewer,
     }) },
-    "@/lib/membership/preview": { PREVIEW_MEMBER_HOME: {}, PREVIEW_MEMBER_TIMELINE: {} },
+    "@/lib/membership/preview": { PREVIEW_MEMBER_HOME: {} },
     "@/lib/membership/repository": {
       getMemberHome: async () => data,
-      getMemberTimeline: async () => { calls.timelines += 1; if (timelineError) throw timelineError; return {}; },
+      getMemberTimeline: async () => { calls.timelines += 1; throw new Error("Profile must not prefetch Timeline"); },
     },
     "@/lib/shopify": { getProducts: async () => { calls.products += 1; return products; } },
   });
@@ -95,13 +93,14 @@ test("loading recovery is a native same-page link in server HTML without client 
     "https://members.theruinedproject.com/my?returnTo=profile");
 });
 
-test("profile and optional timeline reads use isolated recovery without blocking the profile on timeline failure", async () => {
+test("profile loads its own snapshot without eagerly fetching a separate Timeline", async () => {
   const member = homeFixture({ access: { capabilities: ["home.read", "foundations.write"] } });
-  const f = pageFixture(member, { timelineError: new Error("Timeline unavailable") });
+  const f = pageFixture(member);
   const result = await f.Page();
   assert.equal(result.type, "member-home");
   assert.equal(result.props.timeline, undefined);
-  assert.deepEqual(f.calls.reads, ["member-home", "member-timeline"]);
+  assert.deepEqual(f.calls.reads, ["member-home"]);
+  assert.equal(f.calls.timelines, 0);
 });
 
 test("authenticated profile failures render native reload without asking the member to sign in again", async () => {
@@ -204,4 +203,12 @@ test("getProducts passes an eight-second abort signal and falls back to an empty
   assert.match(request.query, /query Products/);
   controller.abort(new DOMException("Catalogue deadline reached", "TimeoutError"));
   assert.deepEqual(await pending, []);
+});
+
+
+test("existing Foundations Timeline links redirect into the shared Journal without loading private entries", () => {
+  const { default: Page } = loadModule("app/my/foundations/timeline/page.tsx", {
+    "next/navigation": { redirect: href => { throw Error(`redirect:${href}`); } },
+  });
+  assert.throws(() => Page(), /redirect:\/my#timeline/);
 });

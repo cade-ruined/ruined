@@ -77,12 +77,18 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: "Your Timeline could not be saved." }, { status: 500 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (getPlatformConfiguration().mode !== "connected") {
     return NextResponse.json({ error: "The Timeline is not connected." }, { status: 503 });
   }
   const viewer = await getCurrentPlatformViewer();
   if (!viewer) return NextResponse.json({ error: "Sign in to open your Timeline." }, { status: 401 });
+  const expectedOwner = request.headers.get("x-ruined-session-owner");
+  if (expectedOwner && expectedOwner !== viewer.authUserId) {
+    return NextResponse.json({ error: "The signed-in account changed. Reload before using your Timeline." }, {
+      status: 409, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" },
+    });
+  }
   try {
     const timeline = await getMemberTimeline(viewer.authUserId);
     return NextResponse.json({ timeline }, { headers: { "Cache-Control": "private, no-store" } });
@@ -137,6 +143,12 @@ export async function POST(request: Request) {
   const viewer = await getCurrentPlatformViewer();
   if (!viewer) {
     return NextResponse.json({ error: "Passwordless member access is required." }, { status: 401 });
+  }
+  const expectedOwner = request.headers.get("x-ruined-session-owner");
+  if (expectedOwner && expectedOwner !== viewer.authUserId) {
+    return NextResponse.json({ error: "The signed-in account changed. Reload before using your Timeline." }, {
+      status: 409, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" },
+    });
   }
   try {
     if (body.action === "complete") {

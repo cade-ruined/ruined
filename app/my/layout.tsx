@@ -8,6 +8,7 @@ import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import MemberSessionContinuity from "@/components/membership/MemberSessionContinuity";
 import MemberPortraitState from "@/components/membership/MemberPortraitState";
 import MemberTimelineDraftState from "@/components/membership/MemberTimelineDraftState";
+import MemberJournalDraftState from "@/components/membership/MemberJournalDraftState";
 import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
@@ -44,6 +45,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
     <MemberSessionContinuity enabled={session?.status === "authenticated" || session?.status === "unavailable"} ownerId={viewer?.authUserId} initiallyUnavailable={session?.status === "unavailable"}>
     <MemberPortraitState ownerId={viewer?.authUserId}>
     <MemberTimelineDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
+    <MemberJournalDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
     <MemberJourneyShell
       configuration={configuration}
       operatorRole={operatorRole}
@@ -52,6 +54,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
     </MemberJourneyShell>
+    </MemberJournalDraftState>
     </MemberTimelineDraftState>
     </MemberPortraitState>
     </MemberSessionContinuity>

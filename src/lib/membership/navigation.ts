@@ -1,5 +1,5 @@
 export const MEMBER_DESTINATIONS = [
-  { href: "/my", label: "Profile", group: "Your record", keywords: "home achievements history attended milestones badges bio" },
+  { href: "/my", label: "Profile", group: "Your record", keywords: "home journal writing saved entries achievements history attended milestones badges bio" },
   { href: "/my/card", label: "My Card", group: "Your record", keywords: "public share flip portrait card download identity" },
   { href: "/my/invitation", label: "My Invitation", group: "Your record", keywords: "invite invitation referral people joined share" },
   { href: "/my/foundations/timeline", label: "My Timeline", group: "Your record", keywords: "life story journey export carousel" },

@@ -18,6 +18,10 @@ function fixture({ authenticated = true, mode = "connected", denied = false } = 
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
     "@/lib/membership/repository": {
       MembershipAccessDeniedError, MembershipConflictError, MembershipInputError,
+      completeMemberFoundationRequirement: async (auth, requirement) => {
+        calls.push(["complete", auth, requirement]);
+        return { timeline: { completed: true } };
+      },
       getMemberTimeline: async (auth) => {
         calls.push(["read", auth]);
         if (denied) throw new MembershipAccessDeniedError("Access denied");
@@ -57,7 +61,7 @@ function request(body, origin = "https://members.example.test") {
 
 test("Timeline reload uses only verified account identity and disables shared caching", async () => {
   const f = fixture();
-  const response = await f.GET();
+  const response = await f.GET(new Request("https://members.example.test/api/my/timeline"));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.deepEqual(await response.json(), { timeline: f.timeline });
@@ -67,7 +71,7 @@ test("Timeline reload uses only verified account identity and disables shared ca
 test("Timeline reload cannot bypass sign-in, disconnected mode, or repository access denial", async () => {
   for (const [options, status] of [[{ authenticated: false }, 401], [{ mode: "preview" }, 503], [{ denied: true }, 403]]) {
     const f = fixture(options);
-    assert.equal((await f.GET()).status, status);
+    assert.equal((await f.GET(new Request("https://members.example.test/api/my/timeline"))).status, status);
     if (!options.denied) assert.equal(f.calls.length, 0);
   }
 });
@@ -167,4 +171,30 @@ test("Timeline bounds actual request bytes, including chunked/lying lengths, bef
     assert.equal((await f.POST(req)).status, 413);
     assert.deepEqual(f.calls, []);
   }
+});
+
+
+test("Timeline owner headers block stale-account reads, saves, deletion and Foundations completion", async () => {
+  const f = fixture();
+  const changedGet = await f.GET(new Request("https://members.example.test/api/my/timeline", { headers: { "x-ruined-session-owner": "old-account" } }));
+  assert.equal(changedGet.status, 409);
+  assert.equal(changedGet.headers.get("cache-control"), "private, no-store");
+  assert.equal(changedGet.headers.get("vary"), "Cookie");
+  const entry = { id: null, title: "Private old account moment", year: 2020, details: null };
+  for (const body of [
+    { action: "complete" }, { action: "save", entries: [], expectedRevision: "5" },
+    { action: "upsert", entry, expectedRevision: "5" }, { action: "delete", id: "existing-entry", expectedRevision: "5" },
+  ]) {
+    const req = request(body); req.headers.set("x-ruined-session-owner", "old-account");
+    const response = await f.POST(req);
+    assert.equal(response.status, 409); assert.equal(response.headers.get("vary"), "Cookie");
+  }
+  assert.equal(f.calls.length, 0);
+  for (const owner of [null, "verified-account"]) {
+    const req = request({ action: "complete" }); if (owner) req.headers.set("x-ruined-session-owner", owner);
+    assert.equal((await f.POST(req)).status, 200);
+    const get = new Request("https://members.example.test/api/my/timeline"); if (owner) get.headers.set("x-ruined-session-owner", owner);
+    assert.equal((await f.GET(get)).status, 200);
+  }
+  assert.deepEqual(f.calls, [["complete", "verified-account", "timeline"], ["read", "verified-account"], ["complete", "verified-account", "timeline"], ["read", "verified-account"]]);
 });

@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import RuinedTimeline from "@/components/membership/RuinedTimeline";
-import { memberCan } from "@/lib/membership/access-policy";
 import MemberHome from "@/components/platform/MemberHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { withFreshApplicationDatabaseRead } from "@/lib/database/server";
 import { resolveMemberHomeArtifactProducts } from "@/lib/membership/artifact-products";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
-import { PREVIEW_MEMBER_HOME, PREVIEW_MEMBER_TIMELINE } from "@/lib/membership/preview";
-import { getMemberHome, getMemberTimeline } from "@/lib/membership/repository";
+import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
+import { getMemberHome } from "@/lib/membership/repository";
 import { getProducts } from "@/lib/shopify";
 
 export const metadata: Metadata = {
@@ -40,14 +38,5 @@ export default async function MyRuinedPage() {
     || context.data.artifacts.some((artifact) => Boolean(artifact.product));
   const products = hasArtifactProducts ? await getProducts() : [];
   const member = resolveMemberHomeArtifactProducts(context.data, products);
-  let timeline = context.state === "preview" ? PREVIEW_MEMBER_TIMELINE : null;
-  if (context.viewer && (memberCan(member.access, "foundations.write") || memberCan(member.access, "foundations.revisit"))) {
-    try {
-      const authUserId = context.viewer.authUserId;
-      timeline = await withFreshApplicationDatabaseRead("member-timeline", () => getMemberTimeline(authUserId));
-    }
-    catch { /* The rest of the profile remains available if Timeline cannot load. */ }
-  }
-  const hasTimeline = memberCan(member.access, "foundations.write") || memberCan(member.access, "foundations.revisit");
-  return <MemberHome member={member} preview={context.state === "preview"} timeline={hasTimeline && timeline ? <RuinedTimeline initialTimeline={timeline} preview={context.state === "preview"} writable={context.state === "authenticated" && memberCan(member.access, "foundations.write")} /> : undefined} />;
+  return <MemberHome member={member} preview={context.state === "preview"} />;
 }

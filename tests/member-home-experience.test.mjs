@@ -71,7 +71,7 @@ test("profile uses the actual name, portrait, and full editor link",()=>{
 });
 test("all profile tabs point to real accessible panels",()=>{
  const tree=render(memberFixture());const nodes=elements(tree);const tabs=nodes.filter(node=>attr(node,"role")==="tab");
- assert.deepEqual(tabs.map(text),["Journal","Timeline","Saved","About"]);
+ assert.deepEqual(tabs.map(text),["Journal","Saved","About"]);
  for(const tab of tabs)assert.ok(nodes.some(node=>attr(node,"role")==="tabpanel"&&attr(node,"id")===attr(tab,"aria-controls")));
  assert.equal(tabs.filter(node=>attr(node,"aria-selected")==="true").length,1);
 });
@@ -123,4 +123,115 @@ test("profile badge uses the permanent number and leaves unassigned members unnu
   assert.doesNotMatch(rendered,/No\. 0001|Founder/);
   const tree=render(member), actions=elements(tree).find(node=>attr(node,"class")==="identityActions");
   assert.deepEqual(elements(actions).filter(node=>node.tagName==="a").map(node=>attr(node,"href")),["/my/profile","/my/card","/my/invitation"]);
+});
+
+
+function interactiveProfile(hash = "#journal") {
+  const slots = [], listeners = new Map(), historyState = { nextRouter: "retained" };
+  const Journal = () => null;
+  let cursor = 0, queued = [], changed = false, tree, focused = null;
+  const window = {
+    location: { hash },
+    history: { state: historyState, replaceState(state, unused, next) { assert.equal(state, historyState); window.location.hash = next; } },
+    addEventListener(name, callback) { listeners.set(name, callback); },
+    removeEventListener(name, callback) { if (listeners.get(name) === callback) listeners.delete(name); },
+  };
+  const hooks = { ...React,
+    useId: () => "profile-test",
+    useState(initial) {
+      const key = cursor++;
+      if (!(key in slots)) slots[key] = typeof initial === "function" ? initial() : initial;
+      return [slots[key], next => { const value = typeof next === "function" ? next(slots[key]) : next; changed ||= !Object.is(value, slots[key]); slots[key] = value; }];
+    },
+    useRef(initial) { const key = cursor++; return slots[key] ??= { current: initial }; },
+    useEffect(callback, dependencies) {
+      const key = cursor++, prior = slots[key];
+      if (!prior || dependencies.some((value, index) => !Object.is(value, prior.dependencies[index]))) {
+        slots[key] = { dependencies };
+        queued.push(() => { prior?.cleanup?.(); slots[key].cleanup = callback(); });
+      }
+    },
+  };
+  const loaded = { exports: {} };
+  new Function("require", "module", "exports", "window", compiled)(name => {
+    if (name === "react") return hooks;
+    if (name === "react/jsx-runtime") return require(name);
+    if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: Journal };
+    if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
+    if (name === "@/lib/membership/access-policy") return { memberCan: (access, capability) => access.capabilities.includes(capability) };
+    if (name === "@/lib/membership/member-number") return memberNumber;
+    if (name === "next/link" || name === "next/image") return { __esModule: true, default: name };
+    if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
+    throw Error(`Unexpected profile dependency ${name}`);
+  }, loaded, loaded.exports, window);
+  const nodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : [];
+  function render() {
+    let attempts = 0;
+    do {
+      assert.ok(attempts++ < 8, "profile effects should settle");
+      cursor = 0; queued = []; changed = false;
+      tree = loaded.exports.default({ member: memberFixture() });
+      queued.forEach(effect => effect());
+    } while (changed);
+    nodes(tree).filter(node => node.props.role === "tab").forEach((node, index) => node.props.ref?.({ focus() { focused = index; } }));
+    return tree;
+  }
+  const tabs = () => nodes(render()).filter(node => node.props.role === "tab");
+  return { window, render, tabs, nodes,
+    journal() { const journals = nodes(render()).filter(node => node.type === Journal); assert.equal(journals.length, 1); return journals[0]; },
+    panel() { return nodes(render()).find(node => node.props.id === "profile-test-entries-panel"); },
+    navigate(next, event = "hashchange") { window.location.hash = next; listeners.get(event)?.(); render(); },
+    focus: () => focused,
+    unmount() { slots.forEach(slot => slot?.cleanup?.()); assert.equal(listeners.size, 0); },
+  };
+}
+
+test("legacy Timeline hashes select the Journal timeline view and mode changes preserve browser state", () => {
+  const ui = interactiveProfile("#timeline");
+  assert.equal(ui.journal().props.initialMode, "timeline");
+  assert.equal(ui.journal().props.view, "journal");
+  assert.deepEqual(ui.tabs().map(tab => tab.props["aria-selected"]), [true, false, false]);
+  assert.equal(ui.panel().props.hidden, false);
+  ui.journal().props.onModeChange("all");
+  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.journal().props.initialMode, "all");
+  ui.journal().props.onModeChange("timeline");
+  assert.equal(ui.window.location.hash, "#timeline");
+  ui.navigate("#journal"); assert.equal(ui.journal().props.initialMode, "all");
+  ui.navigate("#timeline", "popstate"); assert.equal(ui.journal().props.initialMode, "timeline");
+  ui.navigate("", "popstate"); assert.equal(ui.journal().props.initialMode, "all");
+  ui.unmount();
+});
+
+test("Journal remains in one unchanged panel across Timeline, Saved and About so drafts retain their owner", () => {
+  const ui = interactiveProfile("#timeline"), initial = ui.journal();
+  for (const [hash, view, hidden, labelled] of [
+    ["#saved", "saved", false, "saved"], ["#about", "journal", true, "journal"], ["#timeline", "journal", false, "journal"],
+  ]) {
+    ui.navigate(hash);
+    const journal = ui.journal();
+    assert.equal(journal.type, initial.type); assert.equal(journal.key, initial.key);
+    assert.equal(ui.panel().props.children.type, journal.type);
+    assert.equal(ui.panel().props.children.key, null, "view switches must not key-remount the Journal");
+    assert.equal(ui.panel().props.hidden, hidden);
+    assert.equal(ui.panel().props["aria-labelledby"], `profile-test-${labelled}-tab`);
+    assert.equal(journal.props.view, view); assert.equal(journal.props.initialMode, "timeline");
+  }
+  ui.tabs()[1].props.onClick(); assert.equal(ui.window.location.hash, "#saved");
+  ui.tabs()[0].props.onClick(); assert.equal(ui.window.location.hash, "#timeline");
+  ui.unmount();
+});
+
+test("three profile tabs keep roving keyboard focus and explicit Journal hashes restore All entries", () => {
+  const ui = interactiveProfile("#saved");
+  assert.deepEqual(ui.tabs().map(tab => tab.props.tabIndex), [-1, 0, -1]);
+  let prevented = 0;
+  ui.tabs()[1].props.onKeyDown({ key: "End", preventDefault() { prevented++; } });
+  assert.equal(ui.window.location.hash, "#about"); assert.equal(ui.focus(), 2);
+  ui.tabs()[2].props.onKeyDown({ key: "ArrowRight", preventDefault() { prevented++; } });
+  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.focus(), 0);
+  ui.tabs()[0].props.onKeyDown({ key: "ArrowLeft", preventDefault() { prevented++; } });
+  assert.equal(ui.window.location.hash, "#about"); assert.equal(ui.focus(), 2);
+  ui.tabs()[2].props.onKeyDown({ key: "Home", preventDefault() { prevented++; } });
+  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.focus(), 0); assert.equal(prevented, 4);
+  ui.unmount();
 });

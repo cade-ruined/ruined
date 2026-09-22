@@ -9,6 +9,8 @@ export async function journalViewer(request:Request,write=false) {
   if(getPlatformConfiguration().mode!=="connected") throw new JournalError(503,"Your journal is not connected.");
   const viewer=await getCurrentPlatformViewer();
   if(!viewer) throw new JournalError(401,"Sign in to open your journal.");
+  const expectedOwner=request.headers.get("x-ruined-session-owner");
+  if(expectedOwner && expectedOwner!==viewer.authUserId) throw new JournalError(409,"The signed-in account changed. Reload before using this journal.");
   return viewer.authUserId;
 }
 export function journalFailure(error:unknown) {

@@ -60,7 +60,7 @@ export default function TimelineExportStudio({
   const entryRevision = entries
     .map(
       (entry) =>
-        `${entry.id ?? ""}:${entry.clientKey}:${entry.createdOrder}:${entry.year}:${entry.month ?? ""}:${entry.title}:${entry.details}`,
+        `${entry.id ?? ""}:${entry.clientKey}:${entry.createdOrder}:${entry.year}:${entry.month ?? ""}:${entry.day ?? ""}:${entry.title}:${entry.details}`,
     )
     .join("|");
 

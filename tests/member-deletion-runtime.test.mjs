@@ -71,7 +71,7 @@ test("Delete closes every account state atomically, records a real transition on
 
 test("removal erases live profiles and authored content, preserves original history and creates one historical record and cleanup job", async t => {
   const { db,person,eligibility,remove } = await fixture(t);
-  await db.query("insert into member_timeline_entries(member_id,entry_year,title,details) values($1,2020,'Personal event','Sensitive details')",[member]);
+  await db.query("insert into member_journal_entries(member_id,kind,event_year,title,body,include_on_timeline) values($1,'text',2020,'Personal event','Sensitive details',true)",[member]);
   await db.query("insert into member_journal_entries(id,member_id,kind,body) values($1,$2,'text','Private journal')",[id(11),member]);
   await db.query("insert into member_journal_media(id,member_id,storage_path,mime_type,byte_size) values($1,$2,$3,'image/webp',12)",[id(12),member,`${member}/pending/${id(12)}`]);
   await db.query("insert into member_public_cards(member_id,public_token,wear_seed,public_enabled) values($1,$2,$3,true)",[member,"a".repeat(43),"b".repeat(24)]);
@@ -84,7 +84,7 @@ test("removal erases live profiles and authored content, preserves original hist
   const history = (await db.query("select to_jsonb(h) as value from member_state_history h order by id")).rows;
   const result = await remove({email:"  MEMBER@example.test  "});
   assert.equal(result.deleted,true);
-  for (const table of ["person_profiles","person_private_profiles","person_email_addresses","member_journal_entries","member_journal_media","member_timeline_entries","member_timeline_entry_versions","member_public_cards","member_invitations","member_personal_invitations"]) {
+  for (const table of ["person_profiles","person_private_profiles","person_email_addresses","member_journal_entries","member_journal_media","member_journal_entry_versions","member_timeline_entries","member_timeline_entry_versions","member_public_cards","member_invitations","member_personal_invitations"]) {
     const column = table.startsWith("person_") ? "person_id" : "member_id";
     assert.equal((await db.query(`select count(*)::int n from ${table} where ${column}=$1`,[column === "person_id" ? person : member])).rows[0].n,0,table);
   }
@@ -150,15 +150,15 @@ test("open billing, staff history, self deletion, shared identity and pending wo
 
 test("rollback leaves account, history and provider queue unchanged and scoped erasure never permits unrelated audit mutation", async t=>{
   const {db,person,remove}=await fixture(t,"active");
-  await db.query("insert into member_timeline_entries(member_id,entry_year,title) values($1,2020,'Personal event')",[member]);
-  await assert.rejects(db.exec("delete from member_timeline_entry_versions"),/append-only/);
+  await db.query("insert into member_journal_entries(member_id,kind,event_year,title,include_on_timeline) values($1,'text',2020,'Personal event',true)",[member]);
+  await assert.rejects(db.exec("delete from member_journal_entry_versions"),/append-only/);
   await db.exec("select set_config('ruined.member_deletion_token','00000000-0000-4000-8000-000000000999',false)");
-  await assert.rejects(db.exec("delete from member_timeline_entry_versions"),/append-only/);
+  await assert.rejects(db.exec("delete from member_journal_entry_versions"),/append-only/);
   await assert.rejects(db.transaction(async tx=>{await remove({},tx);throw Error("ROLLBACK_PROOF");}),/ROLLBACK_PROOF/);
   assert.equal((await db.query("select deleted_at from ruined_members where id=$1",[member])).rows[0].deleted_at,null);
   assert.equal((await db.query("select display_name from person_profiles where person_id=$1",[person])).rows[0].display_name,"Former Member");
   assert.equal((await db.query("select count(*)::int n from private.member_deletion_jobs")).rows[0].n,0);
-  assert.equal((await db.query("select count(*)::int n from member_timeline_entry_versions")).rows[0].n,1);
+  assert.equal((await db.query("select count(*)::int n from member_journal_entry_versions")).rows[0].n,1);
   assert.equal((await db.query("select account_state from member_lifecycle where member_id=$1",[member])).rows[0].account_state,"active");
   assert.equal((await db.query("select count(*)::int n from member_state_history")).rows[0].n,0);
   await remove();

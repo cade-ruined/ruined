@@ -2737,9 +2737,9 @@ export async function getMemberFoundationRequirements(
     select
       (
         select count(*)::int
-        from member_timeline_entries timeline
+        from member_journal_entries timeline
         where timeline.member_id = ${identity.memberId}::uuid
-          and timeline.status = 'active'
+          and timeline.deleted_at is null and timeline.include_on_timeline
       ) as entry_count,
       (
         select completed_at
@@ -3133,15 +3133,17 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
   }>>`
     with timeline_revision as (
       select coalesce(max(id), 0)::text as revision
-      from member_timeline_entry_versions
+      from member_journal_entry_versions
       where member_id = ${memberId}::uuid
     )
-    select entry.id, entry.entry_year, entry.entry_month, entry.title, entry.details, entry.position,
+    select entry.id, entry.event_year as entry_year, entry.event_month as entry_month,
+      coalesce(entry.title, case entry.kind when 'images' then 'A photograph' when 'video' then 'A video' else 'An untitled moment' end) as title,
+      entry.body as details, entry.timeline_position as position,
       timeline_revision.revision
     from timeline_revision
-    left join member_timeline_entries entry
-      on entry.member_id = ${memberId}::uuid and entry.status = 'active'
-    order by entry.entry_year, coalesce(entry.entry_month, 13), entry.position, entry.created_at, entry.id
+    left join member_journal_entries entry
+      on entry.member_id = ${memberId}::uuid and entry.deleted_at is null and entry.include_on_timeline
+    order by entry.event_year, coalesce(entry.event_month, 13), coalesce(entry.event_day, 32), entry.timeline_position, entry.created_at, entry.id
   `;
   return {
     entries: rows.flatMap((row) => row.id ? [{
@@ -3201,14 +3203,14 @@ function validateTimelineInput(input: MemberTimelineInput) {
     }
     const title = cleanRequired(entry.title, "Timeline title", 200);
     const details = entry.details?.trim() || null;
-    if (details && details.length > 4000) {
+    if (details && details.length > (entry.id ? 20000 : 4000)) {
       throw new MembershipInputError("Timeline details must be 4,000 characters or fewer.");
     }
     return { details, id: entry.id, month: entry.month, position: index + 1, title, year: entry.year };
   });
 }
 
-async function requireLockedFoundationAccess(tx: postgres.TransactionSql, identity: MemberIdentity) {
+export async function requireLockedMemberWriteAccess(tx: postgres.TransactionSql, identity: MemberIdentity, capability: "profile.write" | "foundations.write" = "foundations.write") {
   // Recheck after waiting for the writer lock. Funding can be revoked while a
   // request is in flight; an earlier page/identity read is not authorization.
   await tx`select private.ruined_lock_member_complimentary_funding(${identity.memberId}::uuid)`;
@@ -3235,172 +3237,75 @@ async function requireLockedFoundationAccess(tx: postgres.TransactionSql, identi
     for share of person, account, member_grant
   `;
   const row = rows[0];
-  if (!row || !memberCan(deriveMemberAccessPolicy(identityFromRow(row)), "foundations.write")) {
+  if (!row || !memberCan(deriveMemberAccessPolicy(identityFromRow(row)), capability)) {
     throw new MembershipAccessDeniedError();
   }
 }
 
-export async function saveMemberTimeline(
-  authUserId: string,
-  input: MemberTimelineInput,
-  expectedRevision: string,
-): Promise<MemberTimelineSnapshot> {
-  const identity = await requireMemberIdentity(authUserId);
-  const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
-  if (!memberCan(access, "foundations.write")) throw new MembershipAccessDeniedError();
-  if (typeof expectedRevision !== "string" || !/^\d{1,20}$/.test(expectedRevision)) {
-    throw new MembershipConflictError("Load the latest saved events before saving. Your draft has not been changed.");
+type LegacyJournalRow = { id:string; kind:string; title:string|null; body:string|null; event_year:number; event_month:number|null; event_day:number|null; timeline_position:number };
+
+async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:MemberIdentity,entry:ReturnType<typeof validateTimelineInput>[number]) {
+  if(entry.id) {
+    const [current]=await tx<LegacyJournalRow[]>`select id,kind,title,body,event_year,event_month,event_day,timeline_position from member_journal_entries
+      where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and include_on_timeline and deleted_at is null for update`;
+    if(!current) throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
+    const displayTitle=current.title ?? (current.kind==='images' ? 'A photograph' : current.kind==='video' ? 'A video' : 'An untitled moment');
+    const nextTitle=entry.title===displayTitle ? current.title : entry.title;
+    const nextMonth=entry.month===undefined ? current.event_month : entry.month;
+    // Legacy editors cannot represent a day or a long journal body. An
+    // unchanged value is safe; an attempted replacement must use Journal.
+    if((current.event_day!==null && (entry.year!==current.event_year || nextMonth!==current.event_month))
+      || ((current.body?.length ?? 0)>4000 && entry.details!==current.body)
+      || ((entry.details?.length ?? 0)>4000 && entry.details!==current.body)) {
+      throw new MembershipConflictError("This moment has more detail in Journal. Open it there to edit without losing anything.");
+    }
+    await tx`update member_journal_entries set event_year=${entry.year},event_month=${nextMonth},title=${nextTitle},body=${entry.details},updated_by_auth_user_id=${identity.authUserId}::uuid
+      where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline
+        and (event_year is distinct from ${entry.year} or event_month is distinct from ${nextMonth}::integer
+          or title is distinct from ${nextTitle} or body is distinct from ${entry.details})`;
+    return entry.id;
   }
-  const entries = validateTimelineInput(input);
-  // Resolve auxiliary metadata before writing. A failed follow-up read must
-  // not report a committed save as a failure to the member.
-  const requirements = await getMemberFoundationRequirements(authUserId);
-  const sql = getApplicationDatabase();
-  const record = await sql.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 45)`;
-    await requireLockedFoundationAccess(tx, identity);
-    const current = await readTimelineRecord(tx, identity.memberId);
-    if (current.revision !== expectedRevision) {
-      throw new MembershipConflictError("Your Timeline changed in another tab. Your draft is still here. Load the latest saved events before trying again.");
-    }
-    const currentRows = await tx<Array<{ id: string }>>`
-      select id
-      from member_timeline_entries
-      where member_id = ${identity.memberId}::uuid
-        and status = 'active'
-      for update
-    `;
-    const currentIds = new Set(currentRows.map((row) => row.id));
-    const retainedIds = new Set<string>();
-    for (const entry of entries) {
-      if (entry.id) {
-        if (!currentIds.has(entry.id)) {
-          throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
-        }
-        retainedIds.add(entry.id);
-        // Older clients have no month field; only an explicit null clears it.
-        await tx`
-          update member_timeline_entries
-          set
-            entry_year = ${entry.year},
-            entry_month = case when ${entry.month === undefined} then entry_month else ${entry.month ?? null}::integer end,
-            title = ${entry.title},
-            details = ${entry.details},
-            position = ${entry.position},
-            updated_by_auth_user_id = ${authUserId}::uuid
-          where id = ${entry.id}::uuid
-            and member_id = ${identity.memberId}::uuid
-            and status = 'active'
-        `;
-      } else {
-        const insertedRows = await tx<Array<{ id: string }>>`
-          insert into member_timeline_entries (
-            member_id,
-            entry_year,
-            entry_month,
-            title,
-            details,
-            position,
-            updated_by_auth_user_id
-          ) values (
-            ${identity.memberId}::uuid,
-            ${entry.year},
-            ${entry.month ?? null},
-            ${entry.title},
-            ${entry.details},
-            ${entry.position},
-            ${authUserId}::uuid
-          )
-          returning id
-        `;
-        if (insertedRows[0]) retainedIds.add(insertedRows[0].id);
-      }
-    }
-    for (const currentId of currentIds) {
-      if (retainedIds.has(currentId)) continue;
-      await tx`
-        update member_timeline_entries
-        set
-          status = 'deleted',
-          deleted_at = statement_timestamp(),
-          updated_by_auth_user_id = ${authUserId}::uuid
-        where id = ${currentId}::uuid
-          and member_id = ${identity.memberId}::uuid
-          and status = 'active'
-      `;
-    }
-    // Return this write's exact snapshot while the member lock is still held.
-    return readTimelineRecord(tx, identity.memberId);
+  const [created]=await tx<{id:string}[]>`insert into member_journal_entries(member_id,kind,title,body,event_year,event_month,include_on_timeline,timeline_position,updated_by_auth_user_id)
+    select ${identity.memberId}::uuid,'text',${entry.title},${entry.details},${entry.year},${entry.month??null},true,
+      coalesce(max(timeline_position),0)+1,${identity.authUserId}::uuid from member_journal_entries where member_id=${identity.memberId}::uuid returning id`;
+  return created!.id;
+}
+
+async function writeLegacyTimeline(authUserId:string, expectedRevision:string, mutation:{entries:MemberTimelineInput}|{entry:MemberTimelineInput[number]}|{id:string}):Promise<MemberTimelineSnapshot> {
+  const identity=await requireMemberIdentity(authUserId);
+  const access=deriveMemberAccessPolicy(identity,identity.cancellationEffectiveAt);
+  if(!memberCan(access,"foundations.write")) throw new MembershipAccessDeniedError();
+  if(typeof expectedRevision!=="string" || !/^\d{1,20}$/.test(expectedRevision)) throw new MembershipConflictError("Load the latest saved events before saving. Your draft has not been changed.");
+  const entries='entries' in mutation ? validateTimelineInput(mutation.entries) : 'entry' in mutation ? validateTimelineInput([mutation.entry]) : [];
+  if('id' in mutation && (typeof mutation.id!=="string" || !UUID.test(mutation.id))) throw new MembershipInputError("A Timeline entry identifier is not valid.");
+  const requirements=await getMemberFoundationRequirements(authUserId);
+  const record=await getApplicationDatabase().begin(async tx=>{
+    await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}),45)`;
+    await requireLockedMemberWriteAccess(tx,identity);
+    await tx`select set_config('app.journal_actor_auth_user_id',${authUserId},true)`;
+    const current=await readTimelineRecord(tx,identity.memberId);
+    if(current.revision!==expectedRevision) throw new MembershipConflictError("Your Timeline changed in another tab. Your draft is still here. Load the latest saved events before trying again.");
+    const currentIds=new Set(current.entries.map(entry=>entry.id));
+    if('id' in mutation && !currentIds.has(mutation.id)) throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
+    const retained=new Set<string>();
+    for(const entry of entries) retained.add(await writeLegacyTimelineEntry(tx,identity,entry));
+    const removed='id' in mutation ? [mutation.id] : 'entries' in mutation ? [...currentIds].filter(id=>!retained.has(id)) : [];
+    // Removing a legacy Timeline item only removes its milestone marker. Its
+    // canonical journal content, date, media and append-only history remain.
+    for(const id of removed) await tx`update member_journal_entries set include_on_timeline=false,updated_by_auth_user_id=${authUserId}::uuid
+      where id=${id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline`;
+    return readTimelineRecord(tx,identity.memberId);
   });
-  return { access, completedAt: requirements.timeline.completedAt, ...record };
+  return {access,completedAt:requirements.timeline.completedAt,...record};
 }
-
-/** Single-entry writes retain every other entry and its durable within-date position. */
-async function mutateMemberTimelineEntry(
-  authUserId: string,
-  mutation: { entry: MemberTimelineInput[number] } | { id: string },
-  expectedRevision: string,
-): Promise<MemberTimelineSnapshot> {
-  const identity = await requireMemberIdentity(authUserId);
-  const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
-  if (!memberCan(access, "foundations.write")) throw new MembershipAccessDeniedError();
-  if (typeof expectedRevision !== "string" || !/^\d{1,20}$/.test(expectedRevision)) {
-    throw new MembershipConflictError("Load the latest saved events before saving. Your draft has not been changed.");
-  }
-  const entry = "entry" in mutation ? validateTimelineInput([mutation.entry])[0]! : null;
-  const targetId = entry ? entry.id : (mutation as { id: string }).id;
-  if (!entry && (typeof targetId !== "string" || !UUID.test(targetId))) {
-    throw new MembershipInputError("A Timeline entry identifier is not valid.");
-  }
-  const requirements = await getMemberFoundationRequirements(authUserId);
-  const record = await getApplicationDatabase().begin(async tx => {
-    await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 45)`;
-    await requireLockedFoundationAccess(tx, identity);
-    const current = await readTimelineRecord(tx, identity.memberId);
-    if (current.revision !== expectedRevision) {
-      throw new MembershipConflictError("Your Timeline changed in another tab. Your draft is still here. Load the latest saved events before trying again.");
-    }
-    if (targetId && !current.entries.some(item => item.id === targetId)) {
-      throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
-    }
-    if (!entry) {
-      await tx`
-        update member_timeline_entries
-        set status = 'deleted', deleted_at = statement_timestamp(), updated_by_auth_user_id = ${authUserId}::uuid
-        where id = ${targetId}::uuid and member_id = ${identity.memberId}::uuid and status = 'active'
-      `;
-    } else if (targetId) {
-      // Missing month is compatible with older clients; explicit null clears it.
-      // Avoid even a no-op UPDATE so unrelated save metadata is not rewritten.
-      await tx`
-        update member_timeline_entries
-        set entry_year = ${entry.year},
-          entry_month = case when ${entry.month === undefined} then entry_month else ${entry.month ?? null}::integer end,
-          title = ${entry.title}, details = ${entry.details}, updated_by_auth_user_id = ${authUserId}::uuid
-        where id = ${targetId}::uuid and member_id = ${identity.memberId}::uuid and status = 'active'
-          and (entry_year is distinct from ${entry.year}
-            or (${entry.month !== undefined} and entry_month is distinct from ${entry.month ?? null}::integer)
-            or title is distinct from ${entry.title} or details is distinct from ${entry.details})
-      `;
-    } else {
-      await tx`
-        insert into member_timeline_entries(member_id,entry_year,entry_month,title,details,position,updated_by_auth_user_id)
-        select ${identity.memberId}::uuid, ${entry.year}, ${entry.month ?? null}, ${entry.title}, ${entry.details},
-          coalesce(max(position), 0) + 1, ${authUserId}::uuid
-        from member_timeline_entries where member_id = ${identity.memberId}::uuid
-      `;
-    }
-    return readTimelineRecord(tx, identity.memberId);
-  });
-  return { access, completedAt: requirements.timeline.completedAt, ...record };
+export function saveMemberTimeline(authUserId:string,input:MemberTimelineInput,expectedRevision:string) {
+  return writeLegacyTimeline(authUserId,expectedRevision,{entries:input});
 }
-
-export function upsertMemberTimelineEntry(authUserId: string, entry: MemberTimelineInput[number], expectedRevision: string) {
-  return mutateMemberTimelineEntry(authUserId, { entry }, expectedRevision);
+export function upsertMemberTimelineEntry(authUserId:string,entry:MemberTimelineInput[number],expectedRevision:string) {
+  return writeLegacyTimeline(authUserId,expectedRevision,{entry});
 }
-
-export function deleteMemberTimelineEntry(authUserId: string, id: string, expectedRevision: string) {
-  return mutateMemberTimelineEntry(authUserId, { id }, expectedRevision);
+export function deleteMemberTimelineEntry(authUserId:string,id:string,expectedRevision:string) {
+  return writeLegacyTimeline(authUserId,expectedRevision,{id});
 }
 
 export async function completeMemberFoundationRequirement(
@@ -3413,7 +3318,7 @@ export async function completeMemberFoundationRequirement(
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 46)`;
-    await requireLockedFoundationAccess(tx, identity);
+    await requireLockedMemberWriteAccess(tx, identity);
     const enrollmentRows = await tx<Array<{ id: string }>>`
       select id
       from foundation_enrollments

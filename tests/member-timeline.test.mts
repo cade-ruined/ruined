@@ -103,6 +103,17 @@ test("reading filters search saved titles, details and dates without changing so
   assert.deepEqual(input, original);
 });
 
+test("timeline exports retain exact days while keeping unknown days and months unspecified", () => {
+  const entries = [entry("month-only", 2020, 1, { month: 9 }),
+    entry("later-day", 2020, 2, { month: 9, day: 21 }),
+    entry("year-only", 2020, 3), entry("earlier-day", 2020, 4, { month: 9, day: 3 })];
+  assert.deepEqual(sortTimelineEntries(entries).map(value => value.clientKey),
+    ["earlier-day", "later-day", "month-only", "year-only"]);
+  assert.equal(formatTimelineDate(entries[1]!), "Sep 21, 2020");
+  assert.equal(formatTimelineDate(entries[0]!), "Sep 2020");
+  assert.equal(formatTimelineDate(entries[2]!), "2020");
+});
+
 test("oldest and newest reading orders keep year-only dates last and same-date moments stable", () => {
   const input = [
     entry("unknown-2021", 2021, 1), entry("jan-later", 2021, 5, { month: 1 }),
@@ -163,7 +174,7 @@ test("approved examples remain presentation-only and in chronological order", ()
   );
 });
 
-test("My Timeline is named consistently across member navigation, profile, and page", async () => {
+test("existing Timeline navigation opens the unified Journal profile", async () => {
   const [navigation, home, page, repository] = await Promise.all([
     readFile(new URL("../src/lib/membership/navigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8"),
@@ -172,18 +183,16 @@ test("My Timeline is named consistently across member navigation, profile, and p
   ]);
 
   assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "My Timeline"/);
-  assert.match(home, /"journal","timeline","saved","about"/);
-  assert.match(home, /Your timeline is private/);
-  assert.match(page, /title: "My Timeline \| Foundations"/);
+  assert.match(home, /"journal","saved","about"/);
+  assert.match(page, /redirect\("\/my#timeline"\)/);
   assert.match(repository, /title: "Build My Timeline\."/);
 });
 
 test("the timeline retains its private member API and existing downloadable export pipeline", async () => {
-  const [component, exportStudio, page, repository, persistence] = await Promise.all([
+  const [component, exportStudio, page, persistence] = await Promise.all([
     readFile(new URL("../src/components/membership/RuinedTimeline.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/TimelineExportStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/timeline-persistence.ts", import.meta.url), "utf8"),
   ]);
 
@@ -206,6 +215,5 @@ test("the timeline retains its private member API and existing downloadable expo
   assert.match(exportStudio, /preparedRef\.current !== nextPrepared/);
   assert.doesNotMatch(exportStudio, /html2canvas|dom-to-image|foreignObject/i);
   assert.doesNotMatch(component, /localStorage|sessionStorage|<iframe/i);
-  assert.match(page, /preview=\{context\.state === "preview"\}/);
-  assert.match(repository, /order by entry\.entry_year, coalesce\(entry\.entry_month, 13\), entry\.position, entry\.created_at, entry\.id/);
+  assert.match(page, /redirect\("\/my#timeline"\)/);
 });

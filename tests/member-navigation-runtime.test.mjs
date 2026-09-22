@@ -156,6 +156,8 @@ test("Member page search supports common task terms, whitespace, case, and multi
   assert.equal(findMemberDestinations("  ").length, 13);
   for (const [query, hrefs] of [
     ["BILLING", ["/my/account"]],
+    ["journal", ["/my"]],
+    ["saved entries", ["/my"]],
     ["  profile   photo ", ["/my/profile"]],
     ["events", ["/my/experiences"]],
     ["help", ["/my/support"]],
