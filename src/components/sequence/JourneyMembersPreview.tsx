@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import MembershipWaitlistForm from "@/components/public-members/MembershipWaitlistForm";
-import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
+import { MEMBERSHIP_INTRO } from "@/data/public-membership";
 import styles from "./JourneyMembersPreview.module.css";
 
 export default function JourneyMembersPreview({ headingId }: { headingId: string }) {
@@ -89,7 +89,7 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
             playsInline
             data-cursor-native
             preload="none"
-            poster="/media/membership-introduction-poster.jpg"
+            poster="/membership/foundations/beginning.webp"
             width={720}
             height={1280}
             onPointerDown={(event) => event.stopPropagation()}
@@ -98,15 +98,11 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
             <source src="/media/membership-introduction.mp4" type="video/mp4" />
             <a href="/media/membership-introduction.mp4">Watch the membership film</a>
           </video>
-          <figcaption><span>Inside Ruined</span><span>2:15</span></figcaption>
         </figure>
         <div className={styles.copy}>
-          <p className={styles.label}>Members</p>
           <h2 id={headingId} className="ui-heading">{MEMBERSHIP_INTRO.headline}</h2>
-          <p className={styles.description}>Leave your details. We’ll be in touch when membership opens.</p>
           <div className={styles.signup}>
             <MembershipWaitlistForm tone="paper" />
-            <a className={styles.signIn} href={MEMBERSHIP_LINKS.signIn}>Member sign-in</a>
           </div>
         </div>
       </section>
