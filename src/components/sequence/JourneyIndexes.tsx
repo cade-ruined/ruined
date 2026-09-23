@@ -358,9 +358,9 @@ export function JourneyStoreIndex({
   catalogStatus?: CatalogStatus;
 }) {
   const rackSelections = [
-    { id: "sunday-clothes-hoodie", color: "Grey" },
+    { id: "sunday-clothes-hoodie", color: "Blue" },
     { id: "womens-crop-tee" },
-    { id: "mens-less-permanent-tee" },
+    { id: "long-sleeve-crest-polo" },
   ];
   const featuredProducts: { product: Product; color?: string }[] = [];
   for (const { id, color } of rackSelections) {

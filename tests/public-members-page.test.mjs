@@ -72,7 +72,10 @@ test("the Members walk section contains the signup form and keeps the member por
   assert.equal(descendants(preview, "form").length, 1, "signup is available directly in the walk");
   assert.equal(attr(descendants(preview, "form")[0], "aria-label"), "Membership waitlist");
   assert.equal(MEMBERSHIP_LINKS.signIn, "https://members.theruinedproject.com/access");
-  assert.deepEqual(descendants(preview, "a").map((link) => attr(link, "href")), [MEMBERSHIP_LINKS.signIn]);
+  assert.deepEqual(descendants(preview, "a").map((link) => attr(link, "href")), [
+    "/media/membership-introduction.mp4",
+    MEMBERSHIP_LINKS.signIn,
+  ]);
   assert.equal(descendants(preview, "iframe").length, 0);
   assert.doesNotMatch(text(preview), /Explore membership/);
   assert.doesNotMatch(text(preview), /\$\s*\d|\bUSD\s*\d|\b\d+(?:\.\d{2})?\s*\/\s*(?:month|year|mo|yr)\b/i);

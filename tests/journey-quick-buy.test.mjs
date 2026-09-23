@@ -436,7 +436,7 @@ test("an overflowing rack keeps product gestures out of the walk without taking 
   assert.equal(quickBuy.calls[0].variantId, "gid://shopify/ProductVariant/105");
 });
 
-test("On the Rack features Grey, the women's script crop, and the men's Less Permanent tee in the requested order", () => {
+test("On the Rack features Blue, the women's script crop, and the Crest polo in the requested order", () => {
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/store/product-colors": productColors,
     react: React,
@@ -458,12 +458,12 @@ test("On the Rack features Grey, the women's script crop, and the men's Less Per
   const hoodie = {
     ...product, id: "sunday-clothes-hoodie", name: "Sunday Clothes Hoodie", price: "$96",
     image: photo("Black", "Front"),
-    images: [photo("Black", "Front"), photo("Black", "Back"), photo("Grey", "Front"), photo("Grey", "Back")],
-    options: [{ name: "Color", values: ["Black", "Grey"] }, { name: "Size", values: ["S", "M"] }],
+    images: [photo("Black", "Front"), photo("Black", "Back"), photo("Blue", "Front"), photo("Blue", "Back")],
+    options: [{ name: "Color", values: ["Black", "Blue"] }, { name: "Size", values: ["S", "M"] }],
     variants: [
       { ...variant(401, "Black", "S", true, "96.00"), image: photo("Black", "Front") },
-      { ...variant(402, "Grey", "S", true, "96.00"), image: photo("Grey", "Front") },
-      { ...variant(403, "Grey", "M", true, "96.00"), image: photo("Grey", "Front") },
+      { ...variant(402, "Blue", "S", true, "96.00"), image: photo("Blue", "Front") },
+      { ...variant(403, "Blue", "M", true, "96.00"), image: photo("Blue", "Front") },
     ],
   };
   const tee = (id, name, color) => ({
@@ -473,10 +473,19 @@ test("On the Rack features Grey, the women's script crop, and the men's Less Per
   });
   const womensCrop = tee("womens-crop-tee", "Women's Crop Tee", "Grey");
   const mensLessPermanent = tee("mens-less-permanent-tee", "Men's Less Permanent Tee", "Pale Khaki");
+  const crestPolo = {
+    ...product, id: "long-sleeve-crest-polo", name: "Long sleeve Crest Polo", price: "$84",
+    image: { url: "/CrestPolo.png", alt: "Long sleeve Crest Polo" }, images: [],
+    options: [{ name: "Size", values: ["S", "M", "L", "XL", "2XL"] }],
+    variants: ["S", "M", "L", "XL", "2XL"].map((size, index) => ({
+      ...variant(501 + index, "", size, true, "84.00"), title: size,
+      selectedOptions: [{ name: "Size", value: size }], image: undefined,
+    })),
+  };
   const items = [
     { ...product, id: "ruined-hoodie", name: "Ruined Hoodie" },
     tee("womens-less-permanent-crop-tee", "Women's Less Permanent Crop Tee", "White"),
-    mensLessPermanent, womensCrop, hoodie,
+    mensLessPermanent, crestPolo, womensCrop, hoodie,
   ];
   const before = structuredClone(items);
   const dom = parseFragment(renderToStaticMarkup(React.createElement(JourneyStoreIndex, { products: items, catalogStatus: "ready" })));
@@ -484,9 +493,9 @@ test("On the Rack features Grey, the women's script crop, and the men's Less Per
   const attr = (node, name) => node.attrs?.find((attribute) => attribute.name === name)?.value;
   const cards = nodes(dom).filter((node) => attr(node, "data-journey-product-card") !== undefined);
   assert.deepEqual(cards.map((node) => attr(node, "data-journey-product-card")), [
-    "sunday-clothes-hoodie", "womens-crop-tee", "mens-less-permanent-tee",
+    "sunday-clothes-hoodie", "womens-crop-tee", "long-sleeve-crest-polo",
   ]);
-  const expectedHrefs = ["/store/sunday-clothes-hoodie?color=Grey", "/store/womens-crop-tee", "/store/mens-less-permanent-tee"];
+  const expectedHrefs = ["/store/sunday-clothes-hoodie?color=Blue", "/store/womens-crop-tee", "/store/long-sleeve-crest-polo"];
   for (const [index, card] of cards.entries()) {
     const children = nodes(card);
     assert.equal(children.filter((node) => attr(node, "data-journey-quick-buy") !== undefined).length, 1);
@@ -497,7 +506,13 @@ test("On the Rack features Grey, the women's script crop, and the men's Less Per
     assert.equal(nodes(link).some((node) => ["select", "button"].includes(node.tagName)), false);
   }
   assert.deepEqual(nodes(cards[0]).filter((node) => node.tagName === "img").map((node) => attr(node, "src")), [
-    "/SundayClothes-GreyHoodieFront.png", "/SundayClothes-GreyHoodieBack.png",
+    "/SundayClothes-BlueHoodieFront.png", "/SundayClothes-BlueHoodieBack.png",
   ]);
+  assert.deepEqual(nodes(cards[2]).filter((node) => node.tagName === "img").map((node) => attr(node, "src")), ["/CrestPolo.png"]);
+  const bluePurchase = fixture(hoodie, () => {}, { color: "Blue" });
+  bluePurchase.choose("Size", "M");
+  bluePurchase.button().props.onClick();
+  assert.equal(bluePurchase.calls[0].variantId, "gid://shopify/ProductVariant/403");
+  assert.equal(bluePurchase.calls[0].image.url, "/SundayClothes-BlueHoodieFront.png");
   assert.deepEqual(items, before, "Featuring products must not reorder or narrow the canonical catalog input");
 });
