@@ -27,10 +27,16 @@ export function getPlatformConfiguration(): PlatformConfiguration {
     hasEnvironmentValue("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   const databaseConfigured = hasEnvironmentValue("DATABASE_URL");
   const stripePublishableKeyConfigured = Boolean(getStripePublishableKey());
+  const stripeSecretMode = process.env.STRIPE_SECRET_KEY?.trim().match(/^(?:sk|rk)_(test|live)_/)?.[1];
+  const stripePublishableMode = getStripePublishableKey()?.match(/^pk_(test|live)_/)?.[1];
   const stripeConfigured =
-    hasEnvironmentValue("STRIPE_SECRET_KEY") &&
-    hasEnvironmentValue("STRIPE_WEBHOOK_SECRET") &&
-    hasEnvironmentValue("STRIPE_MEMBERSHIP_PRICE_ID");
+    Boolean(stripeSecretMode) && hasEnvironmentValue("STRIPE_WEBHOOK_SECRET");
+  const paidCheckoutConfigured =
+    hasEnvironmentValue("STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID") &&
+    hasEnvironmentValue("STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID") &&
+    hasEnvironmentValue("STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION") &&
+    stripeSecretMode === stripePublishableMode &&
+    (stripeSecretMode === "test" || process.env.STRIPE_MEMBERSHIP_LIVE_ENABLED?.trim().toLowerCase() === "true");
   const requestedMode = process.env.PLATFORM_MODE?.trim().toLowerCase() || "preview";
   const previewAllowed = process.env.NODE_ENV !== "production" && requestedMode === "preview";
   const mode: PlatformMode = previewAllowed
@@ -56,6 +62,7 @@ export function getPlatformConfiguration(): PlatformConfiguration {
       supabaseConfigured &&
       databaseConfigured &&
       stripeConfigured &&
+      paidCheckoutConfigured &&
       stripePublishableKeyConfigured,
     supabase: supabaseConfigured ? "connected" : "disconnected",
   };

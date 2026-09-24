@@ -9,6 +9,7 @@ import {
   completeWebhookEvent,
   ensureBillingMember,
   findMemberBySubscription,
+  hasMembershipCheckoutConsent,
   reconcileCheckoutAttempt,
   recordWebhookFailure,
   updateMemberBillingState,
@@ -27,9 +28,12 @@ import {
 } from "@/lib/stripe/membership-state";
 import {
   getStripe,
-  getStripeMembershipPriceId,
+  getMembershipPriceConfiguration,
   isStripeTaxEnabled,
 } from "@/lib/stripe/server";
+
+import { hasFullMembershipPayment, matchesMembershipInvoice, recognizesMembershipSubscription } from "@/lib/stripe/price-policy";
+import { isMembershipBillingPlan } from "@/lib/membership/pricing";
 
 type WebhookResult = {
   duplicate: boolean;
@@ -87,6 +91,26 @@ async function handleCheckoutSession(
   const subscriptionId = expandableId(session.subscription);
   const email = await customerEmail(session.customer, session.customer_details?.email ?? session.customer_email);
 
+  const checkoutAttemptId = session.metadata.ruined_checkout_attempt_id;
+  if (isUuid(checkoutAttemptId)) {
+    await reconcileCheckoutAttempt(tx, {
+      acceptanceId: isUuid(session.metadata.agreement_acceptance_id)
+        ? session.metadata.agreement_acceptance_id
+        : null,
+      attemptId: checkoutAttemptId,
+      expiresAt: new Date(session.expires_at * 1_000),
+      sessionId: session.id,
+      status:
+        session.status === "complete"
+          ? "completed"
+          : session.status === "expired"
+            ? "expired"
+            : "open",
+      subscriptionId,
+    });
+  }
+
+
   // An expired, never-completed Session might have no Customer. Its event is
   // still durably acknowledged, but there is no billing identity to persist.
   if (!isUuid(memberId) || !customerId || !email) {
@@ -114,24 +138,6 @@ async function handleCheckoutSession(
     subscriptionId,
   });
 
-  const checkoutAttemptId = session.metadata.ruined_checkout_attempt_id;
-  if (isUuid(checkoutAttemptId)) {
-    await reconcileCheckoutAttempt(tx, {
-      acceptanceId: isUuid(session.metadata.agreement_acceptance_id)
-        ? session.metadata.agreement_acceptance_id
-        : null,
-      attemptId: checkoutAttemptId,
-      expiresAt: new Date(session.expires_at * 1_000),
-      sessionId: session.id,
-      status:
-        session.status === "complete"
-          ? "completed"
-          : session.status === "expired"
-            ? "expired"
-            : "open",
-      subscriptionId,
-    });
-  }
 
   return true;
 }
@@ -186,8 +192,7 @@ async function ensureMemberFromSubscription(
 }
 
 function isExpectedMembershipPrice(subscription: Stripe.Subscription): boolean {
-  const expectedPriceId = getStripeMembershipPriceId();
-  return subscription.items.data.some((item) => item.price.id === expectedPriceId);
+  return recognizesMembershipSubscription(subscription, getMembershipPriceConfiguration());
 }
 
 async function handleInvoice(
@@ -206,7 +211,17 @@ async function handleInvoice(
   if (isMembership && subscriptionId) {
     subscription = await getStripe().subscriptions.retrieve(subscriptionId);
     member = await ensureMemberFromSubscription(tx, subscription, invoice.customer_email);
-    membershipPriceMatches = isExpectedMembershipPrice(subscription);
+    membershipPriceMatches = matchesMembershipInvoice(invoice, subscription, getMembershipPriceConfiguration());
+    const plan = subscription.metadata.ruined_billing_plan;
+    if (isMembershipBillingPlan(plan)) {
+      const attemptId = subscription.metadata.ruined_checkout_attempt_id;
+      const acceptanceId = subscription.metadata.agreement_acceptance_id;
+      membershipPriceMatches = membershipPriceMatches && member !== null && isUuid(attemptId) && isUuid(acceptanceId) &&
+        await hasMembershipCheckoutConsent(tx, {
+          memberId: member.id, attemptId, acceptanceId, plan,
+          priceId: subscription.items.data[0].price.id, subscriptionId: subscription.id,
+        });
+    }
   }
 
   const purpose = isMembership
@@ -255,7 +270,7 @@ async function handleInvoice(
     isStripeTaxEnabled() &&
     (!subscription.automatic_tax.enabled || Boolean(subscription.automatic_tax.disabled_reason));
   const currentState = deriveMembershipState({
-    paidInvoice: event.type === "invoice.paid" && invoice.amount_paid > 0,
+    paidInvoice: event.type === "invoice.paid" && invoice.amount_paid > 0 && hasFullMembershipPayment(invoice, subscription) && membershipPriceMatches,
     previousState: member.membershipState,
     subscriptionState: subscription.status as StripeSubscriptionState,
   });

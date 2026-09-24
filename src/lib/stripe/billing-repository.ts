@@ -3,6 +3,8 @@ import "server-only";
 import postgres from "postgres";
 import type Stripe from "stripe";
 
+import { MEMBERSHIP_PLANS, isMembershipBillingPlan, type MembershipBillingPlan } from "@/lib/membership/pricing";
+
 import { getBillingDatabase } from "@/lib/stripe/database";
 import {
   type MembershipState,
@@ -25,6 +27,9 @@ export type MembershipCheckoutReservation = {
   agreementVersion: string;
   ageAttestedAt: Date;
   attemptId: string;
+  plan: MembershipBillingPlan;
+  stripePriceId: string;
+  recurringPaymentAcceptedAt: Date;
   existingAcceptanceMatches: boolean;
   existingStripeSessionId: string | null;
   memberId: string;
@@ -34,6 +39,13 @@ export class MembershipCheckoutConflictError extends Error {
   constructor() {
     super("This email already has membership billing in progress.");
     this.name = "MembershipCheckoutConflictError";
+  }
+}
+
+export class MembershipCheckoutPlanConflictError extends MembershipCheckoutConflictError {
+  constructor(public readonly plan: MembershipBillingPlan) {
+    super();
+    this.name = "MembershipCheckoutPlanConflictError";
   }
 }
 
@@ -135,11 +147,17 @@ export async function reserveMembershipCheckout({
   attemptId,
   authUserId,
   email,
+  plan,
+  stripePriceId,
+  paidAgreementVersion,
 }: {
   acceptanceId: string;
   attemptId: string;
   authUserId: string;
   email: string;
+  plan: MembershipBillingPlan;
+  stripePriceId: string;
+  paidAgreementVersion: string;
 }): Promise<MembershipCheckoutReservation> {
   const sql = getBillingDatabase();
   const emailNormalized = normalizeEmail(email);
@@ -229,6 +247,7 @@ export async function reserveMembershipCheckout({
     const acceptance = acceptanceRows[0];
     if (!acceptance) throw new MembershipCheckoutConflictError();
     const agreementVersion = `${acceptance.agreement_key}-v${acceptance.agreement_version}`;
+    if (agreementVersion !== paidAgreementVersion) throw new MembershipCheckoutConflictError();
 
     const nonterminalSubscriptions = await tx<Array<{ id: string }>>`
       select id
@@ -262,14 +281,9 @@ export async function reserveMembershipCheckout({
       throw new MembershipCheckoutConflictError();
     }
 
-    await tx`
-      update stripe_checkout_attempts
-      set status = 'expired', updated_at = now()
-      where member_id = ${member.id}
-        and status in ('creating', 'open')
-        and expires_at <= now()
-    `;
-
+    // Never retire an attempt using only the local clock: a Stripe create may
+    // have succeeded just before a network timeout. Resolve its remote Session
+    // first, or retry the same idempotency key while it is still durable.
     const attemptRows = await tx<
       Array<{
         agreement_accepted_at: Date;
@@ -278,9 +292,14 @@ export async function reserveMembershipCheckout({
         age_attested_at: Date;
         id: string;
         stripe_session_id: string | null;
+        billing_plan: string | null;
+        stripe_price_id: string | null;
+        expires_at: Date;
+        recurring_payment_accepted_at: Date | null;
       }>
     >`
       select
+        billing_plan, stripe_price_id, expires_at, recurring_payment_accepted_at,
         id,
         stripe_session_id,
         agreement_acceptance_id,
@@ -297,6 +316,18 @@ export async function reserveMembershipCheckout({
     const existingAttempt = attemptRows[0];
 
     if (existingAttempt) {
+      if (!isMembershipBillingPlan(existingAttempt.billing_plan) || !existingAttempt.stripe_price_id || !existingAttempt.recurring_payment_accepted_at) {
+        throw new MembershipCheckoutConflictError();
+      }
+      if (existingAttempt.billing_plan !== plan && !existingAttempt.stripe_session_id) {
+        throw new MembershipCheckoutPlanConflictError(existingAttempt.billing_plan);
+      }
+      if ((existingAttempt.billing_plan === plan && existingAttempt.stripe_price_id !== stripePriceId) ||
+        existingAttempt.agreement_acceptance_id !== acceptance.id ||
+        existingAttempt.agreement_version !== agreementVersion ||
+        (!existingAttempt.stripe_session_id && existingAttempt.expires_at <= new Date())) {
+        throw new MembershipCheckoutConflictError();
+      }
       return {
         agreementAcceptanceId: acceptance.id,
         agreementAcceptedAt: acceptance.accepted_at,
@@ -305,6 +336,9 @@ export async function reserveMembershipCheckout({
         agreementVersion,
         ageAttestedAt: acceptance.age_attested_at,
         attemptId: existingAttempt.id,
+        plan: existingAttempt.billing_plan,
+        stripePriceId: existingAttempt.stripe_price_id,
+        recurringPaymentAcceptedAt: existingAttempt.recurring_payment_accepted_at,
         existingAcceptanceMatches:
           existingAttempt.agreement_acceptance_id === acceptance.id &&
           existingAttempt.agreement_version === agreementVersion,
@@ -314,6 +348,12 @@ export async function reserveMembershipCheckout({
     }
 
     await tx`
+      update member_onboardings
+      set billing_plan = ${plan}, version = version + 1, updated_at = statement_timestamp()
+      where member_id = ${member.id}::uuid and billing_plan is distinct from ${plan}
+    `;
+
+    const [{ recurring_payment_accepted_at: recurringPaymentAcceptedAt }] = await tx<Array<{ recurring_payment_accepted_at: Date }>>`
       insert into stripe_checkout_attempts (
         id,
         member_id,
@@ -322,6 +362,11 @@ export async function reserveMembershipCheckout({
         agreement_version,
         agreement_accepted_at,
         age_attested_at,
+        billing_plan,
+        stripe_price_id,
+        recurring_payment_accepted_at,
+        billing_consent_auth_user_id,
+        recurring_payment_terms,
         expires_at
       ) values (
         ${attemptId},
@@ -331,8 +376,13 @@ export async function reserveMembershipCheckout({
         ${agreementVersion},
         ${acceptance.accepted_at},
         ${acceptance.age_attested_at},
-        now() + interval '30 minutes'
-      )
+        ${plan},
+        ${stripePriceId},
+        statement_timestamp(),
+        ${authUserId}::uuid,
+        ${tx.json({ version: 'membership-billing-v1', plan, ...MEMBERSHIP_PLANS[plan], firstPayment: 'upfront', recurring: true })}::jsonb,
+        now() + interval '23 hours'
+      ) returning recurring_payment_accepted_at
     `;
 
     return {
@@ -343,6 +393,9 @@ export async function reserveMembershipCheckout({
       agreementVersion,
       ageAttestedAt: acceptance.age_attested_at,
       attemptId,
+      plan,
+      stripePriceId,
+      recurringPaymentAcceptedAt,
       existingAcceptanceMatches: true,
       existingStripeSessionId: null,
       memberId: member.id,
@@ -610,6 +663,27 @@ export async function findMemberBySubscription(
         stripeCustomerId: row.stripe_customer_id,
       }
     : null;
+}
+
+export async function hasMembershipCheckoutConsent(
+  tx: BillingTransaction,
+  input: { memberId: string; attemptId: string; acceptanceId: string; plan: MembershipBillingPlan; priceId: string; subscriptionId: string },
+): Promise<boolean> {
+  const rows = await tx<Array<{ id: string }>>`
+    select id from stripe_checkout_attempts
+    where id = ${input.attemptId}::uuid
+      and member_id = ${input.memberId}::uuid
+      and agreement_acceptance_id = ${input.acceptanceId}::uuid
+      and billing_plan = ${input.plan}
+      and stripe_price_id = ${input.priceId}
+      and recurring_payment_accepted_at is not null
+      and billing_consent_auth_user_id is not null
+      and recurring_payment_terms->>'version' = 'membership-billing-v1'
+      and status in ('creating', 'open', 'completed')
+      and (stripe_subscription_id is null or stripe_subscription_id = ${input.subscriptionId})
+    limit 1
+  `;
+  return rows.length === 1;
 }
 
 export async function upsertCheckoutSession(

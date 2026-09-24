@@ -77,6 +77,7 @@ const JoinForm = load("src/components/membership/JoinForm.tsx", {
   "@/components/membership/AgreementText": { __esModule: true, default: AgreementText },
   "@/components/membership/MemberPhotoUpload": { __esModule: true, default: () => null },
   "@/lib/membership/entry-stage": load("src/lib/membership/entry-stage.ts"),
+  "@/lib/membership/pricing": load("src/lib/membership/pricing.ts"),
   "@/lib/membership/phone": load("src/lib/membership/phone.ts"),
 }).default;
 function join(publishableKey, stage = "payment") {

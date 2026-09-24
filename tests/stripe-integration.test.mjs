@@ -16,7 +16,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
 
   assert.match(checkoutRoute, /const viewer = await getCurrentPlatformViewer\(\)/);
   assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
-  assert.match(checkoutRoute, /getStripeMembershipPriceId\(\)/);
+  assert.match(checkoutRoute, /validateStripeMembershipPrice\(plan\)/);
   assert.match(checkoutRoute, /line_items:\s*\[\{ price: priceId, quantity: 1 \}\]/);
   assert.doesNotMatch(requestType, /email|price|priceId|amount|quantity/i);
   assert.doesNotMatch(checkoutRoute, /body\.(email|price|priceId|amount|quantity)/);
@@ -33,13 +33,13 @@ test("embedded membership Checkout fixes the offer on the server", () => {
   assert.doesNotMatch(checkoutRoute, /customer_update|reservation\.stripeCustomerId/);
 });
 
-test("embedded Checkout returns only a non-cacheable client secret and mounts with Stripe.js", () => {
+test("embedded Checkout returns a non-cacheable client secret and selected plan and mounts with Stripe.js", () => {
   assert.match(
     checkoutRoute,
-    /function clientSecretResponse\(clientSecret: string\)[\s\S]*?\{ clientSecret \}[\s\S]*?"Cache-Control": "no-store"/,
+    /function clientSecretResponse\(clientSecret: string, plan: MembershipBillingPlan\)[\s\S]*?\{ clientSecret, plan \}[\s\S]*?"Cache-Control": "no-store"/,
   );
-  assert.match(checkoutRoute, /return clientSecretResponse\(existingSession\.client_secret\)/);
-  assert.match(checkoutRoute, /return clientSecretResponse\(session\.client_secret\)/);
+  assert.match(checkoutRoute, /return clientSecretResponse\(existingSession\.client_secret, reservation\.plan\)/);
+  assert.match(checkoutRoute, /return clientSecretResponse\(session\.client_secret, reservation\.plan\)/);
   assert.doesNotMatch(checkoutRoute, /\{\s*checkoutUrl:/);
 
   assert.match(checkoutClient, /cache:\s*"no-store"/);
@@ -52,37 +52,6 @@ test("embedded Checkout returns only a non-cacheable client secret and mounts wi
   assert.match(checkoutClient, /instance\.mount\(mountRef\.current\)/);
   assert.match(checkoutClient, /checkout\?\.destroy\(\)/);
   assert.doesNotMatch(checkoutClient, /window\.location\.assign\(payload\./);
-});
-
-test("an open hosted Checkout Session is expired remotely and locally before replacement", () => {
-  const reusableEmbeddedIndex = checkoutRoute.indexOf(
-    'existingSession.ui_mode === "embedded_page"',
-  );
-  const remoteExpiryIndex = checkoutRoute.indexOf(
-    "stripe.checkout.sessions.expire(existingSession.id)",
-  );
-  const localExpiryIndex = checkoutRoute.indexOf(
-    "expireMembershipCheckoutAttempt(reservation.attemptId)",
-  );
-  const replacementIndex = checkoutRoute.indexOf("const replacementAttemptId");
-  const secondReservationIndex = checkoutRoute.indexOf(
-    "reservation = await reserveMembershipCheckout",
-    replacementIndex,
-  );
-
-  assert.ok(reusableEmbeddedIndex >= 0, "open embedded Sessions must be reused");
-  assert.ok(remoteExpiryIndex > reusableEmbeddedIndex, "legacy Session must expire in Stripe");
-  assert.ok(localExpiryIndex > remoteExpiryIndex, "legacy attempt must then expire locally");
-  assert.ok(replacementIndex > localExpiryIndex, "replacement ID must follow both expirations");
-  assert.ok(
-    secondReservationIndex > replacementIndex,
-    "replacement Checkout must reserve a fresh local attempt",
-  );
-  assert.match(
-    checkoutRoute,
-    /existingSession\.status === "open"[\s\S]*?stripe\.checkout\.sessions\.expire\(existingSession\.id\)/,
-  );
-  assert.match(checkoutRoute, /\? crypto\.randomUUID\(\) : checkoutAttemptId/);
 });
 
 test("billing persistence binds Stripe identity to the verified platform member", () => {

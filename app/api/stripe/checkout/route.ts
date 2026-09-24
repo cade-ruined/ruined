@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getMemberIdentity } from "@/lib/membership/repository";
+import { MEMBERSHIP_PLANS, isMembershipBillingPlan, type MembershipBillingPlan } from "@/lib/membership/pricing";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   PlatformAccessDeniedError,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/platform/repository";
 import {
   MembershipCheckoutConflictError,
+  MembershipCheckoutPlanConflictError,
   expireMembershipCheckoutAttempt,
   openMembershipCheckoutAttempt,
   reserveMembershipCheckout,
@@ -22,7 +24,9 @@ import {
 import {
   getApplicationOrigin,
   getStripe,
-  getStripeMembershipPriceId,
+  getPaidMembershipAgreementVersion,
+  getStripeLivemode,
+  validateStripeMembershipPrice,
   isStripeTaxEnabled,
   isTrustedCheckoutOrigin,
 } from "@/lib/stripe/server";
@@ -32,6 +36,8 @@ export const runtime = "nodejs";
 type CheckoutRequest = {
   acceptanceId?: unknown;
   attemptId?: unknown;
+  plan?: unknown;
+  recurringPaymentAccepted?: unknown;
 };
 
 function invalidRequest(message: string) {
@@ -41,9 +47,9 @@ function invalidRequest(message: string) {
   );
 }
 
-function clientSecretResponse(clientSecret: string) {
+function clientSecretResponse(clientSecret: string, plan: MembershipBillingPlan) {
   return NextResponse.json(
-    { clientSecret },
+    { clientSecret, plan },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -61,11 +67,23 @@ export async function POST(request: Request) {
     return invalidRequest("A valid checkout request is required.");
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return invalidRequest("A valid checkout request is required.");
+  }
+
   const checkoutAttemptId = typeof body.attemptId === "string" ? body.attemptId : null;
   const acceptanceId = typeof body.acceptanceId === "string" ? body.acceptanceId : null;
 
   if (!isUuid(checkoutAttemptId) || !isUuid(acceptanceId)) {
     return invalidRequest("Start a new checkout attempt and try again.");
+  }
+
+  if (!isMembershipBillingPlan(body.plan)) {
+    return invalidRequest("Choose monthly or annual membership.");
+  }
+  const plan = body.plan;
+  if (body.recurringPaymentAccepted !== true) {
+    return NextResponse.json({ error: "Confirm the recurring payment amount before continuing.", code: "billing_consent_required" }, { status: 400 });
   }
 
   try {
@@ -91,68 +109,63 @@ export async function POST(request: Request) {
     }
     const platformUser = await requireActivePlatformMemberLink(viewer);
     const stripe = getStripe();
-    const priceId = getStripeMembershipPriceId();
+    const priceId = await validateStripeMembershipPrice(plan);
+    const paidAgreementVersion = getPaidMembershipAgreementVersion();
     const applicationOrigin = getApplicationOrigin(new URL(request.url).origin);
     const email = normalizeEmail(viewer.email);
-    let reservation = await reserveMembershipCheckout({
-      acceptanceId,
-      attemptId: checkoutAttemptId,
-      authUserId: viewer.authUserId,
-      email,
+    const reserve = (attemptId: string) => reserveMembershipCheckout({
+      acceptanceId, attemptId, authUserId: viewer.authUserId, email,
+      plan, stripePriceId: priceId, paidAgreementVersion,
     });
+    let reservation = await reserve(checkoutAttemptId);
 
-    if (reservation.memberId !== platformUser.memberId) {
-      throw new Error("The verified account does not match the billing member.");
-    }
-
-    if (reservation.existingStripeSessionId) {
-      const existingSession = await stripe.checkout.sessions.retrieve(
-        reservation.existingStripeSessionId,
-      );
-
-      if (
-        reservation.existingAcceptanceMatches &&
-        existingSession.status === "open" &&
-        existingSession.ui_mode === "embedded_page" &&
-        existingSession.client_secret
-      ) {
-        return clientSecretResponse(existingSession.client_secret);
-      }
-
+    // A competing tab may reserve a replacement while this request resolves an
+    // expired remote Session. Always re-check the reservation before creating.
+    for (let resolved = 0; reservation.existingStripeSessionId; resolved++) {
+      if (resolved >= 3) throw new MembershipCheckoutConflictError();
+      const existingSession = await stripe.checkout.sessions.retrieve(reservation.existingStripeSessionId);
       if (existingSession.status === "complete") {
         return NextResponse.json(
           { error: "This membership payment is already being confirmed." },
-          { status: 409 },
+          { headers: { "Cache-Control": "no-store" }, status: 409 },
         );
       }
-
-      if (existingSession.status === "open") {
-        await stripe.checkout.sessions.expire(existingSession.id);
+      if (existingSession.status === "expired") {
+        await expireMembershipCheckoutAttempt(reservation.attemptId);
+        reservation = await reserve(crypto.randomUUID());
+        continue;
       }
-      await expireMembershipCheckoutAttempt(reservation.attemptId);
-      const replacementAttemptId =
-        reservation.attemptId === checkoutAttemptId ? crypto.randomUUID() : checkoutAttemptId;
-      reservation = await reserveMembershipCheckout({
-        acceptanceId,
-        attemptId: replacementAttemptId,
-        authUserId: viewer.authUserId,
-        email,
-      });
+      if (reservation.plan !== plan) throw new MembershipCheckoutPlanConflictError(reservation.plan);
+      const expected = MEMBERSHIP_PLANS[reservation.plan];
+      if (
+        reservation.memberId === platformUser.memberId &&
+        existingSession.status === "open" &&
+        existingSession.mode === "subscription" &&
+        existingSession.livemode === getStripeLivemode() &&
+        existingSession.ui_mode === "embedded_page" &&
+        existingSession.metadata?.ruined_member_id === reservation.memberId &&
+        existingSession.metadata?.ruined_billing_plan === reservation.plan &&
+        existingSession.metadata?.ruined_price_id === reservation.stripePriceId &&
+        existingSession.metadata?.agreement_acceptance_id === reservation.agreementAcceptanceId &&
+        existingSession.amount_subtotal === expected.amount &&
+        existingSession.currency === expected.currency &&
+        existingSession.client_secret
+      ) {
+        return clientSecretResponse(existingSession.client_secret, reservation.plan);
+      }
+      // Do not expire an in-flight payment to satisfy a different tab/plan.
+      throw new MembershipCheckoutConflictError();
     }
 
-    if (!reservation.existingAcceptanceMatches) {
-      await expireMembershipCheckoutAttempt(reservation.attemptId);
-      reservation = await reserveMembershipCheckout({
-        acceptanceId,
-        attemptId: crypto.randomUUID(),
-        authUserId: viewer.authUserId,
-        email,
-      });
+    if (reservation.memberId !== platformUser.memberId || reservation.plan !== plan || reservation.stripePriceId !== priceId) {
+      throw new MembershipCheckoutConflictError();
     }
 
     const metadata = {
       ruined_context: MEMBERSHIP_CONTEXT,
       ruined_offer: MEMBERSHIP_OFFER,
+      ruined_billing_plan: reservation.plan,
+      ruined_price_id: reservation.stripePriceId,
       ruined_member_id: reservation.memberId,
       ruined_checkout_attempt_id: reservation.attemptId,
       agreement_acceptance_id: reservation.agreementAcceptanceId,
@@ -161,6 +174,8 @@ export async function POST(request: Request) {
       agreement_version: reservation.agreementVersion,
       agreement_accepted_at: reservation.agreementAcceptedAt.toISOString(),
       age_attested_at: reservation.ageAttestedAt.toISOString(),
+      billing_consent_at: reservation.recurringPaymentAcceptedAt.toISOString(),
+      billing_terms_version: "membership-billing-v1",
       age_policy_minimum: String(configuration.minimumAge),
     };
 
@@ -178,11 +193,11 @@ export async function POST(request: Request) {
         payment_method_collection: "always",
         redirect_on_completion: "always",
         return_url: `${applicationOrigin}/my/join/complete?session_id={CHECKOUT_SESSION_ID}`,
-        subscription_data: { metadata },
+        subscription_data: { billing_mode: { type: "flexible" }, metadata },
         ui_mode: "embedded_page",
       },
       {
-        idempotencyKey: `ruined-membership:${reservation.attemptId}:${reservation.agreementAcceptanceId}`,
+        idempotencyKey: `ruined-membership:${reservation.attemptId}:${reservation.agreementAcceptanceId}:${reservation.plan}:${reservation.stripePriceId}`,
       },
     );
 
@@ -196,13 +211,20 @@ export async function POST(request: Request) {
       stripeSessionId: session.id,
     });
 
-    return clientSecretResponse(session.client_secret);
+    return clientSecretResponse(session.client_secret, reservation.plan);
   } catch (error) {
     if (error instanceof PlatformAccessDeniedError) {
       return NextResponse.json(
-        { error: "An active invited member account is required before Checkout." },
+        { error: "A verified member signup is required before Checkout." },
         { status: 403 },
       );
+    }
+
+    if (error instanceof MembershipCheckoutPlanConflictError) {
+      return NextResponse.json({
+        error: `Your ${error.plan} checkout is already in progress. Resume it to avoid a second payment.`,
+        code: "checkout_plan_locked", plan: error.plan,
+      }, { headers: { "Cache-Control": "no-store" }, status: 409 });
     }
 
     if (error instanceof MembershipCheckoutConflictError) {

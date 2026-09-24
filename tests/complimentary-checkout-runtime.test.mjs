@@ -14,6 +14,7 @@ for (const funding of ["operator", "complimentary", "self"]) test(`checkout chec
   const dependencies = {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid }) },
+    "@/lib/membership/pricing": { isMembershipBillingPlan: value => value === "monthly" || value === "annual" },
     "@/lib/membership/repository": { getMemberIdentity: async () => ({ membershipFunding: funding }) },
     "@/lib/platform/config": { getPlatformConfiguration: () => { configurationReads++; return { stripeCheckoutReady: false }; } },
     "@/lib/platform/repository": { PlatformAccessDeniedError: class extends Error {} },
@@ -27,7 +28,7 @@ for (const funding of ["operator", "complimentary", "self"]) test(`checkout chec
     return dependencies[name];
   }, loaded, loaded.exports);
   const response = await loaded.exports.POST(new Request("https://members.example.test/api/stripe/checkout", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acceptanceId: uuid, attemptId: uuid }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acceptanceId: uuid, attemptId: uuid, plan: "monthly", recurringPaymentAccepted: true }),
   }));
   assert.equal(response.status, funding === "self" ? 503 : 409);
   assert.equal(configurationReads, funding === "self" ? 1 : 0);

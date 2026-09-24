@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { isMembershipBillingPlan, type MembershipBillingPlan } from "@/lib/membership/pricing";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import {
@@ -43,8 +44,10 @@ const INVITATION_MESSAGES: Record<MemberEmailConfirmationStatus, string> = {
 
 export default function MemberEmailConfirmationStatus({
   invitationToken,
+  signupPlan,
 }: {
   invitationToken?: string;
+  signupPlan?: MembershipBillingPlan;
 }) {
   const [status, setStatus] = useState<MemberEmailConfirmationStatus>("neutral");
   const consumed = useRef(false);
@@ -63,7 +66,13 @@ export default function MemberEmailConfirmationStatus({
 
   const copy = STATUS_COPY[status];
   const hasInvitation = typeof invitationToken === "string" && /^[A-Za-z0-9_-]{43}$/.test(invitationToken);
-  const destination = hasInvitation ? `/invitation/${invitationToken}#accept-invitation` : "/access";
+  const hasSignup = !hasInvitation && isMembershipBillingPlan(signupPlan);
+  const destination = hasInvitation ? `/invitation/${invitationToken}#accept-invitation` : hasSignup ? `/signup?plan=${signupPlan}` : "/access";
+  const signupMessage = status === "confirmed"
+    ? "Your email address is verified. Return to signup and request a one-time code to continue with your profile, agreement, and payment."
+    : status === "error"
+      ? "This link may have expired or already been used. Return to signup to request a new email."
+      : "Open the confirmation link in your email. Visiting this page alone does not confirm your email or start a paid membership.";
 
   return (
     <section className="lg:pt-12" aria-live="polite" aria-labelledby="confirmation-status">
@@ -77,7 +86,7 @@ export default function MemberEmailConfirmationStatus({
         {copy.title}
       </h2>
       <p className="mt-5 text-sm leading-relaxed text-white/50">
-        {hasInvitation ? INVITATION_MESSAGES[status] : copy.message}
+        {hasInvitation ? INVITATION_MESSAGES[status] : hasSignup ? signupMessage : copy.message}
       </p>
       <Link
         className="mt-10 inline-flex min-h-12 items-center border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white"
@@ -86,6 +95,7 @@ export default function MemberEmailConfirmationStatus({
       >
         {hasInvitation
           ? status === "confirmed" ? "Continue to invitation" : "Return to invitation"
+          : hasSignup ? status === "confirmed" ? "Continue signup" : "Return to signup"
           : status === "confirmed" ? "Continue to access" : "Return to access"}
       </Link>
     </section>

@@ -10,6 +10,8 @@ import {
 } from "@/lib/platform/repository";
 import { claimPlatformOperatorForViewer } from "@/lib/platform/ops-access-repository";
 import { ensureOperatorMemberProfile } from "@/lib/platform/operator-member-profile";
+import { claimPublicMembershipSignup, PublicMembershipSignupDeniedError } from "@/lib/membership/public-signup-admission";
+import type { PublicMembershipSignup } from "@/lib/membership/public-signup";
 
 /** Call only after completePlatformSignIn has succeeded. This grants no access. */
 export async function getSupportSignInDestination(
@@ -42,8 +44,17 @@ export async function getUnifiedAccessEligibility(email: string) {
 /** Called only after Supabase has verified the identity, including existing sessions. */
 export async function completePlatformSignIn(
   viewer: PlatformViewer,
-  options?: { invitationToken: string },
+  options?: { invitationToken: string; signup?: never } | { signup: PublicMembershipSignup; invitationToken?: never },
 ): Promise<{ redirectTo: "/my" | "/my/join" | "/ops" }> {
+  if (options?.signup) {
+    try {
+      await claimPublicMembershipSignup(viewer, options.signup.plan);
+    } catch (error) {
+      if (error instanceof PublicMembershipSignupDeniedError) throw new PlatformAccessDeniedError();
+      throw error;
+    }
+    return { redirectTo: "/my/join" };
+  }
   if (options?.invitationToken !== undefined) {
     // A personal invitation approves membership only. Its claim revalidates
     // the exact recipient, deadline and eligibility in the same transaction.

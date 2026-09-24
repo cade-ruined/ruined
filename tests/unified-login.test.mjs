@@ -27,6 +27,10 @@ async function accessModule(member, operator, overrides = {}) {
   const calls = [];
   const api = await load("src/lib/auth/platform-access.ts", {
     "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts", {}),
+    "@/lib/membership/public-signup-admission": {
+      claimPublicMembershipSignup: async () => { calls.push("signup"); },
+      PublicMembershipSignupDeniedError: class extends Error {},
+    },
     "@/lib/platform/repository": {
       PlatformAccessDeniedError,
       getPasswordlessAccessEligibility: async (email, audience) => {
@@ -123,7 +127,14 @@ async function routeModule(kind, options = {}) {
   });
   const api = await load(`app/api/auth/otp/${kind}/route.ts`, {
     "next/server": { NextResponse },
-    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
+    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context", isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
+    "@/lib/membership/public-signup": await load("src/lib/membership/public-signup.ts", {
+      "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts", {}),
+    }),
+    "@/lib/membership/public-signup-admission": {
+      getPublicMembershipSignupEligibility: async () => { calls.push("signup-eligibility"); if(options.signupUnavailable) throw new Error("Unavailable"); return options.signupEligible !== false; },
+      consumePublicMembershipSignupRateLimit: async () => { calls.push("signup-throttle"); return options.signupThrottled !== true; },
+    },
     "@/lib/membership/personal-invitation-admission": {
       getPersonalInvitationAdmissionEligibility: async (email, token) => {
         calls.push({ admission: { email, token } });
@@ -131,7 +142,7 @@ async function routeModule(kind, options = {}) {
         return options.personalEligible !== false;
       },
     },
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected", stripeCheckoutReady: options.checkoutReady !== false }) },
     "@/lib/platform/repository": { PlatformAccessDeniedError },
     "@/lib/auth/platform-access": {
       getUnifiedAccessEligibility: async () => { calls.push("eligibility"); return { eligible: options.eligible !== false, shouldCreateUser: options.newIdentity === true, member: options.member ?? "none", operator: options.operator ?? "none" }; },
@@ -177,6 +188,59 @@ test("OTP delivery cannot be steered by a forged audience and stays generic for 
   const invited = await routeModule("request", { newIdentity: true });
   assert.equal((await invited.POST(request("request", { email: viewer.email, audience: "member" }))).status, 200);
   assert.deepEqual(invited.calls[1], { email: viewer.email, options: { shouldCreateUser: true, emailRedirectTo: "https://ruined.example/my/confirmed" } });
+});
+
+test("explicit public signup sends OTP without invitation and stores only plan navigation context", async () => {
+  const api = await routeModule("request", { eligible: false });
+  const response = await api.POST(request("request", { email: viewer.email, signup: { plan: "annual" } }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ok,true);
+  assert.deepEqual(api.calls,["signup-throttle","signup-eligibility","eligibility",{ email:viewer.email,options:{shouldCreateUser:true,emailRedirectTo:"https://ruined.example/my/confirmed"}}]);
+  assert.equal(response.cookies.get("ruined-signup-context")?.value,"annual");
+  assert.equal(response.cookies.get("ruined-invitation-context")?.value,"");
+  assert.match(response.headers.get("set-cookie"),/HttpOnly/);
+  assert.match(response.headers.get("set-cookie"),/Path=\/my\/confirmed/);
+  assert.equal(api.calls.includes("claim"),false);
+});
+
+test("signup validates plans and rejects funding or role overrides", async () => {
+  for(const signup of [null,{},[],{plan:"free"},{plan:"monthly",funding:"complimentary"},{plan:"annual",role:"ops_admin"}]) {
+    const api = await routeModule("request",{eligible:false});
+    assert.equal((await api.POST(request("request",{email:viewer.email,signup}))).status,400);
+    assert.deepEqual(api.calls,[]);
+  }
+  const conflict = await routeModule("request",{eligible:false});
+  assert.equal((await conflict.POST(request("request",{email:viewer.email,signup:{plan:"monthly"},invitationToken:"P".repeat(43)}))).status,400);
+  assert.deepEqual(conflict.calls,[]);
+});
+
+test("unknown normal signin remains denied while blocked or throttled public signup has the same generic delivery result", async () => {
+  for(const options of [{signupEligible:false},{signupThrottled:true}]) {
+    const api = await routeModule("request",{eligible:false,...options});
+    const response = await api.POST(request("request",{email:viewer.email,signup:{plan:"monthly"}}));
+    assert.equal(response.status,200); assert.equal((await response.json()).ok,true);
+    assert.equal(api.calls.some(call=>typeof call==='object' && 'email' in call),false);
+  }
+  const unconfigured = await routeModule("request",{checkoutReady:false});
+  assert.equal((await unconfigured.POST(request("request",{email:viewer.email,signup:{plan:"annual"}}))).status,503);
+  assert.deepEqual(unconfigured.calls,[]);
+});
+
+test("verified public signup claims pending entry only after matching OTP and preserves its exact plan", async () => {
+  const api = await routeModule("verify",{eligible:false});
+  const response = await api.POST(request("verify",{email:viewer.email,token:"123456",signup:{plan:"annual"},returnTo:"/ops"}));
+  assert.deepEqual(await response.json(),{redirectTo:"/my/join"});
+  assert.deepEqual(api.calls,["signup-eligibility","verify","claim",{claimContext:{signup:{plan:"annual"}}}]);
+  assert.equal(response.cookies.get("test-session")?.value,"verified");
+  assert.equal(response.cookies.get("ruined-signup-context")?.value,"");
+  for(const options of [{signupEligible:false},{wrongEmail:true},{denied:true},{checkoutReady:false}]) {
+    const blocked = await routeModule("verify",{eligible:false,...options});
+    const denied = await blocked.POST(request("verify",{email:viewer.email,token:"123456",signup:{plan:"annual"}}));
+    assert.ok([401,503].includes(denied.status));
+    assert.equal(denied.cookies.get("test-session")?.value,"");
+    assert.equal((await denied.json()).redirectTo,undefined);
+    if(options.wrongEmail || options.signupEligible===false || options.checkoutReady===false) assert.equal(blocked.calls.includes("claim"),false);
+  }
 });
 
 test("added and returning users request a code with email alone, without an invitation link", async () => {

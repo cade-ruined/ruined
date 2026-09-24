@@ -352,6 +352,7 @@ for (const funding of ["self", "operator", "complimentary"]) test(`entry saves, 
     }
     if (funding === "complimentary") {
       const billing = await loadModule("src/lib/stripe/billing-repository.ts", {
+        "@/lib/membership/pricing": await loadModule("src/lib/membership/pricing.ts", {}),
         postgres, "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
         "@/lib/stripe/membership-state": { normalizeEmail: email => email.trim().toLowerCase() },
       });

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   STRIPE_API_VERSION,
   getStripe,
+  getStripeLivemode,
   getStripeWebhookSecret,
 } from "@/lib/stripe/server";
 import { processStripeWebhookEvent } from "@/lib/stripe/webhook";
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
     );
   } catch {
     return NextResponse.json({ error: "Invalid Stripe signature." }, { status: 400 });
+  }
+
+  if (event.livemode !== getStripeLivemode()) {
+    return NextResponse.json({ error: "Stripe event mode does not match this environment." }, { status: 400 });
   }
 
   if (event.api_version !== STRIPE_API_VERSION) {

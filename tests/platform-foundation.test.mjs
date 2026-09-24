@@ -232,7 +232,7 @@ test("Checkout derives identity from verified claims and keeps the offer server-
   assert.match(checkoutRoute, /normalizeEmail\(viewer\.email\)/);
   assert.match(checkoutRoute, /customer_email: email/);
   assert.doesNotMatch(checkoutRoute, /body\.(?:email|price|priceId|amount|quantity)/);
-  assert.match(checkoutRoute, /const priceId = getStripeMembershipPriceId\(\)/);
+  assert.match(checkoutRoute, /const priceId = await validateStripeMembershipPrice\(plan\)/);
   assert.match(checkoutRoute, /line_items: \[\{ price: priceId, quantity: 1 \}\]/);
   assert.match(checkoutRoute, /integration_identifier: "ruined_my_[a-z]{8}"/);
 });

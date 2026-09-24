@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
+import * as pricing from "../src/lib/membership/pricing.ts";
 import * as confirmation from "../src/lib/auth/email-confirmation.ts";
 
 const token = "P".repeat(43);
@@ -38,11 +39,13 @@ test("confirmation page forwards only the validated navigation cookie and never 
   let cookieValue;
   const route = await load("../app/my/confirmed/page.tsx", {
     "next/headers": { cookies: async () => ({ get: name => {
+      if (name === "ruined-signup-context") return undefined;
       assert.equal(name, "ruined-invitation-context");
       return cookieValue === undefined ? undefined : { value: cookieValue };
     } }) },
     "@/components/platform/MemberEmailConfirmationStatus": { default: Status },
-    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context" },
+    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context" },
+    "@/lib/membership/pricing": pricing,
     "@/lib/membership/invitation-model": { MEMBER_INVITATION_TOKEN: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/sharing": { privateSharingMetadata: { robots: { index: false, follow: false } } },
   });
@@ -50,7 +53,7 @@ test("confirmation page forwards only the validated navigation cookie and never 
     cookieValue = invitation;
     const tree = await route.default({ searchParams: Promise.resolve({ invitation: "Q".repeat(43), code: "SECRET-CODE", access_token: "SECRET-ACCESS", email: "PRIVATE@example.test", next: "https://attacker.example" }) });
     const status = elements(tree).find(element => element.type === Status);
-    assert.deepEqual(status.props, { invitationToken: invitation === token ? token : undefined });
+    assert.deepEqual(status.props, { invitationToken: invitation === token ? token : undefined, signupPlan: undefined });
     assert.doesNotMatch(JSON.stringify(tree), /SECRET|PRIVATE|attacker|Q{43}/);
   }
   assert.equal(route.metadata.referrer, "no-referrer");
@@ -70,9 +73,10 @@ async function statusFixture() {
       useLayoutEffect: callback => { effect = callback; },
     },
     "@/lib/auth/email-confirmation": confirmation,
+    "@/lib/membership/pricing": pricing,
   });
   return {
-    render: invitationToken => loaded.default({ invitationToken }),
+    render: (invitationToken, signupPlan) => loaded.default({ invitationToken, signupPlan }),
     consume: () => effect(),
     link: tree => elements(tree).find(element => element.type === Link),
   };
@@ -129,5 +133,19 @@ test("failed personal confirmations return to the invitation while ordinary and 
   } finally {
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
+  }
+});
+
+
+test("signup confirmation returns to the validated billing choice without treating confirmation as payment", async () => {
+  const fixture = await statusFixture();
+  for (const plan of ["monthly", "annual"]) {
+    const tree = fixture.render(undefined, plan);
+    assert.equal(fixture.link(tree).props.href, `/signup?plan=${plan}`);
+    assert.match(content(tree), /does not confirm your email or start a paid membership/);
+    assert.equal(fixture.link(fixture.render(token, plan)).props.href, `/invitation/${token}#accept-invitation`, "invitation context takes precedence");
+  }
+  for (const plan of [undefined, "free", "https://attacker.example", ["annual"]]) {
+    assert.equal(fixture.link(fixture.render(undefined, plan)).props.href, "/access");
   }
 });
