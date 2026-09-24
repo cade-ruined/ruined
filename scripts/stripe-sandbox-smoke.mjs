@@ -182,6 +182,7 @@ const config=${config}; let checkout; let busy=false;
 const error=document.getElementById('error'); const button=document.getElementById('start');
 const plan=document.getElementById('plan'); const consent=document.getElementById('consent');
 const headers={'Content-Type':'application/json','X-Ruined-Smoke':config.token};
+document.addEventListener('securitypolicyviolation',event=>{let source='inline content';try{source=new URL(event.blockedURI).origin;}catch{}error.textContent='Browser policy blocked '+event.effectiveDirective+' from '+source;});
 plan.addEventListener('change',()=>{consent.checked=false;error.textContent='';if(checkout){checkout.destroy();checkout=null;}button.textContent='Open sandbox Checkout';});
 async function refresh(){try{const response=await fetch('/status',{cache:'no-store'});if(!response.ok)throw Error('Status unavailable');document.getElementById('state').textContent=JSON.stringify(await response.json(),null,2);}catch{document.getElementById('state').textContent='Harness stopped or unavailable.';}}
 document.getElementById('form').addEventListener('submit',async event=>{event.preventDefault();if(busy)return;busy=true;button.disabled=true;plan.disabled=true;consent.disabled=true;error.textContent='';try{
@@ -200,12 +201,12 @@ function response(body, status = 200, type = "application/json") {
   const security = type.startsWith("text/html") ? { "Content-Security-Policy": [
     "default-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
     `script-src 'self' https://*.stripe.com https://*.link.com ${hashes("script")}`,
-    `style-src 'self' ${hashes("style")}`, "frame-src https://*.stripe.com https://*.link.com",
-    "connect-src 'self' https://*.stripe.com https://*.link.com",
+    "style-src 'self' 'unsafe-inline'", "frame-src https://*.stripe.com https://link.com https://*.link.com",
+    "connect-src 'self' https://*.stripe.com https://link.com https://*.link.com",
     "img-src 'self' data: https://*.stripe.com https://*.link.com",
   ].join("; ") } : {};
   return new Response(type === "application/json" ? JSON.stringify(body) : body, { status,
-    headers: { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY", ...security } });
+    headers: { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY", ...security } });
 }
 
 async function dispatch(app, token, request) {
