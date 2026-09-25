@@ -362,10 +362,12 @@ test("Members page keeps the compatible Add member anchor and exact Administrato
   const calls = [];
   const Page = load("app/ops/members/page.tsx", {
     "next/navigation": { redirect: (path) => { throw new Error(`redirect:${path}`); } },
+    "@/components/platform/OperatorDirectInvitations": { __esModule: true, default: () => React.createElement("div", { "data-direct-invitations": true }) },
+    "@/lib/platform/ops-direct-invitations-repository": { getOpsDirectInvitations: async () => ({ entries: [], query: "", page: 1, pageCount: 1, totalResults: 0, counts: { created: 0, pending: 0, sent: 0, failed: 0, accepted: 0, joined: 0, expired: 0, revoked: 0 } }) },
     "@/components/platform/OperatorMemberInvitations": { __esModule: true, default: (props) => React.createElement("div", { "data-allowance": true, "data-preview": props.preview }) },
     "@/lib/platform/ops-member-invitation-repository": { getPendingMemberInvitations: async () => ({ entries: [], query: "", page: 1, pageCount: 1, totalResults: 0 }) },
     "@/components/platform/OperatorMemberDirectory": { __esModule: true, default: () => React.createElement("div", { "data-directory": true }) },
-    "@/components/platform/OperatorPeopleWorkspace": { __esModule: true, default: ({ children, pendingJoining }) => React.createElement("div", { "data-people-workspace": true }, children, pendingJoining) },
+    "@/components/platform/OperatorPeopleWorkspace": { __esModule: true, default: ({ children, pendingJoining, directInvitations }) => React.createElement("div", { "data-people-workspace": true }, children, pendingJoining, directInvitations) },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: ({ children }) => React.createElement("main", null, children) },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: () => React.createElement("p", null, "Unavailable") },
     "@/lib/platform/page-data": { getOperatorPageContext: async () => context },
@@ -375,10 +377,12 @@ test("Members page keeps the compatible Add member anchor and exact Administrato
   const admin = nodes(await render());
   assert.ok(admin.some((n) => n.props?.["data-people-workspace"]));
   assert.ok(admin.some((n) => n.props?.["data-allowance"]));
+  assert.ok(admin.some((n) => n.props?.["data-direct-invitations"]));
   assert.match(source("src/components/platform/OperatorPeopleWorkspace.tsx"), /id="allow-member-email"/);
   assert.deepEqual(calls[0], ["admin", { query: "name", page: 2, filter: "unassigned" }]);
   context.role = "circle_leader";
   assert.equal(nodes(await render()).some((n) => n.props?.["data-allowance"]), false);
+  assert.equal(nodes(await render()).some((n) => n.props?.["data-direct-invitations"]), false);
   context.role = "ops_admin";
   context.state = "preview";
   context.viewer = null;

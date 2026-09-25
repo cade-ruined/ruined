@@ -16,7 +16,8 @@ export const metadata: Metadata = {
 export default async function MyRuinedEmailConfirmedPage() {
   // This cookie supplies navigation context only. The invitation and verified
   // recipient are checked again when the member accepts it.
-  const invitation = (await cookies()).get(MEMBER_INVITATION_CONTEXT_COOKIE)?.value;
+  const cookieStore = await cookies();
+  const invitation = cookieStore.get(MEMBER_INVITATION_CONTEXT_COOKIE)?.value;
   const invitationToken = typeof invitation === "string" && MEMBER_INVITATION_TOKEN.test(invitation)
     ? invitation
     : undefined;

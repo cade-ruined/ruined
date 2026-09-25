@@ -16,6 +16,7 @@ import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { useMembershipEntryProgressStage } from "@/components/membership/MembershipEntryProgress";
 import AgreementText from "@/components/membership/AgreementText";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
+import { formatMembershipPrice, isMembershipBillingPlan, MEMBERSHIP_PLANS, type MembershipBillingPlan } from "@/lib/membership/pricing";
 import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
 import {
@@ -34,6 +35,8 @@ import {
 type CheckoutResponse = {
   clientSecret?: string;
   error?: string;
+  code?: string;
+  plan?: MembershipBillingPlan;
 };
 
 type AgreementResponse = {
@@ -124,6 +127,7 @@ export default function JoinForm({
   checkoutEnabled,
   enabled,
   initialOnboarding,
+  initialPlan = "monthly",
   minimumAge,
   photoStorageReady,
   publishableKey,
@@ -133,6 +137,7 @@ export default function JoinForm({
   checkoutEnabled: boolean;
   enabled: boolean;
   initialOnboarding: MemberOnboardingSnapshot;
+  initialPlan?: MembershipBillingPlan;
   minimumAge: number;
   photoStorageReady: boolean;
   publishableKey: string | null;
@@ -146,6 +151,11 @@ export default function JoinForm({
   const [acceptanceId, setAcceptanceId] = useState(initialOnboarding.agreement.acceptanceId);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<MembershipBillingPlan>(initialPlan);
+  const [recurringPaymentAccepted, setRecurringPaymentAccepted] = useState(false);
+  const [lockedPlan, setLockedPlan] = useState<MembershipBillingPlan | null>(null);
+  const selectedPrice = MEMBERSHIP_PLANS[plan];
+  const selectedAmount = formatMembershipPrice(selectedPrice.amount);
   const [submitting, setSubmitting] = useState(false);
   const [photoPending, setPhotoPending] = useState(false);
   const [photoDraft, setPhotoDraft] = useState(false);
@@ -313,8 +323,17 @@ export default function JoinForm({
     }
   }
 
+  function changePlan(nextPlan: MembershipBillingPlan) {
+    if (clientSecret || submitting) return;
+    setPlan(nextPlan);
+    setRecurringPaymentAccepted(false);
+    setLockedPlan(null);
+    setError(null);
+    checkoutAttempt.current = null;
+  }
+
   async function openCheckout() {
-    if (complimentary || !checkoutEnabled || !publishableKey || !acceptanceId || submitting || clientSecret) return;
+    if (complimentary || !checkoutEnabled || !publishableKey || !acceptanceId || !recurringPaymentAccepted || submitting || clientSecret) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -322,6 +341,8 @@ export default function JoinForm({
         body: JSON.stringify({
           acceptanceId,
           attemptId: attemptId(),
+          plan,
+          recurringPaymentAccepted,
         }),
         cache: "no-store",
         headers: { "content-type": "application/json" },
@@ -329,8 +350,13 @@ export default function JoinForm({
       });
       const payload = (await response.json()) as CheckoutResponse;
       if (!response.ok || !payload.clientSecret) {
+        if (payload.code === "checkout_plan_locked" && isMembershipBillingPlan(payload.plan)) {
+          setLockedPlan(payload.plan);
+          setRecurringPaymentAccepted(false);
+        }
         throw new Error(payload.error || "Secure payment is temporarily unavailable.");
       }
+      if (payload.plan !== plan) throw new Error("Your payment plan changed. Reload this page to review it before paying.");
       setClientSecret(payload.clientSecret);
     } catch (checkoutError) {
       setError(
@@ -656,6 +682,15 @@ export default function JoinForm({
             <span className="text-sm text-[var(--member-muted)]">{onboarding.email}</span>
           </div>
           <p className="mt-5 text-sm leading-relaxed text-[var(--member-muted)]">{testCheckout ? "Your profile and agreement are saved. This is a test checkout—no real charge will occur. Do not enter a real payment card." : "Your profile and agreement are saved. Payment is the final step."}</p>
+          <fieldset className="mt-6 grid min-w-0 gap-3 border-0 p-0 sm:grid-cols-2" disabled={Boolean(clientSecret) || submitting || Boolean(lockedPlan)}>
+            <legend className="mb-3 text-sm font-semibold">Choose your payment plan</legend>
+            {(["monthly", "annual"] as const).map(option => <label key={option} className="flex min-h-20 cursor-pointer items-start gap-3 rounded-[4px] border border-[var(--member-rule)] p-4 has-[:checked]:border-[var(--member-red)]">
+              <input className="mt-1 size-4 shrink-0 accent-[var(--member-red)]" type="radio" name="checkout-plan" value={option} checked={plan === option} onChange={() => changePlan(option)} />
+              <span className="min-w-0 text-sm"><strong className="block">{MEMBERSHIP_PLANS[option].label}</strong>{formatMembershipPrice(MEMBERSHIP_PLANS[option].amount)} / {MEMBERSHIP_PLANS[option].interval}<span className="mt-1 block text-xs text-[var(--member-muted)]">{option === "annual" ? "Paid upfront for the full year." : "Your first month is paid today."}</span></span>
+            </label>)}
+          </fieldset>
+          <p className="mt-5 text-sm leading-relaxed" aria-live="polite">{selectedAmount} USD due at signup. Renews at {selectedAmount} each {selectedPrice.interval}.</p>
+          {!clientSecret ? <label className="mt-5 grid grid-cols-[1rem_1fr] items-start gap-3 text-sm leading-relaxed text-[var(--member-muted)]"><input className="mt-1 size-4 accent-[var(--member-red)]" type="checkbox" name="recurring-payment-accepted" checked={recurringPaymentAccepted} disabled={submitting || Boolean(lockedPlan)} onChange={event => setRecurringPaymentAccepted(event.target.checked)} /><span>I authorize {selectedAmount} USD at signup and recurring {plan === "annual" ? "annual" : "monthly"} payments of {selectedAmount}, plus any applicable tax, under the membership agreement I accepted.</span></label> : null}
           {testCheckout ? (
             <dl className="mt-4 grid gap-2 text-sm leading-relaxed text-[var(--member-muted)]">
               <div><dt className="inline font-semibold text-white">Test card: </dt><dd className="inline font-mono [font-variant-numeric:tabular-nums]">4242 4242 4242 4242</dd></div>
@@ -664,8 +699,9 @@ export default function JoinForm({
             </dl>
           ) : null}
           {error || checkoutDisabledReason ? <p aria-live="polite" className="mt-6 border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? checkoutDisabledReason}</p> : null}
+          {lockedPlan ? <div className="mt-5 border border-[var(--member-rule)] p-4 text-sm" role="status"><p>A {MEMBERSHIP_PLANS[lockedPlan].label.toLowerCase()} checkout is already open. Review that plan before resuming payment.</p><button type="button" className="mt-3 min-h-11 underline underline-offset-4" onClick={() => changePlan(lockedPlan)}>Use {MEMBERSHIP_PLANS[lockedPlan].label.toLowerCase()} plan · {formatMembershipPrice(MEMBERSHIP_PLANS[lockedPlan].amount)} / {MEMBERSHIP_PLANS[lockedPlan].interval}</button></div> : null}
           {!clientSecret ? (
-            <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!checkoutEnabled || !publishableKey || submitting} onClick={openCheckout} type="button">{submitting ? testCheckout ? "Preparing test checkout" : "Preparing payment" : checkoutEnabled && publishableKey ? testCheckout ? "Open test checkout" : "Open secure payment" : "Payment not connected"}</button>
+            <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!checkoutEnabled || !publishableKey || !recurringPaymentAccepted || Boolean(lockedPlan) || submitting} onClick={openCheckout} type="button">{submitting ? testCheckout ? "Preparing test checkout" : "Preparing payment" : checkoutEnabled && publishableKey ? testCheckout ? "Open test checkout" : "Open secure payment" : "Payment not connected"}</button>
           ) : null}
           {clientSecret && publishableKey ? <EmbeddedCheckout clientSecret={clientSecret} publishableKey={publishableKey} setError={setError} /> : null}
           <p className="mt-4 text-xs leading-relaxed text-[var(--member-muted)]">{testCheckout ? "Test checkout is provided by Stripe. Store purchases remain separate." : "Payment is handled securely by Stripe. Store purchases remain separate."}</p>

@@ -55,6 +55,9 @@ const migrations = [
   "../db/migrations/20260926000000_member_number_zero.sql",
   "../db/migrations/20260927000000_timeline_entry_month.sql",
   "../db/migrations/20260928000000_unified_member_journal.sql",
+  "../db/migrations/20260929000000_public_member_signup.sql",
+  "../db/migrations/20260929001000_membership_checkout_plans.sql",
+  "../db/migrations/20260929002000_ruined_direct_invitations.sql",
 ];
 
 function migrationBody(migration, migrationName) {

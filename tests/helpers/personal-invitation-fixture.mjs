@@ -35,7 +35,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity);
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text, bio text default 'PRIVATE BIO', avatar_storage_path text default 'PRIVATE PHOTO');
     create table person_email_addresses(person_id uuid, email_normalized text primary key, verification_state text, retired_at timestamptz);
-    create table member_lifecycle(member_id uuid primary key, account_state text default 'active', billing_state text default 'pending', program_state text default 'prospect', foundations_state text default 'not_started', administrative_onboarding_state text default 'in_progress', standing_state text default 'pre_active', cancellation_effective_at timestamptz, access_started_at timestamptz);
+    create table member_lifecycle(member_id uuid primary key, account_state text default 'active', billing_state text default 'pending', program_state text default 'prospect', foundations_state text default 'not_started', administrative_onboarding_state text default 'in_progress', standing_state text default 'pre_active', admission_state text default 'accepted', cancellation_effective_at timestamptz, access_started_at timestamptz);
     create table member_onboardings(member_id uuid primary key, state text default 'in_progress', profile_completed_at timestamptz, agreement_completed_at timestamptz);
     create table operator_funding(member_id uuid primary key);
     create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql stable as 'select exists(select 1 from public.operator_funding where member_id=$1)';
@@ -49,6 +49,8 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   if (applyExpiry) await db.exec(await source("db/migrations/20260923000000_personal_member_invitations.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260924000000_personal_invitation_admission.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260925000000_complimentary_member_invitations.sql"));
+  if (applyExpiry) await db.exec(await source("db/migrations/20260929000000_public_member_signup.sql"));
+  if (applyExpiry) await db.exec(await source("db/migrations/20260929002000_ruined_direct_invitations.sql"));
   function wrap(client) {
     const sql = (strings, ...values) => {
       const parameters = values.map((value, index) => {
@@ -76,6 +78,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   const repository = await load("src/lib/membership/invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, read) => read() },
     "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity }, "./invitation-model": model,
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true }) },
   });
   const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": model });
   const personalRepository = await load("src/lib/membership/personal-invitation-repository.ts", {

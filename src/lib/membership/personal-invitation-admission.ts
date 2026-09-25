@@ -5,6 +5,8 @@ import type { TransactionSql } from "postgres";
 import { getApplicationDatabase, withFreshApplicationDatabaseRead } from "@/lib/database/server";
 import { ensurePersonForEmail, PersonIdentityConflictError } from "@/lib/identity/repository";
 import type { PlatformViewer } from "@/lib/platform/model";
+import { getPlatformConfiguration } from "@/lib/platform/config";
+import type { MembershipBillingPlan } from "@/lib/membership/pricing";
 
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -14,7 +16,7 @@ export class PersonalInvitationAdmissionDeniedError extends Error {
 const deny = () => { throw new PersonalInvitationAdmissionDeniedError(); };
 
 export type PersonalInvitationClaim = {
-  id: string; member_id: string; recipient_name: string; recipient_email_normalized: string;
+  id: string; member_id: string | null; origin: "member" | "ruined_direct"; billing_plan: MembershipBillingPlan | null; recipient_name: string; recipient_email_normalized: string;
   issued_at: Date; expires_at: Date; accepted_at: Date | null;
   accepted_by_auth_user_id: string | null; accepted_member_id: string | null;
 };
@@ -27,14 +29,16 @@ export async function getPersonalInvitationAdmissionEligibility(email: string, t
     const sql = getApplicationDatabase();
     const [row] = await sql<Array<{ eligible: boolean }>>`select exists (
       select 1 from member_personal_invitations invitation
-      join ruined_members inviter on inviter.id = invitation.member_id and inviter.deleted_at is null
+      left join ruined_members inviter on inviter.id = invitation.member_id and inviter.deleted_at is null
       where invitation.public_token = ${token} and invitation.recipient_email_normalized = ${normalized}
         and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
         and private.ruined_personal_invitation_benefit_available(invitation.id)
-        and private.ruined_member_can_share_invitation(invitation.member_id)
-        and inviter.email_normalized <> ${normalized}
-        and not exists (select 1 from person_email_addresses address
-          where address.person_id = inviter.person_id and address.email_normalized = ${normalized} and address.retired_at is null)
+        and ((invitation.origin = 'ruined_direct' and ${getPlatformConfiguration().stripeCheckoutReady === true}
+          and private.ruined_direct_invitation_available(invitation.id))
+          or (invitation.origin = 'member' and private.ruined_member_can_share_invitation(invitation.member_id)
+            and inviter.email_normalized <> ${normalized}
+            and not exists (select 1 from person_email_addresses address
+              where address.person_id = inviter.person_id and address.email_normalized = ${normalized} and address.retired_at is null)))
         and not exists (select 1 from platform_users viewer where viewer.email_normalized = ${normalized}
           and (viewer.status in ('disabled','suspended') or (
             exists(select 1 from platform_role_grants g where g.auth_user_id = viewer.auth_user_id and g.role_slug = 'member' and g.revoked_at is not null)
@@ -54,19 +58,22 @@ export async function getPersonalInvitationAdmissionEligibility(email: string, t
 /** Acquire the parent/source locks before the recipient-email advisory lock. */
 export async function lockPersonalInvitationClaim(tx: TransactionSql, viewer: PlatformViewer, token: string): Promise<PersonalInvitationClaim> {
   if (!TOKEN.test(token)) return deny();
-  const [source] = await tx<Array<{ member_id: string }>>`select member_id from member_personal_invitations where public_token = ${token}`;
+  const [source] = await tx<Array<{ member_id: string | null; origin: string }>>`select member_id, origin from member_personal_invitations where public_token = ${token}`;
   if (!source) return deny();
-  // Current staff or independent complimentary funding is locked before the
-  // source member, preventing a concurrent revocation from approving admission.
-  await tx`select private.ruined_lock_member_complimentary_funding(${source.member_id}::uuid)`;
-  await tx`select id from ruined_members where id = ${source.member_id}::uuid for update`;
-  await tx`select person.id from people person join ruined_members member on member.person_id = person.id
-    where member.id = ${source.member_id}::uuid for share of person`;
-  await tx`select member_id from member_lifecycle where member_id = ${source.member_id}::uuid for share`;
-  await tx`select viewer.auth_user_id from platform_users viewer
-    join ruined_members member on member.person_id = viewer.person_id
-    join platform_role_grants grant_row on grant_row.auth_user_id = viewer.auth_user_id and grant_row.role_slug = 'member'
-    where member.id = ${source.member_id}::uuid for share of viewer, grant_row`;
+  if (source.origin === "ruined_direct" && !getPlatformConfiguration().stripeCheckoutReady) return deny();
+  if (source.member_id !== null) {
+    // Current staff or independent complimentary funding is locked before the
+    // source member, preventing a concurrent revocation from approving admission.
+    await tx`select private.ruined_lock_member_complimentary_funding(${source.member_id}::uuid)`;
+    await tx`select id from ruined_members where id = ${source.member_id}::uuid for update`;
+    await tx`select person.id from people person join ruined_members member on member.person_id = person.id
+      where member.id = ${source.member_id}::uuid for share of person`;
+    await tx`select member_id from member_lifecycle where member_id = ${source.member_id}::uuid for share`;
+    await tx`select viewer.auth_user_id from platform_users viewer
+      join ruined_members member on member.person_id = viewer.person_id
+      join platform_role_grants grant_row on grant_row.auth_user_id = viewer.auth_user_id and grant_row.role_slug = 'member'
+      where member.id = ${source.member_id}::uuid for share of viewer, grant_row`;
+  }
   const [invitation] = await tx<PersonalInvitationClaim[]>`select * from member_personal_invitations where public_token = ${token} for update`;
   if (!invitation || invitation.recipient_email_normalized !== viewer.email.trim().toLowerCase()
       || (invitation.accepted_by_auth_user_id && invitation.accepted_by_auth_user_id !== viewer.authUserId)) return deny();
@@ -75,6 +82,16 @@ export async function lockPersonalInvitationClaim(tx: TransactionSql, viewer: Pl
 }
 
 async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: PersonalInvitationClaim) {
+  if (invitation.origin === "ruined_direct") {
+    if (!getPlatformConfiguration().stripeCheckoutReady) return deny();
+    const [direct] = await tx<Array<{ eligible: boolean }>>`select exists (
+      select 1 from member_personal_invitations where id = ${invitation.id}::uuid and origin = 'ruined_direct'
+        and member_id is null and membership_type = 'standard' and revoked_at is null and expires_at > clock_timestamp()
+        and private.ruined_direct_invitation_available(id)
+    ) as eligible`;
+    if (!direct?.eligible) deny();
+    return;
+  }
   const [row] = await tx<Array<{ eligible: boolean }>>`select exists (
     select 1 from member_personal_invitations invitation join ruined_members inviter on inviter.id = invitation.member_id
     where invitation.id = ${invitation.id}::uuid and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
@@ -89,6 +106,7 @@ async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: 
 
 /** Caller already holds the source and recipient-email locks after provider verification. */
 export async function preparePersonalInvitationClaim(tx: TransactionSql, viewer: PlatformViewer, invitation: PersonalInvitationClaim): Promise<string | null> {
+  if (invitation.origin === "ruined_direct") return deny();
   const email = viewer.email.trim().toLowerCase();
   const identities = await tx<Array<{ auth_user_id: string; person_id: string | null; member_id: string | null; status: string; email_normalized: string }>>`
     select auth_user_id, person_id, member_id, status, email_normalized from platform_users
@@ -172,5 +190,5 @@ export async function completePersonalInvitationClaim(tx: TransactionSql, viewer
     where id = ${invitation.id}::uuid and accepted_at is null and revoked_at is null and expires_at > clock_timestamp()
     returning id`;
   if (!accepted) deny();
-  await tx`select private.ruined_redeem_complimentary_invitation(${invitation.id}::uuid, ${memberId}::uuid, ${viewer.authUserId}::uuid)`;
+  if (invitation.origin !== "ruined_direct") await tx`select private.ruined_redeem_complimentary_invitation(${invitation.id}::uuid, ${memberId}::uuid, ${viewer.authUserId}::uuid)`;
 }

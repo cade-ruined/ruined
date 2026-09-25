@@ -22,6 +22,7 @@ function fixture({ membershipFunding = "self", billingState = "pending", state =
     "@/lib/membership/entry-stage": { membershipEntryStage: () => "payment" },
     "@/lib/membership/preview": { PREVIEW_MEMBER_ONBOARDING: {} },
     "@/lib/membership/repository": { getMemberOnboarding: () => { throw Error("Live database prohibited"); } },
+    "@/lib/membership/public-signup-admission": { getMemberSignupPlan: async () => "annual" },
     "@/lib/membership/photos": { isMemberPhotoStorageConfigured: () => true },
     "@/lib/platform/config": { getStripePublishableKey: () => "pk_test_fixture" },
   };

@@ -10,11 +10,12 @@ import AmbientParticles from "./AmbientParticles";
 import type { ArchiveShadow } from "./archive-lighting";
 import styles from "./PublicMemberCardPage.module.css";
 
-export default function PublicMemberCardPage({ card, preview = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, title, headerActions, footerActions, footerNote, children }: {
-  card: PublicMemberCard; preview?: boolean; variant?: "member" | "invitation"; invitationExpiresAt?: string | null; invitationRecipientName?: string | null;
+export default function PublicMemberCardPage({ card, preview = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, invitationSource = "member", title, headerActions, footerActions, footerNote, children }: {
+  card: PublicMemberCard; preview?: boolean; variant?: "member" | "invitation"; invitationExpiresAt?: string | null; invitationRecipientName?: string | null; invitationSource?: "member" | "ruined_direct";
   title?: string; headerActions?: ReactNode; footerActions?: ReactNode; footerNote?: ReactNode; children?: ReactNode;
 }) {
   const [status, setStatus] = useState("");
+  const identity = variant === "invitation" && invitationSource === "ruined_direct" ? "The Ruined Project" : publicMemberCardIdentity(card);
   const tableShadow = useRef<SVGSVGElement>(null), shadowShape = useRef<SVGPolygonElement>(null);
   // The tabletop extends beyond the card's canvas. Keep its projected shadow
   // in the room layer, updating the SVG directly without React renders per frame.
@@ -31,7 +32,7 @@ export default function PublicMemberCardPage({ card, preview = false, variant = 
   }, []);
   async function share() {
     try {
-      if (navigator.share) await navigator.share({ title: `${publicMemberCardIdentity(card)} / Ruined`, url: window.location.href });
+      if (navigator.share) await navigator.share({ title: `${identity} / Ruined`, url: window.location.href });
       else { await navigator.clipboard.writeText(window.location.href); setStatus("Link copied."); }
     } catch (error) { if (!(error instanceof Error && error.name === "AbortError")) setStatus("Copy this page’s address to share the card."); }
   }
@@ -45,7 +46,7 @@ export default function PublicMemberCardPage({ card, preview = false, variant = 
     <svg ref={tableShadow} className={styles.tableShadow} preserveAspectRatio="none" aria-hidden="true"><polygon ref={shadowShape} fill="#050403" /></svg>
     <AmbientParticles className={styles.particles} archive />
     <header className={styles.header}><Link href="/" aria-label="Ruined home"><img src="/ruined-wordmark.svg" width={120} height={36} alt="Ruined" /></Link><span>{title ?? (preview ? "MEMBERS’ ARCHIVE / PREVIEW" : "THE MEMBERS’ ARCHIVE")}</span><div className={styles.headerActions}>{headerActions !== undefined ? headerActions : preview ? <Link href="/my/card">My Card ↗</Link> : <button type="button" onClick={share}>Share card ↗</button>}</div></header>
-    <div className={styles.content}><div className={styles.caption}><h1>{variant === "invitation" ? `An invitation from ${publicMemberCardIdentity(card)}` : `${publicMemberCardIdentity(card)} — Ruined member card`}</h1></div><div className={styles.card}><MemberCard card={card} variant={variant} invitationExpiresAt={invitationExpiresAt} invitationRecipientName={invitationRecipientName} archive onArchiveShadow={updateShadow} /></div></div>
+    <div className={styles.content}><div className={styles.caption}><h1>{variant === "invitation" ? `An invitation from ${identity}` : `${identity} — Ruined member card`}</h1></div><div className={styles.card}><MemberCard card={card} variant={variant} invitationExpiresAt={invitationExpiresAt} invitationRecipientName={invitationRecipientName} invitationSource={invitationSource} archive onArchiveShadow={updateShadow} /></div></div>
     <p className={styles.status} role="status">{status}</p>
     {children ? <div className={styles.belowCard}>{children}</div> : null}
     <footer className={styles.footer}><div>{footerNote ?? (preview ? "Example details. Nothing is published." : "Shared by its owner.")}</div><div className={styles.footerActions}>{footerActions !== undefined ? footerActions : <a href="https://theruinedproject.com/#members">Find your people <span aria-hidden="true">↗</span></a>}</div></footer>

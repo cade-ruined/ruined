@@ -5,6 +5,7 @@ import {
   getMemberEmailConfirmationUrl,
   isTrustedPlatformOrigin,
   MEMBER_INVITATION_CONTEXT_COOKIE,
+  MEMBER_SIGNUP_CONTEXT_COOKIE,
 } from "@/lib/auth/request";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
@@ -19,6 +20,7 @@ const MAX_EMAIL_LENGTH = 254;
 type RequestBody = {
   email?: unknown;
   invitationToken?: unknown;
+  signup?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -33,6 +35,11 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as RequestBody | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const invitationToken = body?.invitationToken;
+  const signup = body?.signup;
+
+  if (signup !== undefined) {
+    return NextResponse.json({ error: "Open your Ruined invitation to continue signup." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
+  }
 
   if (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken))) {
     return NextResponse.json({ error: "This invitation is unavailable or doesn’t match that email." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
@@ -89,8 +96,8 @@ export async function POST(request: NextRequest) {
       console.error("Email confirmation destination is not safely configured", { requestId });
       return response;
     }
-    // Either kind of durable invitation can create an authentication identity.
-    // The role is granted only after verification claims that invitation.
+    // Only eligible invitations can create an authentication identity.
+    // Membership entry is linked only after verification; payment grants paid access.
     options = { emailRedirectTo, shouldCreateUser: true };
   }
 
@@ -102,6 +109,10 @@ export async function POST(request: NextRequest) {
       path: "/my/confirmed", maxAge: 3600,
     });
   }
+  response.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
+    httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
+    path: "/my/confirmed", maxAge: 0,
+  });
 
   try {
     const { error } = await supabase.auth.signInWithOtp({

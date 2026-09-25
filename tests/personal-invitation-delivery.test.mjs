@@ -50,7 +50,10 @@ async function fixture(t) {
       'select eligible from member_lifecycle where member_id=$1';
     ${table}
     alter table member_personal_invitations add column accepted_at timestamptz,
-      add column membership_type text default 'standard', add column complimentary_ends_at timestamptz;
+      add column membership_type text default 'standard', add column complimentary_ends_at timestamptz,
+      add column origin text default 'member';
+    alter table member_personal_invitations alter column member_id drop not null;
+    create function private.ruined_direct_invitation_available(uuid) returns boolean language sql as 'select true';
     create function private.ruined_lock_member_complimentary_funding(uuid) returns boolean language sql as 'select false';
     create function private.ruined_personal_invitation_benefit_available(uuid) returns boolean language sql as
       'select membership_type = ''standard'' or complimentary_ends_at is null or complimentary_ends_at > clock_timestamp() from member_personal_invitations where id=$1';`);
@@ -79,10 +82,11 @@ async function fixture(t) {
     };
     return tag;
   }
+  const configuration = { mode: "connected", stripeCheckoutReady: true };
   const worker = await load("src/lib/membership/personal-invitation-delivery.ts", {
     "server-only": {}, "node:crypto": crypto,
     "@/lib/database/server": { getApplicationDatabase: () => wrap(pg) },
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
     "@/lib/support/model": { SUPPORT_EMAIL: "connect@theruinedproject.com" },
     "./personal-invitation-email": email,
     resend: { Resend: class { emails = { send: async (payload, options) => {
@@ -104,7 +108,7 @@ async function fixture(t) {
     for (const [key, value] of Object.entries(original)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     await pg.close();
   });
-  return { pg, id, member, worker, sends, responses, faults, hooks,
+  return { pg, id, member, worker, sends, responses, faults, hooks, configuration,
     row: async () => (await pg.query("select * from member_personal_invitations where id=$1", [id])).rows[0],
     due: () => pg.query("update member_personal_invitations set next_attempt_at=now()-interval '1 minute' where id=$1", [id]),
   };
@@ -220,4 +224,27 @@ test("an expired complimentary benefit cancels queued invitation delivery", asyn
   const result = await f.worker.processPersonalInvitationEmailBatch();
   assert.equal(result.cancelled, 1); assert.equal(f.sends.length, 0);
   assert.equal((await f.row()).delivery_status, "cancelled");
+});
+
+
+test("Ruined Direct email uses the brand sender, canonical recipient and the existing idempotent queue", async t => {
+  const f = await fixture(t);
+  await f.pg.query("update member_personal_invitations set origin='ruined_direct',member_id=null,inviter_name='Ruined',inviter_tag=null where id=$1", [f.id]);
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).sent, 1);
+  assert.equal(f.sends[0].payload.to, "alex@example.test");
+  assert.match(f.sends[0].payload.text, /personal invitation from The Ruined Project/);
+  assert.doesNotMatch(f.sends[0].payload.text, /Cade|@cade|complimentary/);
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).sent, 0);
+  assert.equal(f.sends.length, 1);
+});
+
+test("Ruined Direct delivery is held while launch is closed and resumes when ready", async t => {
+  const f = await fixture(t);
+  await f.pg.query("update member_personal_invitations set origin='ruined_direct',member_id=null,inviter_name='Ruined',inviter_tag=null where id=$1", [f.id]);
+  f.configuration.stripeCheckoutReady = false;
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).claimed, 0);
+  assert.equal(f.sends.length, 0);
+  assert.equal((await f.row()).delivery_status, 'queued');
+  f.configuration.stripeCheckoutReady = true;
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).sent, 1);
 });

@@ -123,7 +123,7 @@ async function routeModule(kind, options = {}) {
   });
   const api = await load(`app/api/auth/otp/${kind}/route.ts`, {
     "next/server": { NextResponse },
-    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
+    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context", isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
     "@/lib/membership/personal-invitation-admission": {
       getPersonalInvitationAdmissionEligibility: async (email, token) => {
         calls.push({ admission: { email, token } });
@@ -131,7 +131,7 @@ async function routeModule(kind, options = {}) {
         return options.personalEligible !== false;
       },
     },
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected", stripeCheckoutReady: options.checkoutReady !== false }) },
     "@/lib/platform/repository": { PlatformAccessDeniedError },
     "@/lib/auth/platform-access": {
       getUnifiedAccessEligibility: async () => { calls.push("eligibility"); return { eligible: options.eligible !== false, shouldCreateUser: options.newIdentity === true, member: options.member ?? "none", operator: options.operator ?? "none" }; },
@@ -177,6 +177,37 @@ test("OTP delivery cannot be steered by a forged audience and stays generic for 
   const invited = await routeModule("request", { newIdentity: true });
   assert.equal((await invited.POST(request("request", { email: viewer.email, audience: "member" }))).status, 200);
   assert.deepEqual(invited.calls[1], { email: viewer.email, options: { shouldCreateUser: true, emailRedirectTo: "https://ruined.example/my/confirmed" } });
+});
+
+test("legacy direct-signup payloads cannot request Auth or bypass invitation verification", async () => {
+  for (const signup of [null, {}, [], { plan: "monthly" }, { plan: "annual" },
+    { plan: "monthly", funding: "complimentary" }, { plan: "annual", role: "ops_admin" }]) {
+    for (const invitationToken of [undefined, "P".repeat(43)]) {
+      for (const kind of ["request", "verify"]) {
+        const api = await routeModule(kind, { eligible: false });
+        const response = await api.POST(request(kind, { email: viewer.email, token: "123456", signup, invitationToken }));
+        assert.equal(response.status, kind === "request" ? 400 : 401);
+        assert.equal((await response.json()).redirectTo, undefined);
+        assert.match(response.headers.get("cache-control"), /no-store/);
+        assert.deepEqual(api.calls, kind === "verify" ? ["signout"] : []);
+        assert.equal(response.cookies.get("test-session")?.value, kind === "verify" ? "" : undefined);
+      }
+    }
+  }
+});
+
+test("stale plan cookies and forged billing choices cannot authorize an unknown email", async () => {
+  for (const kind of ["request", "verify"]) {
+    const api = await routeModule(kind, { eligible: false });
+    const req = request(kind, { email: viewer.email, token: "123456", billingPlan: "annual", signupPlan: "annual", plan: "annual" });
+    req.cookies.set("ruined-signup-context", "annual");
+    req.cookies.set("ruined-invitation-context", "P".repeat(43));
+    const response = await api.POST(req);
+    assert.equal(response.status, kind === "request" ? 200 : 401);
+    assert.deepEqual(api.calls, kind === "request" ? ["eligibility"] : ["eligibility", "signout"]);
+    assert.equal(response.cookies.get("test-session")?.value, kind === "verify" ? "" : undefined);
+    assert.equal((await response.json()).redirectTo, undefined);
+  }
 });
 
 test("added and returning users request a code with email alone, without an invitation link", async () => {

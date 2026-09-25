@@ -2,7 +2,10 @@ import "server-only";
 
 import Stripe from "stripe";
 
-export const STRIPE_API_VERSION = "2026-07-29.dahlia" as const;
+import type { MembershipBillingPlan } from "@/lib/membership/pricing";
+import { matchesMembershipPrice, type MembershipPriceConfiguration } from "@/lib/stripe/price-policy";
+
+export const STRIPE_API_VERSION = "2026-08-26.dahlia" as const;
 
 declare global {
   var ruinedStripeClient: Stripe | undefined;
@@ -38,8 +41,39 @@ export function getStripe(): Stripe {
   return globalThis.ruinedStripeClient;
 }
 
-export function getStripeMembershipPriceId(): string {
-  return requiredEnvironmentValue("STRIPE_MEMBERSHIP_PRICE_ID");
+export function getStripeMembershipPriceId(plan: MembershipBillingPlan): string {
+  return requiredEnvironmentValue(plan === "monthly"
+    ? "STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID"
+    : "STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID");
+}
+
+export function getStripeLivemode(): boolean {
+  const key = requiredEnvironmentValue("STRIPE_SECRET_KEY");
+  if (!/^(?:sk|rk)_(?:live|test)_/.test(key)) throw new Error("Stripe server key mode is invalid.");
+  return /^(?:sk|rk)_live_/.test(key);
+}
+
+export function getMembershipPriceConfiguration(): MembershipPriceConfiguration {
+  return {
+    monthly: process.env.STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID?.trim() || null,
+    annual: process.env.STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID?.trim() || null,
+    legacy: process.env.STRIPE_MEMBERSHIP_PRICE_ID?.trim() || null,
+    livemode: getStripeLivemode(),
+  };
+}
+
+export function getPaidMembershipAgreementVersion(): string {
+  return requiredEnvironmentValue("STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION");
+}
+
+export async function validateStripeMembershipPrice(plan: MembershipBillingPlan): Promise<string> {
+  const configuration = getMembershipPriceConfiguration();
+  const priceId = getStripeMembershipPriceId(plan);
+  const price = await getStripe().prices.retrieve(priceId);
+  if (!matchesMembershipPrice(price, plan, configuration, true)) {
+    throw new Error("The configured Stripe membership price does not match the approved offer.");
+  }
+  return priceId;
 }
 
 export function getStripeWebhookSecret(): string {

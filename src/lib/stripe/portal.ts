@@ -35,7 +35,9 @@ export async function createBillingPortalSessionForMember({
     throw new Error("The authenticated member has no Stripe Customer.");
   }
 
+  const configuration = process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID?.trim();
   const session = await getStripe().billingPortal.sessions.create({
+    ...(configuration ? { configuration } : {}),
     customer: member.stripeCustomerId,
     return_url: returnUrl,
   });

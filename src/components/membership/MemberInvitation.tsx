@@ -12,14 +12,16 @@ import PublicMemberCardPage from "./card/PublicMemberCardPage";
 import PersonalInvitationAcceptance from "./PersonalInvitationAcceptance";
 import styles from "./MemberInvitation.module.css";
 
-export function InvitationLanding({ card, token, expiresAt, recipientName, membershipType = "standard", complimentaryEndsAt = null, preview = false }: { card: PublicMemberCard; token?: string; expiresAt: string | null; recipientName?: string | null; membershipType?: "standard" | "complimentary"; complimentaryEndsAt?: string | null; preview?: boolean }) {
+export function InvitationLanding({ card, token, expiresAt, recipientName, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", preview = false }: { card: PublicMemberCard; token?: string; expiresAt: string | null; recipientName?: string | null; membershipType?: "standard" | "complimentary"; complimentaryEndsAt?: string | null; invitationSource?: "member" | "ruined_direct"; preview?: boolean }) {
   const expired = useInvitationExpired(expiresAt);
   const personal = Boolean(recipientName);
-  return <PublicMemberCardPage card={card} variant="invitation" invitationExpiresAt={expiresAt} invitationRecipientName={recipientName} preview={preview} title="AN INVITATION TO RUINED"
+  const direct = invitationSource === "ruined_direct";
+  const inviterName = direct ? "The Ruined Project" : card.name;
+  return <PublicMemberCardPage card={card} variant="invitation" invitationExpiresAt={expiresAt} invitationRecipientName={recipientName} invitationSource={invitationSource} preview={preview} title="AN INVITATION TO RUINED"
     headerActions={preview ? <Link href="/my/invitation">My Invitation ↗</Link> : <a href={personal ? "#accept-invitation" : "#join-ruined"}>{personal ? "Accept invitation ↗" : "Request to join ↗"}</a>}
-    footerNote={preview ? "Example invitation. Nothing is sent or published." : `An invitation from ${card.name}.`}
+    footerNote={preview ? "Example invitation. Nothing is sent or published." : `${direct ? "Ruined Direct · " : ""}An invitation from ${inviterName}.`}
     footerActions={<a href="https://theruinedproject.com/#members">About membership ↗</a>}>
-    {personal ? <PersonalInvitationAcceptance invitationToken={token} recipientName={recipientName!} inviterName={card.name} expiresAt={expiresAt} membershipType={membershipType} complimentaryEndsAt={complimentaryEndsAt} preview={preview} /> : <section id="join-ruined" className={styles.panel} aria-labelledby="invitation-join-title">
+    {personal ? <PersonalInvitationAcceptance invitationToken={token} recipientName={recipientName!} inviterName={inviterName} invitationSource={invitationSource} expiresAt={expiresAt} membershipType={membershipType} complimentaryEndsAt={complimentaryEndsAt} preview={preview} /> : <section id="join-ruined" className={styles.panel} aria-labelledby="invitation-join-title">
       <p className={styles.eyebrow}>{recipientName ? `For ${recipientName}` : "Your next step"}</p><h2 id="invitation-join-title">Find your people.</h2>
       <p>Leave your details and we’ll be in touch about joining. Your invitation will stay connected to {card.name}.</p>
       {recipientName ? <p className={styles.note}>Use the email address this invitation was sent to.</p> : null}

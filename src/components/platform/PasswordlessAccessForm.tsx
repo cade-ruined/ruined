@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import type { MembershipBillingPlan } from "@/lib/membership/pricing";
 
 type AuthResponse = {
   error?: string;
@@ -10,7 +11,7 @@ type AuthResponse = {
   requestId?: string;
 };
 
-export default function PasswordlessAccessForm({ enabled, returnTo, onAuthenticated }: { enabled: boolean; returnTo?: string; onAuthenticated?: () => Promise<void> | void }) {
+export default function PasswordlessAccessForm({ enabled, returnTo, onAuthenticated, signupPlan, onVerificationChange }: { enabled: boolean; returnTo?: string; onAuthenticated?: () => Promise<void> | void; signupPlan?: MembershipBillingPlan; onVerificationChange?: (started: boolean) => void }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -25,12 +26,14 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
   }, [resendDelay]);
 
   async function sendCode() {
+    if (!enabled || pending) return;
     setPending(true);
+    onVerificationChange?.(true);
     setError(null);
 
     try {
       const response = await fetch("/api/auth/otp/request", {
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), ...(signupPlan ? { signup: { plan: signupPlan } } : {}) }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
@@ -38,8 +41,10 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
       if (!response.ok) throw new Error(payload.error || "Access could not be requested.");
       setRequestId(payload.requestId ?? null);
       setRequested(true);
+      onVerificationChange?.(true);
       setResendDelay(60);
     } catch (requestError) {
+      onVerificationChange?.(requested);
       setError(requestError instanceof Error ? requestError.message : "Access could not be requested.");
     } finally {
       setPending(false);
@@ -53,6 +58,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
 
   async function verifyCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!enabled || pending) return;
     setPending(true);
     setError(null);
     const form = new FormData(event.currentTarget);
@@ -63,6 +69,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
           email: email.trim().toLowerCase(),
           token: form.get("token"),
           returnTo,
+          ...(signupPlan ? { signup: { plan: signupPlan } } : {}),
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -83,7 +90,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
 
   if (!requested) {
     return (
-      <form className="mt-8 grid gap-5" onSubmit={requestCode}>
+      <form className="mt-8 grid gap-5" onSubmit={requestCode} aria-label={signupPlan ? "Create your membership account" : "Member sign in"}>
         <label className="grid gap-2">
           <span className="font-cadehandy2 text-xl leading-none text-[var(--member-red)]">
             Your email
@@ -94,6 +101,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
             autoCorrect="off"
             className="min-h-13 rounded-[4px] border border-[var(--member-rule)] bg-white/24 px-4 text-base text-[var(--member-ink)] outline-none placeholder:text-[var(--member-muted)] focus:border-black focus:ring-2 focus:ring-[var(--color-shop)] disabled:opacity-40"
             disabled={!enabled || pending}
+            maxLength={254}
             name="email"
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@example.com"
@@ -111,10 +119,10 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
           disabled={!enabled || pending}
           type="submit"
         >
-          {pending ? "Sending code…" : enabled ? "Send access code" : "Secure access is not connected"}
+          {pending ? "Sending code…" : enabled ? signupPlan ? "Verify my email" : "Send access code" : signupPlan ? "Signup is not available yet" : "Secure access is not connected"}
         </button>
 
-        {!enabled && process.env.NODE_ENV !== "production" ? (
+        {!enabled && !signupPlan && process.env.NODE_ENV !== "production" ? (
           <Link className="w-fit text-sm font-medium underline decoration-black/30 underline-offset-4" href="/my">
             Open the member preview
           </Link>
@@ -126,7 +134,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
   return (
     <form className="mt-8 grid gap-5" onSubmit={verifyCode}>
       <p className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-sm leading-relaxed text-[var(--member-muted)]" role="status">
-        Request received for <span className="font-medium text-[var(--member-muted)]">{email.trim().toLowerCase()}</span>. An active account or current invitation is needed to receive a code. Check your inbox and spam folder, then enter the newest code below.
+        Request received for <span className="font-medium text-[var(--member-muted)]">{email.trim().toLowerCase()}</span>. {signupPlan ? "Check your inbox and spam folder. Enter the newest code below, or follow the email confirmation link and return here to continue." : "An active account or current invitation is needed to receive a code. Check your inbox and spam folder, then enter the newest code below."}
       </p>
       <label className="grid gap-2">
         <span className="font-cadehandy2 text-xl leading-none text-[var(--member-red)]">
@@ -135,7 +143,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
         <input
           autoComplete="one-time-code"
           autoFocus
-          className="min-h-14 rounded-[4px] border border-[var(--member-rule)] bg-white/24 px-4 font-mono text-xl tracking-[0.28em] text-[var(--member-ink)] outline-none focus:border-black focus:ring-2 focus:ring-[var(--color-shop)]"
+          className="min-h-14 min-w-0 w-full rounded-[4px] border border-[var(--member-rule)] bg-white/24 px-4 font-mono text-xl tracking-[0.28em] text-[var(--member-ink)] outline-none focus:border-black focus:ring-2 focus:ring-[var(--color-shop)]"
           inputMode="numeric"
           maxLength={10}
           minLength={6}
@@ -160,6 +168,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
           disabled={pending}
           onClick={() => {
             setRequested(false);
+            onVerificationChange?.(false);
             setError(null);
           }}
           type="button"
@@ -176,7 +185,7 @@ export default function PasswordlessAccessForm({ enabled, returnTo, onAuthentica
         </button>
       </div>
       <div className="text-sm leading-relaxed text-[var(--member-muted)]">
-        <p>Still no code? Your invitation may have expired, or email delivery may need attention. <a className="underline underline-offset-4" href={`mailto:connect@theruinedproject.com?subject=${encodeURIComponent("Sign-in help")}&body=${encodeURIComponent(`I could not receive a sign-in code for ${email.trim().toLowerCase()}. Request reference: ${requestId ?? "not available"}.`)}`}>Contact connect@theruinedproject.com</a>.</p>
+        <p>Still no code? {signupPlan ? "Check that your email is correct, or request a new code." : "Your invitation may have expired, or email delivery may need attention."} <a className="underline underline-offset-4" href={`mailto:connect@theruinedproject.com?subject=${encodeURIComponent("Sign-in help")}&body=${encodeURIComponent(`I could not receive a sign-in code for ${email.trim().toLowerCase()}. Request reference: ${requestId ?? "not available"}.`)}`}>Contact connect@theruinedproject.com</a>.</p>
         {requestId ? <p className="mt-2 break-all text-xs">Request reference: {requestId}</p> : null}
       </div>
     </form>

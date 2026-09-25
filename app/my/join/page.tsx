@@ -13,6 +13,7 @@ import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
 import { getMemberOnboarding } from "@/lib/membership/repository";
 import { isMemberPhotoStorageConfigured } from "@/lib/membership/photos";
+import { getMemberSignupPlan } from "@/lib/membership/public-signup-admission";
 import { getStripePublishableKey } from "@/lib/platform/config";
 
 export const metadata: Metadata = {
@@ -36,6 +37,9 @@ export default async function JoinMyRuinedPage() {
     redirect("/my");
   }
 
+  const initialPlan = context.state === "authenticated" && context.viewer
+    ? await getMemberSignupPlan(context.viewer.authUserId) ?? "monthly"
+    : "monthly";
   const publishableKey = getStripePublishableKey();
   const writable = context.state === "authenticated";
   const checkoutEnabled = writable && !complimentary && context.configuration.stripeCheckoutReady;
@@ -83,6 +87,7 @@ export default async function JoinMyRuinedPage() {
             disabledReason={disabledReason}
             enabled={writable}
             initialOnboarding={context.data}
+            initialPlan={initialPlan}
             minimumAge={context.configuration.minimumAge}
             photoStorageReady={isMemberPhotoStorageConfigured()}
             publishableKey={publishableKey}

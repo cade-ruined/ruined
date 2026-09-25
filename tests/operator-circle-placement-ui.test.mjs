@@ -433,6 +433,7 @@ function directoryHarness(role = "ops_admin", rows = []) {
   const repository = load("src/lib/platform/repository.ts", {
     "server-only": {},
     "@/lib/membership/personal-invitation-admission": {},
+    "@/lib/membership/public-signup-admission": {},
     "@/lib/identity/repository": {},
     "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/database": { getBillingDatabase: () => sql },

@@ -120,6 +120,9 @@ async function fixture(t) {
   const fundingPredicateMarker = complimentary.indexOf("-- Replace only funding predicates.");
   assert.ok(fundingPredicateMarker > 0, "Missing migration prefix boundary");
   await db.exec(complimentary.slice(0, fundingPredicateMarker) + "\ncommit;");
+  for (const name of ['20260929000000_public_member_signup', '20260929002000_ruined_direct_invitations']) {
+    await db.exec(await source(`db/migrations/${name}.sql`));
+  }
   await db.query("insert into platform_users (auth_user_id,email_normalized,status,user_type) values ($1,'admin@example.test','active','staff')", [admin]);
   await db.query("insert into platform_role_grants (auth_user_id,role_slug) values ($1,'ops_admin')", [admin]);
   await db.query("insert into circles values ($1,'Circle Test','active')", [circle]);
@@ -145,13 +148,21 @@ async function fixture(t) {
   const basic = { "server-only": {}, "node:crypto": crypto };
   const identity = await load("src/lib/identity/repository.ts", basic);
   const database = { getApplicationDatabase: () => wrap(db), withFreshApplicationDatabaseRead: (_stage, read) => read() };
+  const signup = await load("src/lib/membership/public-signup-admission.ts", {
+    ...basic, "@/lib/database/server": database, "@/lib/identity/repository": identity,
+    "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
+  });
+  let checkoutReady = true;
   const admission = await load("src/lib/membership/personal-invitation-admission.ts", {
     ...basic, "@/lib/database/server": database, "@/lib/identity/repository": identity,
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: checkoutReady }) },
+    "@/lib/membership/public-signup-admission": signup,
   });
   let beforeCommit = async () => {};
   const deps = {
     ...basic,
     "@/lib/membership/personal-invitation-admission": admission,
+    "@/lib/membership/public-signup-admission": signup,
     "@/lib/identity/repository": identity,
     "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
     "@/lib/stripe/membership-state": await load("src/lib/stripe/membership-state.ts"),
@@ -182,9 +193,67 @@ async function fixture(t) {
       values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval,$6,$7,case when $8::text is null then null else statement_timestamp()+$8::interval end,$9::uuid) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn,complimentary ? 'complimentary' : 'standard',complimentary ? 'Founding member' : null,complimentaryEndsIn,complimentary ? inviterAuth : null]);
     return { token, memberId, inviterAuth, ...result.rows[0] };
   }
-  return { db, members, pending, operators, platform, admission, personal, allowMember, allowGuide, grants,
+  async function direct() {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const { rows: [invitation] } = await db.query(`insert into member_personal_invitations(
+      member_id,origin,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,membership_type,billing_plan)
+      values(null,'ruined_direct',$1,$2,'New Member',$3,'Ruined',true,'standard','annual') returning *`, [crypto.randomUUID(), token, email]);
+    return { token, ...invitation };
+  }
+  return { db, members, pending, operators, platform, admission, personal, direct, allowMember, allowGuide, grants,
+    checkout: ready => { checkoutReady = ready; },
     beforeCommit: callback => { beforeCommit = callback; }, clock: value => { testClock = new Date(value); } };
 }
+
+test("closing public checkout invalidates direct admission but preserves member invitation admission", async t => {
+  const f = await fixture(t);
+  const direct = await f.direct();
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, direct.token), true);
+  f.checkout(false);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, direct.token), false);
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, direct.token), f.platform.PlatformAccessDeniedError);
+  assert.deepEqual(await f.grants(), []);
+  assert.equal((await f.db.query("select count(*)::int as count from ruined_members")).rows[0].count, 0);
+  assert.equal((await f.db.query("select accepted_at from member_personal_invitations where id=$1", [direct.id])).rows[0].accepted_at, null);
+
+  const memberInvitation = await f.personal();
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, memberInvitation.token), true);
+  await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, memberInvitation.token);
+  assert.deepEqual(await f.grants(), ["member"], "The public launch gate must not break normal member invitations.");
+});
+
+test("direct verified claim is idempotent and cannot restore changed identity or withdrawn membership", async t => {
+  const f = await fixture(t);
+  const invitation = await f.direct();
+  const viewer = { authUserId: auth, email };
+  const firstClaim = await f.platform.claimPlatformMemberForViewer(viewer, invitation.token);
+  const accepted = (await f.db.query("select * from member_personal_invitations where id=$1", [invitation.id])).rows[0];
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer(viewer, invitation.token), firstClaim);
+  assert.deepEqual((await f.db.query("select * from member_personal_invitations where id=$1", [invitation.id])).rows[0], accepted);
+  assert.equal((await f.db.query("select billing_plan from member_onboardings where member_id=$1", [firstClaim.memberId])).rows[0].billing_plan, "annual");
+  assert.deepEqual(await f.grants(), ["member"]);
+  assert.equal((await f.db.query("select count(*)::int as count from member_referrals")).rows[0].count, 0);
+  for (const imposter of [{ authUserId: crypto.randomUUID(), email }, { ...viewer, email: "different@example.test" }]) {
+    await assert.rejects(f.platform.claimPlatformMemberForViewer(imposter, invitation.token), f.platform.PlatformAccessDeniedError);
+  }
+  for (const [block, restore] of [
+    ["update ruined_members set deleted_at=now()", "update ruined_members set deleted_at=null"],
+    ["update member_lifecycle set account_state='closed'", "update member_lifecycle set account_state='active'"],
+    ["update member_lifecycle set account_state='suspended'", "update member_lifecycle set account_state='active'"],
+    ["update member_lifecycle set admission_state='declined'", "update member_lifecycle set admission_state='accepted'"],
+    ["update member_lifecycle set admission_state='withdrawn'", "update member_lifecycle set admission_state='accepted'"],
+    [`update platform_users set status='disabled' where auth_user_id='${auth}'`, `update platform_users set status='active' where auth_user_id='${auth}'`],
+    [`update platform_role_grants set revoked_at=now() where auth_user_id='${auth}'`, `update platform_role_grants set revoked_at=null where auth_user_id='${auth}'`],
+    ["update people set status='merged'", "update people set status='active'"],
+  ]) {
+    await f.db.exec(block);
+    assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invitation.token), false, block);
+    await assert.rejects(f.platform.claimPlatformMemberForViewer(viewer, invitation.token), f.platform.PlatformAccessDeniedError, block);
+    await f.db.exec(restore);
+  }
+  assert.deepEqual((await f.db.query("select * from member_personal_invitations where id=$1", [invitation.id])).rows[0], accepted);
+  assert.equal((await f.db.query("select count(*)::int as count from ruined_members")).rows[0].count, 1);
+});
 
 test("member reissue and revoke preserve the pending operator invitation and immutable scope", async (t) => {
   const f = await fixture(t);

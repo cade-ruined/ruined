@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { isTrustedPlatformOrigin, MEMBER_INVITATION_CONTEXT_COOKIE } from "@/lib/auth/request";
+import { isTrustedPlatformOrigin, MEMBER_INVITATION_CONTEXT_COOKIE, MEMBER_SIGNUP_CONTEXT_COOKIE } from "@/lib/auth/request";
 import { completePlatformSignIn, getSupportSignInDestination, getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
 import { getPersonalInvitationAdmissionEligibility } from "@/lib/membership/personal-invitation-admission";
 import { getPlatformConfiguration } from "@/lib/platform/config";
@@ -23,6 +23,7 @@ type VerifyBody = {
   token?: unknown;
   returnTo?: unknown;
   invitationToken?: unknown;
+  signup?: unknown;
 };
 
 async function denyVerifiedSession(request: NextRequest, status: 401 | 409 | 503, message = ACCESS_DENIED_MESSAGE) {
@@ -64,9 +65,11 @@ export async function POST(request: NextRequest) {
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const invitationToken = body?.invitationToken;
+  const signup = body?.signup;
 
   if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email) || !TOKEN_PATTERN.test(token)
-    || (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken)))) {
+    || (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken)))
+    || signup !== undefined) {
     return denyVerifiedSession(request, 401);
   }
 
@@ -124,6 +127,10 @@ export async function POST(request: NextRequest) {
     });
     response.cookies.getAll().forEach((cookie) => authorizedResponse.cookies.set(cookie));
     if (invitationToken) authorizedResponse.cookies.set(MEMBER_INVITATION_CONTEXT_COOKIE, "", {
+      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
+      path: "/my/confirmed", maxAge: 0,
+    });
+    authorizedResponse.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
       path: "/my/confirmed", maxAge: 0,
     });

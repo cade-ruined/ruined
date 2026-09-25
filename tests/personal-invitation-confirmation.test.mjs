@@ -38,11 +38,12 @@ test("confirmation page forwards only the validated navigation cookie and never 
   let cookieValue;
   const route = await load("../app/my/confirmed/page.tsx", {
     "next/headers": { cookies: async () => ({ get: name => {
+      if (name === "ruined-signup-context") return { value: "annual" };
       assert.equal(name, "ruined-invitation-context");
       return cookieValue === undefined ? undefined : { value: cookieValue };
     } }) },
     "@/components/platform/MemberEmailConfirmationStatus": { default: Status },
-    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context" },
+    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context" },
     "@/lib/membership/invitation-model": { MEMBER_INVITATION_TOKEN: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/sharing": { privateSharingMetadata: { robots: { index: false, follow: false } } },
   });
@@ -72,7 +73,7 @@ async function statusFixture() {
     "@/lib/auth/email-confirmation": confirmation,
   });
   return {
-    render: invitationToken => loaded.default({ invitationToken }),
+    render: (invitationToken, signupPlan) => loaded.default({ invitationToken, signupPlan }),
     consume: () => effect(),
     link: tree => elements(tree).find(element => element.type === Link),
   };
@@ -129,5 +130,16 @@ test("failed personal confirmations return to the invitation while ordinary and 
   } finally {
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
+  }
+});
+
+
+test("legacy signup plan context cannot bypass the invitation or authorize membership", async () => {
+  const fixture = await statusFixture();
+  for (const plan of ["monthly", "annual", undefined, "free", "https://attacker.example", ["annual"]]) {
+    const tree = fixture.render(undefined, plan);
+    assert.equal(fixture.link(tree).props.href, "/access");
+    assert.match(content(tree), /does not confirm an email or grant access/);
+    assert.equal(fixture.link(fixture.render(token, plan)).props.href, `/invitation/${token}#accept-invitation`);
   }
 });
