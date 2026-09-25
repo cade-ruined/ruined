@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
+import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getApplicationDatabase, withFreshApplicationDatabaseRead } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
@@ -69,23 +70,31 @@ export async function saveOwnMemberInvitation(authUserId: string, value: MemberI
 export async function getPublicMemberInvitation(token: string): Promise<PublicMemberInvitation | null> {
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
   return withFreshApplicationDatabaseRead("member-invitations", async () => {
-    const [row] = await getApplicationDatabase()<Array<{ member_id: string; name: string; member_tag: string | null; expires_at: Date | string; recipient_name: string | null;
+    const [row] = await getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string; recipient_name: string | null;
       membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null }>>`
-      select invitation.member_id, invitation.expires_at, invitation.recipient_name, invitation.membership_type, invitation.complimentary_ends_at,
-        coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') as name, profile.member_tag
+      select invitation.member_id, invitation.origin, invitation.expires_at, invitation.recipient_name,
+        invitation.membership_type, invitation.complimentary_ends_at,
+        case when invitation.origin = 'ruined_direct' then 'The Ruined Project'
+          else coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') end as name,
+        case when invitation.origin = 'ruined_direct' then null else profile.member_tag end as member_tag
       from (
-        select member_id, expires_at, null::text as recipient_name, 'standard'::text as membership_type, null::timestamptz as complimentary_ends_at from member_invitations
+        select member_id, 'member'::text as origin, expires_at, null::text as recipient_name, 'standard'::text as membership_type, null::timestamptz as complimentary_ends_at from member_invitations
         where public_token = ${token} and enabled and expires_at > clock_timestamp()
         union all
-        select member_id, expires_at, recipient_name, membership_type, complimentary_ends_at from member_personal_invitations
+        select member_id, origin, expires_at, recipient_name, membership_type, complimentary_ends_at from member_personal_invitations
         where public_token = ${token} and revoked_at is null and expires_at > clock_timestamp()
           and private.ruined_personal_invitation_benefit_available(id)
-      ) invitation join ruined_members member on member.id = invitation.member_id
+          and (origin = 'member' or (${getPlatformConfiguration().stripeCheckoutReady === true}
+            and private.ruined_direct_invitation_available(id)))
+      ) invitation left join ruined_members member on member.id = invitation.member_id
       left join person_profiles profile on profile.person_id = member.person_id
-      where member.deleted_at is null and private.ruined_member_can_share_invitation(invitation.member_id)
+      where invitation.origin = 'ruined_direct'
+        or (member.deleted_at is null and private.ruined_member_can_share_invitation(invitation.member_id))
       limit 1
     `;
-    return row ? { card: invitationCard(row.name, wearSeed(row.member_id), row.member_tag), expiresAt: expiresAt(row.expires_at),
+    return row ? { card: invitationCard(row.name, wearSeed(row.member_id ?? "ruined-direct"), row.member_tag),
+      ...(row.origin === "ruined_direct" ? { invitationSource: "ruined_direct" as const } : {}),
+      expiresAt: expiresAt(row.expires_at),
       ...(row.recipient_name !== null ? { recipientName: row.recipient_name, membershipType: row.membership_type,
         complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) } : null;
   });

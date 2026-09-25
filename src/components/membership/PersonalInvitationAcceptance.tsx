@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { memberInvitationDeadline, memberInvitationExpired } from "@/lib/membership/invitation-expiry";
 import { complimentaryMembershipDeadline } from "@/lib/membership/personal-invitation-presentation";
@@ -8,16 +9,20 @@ import styles from "./MemberInvitation.module.css";
 
 type AuthResponse = { error?: string; redirectTo?: string; requestId?: string };
 
-export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, preview = false }: {
+export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", preview = false }: {
   invitationToken?: string;
   recipientName: string;
   inviterName: string;
   expiresAt: string | null;
   membershipType?: "standard" | "complimentary";
   complimentaryEndsAt?: string | null;
+  invitationSource?: "member" | "ruined_direct";
   preview?: boolean;
 }) {
   const expired = useInvitationExpired(expiresAt);
+  const direct = invitationSource === "ruined_direct";
+  const sender = direct ? "The Ruined Project" : inviterName;
+  const expiryMessage = direct ? "This invitation has expired. Request a new invitation to continue." : `This invitation has expired. Ask ${sender} for a new one.`;
   const [email, setEmail] = useState(""), [code, setCode] = useState("");
   const [requested, setRequested] = useState(false), [pending, setPending] = useState(false);
   const [error, setError] = useState(""), [requestId, setRequestId] = useState<string | null>(null);
@@ -35,7 +40,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
   function unavailable() {
     if (preview || !invitationToken || writing.current) return true;
     if (memberInvitationExpired(expiresAt)) {
-      setError(`This invitation has expired. Ask ${inviterName} for a new one.`);
+      setError(expiryMessage);
       return true;
     }
     return false;
@@ -86,11 +91,11 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
 
   return <section id="accept-invitation" className={styles.panel} aria-labelledby="invitation-join-title">
     <span id="join-ruined" aria-hidden="true" />
-    <p className={styles.eyebrow}>For {recipientName}</p>
+    <p className={styles.eyebrow}>{direct ? "Ruined Direct / " : ""}For {recipientName}</p>
     <h2 id="invitation-join-title">{requested ? "Verify your email." : "Accept your invitation."}</h2>
-    <p>Your invitation from {inviterName} is your approval to join. Verify your email, then complete your profile and membership.</p>
+    <p>{direct ? "Your personal invitation from The Ruined Project begins here. Verify your email, then complete your profile, membership agreement, and payment." : <>Your invitation from {sender} is your approval to join. Verify your email, then complete your profile and membership.</>}</p>
     {membershipType === "complimentary" ? <p className={styles.complimentaryNotice}><strong>Complimentary membership.</strong> {complimentaryEndsAt ? <>No payment is needed through <time dateTime={complimentaryEndsAt}>{complimentaryMembershipDeadline(complimentaryEndsAt)}</time>.</> : "No payment is needed. Your complimentary membership is ongoing."} You’ll still complete your profile and accept the membership agreement.</p> : null}
-    {expired ? <p role="status">This invitation has expired. Ask {inviterName} for a new one.</p> : <p className={styles.note}>Accept by <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
+    {expired ? <p role="status">{expiryMessage}{direct ? <> <Link href="/signup">Request a new invitation ↗</Link></> : null}</p> : <p className={styles.note}>Accept by <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
     <form className={styles.form} onSubmit={requested ? verifyCode : submitEmail} aria-label={requested ? "Verify invitation email" : "Accept personal invitation"} aria-busy={pending}>
       {requested ? <>
         <p className={styles.acceptanceStatus} role="status">Request received for <strong>{email.trim().toLowerCase()}</strong>. If it matches this invitation, check your inbox and spam folder for the newest code. If the email contains a confirmation link instead, follow it, then return here to request a code.</p>

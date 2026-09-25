@@ -11,7 +11,7 @@ const output = ts.transpileModule(source, { compilerOptions: { module: ts.Module
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 const visibleText = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(visibleText).join("") : typeof node === "object" ? node.props?.hidden ? "" : visibleText(node.props?.children) : String(node);
-function fixture({ admin = true, hash = "", preview = false } = {}) {
+function fixture({ admin = true, hash = "", preview = false, direct = false } = {}) {
   const state = [], effects = [], listeners = new Map();
   let cursor = 0, refreshes = 0;
   const win = { location: { hash, pathname: "/ops/members", search: "?q=Ty" }, history: { replaceState(_a, _b, path) { win.location.hash = ""; assert.equal(path, "/ops/members?q=Ty"); } }, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) };
@@ -26,7 +26,7 @@ function fixture({ admin = true, hash = "", preview = false } = {}) {
     if (name.endsWith("operatorStyles")) return { OPERATOR_PRIMARY_ACTION_CLASS: "primary" };
     throw Error(name);
   }, mod, mod.exports, win);
-  const draw = () => { cursor = 0; return mod.exports.default({ children: "Member list", pendingJoining: admin ? "Pending list" : undefined, preview, showHistory: admin }); };
+  const draw = () => { cursor = 0; return mod.exports.default({ children: "Member list", pendingJoining: admin ? "Pending list" : undefined, directInvitations: admin && direct ? "Direct history" : undefined, preview, showHistory: admin }); };
   const button = label => { const match = nodes(draw()).find(node => node.type === "button" && text(node) === label); assert.ok(match, label); return match; };
   return { draw, button, effects, win, listeners, refreshes: () => refreshes, pending(value) { nodes(draw()).find(node => node.props?.id === "pending-joining-panel").props.ref.current = { querySelector(selector) { assert.equal(selector, '[data-operator-pending="true"]'); return value ? {} : null; } }; } };
 }
@@ -118,4 +118,20 @@ test("the existing member allowance form advertises dirty and pending work to th
   assert.match(actions, /data-operator-dirty=\{email\.trim\(\) !== \(preview \? sampleEmail : ""\) && !allowance \|\| revokeEmail/);
   const invitations = readFileSync(new URL("../src/components/platform/OperatorMemberInvitations.tsx", import.meta.url), "utf8");
   assert.match(invitations, /data-operator-pending=\{busy \? "true" : undefined\}/);
+});
+
+
+test("direct invitation history has its own admin view and stable search deep link", () => {
+  const f = fixture({ direct: true, hash: "#direct-invitations" });
+  f.draw(); f.effects[0]();
+  assert.match(visibleText(f.draw()), /Direct history/);
+  assert.doesNotMatch(visibleText(f.draw()), /Pending list|Member list/);
+  assert.equal(f.button("Ruined Direct").props["aria-pressed"], true);
+  f.button("Members").props.onClick();
+  assert.match(visibleText(f.draw()), /Member list/);
+  f.pending(true); f.button("Ruined Direct").props.onClick();
+  assert.equal(f.button("Members").props["aria-pressed"], true, "pending access changes keep their existing navigation guard");
+  const scoped = fixture({ admin: false, direct: true, hash: "#direct-invitations" });
+  scoped.draw(); scoped.effects[0]();
+  assert.doesNotMatch(text(scoped.draw()), /Direct history|Ruined Direct/);
 });

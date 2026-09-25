@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import OperatorDirectInvitations from "@/components/platform/OperatorDirectInvitations";
+import { getOpsDirectInvitations, type OpsDirectInvitationPage } from "@/lib/platform/ops-direct-invitations-repository";
 import OperatorMemberInvitations from "@/components/platform/OperatorMemberInvitations";
 import OperatorMemberDirectory from "@/components/platform/OperatorMemberDirectory";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
@@ -109,6 +111,13 @@ export default async function OperationsMembersPage({
     try { pendingInvitations = await getPendingMemberInvitations(context.viewer.authUserId, { query: firstSearchValue(params.invitationQ), page: requestedPage(firstSearchValue(params.invitationPage)) }); }
     catch (error) { console.error("Pending member joining could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" }); }
   }
+  let directInvitations: OpsDirectInvitationPage | null = context.state === "preview"
+    ? { entries: [], query: "", page: 1, pageCount: 1, totalResults: 0, counts: { created: 0, pending: 0, sent: 0, failed: 0, accepted: 0, joined: 0, expired: 0, revoked: 0 } }
+    : null;
+  if (context.role === "ops_admin" && context.state !== "preview" && context.viewer) {
+    try { directInvitations = await getOpsDirectInvitations(context.viewer.authUserId, { query: firstSearchValue(params.directInvitationQ), page: requestedPage(firstSearchValue(params.directInvitationPage)) }); }
+    catch (error) { console.error("Direct invitations could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" }); }
+  }
   const directoryParams = { q: directory.query, filter: directory.filter, page: String(directory.page) };
   const actions = context.role === "ops_admin" && (context.state === "preview" || context.viewer)
     ? <OperatorMemberInvitations data={pendingInvitations} directoryParams={directoryParams} preview={context.state === "preview"} showAdd={false} />
@@ -116,7 +125,7 @@ export default async function OperationsMembersPage({
 
   return (
     <OperatorPageFrame title="Members">
-      <OperatorPeopleWorkspace pendingJoining={actions} preview={context.state === "preview"} showHistory={context.role === "ops_admin"}>
+      <OperatorPeopleWorkspace pendingJoining={actions} directInvitations={context.role === "ops_admin" ? <OperatorDirectInvitations data={directInvitations} directoryParams={directoryParams} preview={context.state === "preview"} /> : undefined} preview={context.state === "preview"} showHistory={context.role === "ops_admin"}>
         <OperatorMemberDirectory directory={directory} />
       </OperatorPeopleWorkspace>
     </OperatorPageFrame>

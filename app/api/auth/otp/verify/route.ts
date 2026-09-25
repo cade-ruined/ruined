@@ -4,8 +4,6 @@ import { NextResponse } from "next/server";
 import { isTrustedPlatformOrigin, MEMBER_INVITATION_CONTEXT_COOKIE, MEMBER_SIGNUP_CONTEXT_COOKIE } from "@/lib/auth/request";
 import { completePlatformSignIn, getSupportSignInDestination, getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
 import { getPersonalInvitationAdmissionEligibility } from "@/lib/membership/personal-invitation-admission";
-import { isPublicMembershipSignup } from "@/lib/membership/public-signup";
-import { getPublicMembershipSignupEligibility } from "@/lib/membership/public-signup-admission";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   PlatformAccessDeniedError,
@@ -71,17 +69,14 @@ export async function POST(request: NextRequest) {
 
   if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email) || !TOKEN_PATTERN.test(token)
     || (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken)))
-    || (signup !== undefined && (!isPublicMembershipSignup(signup) || invitationToken !== undefined))) {
+    || signup !== undefined) {
     return denyVerifiedSession(request, 401);
-  }
-  if (signup && !getPlatformConfiguration().stripeCheckoutReady) {
-    return denyVerifiedSession(request, 503, "Membership signup is not available yet.");
   }
 
   try {
     const eligible = invitationToken
       ? await getPersonalInvitationAdmissionEligibility(email, invitationToken)
-      : signup ? await getPublicMembershipSignupEligibility(email) : (await getUnifiedAccessEligibility(email)).eligible;
+      : (await getUnifiedAccessEligibility(email)).eligible;
     if (!eligible) {
       return denyVerifiedSession(request, 401);
     }
@@ -120,9 +115,8 @@ export async function POST(request: NextRequest) {
   try {
     const { redirectTo } = invitationToken
       ? await completePlatformSignIn({ authUserId, email: verifiedEmail }, { invitationToken })
-      : signup ? await completePlatformSignIn({ authUserId, email: verifiedEmail }, { signup })
       : await completePlatformSignIn({ authUserId, email: verifiedEmail });
-    const destination = invitationToken || signup || body?.returnTo === undefined ? redirectTo : await getSupportSignInDestination(
+    const destination = invitationToken || body?.returnTo === undefined ? redirectTo : await getSupportSignInDestination(
       { authUserId, email: verifiedEmail }, body.returnTo, redirectTo,
     );
     const authorizedResponse = NextResponse.json({ redirectTo: destination });
@@ -136,7 +130,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
       path: "/my/confirmed", maxAge: 0,
     });
-    if (signup) authorizedResponse.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
+    authorizedResponse.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
       path: "/my/confirmed", maxAge: 0,
     });

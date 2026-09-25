@@ -1,6 +1,7 @@
 import { memberInvitationDeadline } from "./invitation-expiry";
 
 export type PersonalInvitationEmailInput = {
+  invitationSource?: "member" | "ruined_direct";
   recipientName: string;
   inviterName: string;
   inviterTag: string | null;
@@ -25,7 +26,9 @@ export function createPersonalInvitationEmail(input: PersonalInvitationEmailInpu
   const deadline = memberInvitationDeadline(input.expiresAt);
   if (!deadline) throw new Error("A valid invitation deadline is required.");
   const heading = `${recipient}, this is for you.`;
-  const sentence = `${inviter}${tag} has sent you a personal invitation to Ruined.`;
+  const sentence = input.invitationSource === "ruined_direct"
+    ? "Here is your personal invitation from The Ruined Project. Open your card to continue joining."
+    : `${inviter}${tag} has sent you a personal invitation to Ruined.`;
   const expiry = `Your invitation is valid until ${deadline}.`;
   const benefit = input.membershipType === "complimentary"
     ? input.complimentaryEndsAt

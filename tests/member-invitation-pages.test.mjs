@@ -219,7 +219,7 @@ test("personal landings route directly to email acceptance while legacy invitati
     const elements = descendants(landing);
     assert.equal(elements.some(element => element.type === renderWaitlist), false);
     const acceptance = elements.find(element => element.type === renderAcceptance);
-    assert.deepEqual(acceptance.props, { invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, expiresAt, membershipType: "standard", complimentaryEndsAt: null, preview });
+    assert.deepEqual(acceptance.props, { invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, invitationSource: "member", expiresAt, membershipType: "standard", complimentaryEndsAt: null, preview });
     assert.doesNotMatch(JSON.stringify(acceptance.props), /recipientEmail|personId|joinedCount/);
     if (!preview) assert.match(renderToStaticMarkup(landing.props.headerActions), /Accept invitation/);
   }

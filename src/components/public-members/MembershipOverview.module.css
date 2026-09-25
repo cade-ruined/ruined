@@ -232,6 +232,15 @@
 .signupForm form button:disabled { opacity: .5; cursor: not-allowed; }
 .signupForm fieldset:disabled label { cursor: default; }
 .signupForm fieldset:disabled input { cursor: default; }
+.directInvitationForm fieldset { display: grid; min-width: 0; gap: 16px; padding: 0; border: 0; }
+.directInvitationForm label { display: grid; gap: 7px; color: var(--ink); font-size: 12px; }
+.directInvitationForm input { min-height: 44px; padding: 10px 12px; border: 1px solid #17171542; border-radius: 0; background: #ffffff30; color: var(--ink); }
+.directInvitationForm input:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.invitationReceived { margin-top: 24px; padding-top: 20px; border-top: 1px solid #17171525; }
+.invitationReceived p, .directInvitationForm > p { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.invitationReceived p + p { margin-top: 12px; }
+.invitationReceived a { text-decoration: underline; text-underline-offset: 3px; }
+.invitationError { margin-top: 12px; color: var(--red); }
 .signupPage { display: grid; justify-items: center; padding: calc(var(--ruined-header-height, 4.5rem) + 35px) 20px 80px; min-height: 85svh; }
 .signupPageContent { width: min(100%, 560px); padding: 30px 40px 40px; background: var(--paper) url('/textures/member-paper.svg') center / 600px; color: var(--ink); }
 .signupPageContent > .signupBack { margin-top: 0; margin-bottom: 20px; }

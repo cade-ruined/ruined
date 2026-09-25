@@ -10,8 +10,6 @@ import {
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
 import { getPersonalInvitationAdmissionEligibility } from "@/lib/membership/personal-invitation-admission";
-import { isPublicMembershipSignup } from "@/lib/membership/public-signup";
-import { consumePublicMembershipSignupRateLimit, getPublicMembershipSignupEligibility } from "@/lib/membership/public-signup-admission";
 import { createSupabaseCurrentResponseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -39,11 +37,8 @@ export async function POST(request: NextRequest) {
   const invitationToken = body?.invitationToken;
   const signup = body?.signup;
 
-  if (signup !== undefined && (!isPublicMembershipSignup(signup) || invitationToken !== undefined)) {
-    return NextResponse.json({ error: "Choose a valid membership plan to continue." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
-  }
-  if (signup && !getPlatformConfiguration().stripeCheckoutReady) {
-    return NextResponse.json({ error: "Membership signup is not available yet." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
+  if (signup !== undefined) {
+    return NextResponse.json({ error: "Open your Ruined invitation to continue signup." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
   }
 
   if (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken))) {
@@ -66,14 +61,11 @@ export async function POST(request: NextRequest) {
   let eligibility: Awaited<ReturnType<typeof getUnifiedAccessEligibility>>;
 
   try {
-    if (signup && (!await consumePublicMembershipSignupRateLimit(email, request) || !await getPublicMembershipSignupEligibility(email))) {
-      return response;
-    }
     if (invitationToken && !await getPersonalInvitationAdmissionEligibility(email, invitationToken)) {
       return NextResponse.json({ error: "This invitation is unavailable or doesn’t match that email." }, { status: 403, headers: { "Cache-Control": "private, no-store" } });
     }
     eligibility = await getUnifiedAccessEligibility(email);
-    if (invitationToken || signup) {
+    if (invitationToken) {
       // This read only permits delivery of a verification code. Admission is
       // claimed atomically after Supabase verifies the invited email.
       eligibility = { ...eligibility, eligible: true,
@@ -84,8 +76,8 @@ export async function POST(request: NextRequest) {
       requestId,
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
-    return invitationToken || signup
-      ? NextResponse.json({ error: signup ? "Membership signup is temporarily unavailable. Please try again." : "Your invitation could not be checked. Please try again." }, { status: 503, headers: { "Cache-Control": "private, no-store" } })
+    return invitationToken
+      ? NextResponse.json({ error: "Your invitation could not be checked. Please try again." }, { status: 503, headers: { "Cache-Control": "private, no-store" } })
       : response;
   }
 
@@ -104,7 +96,7 @@ export async function POST(request: NextRequest) {
       console.error("Email confirmation destination is not safely configured", { requestId });
       return response;
     }
-    // Invitations and explicit public signup can create an authentication identity.
+    // Only eligible invitations can create an authentication identity.
     // Membership entry is linked only after verification; payment grants paid access.
     options = { emailRedirectTo, shouldCreateUser: true };
   }
@@ -117,21 +109,10 @@ export async function POST(request: NextRequest) {
       path: "/my/confirmed", maxAge: 3600,
     });
   }
-  if (signup) {
-    response.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, signup.plan, {
-      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
-      path: "/my/confirmed", maxAge: 3600,
-    });
-    response.cookies.set(MEMBER_INVITATION_CONTEXT_COOKIE, "", {
-      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
-      path: "/my/confirmed", maxAge: 0,
-    });
-  } else {
-    response.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
-      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
-      path: "/my/confirmed", maxAge: 0,
-    });
-  }
+  response.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
+    httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
+    path: "/my/confirmed", maxAge: 0,
+  });
 
   try {
     const { error } = await supabase.auth.signInWithOtp({

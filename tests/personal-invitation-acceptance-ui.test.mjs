@@ -43,7 +43,7 @@ async function harness(options = {}) {
     },
   };
   const component = await load("src/components/membership/PersonalInvitationAcceptance.tsx", {
-    react: hooks, "@/lib/membership/invitation-expiry": expiry,
+    react: hooks, "next/link": "a", "@/lib/membership/invitation-expiry": expiry,
     "@/lib/membership/personal-invitation-presentation": await load("src/lib/membership/personal-invitation-presentation.ts"),
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   }, {
@@ -171,4 +171,19 @@ test("duplicate submissions are ignored during an in-flight request and redirect
     await form(unsafe.render()).props.onSubmit(event); await form(unsafe.render()).props.onSubmit(event);
     assert.equal(unsafe.redirects.length, 0); assert.match(text(unsafe.render()), /could not be verified/);
   }
+});
+
+test("Ruined Direct keeps the same acceptance flow with brand identity and signup expiry recovery", async () => {
+  const f = await harness({ props: { invitationSource: "ruined_direct", inviterName: "Unrelated member" } });
+  assert.match(text(f.render()), /Ruined Direct/);
+  assert.match(text(f.render()), /The Ruined Project/);
+  assert.doesNotMatch(text(f.render()), /Unrelated member/);
+  input(f.render(), "email").props.onChange({ target: { value: "alex@example.test" } });
+  await form(f.render()).props.onSubmit(event);
+  assert.deepEqual(f.calls[0].body, { email: "alex@example.test", invitationToken: token });
+  f.advance(48 * 60 * 60 * 1000);
+  const expired = f.render();
+  assert.match(text(expired), /Request a new invitation/);
+  assert.ok(descendants(expired).some(node => node.type === "a" && node.props.href === "/signup"));
+  assert.doesNotMatch(text(expired), /Ask The Ruined Project|Ask Unrelated/);
 });

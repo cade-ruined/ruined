@@ -15,7 +15,7 @@ const includes = [
 ];
 
 const questions = [
-  { question: "Do I need an invitation?", answer: "No. Choose your plan, create your account, and pay at signup. If a member invited you, use their invitation link and the email address it was sent to." },
+  { question: "Do I need an invitation?", answer: "You can request your own personal invitation from The Ruined Project when membership opens. Choose your plan and leave your name and email. If a member invited you, use their invitation link and the email address it was sent to." },
   { question: "When do I pay?", answer: "At signup. Your first monthly payment or full annual payment is due when you join. Review your plan and membership terms, then confirm payment to start your membership. Standard invitations follow the same payment step." },
   { question: "What if my invitation is complimentary?", answer: "Your invitation will say so, including an end date if one applies. You’ll complete your profile and agreement without a payment step. Complimentary access does not automatically become a paid subscription." },
   { question: "Are gatherings and physical items included?", answer: "Each experience lists its own access, availability, and any separate cost. Specific garments and artifacts are shared separately. Membership does not promise every event or physical item at no additional charge." },
@@ -66,11 +66,11 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
         <p className={styles.heroDescription}>A private membership for people making something of their lives. A place to find your people, get clear, and put intention into practice.</p>
         <p className={styles.handwritten}>You don’t have to do it alone.</p>
         <div className={styles.heroActions}>
-          <button className={styles.primary} type="button" onClick={join}>Join Ruined <span aria-hidden="true">↗</span></button>
+          <button className={styles.primary} type="button" onClick={join}>{signupEnabled ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
           <a className={styles.textLink} href="#inside-membership">Take a look inside <span aria-hidden="true">↓</span></a>
         </div>
         <p className={styles.heroPrice}>{formatMembershipPrice(MEMBERSHIP_PLANS.monthly.amount)} / month <span>or annual membership.</span> <a href="#membership-pricing">See pricing</a></p>
-        <p className={styles.paymentTiming}>Choose your plan. Pay at signup. Begin.</p>
+        <p className={styles.paymentTiming}>{signupEnabled ? "Your invitation comes first. Payment completes signup." : "Join the waitlist. We’ll be in touch when membership opens."}</p>
       </div>
       <figure className={styles.heroArt}>
         <div className={styles.heroPhoto}>
@@ -121,8 +121,8 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
             <p className={styles.billing}>{annual ? `${formatMembershipPrice(price.amount)} paid upfront each year.` : `${formatMembershipPrice(price.amount)} billed each month.`}</p>
             <p className={styles.equivalent}>{annual ? `Equivalent to ${formatMembershipPrice(MEMBERSHIP_PLANS.annual.amount / 12)} per month. Save ${formatMembershipPrice(MEMBERSHIP_PLANS.monthly.amount * 12 - MEMBERSHIP_PLANS.annual.amount)} over twelve monthly payments.` : "A monthly commitment. Full membership access."}</p>
           </div>
-          <button className={styles.primary} type="button" onClick={join}>Join Ruined <span aria-hidden="true">↗</span></button>
-          <p className={styles.priceReassurance}>Your first payment is due at signup.</p>
+          <button className={styles.primary} type="button" onClick={join}>{signupEnabled ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
+          <p className={styles.priceReassurance}>{signupEnabled ? "Your first payment is due at signup." : "No payment is taken to join the waitlist."}</p>
           <div className={styles.priceFootnote}><span>All prices in USD.</span><p>You’ll review your billing choice, applicable taxes, and membership terms before confirming payment.</p></div>
           <p className={styles.alreadyMember}>Already a member? <Link href={preview ? "/access" : MEMBERSHIP_LINKS.signIn}>Sign in ↗</Link></p>
         </div>
@@ -132,8 +132,8 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
     <section className={`${styles.wrap} ${styles.how}`} id="how-to-join" aria-labelledby="join-heading">
       <div className={styles.sectionHeader}><p className={styles.eyebrow}>03 / Your next step</p><h2 id="join-heading">Find your place.<br /><em>Then begin.</em></h2><p>Know what happens next.<br />Decide when you’re ready.</p></div>
       <ol className={styles.steps}>
-        <li><span>01</span><h3>Make it yours.</h3><p>Choose monthly or annual membership. Create your account and verify your email.</p></li>
-        <li><span>02</span><h3>Join Ruined.</h3><p>Review the membership agreement and pay at signup. Your membership begins when payment is confirmed.</p></li>
+        <li><span>01</span><h3>Open your invitation.</h3><p>When membership opens, choose your plan and request an invitation with your name and email. Your personalized card arrives by email and is valid for 48 hours.</p></li>
+        <li><span>02</span><h3>Join Ruined.</h3><p>Accept your invitation, verify your email, complete your profile, and review the agreement. Your membership begins when payment is confirmed.</p></li>
         <li><span>03</span><h3>Begin the work.</h3><p>Enter your member space, make your profile your own, and begin Foundations while we connect your Circle.</p></li>
       </ol>
       <p className={styles.invitationNote}><Image src="/ruined-mark.svg" alt="" width={284} height={400} />Already have a personal invitation? Follow its link to join so your invitation stays connected. Complimentary invitations skip payment.</p>
@@ -144,7 +144,7 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
       <div className={styles.questions}>{questions.map(item => <details key={item.question}><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{item.answer}</p></details>)}</div>
     </section>
 
-    <section className={`${styles.wrap} ${styles.closing}`} aria-labelledby="closing-heading"><p className={styles.handwritten}>This is for you.</p><h2 id="closing-heading">You’re allowed to<br /><em>become someone new.</em></h2><button className={styles.primary} type="button" onClick={join}>Join Ruined <span aria-hidden="true">↗</span></button><p>Choose your plan and join. No need to have it all figured out.</p></section>
+    <section className={`${styles.wrap} ${styles.closing}`} aria-labelledby="closing-heading"><p className={styles.handwritten}>This is for you.</p><h2 id="closing-heading">You’re allowed to<br /><em>become someone new.</em></h2><button className={styles.primary} type="button" onClick={join}>{signupEnabled ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button><p>{signupEnabled ? "Start with your invitation. Take the next step when you’re ready." : "Join the waitlist for your next step."}</p></section>
 
     <dialog ref={filmDialog} className={styles.filmDialog} aria-label="Ruined membership film" onClose={() => setModal(null)} onCancel={() => setModal(null)} onClick={event => { if (event.target === event.currentTarget) setModal(null); }}>
       <button className={styles.filmClose} type="button" aria-label="Close film" onClick={() => setModal(null)}>Close <span aria-hidden="true">×</span></button>

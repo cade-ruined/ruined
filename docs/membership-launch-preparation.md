@@ -5,7 +5,8 @@ This preparation does not open paid signup, publish paid terms, or deploy the pe
 
 ## Prepared
 
-- Monthly and annual signup, verified-email admission, profile and agreement steps,
+- Monthly and annual signup begins with a personalized **Ruined Direct** invitation,
+  followed by verified-email admission, profile and agreement steps,
   separate recurring consent, Stripe Checkout and signed billing reconciliation.
 - A real $499 sandbox payment: paid invoice, active membership, completed onboarding,
   duplicate-event protection, and period-end cancellation retaining paid access.
@@ -57,9 +58,10 @@ are ready. Never combine these live Price IDs with test credentials for a purcha
    Configure the reviewed billing portal, and create the live webhook at
    `https://members.theruinedproject.com/api/stripe/webhook` using API version
    `2026-08-26.dahlia` and the events in `stripe-integration.md`.
-3. Apply the two pending additive migrations with the checksum-aware platform
-   migration runner: `20260929000000_public_member_signup.sql` and
-   `20260929001000_membership_checkout_plans.sql`. All 50 existing production
+3. Apply the three pending additive migrations with the checksum-aware platform
+   migration runner: `20260929000000_public_member_signup.sql`,
+   `20260929001000_membership_checkout_plans.sql`, and
+   `20260929002000_ruined_direct_invitations.sql`. All 50 existing production
    migration checksums matched during the readiness check.
 4. Publish the approved paid agreement as a new version and configure its exact
    `STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION`. Preserve the five existing pilot
@@ -87,3 +89,33 @@ public `main`, and do not include unrelated changes from the primary working cop
 
 If new purchases must be closed after launch, disable the live flag and redeploy;
 keep signed webhook processing and existing-member billing management available.
+
+## Ruined Direct invitations
+
+After final launch, self-serve signup collects name, email, and the selected plan.
+It queues the same spinning-card invitation, issued by The Ruined Project with a
+fixed 48-hour lifetime. The email contains the private invitation URL; the signup
+response never exposes its token or whether an address is eligible. Opening the
+card leads into the existing verified-email, profile, agreement, and payment flow.
+
+Operations → Members → Ruined Direct shows creation, delivery, acceptance, expiry,
+and paid joining. Accepted means verified entry, not a paid member. Joined is
+recorded after completed onboarding and paid activation and survives later
+cancellation. Direct invitations never grant complimentary access or add member
+referral credit; existing first-referrer attribution remains intact.
+
+The launch gate is checked at issuance, card loading, verification, and claim.
+Queued direct emails remain held while launch is closed. Existing member-issued
+invitations keep their own eligibility rules. Retrying self-serve signup reuses
+an open invitation without changing its original plan, recipient, or deadline.
+Expired invitations can be replaced with a new 48-hour invitation. Existing joined
+members sign in instead of generating a new direct acquisition.
+
+Local preview only: `/signup?preview=invitation` and
+`/invitation/preview?source=ruined_direct`. These controls require preview mode and
+cannot submit requests, send email, or open signup in production. The default
+closed `/signup` shows the waitlist.
+
+Before release, verify a real direct email lands in the intended mailbox and its
+card completes the actual OTP/browser-session journey. Automated tests substitute
+mail and authentication providers; they do not prove real delivery.

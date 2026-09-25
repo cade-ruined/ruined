@@ -76,7 +76,7 @@ function sourceLoader(overrides) {
   return load;
 }
 
-test("public signup reaches paid onboarding through the real OTP, profile, agreement, checkout and signed webhook handlers", async t => {
+test("Ruined invitation signup reaches paid onboarding through the real issuance, OTP, profile, agreement, checkout and signed webhook handlers", async t => {
   const db = new PGlite();
   t.after(() => db.close());
   await db.exec("create role anon; create role authenticated; create role service_role;");
@@ -92,11 +92,19 @@ test("public signup reaches paid onboarding through the real OTP, profile, agree
     [agreementId, terms, createHash("sha256").update(terms).digest("hex")]);
   const viewer = { authUserId: randomUUID(), email: "signup-journey@example.test" };
   let signedInViewer = null;
-  const delivered = [], verified = [], creations = [];
+  const delivered = [], verified = [], creations = [], invitationDeliveries = [];
   let workflowPasses = 0;
   const sql = sqlFor(db);
   const noCommunication = new Proxy({}, { get: (_target, property) => property === "__esModule" ? true : denyNetwork });
   const load = sourceLoader({
+    "@/lib/membership/personal-invitation-delivery": {
+      getPersonalInvitationEmailReady: () => true,
+      processPersonalInvitationEmailBatch: async (...args) => {
+        const committed = (await db.query("select delivery_status from member_personal_invitations where id=$1", [args[1].invitationId])).rows[0];
+        assert.equal(committed?.delivery_status, "queued", "Delivery starts only after the invitation transaction commits.");
+        invitationDeliveries.push(args);
+      },
+    },
     "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, callback) => callback() },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => signedInViewer },
     "@/lib/supabase/server": { createSupabaseCurrentResponseClient: ({ request, response }) => ({ auth: {
@@ -118,7 +126,7 @@ test("public signup reaches paid onboarding through the real OTP, profile, agree
     "@/lib/google/calendar": noCommunication,
     "@/lib/support/delivery": noCommunication,
   });
-  const routes = Object.fromEntries(["auth/otp/request", "auth/otp/verify", "my/onboarding", "my/agreement", "stripe/checkout", "stripe/webhook"]
+  const routes = Object.fromEntries(["membership/signup/invitation", "auth/otp/request", "auth/otp/verify", "my/onboarding", "my/agreement", "stripe/checkout", "stripe/webhook"]
     .map(path => [path, load(`app/api/${path}/route.ts`)]));
   const identity = load("src/lib/membership/repository.ts");
   const signup = load("src/lib/membership/public-signup-admission.ts");
@@ -162,25 +170,66 @@ test("public signup reaches paid onboarding through the real OTP, profile, agree
   const checkoutAttemptId = randomUUID();
   const checkoutBody = () => ({ acceptanceId, attemptId: checkoutAttemptId, plan: "annual", recurringPaymentAccepted: true });
 
-  await t.test("unknown sign-in and unverified signup create no membership or application session", async () => {
+  let invitationToken;
+  const invitationRequest = { requestId: randomUUID(), recipientName: "Integration Test Member", recipientEmail: viewer.email, billingPlan: "annual" };
+
+  await t.test("requesting a recipient-bound card queues one 48-hour invitation without creating Auth, membership, or referral credit", async () => {
     assert.equal(load("src/lib/platform/config.ts").getPlatformConfiguration().stripeCheckoutReady, true);
     await expectResponse(post("auth/otp/request", { email: viewer.email }), 200);
+    await expectResponse(post("auth/otp/request", { email: viewer.email, signup: { plan: "annual" } }), 400);
+    await expectResponse(post("auth/otp/verify", { email: viewer.email, token: "123456", signup: { plan: "annual" } }), 401);
     assert.equal(delivered.length, 0);
-    const requested = await expectResponse(post("auth/otp/request", { email: viewer.email, signup: { plan: "annual" } }), 200);
+    assert.equal(verified.length, 0);
+    const issued = await expectResponse(post("membership/signup/invitation", invitationRequest), 200);
+    assert.deepEqual(issued.body, { ok: true, requestId: invitationRequest.requestId });
+    assert.match(issued.response.headers.get("cache-control"), /no-store/);
+    assert.equal(issued.response.cookies.getAll().length, 0);
+    const invitation = await row("select * from member_personal_invitations");
+    invitationToken = invitation.public_token;
+    assert.match(invitationToken, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(invitation.origin, "ruined_direct");
+    assert.equal(invitation.member_id, null);
+    assert.equal(invitation.membership_type, "standard");
+    assert.equal(invitation.billing_plan, "annual");
+    assert.equal(invitation.recipient_email_normalized, viewer.email);
+    assert.equal(invitation.inviter_name, "Ruined");
+    assert.equal(invitation.inviter_tag, null);
+    assert.equal(invitation.complimentary_authorized_by_auth_user_id, null);
+    assert.equal(invitation.accepted_at, null);
+    assert.equal(invitation.direct_joined_at, null);
+    assert.equal(new Date(invitation.expires_at) - new Date(invitation.issued_at), 48 * 3600 * 1000);
+    assert.equal(invitation.email_requested, true);
+    assert.equal(invitation.delivery_status, "queued");
+    assert.equal(delivered.length, 0, "The first email is the invitation card, never a provider OTP.");
+    assert.deepEqual(invitationDeliveries, [[1, { invitationId: invitation.id }]]);
+    await expectResponse(post("membership/signup/invitation", invitationRequest), 200);
+    const persisted = (await db.query("select * from member_personal_invitations")).rows;
+    assert.deepEqual(persisted, [invitation], "Retry preserves its token, selected plan, and original deadline.");
+    for (const table of ["people", "ruined_members", "platform_users", "platform_role_grants", "member_onboardings", "membership_waitlist", "member_referrals"]) {
+      assert.equal(Number((await row(`select count(*) from ${table}`)).count), 0, `${table} stays empty before verification`);
+    }
+  });
+
+  await t.test("an issued card still requires the exact recipient and provider verification", async () => {
+    await expectResponse(post("auth/otp/request", { email: "someone-else@example.test", invitationToken }), 403);
+    assert.equal(delivered.length, 0);
+    const requested = await expectResponse(post("auth/otp/request", { email: viewer.email, invitationToken }), 200);
     assert.deepEqual(delivered, [{ email: viewer.email, options: { shouldCreateUser: true, emailRedirectTo: `${origin}/my/confirmed` } }]);
-    assert.equal(requested.response.cookies.get("ruined-signup-context")?.value, "annual");
+    assert.equal(requested.response.cookies.get("ruined-invitation-context")?.value, invitationToken);
+    assert.notEqual(requested.response.cookies.get("ruined-signup-context")?.value, "annual");
     assert.equal(requested.response.cookies.get("test-session"), undefined);
-    const denied = await expectResponse(post("auth/otp/verify", { email: viewer.email, token: "999999", signup: { plan: "annual" } }), 401);
+    const denied = await expectResponse(post("auth/otp/verify", { email: viewer.email, token: "999999", invitationToken }), 401);
     assert.equal(denied.response.cookies.get("test-session")?.value, "");
     assert.equal(await memberCount(), 0);
+    assert.equal((await row("select accepted_at from member_personal_invitations")).accepted_at, null);
     await expectResponse(post("my/agreement", agreement), 401);
   });
 
-  await t.test("verified signup creates only pending access and durably remembers annual membership", async () => {
-    const result = await expectResponse(post("auth/otp/verify", { email: viewer.email, token: "123456", signup: { plan: "annual" } }), 200);
+  await t.test("verified direct invitation atomically creates pending standard membership with annual intent and no referral owner", async () => {
+    const result = await expectResponse(post("auth/otp/verify", { email: viewer.email, token: "123456", invitationToken }), 200);
     assert.deepEqual(result.body, { redirectTo: "/my/join" });
     assert.equal(result.response.cookies.get("test-session")?.value, "verified");
-    assert.equal(result.response.cookies.get("ruined-signup-context")?.value, "");
+    assert.equal(result.response.cookies.get("ruined-invitation-context")?.value, "");
     assert.match(result.response.headers.get("cache-control"), /no-store/);
     // Simulate the browser receiving the provider-issued session only after
     // the real route has successfully authorized and released its cookies.
@@ -188,6 +237,14 @@ test("public signup reaches paid onboarding through the real OTP, profile, agree
     assert.equal(await memberCount(), 1);
     assert.equal(await signup.getMemberSignupPlan(viewer.authUserId), "annual");
     assert.deepEqual((await db.query("select role_slug from platform_role_grants")).rows, [{ role_slug: "member" }]);
+    const accepted = await row("select * from member_personal_invitations");
+    assert.ok(accepted.accepted_at);
+    assert.equal(accepted.accepted_by_auth_user_id, viewer.authUserId);
+    assert.equal(accepted.accepted_member_id, (await row("select id from ruined_members")).id);
+    assert.equal(accepted.member_id, null);
+    assert.equal(accepted.direct_joined_at, null, "Verified acceptance does not report a paid joining.");
+    assert.equal(Number((await row("select count(*) from membership_waitlist")).count), 0);
+    assert.equal(Number((await row("select count(*) from member_referrals")).count), 0);
     await assertEntryOnly();
   });
 
@@ -275,6 +332,8 @@ test("public signup reaches paid onboarding through the real OTP, profile, agree
     assert.equal((await expectResponse(webhook(paidEvent), 200)).body.duplicate, true);
     assert.equal(Number((await row("select count(*) from member_state_history")).count), historyCount);
     assert.equal(await memberCount(), 1);
+    assert.ok((await row("select direct_joined_at from member_personal_invitations")).direct_joined_at);
+    assert.equal(Number((await row("select count(*) from member_referrals")).count), 0);
     assert.equal(verified.length, 2);
     assert.ok(workflowPasses > 0, "Follow-up work stays queued; the real sender is never invoked.");
   });

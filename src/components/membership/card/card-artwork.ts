@@ -240,7 +240,7 @@ export function cardArtworkFontRequests(variant: CardVariant) {
 }
 
 /** The invitation is its own print layout, using only consented identity fields. */
-function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingContext2D, card: PublicMemberCard, photo: HTMLImageElement | null, wordmark: HTMLImageElement | null, expiresAt: string | null, recipientName: string | null) {
+function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingContext2D, card: PublicMemberCard, photo: HTMLImageElement | null, wordmark: HTMLImageElement | null, expiresAt: string | null, recipientName: string | null, invitationSource: "member" | "ruined_direct") {
   const cream = "#fff9e9";
   mark(front, wordmark, 52, 49, 266, 80, "#ffffff");
   front.fillStyle = cream; front.font = '700 38px "Inter Variable", Inter, sans-serif';
@@ -275,7 +275,7 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   const identityLayout = fitCardText(identity, { width: 674, height: 138, maxSize: 38, minSize: 20, leading: 1.16,
     measure: (value, size) => { front.font = identityFont(size); return front.measureText(value).width; } });
   const identityTop = Math.min(1206, 1274 - identityLayout.height);
-  printText(front, textLayout(front, "A personal invitation from", 674, 48, 40, 40, true), 62, identityTop - 50, cream, true);
+  printText(front, textLayout(front, invitationSource === "ruined_direct" ? "An invitation from" : "A personal invitation from", 674, 48, 40, 40, true), 62, identityTop - 50, cream, true);
   front.fillStyle = cream; front.font = identityFont(identityLayout.size); front.textBaseline = "top";
   identityLayout.lines.forEach((line, index) => front.fillText(line, 62, identityTop + index * identityLayout.lineHeight));
   // Use the issued deadline from the service, never a rolling browser timer.
@@ -292,9 +292,9 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   back.textAlign = "left";
 }
 
-export async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null): Promise<CardArtwork> {
+export async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null, invitationSource: "member" | "ruined_direct" = "member"): Promise<CardArtwork> {
   const invitation = variant === "invitation";
-  const card = invitation ? { ...source, avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
+  const card = invitation ? { ...source, ...(invitationSource === "ruined_direct" ? { name: "The Ruined Project", memberTag: null } : {}), avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
   const fonts = document.fonts ? Promise.allSettled(cardArtworkFontRequests(variant).map(font => document.fonts.load(font))) : Promise.resolve();
   let fontTimer: ReturnType<typeof setTimeout> | undefined;
   const [, [portrait, leaf, wordmark, paperPhoto, inkPhoto, invitationPhoto]] = await Promise.all([
@@ -312,7 +312,7 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
       inkBase(ctx, inkPhoto); ctx.strokeStyle = palette.edgeRule; ctx.lineWidth = 2;
       rounded(ctx, 25, 25, CARD_WIDTH - 50, CARD_HEIGHT - 50, 24); ctx.stroke();
     }
-    printInvitation(f, b, card, invitationPhoto, wordmark, invitationExpiresAt, invitationRecipientName?.trim() || null);
+    printInvitation(f, b, card, invitationPhoto, wordmark, invitationExpiresAt, invitationRecipientName?.trim() || null, invitationSource);
     f.drawImage(materials.front.wear, 0, 0); b.drawImage(materials.back.wear, 0, 0);
     f.drawImage(foil.print, foil.position.x, foil.position.y); b.drawImage(backFoil.print, backFoil.position.x, backFoil.position.y);
     const roughness = canvas(512, 512); roughness.getContext("2d")!.drawImage(materials.front.roughness, 0, 0, 512, 512);

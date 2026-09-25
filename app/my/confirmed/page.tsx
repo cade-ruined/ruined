@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
 import MemberEmailConfirmationStatus from "@/components/platform/MemberEmailConfirmationStatus";
-import { MEMBER_INVITATION_CONTEXT_COOKIE, MEMBER_SIGNUP_CONTEXT_COOKIE } from "@/lib/auth/request";
+import { MEMBER_INVITATION_CONTEXT_COOKIE } from "@/lib/auth/request";
 import { MEMBER_INVITATION_TOKEN } from "@/lib/membership/invitation-model";
-import { isMembershipBillingPlan } from "@/lib/membership/pricing";
 import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
@@ -19,8 +18,6 @@ export default async function MyRuinedEmailConfirmedPage() {
   // recipient are checked again when the member accepts it.
   const cookieStore = await cookies();
   const invitation = cookieStore.get(MEMBER_INVITATION_CONTEXT_COOKIE)?.value;
-  const requestedPlan = cookieStore.get(MEMBER_SIGNUP_CONTEXT_COOKIE)?.value;
-  const signupPlan = isMembershipBillingPlan(requestedPlan) ? requestedPlan : undefined;
   const invitationToken = typeof invitation === "string" && MEMBER_INVITATION_TOKEN.test(invitation)
     ? invitation
     : undefined;
@@ -35,7 +32,7 @@ export default async function MyRuinedEmailConfirmedPage() {
         </h1>
       </div>
 
-      <MemberEmailConfirmationStatus invitationToken={invitationToken} signupPlan={signupPlan} />
+      <MemberEmailConfirmationStatus invitationToken={invitationToken} />
     </main>
   );
 }

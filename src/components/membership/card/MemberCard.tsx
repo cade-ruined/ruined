@@ -21,10 +21,12 @@ class SceneBoundary extends Component<{ children: ReactNode; onError: () => void
 }
 const restingPose: CardPose = { x: 0, y: 0, tiltX: 0, tiltY: 0, roll: 0, lifted: false, side: "front", reduced: false, reset: 0 };
 
-export default function MemberCard({ card, compact = false, archive = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, onDownload, onArchiveShadow }: { card: PublicMemberCard; compact?: boolean; archive?: boolean; variant?: CardVariant; invitationExpiresAt?: string | null; invitationRecipientName?: string | null; onDownload?: () => void; onArchiveShadow?: (shadow: ArchiveShadow | null) => void }) {
+export default function MemberCard({ card, compact = false, archive = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, invitationSource = "member", onDownload, onArchiveShadow }: { card: PublicMemberCard; compact?: boolean; archive?: boolean; variant?: CardVariant; invitationExpiresAt?: string | null; invitationRecipientName?: string | null; invitationSource?: "member" | "ruined_direct"; onDownload?: () => void; onArchiveShadow?: (shadow: ArchiveShadow | null) => void }) {
+  const direct = variant === "invitation" && invitationSource === "ruined_direct";
+  const identity = direct ? "The Ruined Project" : publicMemberCardIdentity(card);
   const id = useId(), stage = useRef<HTMLDivElement>(null), handle = useRef<HTMLDivElement>(null), flatCanvas = useRef<HTMLCanvasElement>(null);
-  const [artworkResult, setArtworkResult] = useState<{ card: PublicMemberCard; variant: CardVariant; invitationExpiresAt: string | null; invitationRecipientName: string | null; artwork: CardArtwork } | null>(null), [pose, setPose] = useState(restingPose);
-  const artwork = artworkResult?.card === card && artworkResult.variant === variant && artworkResult.invitationExpiresAt === invitationExpiresAt && artworkResult.invitationRecipientName === invitationRecipientName ? artworkResult.artwork : null;
+  const [artworkResult, setArtworkResult] = useState<{ card: PublicMemberCard; variant: CardVariant; invitationExpiresAt: string | null; invitationRecipientName: string | null; invitationSource: "member" | "ruined_direct"; artwork: CardArtwork } | null>(null), [pose, setPose] = useState(restingPose);
+  const artwork = artworkResult?.card === card && artworkResult.variant === variant && artworkResult.invitationExpiresAt === invitationExpiresAt && artworkResult.invitationRecipientName === invitationRecipientName && artworkResult.invitationSource === invitationSource ? artworkResult.artwork : null;
   const [artworkError, setArtworkError] = useState(false);
   const [ready, setReady] = useState(false), [flat, setFlat] = useState(false), [failed, setFailed] = useState(false), [visible, setVisible] = useState(true), [status, setStatus] = useState("");
   const drag = useRef<{ id: number; x: number; y: number; moved: boolean; side: "front" | "back"; yaw: number } | null>(null);
@@ -39,20 +41,20 @@ export default function MemberCard({ card, compact = false, archive = false, var
   useEffect(() => {
     let cancelled = false;
     setArtworkError(false);
-    createCardArtwork(card, variant, invitationExpiresAt, invitationRecipientName).then(async value => {
+    createCardArtwork(card, variant, invitationExpiresAt, invitationRecipientName, invitationSource).then(async value => {
       if (cancelled) return;
-      setArtworkResult({ card, variant, invitationExpiresAt, invitationRecipientName, artwork: value });
+      setArtworkResult({ card, variant, invitationExpiresAt, invitationRecipientName, invitationSource, artwork: value });
       const fonts = document.fonts;
       const hasFonts = () => cardArtworkFontRequests(variant).every(font => fonts.check(font));
       if (fonts && !hasFonts()) {
         await fonts.ready;
         if (cancelled || !hasFonts()) return;
-        const refined = await createCardArtwork(card, variant, invitationExpiresAt, invitationRecipientName);
-        if (!cancelled) setArtworkResult({ card, variant, invitationExpiresAt, invitationRecipientName, artwork: refined });
+        const refined = await createCardArtwork(card, variant, invitationExpiresAt, invitationRecipientName, invitationSource);
+        if (!cancelled) setArtworkResult({ card, variant, invitationExpiresAt, invitationRecipientName, invitationSource, artwork: refined });
       }
     }).catch(() => { if (!cancelled) { setArtworkError(true); setStatus("The image could not load. Every card detail is available below."); } });
     return () => { cancelled = true; };
-  }, [card, variant, invitationExpiresAt, invitationRecipientName]);
+  }, [card, variant, invitationExpiresAt, invitationRecipientName, invitationSource]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     function sync() { setPose(value => ({ ...value, reduced: media.matches })); }
@@ -113,17 +115,17 @@ export default function MemberCard({ card, compact = false, archive = false, var
   async function download() {
     if (!artwork || downloading) return;
     setDownloading(true); setStatus("");
-    try { await downloadCardArtwork(card, artwork, pose.side, variant); onDownload?.(); setStatus("Card image downloaded."); }
+    try { await downloadCardArtwork(direct ? { ...card, name: "The Ruined Project" } : card, artwork, pose.side, variant); onDownload?.(); setStatus("Card image downloaded."); }
     catch { setStatus("The image could not be downloaded. Please try again."); }
     finally { setDownloading(false); }
   }
   const flatView = flat || failed || artworkError || pose.reduced;
-  return <section className={styles.viewer} data-member-card data-card-side={pose.side} data-card-renderer={flatView ? "flat" : ready && artwork ? "3d" : "loading"} data-compact={compact || undefined} aria-label={variant === 'invitation' ? `An invitation from ${publicMemberCardIdentity(card)}` : `${publicMemberCardIdentity(card)}'s Ruined member card`}>
+  return <section className={styles.viewer} data-member-card data-card-side={pose.side} data-card-renderer={flatView ? "flat" : ready && artwork ? "3d" : "loading"} data-compact={compact || undefined} aria-label={variant === 'invitation' ? `An invitation from ${identity}` : `${identity}'s Ruined member card`}>
     <div ref={stage} className={styles.stage} data-lifted={pose.lifted || undefined} aria-describedby={`${id}-hint`}>
       {compact ? <AmbientParticles className={styles.particles} /> : null}
       {!archive ? <div className={styles.ground} aria-hidden="true" /> : null}
       <div className={styles.flat} data-visible={flatView || !ready || !artwork} aria-hidden="true">
-        {artwork ? <canvas ref={flatCanvas} /> : <div className={styles.placeholder}><img src="/ruined-wordmark.svg" alt="" /><div className={styles.emptyPortrait} /><span>{publicMemberCardIdentity(card)}</span></div>}
+        {artwork ? <canvas ref={flatCanvas} /> : <div className={styles.placeholder}><img src="/ruined-wordmark.svg" alt="" /><div className={styles.emptyPortrait} /><span>{identity}</span></div>}
       </div>
       {artworkResult && !failed && !pose.reduced ? <div className={styles.scene} data-visible={!flatView && Boolean(artwork)} aria-hidden="true"><SceneBoundary onError={onLost}><Scene artwork={artworkResult.artwork} pose={pose} visible={visible && !flatView && Boolean(artwork)} archive={archive} onArchiveShadow={onArchiveShadow} onReady={onReady} onLost={onLost} /></SceneBoundary></div> : null}
       <div ref={handle} className={styles.handle} data-cursor-native data-static={flatView || !ready || !artwork} role="button" tabIndex={0} aria-label={`Drag to rotate, or activate to flip card to ${pose.side === "front" ? "back" : "front"}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event => release(event)} onPointerCancel={event => release(event, true)} onLostPointerCapture={event => release(event, true)}
@@ -139,9 +141,9 @@ export default function MemberCard({ card, compact = false, archive = false, var
     </div>
     <p className={styles.status} role="status">{status}</p>
     <details className={styles.details}><summary>{variant === "invitation" ? "Read invitation" : "Read card details"}<span aria-hidden="true">+</span></summary><div>
-      <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${publicMemberCardIdentity(card)}` : card.name}</p>{variant === "invitation" ? <><p>{invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new.</p>{memberInvitationDeadline(invitationExpiresAt) ? <p>Valid until <time dateTime={invitationExpiresAt!}>{memberInvitationDeadline(invitationExpiresAt)}</time>.</p> : <p>Valid for 48 hours once created.</p>}<p>A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining.</p></> : null}
-      <dl>{card.memberTag ? <div><dt>Member tag</dt><dd>@{card.memberTag}</dd></div> : null}{card.memberSince ? <div><dt>Member since</dt><dd>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince))}</dd></div> : null}{card.location ? <div><dt>Based in</dt><dd>{card.location}</dd></div> : null}{card.buildingNow ? <div><dt>Currently building</dt><dd>{card.buildingNow}</dd></div> : null}{card.bio ? <div><dt>About</dt><dd>{card.bio}</dd></div> : null}{card.labels.length ? <div><dt>Along the way</dt><dd>{card.labels.join(" · ")}</dd></div> : null}</dl>
-      {card.websiteUrl ? <a href={card.websiteUrl} target="_blank" rel="noopener noreferrer">Visit website ↗</a> : null}
+      <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${identity}` : card.name}</p>{variant === "invitation" ? <><p>{invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new.</p>{memberInvitationDeadline(invitationExpiresAt) ? <p>Valid until <time dateTime={invitationExpiresAt!}>{memberInvitationDeadline(invitationExpiresAt)}</time>.</p> : <p>Valid for 48 hours once created.</p>}<p>{direct ? "Ruined Direct. Accept below, verify your email, then complete your profile, agreement, and payment." : "A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining."}</p></> : null}
+      {!direct ? <dl>{card.memberTag ? <div><dt>Member tag</dt><dd>@{card.memberTag}</dd></div> : null}{card.memberSince ? <div><dt>Member since</dt><dd>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince))}</dd></div> : null}{card.location ? <div><dt>Based in</dt><dd>{card.location}</dd></div> : null}{card.buildingNow ? <div><dt>Currently building</dt><dd>{card.buildingNow}</dd></div> : null}{card.bio ? <div><dt>About</dt><dd>{card.bio}</dd></div> : null}{card.labels.length ? <div><dt>Along the way</dt><dd>{card.labels.join(" · ")}</dd></div> : null}</dl> : null}
+      {!direct && card.websiteUrl ? <a href={card.websiteUrl} target="_blank" rel="noopener noreferrer">Visit website ↗</a> : null}
     </div></details>
   </section>;
 }

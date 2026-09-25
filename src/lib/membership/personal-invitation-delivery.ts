@@ -16,7 +16,7 @@ const BATCH_BUDGET_MS = 15_000;
 type Database = ReturnType<typeof getApplicationDatabase>;
 type EmailPayload = { from: string; to: string; replyTo: string; subject: string; html: string; text: string };
 type Delivery = {
-  id: string; member_id: string; public_token: string;
+  id: string; member_id: string | null; origin: "member" | "ruined_direct"; public_token: string;
   recipient_name: string; recipient_email_normalized: string;
   inviter_name: string; inviter_tag: string | null;
   email_requested: boolean;
@@ -25,7 +25,7 @@ type Delivery = {
   delivery_payload: EmailPayload | null; active: boolean; eligible: boolean;
   membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null;
 };
-type Claimed = { id: string; member_id: string; delivery_attempts: number; first_attempt_at: Date | string | null };
+type Claimed = { id: string; member_id: string | null; delivery_attempts: number; first_attempt_at: Date | string | null };
 type BatchResult = { ready: boolean; claimed: number; sent: number; failed: number; cancelled: number; deferred: number };
 
 function environmentValue(name: string): string { return process.env[name]?.trim() ?? ""; }
@@ -97,12 +97,17 @@ async function withLockedDelivery<T>(sql: Database, claim: Claimed, lease: strin
   return sql.begin(async tx => {
     // Match revoke/deletion order. A concurrent revoke either wins before this
     // lock (and prevents sending), or waits until the provider call completes.
-    await tx`select private.ruined_lock_member_complimentary_funding(${claim.member_id}::uuid)`;
-    await tx`select id from ruined_members where id = ${claim.member_id}::uuid for update`;
-    await tx`select member_id from member_lifecycle where member_id = ${claim.member_id}::uuid for share`;
+    if (claim.member_id !== null) {
+      await tx`select private.ruined_lock_member_complimentary_funding(${claim.member_id}::uuid)`;
+      await tx`select id from ruined_members where id = ${claim.member_id}::uuid for update`;
+      await tx`select member_id from member_lifecycle where member_id = ${claim.member_id}::uuid for share`;
+    }
     const [delivery] = await tx<Delivery[]>`
       select invitation.*, expires_at > clock_timestamp() as active,
-             (private.ruined_member_can_share_invitation(member_id) and private.ruined_personal_invitation_benefit_available(id)) as eligible
+             (case when origin = 'ruined_direct' then
+               ${getPlatformConfiguration().stripeCheckoutReady === true} and private.ruined_direct_invitation_available(id)
+               else private.ruined_member_can_share_invitation(member_id) end
+               and private.ruined_personal_invitation_benefit_available(id)) as eligible
       from member_personal_invitations invitation
       where id = ${claim.id}::uuid and delivery_status = 'sending' and delivery_lock_token = ${lease}::uuid
       for update
@@ -121,7 +126,7 @@ async function withLockedDelivery<T>(sql: Database, claim: Claimed, lease: strin
   });
 }
 
-/** No live send occurs unless an authenticated create/retry explicitly queued a row. */
+/** Sends only durable invitations queued by authorized member actions or launch-gated self signup. */
 export async function processPersonalInvitationEmailBatch(requestedLimit = 10,
   options: { invitationId?: string } = {}): Promise<BatchResult> {
   const result: BatchResult = { ready: getPersonalInvitationEmailReady(), claimed: 0, sent: 0, failed: 0, cancelled: 0, deferred: 0 };
@@ -138,6 +143,7 @@ export async function processPersonalInvitationEmailBatch(requestedLimit = 10,
         with candidate as (
           select id from member_personal_invitations
           where (${options.invitationId ?? null}::uuid is null or id = ${options.invitationId ?? null}::uuid)
+            and (origin = 'member' or ${getPlatformConfiguration().stripeCheckoutReady === true})
             and ((delivery_status in ('queued', 'failed') and next_attempt_at <= clock_timestamp())
               or (delivery_status = 'sending' and delivery_locked_at < clock_timestamp() - interval '5 minutes'))
           order by issued_at, id limit 1 for update skip locked
@@ -162,7 +168,7 @@ export async function processPersonalInvitationEmailBatch(requestedLimit = 10,
             payload = {
               from: environmentValue("RESEND_FROM_EMAIL"), to: delivery.recipient_email_normalized, replyTo: SUPPORT_EMAIL,
               ...createPersonalInvitationEmail({
-                recipientName: delivery.recipient_name, inviterName: delivery.inviter_name, inviterTag: delivery.inviter_tag,
+                invitationSource: delivery.origin, recipientName: delivery.recipient_name, inviterName: delivery.inviter_name, inviterTag: delivery.inviter_tag,
                 invitationUrl: new URL(`/invitation/${delivery.public_token}`, site).toString(),
                 membershipType: delivery.membership_type,
                 complimentaryEndsAt: delivery.complimentary_ends_at ? new Date(delivery.complimentary_ends_at).toISOString() : null,

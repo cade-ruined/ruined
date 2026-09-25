@@ -4,6 +4,7 @@ import {
   completePersonalInvitationClaim, lockPersonalInvitationClaim, preparePersonalInvitationClaim,
   PersonalInvitationAdmissionDeniedError,
 } from "@/lib/membership/personal-invitation-admission";
+import { claimPublicMembershipSignupInTransaction, PublicMembershipSignupDeniedError } from "@/lib/membership/public-signup-admission";
 import { markPersonEmailVerified } from "@/lib/identity/repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 import { getBillingDatabase } from "@/lib/stripe/database";
@@ -176,6 +177,12 @@ export async function claimPlatformMemberForViewer(
   return sql.begin(async (tx) => {
     const personalInvitation = invitationToken === undefined ? null : await lockPersonalInvitationClaim(tx, viewer, invitationToken);
     await tx`select pg_advisory_xact_lock(hashtext(${emailNormalized}), 1)`;
+    if (personalInvitation?.origin === "ruined_direct") {
+      if (!personalInvitation.billing_plan) throw new PlatformAccessDeniedError();
+      const link = await claimPublicMembershipSignupInTransaction(tx, viewer, personalInvitation.billing_plan);
+      await completePersonalInvitationClaim(tx, viewer, personalInvitation, link.memberId);
+      return link;
+    }
     const personalAllowanceId = personalInvitation ? await preparePersonalInvitationClaim(tx, viewer, personalInvitation) : null;
 
     const existingLinks = await tx<
@@ -519,7 +526,7 @@ export async function claimPlatformMemberForViewer(
       personId: member.person_id,
     };
   }).catch((error: unknown) => {
-    if (error instanceof PersonalInvitationAdmissionDeniedError ||
+    if (error instanceof PersonalInvitationAdmissionDeniedError || error instanceof PublicMembershipSignupDeniedError ||
         (error && typeof error === "object" && "code" in error && error.code === "P4100")) {
       throw new PlatformAccessDeniedError();
     }

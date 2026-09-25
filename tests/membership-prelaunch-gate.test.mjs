@@ -48,8 +48,7 @@ async function fixture(enabled) {
   const config = await load("src/lib/platform/config.ts", {}, env);
   const authRequest = await load("src/lib/auth/request.ts", {}, env);
   const pricing = await load("src/lib/membership/pricing.ts");
-  const publicSignup = await load("src/lib/membership/public-signup.ts", { "@/lib/membership/pricing": pricing });
-  const calls = { deliveries: [], verifications: [], claims: [], publicClaims: [], stripe: 0 };
+  const calls = { deliveries: [], verifications: [], claims: [], directIssues: [], invitationDeliveries: [], publicEligibility: [], publicRate: [], stripe: 0 };
   const repository = {
     PlatformAccessDeniedError: AccessDenied,
     getPasswordlessAccessEligibility: async (email, audience) => email === viewer.email && audience === "member" ? "returning" : "none",
@@ -61,10 +60,8 @@ async function fixture(enabled) {
     requireActivePlatformMemberLink: fail,
   };
   const admission = {
-    claimPublicMembershipSignup: async input => { calls.publicClaims.push(input); },
-    PublicMembershipSignupDeniedError: class extends Error {},
-    consumePublicMembershipSignupRateLimit: async () => true,
-    getPublicMembershipSignupEligibility: async () => true,
+    consumePublicMembershipSignupRateLimit: async email => { calls.publicRate.push(email); return true; },
+    getPublicMembershipSignupEligibility: async email => { calls.publicEligibility.push(email); return true; },
   };
   const platformAccess = await load("src/lib/auth/platform-access.ts", {
     "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts"),
@@ -76,7 +73,7 @@ async function fixture(enabled) {
   const dependencies = {
     "next/server": { NextResponse }, "@/lib/auth/request": authRequest,
     "@/lib/platform/config": config, "@/lib/auth/platform-access": platformAccess,
-    "@/lib/platform/repository": repository, "@/lib/membership/public-signup": publicSignup,
+    "@/lib/platform/repository": repository,
     "@/lib/membership/public-signup-admission": admission,
     "@/lib/membership/personal-invitation-admission": { getPersonalInvitationAdmissionEligibility: async (email, token) => email === invitee.email && token === invitationToken },
     "@/lib/supabase/server": { createSupabaseCurrentResponseClient: ({ response }) => ({ auth: {
@@ -90,6 +87,24 @@ async function fixture(enabled) {
       signOut: async () => { response.cookies.set("test-session", "", { maxAge: 0 }); return { error: null }; },
     } }) },
   };
+  const invitationModel = await load("src/lib/membership/invitation-model.ts");
+  const directInvitation = await load("app/api/membership/signup/invitation/route.ts", {
+    "next/server": { NextResponse }, "@/lib/auth/request": authRequest, "@/lib/platform/config": config,
+    "@/lib/membership/pricing": pricing, "@/lib/membership/invitation-model": invitationModel,
+    "@/lib/membership/personal-invitation-model": await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel }),
+    "@/lib/membership/public-signup-admission": admission,
+    "@/lib/membership/direct-invitation-repository": { issueRuinedDirectInvitation: async input => {
+      calls.directIssues.push(input); return { invitationId: invitee.authUserId, created: true };
+    } },
+    "@/lib/membership/personal-invitation-delivery": {
+      getPersonalInvitationEmailReady: () => true,
+      processPersonalInvitationEmailBatch: async (...input) => { calls.invitationDeliveries.push(input); },
+    },
+  }, env);
+  const directAdmission = await load("src/lib/membership/personal-invitation-admission.ts", {
+    "node:crypto": { randomUUID: fail }, "@/lib/database/server": { getApplicationDatabase: fail, withFreshApplicationDatabaseRead: fail },
+    "@/lib/identity/repository": {}, "@/lib/platform/config": config,
+  }, env);
   const request = await load("app/api/auth/otp/request/route.ts", dependencies, env);
   const verify = await load("app/api/auth/otp/verify/route.ts", dependencies, env);
   const checkout = await load("app/api/stripe/checkout/route.ts", {
@@ -116,7 +131,7 @@ async function fixture(enabled) {
   const post = (route, body) => route.POST(new NextRequest(`${origin}/api/test`, {
     method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body),
   }));
-  return { env, config, calls, request, verify, checkout, signupPage, authRequest, pricing, post };
+  return { env, config, calls, request, verify, directInvitation, directAdmission, checkout, signupPage, authRequest, pricing, post };
 }
 
 function nodes(node) {
@@ -131,28 +146,32 @@ for (const enabled of [undefined, "false"]) {
     assert.equal(f.config.getPlatformConfiguration().stripe, "connected");
     assert.equal(f.config.getPlatformConfiguration().stripeCheckoutReady, false);
 
-    await t.test("signup is disabled and direct OTP requests or existing codes cannot claim a member", async () => {
+    await t.test("signup and invitation issuance are disabled; legacy OTP payloads cannot claim a member", async () => {
       for (const plan of ["monthly", "annual"]) {
         const page = await f.signupPage.default({ searchParams: Promise.resolve({ plan }) });
         assert.equal(page.props.initialPlan, plan);
         assert.equal(page.props.enabled, false);
         assert.equal(page.props.preview, false);
-        const form = await load("src/components/platform/PasswordlessAccessForm.tsx", {
-          react: { useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": Stub,
-        }, f.env);
-        await form.default({ enabled: page.props.enabled, signupPlan: plan }).props.onSubmit({ preventDefault() {} });
-        assert.equal((await f.post(f.request, { email: "new@example.test", signup: { plan } })).status, 503);
+        const invitation = await f.post(f.directInvitation, { requestId: viewer.authUserId,
+          recipientName: "New Member", recipientEmail: "new@example.test", billingPlan: plan });
+        assert.equal(invitation.status, 503);
+        assert.equal((await invitation.json()).ok, undefined);
+        assert.equal(invitation.cookies.getAll().length, 0);
+        assert.equal((await f.post(f.request, { email: "new@example.test", signup: { plan } })).status, 400);
         const denied = await f.post(f.verify, { email: viewer.email, token: "123456", signup: { plan } });
-        assert.equal(denied.status, 503);
+        assert.equal(denied.status, 401);
         assert.equal(denied.cookies.get("test-session")?.value, "");
         assert.equal((await denied.json()).redirectTo, undefined);
       }
       assert.equal(f.calls.deliveries.length, 0);
       assert.equal(f.calls.verifications.length, 0);
-      assert.equal(f.calls.publicClaims.length, 0);
+      assert.equal(f.calls.directIssues.length, 0);
+      assert.equal(f.calls.invitationDeliveries.length, 0);
+      assert.equal(f.calls.publicRate.length, 0);
+      assert.equal(f.calls.publicEligibility.length, 0);
     });
 
-    await t.test("an old email confirmation only returns to the gated signup page", async () => {
+    await t.test("old signup confirmation cookies return to access and cannot authorize an unknown identity", async () => {
       let status = "neutral", effect;
       const guard = { current: false }, scrubbed = [];
       const confirmation = await load("src/components/platform/MemberEmailConfirmationStatus.tsx", {
@@ -176,9 +195,35 @@ for (const enabled of [undefined, "false"]) {
       assert.equal(status, "confirmed");
       assert.deepEqual(scrubbed, ["/my/confirmed"]);
       const link = nodes(confirmation.default(props)).find(node => node.type === Stub);
-      assert.equal(link.props.href, "/signup?plan=annual");
+      assert.equal(link.props.href, "/access");
+      assert.equal(props.signupPlan, undefined);
+      const request = new NextRequest(`${origin}/api/auth/otp/request`, {
+        method: "POST", headers: { origin, "content-type": "application/json", cookie: "ruined-signup-context=annual" },
+        body: JSON.stringify({ email: "new@example.test" }),
+      });
+      assert.equal((await f.request.POST(request)).status, 200);
+      assert.equal(f.calls.deliveries.length, 0);
       assert.equal((await f.signupPage.default({ searchParams: Promise.resolve({ plan: "annual" }) })).props.enabled, false);
-      assert.equal(f.calls.publicClaims.length, 0);
+      assert.equal(f.calls.directIssues.length, 0);
+      assert.equal(f.calls.invitationDeliveries.length, 0);
+      assert.equal(f.calls.publicRate.length, 0);
+      assert.equal(f.calls.publicEligibility.length, 0);
+      assert.equal(f.calls.verifications.length, 0);
+    });
+
+    await t.test("an already-issued Ruined card cannot be claimed after the launch switch closes", async () => {
+      let sourceReads = 0;
+      const tx = async (strings, ...values) => {
+        sourceReads++;
+        assert.equal(sourceReads, 1, "The closed gate must prevent recipient identity, role, and acceptance writes.");
+        assert.match(strings.join("?"), /select member_id, origin from member_personal_invitations where public_token/);
+        assert.deepEqual(values, [invitationToken]);
+        return [{ member_id: null, origin: "ruined_direct" }];
+      };
+      await assert.rejects(f.directAdmission.lockPersonalInvitationClaim(tx, invitee, invitationToken),
+        f.directAdmission.PersonalInvitationAdmissionDeniedError);
+      assert.equal(sourceReads, 1);
+      assert.equal(f.calls.claims.length, 0);
       assert.equal(f.calls.verifications.length, 0);
     });
 
@@ -201,18 +246,33 @@ for (const enabled of [undefined, "false"]) {
       }
       assert.deepEqual(f.calls.deliveries.map(call => call.options.shouldCreateUser), [false, true]);
       assert.deepEqual(f.calls.claims, [{ viewer, token: undefined }, { viewer: invitee, token: invitationToken }]);
-      assert.equal(f.calls.publicClaims.length, 0);
+      assert.equal(f.calls.directIssues.length, 0);
+      assert.equal(f.calls.invitationDeliveries.length, 0);
+      assert.equal(f.calls.publicRate.length, 0);
+      assert.equal(f.calls.publicEligibility.length, 0);
       assert.equal(f.calls.stripe, 0);
     });
   });
 }
 
-test("explicit launch authorization is the only differing setting needed to enable this complete live configuration", async () => {
+test("explicit launch authorization enables card issuance while legacy direct OTP signup stays forbidden", async () => {
   const f = await fixture("true");
   assert.equal(f.config.getPlatformConfiguration().stripeCheckoutReady, true);
   assert.equal((await f.signupPage.default({ searchParams: Promise.resolve({ plan: "annual" }) })).props.enabled, true);
-  assert.equal((await f.post(f.request, { email: "new@example.test", signup: { plan: "annual" } })).status, 200);
-  assert.equal(f.calls.deliveries.length, 1, "Provider is a local stub; no email is actually sent.");
-  assert.equal(f.calls.publicClaims.length, 0);
+  const input = { requestId: viewer.authUserId, recipientName: "New Member", recipientEmail: "new@example.test", billingPlan: "annual" };
+  const issued = await f.post(f.directInvitation, input);
+  assert.equal(issued.status, 200);
+  assert.deepEqual(await issued.json(), { ok: true, requestId: input.requestId });
+  assert.deepEqual(f.calls.directIssues, [input]);
+  assert.deepEqual(f.calls.invitationDeliveries, [[1, { invitationId: invitee.authUserId }]]);
+  assert.deepEqual(f.calls.publicRate, [input.recipientEmail]);
+  assert.deepEqual(f.calls.publicEligibility, [input.recipientEmail]);
+  assert.equal((await f.post(f.request, { email: input.recipientEmail, signup: { plan: "annual" } })).status, 400);
+  const denied = await f.post(f.verify, { email: input.recipientEmail, token: "123456", signup: { plan: "annual" } });
+  assert.equal(denied.status, 401);
+  assert.equal(denied.cookies.get("test-session")?.value, "");
+  assert.equal(f.calls.deliveries.length, 0, "Issuing the invitation cannot request a provider OTP.");
+  assert.equal(f.calls.verifications.length, 0);
+  assert.equal(f.calls.claims.length, 0);
   assert.equal(f.calls.stripe, 0);
 });
