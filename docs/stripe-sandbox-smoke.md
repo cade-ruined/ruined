@@ -24,7 +24,17 @@ node scripts/stripe-sandbox-smoke.mjs --self-test
 
 This exercises the real identity/consent guards, durable reservation reuse, signed
 webhook deduplication and the host/CSRF boundaries without any Stripe API requests.
-It also verifies that unhandled or unsigned events leave billing pending.
+It also verifies that unhandled or unsigned events leave billing pending, completed
+Checkout alone does not activate access, and a signed paid invoice runs the real
+billing/onboarding transactions and database triggers. The offline subscription
+lookup uses a synthetic response; no external payment is made. Replaying that signed
+invoice must not repeat activation or state history.
+
+The fixture provides a named Person profile before setting profile completion, and
+sets the agreement checkpoint from the saved acceptance timestamp in PostgreSQL.
+These prerequisites matter: setting a checkpoint before acceptance or leaving the
+profile unnamed causes the real onboarding trigger to reject the paid-invoice
+transaction. The harness does not weaken those production guards.
 
 ## Sandbox configuration
 

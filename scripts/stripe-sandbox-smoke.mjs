@@ -111,12 +111,16 @@ async function createFixture(origin) {
     await engine.query("insert into member_lifecycle(member_id,account_state) values($1,'active')", [fixture.memberId]);
     await engine.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,$4,'active')", [fixture.authUserId, fixture.memberId, fixture.personId, fixture.email]);
     await engine.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [fixture.authUserId]);
-    await engine.query("update member_onboardings set billing_plan='monthly',profile_completed_at=now(),agreement_completed_at=now() where member_id=$1", [fixture.memberId]);
+    await engine.query("insert into person_profiles(person_id,display_name) values($1,'Sandbox Test Member') on conflict(person_id) do update set display_name=excluded.display_name", [fixture.personId]);
+    await engine.query("update member_onboardings set billing_plan='monthly',profile_completed_at=now() where member_id=$1", [fixture.memberId]);
     await engine.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',2,'Sandbox paid terms',$2,$3,'published',now())", [termsId, terms, hash]);
     const ageId = (await engine.query("insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key) values($1,'age_attestation','sandbox-age18',now(),$2) returning id", [fixture.memberId, `smoke-age:${fixture.memberId}`])).rows[0].id;
     await engine.query(`insert into membership_agreement_acceptances(id,agreement_version_id,person_id,member_id,accepted_by_auth_user_id,age_attestation_id,signer_name_snapshot,signer_email_snapshot,affirmative_action,accepted_at,agreement_key_snapshot,agreement_version_snapshot,agreement_title_snapshot,agreement_content_sha256,agreement_body_snapshot,dedupe_key)
       values($1,$2,$3,$4,$5,$6,'Sandbox Test Member',$7,'checkbox_and_submit',now(),'ruined_membership',2,'Sandbox paid terms',$8,$9,$10)`,
     [fixture.acceptanceId, termsId, fixture.personId, fixture.memberId, fixture.authUserId, ageId, fixture.email, hash, terms, `smoke-agreement:${fixture.memberId}`]);
+    // Preserve PostgreSQL timestamp precision and order: the checkpoint must
+    // refer to an acceptance that already exists, just as the real signup does.
+    await engine.query("update member_onboardings set agreement_completed_at=(select accepted_at from membership_agreement_acceptances where id=$1) where member_id=$2", [fixture.acceptanceId, fixture.memberId]);
     const sql = sqlFor(engine);
     const noCommunication = new Proxy({}, { get: (_target, property) => {
       if (property === "__esModule") return true;
@@ -267,9 +271,77 @@ async function selfTest() {
     assert.equal((await dispatch(app, "token", new Request(`${app.origin}/api/stripe/checkout`, { method: "POST", headers: { host: "127.0.0.1:3233", origin: "https://attacker.example" } }))).status, 403);
     assert.equal((await dispatch(app, "token", new Request(`${app.origin}/my/join/complete?session_id=cs_test_return`, { headers: { host: "127.0.0.1:3233", "sec-fetch-site": "cross-site" } }))).status, 200);
     assert.equal((await dispatch(app, "token", new Request(`${app.origin}/my/join/complete`, { method: "POST", headers: { host: "127.0.0.1:3233", "sec-fetch-site": "cross-site" } }))).status, 403);
+    // Exercise actual paid-invoice SQL and all completion triggers, not just
+    // signature verification or a mocked state updater. Only provider retrieval
+    // is replaced; this offline mode must never make Stripe network requests.
+    const stripe = app.server.getStripe();
+    const originalRetrieve = stripe.subscriptions.retrieve;
+    const metadata = {
+      ruined_context: "membership", ruined_member_id: app.fixture.memberId,
+      ruined_billing_plan: "monthly", ruined_checkout_attempt_id: first.attemptId,
+      agreement_acceptance_id: first.agreementAcceptanceId,
+      agreement_accepted_at: first.agreementAcceptedAt.toISOString(),
+      agreement_version: first.agreementVersion, age_attested_at: first.ageAttestedAt.toISOString(),
+    };
+    const subscription = {
+      id: "sub_smoke_offline", status: "active", customer: "cus_smoke_offline", livemode: false,
+      metadata, cancel_at_period_end: false, automatic_tax: { enabled: false, disabled_reason: null },
+      latest_invoice: "in_smoke_offline", items: { has_more: false, data: [{
+        id: "si_smoke_offline", quantity: 1,
+        current_period_start: event.created, current_period_end: event.created + 30 * 86400,
+        price: { id: "price_monthly", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit",
+          transform_quantity: null, currency: "usd", unit_amount: 49900,
+          recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } },
+      }] },
+    };
+    stripe.subscriptions.retrieve = async id => {
+      assert.equal(id, subscription.id, "Offline retrieval must use only the test subscription");
+      return subscription;
+    };
+    const deliver = (type, object, id) => {
+      const payload = JSON.stringify({ id, object: "event", api_version: app.server.STRIPE_API_VERSION,
+        created: event.created + 1, livemode: false, type, data: { object } });
+      const signature = stripe.webhooks.generateTestHeaderString({ payload, secret: fake.STRIPE_WEBHOOK_SECRET });
+      return app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`, {
+        method: "POST", headers: { "stripe-signature": signature }, body: payload,
+      }));
+    };
+    try {
+      const checkout = { id: "cs_smoke_offline", livemode: false, status: "complete", payment_status: "paid",
+        customer: subscription.customer, customer_email: app.fixture.email, subscription: subscription.id,
+        client_reference_id: app.fixture.memberId, metadata, expires_at: event.created + 86400 };
+      assert.equal((await deliver("checkout.session.completed", checkout, "evt_smoke_checkout")).status, 200);
+      assert.equal((await app.status()).member.billing_state, "pending", "Completed Checkout alone must not activate access");
+      const invoice = { id: "in_smoke_offline", livemode: false, status: "paid", billing_reason: "subscription_create",
+        customer: subscription.customer, customer_email: app.fixture.email, currency: "usd",
+        amount_due: 49900, amount_paid: 49900, amount_remaining: 0,
+        parent: { subscription_details: { subscription: subscription.id, metadata } },
+        lines: { has_more: false, data: [{ id: "il_smoke_offline", livemode: false, currency: "usd", quantity: 1, subtotal: 49900,
+          pricing: { price_details: { price: "price_monthly" } },
+          parent: { type: "subscription_item_details", subscription_item_details: {
+            subscription: subscription.id, subscription_item: "si_smoke_offline", proration: false,
+          } },
+        }] },
+      };
+      assert.equal((await deliver("invoice.paid", invoice, "evt_smoke_paid")).status, 200);
+      const paid = await app.status();
+      assert.equal(paid.member.billing_state, "active");
+      assert.equal(paid.member.membership_state, "active");
+      assert.equal(paid.member.administrative_onboarding_state, "completed");
+      assert.equal(paid.member.program_state, "onboarding");
+      assert.equal(paid.member.standing_state, "active");
+      assert.ok(paid.member.billing_confirmed_at);
+      assert.equal(paid.invoices.length, 1);
+      assert.equal(paid.invoices[0].purpose, "membership");
+      const history = (await app.engine.query("select count(*)::int count from member_state_history where source_event_id='evt_smoke_paid'")).rows[0].count;
+      assert.ok(history > 0);
+      assert.equal((await (await deliver("invoice.paid", invoice, "evt_smoke_paid")).json()).duplicate, true);
+      assert.equal((await app.engine.query("select count(*)::int count from member_state_history where source_event_id='evt_smoke_paid'")).rows[0].count, history);
+      assert.equal((await app.status()).invoices.length, 1);
+    } finally { stripe.subscriptions.retrieve = originalRetrieve; }
     const page = html(app, "fixture-token");
     assert.ok(!page.includes(fake.STRIPE_SECRET_KEY) && !page.includes(fake.STRIPE_WEBHOOK_SECRET));
-    console.log("Offline self-test passed: full schema, actual identity/consent guards, reservation reuse, signed webhook deduplication, pending billing, loopback/CSRF guards, and no rendered secrets. No Stripe network requests made.");
+    console.log("Offline self-test passed: full schema, identity/consent guards, reservation reuse, signed Checkout stays pending, signed paid invoice activates billing and completes onboarding through real SQL triggers, duplicate invoices do not repeat activation, loopback/CSRF guards, and no rendered secrets. No Stripe network requests made.");
   } finally { await app.engine.close(); }
 }
 
