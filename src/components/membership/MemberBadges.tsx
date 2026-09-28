@@ -6,7 +6,9 @@ import type { MemberBadge } from "@/lib/membership/badge-model";
 import styles from "./MemberBadges.module.css";
 
 export type BadgeDisplay = Omit<MemberBadge, "key"> & { key: string; stamp?: string };
-const badgeImages: Record<string, string> = { "early-supporter": "/membership/badges/i-was-here-red-dashes-v2.png" };
+const badgeImages: Record<string, { src: string; filename: string }> = {
+  "early-supporter": { src: "/membership/badges/i-was-here-red-dashes-v2.png", filename: "ruined-i-was-here-badge.png" },
+};
 const stampNumbers: Record<string, string> = { "early-supporter": "01" };
 function stampFor(badge: BadgeDisplay) { return badge.stamp ?? stampNumbers[badge.key] ?? "•"; }
 const earnedDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -19,6 +21,7 @@ export default function MemberBadges({ badges, preview = false }: { badges: read
   const selectOnScrollRef = useRef(true);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const badge = badges.find(item => item.key === selected);
+  const artwork = badge ? badgeImages[badge.key] : undefined;
   const activeKey = badge?.key;
   const id = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -112,19 +115,19 @@ export default function MemberBadges({ badges, preview = false }: { badges: read
           onPointerEnter={event => { if (event.pointerType !== "touch") setFocusedKey(item.key); }}
           onFocus={() => setFocusedKey(item.key)} onKeyDown={event => moveFocus(event, index)}
           onClick={event => { triggerRef.current = event.currentTarget; setFocusedKey(item.key); setSelected(item.key); }}>
-          <span className={styles.stamp} data-artwork={Boolean(badgeImages[item.key]) || undefined} aria-hidden="true">{badgeImages[item.key] ? <Image src={badgeImages[item.key]} alt="" width={72} height={72} sizes="56px" draggable={false}/> : stampFor(item)}</span>
+          <span className={styles.stamp} data-artwork={Boolean(badgeImages[item.key]) || undefined} aria-hidden="true">{badgeImages[item.key] ? <Image src={badgeImages[item.key].src} alt="" width={72} height={72} sizes="56px" draggable={false}/> : stampFor(item)}</span>
         </button>
       </li>)}
     </ul>
     <dialog ref={dialogRef} id={`${id}-dialog`} className={styles.dialog} aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} onCancel={event => { event.preventDefault(); setSelected(null); }} onClick={event => { if (event.target === event.currentTarget) setSelected(null); }}>
-      {badge ? <div className={styles.detail}>
+      {badge ? <><div className={styles.detail}>
         <span className={styles.cardEdge} aria-hidden="true" />
         <span className={styles.cardStock} aria-hidden="true" />
         <span className={styles.hangerRim} aria-hidden="true" />
         <button ref={closeRef} type="button" className={styles.close} aria-label="Close badge details" onClick={() => setSelected(null)}>×</button>
-        <div className={styles.cardHeader}><span className={styles.cardBrand}>RUINED</span><span className={styles.cardSeries}>Merit badges</span></div>
+        <div className={styles.cardHeader}><span className={styles.cardBrand} role="img" aria-label="Ruined"/><span className={styles.cardSeries}>Merit badges</span></div>
         <div className={styles.patchMount} aria-hidden="true">
-          <span className={styles.detailStamp} data-artwork={Boolean(badgeImages[badge.key]) || undefined}>{badgeImages[badge.key] ? <Image src={badgeImages[badge.key]} alt="" width={440} height={440} sizes="220px" draggable={false}/> : stampFor(badge)}<span className={styles.pin} /></span>
+          <span className={styles.detailStamp} data-artwork={Boolean(artwork) || undefined}>{artwork ? <Image src={artwork.src} alt="" width={440} height={440} sizes="220px" draggable={false}/> : stampFor(badge)}<span className={styles.pin} /></span>
         </div>
         <div className={styles.cardCopy}>
           <p className={styles.eyebrow}>{preview ? "Badge preview" : "Earned badge"}</p>
@@ -133,7 +136,10 @@ export default function MemberBadges({ badges, preview = false }: { badges: read
         </div>
         <p className={styles.earned}><span>{preview ? "Example date" : "Earned"}</span><time dateTime={badge.earnedAt}>{earnedDate.format(new Date(badge.earnedAt))}</time></p>
         {preview ? <p className={styles.previewNote}>Layout preview · not added to your profile</p> : null}
-      </div> : null}
+      </div>{artwork ? <a className={styles.saveBadge} href={artwork.src} download={artwork.filename} aria-label={`Save ${badge.label} badge as a transparent PNG`}>
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.25" aria-hidden="true"><path d="M10 2v10m-4-4 4 4 4-4M3 12v5h14v-5"/></svg>
+        Save badge
+      </a> : null}</> : null}
     </dialog>
   </div>;
 }

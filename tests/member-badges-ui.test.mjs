@@ -255,6 +255,30 @@ test("a compact earned badge opens an accessible native detail modal with its UT
   ui.unmount();
 });
 
+test("an earned badge downloads its original transparent PNG through a named native link", () => {
+  const ui = fixture();
+  assert.equal(nodes(ui.draw()).some(node => node.type === "a" && node.props.download), false);
+  const tree = ui.click("I Was Here badge. View details");
+  const downloads = nodes(tree).filter(node => node.type === "a" && node.props.download);
+  assert.equal(downloads.length, 1);
+  assert.equal(downloads[0].props.href, "/membership/badges/i-was-here-red-dashes-v2.png");
+  assert.equal(downloads[0].props.download, "ruined-i-was-here-badge.png");
+  assert.equal(downloads[0].props["aria-label"], "Save I Was Here badge as a transparent PNG");
+  assert.equal(text(downloads[0]), "Save badge");
+  assert.ok(nodes(tree).some(node => node.props.role === "img" && node.props["aria-label"] === "Ruined"));
+  ui.unmount();
+});
+
+test("placeholder badge details do not retain another badge's artwork download", () => {
+  const ui = fixture({ badges: [award, ...sampleBadges] });
+  ui.click("I Was Here badge. View details");
+  ui.click("Close badge details");
+  const tree = ui.click("Sample 1 badge. View details");
+  assert.equal(nodes(tree).some(node => node.type === "a" && node.props.download), false);
+  assert.doesNotMatch(text(tree), /Save badge/);
+  ui.unmount();
+});
+
 test("Escape and Close restore focus to the badge and restore prior page scrolling", () => {
   for (const method of ["escape", "close"]) {
     const ui = fixture();

@@ -13,20 +13,22 @@
 .dialog .close:focus-visible { outline:2px solid #922f26; outline-offset:-5px; border-radius:3px; }
 .srOnly { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 @media(prefers-reduced-motion:reduce) { .stamp { transition:none; } }
-.dialog { --member-ink:#29291f; --member-muted:#65604f; --member-rule:#48433240; --member-red:#922f26; --card-cutout:radial-gradient(ellipse 22px 5px at 50% 21px,transparent 94%,#000 100%); color-scheme:light; color:var(--member-ink); background:transparent; border:0; width:min(428px,calc(100% - 8px)); max-width:calc(100% - 8px); max-height:calc(100dvh - 8px); margin:auto; padding:clamp(12px,3vw,24px); overflow:auto; overscroll-behavior:contain; font-family:var(--font-body),sans-serif; cursor:auto; }
+.dialog { --member-ink:#29291f; --member-muted:#65604f; --member-rule:#48433240; --member-red:#922f26; --card-cutout:radial-gradient(circle 6px at 50% 24px,transparent 94%,#000 100%); color-scheme:light; color:var(--member-ink); background:transparent; border:0; width:min(428px,calc(100% - 8px)); max-width:calc(100% - 8px); max-height:calc(100dvh - 8px); margin:auto; padding:clamp(12px,3vw,24px); overflow:auto; overscroll-behavior:contain; font-family:var(--font-body),sans-serif; cursor:auto; }
 .dialog::backdrop { background:#090b09bd; backdrop-filter:blur(5px); }
 .dialog * { cursor:auto; }
 .detail { position:relative; isolation:isolate; padding:54px 28px 24px; filter:drop-shadow(1px 3px 2px #0006) drop-shadow(4px 12px 10px #0005); }
-/* The hanging slot cuts through the stock so the room shows through it. */
+/* The eyelet stays open through both layers of paper stock. */
 .cardEdge,.cardStock { position:absolute; border-radius:4px 4px 2px 2px; mask-image:var(--card-cutout); pointer-events:none; }
-.cardEdge { inset:2px -1px -3px 1px; z-index:-2; background:repeating-linear-gradient(0deg,#89785c 0px,#b1a185 .7px,#d2c1a1 1.4px,#9f8d6e 2px); box-shadow:inset -1px -1px 1px #594b3766; }
+.cardEdge { inset:2px -1px -3px 1px; z-index:-2; mask-image:radial-gradient(circle 6px at calc(50% - 1px) 22px,transparent 94%,#000 100%); background:repeating-linear-gradient(0deg,#89785c 0px,#b1a185 .7px,#d2c1a1 1.4px,#9f8d6e 2px); box-shadow:inset -1px -1px 1px #594b3766; }
 .cardStock { inset:0; z-index:-1; border:1px solid #f9efd7b8; background:linear-gradient(115deg,#fbf3e3bd,#eee6d37d 45%,#d1c2a14d),url('/membership/design/distressed-paper.jpg') center/cover; box-shadow:inset 1px 1px 1px #fffae8a3,inset -1px -1px 1px #6c5a3a30,inset 0 -3px 4px #74614112; }
-.hangerRim { position:absolute; top:16px; left:50%; width:44px; height:10px; border-radius:50%; transform:translateX(-50%); background:transparent; box-shadow:inset 0 1.4px 1.8px #392b237a,0 1px .5px #fff8dfb8; pointer-events:none; }
+.hangerRim { position:absolute; top:12px; left:50%; width:24px; height:24px; border-radius:50%; transform:translateX(-50%); background:conic-gradient(from -30deg,#77796e,#d0d0bd 16%,#f3f0de 23%,#8a8e81 37%,#555b51 48%,#b7bbab 63%,#e3e2cf 72%,#797e71 87%,#77796e); mask-image:radial-gradient(circle 6px at center,transparent 94%,#000 100%); box-shadow:inset .6px .7px .6px #ffffedb3,inset -.6px -1px .7px #282e24b3,0 1.5px 1.5px #30271d66; pointer-events:none; }
+.hangerRim::before { content:""; position:absolute; inset:4px; border:1px solid #55594c; border-radius:50%; box-shadow:0 .6px .5px #ffffe5b3,inset 0 1px 1px #252b20b3; }
 .dialog .close { position:absolute; right:5px; top:3px; width:44px; height:44px; display:flex; align-items:center; justify-content:center; border:0; padding:0; background:transparent; color:#655f4d; font:25px/1 var(--font-body),sans-serif; cursor:pointer; }
 .dialog .close:hover { color:#24251e; }
-.cardHeader { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid #7f725b57; box-shadow:0 1px 0 #fff8e17a; }
+.cardHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid #7f725b57; box-shadow:0 1px 0 #fff8e17a; }
 /* A dark upper lip and warm lower catchlight make the type sink into the stock. */
-.cardBrand { color:#74664e; font-family:var(--font-body),sans-serif; font-size:18px; line-height:1; font-weight:650; letter-spacing:-.06em; text-shadow:0 -.7px .4px #34261680,0 1px .5px #fff9e4e6; }
+.cardBrand { display:block; flex-shrink:0; width:112px; aspect-ratio:10/3; color:#74664e; filter:drop-shadow(0 -.7px .3px #34261680) drop-shadow(0 1px .4px #fff9e4e6); }
+.cardBrand::before { content:""; display:block; width:100%; height:100%; background:currentColor; mask:url('/ruined-wordmark.svg') center/contain no-repeat; }
 .cardSeries { color:var(--member-muted); font-size:8px; line-height:1.4; letter-spacing:.14em; text-transform:uppercase; text-shadow:0 .5px 0 #fff7dfb3; }
 .patchMount { display:grid; place-items:center; padding:28px 0 25px; pointer-events:none; }
 .detailStamp { position:relative; width:188px; font-size:58px; color:#e9e3d0; background:#36372e; border-color:#666849; border-radius:50%; transform:rotate(-5deg); box-shadow:2px 7px 8px #332e242a; }
@@ -42,7 +44,11 @@
 .earned { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:6px 16px; margin:24px 0 0; padding-top:14px; border-top:1px dashed #78705b63; color:#555244; font-family:var(--font-mono,ui-monospace),monospace; font-size:10px; line-height:1.6; text-transform:uppercase; letter-spacing:.06em; }
 .earned time { color:#4c4537; text-shadow:0 -.4px .25px #3c2d1838,0 .6px .25px #fff7dfb3; }
 .previewNote { margin:12px 0 0; color:#6b6452; font-size:9px; line-height:1.6; text-transform:none; letter-spacing:0; }
-@media(max-width:359px) { .detail { padding:50px 22px 20px; } .detail h2 { font-size:33px; } .cardBrand { font-size:17px; } .cardSeries { font-size:7px; } .patchMount { padding-block:22px; } }
+.dialog .saveBadge { display:flex; align-items:center; justify-content:center; gap:9px; width:fit-content; min-height:44px; margin:18px auto 0; padding:10px 20px; border:1px solid #e6ddc547; border-radius:2px; background:#181b17d9; color:#f0e8d4; font-size:12px; line-height:1.5; text-decoration:none; cursor:pointer; }
+.dialog .saveBadge:hover { background:#292d25; border-color:#e6ddc58c; }
+.dialog .saveBadge:focus-visible { outline:2px solid #f0e8d4; outline-offset:4px; }
+.saveBadge svg { pointer-events:none; }
+@media(max-width:359px) { .detail { padding:50px 22px 20px; } .detail h2 { font-size:33px; } .cardBrand { width:104px; } .cardSeries { font-size:7px; } .patchMount { padding-block:22px; } }
 
 .stamp[data-artwork],.detailStamp[data-artwork] { border:0; background:transparent; border-radius:50%; }
 .stamp[data-artwork] { width:36px; }
@@ -50,4 +56,4 @@
 .stamp[data-artwork] img,.detailStamp[data-artwork] img { display:block; width:100%; height:100%; object-fit:contain; user-select:none; }
 .detailStamp[data-artwork] { width:min(216px,100%); margin-inline:auto; box-shadow:none; }
 @media(max-height:700px) { .detail { padding-top:46px; } .patchMount { padding-block:20px; } .detailStamp[data-artwork] { width:min(174px,100%); } .detailStamp { width:154px; } .cardCopy { padding-top:16px; } .earned { margin-top:18px; } }
-@media(forced-colors:active) { .detail { filter:none; background:Canvas; border:1px solid CanvasText; } .cardEdge,.cardStock,.hangerRim { display:none; } .cardBrand,.cardSeries,.eyebrow,.detail h2,.description,.earned time { color:CanvasText; text-shadow:none; } }
+@media(forced-colors:active) { .detail { filter:none; background:Canvas; border:1px solid CanvasText; } .cardEdge,.cardStock,.hangerRim { display:none; } .cardBrand { filter:none; forced-color-adjust:none; } .cardBrand,.cardSeries,.eyebrow,.detail h2,.description,.earned time { color:CanvasText; text-shadow:none; } .dialog .saveBadge { color:LinkText; background:Canvas; border-color:LinkText; } .dialog .saveBadge:focus-visible { outline-color:Highlight; } }
