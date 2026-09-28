@@ -40,6 +40,7 @@ async function databaseFixture(t) {
     ${outbox[0]}
   `);
   await db.exec(await source(migrationPath));
+  await db.exec(await source("db/migrations/20260928020000_member_waitlist_joined_at.sql"));
   function wrap(engine) {
     const sql = async (strings, ...values) => (await engine.query(
       strings.reduce((query, part, index) => query + (index ? `$${index}` : "") + part, ""), values,
@@ -130,6 +131,7 @@ test("repository deduplication preserves the original details and atomically cre
   assert.equal(first.email_normalized, original.emailNormalized);
   assert.equal(first.phone, original.phone);
   assert.ok(first.created_at);
+  assert.ok(first.joined_waitlist_at);
   const duplicate = model.parseMembershipWaitlistInput({ name: "Changed name", email: "TEST@example.test", phone: "5551234567" });
   await joinMembershipWaitlist(duplicate);
   // PGlite serializes transactions; this tests repeated competing calls, not a
@@ -153,6 +155,21 @@ test("repository deduplication preserves the original details and atomically cre
   assert.equal((await db.query("select count(*)::integer as count from membership_waitlist")).rows[0].count, 2);
   assert.equal((await db.query("select count(*)::integer as count from integration_outbox")).rows[0].count, 2);
   assert.deepEqual((await db.query("select * from membership_waitlist where email_normalized = 'failed@example.test'")).rows, []);
+});
+
+test("a genuine signup stamps an existing attribution row once without replacing its identity", async (t) => {
+  const { db, joinMembershipWaitlist } = await databaseFixture(t);
+  await db.query("insert into membership_waitlist (name,email_normalized,created_at) values ('Original Name','attributed@example.test','2026-01-01')");
+  const before = (await db.query("select * from membership_waitlist")).rows[0];
+  assert.equal(before.joined_waitlist_at,null);
+  await joinMembershipWaitlist({ name:"New Name", emailNormalized:"attributed@example.test", phone:null });
+  const first = (await db.query("select * from membership_waitlist")).rows[0];
+  assert.equal(first.name,before.name);
+  assert.equal(first.id,before.id);
+  assert.ok(new Date(first.joined_waitlist_at)>new Date(first.created_at));
+  await joinMembershipWaitlist({ name:"Another Name", emailNormalized:"attributed@example.test", phone:null });
+  assert.deepEqual((await db.query("select * from membership_waitlist")).rows,[first]);
+  assert.equal((await db.query("select count(*)::int as count from integration_outbox")).rows[0].count,0);
 });
 
 test("the database constrains invalid contact details and the rate limiter permits eight attempts per window", async (t) => {
