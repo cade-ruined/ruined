@@ -7,11 +7,13 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   try {
     const user = await journalViewer(request), url = new URL(request.url);
+    const collection = url.searchParams.get("collection");
     const view = url.searchParams.get("view"), order = url.searchParams.get("order"), year = url.searchParams.get("year");
-    if ((view !== null && !["journal", "timeline"].includes(view)) || (order !== null && !["oldest", "newest"].includes(order))
+    if ((collection !== null && !["private", "public"].includes(collection)) || (view !== null && !["journal", "timeline"].includes(view)) || (order !== null && !["oldest", "newest"].includes(order))
       || (year !== null && !/^\d{4}$/.test(year))) throw new JournalError(400, "Choose a valid journal view.");
     return NextResponse.json(await getJournal(user, url.searchParams.get("before"), url.searchParams.get("saved") === "true", {
       view: view === "timeline" ? "timeline" : "journal", order: order === "oldest" ? "oldest" : "newest",
+      ...(collection === "private" || collection === "public" ? { collection } : {}),
       search: url.searchParams.get("search") ?? "", year: year === null ? null : Number(year),
     }), { headers: JOURNAL_HEADERS });
   } catch (error) { return journalFailure(error); }

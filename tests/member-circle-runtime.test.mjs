@@ -137,6 +137,7 @@ async function fixture() {
   const cardModel = await loadModule("src/lib/membership/public-card-model.ts", {});
   let cardRepository;
   const repository = await loadModule("src/lib/membership/repository.ts", {
+    "./badge-repository": { getMemberBadges: async () => [] },
     "./public-card-model": cardModel,
     "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },
     "libphonenumber-js/min": require("libphonenumber-js/min"),

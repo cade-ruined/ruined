@@ -30,7 +30,7 @@ async function loadTypescript(path, dependencies = {}) {
   return cjsModule.exports;
 }
 
-export async function timelineFixture(t, { monthMigration = true } = {}) {
+export async function timelineFixture(t, { monthMigration = true, visibilityMigration = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   // Only the driver's actual Parameter/JSON serializers are used. No driver
@@ -74,6 +74,7 @@ export async function timelineFixture(t, { monthMigration = true } = {}) {
       await db.exec(definition);
     }
     await db.exec(await source("db/migrations/20260928000000_unified_member_journal.sql"));
+    if (visibilityMigration) await db.exec(await source("db/migrations/20260928010000_member_journal_visibility.sql"));
   }
   await db.query("insert into people (id) values ($1),($2)", [timelineIds.person, timelineIds.otherMember]);
   await db.query("insert into ruined_members (id,person_id) values ($1,$2),($3,$3)", [timelineIds.member, timelineIds.person, timelineIds.otherMember]);
@@ -137,6 +138,7 @@ export async function timelineFixture(t, { monthMigration = true } = {}) {
   const access = await loadTypescript("src/lib/membership/access-policy.ts");
   const repository = await loadTypescript("src/lib/membership/repository.ts", {
     "server-only": {}, "libphonenumber-js/min": {},
+    "./badge-repository": { getMemberBadges: async () => [] },
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/membership/access-policy": access,
     "@/lib/membership/member-tag": await loadTypescript("src/lib/membership/member-tag.ts", {}),

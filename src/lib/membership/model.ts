@@ -1,3 +1,4 @@
+import type { MemberBadge } from "./badge-model";
 import type {
   AccountState,
   ArtifactState,
@@ -204,6 +205,7 @@ export type MemberRecordSummary = {
 };
 
 export type MemberHomeSnapshot = {
+  badges?: MemberBadge[];
   access: MemberAccessPolicy;
   announcement: MemberAnnouncementSummary | null;
   artifact: MemberArtifactSummary | null;

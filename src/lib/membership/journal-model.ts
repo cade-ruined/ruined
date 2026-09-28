@@ -1,15 +1,16 @@
+export type JournalVisibility = "private" | "public";
 export type JournalKind = "text" | "images" | "video";
 export type JournalMedia = { id: string; mimeType: string; size: number; url: string };
 export type JournalEntry = {
   id: string; kind: JournalKind; title: string | null; body: string | null;
   createdAt: string; saved: boolean; media: JournalMedia[];
   eventYear: number | null; eventMonth: number | null; eventDay: number | null;
-  includeOnTimeline: boolean; version: string;
+  includeOnTimeline: boolean; version: string; visibility?: JournalVisibility;
 };
-export type JournalSnapshot = { entries: JournalEntry[]; writable: boolean; mediaReady: boolean; hasMore: boolean; nextCursor?: string | null; total?: number; years?: number[] };
-export type JournalCreateInput = { id: string; kind: JournalKind; title: string; body: string; mediaIds: string[]; eventYear?: number | null; eventMonth?: number | null; eventDay?: number | null; includeOnTimeline?: boolean };
+export type JournalSnapshot = { entries: JournalEntry[]; writable: boolean; mediaReady: boolean; hasMore: boolean; nextCursor?: string | null; total?: number; years?: number[]; publicUrl?: string | null };
+export type JournalCreateInput = { id: string; kind: JournalKind; title: string; body: string; mediaIds: string[]; eventYear?: number | null; eventMonth?: number | null; eventDay?: number | null; includeOnTimeline?: boolean; visibility?: JournalVisibility };
 export type JournalEditInput = Omit<JournalCreateInput, "id"> & { expectedVersion: string };
-export type JournalListOptions = { view?: "journal" | "timeline"; search?: string; year?: number | null; order?: "oldest" | "newest" };
+export type JournalListOptions = { view?: "journal" | "timeline"; collection?: JournalVisibility; search?: string; year?: number | null; order?: "oldest" | "newest" };
 export const JOURNAL_MAX_IMAGES = 8;
 export const JOURNAL_IMAGE_BYTES = 8 * 1024 * 1024;
 export const JOURNAL_VIDEO_BYTES = 50 * 1024 * 1024;
@@ -32,13 +33,14 @@ export function journalFilePolicy(mime: string, size: number) {
 export function validateJournalInput(value: unknown): JournalCreateInput {
   if (!value || typeof value !== "object") throw new JournalError(400, "An entry is required.");
   const entry = value as Record<string, unknown>;
-  if (Object.keys(entry).some(key => !["id", "kind", "title", "body", "mediaIds", "eventYear", "eventMonth", "eventDay", "includeOnTimeline"].includes(key)) ||
+  if (Object.keys(entry).some(key => !["id", "kind", "title", "body", "mediaIds", "eventYear", "eventMonth", "eventDay", "includeOnTimeline", "visibility"].includes(key)) ||
       typeof entry.id !== "string" || !JOURNAL_UUID.test(entry.id) ||
       !["text", "images", "video"].includes(String(entry.kind)) ||
       typeof entry.title !== "string" || entry.title.trim().length > 200 ||
       typeof entry.body !== "string" || entry.body.trim().length > JOURNAL_BODY_LENGTH ||
       !Array.isArray(entry.mediaIds) || entry.mediaIds.some(id => typeof id !== "string" || !JOURNAL_UUID.test(id)) ||
       new Set(entry.mediaIds).size !== entry.mediaIds.length) throw new JournalError(400, "Check the entry and try again.");
+  if (entry.visibility !== undefined && entry.visibility !== "private" && entry.visibility !== "public") throw new JournalError(400, "Choose private or public for this entry.");
   const kind = entry.kind as JournalKind;
   if ((kind === "text" && ((!entry.body.trim() && !entry.title.trim()) || entry.mediaIds.length !== 0)) ||
       (kind === "images" && (entry.mediaIds.length < 1 || entry.mediaIds.length > JOURNAL_MAX_IMAGES)) ||
@@ -56,7 +58,8 @@ export function validateJournalInput(value: unknown): JournalCreateInput {
   if (entry.includeOnTimeline && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to include this entry on your timeline.");
   return { id: entry.id, kind, title: entry.title.trim(), body: entry.body.trim(), mediaIds: entry.mediaIds as string[],
     eventYear: eventYear as number | null, eventMonth: eventMonth as number | null, eventDay: eventDay as number | null,
-    includeOnTimeline: entry.includeOnTimeline === true };
+    includeOnTimeline: entry.includeOnTimeline === true,
+    ...(entry.visibility === undefined ? {} : { visibility: entry.visibility as JournalVisibility }) };
 }
 export function validateJournalVersion(value: unknown): string {
   if (typeof value !== "string" || !/^[1-9]\d{0,9}$/.test(value)) throw new JournalError(409, "Load the latest entry before saving. Your draft has not been changed.");

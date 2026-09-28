@@ -1,0 +1,21 @@
+.page { min-height: 100svh; padding: 48px 24px 36px; background: #f1efea; color: #1d1d1b; }
+.content { width: min(100%, 880px); margin: 0 auto; }
+.back { color: inherit; font-size: 12px; text-underline-offset: 4px; }
+.identity { display: flex; align-items: flex-end; gap: 32px; padding: 64px 0 56px; }
+.identity h1 { margin: 0; font-size: clamp(32px, 6vw, 64px); font-weight: 500; line-height: 1.02; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.portrait { width: 108px; height: 135px; object-fit: cover; }
+.tag { margin: 14px 0 0; color: #66645e; font-size: 13px; overflow-wrap: anywhere; }
+.journal { border-top: 1px solid #ccc9c1; }
+.journalTitle { margin: 20px 0 48px; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .15em; }
+.entries { display: grid; gap: 52px; }
+.entry { padding-bottom: 48px; border-bottom: 1px solid #ccc9c1; min-width: 0; }
+.entry time { color: #6d6a63; font-size: 12px; }
+.entry h3 { margin: 18px 0; font-size: clamp(24px, 4vw, 36px); font-weight: 500; line-height: 1.15; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.body { max-width: 680px; margin: 18px 0; font-size: 16px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.media { display: grid; gap: 16px; margin-top: 28px; }
+.media img, .media video { display: block; width: 100%; height: auto; max-height: 760px; object-fit: contain; }
+.empty, .status { padding: 28px 0 64px; font-size: 14px; color: #6d6a63; }
+.status button, .more { border: 1px solid #bbb7af; background: transparent; color: inherit; padding: 12px 20px; cursor: pointer; }
+.more { margin: 32px 0; }
+.footer { padding-top: 48px; font-size: 11px; color: #6d6a63; }
+@media (max-width: 480px) { .page { padding: 28px 20px; } .identity { gap: 20px; padding: 44px 0 36px; } .portrait { width: 72px; height: 90px; } .journalTitle { margin-bottom: 32px; } .entry { padding-bottom: 32px; } .entries { gap: 36px; } }

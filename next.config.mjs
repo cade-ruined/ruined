@@ -109,7 +109,7 @@ const nextConfig = {
         ],
       })),
       { source: "/(.*)", headers: securityHeaders },
-      ...["/card/:path*", "/invitation/:path*"].map(source => ({ source, headers: [
+      ...["/card/:path*", "/invitation/:path*", "/journal/:path*"].map(source => ({ source, headers: [
         { key: "Cache-Control", value: "private, no-store, max-age=0" },
         { key: "Referrer-Policy", value: "no-referrer" },
         { key: "X-Robots-Tag", value: "noindex, nofollow" },

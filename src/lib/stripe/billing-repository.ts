@@ -61,6 +61,7 @@ export type InvoiceSnapshot = {
   eventCreated: number;
   id: string;
   memberId: string | null;
+  paidAt?: Date | null;
   purpose: "consulting" | "membership" | "membership_price_mismatch" | "unclassified";
   status: string | null;
   subscriptionId: string | null;
@@ -754,6 +755,7 @@ export async function upsertInvoice(
       billing_reason,
       amount_due,
       amount_paid,
+      paid_at,
       currency,
       last_event_created
     ) values (
@@ -766,6 +768,7 @@ export async function upsertInvoice(
       ${input.billingReason},
       ${input.amountDue},
       ${input.amountPaid},
+      ${input.paidAt ?? null},
       ${input.currency},
       ${input.eventCreated}
     )
@@ -779,6 +782,7 @@ export async function upsertInvoice(
       billing_reason = excluded.billing_reason,
       amount_due = excluded.amount_due,
       amount_paid = excluded.amount_paid,
+      paid_at = coalesce(stripe_invoices.paid_at, excluded.paid_at),
       currency = excluded.currency,
       last_event_created = excluded.last_event_created,
       updated_at = now()

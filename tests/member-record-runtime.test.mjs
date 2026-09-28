@@ -60,6 +60,7 @@ async function fixture() {
   };
   const policy = await load("src/lib/membership/access-policy.ts", {});
   const repository = await load("src/lib/membership/repository.ts", {
+    "./badge-repository": { getMemberBadges: async () => [] },
     "server-only": {},
     "libphonenumber-js/min": {},
     "@/lib/database/server": { getApplicationDatabase: () => sql },

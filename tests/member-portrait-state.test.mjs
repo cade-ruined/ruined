@@ -137,6 +137,7 @@ test("home consumes the portrait override without mutating its cached member or 
     "next/image": Image,
     "next/link": Link,
     "@/components/membership/MemberJournal": () => null,
+    "@/components/membership/MemberBadges": () => null,
     "@/components/membership/MemberPortraitState": { useMemberPortrait: fixture.read },
     "@/lib/membership/access-policy": { memberCan: () => false },
     "@/lib/membership/member-number": { memberTier: () => null },

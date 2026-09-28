@@ -41,6 +41,7 @@ async function databaseFixture(t) {
     ${outbox[0]}
   `);
   await db.exec(await source(migrationPath));
+  await db.exec(await source("db/migrations/20260928020000_member_waitlist_joined_at.sql"));
   function wrap(engine) {
     const sql = async (strings, ...values) => (await engine.query(
       strings.reduce((query, part, index) => query + (index ? `$${index}` : "") + part, ""), values,

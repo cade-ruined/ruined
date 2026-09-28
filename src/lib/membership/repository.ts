@@ -1,4 +1,5 @@
 import "server-only";
+import { getMemberBadges } from "./badge-repository";
 
 import type { MemberCardInput } from "./public-card-model";
 import parsePhoneNumber from "libphonenumber-js/min";
@@ -2951,6 +2952,7 @@ export async function getMemberHome(
     foundationRows,
     memberSinceRows,
     record,
+    badges,
   ] = await Promise.all([
       getMemberProfile(authUserId),
       getMemberCircle(authUserId),
@@ -2961,6 +2963,7 @@ export async function getMemberHome(
       foundationRowsPromise,
       memberSinceRowsPromise,
       getMemberRecord(authUserId),
+      getMemberBadges(identity.memberId),
     ]);
   if (!profile || !circle || !experiences || !artifacts || !updates) return null;
   const foundationRow = foundationRows[0] ?? {
@@ -3090,6 +3093,7 @@ export async function getMemberHome(
     artifact: firstArtifact,
     artifacts: visibleArtifacts,
     avatarUrl: profile.directory.avatarUrl,
+    badges,
     blockName: suppressPrivateHighlights ? null : circle.block?.name ?? null,
     circleMembers: visibleCircleMembers,
     circleName: suppressPrivateHighlights ? null : circle.circle?.name ?? null,
@@ -3142,7 +3146,7 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
       timeline_revision.revision
     from timeline_revision
     left join member_journal_entries entry
-      on entry.member_id = ${memberId}::uuid and entry.deleted_at is null and entry.include_on_timeline
+      on entry.member_id = ${memberId}::uuid and entry.deleted_at is null and entry.include_on_timeline and entry.visibility = 'private'
     order by entry.event_year, coalesce(entry.event_month, 13), coalesce(entry.event_day, 32), entry.timeline_position, entry.created_at, entry.id
   `;
   return {
@@ -3247,7 +3251,7 @@ type LegacyJournalRow = { id:string; kind:string; title:string|null; body:string
 async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:MemberIdentity,entry:ReturnType<typeof validateTimelineInput>[number]) {
   if(entry.id) {
     const [current]=await tx<LegacyJournalRow[]>`select id,kind,title,body,event_year,event_month,event_day,timeline_position from member_journal_entries
-      where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and include_on_timeline and deleted_at is null for update`;
+      where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and include_on_timeline and deleted_at is null and visibility = 'private' for update`;
     if(!current) throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
     const displayTitle=current.title ?? (current.kind==='images' ? 'A photograph' : current.kind==='video' ? 'A video' : 'An untitled moment');
     const nextTitle=entry.title===displayTitle ? current.title : entry.title;
@@ -3260,7 +3264,7 @@ async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:Memb
       throw new MembershipConflictError("This moment has more detail in Journal. Open it there to edit without losing anything.");
     }
     await tx`update member_journal_entries set event_year=${entry.year},event_month=${nextMonth},title=${nextTitle},body=${entry.details},updated_by_auth_user_id=${identity.authUserId}::uuid
-      where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline
+      where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline and visibility = 'private'
         and (event_year is distinct from ${entry.year} or event_month is distinct from ${nextMonth}::integer
           or title is distinct from ${nextTitle} or body is distinct from ${entry.details})`;
     return entry.id;
@@ -3293,7 +3297,7 @@ async function writeLegacyTimeline(authUserId:string, expectedRevision:string, m
     // Removing a legacy Timeline item only removes its milestone marker. Its
     // canonical journal content, date, media and append-only history remain.
     for(const id of removed) await tx`update member_journal_entries set include_on_timeline=false,updated_by_auth_user_id=${authUserId}::uuid
-      where id=${id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline`;
+      where id=${id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline and visibility = 'private'`;
     return readTimelineRecord(tx,identity.memberId);
   });
   return {access,completedAt:requirements.timeline.completedAt,...record};

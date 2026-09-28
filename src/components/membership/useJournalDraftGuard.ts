@@ -19,7 +19,7 @@ function sameDraft(left: DraftState | null, right: DraftState) {
   const a = left.draft, b = right.draft;
   return a.kind === b.kind && a.title === b.title && a.body === b.body
     && a.eventYear === b.eventYear && a.eventMonth === b.eventMonth && a.eventDay === b.eventDay
-    && a.includeOnTimeline === b.includeOnTimeline && a.editingId === b.editingId
+    && a.includeOnTimeline === b.includeOnTimeline && (a.visibility ?? "private") === (b.visibility ?? "private") && a.editingId === b.editingId
     && a.editingVersion === b.editingVersion && a.attempted === b.attempted && a.draftId === b.draftId
     && a.files.length === b.files.length && a.files.every((file, index) => file === b.files[index])
     && a.keptMedia.length === b.keptMedia.length && a.keptMedia.every((media, index) => {

@@ -55,6 +55,10 @@ const migrations = [
   "../db/migrations/20260926000000_member_number_zero.sql",
   "../db/migrations/20260927000000_timeline_entry_month.sql",
   "../db/migrations/20260928000000_unified_member_journal.sql",
+  "../db/migrations/20260928010000_member_journal_visibility.sql",
+  "../db/migrations/20260928020000_member_waitlist_joined_at.sql",
+  "../db/migrations/20260929000000_member_badges.sql",
+  "../db/migrations/20260929010000_early_cohort_badges.sql",
 ];
 
 function migrationBody(migration, migrationName) {

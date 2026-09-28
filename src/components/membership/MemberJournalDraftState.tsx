@@ -11,6 +11,7 @@ export type JournalDraft = {
   eventMonth: string;
   eventDay: string;
   includeOnTimeline: boolean;
+  visibility?: "private" | "public";
   files: File[];
   keptMedia: JournalMedia[];
   editingId: string | null;

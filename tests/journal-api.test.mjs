@@ -58,3 +58,20 @@ test("Journal stale reload/deletion and complete export are private owner-scoped
  const exporter=await fixture("app/api/my/journal/export/route.ts");const exported=await exporter.GET(req("GET"));assert.deepEqual(await exported.json(),{entries:[]});assert.equal(exported.headers.get("vary"),"Cookie");
  assert.deepEqual(exporter.calls.find(call=>call.name==="exportJournalTimeline").args,["verified-owner"]);
 });
+
+test("Journal sharing API validates explicit visibility and collection while keeping private exports scoped",async()=>{
+ const f=await fixture("app/api/my/journal/route.ts");
+ let response=await f.GET(req("GET",undefined,"/api/my/journal?collection=private&view=timeline"));
+ assert.equal(response.status,200);assert.equal(f.calls.find(call=>call.name==="getJournal").args[3].collection,"private");
+ response=await f.GET(req("GET",undefined,"/api/my/journal?collection=everyone"));assert.equal(response.status,400);
+ response=await f.POST(req("POST",{...input,id,visibility:"public"}));assert.equal(response.status,201);
+ assert.equal(f.calls.find(call=>call.name==="createJournalEntry").args[1].visibility,"public");
+ response=await f.POST(req("POST",{...input,id,visibility:"everyone"}));assert.equal(response.status,400);
+ const editor=await fixture("app/api/my/journal/[id]/route.ts");
+ response=await editor.PATCH(req("PATCH",{action:"edit",expectedVersion:"3",...input,visibility:"private"}),context);assert.equal(response.status,200);
+ assert.equal(editor.calls.find(call=>call.name==="editJournalEntry").args[2].visibility,"private");
+ const exporter=await fixture("app/api/my/journal/export/route.ts");
+ response=await exporter.GET(req("GET",undefined,"/api/my/journal/export?collection=private"));assert.equal(response.status,200);
+ assert.deepEqual(exporter.calls.find(call=>call.name==="exportJournalTimeline").args,["verified-owner","private"]);
+ response=await exporter.GET(req("GET",undefined,"/api/my/journal/export?collection=everyone"));assert.equal(response.status,400);
+});

@@ -183,7 +183,7 @@ test("existing Timeline navigation opens the unified Journal profile", async () 
   ]);
 
   assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "My Timeline"/);
-  assert.match(home, /"journal","saved","about"/);
+  assert.match(home, /"journal","timeline"/);
   assert.match(page, /redirect\("\/my#timeline"\)/);
   assert.match(repository, /title: "Build My Timeline\."/);
 });
