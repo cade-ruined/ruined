@@ -329,12 +329,20 @@ test("the real paid-invoice webhook persists its payment timestamp and awards at
       add processed_at timestamptz, add updated_at timestamptz;
   `);
   const state = await load("src/lib/stripe/membership-state.ts");
+  const pricing = await load("src/lib/membership/pricing.ts");
+  const pricePolicy = await load("src/lib/stripe/price-policy.ts", { "@/lib/membership/pricing": pricing });
   const billing = await load("src/lib/stripe/billing-repository.ts", { "server-only": {},
+    "@/lib/membership/pricing": pricing,
+    "@/lib/membership/commercial-repository": { lockCommercialMembershipReservation: () => { throw new Error("Legacy invoice must not reserve a new offer"); } },
     "@/lib/stripe/database": { getBillingDatabase: () => f.sql }, "@/lib/stripe/membership-state": state });
-  const subscription = { id: "subscription-1", customer: "customer-1", status: "active",
-    automatic_tax: { enabled: false, disabled_reason: null }, items: { data: [{ price: { id: "membership-price" } }] } };
+  const subscription = { id: "subscription-1", customer: "customer-1", status: "active", livemode: true,
+    metadata: {}, automatic_tax: { enabled: false, disabled_reason: null },
+    items: { has_more: false, data: [{ id: "si_legacy", quantity: 1, price: { id: "membership-price", livemode: true,
+      type: "recurring", currency: "usd", unit_amount: 49900, recurring: { interval: "month", interval_count: 1 } } }] } };
   const processor = await load("src/lib/stripe/webhook.ts", { "server-only": {},
     "@/lib/membership/badge-repository": f,
+    "@/lib/membership/pricing": pricing,
+    "@/lib/stripe/price-policy": pricePolicy,
     "@/lib/stripe/billing-repository": { ...billing,
       findMemberBySubscription: async () => ({ id: id(1), membershipState: "pending", stripeCustomerId: "customer-1" }),
       upsertSubscription: async () => {}, updateMemberBillingState: async () => {}, recordWebhookFailure: async () => {},
@@ -342,13 +350,17 @@ test("the real paid-invoice webhook persists its payment timestamp and awards at
     "@/lib/stripe/database": { getBillingDatabase: () => f.sql },
     "@/lib/stripe/membership-state": state,
     "@/lib/stripe/server": { getStripe: () => ({ subscriptions: { retrieve: async () => subscription } }),
-      getStripeMembershipPriceId: () => "membership-price", isStripeTaxEnabled: () => false },
+      getMembershipPriceConfiguration: () => ({ legacy: "membership-price", livemode: true }), isStripeTaxEnabled: () => false },
   });
   const paidSeconds = Date.parse(facts.activatedAt) / 1000;
   const event = { id: "verified-event-1", type: "invoice.paid", livemode: true, created: paidSeconds + 20,
     data: { object: { id: "verified-invoice-1", customer: "customer-1", customer_email: "member-1@example.test",
       parent: { subscription_details: { subscription: "subscription-1", metadata: { ruined_context: "membership" } } },
-      status: "paid", amount_paid: 49900, amount_due: 49900, currency: "usd", billing_reason: "subscription_create",
+      status: "paid", livemode: true, amount_paid: 49900, amount_due: 49900, amount_remaining: 0, currency: "usd",
+      lines: { has_more: false, data: [{ livemode: true, currency: "usd", quantity: 1, subtotal: 49900,
+        pricing: { price_details: { price: "membership-price" } }, parent: { type: "subscription_item_details",
+          subscription_item_details: { subscription: "subscription-1", subscription_item: "si_legacy", proration: false } } }] },
+      billing_reason: "subscription_create",
       status_transitions: { paid_at: paidSeconds } } } };
   assert.deepEqual(await processor.processStripeWebhookEvent(event), { duplicate: false, handled: true });
   assert.deepEqual(await f.getMemberBadges(id(1)), model.evaluateMembershipBadges(facts));

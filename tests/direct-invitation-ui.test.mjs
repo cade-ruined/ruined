@@ -182,11 +182,11 @@ test("signup and membership routes pass setup-only mode only for deliberately op
   const signup = await load("app/signup/page.tsx", dependencies);
   const overview = await load("app/membership/page.tsx", dependencies);
   assert.equal((await signup.default({ searchParams: Promise.resolve({}) })).props.paymentSetupOnly, true);
-  assert.equal((await overview.default()).props.paymentSetupOnly, true);
+  assert.equal((await overview.default({ searchParams: Promise.resolve({}) })).props.paymentSetupOnly, true);
   configuration = { ...configuration, stripeCheckoutReady: true };
-  assert.equal((await overview.default()).props.paymentSetupOnly, false);
+  assert.equal((await overview.default({ searchParams: Promise.resolve({}) })).props.paymentSetupOnly, false);
   configuration = { ...configuration, stripeCheckoutReady: false, membershipSignupReady: false };
-  assert.equal((await overview.default()).props.signupEnabled, false);
+  assert.equal((await overview.default({ searchParams: Promise.resolve({}) })).props.signupEnabled, false);
   assert.equal((await signup.default({ searchParams: Promise.resolve({}) })).props.enabled, false);
 });
 

@@ -332,6 +332,7 @@ test("Ruined invitation signup reaches paid onboarding through the real issuance
     assert.equal(completed.body.handled, true);
     await assertEntryOnly();
     const invoice = { id: "in_offline_journey", object: "invoice", livemode: false, currency: "usd", status: "paid",
+      status_transitions: { paid_at: now },
       amount_due: price.unit_amount, amount_paid: price.unit_amount, amount_remaining: 0, total: price.unit_amount, total_excluding_tax: price.unit_amount,
       starting_balance: 0, ending_balance: 0, pre_payment_credit_notes_amount: 0, post_payment_credit_notes_amount: 0, customer_address: { country: "US" }, billing_reason: "subscription_create",
       customer: subscription.customer, customer_email: viewer.email, parent: { subscription_details: { subscription: subscription.id, metadata: subscription.metadata } },

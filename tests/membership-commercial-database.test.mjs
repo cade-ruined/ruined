@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
@@ -58,7 +59,9 @@ test("commercial enrollment uses the real schema, current registered people, saf
     await db.query("insert into member_lifecycle(member_id,account_state) values($1,'active')", [who.member]);
     await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,$4,'active')", [who.auth, who.member, who.person, who.email]);
     await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [who.auth]);
-    if (complimentary) await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'guide')", [who.auth]);
+    // The first paid member is the administrator who explicitly authorizes
+    // complimentary invitations. Circle service roles confer no funding.
+    if (number === 1) await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [who.auth]);
     await db.query("insert into person_profiles(person_id,display_name) values($1,$2) on conflict(person_id) do update set display_name=excluded.display_name", [who.person, `Member ${number}`]);
     await db.query(`insert into person_private_profiles(person_id,birth_date,default_fulfillment_address)
       values($1,'1990-01-01','{"countryCode":"US"}') on conflict(person_id) do update set birth_date=excluded.birth_date,default_fulfillment_address=excluded.default_fulfillment_address`, [who.person]);
@@ -71,6 +74,21 @@ test("commercial enrollment uses the real schema, current registered people, saf
         values($1,$2,$3,$4,$5,$6,$7,$8,'checkbox_and_submit',now(),'ruined_membership',2,'Paid terms',$9,'Test-only agreement',$10)`,
       [id(number + 2000), id(9000), who.person, who.member, who.auth, consent, `Member ${number}`, who.email, "a".repeat(64), `terms-${number}`]);
       await db.query("update member_onboardings set profile_completed_at=now(),agreement_completed_at=now() where member_id=$1", [who.member]);
+    }
+    if (complimentary) {
+      const invitation = (await db.query(`insert into member_personal_invitations(member_id,request_id,public_token,
+        recipient_name,recipient_email_normalized,inviter_name,email_requested,membership_type,
+        complimentary_reason,complimentary_authorized_by_auth_user_id)
+        values($1,$2,$3,$4,$5,'Administrator',false,'complimentary','Explicit test membership waiver',$6) returning id`,
+      [id(1), id(number + 6000), randomBytes(32).toString("base64url"), `Member ${number}`, who.email, id(1001)])).rows[0].id;
+      await db.transaction(async tx => {
+        await tx.query("update member_personal_invitations set accepted_at=clock_timestamp(),accepted_member_id=$2,accepted_by_auth_user_id=$3 where id=$1", [invitation,who.member,who.auth]);
+        await tx.query("select private.ruined_redeem_complimentary_invitation($1,$2,$3)", [invitation,who.member,who.auth]);
+      });
+    }
+    if (number === 1) {
+      await db.query("insert into private.member_number_assignments(member_number,member_id,activated_at) values(0,$1,now())", [who.member]);
+      await db.query("update ruined_members set member_number=0 where id=$1", [who.member]);
     }
     if (active) await activate(who, complimentary);
     return who;
@@ -93,8 +111,7 @@ test("commercial enrollment uses the real schema, current registered people, saf
     await member(70); await member(71, { verified: false }); await member(72, { age: false });
     assert.equal(await occupied(), 49);
     assert.equal((await repository.getCommercialEnrollment(members[1].member)).source, "complimentary");
-    await db.query("insert into private.member_number_assignments(member_number,member_id,activated_at) values(0,$1,now())", [members[0].member]);
-    await db.query("update ruined_members set member_number=0 where id=$1", [members[0].member]);
+    assert.equal((await db.query("select member_number from ruined_members where id=$1", [members[0].member])).rows[0].member_number, 0);
     assert.equal((await repository.getCommercialEnrollment(members[0].member)).foundingEligible, true, "number zero is unrelated to eligibility");
     assert.equal(await occupied(), 49);
   });

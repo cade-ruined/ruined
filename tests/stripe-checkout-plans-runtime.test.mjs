@@ -175,7 +175,7 @@ function membershipInvoice(sub, changes = {}) {
   const item = sub.items.data[0];
   return {
     id: "in_member", livemode: false, currency: "usd", amount_due: item.price.unit_amount,
-    amount_paid: item.price.unit_amount, amount_remaining: 0, status: "paid", billing_reason: "subscription_create",
+    amount_paid: item.price.unit_amount, amount_remaining: 0, status: "paid", status_transitions: { paid_at: 1790000000 }, billing_reason: "subscription_create",
     parent: { subscription_details: { subscription: sub.id, metadata: { ruined_context: "membership" } } },
     customer: "cus_member", customer_email: "member@example.test",
     lines: { has_more: false, data: [{ id: "il_member", livemode: false, currency: "usd", quantity: 1, subtotal: item.price.unit_amount,
@@ -192,6 +192,7 @@ async function webhookHarness({ consent = true } = {}) {
     items: { has_more: false, data: [{ id: "si_member", quantity: 1, price: price() }] },
   });
   const processor = await load("../src/lib/stripe/webhook.ts", {
+    "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
     "server-only": {}, "@/lib/membership/pricing": pricing, "@/lib/stripe/price-policy": policy,
     "@/lib/stripe/membership-state": membershipStates,
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn({}) }) },

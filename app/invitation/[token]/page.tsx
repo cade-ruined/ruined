@@ -49,6 +49,6 @@ export default async function InvitationPage({ params }: Props) {
   const invitation = await readInvitation(token);
   if (!invitation) notFound();
   return <InvitationLanding {...(invitation.invitationSource ? { invitationSource: invitation.invitationSource } : {})} card={invitation.card} expiresAt={invitation.expiresAt} token={token}
-    paymentSetupOnly={invitation.paymentSetupOnly} membershipType={invitation.membershipType} complimentaryEndsAt={invitation.complimentaryEndsAt}
+    {...(invitation.paymentSetupOnly ? { paymentSetupOnly: true } : {})} membershipType={invitation.membershipType} complimentaryEndsAt={invitation.complimentaryEndsAt}
     {...(invitation.recipientName ? { recipientName: invitation.recipientName } : {})} />;
 }

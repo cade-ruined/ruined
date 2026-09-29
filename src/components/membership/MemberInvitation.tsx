@@ -21,7 +21,7 @@ export function InvitationLanding({ card, token, expiresAt, recipientName, membe
     headerActions={preview ? <Link href="/my/invitation">My Invitation ↗</Link> : <a href={personal ? "#accept-invitation" : "#join-ruined"}>{personal ? "Accept invitation ↗" : "Request to join ↗"}</a>}
     footerNote={preview ? "Example invitation. Nothing is sent or published." : `${direct ? "Ruined Direct · " : ""}An invitation from ${inviterName}.`}
     footerActions={<a href="https://theruinedproject.com/#members">About membership ↗</a>}>
-    {personal ? <PersonalInvitationAcceptance paymentSetupOnly={paymentSetupOnly} invitationToken={token} recipientName={recipientName!} inviterName={inviterName} invitationSource={invitationSource} expiresAt={expiresAt} membershipType={membershipType} complimentaryEndsAt={complimentaryEndsAt} preview={preview} /> : <section id="join-ruined" className={styles.panel} aria-labelledby="invitation-join-title">
+    {personal ? <PersonalInvitationAcceptance {...(paymentSetupOnly ? { paymentSetupOnly: true } : {})} invitationToken={token} recipientName={recipientName!} inviterName={inviterName} invitationSource={invitationSource} expiresAt={expiresAt} membershipType={membershipType} complimentaryEndsAt={complimentaryEndsAt} preview={preview} /> : <section id="join-ruined" className={styles.panel} aria-labelledby="invitation-join-title">
       <p className={styles.eyebrow}>{recipientName ? `For ${recipientName}` : "Your next step"}</p><h2 id="invitation-join-title">Find your people.</h2>
       <p>Leave your details and we’ll be in touch about joining. Your invitation will stay connected to {card.name}.</p>
       {recipientName ? <p className={styles.note}>Use the email address this invitation was sent to.</p> : null}

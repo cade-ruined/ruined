@@ -14,6 +14,7 @@ async function harness({duplicate = false, failure = false} = {}) {
   const handled=[], completed=[], failed=[];
   const state = await load('src/lib/stripe/membership-state.ts');
   const processor = await load('src/lib/stripe/webhook.ts', {
+    '@/lib/membership/badge-repository': {reconcileMemberBadgesForStripeEvent: forbidden},
     'server-only': {}, '@/lib/membership/pricing': {}, '@/lib/stripe/membership-state': state,
     '@/lib/stripe/price-policy': {}, '@/lib/stripe/server': {getStripe: forbidden},
     '@/lib/stripe/database': {getBillingDatabase: () => ({begin: async fn => fn({})})},

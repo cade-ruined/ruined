@@ -16,7 +16,7 @@ function subscription() { return { id: "sub_member", start_date: Date.parse("202
   metadata: { ruined_context: "membership", ruined_member_id: memberId, ruined_checkout_attempt_id: attemptId, agreement_acceptance_id: acceptanceId,
     billing_terms_version: "membership-billing-v2", ruined_offer_id: "individual_monthly", ruined_billing_plan: "monthly", ruined_commercial_reservation_id: attemptId },
   items: { data: [{ id: "si_member", current_period_start: 1, current_period_end: 2, price: { id: "price_member", unit_amount: 49900 } }] } }; }
-function invoice(extra = {}) { return { id: "in_paid", livemode: false, customer: "cus_member", customer_email: "member@example.test", currency: "usd", status: "paid", total: 53000,
+function invoice(extra = {}) { return { id: "in_paid", livemode: false, customer: "cus_member", customer_email: "member@example.test", currency: "usd", status: "paid", status_transitions: { paid_at: 100 }, total: 53000,
   amount_due: 53000, amount_paid: 53000, amount_remaining: 0, pre_payment_credit_notes_amount: 0, post_payment_credit_notes_amount: 0, starting_balance: 0, ending_balance: 0,
   customer_address: { country: "US" }, metadata: {}, parent: { subscription_details: { subscription: "sub_member", metadata: { ruined_context: "membership" } } }, ...extra }; }
 async function helperHarness({ chargeChanges = {}, invoicePayments, refunds = [], existing = null } = {}) {
@@ -73,6 +73,7 @@ async function webhookHarness({ verified = true, fee = false, latestInvoice = "i
   const currentInvoice = invoice(fee ? { metadata: { ruined_cancellation_id: "cancel_id", ruined_context: "membership_cancellation" } } : {});
   const stripe = { subscriptions: { retrieve: async () => sub }, invoices: { retrieve: async () => currentInvoice } };
   const loaded = await load("src/lib/stripe/webhook.ts", {
+    "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
     "server-only": {}, "@/lib/membership/pricing": pricing, "@/lib/stripe/membership-state": state,
     "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true, matchesMembershipInvoice: () => true, hasFullMembershipPayment: () => true },
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn({}) }) },
