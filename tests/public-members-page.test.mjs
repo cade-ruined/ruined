@@ -9,13 +9,13 @@ import ts from "typescript";
 
 const require = createRequire(import.meta.url);
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-function load(path, dependencies = {}) {
+function load(path, dependencies = {}, environment = {}) {
   const output = ts.transpileModule(source(path), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
     jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText;
   const cjsModule = { exports: {} };
-  new Function("require", "module", "exports", output)((name) => {
+  new Function("require", "module", "exports", "process", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime" || name === "react") return require(name);
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
@@ -23,7 +23,7 @@ function load(path, dependencies = {}) {
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_target, property) => property }) };
     // The public waitlist must not start loading private account or billing data.
     throw new Error(`Unexpected public page dependency: ${name}`);
-  }, cjsModule, cjsModule.exports);
+  }, cjsModule, cjsModule.exports, { env: environment });
   return cjsModule.exports;
 }
 
@@ -129,4 +129,34 @@ test("the former Members subpage redirects visitors to the signup in the walk", 
   assert.throws(() => route.default(), (error) => error === redirected);
   assert.deepEqual(destinations, ["/#members"]);
   assert.equal(route.metadata, undefined, "the old subpage does not keep a separate canonical URL");
+});
+
+test("opening public invitations preserves the film and sends signup to the member site without a local form", () => {
+  const OpenMembers = load("src/components/sequence/JourneyMembersPreview.tsx", {
+    "@/data/public-membership": membership,
+    "@/components/public-members/MembershipWaitlistForm": { __esModule: true, default: MembershipWaitlistForm },
+  }, { NEXT_PUBLIC_MEMBERSHIP_SIGNUP_ENABLED: "true" }).default;
+  const document = parseFragment(renderToStaticMarkup(React.createElement(OpenMembers, { headingId: "open-members" })));
+  assertAccessibleStructure(document);
+  assert.equal(descendants(document, "form").length, 0);
+  const invitation = descendants(document, "a").find(link => accessibleText(link).trim() === "Request your invitation");
+  assert.equal(attr(invitation, "href"), "https://members.theruinedproject.com/signup");
+  assert.equal(attr(invitation, "target"), undefined, "continue in the same tab");
+  assert.equal(descendants(document, "video").length, 1);
+  assert.equal(attr(descendants(document, "video")[0], "poster"), "/membership/foundations/beginning.webp");
+  assert.equal(attr(descendants(document, "source")[0], "src"), "/media/membership-introduction.mp4");
+  assert.doesNotMatch(text(document), /pay|charge|subscription|\$\s*\d/i, "public CTA must not promise a payment flow before the member site checks readiness");
+});
+
+test("public invitation release is closed unless its build flag explicitly says true", () => {
+  for (const value of [undefined, "", "false", "1", "yes"]) {
+    const WaitlistMembers = load("src/components/sequence/JourneyMembersPreview.tsx", {
+      "@/data/public-membership": membership,
+      "@/components/public-members/MembershipWaitlistForm": { __esModule: true, default: MembershipWaitlistForm },
+    }, { NEXT_PUBLIC_MEMBERSHIP_SIGNUP_ENABLED: value }).default;
+    const document = parseFragment(renderToStaticMarkup(React.createElement(WaitlistMembers, { headingId: "closed-members" })));
+    assert.equal(descendants(document, "form").length, 1);
+    assert.equal(attr(descendants(document, "form")[0], "aria-label"), "Membership waitlist");
+    assert.equal(descendants(document, "a").some(link => attr(link, "href") === membership.MEMBERSHIP_LINKS.signUp), false);
+  }
 });

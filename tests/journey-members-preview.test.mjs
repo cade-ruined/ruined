@@ -17,7 +17,7 @@ const text = (node) => node == null || typeof node === "boolean" ? "" : Array.is
   ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 const WaitlistForm = () => null;
 
-function fixture(headingId = "test-members-heading") {
+function fixture(headingId = "test-members-heading", signupEnabled = false) {
   const slots = [];
   const focus = [];
   const effects = [];
@@ -43,17 +43,17 @@ function fixture(headingId = "test-members-heading") {
     },
   };
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", compiled)((name) => {
+  new Function("require", "module", "exports", "process", compiled)((name) => {
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return require(name);
     if (name === "@/components/public-members/MembershipWaitlistForm") return { __esModule: true, default: WaitlistForm };
     if (name === "@/data/public-membership") return {
       MEMBERSHIP_INTRO: { headline: "A place for what matters." },
-      MEMBERSHIP_LINKS: { signIn: "https://members.theruinedproject.com/access" },
+      MEMBERSHIP_LINKS: { signIn: "https://members.theruinedproject.com/access", signUp: "https://members.theruinedproject.com/signup" },
     };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_target, property) => property }) };
     throw new Error(`Unexpected public signup dependency: ${name}`);
-  }, loaded, loaded.exports);
+  }, loaded, loaded.exports, { env: { NEXT_PUBLIC_MEMBERSHIP_SIGNUP_ENABLED: signupEnabled ? "true" : undefined } });
 
   function draw() {
     cursor = 0;
@@ -68,7 +68,7 @@ function fixture(headingId = "test-members-heading") {
   }
   const panel = (tree) => nodes(tree).find((node) => node.type === "section");
   const close = (tree) => nodes(tree).find((node) => node.type === "button" && node.props["aria-label"] === "Close registration form");
-  const reopen = (tree) => nodes(tree).find((node) => node.type === "button" && text(node).startsWith("Join the waitlist"));
+  const reopen = (tree) => nodes(tree).find((node) => node.type === "button" && text(node).startsWith(signupEnabled ? "Request your invitation" : "Join the waitlist"));
   return { draw, panel, close, reopen, focus };
 }
 
@@ -157,4 +157,18 @@ test("desktop and mobile controls own distinct panel IDs and independent dismiss
   assert.equal(desktop.panel(desktopTree).props.hidden, true);
   assert.equal(mobile.panel(mobile.draw()).props.hidden, false);
   assert.deepEqual(mobile.focus, []);
+});
+
+test("the invitation release retains close and reopen keyboard focus behavior", () => {
+  const f = fixture("invitation-heading", true);
+  const initial = f.draw();
+  assert.equal(nodes(initial).some(node => node.type === WaitlistForm), false);
+  assert.equal(nodes(initial).find(node => node.type === "a" && text(node).startsWith("Request your invitation")).props.href, "https://members.theruinedproject.com/signup");
+  f.close(initial).props.onClick();
+  const closed = f.draw();
+  assert.equal(f.panel(closed).props.hidden, true);
+  assert.deepEqual(f.focus.at(-1), { label: "Request your invitation ↗", options: { preventScroll: true } });
+  f.reopen(closed).props.onClick();
+  assert.equal(f.panel(f.draw()).props.hidden, false);
+  assert.deepEqual(f.focus.at(-1), { label: "Close registration form", options: { preventScroll: true } });
 });

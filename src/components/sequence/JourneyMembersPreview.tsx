@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import MembershipWaitlistForm from "@/components/public-members/MembershipWaitlistForm";
-import { MEMBERSHIP_INTRO } from "@/data/public-membership";
+import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
 import styles from "./JourneyMembersPreview.module.css";
 
 export default function JourneyMembersPreview({ headingId }: { headingId: string }) {
+  const signupEnabled = process.env.NEXT_PUBLIC_MEMBERSHIP_SIGNUP_ENABLED?.trim().toLowerCase() === "true";
   const [open, setOpen] = useState(true);
   const film = useRef<HTMLVideoElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -65,7 +66,7 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
         aria-controls={panelId}
         onClick={() => changeOpen(true)}
       >
-        Join the waitlist <span aria-hidden="true">↗</span>
+        {signupEnabled ? "Request your invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span>
       </button>
       {/* Keep the form mounted so dismissing it never clears a draft or resets a submission. */}
       <section id={panelId} hidden={!open} className={styles.preview} aria-labelledby={headingId} data-journey-members-preview data-mobile-internal-scroll>
@@ -102,7 +103,9 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
         <div className={styles.copy}>
           <h2 id={headingId} className="ui-heading">{MEMBERSHIP_INTRO.headline}</h2>
           <div className={styles.signup}>
-            <MembershipWaitlistForm tone="paper" />
+            {signupEnabled ? <a className={styles.invitation} href={MEMBERSHIP_LINKS.signUp}>
+              Request your invitation <span aria-hidden="true">↗</span>
+            </a> : <MembershipWaitlistForm tone="paper" />}
           </div>
         </div>
       </section>

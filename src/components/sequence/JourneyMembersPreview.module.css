@@ -30,6 +30,10 @@
 .copy { min-width: 0; width: 100%; max-width: 27rem; justify-self: end; padding: clamp(22px, 2.2vw, 28px); border-radius: 5px; background: var(--color-bone) url('/textures/member-paper.svg') center / 512px; color: var(--color-faded); box-shadow: 7px 8px 0 rgb(0 0 0 / .6); }
 .copy h2 { margin: 0; max-width: 18ch; font: 800 clamp(28px, 3vw, 40px)/.98 var(--font-header); letter-spacing: -.055em; text-transform: uppercase; text-wrap: balance; }
 .signup { min-width: 0; margin-top: 20px; }
+.invitation { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 12px 14px; background: var(--color-faded); color: var(--color-bone); font: 650 13px/1.35 var(--font-body); text-decoration: none; }
+.invitation span { flex-shrink: 0; font-size: 20px; font-weight: 400; }
+.invitation:hover { background: var(--color-signal); color: var(--color-faded); }
+.invitation:focus-visible { outline: 3px solid var(--color-verdigris); outline-offset: 4px; }
 .signup form { margin-top: 0; max-width: none; gap: 0; }
 .copy .signup fieldset { gap: 12px; }
 .signup [role='status']:not(:empty), .signup [role='alert'] { margin-top: 12px; }
