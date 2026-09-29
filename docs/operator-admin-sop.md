@@ -2,11 +2,11 @@
 
 **For:** Administrators who operate the Ruined member experience
 
-**Version:** 1.9 — compact workspaces and records (local review)
+**Version:** 2.0 — Circle Supporters and placement responsibilities (local review)
 
-**Last reviewed:** 15 September 2026
+**Last reviewed:** 29 September 2026
 
-This revision covers the workspace dropdown, bento overview, compact record cards, and focused editing windows throughout Operations. It describes the revised interface under local review; this pass has not been deployed.
+This revision adds the approved Circle Supporter, placement, final Foundations reveal, and discretionary reimbursement workflows to the existing Operations guidance. It describes the local implementation under review; these leadership changes and responsibility grants have not been deployed to production. See [Leadership operations](leadership-operations.md) for setup, permissions, and release prerequisites.
 
 ## The simple mental model
 
@@ -14,15 +14,15 @@ The operator side answers seven questions:
 
 1. **Overview:** What is happening right now?
 2. **Members:** Who needs help?
-3. **Circles and Blocks:** Where does each member belong?
+3. **Circles and Supporters:** Where does each member belong, and who supports the group?
 4. **Foundations:** How far has each member moved?
 5. **Experiences and Academy:** What are members attending and learning?
 6. **Artifacts and communications:** What are members receiving and hearing?
 7. **Work and System:** What needs an operator to act?
 
-Start on **Overview**. The People card includes **Find a member**, **All members**, and any members needing review; Administrators also see **Add a member** and **Add an operator**. Use the Circles and Foundations cards to open their workspaces. Upcoming events, work needing a decision, and recent activity link directly to their records. Shapers and Guides see only the actions and records their role allows.
+Start on **Overview**. The People card includes **Find a member**, **All members**, and any members needing review; Administrators also see **Add a member** and **Add an operator**. Use the Circles and Foundations cards to open their workspaces. Upcoming events, work needing a decision, and recent activity link directly to their records. Circle Supporters see only the actions and records their assigned Circle scope allows. Legacy Guide records retain their existing permissions; no new Guide role is issued.
 
-The dropdown beside the Ruined logo shows your current workspace. Open it to choose **Overview**, **Work queue**, **Members**, **Operators**, **Circles**, **Blocks**, **Events**, **Foundations**, **Academy**, **Artifacts**, **Messages**, **Support**, or **Settings**. Each choice opens that page directly—there is no second navigation row. Only pages allowed by your role appear. The header stays visible as you scroll, on desktop and mobile. **Account** opens your profile and sign-out options.
+The dropdown beside the Ruined logo shows your current workspace. Open it to choose **Overview**, **Work queue**, **Members**, **Operators**, **Circles**, **Supporters**, **Events**, **Foundations**, **Academy**, **Artifacts**, **Messages**, **Support**, or **Settings**. Each choice opens that page directly—there is no second navigation row. Only pages allowed by your role appear. The header stays visible as you scroll, on desktop and mobile. **Account** opens your profile and sign-out options.
 
 Across the workspaces, browse or search first. Select a record to manage it; use the main Add/New/Write button to create something. Editing windows preserve unsaved changes and wait for a save to finish before closing. Opening a window never sends a message or changes access.
 
@@ -48,12 +48,12 @@ Use **Members → Pending joining** to find saved allowances after leaving or re
 
 ### One person, two separate actions
 
-**Circle placement** gives a member their group. **Operator access** gives that same person permission to help run Ruined. Adding someone to a Circle does not grant operator access, and Administrator access does not require Circle placement. The **Assign Shaper** review can grant limited Shaper access to an existing Circle member when you explicitly confirm it; it never grants Administrator access.
+**Circle placement** gives a member their group. **Operator access** gives that same person permission to help run Ruined. Adding someone to a Circle does not grant operator access, and Administrator access does not require Circle placement. Use **Supporters → Prepare or start a Supporter** to approve readiness and start limited Circle service for an eligible member of that Circle who has completed Foundations. Service never grants Administrator access or complimentary membership.
 
 For an existing member, open **Members → their record → Overview**:
 
-1. **Review Circle placement** opens **Circles** with that member in context when joining is ready for placement. Choose a card with space, open **Manage Circle**, review the selected person in the Circle window, then deliberately select **Add to Circle**. If setup is blocked, use **Review joining & billing** first. A **Forming** Circle can receive its first member before activation.
-2. **Review operator access** opens their separate, prefilled access review directly. Choose the intended responsibility, review the areas they will manage, then deliberately send an invitation. For an existing pending or active operator, review the existing record instead of inviting them again.
+1. **Review Circle placement** opens **Circles** with that member in context when joining is ready for placement. Choose a card with space, open **Manage Circle**, review the selected person in the Circle window, then deliberately select **Approve placement**. If setup is blocked, use **Review joining & billing** first. A **Forming** Circle can receive its first member before activation.
+2. **Review operator access** opens the separate Administrator access review. Confirm full access before deliberately sending an invitation. For Circle Supporter service, use **Supporters** after membership entry and Circle placement instead. For an existing pending or active operator, review the existing record instead of inviting them again.
 
 Opening either link does not assign a Circle, send an email, or grant access. You do not need to create a second account, repeat member onboarding, or change billing to invite an existing member as an operator. Member eligibility checks still apply to Circle placement.
 
@@ -61,7 +61,7 @@ Opening either link does not assign a Circle, send an email, or grant access. Yo
 
 ## 1. Before adding a new operator
 
-Operator access is not open signup. An active Administrator must approve it: use an invitation for a new operator, or explicitly confirm Shaper access when assigning an eligible existing Circle member as Shaper.
+Operator access is not open signup. An active Administrator can invite another Administrator. Circle Supporter service starts through **Supporters** after an explicitly assigned readiness coordinator approves an eligible existing Circle member. A direct Guide or Circle Supporter operator invitation is no longer available.
 
 The first Administrator cannot be created through the operator screen; that account and role must be provisioned internally. The workflow below adds every subsequent Administrator.
 
@@ -71,8 +71,8 @@ Before sending an invitation:
 - Give each person their own account. Never share an operator login.
 - Choose the smallest responsibility that fits their work:
   - **Administrator:** full access to members, programs, systems, communications, Artifacts, and other operators.
-  - **Shaper:** leads the selected Circle or Circles.
-  - **Guide:** supports members and Experiences inside the selected Circle or Circles.
+  - **Circle Supporter:** serves their own assigned Circle; readiness and service are managed through **Supporters**, not a direct operator invitation.
+- Builder, Author, Partner, Shaper, and Guide are retired leadership titles. Historical records remain; the **Builders signup cohort remains unchanged**.
 - Give **Administrator** access only after the person has been approved to see private member, billing, and operational information.
 - Look at the environment label in the header:
   - **Preview** means fixture data for safe review. Account, persistence, and communication actions are disabled or explicitly non-live; not every control will complete.
@@ -108,9 +108,7 @@ What the system does:
 - Records who created the invitation and the intended access. Access becomes active when the invited person accepts with their verified account.
 - Gives an Administrator access to every area; no Circle selection is needed.
 
-For a **Shaper** or **Guide**, choose at least one Circle under **Circles they help manage** before sending the invitation. Their access remains limited to those assigned Circles. When they accept, the system records their staff assignments to those Circles; a Shaper does not need the same assignment added again afterward.
-
-That selection defines **which Circles they may operate**, not which Circle they personally belong to as a member. Do not move their member placement to unlock an operator role.
+For a **Circle Supporter**, complete member entry, Circle placement, and Foundations first. An assigned readiness coordinator approves and starts service from **Supporters**. This binds operating access to the member's own Circle. An old pending Shaper or Guide invitation needs review and replacement with the appropriate member invitation; do not repeatedly resend it.
 
 ### If the invitation must change
 
@@ -118,7 +116,7 @@ That selection defines **which Circles they may operate**, not which Circle they
 - **Different email:** revoke the pending invitation, then create a new one. The resend screen intentionally locks the original address.
 - **Invitation no longer needed:** use **Revoke**.
 - **Active operator should no longer have access:** use **Remove**. This immediately blocks operator actions through server-side role checks and ends active Circle staff assignments while keeping history. It does not delete the person's Supabase identity, automatically close an already-open browser session, or remove a separate Ruined member role the same person may also hold.
-- **Active operator needs a different role or Circle scope:** choose **Edit access** on their operator record. Choose the responsibility and managed Circles, review the change, and save. No removal-and-reinvitation loop is needed. Administrator access and restoration of inactive access require explicit confirmation. Another Administrator must change your own access.
+- **Administrator access or restoration must change:** choose **Edit access** on the operator record and review the confirmation and reason. Another Administrator must change your own access. **Circle Supporter service or Circle scope must change:** use **Supporters** for the service decision and **Circles** for personal placement. New Guide access and direct Supporter scope changes are rejected; existing records are retained.
 - An Administrator cannot remove their own access, and Ruined will not allow the last active Administrator to be removed.
 
 ---
@@ -142,7 +140,7 @@ Members and operators share the same `/access` page. The verified email determin
 
 **Already signed in as a member?** After the invitation is created, open `/access` on the same deployment. An existing verified session can accept the pending access without signing out or requesting another code. If the sign-in form appears, verify the newest code for the invited email. Then check **Operators** for **Active**; seeing an invitation pending is not the same as active access.
 
-Active operators receive complimentary membership once the complimentary-membership release is applied. This does not mark anyone as paid or alter Stripe billing. They must still complete their own profile and agreement; suspended, closed, or deliberately revoked member access is not silently restored. Valid operator access can still open **Operations** directly.
+Administrator funding and separately approved complimentary memberships remain available. Circle Supporter or legacy Guide roles alone no longer fund membership. Active Supporter service makes a person eligible for discretionary reimbursement; it does not promise reimbursement, change Stripe billing, or mark the member paid. Members still complete their own profile and agreement. Suspended, closed, or deliberately revoked member access is not silently restored.
 
 ### If the code does not arrive
 
@@ -162,13 +160,14 @@ The message “an access code is on its way” protects account privacy. It does
 
 | Responsibility | What they can work with | What they cannot do |
 | --- | --- | --- |
-| **Administrator** | Every member, Circle, Block, Experience, Academy item, Artifact, support ticket, communication, task, system status, and operator | Cannot bypass payment, agreement, or Foundations-completion evidence; cannot remove themselves or the final Administrator |
-| **Shaper** | Members, progress, community information, rosters, and meetings inside assigned Circles; can create and define assigned-Circle meetings | Cannot see administration or global management areas; cannot work outside assigned Circles |
-| **Guide** | Members, progress, community information, and existing Experience rosters inside assigned Circles | Cannot see administration or global management areas; cannot work outside assigned Circles or create and define Experiences |
+| **Administrator** | General member and operational administration; configure explicit leadership responsibilities | Cannot infer placement, readiness, or reimbursement authority from the Administrator role alone; cannot bypass required member evidence or remove themselves/the final Administrator |
+| **Circle Supporter** | Members, progress, community information, rosters, and meetings inside assigned Circles; define assigned-Circle meetings | Cannot see global administration or private reimbursement records; cannot work outside assigned Circles; receives no automatic free membership |
 
-Shapers and Guides share the same selected-Circle data boundary, but their Experience controls differ. The **Shaper holds the Circle and can define its meetings**; a **Guide supports the work and roster inside it**. Only one active or pending Shaper can hold a Circle at a time.
+One active Supporter holds a Circle at a time. The Supporter counts once within its people total. Previous Guide grants and historical assignments remain recorded for compatibility, but Guide is no longer an available new role.
 
-The support queue is private to Administrators. Shaper or Guide access does not reveal members' support conversations.
+An Administrator configures the actual accounts under **Supporters → Configure responsibility**. Libby receives **Routine Circle placement** and **Reimbursement approval and processing**. Tyler and Mitch each receive **Circle placement exceptions** and **Supporter readiness and coverage**. Names in explanatory copy do not grant access. The server requires both an active Administrator account and the specific current responsibility. Unconfigured actions are unavailable. Reimbursement records are visible only to the assigned reimbursement owner.
+
+The support queue remains private to Administrators. Circle Supporter or legacy Guide access does not reveal members' support conversations.
 
 ---
 
@@ -178,9 +177,9 @@ The support queue is private to Administrators. Shaper or Guide access does not 
 
 | Section | Use it for | Key things to know |
 | --- | --- | --- |
-| **Overview** | Find a member or open the People, Circles, Foundations, upcoming events, and work cards | Administrators see Add a member and Add an operator. Shapers and Guides see tasks inside their existing Circle responsibilities. |
+| **Overview** | Find a member or open the People, Circles, Foundations, upcoming events, and work cards | Administrators see Add a member and Add an operator. Circle Supporters see tasks inside their existing Circle responsibilities. |
 | **Members** | Search and filter the directory, then open the complete member record and its next action | Administrators can search private email details and use Add member. Its two steps allow an email and prepare instructions to share; the allowance **does not send an email**. |
-| **Circles** | Search the card grid by Circle, Shaper, or Block; open **Manage Circle** for a focused window with the Shaper and member portraits first, followed by Chat, meetings, and resources | Choose **Add a member** to search, **Move** to transfer someone, or **Edit** to change saved information. **+ Create a Circle** appears once at the top. A Circle holds up to ten members and must be active to finish Foundations. |
+| **Circles** | Search the card grid and open **Manage Circle** for a focused window with the Circle Supporter and member portraits first, followed by Chat, meetings, and resources | Choose **Add a member** to search, **Move** to transfer someone, or **Edit** to change saved information. **+ Create a Circle** appears once at the top. Target 10 people, including the Supporter, with a normal range of 8–12. Placement taking the total above 12 needs a recorded exception approval. A Circle must be active to finish Foundations. |
 | **Foundations** | Review compact member cards grouped by Circle needed, Moving, and Not started; expand Complete for finished members | This is a progress and attention view. Operators do not manually complete Foundations. Completion requires the member-created Timeline, Future Letter, and a current assignment to an active Circle. |
 | **Events** | Choose **Member events** for Circle/member Experiences, audiences, waitlists, attendance, Calendar and Meet; choose **Public events** for website listings and BYOB rosters | Select a record to open it. **+ New experience** opens a draft window. Member and public tabs retain their separate registration records; a public listing does not automatically get BYOB waivers or member Calendar invitations. |
 | **Work queue** | Filter compact work cards by Tasks, Artifacts, or Failed actions | Work highest urgency first. Claim, complete, or reopen tasks from the card; retry an automation only when its cause is understood. The link is visible to every operator role, but the current combined queue is populated for Administrators only. |
@@ -191,7 +190,7 @@ The support queue is private to Administrators. Shaper or Guide access does not 
 | --- | --- | --- |
 | **Support** | Search or filter request cards, then read and reply in the conversation | **Update status** opens a separate window. When enabled, email alerts connect@ and the member but does not synchronize email replies. Members see only their own requests and can ask for help even when payment needs attention. |
 | **Academy** | Browse **Lessons** or **Collections**; use **+ New lesson** or **+ New collection** to open a creation window | A lesson opens on Content, Audience, and Publication cards. **Edit lesson** opens its editor. Saving creates a new version. Members keep seeing the published version until a new version is deliberately published. |
-| **Blocks** | Open **Manage Block** beside a Block to review its Circles, add a Circle, activate, or remove a Circle. **+ New Block** opens a separate creation window. | A Block needs at least two current Circles to activate. A Block does not change the Foundations completion rule. Removing a Circle preserves history and may close the Block if fewer than two remain. |
+| **Supporters** | Configure responsibility owners, approve readiness, start or end service, arrange optional temporary coverage, and review reimbursements | Opens the Leadership page at `/ops/leadership`. Only explicitly assigned owners can act; reimbursement decisions and external payment records are private to the reimbursement owner. Historical Block records and `/ops/blocks` remain, but Blocks is no longer a primary navigation destination. |
 | **Artifacts** | Switch between **Production**, **Templates**, and **Shipping**; review the saved cards, then use **Award an Artifact**, **+ New template**, or **+ Add tracking** for the intended task | Each action opens a focused window. The selected storefront product is checked again before saving. An award opens production work, not a Shopify order. Future unpublishing or deletion in Shopify can still make a saved link unavailable. |
 | **Messages → Board posts** | Draft and publish a durable announcement to all active members, a Block, a Circle, or one member | **Write announcement** creates a draft. Review the audience before publishing. Posts appear on the member announcement board; no email or text is sent. |
 | **Messages → Alerts** | Review notification delivery and send an immediate in-app alert | **Write notification** opens the message window; **Review notification** precedes the final send. “Delivered” means stored in the member app, not delivered by email or SMS. |
@@ -200,7 +199,7 @@ The support queue is private to Administrators. Shaper or Guide access does not 
 
 | Section | Use it for | Key things to know |
 | --- | --- | --- |
-| **Operators** | Under People, invite by email or from an existing member; edit responsibility and managed Circles; resend/revoke invitations; remove or explicitly restore access | A pending invitation lasts seven days. Non-admin roles require at least one managed Circle, separate from personal membership placement. All changes are recorded. |
+| **Operators** | Invite Administrators by email or from an existing member; review existing access, resend/revoke Administrator invitations, remove or explicitly restore access | A pending Administrator invitation lasts seven days. Start Circle Supporters through readiness and service approval, not a direct operator invitation. All changes are recorded. |
 | **Settings** | Check identity, database, Stripe, notification delivery, Google Calendar, and failed automations | Services needing attention are expanded; open other cards for evidence and details. Test/live labels remain visible. Opens independently of member-dashboard queries, but still requires active Administrator access and a working database. Shopify binding health appears in Artifacts. Green can mean configured or previously successful, not a fresh end-to-end provider test. |
 
 ---
@@ -214,7 +213,7 @@ Open a member from **Members**. A compact profile header identifies the person; 
 | **Overview** | The person's current states and the next item most likely to need a decision |
 | **Membership** | Administrative onboarding, contact details, agreement evidence, Stripe billing state, cancellation state, and Profile support controls |
 | **Journey** | Foundations progress, earned Artifacts, and Experience participation |
-| **Community** | Current Circle, Block, Shaper, meetings, and shared resources |
+| **Community** | Current Circle, Circle Supporter, meetings, shared resources, and any historical Block relationship |
 | **Record** | Internal tasks, notes, visible task/note forms, audited state corrections, and operating history |
 
 The views keep their forms mounted, so switching does not reset an unfinished note, task, or correction. A pending save must finish before switching. If you have unsaved edits, choose **Keep editing** or **Switch view — keep edits**; switching is not a save. Shortcuts such as **Create task**, **Add internal note**, and **Correct profile detail** open the appropriate view and move to that control.
@@ -229,7 +228,7 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 | --- | --- |
 | **Member · Complete joining** | Share the sign-in instructions. The member verifies their own email, fills in their profile, accepts the agreement, and completes payment themselves. Review the missing requirement under Membership. |
 | **Member · Continue Foundations** | Help them understand the next step, but leave their Timeline, Future Letter, and completion work with them. |
-| **Operator · Review Circle placement** | An Administrator reviews current eligibility, chooses a Circle with space, then explicitly adds the member. Shapers and Guides refer placement changes to an Administrator. |
+| **Operator · Review Circle placement** | Libby, with routine placement responsibility, reviews eligibility and suggestions before explicitly adding the member. Tyler/Mitch review recorded exceptions. Circle Supporters refer placement changes to the placement team. |
 | **Operator · Review Circle activation** | The placement is already saved. An Administrator activates the forming Circle when the group is ready; do not add the person again. |
 | **Support · Check payment/joining confirmation** | Evidence may already be recorded while another status has not caught up. Ask the system owner or Support to investigate; do not ask the member to pay or accept the agreement again. |
 | **Support · Review a suspension, pause, or ended membership** | Review the recorded restriction with an Administrator. Circle placement or an operator invitation must not be used to bypass it. |
@@ -252,17 +251,23 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 ### A. Place a member into a Circle
 
 1. Open **Members → the member's record → Overview → Review Circle placement**, or open **Circles** directly. If the record instead says **Review joining & billing**, resolve that prerequisite first. The member-record link carries the person into the Circle page; the banner asks you to choose a Circle and open **Manage Circle**.
-2. Find a **Forming** or **Active** Circle card with space. Select **Manage Circle**. A window opens with the Circle name, Shaper, and roster. Close it with **×** or Escape to return to the grid; unsaved edits require confirmation before discarding.
-3. Open **Add a member**, review the selected person or search by name or email. Read any eligibility message, then select **Add to Circle** once. Confirm the saved result and updated roster. Merely choosing a person or opening the window does not change their placement.
-4. If a new Circle is needed, select **+ Create a Circle** at the top. Enter its name and select **Create Circle**, or choose **Cancel** without saving. It begins **Forming** with ten places and opens its management window for adding the first member.
-5. The **Shaper** appears first in the window. Select **Assign Shaper**, then choose from **Circle members** or **Existing Shapers**. If the member needs Shaper access, check the confirmation and select **Save Shaper**. This grants Circle-level operator access, not administrator access; existing administrator permissions are kept. Unavailable members show a reason—review that person's record instead of bypassing an account or membership restriction. Use **Edit Shaper** to review a current assignment; removal requires confirmation before selecting a replacement. Someone new can still be invited as a Shaper through **Operators**. Under **Resources**, use **Add resource** to share an approved, published lesson or document; each resource keeps its exact selected version.
+2. Open **Review placement suggestions** for the member, including availability, invitation connections, and current size. Find a **Forming** or **Active** Circle and select **Manage Circle**. A window opens with the Circle name, Circle Supporter, and roster. Close it with **×** or Escape to return to the grid; unsaved edits require confirmation before discarding.
+3. Open **Add a member**, review the selected person or search by name or email. Read any eligibility message, then select **Approve placement** once. Confirm the saved result and updated roster. Merely choosing a person or opening the window does not change their placement.
+4. If a new Circle is needed, select **+ Create a Circle** at the top. Enter its name and select **Create Circle**, or choose **Cancel** without saving. It begins **Forming** with a target of ten people and opens its management window for adding the first member. Ten is a target, not a hard cap.
+5. Use **Supporters → Prepare or start a Supporter** for readiness and service. Choose the Circle and a current member; record **Approve readiness**, then **Start service**. Ongoing and temporary service both require an eligible member who has completed Foundations and prior readiness approval. Use **End service / arrange coverage** when someone steps back; a replacement is optional. Under Circle **Resources**, use **Add resource** to share a published lesson or document; each resource keeps its exact selected version.
 6. Under **Circle chat**, paste the private Google Chat space URL and select **Set chat link**. To find it, open the private space in Google Chat, click its name at the top, and choose **Copy link to this space**. **Where do I find the link?** keeps these instructions available during setup or editing. A saved link shows **Open chat**, **Copy link**, and **Edit**; choose **Edit** only when changing or removing it. **Cancel** keeps the saved link. Keep the space private and add or invite participants in Google Chat separately; saving a link in Ruined does not grant Google access or send invitations. To arrange the first meeting, select **Schedule a meeting** in the same window—the Circle audience is already selected.
 7. When a forming Circle has at least one member, an Administrator can open **Manage Circle** and select **Activate [Circle name]**, then **Confirm activation**. **A first meeting is not required; schedule meetings later. Add members before activation.** Activation changes the whole Circle, not just the selected member, and does not create a meeting or send invitations.
 8. Circle roster and Block changes queue Calendar audience updates for linked Experiences. Open the affected Experience's **Overview → Meeting** and check the status. Use **Refresh status** for a queued change. Open **Manage meeting** for **Update invitations** or **Retry invitations** when available; these are deliberate communication actions. A saved roster or pending update does not prove that Google has delivered invitations.
 
+Routine placement is owned by Libby. If adding or moving someone would put the destination above 12 people, record a reason and request an exception. Under **Circles → Placement exceptions**, Tyler or Mitch reviews it and selects **Approve and place** or **Decline**. Requesting review does not move anyone. Approval rechecks current placement, eligibility, and headcount. A Circle may exceed the normal range after approval; the system does not guarantee placement with a friend.
+
+Members can provide private time zone, weekly availability, and an invitation-history connection preference under **My Circle → Help us find your Circle**. Suggestions assist the decision; they do not choose a Circle or create a meeting. Check the actual meeting schedule before placing someone.
+
+Placement is prepared before final Foundations completion. Until that final moment, member-facing Circle identity, roster, chat, resources, scoped announcements, and Circle meeting access remain hidden. Completing the final Foundations moment reveals the Circle. Welcome the member immediately and direct them to the next available WHY/BUILD meetings; there is no additional next-month waiting rule.
+
 Only eligible, unassigned members with an active account, valid paid or complimentary membership access, and the required joining/program state can be added. The server verifies current membership and eligibility when saving. If a person is missing or blocked, review the stated prerequisite in their record; do not change payment or agreement evidence to bypass it. A current roster still includes people whose payment or account later changed, so their existing placements can be reviewed accurately.
 
-**To remove a member:** open **Manage Circle** on their Circle, find the person in its roster, and select **Remove** beside their name. Read the inline confirmation, then select **Confirm removal** only if that placement should end. **Cancel** leaves it unchanged. This ends the placement, not the account, operator role, or historical Foundations proof. If another operator has moved the person since you opened the page, refresh and review their new Circle instead of retrying the old removal.
+**To remove a member:** open **Manage Circle** on their Circle, find the person in its roster, and select **Remove** beside their name. Read the inline confirmation, then select **Confirm removal** only if that placement should end. **Cancel** leaves it unchanged. This ends the placement, not the account or historical Foundations proof. If this person is that Circle’s Supporter, departure also ends their service and its scoped access immediately. Independent Administrator, member, and complimentary grants remain. If another operator has moved the person since you opened the page, refresh and review their new Circle instead of retrying the old removal.
 
 Ending the last current member assignment automatically archives an active Circle. If that leaves an active Block with fewer than two current Circles, the Block archives too. Ending a Circle's Block assignment can trigger the same Block closure, so check affected Experiences before confirming either action.
 
@@ -352,7 +357,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 ### Weekly
 
 1. Review members moving through Foundations and those blocked by no active Circle.
-2. Review Circle capacity, Shaper coverage, resources, and Chat links.
+2. Review Circle size, Circle Supporter coverage, resources, and Chat links.
 3. Review the upcoming Experience calendar and close attendance on completed events.
 4. Review Academy drafts and audience settings.
 5. Review Artifact production and shipments.
@@ -366,7 +371,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 1. **A member may begin Foundations without a Circle, but completion requires the Timeline, Future Letter, and a current assignment to an active Circle.**
 2. **Do not use a state correction as a shortcut.** Payment, agreement acceptance, and Foundations completion require real evidence and cannot be overridden.
 3. **Draft first where the tool supports it.** Experiences, announcements, and Academy items can be reviewed before publishing. Notifications send immediately when **Send notification** is selected and currently cannot be retracted, so verify the audience and message before that final action.
-4. **End or revoke; do not erase history.** Circle, Block, Shaper, operator, event, and Artifact records preserve what happened.
+4. **End or revoke; do not erase history.** Circle, historical Block, Circle Supporter, operator, event, and Artifact records preserve what happened.
 5. **Use the narrowest audience.** Check it before every publish or send.
 6. **Use the narrowest operator role.** Administrator is not the default.
 7. **Do not store secrets in the portal.** Google, Supabase, Stripe, Shopify, and email credentials belong in protected system settings, never member notes or operator forms.
@@ -382,9 +387,9 @@ Before publishing or sending, read the audience out loud and verify it a second 
 | New operator has no code | Confirm the email, wait briefly, send once more, and use the newest code. If it still does not arrive, stop and give the system owner the email and exact time. |
 | Invitation expired | Open **Operators** and use **Send again**. This creates a new seven-day invitation. |
 | Wrong email was invited | Revoke the pending invitation, then add the operator again with the correct email. |
-| Active operator needs a new role or Circle scope | Open **Operators → Edit access** on the correct record. Review the responsibility, managed Circles, required confirmation, and reason before **Save access**. Do not remove and reinvite them. Another Administrator must change your own access. |
+| Active operator needs a new role or Circle scope | Use **Operators → Edit access** for Administrator access changes. Use **Supporters** for Supporter readiness/service and **Circles** for member placement. New Guide roles and direct Supporter scope edits are retired. Another Administrator must change your own Administrator access. |
 | Operator lands on the member side | This is expected. Select **Operations** from the profile; no second login is needed. If the link is missing, confirm the verified email and active operator role with an Administrator. |
-| Operator cannot see a section | Check their role and managed Circles under **Operators**. Administrator-only workspaces are hidden from Shapers and Guides; mobile uses the same destinations as desktop. |
+| Operator cannot see a section | Check their role and managed Circles under **Operators**. Administrator-only workspaces are hidden from Circle Supporters and legacy Guides; mobile uses the same destinations as desktop. |
 | I added a member but they received no email | Add member allows their email; it does not send. Complete step 2: Copy message or Copy link, then send those instructions to the person yourself. |
 | I cannot find the person to invite as an operator | Open **Operators → Choose existing member**, search by name or email, and use **Review access**. An existing operator or invitation has **View operator record** instead. Do not create a second account. |
 | Operator is shown as suspended | An approved Administrator can open **Edit access**, explicitly confirm restoration, enter a reason, and choose **Restore and save access**. Member billing and lifecycle restrictions still apply. Do not create a duplicate invitation or restore access without approval. |
@@ -393,10 +398,10 @@ Before publishing or sending, read the audience out loud and verify it a second 
 | Cannot activate an empty Circle | Open **Manage Circle**, add its first eligible member while it is **Forming**, then select **Activate [Circle name] → Confirm activation** when the group is ready. |
 | Removal says the member's Circle changed | Refresh the roster and review the member's current Circle. The old request was rejected without removing their new placement. |
 | Existing member still shows Invitation pending | Have them open `/access` on the same deployment; verify the newest code only if asked. Refresh Operators and check for Active before considering another invitation. |
-| Administrator invitation seems to require a Circle | Check the selected responsibility. Administrator requires no Circle; Shaper and Guide require an operator Circle scope, separate from their personal member placement. |
-| Member cannot finish Foundations | Confirm the Timeline and Future Letter are complete and the member has a current assignment to an **active** Circle. A forming Circle is not enough. |
+| Administrator invitation seems to require a Circle | Check the selected responsibility. Administrator requires no Circle. Circle Supporter service starts for an eligible current Circle member through **Supporters**, not the invitation form. |
+| Member cannot finish Foundations | Confirm the Timeline and Future Letter are complete and the member has a current assignment to an **active** Circle. A forming Circle is not enough. Circle details reveal only at final completion. |
 | Calendar invite did not send | Open the Experience's **Overview → Meeting** and check its status. Use **Refresh status** for queued work and **Manage meeting** for audience details and available recovery actions. Review **Settings** and **Work queue** for failures before choosing an explicit retry. Do not republish repeatedly. |
-| Meeting shows zero eligible recipients | Use **Review Circle** or **Review people**. A forming Circle, incomplete joining, restricted access, unverified email, or organizer-only audience can explain zero; public/invite-only events also need confirmed registrations. Review the actual evidence before changing anything. |
+| Meeting shows zero eligible recipients | Use **Review Circle** or **Review people**. A forming Circle, incomplete joining or Foundations, restricted access, unverified email, or organizer-only audience can explain zero; public/invite-only events also need confirmed registrations. Review the actual evidence before changing anything. |
 | Academy item is not visible | Confirm it is published and has the correct audience. Draft changes remain invisible until published. |
 | Artifact cannot be awarded | Confirm a published Artifact template version is bound, then verify that its live product exists and is published in Shopify. |
 | A service shows Attention or Disconnected | Stop the dependent workflow, check **Settings**, and escalate with the exact action and time. Do not invent a manual workaround. |
@@ -408,7 +413,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 1. **5 minutes — Access:** sign in through `/access`, switch from the member profile to **Operations**, and explain numeric codes, environment labels, and sign out.
 2. **5 minutes — Navigation:** show Overview search and its cards, then use the workspace dropdown to open Members, Circles, Events, Academy, Artifacts, Messages, Support, and Settings. Each selection opens its workspace directly; there is no second navigation row. Demonstrate the same paths on mobile and opening/closing one focused task window without saving.
 3. **10 minutes — Member record:** find a member, switch among the five views, show a task or note form, and demonstrate keeping unsaved edits when switching. Explain private notes and corrections; only save a test task in an approved training environment.
-4. **10 minutes — Circle:** choose a card and open **Manage Circle**, show the roster and add/remove/activation confirmations, then the Shaper, resource, and Chat setup controls. Show the top **+ Create a Circle** form and cancel it. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
+4. **10 minutes — Circle:** choose a card and open **Manage Circle**, show the roster and add/remove/activation confirmations, then the Circle Supporter, resource, and Chat setup controls. Open **Supporters** to show responsibility configuration, readiness, optional coverage, and the reimbursement review flow. Show the top **+ Create a Circle** form and cancel it. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
 5. **10 minutes — Experience:** open **Events → Member events → + New experience**, save a draft only, then show the Overview cards, People, and Activity. Open **Manage meeting** and **••• Event actions**, then close them without acting. Open **Review & publish** and explain the recipient count, link replacement, and queued-versus-sent distinction; close the review without publishing. Do not publish during training unless using approved test recipients and explicit approval.
 6. **5 minutes — Communications and Settings:** compare Board posts, Alerts, Calendar, and Chat; show where delivery and failed work appear. Opening **Write announcement** or **Write notification** is safe; saving or sending is a separate decision.
 
@@ -419,10 +424,10 @@ Before publishing or sending, read the audience out loud and verify it a second 
 - Find a member who needs attention.
 - Read who owns the next action and distinguish Ready, Waiting, and Blocked without overriding member evidence.
 - Add a member through allowance and shared instructions, without claiming an email was sent automatically.
-- Explain Circle, Shaper, Block, and the Foundations completion rule.
+- Explain Circle, Circle Supporter, the 10-person target/8–12 range, exception approval, and the final Foundations reveal.
 - Create a task and an Experience draft.
 - Explain the difference between an announcement, notification, Calendar invitation, and Chat link.
-- Add a lower-access operator without accidentally granting Administrator access.
+- Start scoped Circle Supporter service through readiness approval without granting Administrator access or promising free membership.
 - Find service health in Settings and know when to stop and escalate.
 
 ---
@@ -430,10 +435,11 @@ Before publishing or sending, read the audience out loud and verify it a second 
 ## Short glossary
 
 - **Member:** the person receiving the Ruined membership experience.
-- **Circle:** the member's primary group, with up to ten members.
-- **Shaper:** the person who holds and leads a Circle.
-- **Guide:** an operator who supports selected Circles.
-- **Block:** a larger operating group made from at least two Circles.
+- **Circle:** the member’s primary group; target 10 people, including the Supporter, with a normal range of 8–12 and reviewed exceptions above that range.
+- **Circle Supporter:** a prepared member serving their own Circle, supported by Tyler/Mitch.
+- **Responsibility:** an explicit, audited decision-making grant assigned to an Administrator.
+- **Reimbursement:** a discretionary approval for an elapsed period of Supporter service; the app records an external payment and never sends it.
+- **Block:** a historical larger operating group retained for existing records and workflows; no longer a primary navigation destination.
 - **Foundations:** the member's core Ruined work; an active Circle is required for final completion.
 - **Experience:** a meeting, event, call, session, challenge, or retreat.
 - **Academy:** the member learning library.

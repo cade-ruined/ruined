@@ -524,6 +524,7 @@ async function sendAnnouncementNotifications(
                     from circle_member_assignments circle_assignment
                     where circle_assignment.circle_id = target.circle_id
                       and circle_assignment.member_id = member_record.id
+                      and lifecycle.foundations_state = 'completed'
                       and circle_assignment.ended_at is null
                   )
                 )
@@ -537,6 +538,7 @@ async function sendAnnouncementNotifications(
                       and block_assignment.ended_at is null
                     where block_assignment.block_id = target.block_id
                       and circle_assignment.member_id = member_record.id
+                      and lifecycle.foundations_state = 'completed'
                       and circle_assignment.ended_at is null
                   )
                 )

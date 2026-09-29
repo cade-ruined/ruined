@@ -185,7 +185,7 @@ test("confirmed save or discard clears the draft even before another render or r
 test("new metadata, media, date, or upload changes after clearing create a protected checkpoint", () => {
   for (const change of [
     { title: "Later title" }, { body: "Later body" }, { eventYear: "2025" }, { eventMonth: "" }, { eventDay: "" },
-    { includeOnTimeline: false }, { kind: "video" }, { attempted: false }, { draftId: "different-id" },
+    { includeOnTimeline: false }, { visibility: "public" }, { kind: "video" }, { attempted: false }, { draftId: "different-id" },
     { editingId: "entry-2" }, { editingVersion: "8" }, { files: [photo] },
     { keptMedia: [{ ...draft.keptMedia[0], url: "/changed" }] }, { uploadIds: [[uploadedPhoto, "new-upload-id"]] },
   ]) {

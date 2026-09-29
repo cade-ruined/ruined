@@ -1,4 +1,7 @@
 const LABELS: Record<string, string> = {
+  circle_leader: "Circle Supporter",
+  guide: "Legacy Circle support",
+  ops_admin: "Administrator",
   active: "Active",
   archived: "Archived",
   attention_required: "Attention required",

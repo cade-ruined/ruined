@@ -216,6 +216,8 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       assert.equal((await db.query("select count(*)::int as total from experience_registrations")).rows[0].total, 0);
       assert.equal((await db.query("select count(*)::int as total from operator_audit_events")).rows[0].total, 0);
       assert.equal(calendarInvalidations, 0);
+      await deny(() => roster({ memberId: ids.member }));
+      await db.query("update member_lifecycle set foundations_state='completed' where member_id=$1", [ids.member]);
       assert.equal((await roster({ memberId: ids.member })).status, "registered");
       assert.equal(calendarInvalidations, 1);
       assert.equal((await db.query("select billing_state from member_lifecycle where member_id=$1", [ids.member])).rows[0].billing_state, "pending");
@@ -269,9 +271,11 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       }
     });
 
-    await t.test("paid Foundations access is limited to the member's own Circle", async () => {
+    await t.test("paid Foundations members wait for the final reveal before Circle admission", async () => {
       await reset("ops_admin");
       await db.query("update member_lifecycle set program_state='onboarding', foundations_state='in_progress' where member_id=$1", [ids.member]);
+      await deny(() => roster({ memberId: ids.member }));
+      await db.query("update member_lifecycle set foundations_state='completed' where member_id=$1", [ids.member]);
       assert.equal((await roster({ memberId: ids.member })).status, "registered");
       await db.query("update experiences set visibility='all_members',circle_id=null where id=$1", [ids.otherEvent]);
       await deny(() => roster({ experienceId: ids.otherEvent, memberId: ids.member }));

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type Stripe from "stripe";
+import { reconcileMemberBadgesForStripeEvent } from "@/lib/membership/badge-repository";
 
 import {
   type BillingMember,
@@ -253,6 +254,7 @@ async function handleInvoice(
     eventCreated: event.created,
     id: invoice.id,
     memberId: member?.id ?? null,
+    paidAt: invoice.status === "paid" ? unixSecondsToDate(invoice.status_transitions.paid_at) : null,
     purpose,
     status: invoice.status,
     subscriptionId,
@@ -441,10 +443,12 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
       const claim = await claimWebhookEvent(tx, event);
 
       if (claim === "duplicate") {
+        if (event.type === "invoice.paid") await reconcileMemberBadgesForStripeEvent(tx, event.id);
         return { duplicate: true, handled: true };
       }
 
       const handled = await dispatchStripeEvent(tx, event);
+      if (event.type === "invoice.paid") await reconcileMemberBadgesForStripeEvent(tx, event.id);
       await completeWebhookEvent(tx, event.id);
 
       const setupOnly = event.type === "setup_intent.succeeded"

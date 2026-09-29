@@ -32,8 +32,8 @@ export async function joinMembershipWaitlist(submission: MembershipWaitlistSubmi
     // Avoid consuming a spreadsheet row for routine retries. The unique email
     // constraint also handles simultaneous requests safely.
     const rows = await tx<Array<{ id: string }>>`
-      insert into membership_waitlist (name, email_normalized, phone)
-      select ${submission.name}, ${submission.emailNormalized}, ${submission.phone}
+      insert into membership_waitlist (name, email_normalized, phone, joined_waitlist_at)
+      select ${submission.name}, ${submission.emailNormalized}, ${submission.phone}, statement_timestamp()
       where not exists (
         select 1 from membership_waitlist where email_normalized = ${submission.emailNormalized}
       )
@@ -41,6 +41,12 @@ export async function joinMembershipWaitlist(submission: MembershipWaitlistSubmi
       returning id::text as id
     `;
     const entry = rows[0];
+    // An existing invitation-attribution row is not a waitlist signup. Record
+    // this genuine submission without allowing the caller to replace identity.
+    await tx`
+      update membership_waitlist set joined_waitlist_at = statement_timestamp()
+      where email_normalized = ${submission.emailNormalized} and joined_waitlist_at is null
+    `;
     // Knowing an email address never lets a public request replace its details.
     // The route returns the same response for both existing and new entries.
     if (!entry) {

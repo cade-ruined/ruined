@@ -57,7 +57,7 @@ test("operator invitations are admin-authorized, email-serialized, scoped, and a
   assert.match(repository, /intended_user_type[\s\S]*'staff'/);
   assert.match(repository, /role_slug in \('ops_admin', 'circle_leader', 'guide'\)/);
   assert.match(repository, /Choose at least one Circle/);
-  assert.match(repository, /already has a Shaper or a pending Shaper invitation/);
+  assert.match(repository, /already has a Circle Supporter or a pending Circle Supporter invitation/);
   assert.match(repository, /operator_invitation\.created/);
   assert.match(repository, /operator_invitation\.reissued/);
   assert.match(repository, /insert into operator_audit_events/);
@@ -110,7 +110,9 @@ test("operator UI uses a low-training list and focused add task", () => {
   assert.match(manager, /event\.key === "Escape"/);
   assert.match(manager, /readOnly=\{Boolean\(resendEmail \|\| reviewedMember\)\}/);
   assert.match(manager, /Revoke it first to use a different email/);
-  assert.match(manager, /Administrator[\s\S]*Shaper[\s\S]*Guide|Guide[\s\S]*Shaper[\s\S]*Administrator/);
+  assert.match(manager, /Circle Supporters are appointed from existing members after preparation/);
+  assert.match(manager, /Review Supporter readiness/);
+  assert.doesNotMatch(manager, /label: "Guide"/);
   assert.match(manager, /Invitation pending/);
   assert.match(manager, /Remove operator access\?/);
 });

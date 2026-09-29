@@ -70,7 +70,7 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
               { memberId: "preview-02", preferredName: "Member 02" },
             ],
             name: circleName,
-            shaperName: isComplete ? null : "Shaper 01",
+            shaperName: isComplete ? null : "Circle Supporter 01",
             state: "active",
           }
         : null,
@@ -208,7 +208,7 @@ export function getPreviewOpsMemberRecord(memberId: string): OpsMemberRecord {
           summary: "Administrative onboarding completed.",
         },
         {
-          actor: "Shaper 01",
+          actor: "Circle Supporter 01",
           occurredAt: "2026-07-20T17:00:00.000Z",
           source: "circle",
           summary: "Placed in Circle 01.",
@@ -355,7 +355,7 @@ export const PREVIEW_OPS_CIRCLES: OpsCircleSummary[] = [
       assignedAt: "2026-08-19T16:00:00.000Z",
       assignmentId: "11111111-1111-4111-8111-111111111130",
       authUserId: "11111111-1111-4111-8111-111111111131",
-      name: "Shaper 01",
+      name: "Circle Supporter 01",
     },
     slug: "circle-01",
     status: "active",
@@ -398,7 +398,7 @@ export const PREVIEW_OPS_CIRCLE_MANAGEMENT: OpsCircleManagementOptions = {
     },
   ],
   shapers: [
-    { authUserId: "11111111-1111-4111-8111-111111111132", name: "Shaper 02" },
+    { authUserId: "11111111-1111-4111-8111-111111111132", name: "Circle Supporter 02" },
   ],
 };
 

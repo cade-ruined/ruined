@@ -66,7 +66,7 @@ export default async function OperationsCirclesPage({
       circleMembers: assignments.filter((member) => member.circleId === initialCircleId).map((member) => ({
         memberId: member.memberId, circleId: member.circleId, name: member.name, email: member.email,
         authUserId: `preview-user-${member.memberId}`, requiresShaperAccess: true,
-        unavailableReason: member.accountState === "active" ? null : "Complete member setup before assigning Shaper access.",
+        unavailableReason: member.accountState === "active" ? null : "Complete member setup before assigning Circle Supporter access.",
       })),
     };
     circles = circles.map((circle) => ({ ...circle, activeMembers: assignments!.filter((assignment) => assignment.circleId === circle.id).length }));
@@ -168,7 +168,7 @@ export default async function OperationsCirclesPage({
   return <OperatorPageFrame title="Circles">
     {!visibleCircles.length ? <p className="text-sm text-black/65">{initialCircleId ? "This Circle is not available to your account. Ask an Administrator to check your Circle access." : "No Circles are assigned to you yet. Ask an Administrator to assign the Circles you help manage."}</p> : null}
     <div className="grid gap-6">{visibleCircles.map((circle) => <article key={circle.id} id={`circle-${circle.id}`} className="rounded-[4px] bg-black/[0.025] p-5 sm:p-6">
-      <header className="mb-5 flex flex-wrap items-center gap-4"><h2 className="font-[var(--font-display)] text-3xl">{circle.name}</h2><StateLabel state={circle.status} /><p className="text-sm text-black/60">{circle.activeMembers}/{circle.capacity} members</p></header>
+      <header className="mb-5 flex flex-wrap items-center gap-4"><h2 className="font-[var(--font-display)] text-3xl">{circle.name}</h2><StateLabel state={circle.status} /><p className="text-sm text-black/60">{circle.activeMembers} people · target {circle.capacity}</p></header>
       <section id={initialCircleId ? "circle-communications" : `circle-communications-${circle.id}`} aria-label={`${circle.name} chat and meetings`} className="scroll-mt-28">
         <OperatorCircleCommunicationPanel circle={circle} communication={circle} directory={meetingDirectory} />
       </section>

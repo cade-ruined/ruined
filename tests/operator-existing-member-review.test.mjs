@@ -170,11 +170,12 @@ test("an authorized existing-member shortcut opens only a locked identity review
     assert.equal(input.props.defaultValue, value);
     assert.equal(input.props.readOnly, true);
   }
-  assert.equal(inputs.find((node) => node.props.value === "guide").props.checked, true);
+  assert.equal(inputs.find((node) => node.props.value === "ops_admin").props.checked, true);
   assert.ok(inputs.filter((node) => node.props.type === "checkbox").every((node) => node.props.checked === false));
   const send = nodes(tree).find((node) => node.type === "button" && node.props.type === "submit");
-  assert.equal(send.props.disabled, true, "member Circle is never silently copied into operator scope");
-  assert.match(text(tree), /This does not place them in a Circle as a member/);
+  assert.equal(send.props.disabled, true, "administrator access requires deliberate confirmation");
+  assert.match(text(tree), /Circle Supporters are appointed from existing members after preparation/);
+  assert.equal(inputs.some((node) => node.props.value === "guide" || node.props.value === "circle_leader"), false);
   assert.match(text(tree), /open member sign-in to accept and, if asked, verify the newest email code/);
   assert.equal(requests, 0);
 });
@@ -182,8 +183,8 @@ test("an authorized existing-member shortcut opens only a locked identity review
 test("Administrator has no Circle prerequisite but always requires explicit full-access confirmation", () => {
   const fixture = managerFixture({ circles: [] });
   let tree = fixture.draw();
-  assert.match(text(tree), /A Shaper or Guide needs a forming or active Circle/);
-  assert.ok(nodes(tree).some((node) => node.props?.href === "/ops/circles"));
+  assert.match(text(tree), /Circle Supporters are appointed from existing members after preparation/);
+  assert.ok(nodes(tree).some((node) => node.props?.href === "/ops/leadership"));
   nodes(tree).find((node) => node.type === "input" && node.props.value === "ops_admin").props.onChange();
   tree = fixture.draw();
   let send = nodes(tree).find((node) => node.type === "button" && node.props.type === "submit");
@@ -353,7 +354,7 @@ test("picker focus, role-review focus, dialog tab trap, Escape, and cleanup rema
   let roleFocused = 0;
   let triggerFocused = 0;
   const dialogTree = review.draw();
-  nodes(dialogTree).find((node) => node.type === "input" && node.props?.value === "guide").props.ref.current = { focus: () => roleFocused++ };
+  nodes(dialogTree).find((node) => node.type === "input" && node.props?.value === "ops_admin").props.ref.current = { focus: () => roleFocused++ };
   nodes(dialogTree).find((node) => node.type === "button" && text(node) === "Add operator").props.ref.current = { focus: () => triggerFocused++ };
   const reviewCleanups = review.effects.map((effect) => effect()).filter(Boolean);
   assert.equal(roleFocused, 1, "a selected identity starts at responsibility, not a read-only name field");

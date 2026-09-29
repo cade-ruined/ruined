@@ -63,16 +63,11 @@ async function fixture(t) {
   return { db, access, operating, invitations, edit, queries, fail, snapshot };
 }
 
-test("editing Circle scope preserves assignment history, audits, and survives directory reload", async (t) => {
-  const f = await fixture(t); const updated = await f.edit();
-  assert.deepEqual(updated.circles, [{ id: ids.b, name: "Circle B" }]);
-  const assignments = (await f.db.query("select circle_id,ended_at from circle_staff_assignments order by id")).rows;
-  assert.equal(assignments.length, 2); assert.ok(assignments[0].ended_at); assert.equal(assignments[1].ended_at, null);
-  const loaded = (await f.access.getOperatorAccessDirectory(ids.admin)).find((entry) => entry.authUserId === ids.operator);
-  assert.deepEqual(loaded.circles, updated.circles); assert.equal(loaded.role, "guide");
-  const audit = (await f.db.query("select * from operator_audit_events")).rows[0];
-  assert.equal(audit.action, "operator_access.updated"); assert.deepEqual(audit.before_snapshot.circleIds, [ids.a]); assert.deepEqual(audit.after_snapshot.circleIds, [ids.b]);
-  assert.ok(f.queries.findIndex((query) => query.includes("ruined-operator-admins")) < f.queries.findIndex((query) => query.includes("as authorized")));
+test("retired Guide and direct Supporter scope edits are rejected without changing history", async (t) => {
+  const f = await fixture(t), before = await f.snapshot();
+  await assert.rejects(f.edit(), /Guide is a retired title/);
+  await assert.rejects(f.edit({role:"circle_leader"}), /Leadership after readiness/);
+  assert.deepEqual(await f.snapshot(), before);
 });
 test("promotion requires administrator confirmation and removes Circle scope without deleting history", async (t) => {
   const f = await fixture(t); const before = await f.snapshot();
@@ -87,26 +82,26 @@ test("self edits, unauthorized callers, stale role/scope/status, and unavailable
     await assert.rejects(f.edit(input)); assert.deepEqual(await f.snapshot(), before);
   }
   await f.db.query("update circles set status='archived' where id=$1", [ids.b]);
-  await assert.rejects(f.edit(), /no longer available/); assert.deepEqual(await f.snapshot(), before);
+  await assert.rejects(f.edit(), /Guide is a retired title/); assert.deepEqual(await f.snapshot(), before);
 });
 test("suspended accounts require explicit restore; disabled accounts cannot be restored here", async (t) => {
   const f = await fixture(t);
   await f.db.query("update platform_users set status='suspended' where auth_user_id=$1", [ids.operator]);
-  await assert.rejects(f.edit({ expectedStatus: "suspended" }), /restoration was not confirmed/);
-  await f.edit({ expectedStatus: "suspended", restoreAccount: true });
+  await assert.rejects(f.edit({ expectedStatus: "suspended", role: "ops_admin", circleIds: [], administratorConfirmed: true }), /restoration was not confirmed/);
+  await f.edit({ expectedStatus: "suspended", restoreAccount: true, role: "ops_admin", circleIds: [], administratorConfirmed: true });
   assert.equal((await f.db.query("select status from platform_users where auth_user_id=$1", [ids.operator])).rows[0].status, "active");
   assert.equal((await f.db.query("select action from operator_audit_events")).rows[0].action, "operator_access.restored");
   await f.db.query("update platform_users set status='disabled' where auth_user_id=$1", [ids.operator]);
-  await assert.rejects(f.edit({ expectedStatus: "suspended", restoreAccount: true, expectedCircleIds: [ids.b] }), /separate recovery review/);
+  await assert.rejects(f.edit({ expectedStatus: "suspended", restoreAccount: true, expectedRole:"ops_admin", expectedCircleIds: [], role:"ops_admin", circleIds:[], administratorConfirmed:true }), /separate recovery review/);
 });
 test("Shaper collisions and pending Shaper invitations reject the complete edit", async (t) => {
   const f = await fixture(t);
   await f.db.query("insert into circle_staff_assignments (circle_id,auth_user_id,role_slug) values ($1,$2,'circle_leader')", [ids.b, ids.other]);
-  const before = await f.snapshot(); await assert.rejects(f.edit({ role: "circle_leader" }), /already has a Shaper/); assert.deepEqual(await f.snapshot(), before);
+  const before = await f.snapshot(); await assert.rejects(f.edit({ role: "circle_leader" }), /Leadership after readiness/); assert.deepEqual(await f.snapshot(), before);
   await f.db.query("update circle_staff_assignments set ended_at=now() where auth_user_id=$1", [ids.other]);
   const invitation = (await f.db.query("insert into passwordless_account_invites(email_normalized,intended_user_type,expires_at) values ('new@example.com','staff',now()+interval '7 days') returning id")).rows[0].id;
   await f.db.query("insert into operator_invitation_configs values ($1,'circle_leader','New Shaper')", [invitation]); await f.db.query("insert into operator_invitation_circles values ($1,$2)", [invitation, ids.b]);
-  await assert.rejects(f.edit({ role: "circle_leader" }), /pending Shaper invitation/);
+  await assert.rejects(f.edit({ role: "circle_leader" }), /Leadership after readiness/);
 });
 test("audit failure rolls back grants, scopes, and account restoration together", async (t) => {
   const f = await fixture(t); await f.db.query("update platform_users set status='suspended' where auth_user_id=$1", [ids.operator]);

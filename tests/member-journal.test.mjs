@@ -41,7 +41,7 @@ async function fixture(){
     remove:async paths=>{paths.forEach(path=>blobs.delete(path));return{error:null};},
     createSignedUrl:async path=>{signed.push(path);return{data:{signedUrl:`https://storage.example.test/private/${path}`},error:null};},
   };
-  const repository=await load('src/lib/membership/journal-repository.ts',{'server-only':{},'node:crypto':{randomUUID},'@/lib/database/server':{getApplicationDatabase:()=>base.sql},'@/lib/membership/repository':base.repository,'@/lib/membership/access-policy':policy,'./journal-model':model,'./journal-storage':{journalStore:()=>store,journalStorageConfigured:()=>true,validateJournalMedia:storage.validateJournalMedia}});
+  const repository=await load('src/lib/membership/journal-repository.ts',{'server-only':{},'node:crypto':{randomUUID},'@/lib/database/server':{getApplicationDatabase:()=>base.sql},'@/lib/membership/repository':base.repository,'@/lib/membership/access-policy':policy,'./journal-model':model,'./public-card-repository':{getOwnMemberCardPublicScope:async()=>null},'./journal-storage':{journalStore:()=>store,journalStorageConfigured:()=>true,validateJournalMedia:storage.validateJournalMedia}});
   return{pg,owner,other,blobs,signed,repository,base,close:cleanup};
 }
 test('owner-scoped journal saves idempotently, keeps other records private, and filters saved entries',async()=>{

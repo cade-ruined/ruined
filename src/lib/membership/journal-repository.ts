@@ -6,10 +6,11 @@ import { getMemberIdentity, requireLockedMemberWriteAccess, MembershipAccessDeni
 import type { MemberIdentity } from "./model";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { JournalError, journalFilePolicy, validateJournalInput, validateJournalVersion, type JournalCreateInput, type JournalEditInput, type JournalEntry, type JournalSnapshot, type JournalListOptions, JOURNAL_UUID } from "./journal-model";
+import { getOwnMemberCardPublicScope } from "./public-card-repository";
 import { journalStore, journalStorageConfigured, validateJournalMedia } from "./journal-storage";
 
 type Sql = ReturnType<typeof getApplicationDatabase> | postgres.TransactionSql;
-type EntryRow = { id:string; kind:JournalEntry["kind"]; title:string|null; body:string|null; created_at:Date|string; saved:boolean; event_year:number|null; event_month:number|null; event_day:number|null; include_on_timeline:boolean; current_version:number; deleted_at:Date|null; timeline_position:number|null };
+type EntryRow = { visibility:"private"|"public"; id:string; kind:JournalEntry["kind"]; title:string|null; body:string|null; created_at:Date|string; saved:boolean; event_year:number|null; event_month:number|null; event_day:number|null; include_on_timeline:boolean; current_version:number; deleted_at:Date|null; timeline_position:number|null };
 type MediaRow = { id:string; entry_id:string|null; storage_path:string; mime_type:string; byte_size:number|string; verified_at:Date|null; state:string; created_at:Date|string; removed_at:Date|null };
 export async function journalOwner(authUserId:string, write=false) {
   const identity=await getMemberIdentity(authUserId);
@@ -28,7 +29,7 @@ async function entriesWithMedia(memberId:string, rows:EntryRow[], sql:Sql=getApp
   if (!rows.length) return [];
   const media=await sql<MediaRow[]>`select id,entry_id,mime_type,byte_size from member_journal_media where member_id=${memberId}::uuid and entry_id in ${sql(rows.map(row=>row.id))} and state='ready' and removed_at is null order by position,id`;
   return rows.map(row=>({id:row.id,kind:row.kind,title:row.title,body:row.body,createdAt:new Date(row.created_at).toISOString(),saved:row.saved,
-    eventYear:row.event_year,eventMonth:row.event_month,eventDay:row.event_day,includeOnTimeline:row.include_on_timeline,version:String(row.current_version),
+    eventYear:row.event_year,eventMonth:row.event_month,eventDay:row.event_day,includeOnTimeline:row.include_on_timeline,version:String(row.current_version),visibility:row.visibility,
     media:media.filter(item=>item.entry_id===row.id).map(item=>({id:item.id,mimeType:item.mime_type,size:Number(item.byte_size),url:`/api/my/journal/media/${item.id}`}))}));
 }
 export async function getJournalEntry(authUserId:string,id:string):Promise<JournalEntry> {
@@ -43,12 +44,15 @@ export async function getJournal(authUserId:string, cursor:string|null=null, sav
   if(cursor && !JOURNAL_UUID.test(cursor)) throw new JournalError(400,"Invalid journal page.");
   const timeline=options.view==="timeline", search=options.search?.trim() ?? "", year=options.year ?? null;
   if(search.length>200 || (year!==null && (!Number.isInteger(year) || year<1900 || year>2200))) throw new JournalError(400,"Choose a valid journal search or year.");
+  const collection=options.collection ?? null;
+  if(collection!==null && collection!=="private" && collection!=="public") throw new JournalError(400,"Choose a valid journal collection.");
   const oldest=options.order==="oldest";
   // Cursor position is derived from the same filtered owner-only result. A
   // foreign or deleted cursor can never reveal another member's content.
   const rows=await sql<EntryRow[]>`with filtered as (
     select * from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null
-      and (${!saved} or saved) and (${!timeline} or include_on_timeline)
+      and (${!saved} or saved) and (${!timeline || collection==="private"} or include_on_timeline)
+      and (${collection===null} or visibility=${collection})
       and (${year===null} or event_year=${year}::integer)
       and (${!search} or strpos(lower(coalesce(title,'') || ' ' || coalesce(body,'')),lower(${search}))>0)
   ), ordered as (
@@ -69,15 +73,18 @@ export async function getJournal(authUserId:string, cursor:string|null=null, sav
     count(*) filter(where (${year===null} or event_year=${year}::integer))::integer as total,
     coalesce(array_agg(distinct event_year order by event_year desc) filter(where event_year is not null),'{}'::integer[]) as years
     from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null
-      and (${!saved} or saved) and (${!timeline} or include_on_timeline)
+      and (${!saved} or saved) and (${!timeline || collection==="private"} or include_on_timeline)
+      and (${collection===null} or visibility=${collection})
       and (${!search} or strpos(lower(coalesce(title,'') || ' ' || coalesce(body,'')),lower(${search}))>0)`;
   const page=rows.slice(0,30);
   return {entries:await entriesWithMedia(owner.id,page),hasMore:rows.length>30,nextCursor:rows.length>30 ? page.at(-1)!.id : null,
-    total:summary?.total ?? 0,years:summary?.years ?? [],writable:owner.writable,mediaReady:journalStorageConfigured()};
+    total:summary?.total ?? 0,years:summary?.years ?? [],writable:owner.writable,mediaReady:journalStorageConfigured(),
+    ...(collection === null ? {} : { publicUrl: await ownPublicJournalUrl(owner.id) })};
 }
-export async function exportJournalTimeline(authUserId:string):Promise<JournalEntry[]> {
+export async function exportJournalTimeline(authUserId:string, collection?:"private"|"public"):Promise<JournalEntry[]> {
   const owner=await journalOwner(authUserId); const sql=getApplicationDatabase();
   const rows=await sql<EntryRow[]>`select * from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null and include_on_timeline
+      and (${collection===undefined} or visibility=${collection??null})
     order by event_year,coalesce(event_month,13),coalesce(event_day,32),timeline_position,created_at,id`;
   return entriesWithMedia(owner.id,rows);
 }
@@ -132,10 +139,21 @@ async function prepareEntryMedia(memberId:string, input:JournalCreateInput) {
     await verifyUpload(memberId,id,input.kind);
   }
 }
+async function ownPublicJournalUrl(memberId:string, sql:Sql=getApplicationDatabase()) {
+  const scope=await getOwnMemberCardPublicScope(memberId,sql);
+  return scope ? `/journal/${scope.token}` : null;
+}
+async function requireJournalPublication(memberId:string, input:JournalCreateInput, tx:postgres.TransactionSql) {
+  if(input.visibility!=="public") return;
+  // Scope changes lock this same row. Recheck account eligibility inside the owner write transaction.
+  await tx`select member_id from member_public_cards where member_id=${memberId}::uuid for share`;
+  if(!await ownPublicJournalUrl(memberId,tx)) throw new JournalError(403,"Enable sharing on your member card before publishing.");
+}
 function inputMatches(entry:JournalEntry,input:JournalCreateInput) {
   return entry.kind===input.kind && entry.title===(input.title||null) && entry.body===(input.body||null)
     && entry.eventYear===(input.eventYear??null) && entry.eventMonth===(input.eventMonth??null) && entry.eventDay===(input.eventDay??null)
     && entry.includeOnTimeline===(input.includeOnTimeline===true)
+    && (input.visibility===undefined || entry.visibility===input.visibility)
     && entry.media.map(file=>file.id).join(",")===input.mediaIds.join(",");
 }
 async function applyMedia(tx:postgres.TransactionSql, memberId:string,input:JournalCreateInput) {
@@ -156,7 +174,7 @@ async function savedEntry(tx:Sql,memberId:string,id:string) {
   return (await entriesWithMedia(memberId,rows,tx))[0]!;
 }
 export async function createJournalEntry(authUserId:string,value:JournalCreateInput):Promise<JournalEntry> {
-  const input=validateJournalInput(value), owner=await journalOwner(authUserId,true), sql=getApplicationDatabase();
+  const normalized=validateJournalInput(value), input={...normalized,visibility:normalized.visibility??"private" as const}, owner=await journalOwner(authUserId,true), sql=getApplicationDatabase();
   // A retry may reference files already attached by the committed first try.
   const existing=await sql<EntryRow[]>`select * from member_journal_entries where id=${input.id}::uuid and member_id=${owner.id}::uuid`;
   if(!existing.length) await prepareEntryMedia(owner.id,input);
@@ -168,9 +186,10 @@ export async function createJournalEntry(authUserId:string,value:JournalCreateIn
       if(!current.deleted_at && inputMatches(entry,input)) return entry;
       throw new JournalError(409,"This entry has already changed. Load the latest version before saving.");
     }
-    await tx`insert into member_journal_entries(id,member_id,kind,title,body,event_year,event_month,event_day,include_on_timeline,timeline_position,updated_by_auth_user_id)
+    await requireJournalPublication(owner.id,input,tx);
+    await tx`insert into member_journal_entries(id,member_id,kind,title,body,event_year,event_month,event_day,include_on_timeline,timeline_position,updated_by_auth_user_id,visibility)
       select ${input.id}::uuid,${owner.id}::uuid,${input.kind},${input.title||null},${input.body||null},${input.eventYear??null},${input.eventMonth??null},${input.eventDay??null},${input.includeOnTimeline===true},
-        case when ${input.includeOnTimeline===true} then coalesce(max(timeline_position),0)+1 else null end,${authUserId}::uuid
+        case when ${input.includeOnTimeline===true} then coalesce(max(timeline_position),0)+1 else null end,${authUserId}::uuid,${input.visibility}
       from member_journal_entries where member_id=${owner.id}::uuid`;
     await applyMedia(tx,owner.id,input);
     return savedEntry(tx,owner.id,input.id);
@@ -189,8 +208,10 @@ export async function editJournalEntry(authUserId:string,id:string,value:Journal
     if(!row) throw new JournalError(404,"Entry not found.");
     const entry=await savedEntry(tx,owner.id,id);
     if(inputMatches(entry,input)) return entry;
+    if(row.visibility==="public" && input.visibility===undefined) throw new JournalError(409,"This entry is public. Open the current Journal editor to review its sharing choice before saving.");
     if(String(row.current_version)!==expectedVersion) throw new JournalError(409,"This entry changed in another window. Your draft is still here. Load the latest entry before saving.");
-    await tx`update member_journal_entries set kind=${input.kind},title=${input.title||null},body=${input.body||null},
+    await requireJournalPublication(owner.id,input,tx);
+    await tx`update member_journal_entries set visibility=${input.visibility??row.visibility},kind=${input.kind},title=${input.title||null},body=${input.body||null},
       event_year=${input.eventYear??null},event_month=${input.eventMonth??null},event_day=${input.eventDay??null},include_on_timeline=${input.includeOnTimeline===true},
       timeline_position=case when ${input.includeOnTimeline===true} and timeline_position is null
         then (select coalesce(max(other.timeline_position),0)+1 from member_journal_entries other where other.member_id=${owner.id}::uuid) else timeline_position end,

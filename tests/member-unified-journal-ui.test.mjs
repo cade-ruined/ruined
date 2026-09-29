@@ -22,13 +22,13 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : typeof node === "string" || typeof node === "number" ? String(node) : "";
 const nodes = node => !React.isValidElement(node) ? [] : [node, ...(node.type.name === "Dialog" && !node.props.open ? [] : React.Children.toArray(node.props.children).flatMap(nodes))];
 
-function fixture({ initialEntries = [entry()], writable = true, preview = false, initialMode = "all", view = "journal", pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false } = {}) {
+function fixture({ initialEntries = [entry()], writable = true, preview = false, initialMode = "all", view = "journal", sharingEnabled = false, publicUrl = "/journal/public-member-token", renderLayout, pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false } = {}) {
   const slots = [], calls = [], guards = [], rendered = [], timers = new Map(), frames = new Map(), revoked = [], createdUrls = [];
   const entries = new Map(initialEntries.map(value => [value.id, structuredClone(value)]));
   const media = new Map(initialEntries.flatMap(value => value.media.map(item => [item.id, item])));
   const Export = () => null;
   let cursor = 0, queued = [], changed = false, tree, uuid = 100, timerId = 0, urlId = 0, cleared = 0, focused = 0, confirmResult = true;
-  const props = { writable, preview, initialMode, view, onModeChange(mode) { props.initialMode = mode; } };
+  const props = { writable, preview, initialMode, view, sharingEnabled, renderLayout, onModeChange(mode) { props.initialMode = mode; } };
   const same = (left, right) => left?.length === right?.length && left.every((value, i) => Object.is(value, right[i]));
   const hooks = { ...React,
     useId: () => "journal-test",
@@ -41,13 +41,14 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
   function listed(url) {
     const params = url.searchParams;
     const values = [...entries.values()].filter(value => (params.get("saved") !== "true" || value.saved)
-      && (params.get("view") !== "timeline" || value.includeOnTimeline)
+      && (!params.get("collection") || (params.get("collection") === "public" ? value.visibility === "public" : value.visibility !== "public"))
+      && (params.get("view") !== "timeline" || params.get("collection") === "private" || value.includeOnTimeline)
       && (!params.get("year") || String(value.eventYear) === params.get("year"))
       && (!params.get("search") || `${value.title} ${value.body}`.toLowerCase().includes(params.get("search").toLowerCase())));
     if (params.get("view") === "timeline") values.sort((a, b) => (params.get("order") === "newest" ? -1 : 1) * ((a.eventYear ?? 0) - (b.eventYear ?? 0)) || (a.eventMonth ?? 13) - (b.eventMonth ?? 13));
     const start = params.has("before") ? values.findIndex(value => value.id === params.get("before")) + 1 : 0;
     const page = values.slice(start, start + pageSize), hasMore = start + pageSize < values.length;
-    return response({ entries: structuredClone(page), total: values.length, years: [...new Set([...entries.values()].map(value => value.eventYear).filter(Boolean))], hasMore, nextCursor: hasMore ? page.at(-1)?.id : null, mediaReady: true, writable });
+    return response({ entries: structuredClone(page), total: values.length, years: [...new Set([...entries.values()].map(value => value.eventYear).filter(Boolean))], hasMore, nextCursor: hasMore ? page.at(-1)?.id : null, mediaReady: true, publicUrl, writable });
   }
   async function fakeFetch(href, init = {}) {
     const url = new URL(href, "https://members.example.test"), method = init.method ?? "GET";
@@ -57,7 +58,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     if (overridden !== undefined) return overridden;
     if (method === "PUT") return response({});
     if (url.pathname === "/api/my/timeline") return response(method === "GET" ? { timeline: { completedAt: null, access: { capabilities: timelineCapabilities } } } : { requirements: { timeline: { completedAt: "2026-09-22T13:00:00Z" } } });
-    if (url.pathname === "/api/my/journal/export") return response({ entries: [...entries.values()].filter(value => value.includeOnTimeline).sort((a, b) => a.eventYear - b.eventYear) });
+    if (url.pathname === "/api/my/journal/export") return response({ entries: [...entries.values()].filter(value => value.includeOnTimeline && (url.searchParams.get("collection") !== "private" || value.visibility !== "public")).sort((a, b) => a.eventYear - b.eventYear) });
     if (url.pathname === "/api/my/journal/media") {
       const mediaId = id(++uuid); media.set(mediaId, { id: mediaId, mimeType: body.mimeType, size: body.size, url: `/api/my/journal/media/${mediaId}` });
       return response({ id: mediaId, signedUrl: `https://upload.example.test/${mediaId}` });
@@ -89,6 +90,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     if (name === "./timeline-model") return timelineModel;
     if (name === "./TimelineExportStudio") return { __esModule: true, default: Export };
     if (name === "./useJournalDraftGuard") return { __esModule: true, default: state => { guards.push(state); return { ownerId, recoveryDraft, dismissRecovery() { recoveryDraft = null; }, clearDraft() { cleared++; } }; } };
+    if (name === "next/link") return { __esModule: true, default: "a" };
     if (name === "next/image") return { __esModule: true, default: "image" };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     throw Error(`Unexpected Journal dependency ${name}`);
@@ -346,4 +348,89 @@ test("switching All, Saved and Timeline after unmarking a same-year milestone ne
   }
   assert.deepEqual(nodes(ui.render()).filter(node => node.type === "section" && node.props.className === "storyYear").map(group => text(nodes(group).find(node => node.type === "h3"))), ["2014", "2026"]);
   assert.equal(ui.mutate().length, 0); ui.unmount();
+});
+
+test("public Journal and private Timeline request separate collections without exposing private entries during switches", async () => {
+  const ui = fixture({ sharingEnabled: true, captureRenders: true, initialEntries: [
+    entry({ title: "Published words", visibility: "public" }),
+    entry({ id: id(2), title: "Private milestone", visibility: "private" }),
+    entry({ id: id(3), title: "Private undated thought", visibility: "private", includeOnTimeline: false, eventYear: null }),
+  ] });
+  await ui.flush();
+  assert.deepEqual(nodes(ui.render()).filter(node => node.type === "article").map(text).map(value => value.includes("Published words")), [true]);
+  assert.equal(ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1).url.searchParams.get("collection"), "public");
+  assert.equal(ui.find(node => node.type === "a" && text(node) === "View as visitor ↗").props.href, "/journal/public-member-token");
+  assert.equal(ui.button("Unsave entry"), undefined);
+  ui.render({ initialMode: "timeline" }); await ui.flush();
+  const privateCards = nodes(ui.render()).filter(node => node.type === "article");
+  assert.equal(privateCards.length, 2); assert.match(privateCards.map(text).join(), /Private undated thought/);
+  assert.ok(ui.find(node => node.type === "h3" && text(node) === "Undated"));
+  assert.equal(ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1).url.searchParams.get("collection"), "private");
+  await ui.click("Export timeline ↗");
+  assert.equal(ui.calls.find(call => call.url.pathname === "/api/my/journal/export").url.searchParams.get("collection"), "private");
+  assert.deepEqual(ui.find(node => node.type === ui.Export).props.entries.map(value => value.title), ["Private milestone"]);
+  ui.render({ initialMode: "all" }); await ui.flush();
+  for (const frame of ui.rendered) {
+    const section = nodes(frame).find(node => node.type === "section" && node.props.className === "journal");
+    const cards = nodes(section).filter(node => node.type === "article").map(text).join();
+    if (section.props["aria-label"] === "Journal") assert.doesNotMatch(cards, /Private milestone|Private undated thought/);
+    else if (section.props["aria-label"] === "Timeline") assert.doesNotMatch(cards, /Published words/);
+  }
+  ui.unmount();
+});
+
+test("sharing composer starts private and only an explicit public choice publishes the same entry", async () => {
+  const ui = fixture({ sharingEnabled: true, initialEntries: [] }); await ui.flush(); await ui.click("Add entry");
+  assert.equal(ui.field("Only me").props.checked, true); assert.equal(ui.field("Public").props.checked, false);
+  assert.equal(ui.field("Mark as a milestone").props.checked, false);
+  ui.change("Your words", "An undated thought"); await ui.submit(); await ui.flush();
+  const privateSave = ui.mutate()[0];
+  assert.equal(privateSave.body.visibility, "private"); assert.equal(privateSave.body.eventYear, null); assert.equal(privateSave.body.includeOnTimeline, false);
+  assert.match(text(ui.render()), /Saved privately in your Timeline/);
+  await ui.click("Open entry: An undated thought"); await ui.click("Edit entry");
+  ui.change("Public", true); assert.equal(ui.guards.at(-1).dirty, true, "visibility alone must protect a draft");
+  assert.ok(ui.button("Publish to Journal")); await ui.submit(); await ui.flush();
+  assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[1].body.visibility, "public");
+  assert.equal(ui.mutate()[1].method, "PATCH"); assert.equal(ui.mutate()[1].body.expectedVersion, "1");
+  assert.match(text(ui.render()), /Published to your Journal/);
+  assert.equal(ui.find(node => node.type === "section" && node.props.className === "journal").props["aria-label"], "Journal");
+  await ui.click("Open entry: An undated thought"); await ui.click("Edit entry"); ui.change("Only me", true); await ui.submit(); await ui.flush();
+  assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[2].body.visibility, "private");
+  ui.render({ initialMode: "all" }); await ui.flush();
+  assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 0);
+  ui.unmount();
+});
+
+test("disabled card sharing blocks publication while allowing an existing public entry to be made private", async () => {
+  const ui = fixture({ sharingEnabled: true, publicUrl: null, initialEntries: [entry({ visibility: "public" })] }); await ui.flush();
+  assert.equal(ui.find(node => node.type === "a" && text(node) === "View as visitor ↗"), undefined);
+  assert.equal(ui.find(node => node.type === "a" && text(node) === "Enable member-card sharing ↗").props.href, "/my/profile");
+  await ui.click("Open entry: One remembered beginning"); await ui.click("Edit entry");
+  assert.equal(ui.field("Public").props.disabled, true);
+  assert.equal(ui.button("Publish to Journal").props.disabled, true);
+  await ui.submit(); await ui.flush(); assert.equal(ui.mutate().length, 0);
+  assert.match(text(ui.render()), /Enable sharing on your member card before publishing/);
+  ui.change("Only me", true); await ui.submit(); await ui.flush();
+  assert.equal(ui.mutate().length, 1); assert.equal(ui.entries.get(id(1)).visibility, "private");
+  await ui.click("Add entry"); assert.equal(ui.field("Only me").props.checked, true);
+  ui.unmount();
+});
+
+test("a recovered public draft retains its audience, owner guard, and stable retry identifier", async () => {
+  const recovered = { kind: "text", title: "A public draft", body: "Draft words", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: false, visibility: "public",
+    files: [], keptMedia: [], editingId: null, editingVersion: null, attempted: false, draftId: id(88), uploadIds: [], wasPending: false };
+  const ui = fixture({ sharingEnabled: true, initialEntries: [], recoveryDraft: recovered }); await ui.flush(); await ui.click("Restore draft");
+  assert.equal(ui.field("Public").props.checked, true); assert.equal(ui.guards.at(-1).dirty, true);
+  await ui.submit(); await ui.flush();
+  assert.equal(ui.mutate()[0].body.id, id(88)); assert.equal(ui.mutate()[0].body.visibility, "public");
+  assert.equal(ui.entries.size, 1); assert.equal(ui.cleared(), 1); ui.unmount();
+});
+
+test("external profile controls expose one working composer action without a duplicate heading or view switch", async () => {
+  const ui = fixture({ sharingEnabled: true, initialEntries: [], renderLayout: (content, action) => React.createElement("main", null, React.createElement("nav", { "aria-label": "Profile actions" }, action), content) });
+  await ui.flush();
+  assert.equal(nodes(ui.render()).filter(node => node.type === "button" && node.props["aria-label"] === "Add entry").length, 1);
+  assert.equal(ui.find(node => node.props.role === "group" && node.props["aria-label"] === "Journal view"), undefined);
+  assert.equal(ui.find(node => node.type === "h2" && text(node) === "Your journal"), undefined);
+  await ui.click("Add entry"); assert.ok(ui.find(node => node.type === "form")); ui.unmount();
 });

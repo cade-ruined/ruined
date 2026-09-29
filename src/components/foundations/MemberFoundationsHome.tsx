@@ -137,14 +137,14 @@ export default function MemberFoundationsHome({
       <aside className={styles.circle} aria-label="Circle status">
         <p>
           <span className={styles.circleDot} data-active={hasActiveCircle} aria-hidden="true" />
-          {hasActiveCircle
-            ? `${state.activeCircleName ?? "Your Circle"} · Active`
-            : completed
-              ? "Your Circle"
-              : "An active Circle is required to complete."}
+          {completed
+            ? state.activeCircleName ?? "Your Circle"
+            : hasActiveCircle
+              ? "Your Circle will be revealed at the final moment."
+              : "Your Circle is being prepared while you begin."}
         </p>
         <Link href="/my/circle">
-          {hasActiveCircle || completed ? "My Circle" : "Check Circle status"}
+          {completed ? "My Circle" : "Circle preferences"}
           <span aria-hidden="true">↗</span>
         </Link>
       </aside>

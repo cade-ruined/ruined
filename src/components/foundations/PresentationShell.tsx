@@ -13,6 +13,7 @@ import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   FOUNDATION_FINAL_OVERVIEW,
+  FOUNDATION_LEADERSHIP,
   FOUNDATION_MOMENTS,
   FOUNDATION_SESSIONS,
   type FoundationChapterId,
@@ -871,7 +872,7 @@ function renderMoment(props: RenderMomentProps) {
               return;
             }
             if (await props.member.onComplete()) {
-              props.setClosingOverview(true);
+              props.member.onViewCircle();
             }
           }}
           selected={props.selectedResponses}
@@ -1098,6 +1099,7 @@ function CultureCodeMoment({
   onSelectDna: (id: string) => void;
   reducedMotion: boolean;
 }) {
+  const [showLeadership, setShowLeadership] = useState(false);
   if (content.dna.kind !== "dna" || content.expectations.kind !== "expectations")
     return null;
 
@@ -1137,7 +1139,21 @@ function CultureCodeMoment({
         </div>
       </div>
       <div className={styles.expectationsBlock}>
-        <p className={styles.eyebrow}>Culture / Expectations</p>
+        <div className={styles.cultureTeachingTabs} aria-label="Culture teaching">
+          <button type="button" aria-pressed={!showLeadership} onClick={() => setShowLeadership(false)}>How we show up</button>
+          <button type="button" aria-pressed={showLeadership} onClick={() => setShowLeadership(true)}>Leadership</button>
+        </div>
+        {showLeadership ? (
+          <section className={styles.leadershipTeaching} aria-label="Leadership in Ruined">
+            <h3>{FOUNDATION_LEADERSHIP.title}</h3>
+            <p>{FOUNDATION_LEADERSHIP.introduction}</p>
+            <dl>{FOUNDATION_LEADERSHIP.roles.map((role) => <div key={role.title}><dt>{role.title}</dt><dd>{role.body}</dd></div>)}</dl>
+            <p>{FOUNDATION_LEADERSHIP.recognition}</p>
+            <p className={styles.leadershipPreparation}>{FOUNDATION_LEADERSHIP.preparation.join(" → ")}</p>
+            <p>{FOUNDATION_LEADERSHIP.support}</p>
+            <p>{FOUNDATION_LEADERSHIP.belonging}</p>
+          </section>
+        ) : <>
         <h3>{content.expectations.title}</h3>
         <ol>
           {content.expectations.expectations.map((item, index) => (
@@ -1158,6 +1174,7 @@ function CultureCodeMoment({
             </motion.li>
           ))}
         </ol>
+        </>}
       </div>
     </div>
   );
@@ -1472,8 +1489,8 @@ function ClosingMoment({
             >
               {member && !member.completed
                 ? member.hasActiveCircle
-                  ? "COMPLETE THE BEGINNING."
-                  : "COMPLETION BEGINS WITH A CIRCLE."
+                  ? "YOUR PEOPLE ARE WAITING."
+                  : "YOUR PLACE IS SAVED."
                 : content.welcome.secondaryTitle}
             </motion.h3>
           </div>
@@ -1485,8 +1502,8 @@ function ClosingMoment({
                 </p>
                 <p>
                   {member.hasActiveCircle
-                    ? "Your active Circle is in place. Complete Foundations when you are ready."
-                    : "Your place remains saved. Join an active Circle before Foundations can be completed."}
+                    ? "Your Circle has been approved. Complete this beginning to meet your people and join their next scheduled WHY and BUILD meetings."
+                    : "We are finding the right Circle for you. Your progress is saved; review your preferences while the team confirms your placement."}
                 </p>
                 {member.error ? (
                   <p className={styles.memberCompletionError} role="alert">
@@ -1509,8 +1526,8 @@ function ClosingMoment({
                 ? member.pending
                   ? "Completing"
                   : member.hasActiveCircle
-                    ? "Complete Foundations"
-                    : "View Circle"
+                    ? "Reveal my Circle"
+                    : "Circle preferences"
                 : content.welcome.actionLabel}
             </span>
             <span aria-hidden>→</span>

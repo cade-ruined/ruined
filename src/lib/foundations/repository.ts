@@ -13,6 +13,7 @@ import type { PlatformViewer } from "@/lib/platform/model";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
+import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
 
 type FoundationTransaction = postgres.TransactionSql;
 
@@ -287,7 +288,7 @@ export async function getMemberFoundationsState(
   >`
     select
       member.id as member_id,
-      active_circle.name as circle_name,
+      case when lifecycle.foundations_state = 'completed' then active_circle.name end as circle_name,
       active_circle.status as circle_status
     from platform_users platform_user
     join platform_role_grants member_grant
@@ -302,7 +303,10 @@ export async function getMemberFoundationsState(
       join circles circle on circle.id = assignment.circle_id
       where assignment.member_id = member.id
         and assignment.ended_at is null
-        and assignment.assigned_at <= now()
+        and assignment.assigned_at <= statement_timestamp()
+        and circle.status = 'active'
+        and circle.activated_at <= statement_timestamp()
+        and (circle.ends_at is null or circle.ends_at >= statement_timestamp())
       order by assignment.assigned_at desc
       limit 1
     ) active_circle on true
@@ -750,6 +754,10 @@ export async function completeMemberFoundations(
         )
         on conflict (dedupe_key) do nothing
       `;
+      await markCalendarAudiencesPendingForMember(tx, {
+        actorAuthUserId: viewer.authUserId,
+        memberId: member.memberId,
+      });
       if (member.programState === "onboarding") {
         await tx`
           insert into member_state_history (

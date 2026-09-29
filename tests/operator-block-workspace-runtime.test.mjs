@@ -48,6 +48,7 @@ function fixture({ hash = "", preview = false, props = {}, respond = async () =>
     if (dependency === "next/navigation") return { useRouter: () => ({ refresh() { refreshes++; } }) };
     if (dependency === "@/components/platform/OperatorDialog") return { __esModule: true, default: Dialog };
     if (dependency === "@/components/platform/operatorStyles") return new Proxy({}, { get: () => "operator-control" });
+    if (dependency === "@/components/platform/CirclePlacementRecommendations") return { __esModule: true, default: () => null };
     throw new Error(`Unexpected Block UI dependency ${dependency}`);
   }, loadedModule, loadedModule.exports, browserWindow, async (url, options) => { const request = { url, method: options.method, body: JSON.parse(options.body) }; requests.push(request); return respond(request); }, class { constructor(form) { this.values = form.values; } get(key) { return this.values[key] ?? null; } });
   const draw = () => { let result; let turns = 0; do { assert.ok(++turns < 10, "effects settle"); cursor = 0; changed = false; result = loadedModule.exports.OpsBlockActions(values); while (effects.length) effects.shift()(); } while (changed); return result; };

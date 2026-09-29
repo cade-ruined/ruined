@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 
 import CircleMemberPortrait from "@/components/membership/CircleMemberPortrait";
 import type { PrivacySafePersonSummary } from "@/lib/membership/model";
@@ -51,7 +51,7 @@ export default function CircleMemberCluster({
 }: {
   members: PrivacySafePersonSummary[];
 }) {
-  const visibleMembers = useMemo(() => members.slice(0, 10), [members]);
+  const visibleMembers = members;
   const initialMemberId = visibleMembers.find((person) => person.isSelf)?.id
     ?? visibleMembers[0]?.id
     ?? null;
@@ -74,7 +74,7 @@ export default function CircleMemberCluster({
 
   return (
     <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(17rem,0.75fr)] lg:gap-10" data-circle-member-cluster>
-      <ol aria-label="Circle members" className={styles.cluster} data-member-count={visibleMembers.length}>
+      <ol aria-label="Circle members" className={styles.cluster} data-member-count={visibleMembers.length} data-expanded={visibleMembers.length > positions.length ? "true" : undefined}>
         {visibleMembers.map((person, index) => {
           const selectedMember = person.id === selected.id;
           return (

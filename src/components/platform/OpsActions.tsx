@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import CirclePlacementRecommendations from "@/components/platform/CirclePlacementRecommendations";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 
 import {
@@ -377,6 +378,7 @@ export function OpsCircleActions({
   const [activationNotice, setActivationNotice] = useState<ActionNotice>(null);
   const [endAssignmentNotice, setEndAssignmentNotice] = useState<ActionNotice>(null);
   const [selectedMemberId, setSelectedMemberId] = useState(initialMemberId ?? "");
+  const [exceptionReason, setExceptionReason] = useState("");
   const [selectedCircleId, setSelectedCircleId] = useState("");
   const [activationCircleId, setActivationCircleId] = useState("");
   const [createOpen, setCreateOpen] = useState(initialCircles.length === 0);
@@ -396,8 +398,7 @@ export function OpsCircleActions({
     : selectedMemberId ? "This member is not in the member list available to you. Choose a member below or ask an Administrator to check their account." : null;
   const acceptingCircles = circles.filter(
     (circle) =>
-      (circle.status === "forming" || circle.status === "active") &&
-      circle.activeMembers < circle.capacity,
+      (circle.status === "forming" || circle.status === "active"),
   );
   const activatableCircles = circles.filter(
     (circle) => circle.status === "forming" && circle.activeMembers > 0,
@@ -423,7 +424,7 @@ export function OpsCircleActions({
       const result = await postJson<{ circle: OpsActionCircle }>("/api/ops/circles", { name });
       setCircles((current) => [...current, result.circle]);
       setSelectedCircleId(result.circle.id);
-      setCreateNotice({ kind: "success", text: `${result.circle.name} created with ${result.circle.capacity} spaces. Choose a member above to make the first assignment.` });
+      setCreateNotice({ kind: "success", text: `${result.circle.name} created with a target of ${result.circle.capacity} people. Choose a member above to make the first assignment.` });
       createFormRef.current?.reset();
       router.refresh();
     } catch (error) {
@@ -449,6 +450,11 @@ export function OpsCircleActions({
 
     try {
       if (!member || !circle) throw new Error("Choose an eligible member and a forming or active Circle with an open space.");
+      if (circle.activeMembers >= 12) {
+        await postJson("/api/ops/circle-placement-reviews", { circleId, memberId, reason: exceptionReason });
+        setAssignmentNotice({ kind: "success", text: "Exception requested. Tyler/Mitch must approve before placement." });
+        return;
+      }
       const result = await postJson<{ assignment: { created: boolean } }>("/api/ops/circle-assignments", {
         circleId,
         memberId,
@@ -622,7 +628,7 @@ export function OpsCircleActions({
                 value={selectedCircle?.id ?? ""}
               >
                 <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
-                {acceptingCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.status} · {circle.capacity - circle.activeMembers} {circle.capacity - circle.activeMembers === 1 ? "space" : "spaces"}</option>)}
+                {acceptingCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.status} · {circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · target 10</option>)}
               </select>
             </label>
           </div>
@@ -637,18 +643,20 @@ export function OpsCircleActions({
             </div>
             <div id="circle-space-help">
               {acceptingCircles.length ? (
-                <p>{selectedCircle?.status === "forming" ? `${selectedCircle.name} is forming. Assign the member now, then activate it when ready.` : "Only forming or active Circles with open spaces are listed."}</p>
+                <p>{selectedCircle?.status === "forming" ? `${selectedCircle.name} is forming. Assign the member now, then activate it when ready.` : "Forming and active Circles are listed. Above 12 people requires exception review."}</p>
               ) : (
-                <p>No Circles have an open space. <a className="underline underline-offset-4" href="#create-circle" onClick={() => setCreateOpen(true)}>Create a Circle</a> or review the existing assignments below.</p>
+                <p>No current Circles are available. <a className="underline underline-offset-4" href="#create-circle" onClick={() => setCreateOpen(true)}>Create a Circle</a> or review the existing assignments below.</p>
               )}
             </div>
           </div>
+          {selectedMember && !selectedMemberIssue ? <CirclePlacementRecommendations memberId={selectedMember.memberId} /> : null}
+          {selectedCircle && selectedCircle.activeMembers >= 12 ? <label className="block text-sm">Exception reason<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required /></label> : null}
           <button
             className={`${BUTTON_CLASS} w-fit`}
             disabled={assigning || !selectedMember || Boolean(selectedMemberIssue) || !selectedCircle}
             type="submit"
           >
-            {assigning ? "Assigning" : "3. Assign member"}
+            {assigning ? "Saving…" : selectedCircle && selectedCircle.activeMembers >= 12 ? "3. Request exception" : "3. Approve placement"}
           </button>
           <Notice notice={assignmentNotice} />
         </form>
@@ -660,7 +668,7 @@ export function OpsCircleActions({
           <span aria-hidden="true" className="text-2xl group-open:rotate-45">+</span>
         </summary>
         <div className="px-5 pb-5">
-          <p className="text-sm text-black/60">A new Circle starts in forming with ten member spaces.</p>
+          <p className="text-sm text-black/60">A new Circle starts in forming. Target 10 people; normal range 8–12, including the Circle Supporter.</p>
           <form className="mt-4 grid gap-3" onSubmit={submitCircle} ref={createFormRef}>
             <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-name">
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span>

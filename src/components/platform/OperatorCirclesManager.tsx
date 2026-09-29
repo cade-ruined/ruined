@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import CirclePlacementRecommendations from "@/components/platform/CirclePlacementRecommendations";
+import CirclePlacementReviewQueue from "@/components/platform/CirclePlacementReviewQueue";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -62,6 +64,7 @@ export default function OperatorCirclesManager({
   const createNameRef = useRef<HTMLInputElement>(null);
   const [circleQuery, setCircleQuery] = useState("");
   const [circleFilter, setCircleFilter] = useState("current");
+  const [exceptionReason, setExceptionReason] = useState("");
   const [confirmationName, setConfirmationName] = useState("");
   const confirmationFieldRef = useRef<HTMLInputElement>(null);
   const destinationFieldRef = useRef<HTMLSelectElement>(null);
@@ -102,6 +105,7 @@ export default function OperatorCirclesManager({
   ));
   function openWorkspace(circleId: string) {
     setOpenCircleId(circleId);
+    setExceptionReason("");
     setConfirmation(null);
     const params = new URLSearchParams({ circleId });
     if (initialMemberId) params.set("memberId", initialMemberId);
@@ -124,7 +128,7 @@ export default function OperatorCirclesManager({
     return getCirclePlacementIssue(member);
   }
   const eligibleMembers = candidates.filter((member) => !placementIssue(member));
-  const available = (circle: OpsCircleSummary) => (circle.status === "forming" || circle.status === "active") && circle.activeMembers < circle.capacity;
+  const available = (circle: OpsCircleSummary) => (circle.status === "forming" || circle.status === "active");
   function transferIssue(member: OpsCircleMemberAssignment) {
     const saved = candidates.find((candidate) => candidate.memberId === member.memberId);
     if (member.membershipFunding !== "operator" && member.membershipFunding !== "complimentary" && saved?.membershipState && saved.membershipState !== "active") return "Review this person’s membership before moving them.";
@@ -176,6 +180,10 @@ export default function OperatorCirclesManager({
     const member = eligibleMembers.find((candidate) => candidate.memberId === memberId);
     if (!member || !available(circle)) return;
     await change(circle.id, async () => {
+      if (circle.activeMembers >= 12) {
+        await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: circle.id, reason: exceptionReason });
+        return `Exception requested for ${member.name}. Tyler/Mitch must review before placement.`;
+      }
       const result = await request<{ assignment: { created: boolean; id: string; assignedAt: string; memberId: string; circleId: string } }>("/api/ops/circle-assignments", "POST", { memberId: member.memberId, circleId: circle.id });
       if (!result.assignment || typeof result.assignment.id !== "string" || !result.assignment.id
         || typeof result.assignment.created !== "boolean" || !Number.isFinite(Date.parse(result.assignment.assignedAt))
@@ -209,6 +217,10 @@ export default function OperatorCirclesManager({
       const source = circles.find((item) => item.id === member?.circleId);
       if (!member || !source || !destination || source.id === destination.id || !available(destination) || transferIssue(member)) return;
       await change(circle.id, async () => {
+        if (destination.activeMembers >= 12) {
+          await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: destination.id, reason: exceptionReason });
+          return `Move requested for ${member.name}. Tyler/Mitch must review the capacity exception.`;
+        }
         const result = await request<{ transfer: { id: string; previousAssignmentId: string; assignedAt: string; memberId: string; fromCircleId: string; circleId: string; fromCircleStatus: OpsCircleSummary["status"]; fromBlockId: string | null; fromBlockStatus: OpsCircleSummary["blockStatus"] } }>("/api/ops/circle-transfers", "POST", {
           memberId: member.memberId, fromCircleId: source.id, assignmentId: member.assignmentId, toCircleId: destination.id,
         });
@@ -270,7 +282,7 @@ export default function OperatorCirclesManager({
       setCircleName("");
       setCreateOpen(false);
       router.push(`/ops/circles?circleId=${encodeURIComponent(result.circle.id)}`, { scroll: false });
-      return `${result.circle.name} created. Add its first member, then set up the Shaper and meetings.`;
+      return `${result.circle.name} created. Add its first member, then set up the Circle Supporter and meetings.`;
     });
   }
 
@@ -286,9 +298,9 @@ export default function OperatorCirclesManager({
         <p className="text-sm">Move <strong>{member.name}</strong> from <strong>{source?.name ?? "their Circle"}</strong>.</p>
         {issue ? <p className="mt-2 text-sm text-[var(--color-poster)]">{issue} <Link className="underline" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership</Link></p> : destinations.length ? <>
           <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Move to</span><select ref={destinationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label={`New Circle for ${member.name}`} value={confirmation.toCircleId} disabled={pending} onChange={(event) => setConfirmation({ ...confirmation, toCircleId: event.target.value })}>
-            <option value="">Choose a Circle</option>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.capacity - item.activeMembers} places · {item.status}</option>)}
+            <option value="">Choose a Circle</option>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target 10 · {item.status}</option>)}
           </select></label>
-          <p className="mt-3 text-xs leading-relaxed text-black/65">Their membership and history stay intact. The move only happens if the new Circle has room.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
+          <p className="mt-3 text-xs leading-relaxed text-black/65">Their membership and history stay intact. Above 12 people, Tyler/Mitch review the exception before the move.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
         </> : <p className="mt-3 text-sm">No other Circles have an open place. <Link href="/ops/circles#create-circle" className="underline" onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
@@ -297,7 +309,8 @@ export default function OperatorCirclesManager({
           setCreateOpen(true);
           router.replace("/ops/circles#create-circle", { scroll: false });
         }}>Create a Circle</Link> first.</p>}
-        <div className="mt-3 flex flex-wrap gap-2"><button className={BUTTON} disabled={pending || !!issue || !destination || !available(destination) || destination.id === member.circleId} onClick={() => confirmChange(circle)} type="button">{pending ? "Moving…" : "Confirm move"}</button><button className={SECONDARY} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
+        {destination && destination.activeMembers >= 12 ? <label className="mt-3 block text-sm">Exception reason<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} placeholder="Why is this placement appropriate above the normal range?" /></label> : null}
+        <div className="mt-3 flex flex-wrap gap-2"><button className={BUTTON} disabled={pending || !!issue || !destination || !available(destination) || destination.id === member.circleId} onClick={() => confirmChange(circle)} type="button">{pending ? "Saving…" : destination && destination.activeMembers >= 12 ? "Request exception" : "Confirm move"}</button><button className={SECONDARY} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
       </div>;
     }
     if (confirmation.kind === "delete" || confirmation.kind === "archive") {
@@ -320,18 +333,19 @@ export default function OperatorCirclesManager({
 
   return (
     <div className="grid gap-3">
+      <CirclePlacementReviewQueue preview={preview} />
       <div className="operator-record-header flex flex-wrap items-center justify-between gap-3 text-sm">
         <div className="flex items-baseline gap-3"><h2 className="operator-page-heading">Circles</h2><p className="text-xs text-black/60">{circles.length} total</p></div>
         <button ref={createButtonRef} className={BUTTON} type="button" aria-expanded={createOpen} aria-controls="create-circle" disabled={pending} onClick={() => createOpen ? closeCreation() : setCreateOpen(true)}>+ Create a Circle</button>
       </div>
       <section id="create-circle" aria-labelledby="create-circle-heading" hidden={!createOpen} className="scroll-mt-28 operator-bento-card bg-[var(--color-shop)]/25">
         <h2 id="create-circle-heading" className="operator-record-title">New Circle</h2>
-        <p className="mt-2 text-sm text-black/60">Ten places. Add members, then activate when ready.</p>
+        <p className="mt-2 text-sm text-black/60">Target 10 people, including the Circle Supporter. The normal range is 8–12; larger groups need an exception review.</p>
         <form onSubmit={createCircle} className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1"><span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span><input ref={createNameRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} name="name" minLength={2} maxLength={80} required placeholder="Circle 02" value={circleName} onChange={(event) => setCircleName(event.target.value)} disabled={pending} /></label><button className={BUTTON} disabled={pending} type="submit">Create Circle</button><button className={SECONDARY} disabled={pending} type="button" onClick={closeCreation}>Cancel</button></form>
       </section>
       {notice("create")}
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
-        <label><span className={OPERATOR_LABEL_TEXT_CLASS}>Find a Circle</span><input className={`${OPERATOR_FIELD_CLASS} mt-2`} type="search" placeholder="Circle, Shaper, or Block" value={circleQuery} onChange={(event) => setCircleQuery(event.target.value)} /></label>
+        <label><span className={OPERATOR_LABEL_TEXT_CLASS}>Find a Circle</span><input className={`${OPERATOR_FIELD_CLASS} mt-2`} type="search" placeholder="Circle, Circle Supporter, or Block" value={circleQuery} onChange={(event) => setCircleQuery(event.target.value)} /></label>
         <label><span className={OPERATOR_LABEL_TEXT_CLASS}>Show</span><select className={`${OPERATOR_FIELD_CLASS} mt-2`} value={circleFilter} onChange={(event) => setCircleFilter(event.target.value)}><option value="current">Active & forming</option><option value="active">Active</option><option value="forming">Forming</option><option value="completed">Completed</option><option value="archived">Archived</option><option value="all">All Circles</option></select></label>
       </div>
       {!confirmation || (confirmation.kind !== "delete" && confirmation.kind !== "archive") ? notice("circle-removal") : null}
@@ -347,10 +361,10 @@ export default function OperatorCirclesManager({
               <div className="flex flex-wrap items-center justify-between gap-2"><StateLabel state={circle.status} />{circle.blockName ? <p className="text-xs text-black/55">{circle.blockName}</p> : null}</div>
               <h2 className="mt-2 break-words text-xl font-semibold leading-tight">{circle.name}</h2>
               <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm text-black/65"><span className="text-2xl font-semibold tracking-tight text-[var(--color-faded)]">{circle.activeMembers}</span> / {circle.capacity} members</p>
-                <p className="text-xs text-black/55">{Math.max(0, circle.capacity - circle.activeMembers)} open places</p>
+                <p className="text-sm text-black/65"><span className="text-2xl font-semibold tracking-tight text-[var(--color-faded)]">{circle.activeMembers}</span> {circle.activeMembers === 1 ? "person" : "people"} · target {circle.capacity}</p>
+                <p className="text-xs text-black/55">{circle.activeMembers > 12 ? "Above normal range" : "Normal range 8–12"}</p>
               </div>
-              <p className="mt-2 break-words text-sm text-black/65">Shaper: {circle.shaper?.name ?? "Not assigned"}</p>
+              <p className="mt-2 break-words text-sm text-black/65">Circle Supporter: {circle.shaper?.name ?? "Not assigned"}</p>
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
                 <button id={`manage-${circle.id}`} className={BUTTON} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `roster-${circle.id}` : undefined} aria-label={`Manage Circle — ${circle.name}`} disabled={pending} onClick={() => openWorkspace(circle.id)} type="button">Manage Circle<span aria-hidden="true" className="ml-3">↗</span></button>
               </div>
@@ -365,9 +379,13 @@ export default function OperatorCirclesManager({
           <section id={`roster-${circle.id}`} aria-label={`${circle.name} management`} data-operator-dirty={confirmation ? "true" : undefined} className="min-w-0">
               {initialCircleId !== circle.id ? <p role="status" className="mb-4 text-sm text-black/60">Loading Circle controls…</p> : null}
               <fieldset disabled={initialCircleId !== circle.id} className="min-w-0">
-                {initialCircleId === circle.id && shaper ? <section className="mb-3" aria-label={`${circle.name} Shaper`}>{shaper}</section> : <p className="mb-3 text-sm">Shaper: {circle.shaper?.name ?? "Not assigned"}</p>}
+                {initialCircleId === circle.id && shaper ? <section className="mb-3" aria-label={`${circle.name} Circle Supporter`}>{shaper}</section> : <p className="mb-3 text-sm">Circle Supporter: {circle.shaper?.name ?? "Not assigned"}</p>}
+                <details className="mb-4 rounded bg-black/[0.025] p-4"><summary className="min-h-11 cursor-pointer content-center font-semibold">Circle story</summary><form className="mt-3 space-y-3" onSubmit={event => {
+                  event.preventDefault(); const story = String(new FormData(event.currentTarget).get("story") ?? "");
+                  void change(circle.id, async () => { await request("/api/ops/circle-story", "POST", { circleId: circle.id, story }); setCircles(current => current.map(item => item.id === circle.id ? { ...item, story } : item)); return "Circle story saved."; });
+                }}><p className="text-xs text-black/60">A short introduction shown in the Circle home after its reveal.</p><textarea name="story" aria-label="Circle story" className={OPERATOR_FIELD_CLASS} defaultValue={circle.story ?? ""} maxLength={2000} rows={4} disabled={pending} /><button type="submit" className={BUTTON} disabled={pending}>Save story</button></form></details>
                 <div className="grid gap-3">
-                  <div><h3 className="mb-3 flex items-baseline gap-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Members</span><span className="text-sm text-black/55">{circle.activeMembers} / {circle.capacity}</span></h3>
+                  <div><h3 className="mb-3 flex items-baseline gap-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Members</span><span className="text-sm text-black/55">{circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · target {circle.capacity}</span></h3>
                     {roster.length ? <ul className="grid gap-x-5 gap-y-1 md:grid-cols-2">{roster.map((member) => <li key={member.assignmentId} className="min-w-0 py-2"><div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex min-w-0 flex-1 items-center gap-3"><OperatorMemberAvatar memberId={member.memberId} className="h-10 w-10" /><div className="min-w-0"><Link className="text-sm font-semibold underline decoration-black/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="truncate text-xs text-black/55">{member.email}</p></div></div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -387,6 +405,7 @@ export default function OperatorCirclesManager({
                         <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members without a Circle"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
                         {memberQuery ? <Link className="underline underline-offset-4" href={searchHref(circle.id, 1, "")}>Clear search</Link> : null}
                       </div>
+                      {circle.activeMembers >= 12 ? <label className="mb-4 block text-sm">Exception reason<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} placeholder="Explain why this placement should exceed the normal range. Tyler/Mitch will review it." /></label> : null}
                       <ul aria-label={`Member results for ${circle.name}`} className="grid gap-3">
                         {candidates.map((member) => {
                           const issue = placementIssue(member);
@@ -395,8 +414,9 @@ export default function OperatorCirclesManager({
                             {member.memberId === pinnedMemberId ? <p className="mb-2 text-xs font-semibold text-black/60">Selected from member profile</p> : null}
                             <form aria-label={`Add ${member.name} to ${circle.name}`} data-member-id={member.memberId} onSubmit={(event) => addMember(event, circle, member.memberId)} className="flex flex-wrap items-center justify-between gap-3">
                               <div className="flex min-w-0 flex-1 items-center gap-3"><OperatorMemberAvatar memberId={member.memberId} className="h-10 w-10" /><div className="min-w-0"><Link className="text-sm font-semibold underline decoration-black/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="break-all text-xs text-black/55">{member.email}</p></div></div>
-                              {assignment && assignment.circleId !== circle.id ? <button className={`${BUTTON} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : "Add to Circle"}</button>}
+                              {assignment && assignment.circleId !== circle.id ? <button className={`${BUTTON} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : circle.activeMembers >= 12 ? "Request exception" : "Approve placement"}</button>}
                             </form>
+                            {!issue ? <CirclePlacementRecommendations memberId={member.memberId} preview={preview} previewCircles={circles} /> : null}
                             {issue ? <div className="mt-2 text-xs leading-relaxed text-black/60"><p>{issue}</p>{assignment ? assignment.circleId !== circle.id ? <Link className="mt-1 inline-flex min-h-11 items-center underline underline-offset-4" href={searchHref(assignment.circleId)}>Open their Circle →</Link> : null : <Link className="mt-1 inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership →</Link>}</div> : null}
                             {assignment && assignment.circleId !== circle.id ? confirmPanel(circle, assignment) : null}
                           </li>;
@@ -404,14 +424,14 @@ export default function OperatorCirclesManager({
                       </ul>
                       {!candidates.length ? <p className="py-2 text-sm leading-relaxed text-black/60">{memberQuery ? "No members match this search. Try their name or email, or check the member directory." : "No members are ready to add here. Search by name to check someone’s status, or allow a new member email."} <Link className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href="/ops/members">Go to Members →</Link></p> : null}
                       {candidatePageCount > 1 ? <nav aria-label={`Member result pages for ${circle.name}`} className="mt-4 flex items-center justify-between gap-3 text-sm"><span>Page {candidatePage} of {candidatePageCount}</span><div className="flex gap-3">{candidatePage > 1 ? <Link className={SECONDARY} href={searchHref(circle.id, candidatePage - 1)}>Previous members</Link> : null}{candidatePage < candidatePageCount ? <Link className={SECONDARY} href={searchHref(circle.id, candidatePage + 1)}>Next members</Link> : null}</div></nav> : candidateTotal > candidates.length ? <p className="mt-3 text-xs text-black/60">Search by name or email to find people beyond these first results.</p> : null}
-                    </> : <p className="text-sm text-black/60">{circle.activeMembers >= circle.capacity ? "This Circle is full. Move or remove a member only if their placement should change, or use Create a Circle at the top." : "This Circle is closed to new members."}</p>}
+                    </> : <p className="text-sm text-black/60">This Circle is closed to new members.</p>}
                   </div></details>
                 </div>
                 {circle.status === "forming" ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-sm text-black/60">{circle.activeMembers ? "Activate this Circle now. You can schedule meetings later. Members need an active Circle to finish Foundations." : "Add the first member before activating this Circle."}</p><button className={SECONDARY} type="button" disabled={pending || !circle.activeMembers} onClick={() => setConfirmation({ kind: "activate", circleId: circle.id })}>Activate {circle.name}</button></div> : null}
                 {confirmation?.kind === "activate" ? confirmPanel(circle) : null}
                 {notice(circle.id)}
                 {initialCircleId === circle.id && communications ? <section id="circle-communications" aria-label={`${circle.name} chat and meetings`} className="mt-3 scroll-mt-4">{communications}</section> : null}
-                {open && initialCircleId === circle.id ? <section id="circle-resources" aria-label={`${circle.name} resources`} className="mt-3 scroll-mt-4">{children}</section> : open && initialCircleId !== circle.id && (circle.status === "forming" || circle.status === "active") ? <Link className={SECONDARY} href={`/ops/circles?circleId=${encodeURIComponent(circle.id)}`}>Load Shaper, meetings & resources →</Link> : null}
+                {open && initialCircleId === circle.id ? <section id="circle-resources" aria-label={`${circle.name} resources`} className="mt-3 scroll-mt-4">{children}</section> : open && initialCircleId !== circle.id && (circle.status === "forming" || circle.status === "active") ? <Link className={SECONDARY} href={`/ops/circles?circleId=${encodeURIComponent(circle.id)}`}>Load Circle Supporter, meetings & resources →</Link> : null}
               </fieldset>
               <fieldset disabled={initialCircleId !== circle.id} className="mt-5 min-w-0">
                 <div className="flex flex-wrap items-center gap-x-3">

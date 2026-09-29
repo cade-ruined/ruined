@@ -8,7 +8,7 @@ export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnaps
   const futureMeetings = circle.meetings
     .filter((meeting) => new Date(meeting.endsAt ?? meeting.startsAt).getTime() >= Date.now())
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
-  const visibleMembers = circle.members.slice(0, 10);
+  const visibleMembers = circle.members;
 
   return (
     <main className="member-journey-page member-circle-page member-profile-dossier mx-auto max-w-[82rem] pb-20 pt-2 sm:pb-24 sm:pt-4" data-member-circle-room>
@@ -40,12 +40,11 @@ export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnaps
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 font-[var(--font-body)] text-[0.68rem] font-bold uppercase tracking-[0.035em] text-[var(--member-muted)]">
                 <span>{visibleMembers.length} {visibleMembers.length === 1 ? "member" : "members"}</span>
                 <span>{circle.circle.status.replaceAll("_", " ")}</span>
-                {circle.block ? <span>{circle.block.name}</span> : null}
               </div>
             </div>
             {circle.shaper ? (
               <div className="pb-1 sm:max-w-[15rem] sm:text-right">
-                <p className="[font-family:var(--font-cadehandy2)] text-[1.25rem] leading-none text-[var(--member-red)]">Shaper</p>
+                <p className="[font-family:var(--font-cadehandy2)] text-[1.25rem] leading-none text-[var(--member-red)]">Circle Supporter</p>
                 <Link
                   className="ui-heading mt-1.5 inline-block text-lg font-black uppercase leading-[0.9] tracking-[-0.03em] text-[var(--member-muted)] transition-colors hover:text-[var(--member-red)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)] sm:text-xl"
                   data-circle-shaper-profile-link
@@ -56,6 +55,12 @@ export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnaps
               </div>
             ) : null}
           </header>
+
+          {circle.circle.story ? (
+            <section className="mt-7 max-w-3xl" aria-label="Our Circle">
+              <p className="whitespace-pre-line font-[var(--font-body)] text-base leading-relaxed text-[var(--member-muted)]">{circle.circle.story}</p>
+            </section>
+          ) : null}
 
           <section aria-labelledby="circle-members-title" className="mt-5 sm:mt-7">
             <h2 className="sr-only" id="circle-members-title">People in {circle.circle.name}</h2>

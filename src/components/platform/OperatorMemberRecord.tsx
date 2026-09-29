@@ -344,7 +344,7 @@ export default function OperatorMemberRecord({
                   {community.circle.name}
                 </Link>
                 <div className="mt-3 grid gap-2 text-sm text-black/58 sm:grid-cols-2">
-                  <p>Shaper · {community.circle.shaperName ?? "Not assigned"}</p>
+                  <p>Circle Supporter · {community.circle.shaperName ?? "Not assigned"}</p>
                   <p>Members · {community.circle.members.length}</p>
                   <p>Block · {community.block?.name ?? "Not assigned"}</p>
                   <p>Guides · {community.circle.guides.join(", ") || "Not assigned"}</p>

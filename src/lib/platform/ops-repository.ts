@@ -51,6 +51,7 @@ export type OpsInvitationRevocationResult = {
 };
 
 export type OpsCircleSummary = {
+  story?: string | null;
   activeMembers: number;
   blockId: string | null;
   blockName: string | null;
@@ -854,6 +855,7 @@ export async function getOpsCircleSummaries(
         block_name: string | null;
         block_status: OpsBlockStatus | null;
         capacity: number;
+        story: string | null;
         id: string;
         name: string;
         slug: string;
@@ -865,11 +867,12 @@ export async function getOpsCircleSummaries(
         circle.name,
         circle.slug,
         circle.capacity,
+        circle.story,
         circle.status,
         block_assignment.block_id,
         membership_block.name as block_name,
         membership_block.status as block_status,
-        count(assignment.id) filter (where assignment.ended_at is null) as active_members
+        private.ruined_circle_participant_count(circle.id) as active_members
       from circles circle
       left join circle_member_assignments assignment on assignment.circle_id = circle.id
       left join block_circle_assignments block_assignment
@@ -955,6 +958,7 @@ export async function getOpsCircleSummaries(
       blockName: row.block_name,
       blockStatus: row.block_status,
       capacity: Number(row.capacity),
+      story: row.story,
       id: row.id,
       name: row.name,
       resources: resourceRows
@@ -999,6 +1003,7 @@ type CircleShaperMemberRow = {
   billing_state: string | null;
   membership_state: string;
   program_state: string | null;
+  foundations_state: string | null;
   standing_eligible: boolean;
   complimentary_funded: boolean;
   operator_funded: boolean;
@@ -1024,7 +1029,7 @@ async function getCircleShaperMemberRows(
       platform_user.auth_user_id, circle.status as circle_status,
       person.status as person_status, platform_user.status as user_status,
       lifecycle.account_state, lifecycle.administrative_onboarding_state,
-      coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state, member.membership_state, lifecycle.program_state,
+      coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state, member.membership_state, lifecycle.program_state, lifecycle.foundations_state,
       coalesce(lifecycle.standing_state = 'active' or (
         lifecycle.standing_state = 'cancellation_requested'
         and lifecycle.cancellation_effective_at > statement_timestamp()
@@ -1063,23 +1068,25 @@ function circleShaperMemberCandidate(row: CircleShaperMemberRow): OpsCircleShape
   let unavailableReason: string | null = null;
   const alreadyAuthorized = row.admin_access || row.shaper_access;
   if (row.circle_status !== "active" && row.circle_status !== "forming") {
-    unavailableReason = "Only a forming or active Circle can receive a Shaper.";
+    unavailableReason = "Only a forming or active Circle can receive a Circle Supporter.";
   } else if (!row.auth_user_id) {
-    unavailableReason = "This member needs to sign in before receiving Shaper access.";
+    unavailableReason = "This member needs to sign in before receiving Circle Supporter access.";
   } else if (row.person_status !== "active" || row.user_status !== "active" || row.account_state !== "active" || !row.member_access) {
-    unavailableReason = "Review this member’s account access before assigning a Shaper.";
+    unavailableReason = "Review this member’s account access before assigning a Circle Supporter.";
   } else if (row.pending_operator_invitation) {
     unavailableReason = "Review this member’s pending operator invitation in Operators first.";
   } else if (!alreadyAuthorized && row.guide_access) {
     unavailableReason = "This member is a Guide. Change their operator role in Operators first.";
   } else if (!alreadyAuthorized && (row.revoked_operator_access || row.existing_staff_assignment)) {
-    unavailableReason = "Review this member’s previous operator access in Operators before restoring Shaper access.";
+    unavailableReason = "Review this member’s previous operator access in Operators before restoring Circle Supporter access.";
   } else if (row.administrative_onboarding_state !== "completed") {
     unavailableReason = "This member needs to finish their membership entry first.";
+  } else if (row.foundations_state !== "completed") {
+    unavailableReason = "This member needs to complete Foundations before serving as Circle Supporter.";
   } else if (!row.standing_eligible || (row.program_state !== "active" && row.program_state !== "onboarding")) {
-    unavailableReason = "Review this member’s standing before assigning them as Shaper.";
+    unavailableReason = "Review this member’s standing before assigning them as Circle Supporter.";
   } else if (!row.complimentary_funded && (row.billing_state !== "active" || row.membership_state !== "active")) {
-    unavailableReason = "Confirm this member’s active membership before granting Shaper access.";
+    unavailableReason = "Confirm this member’s active membership before granting Circle Supporter access.";
   }
   return {
     memberId: row.member_id,
@@ -1175,7 +1182,7 @@ export async function assignShaperToCircle({
     || !UUID_PATTERN.test(memberPath ? requestedMemberId! : requestedShaperAuthUserId!)
     || (grantShaperAccess !== undefined && typeof grantShaperAccess !== "boolean")
     || (!memberPath && grantShaperAccess !== undefined)) {
-    throw new OpsRepositoryError("invalid_request", "Choose a valid Circle and Shaper.");
+    throw new OpsRepositoryError("invalid_request", "Choose a valid Circle and Circle Supporter.");
   }
   const circleId = requestedCircleId.toLowerCase();
   const memberId = requestedMemberId?.toLowerCase();
@@ -1184,6 +1191,8 @@ export async function assignShaperToCircle({
     // Share access-edit ordering before taking account, Circle, or grant locks.
     await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
+    const responsibility = await tx<Array<{ allowed: boolean }>>`select private.ruined_has_leadership_responsibility(${actorAuthUserId}::uuid, 'supporter_readiness') as allowed`;
+    if (!responsibility[0]?.allowed) throw new OpsRepositoryError("forbidden", "Supporter readiness responsibility is required. Configure it in Leadership.");
     let shaper: { auth_user_id: string; name: string };
     let candidate: OpsCircleShaperMemberCandidate | undefined;
     if (memberId !== undefined) {
@@ -1224,7 +1233,7 @@ export async function assignShaperToCircle({
         throw new OpsRepositoryError("conflict", candidate.unavailableReason ?? "This member needs to sign in first.");
       }
       if (candidate.requiresShaperAccess && grantShaperAccess !== true) {
-        throw new OpsRepositoryError("conflict", "Confirm granting Shaper access before assigning this member.");
+        throw new OpsRepositoryError("conflict", "Confirm granting Circle Supporter access before assigning this member.");
       }
       shaper = { auth_user_id: candidate.authUserId, name: candidate.name };
     } else {
@@ -1255,12 +1264,20 @@ export async function assignShaperToCircle({
       if (!shaperRows[0]) {
         throw new OpsRepositoryError(
           "conflict",
-          "That person needs an active Shaper role before they can lead a Circle.",
+          "That person needs an active Circle Supporter role before they can lead a Circle.",
         );
       }
       shaper = shaperRows[0];
     }
     const shaperAuthUserId = shaper.auth_user_id;
+    const readiness = await tx<Array<{ id: string }>>`
+      select ready.id from supporter_readiness_approvals ready
+      join platform_users account on account.auth_user_id = ready.auth_user_id
+      join circle_member_assignments placement on placement.member_id = account.member_id
+      where ready.auth_user_id = ${shaperAuthUserId}::uuid and ready.circle_id = ${circleId}::uuid
+        and placement.circle_id = ready.circle_id and placement.ended_at is null and placement.assigned_at <= statement_timestamp()
+    `;
+    if (!readiness[0]) throw new OpsRepositoryError("conflict", "Approve this Circle member’s readiness in Leadership before assigning service.");
     await tx`select pg_advisory_xact_lock(hashtext(${circleId}), 4)`;
     const circleRows = await tx<Array<{ id: string; name: string; status: OpsCircleSummary["status"] }>>`
       select id, name, status
@@ -1271,7 +1288,7 @@ export async function assignShaperToCircle({
     const circle = circleRows[0];
     if (!circle) throw new OpsRepositoryError("not_found", "That Circle could not be found.");
     if (!new Set(["forming", "active"]).has(circle.status)) {
-      throw new OpsRepositoryError("conflict", "Only a forming or active Circle can receive a Shaper.");
+      throw new OpsRepositoryError("conflict", "Only a forming or active Circle can receive a Circle Supporter.");
     }
 
     const existingRows = await tx<Array<{
@@ -1302,7 +1319,7 @@ export async function assignShaperToCircle({
     if (existing) {
       throw new OpsRepositoryError(
         "conflict",
-        "That Circle already has a Shaper. End the current assignment first.",
+        "That Circle already has a Circle Supporter. End the current assignment first.",
       );
     }
 
@@ -1316,7 +1333,7 @@ export async function assignShaperToCircle({
       limit 1
     `;
     if (pendingRows[0]) {
-      throw new OpsRepositoryError("conflict", "That Circle has a pending Shaper invitation. Review it in Operators first.");
+      throw new OpsRepositoryError("conflict", "That Circle has a pending Circle Supporter invitation. Review it in Operators first.");
     }
     const shaperAccessGranted = candidate?.requiresShaperAccess === true;
     if (shaperAccessGranted) {
@@ -1328,7 +1345,7 @@ export async function assignShaperToCircle({
         action: "operator_access.shaper_granted",
         actorAuthUserId,
         after: { memberId: memberId!, role: "circle_leader", circleIds: [circleId] },
-        reason: "Shaper access explicitly confirmed while assigning a Circle member.",
+        reason: "Circle Supporter access explicitly confirmed while assigning a Circle member.",
         subjectId: shaperAuthUserId,
         subjectType: "platform_user",
       });
@@ -1353,7 +1370,7 @@ export async function assignShaperToCircle({
       returning id::text, auth_user_id, assigned_at
     `;
     const assignment = insertedRows[0];
-    if (!assignment) throw new Error("The Shaper assignment could not be created.");
+    if (!assignment) throw new Error("The Circle Supporter assignment could not be created.");
     await writeOpsAudit(tx, {
       action: "circle.shaper_assigned",
       actorAuthUserId,
@@ -1382,12 +1399,14 @@ export async function endCircleShaperAssignment({
   assignmentId: string;
 }) {
   if (!/^\d+$/.test(assignmentId)) {
-    throw new OpsRepositoryError("invalid_request", "Choose a valid Shaper assignment.");
+    throw new OpsRepositoryError("invalid_request", "Choose a valid Circle Supporter assignment.");
   }
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
+    const responsibility = await tx<Array<{ allowed: boolean }>>`select private.ruined_has_leadership_responsibility(${actorAuthUserId}::uuid, 'supporter_readiness') as allowed`;
+    if (!responsibility[0]?.allowed) throw new OpsRepositoryError("forbidden", "Supporter readiness responsibility is required. Configure it in Leadership.");
     const assignmentRows = await tx<Array<{
       auth_user_id: string;
       circle_id: string;
@@ -1402,7 +1421,7 @@ export async function endCircleShaperAssignment({
     `;
     const assignment = assignmentRows[0];
     if (!assignment) {
-      throw new OpsRepositoryError("not_found", "That active Shaper assignment could not be found.");
+      throw new OpsRepositoryError("not_found", "That active Circle Supporter assignment could not be found.");
     }
     const endedRows = await tx<Array<{ ended_at: Date | string }>>`
       update circle_staff_assignments
@@ -1415,7 +1434,10 @@ export async function endCircleShaperAssignment({
       returning ended_at
     `;
     const ended = endedRows[0];
-    if (!ended) throw new OpsRepositoryError("conflict", "That Shaper assignment is no longer active.");
+    if (!ended) throw new OpsRepositoryError("conflict", "That Circle Supporter assignment is no longer active.");
+    await tx`update platform_role_grants set revoked_at = statement_timestamp(), revoke_reason = 'Supporter service ended'
+      where auth_user_id = ${assignment.auth_user_id}::uuid and role_slug = 'circle_leader' and revoked_at is null
+        and not exists(select 1 from circle_staff_assignments remaining where remaining.auth_user_id = ${assignment.auth_user_id}::uuid and remaining.role_slug = 'circle_leader' and remaining.ended_at is null)`;
     await writeOpsAudit(tx, {
       action: "circle.shaper_assignment_ended",
       actorAuthUserId,
@@ -2059,17 +2081,51 @@ export async function endCircleBlockAssignment({
   });
 }
 
+// Called only after member/assignment/Circle locks, with a fresh deduplicated count.
+async function approveCirclePlacement(tx: postgres.TransactionSql, input: { actor: string; memberId: string; circleId: string; projectedCount: number; exceptionReason?: string; reviewId?: string; previousAssignmentId?: string }) {
+  const exceptional = input.projectedCount > 12;
+  const capability = exceptional || input.reviewId ? "circle_exception" : "circle_placement";
+  const [authority] = await tx<Array<{ allowed: boolean }>>`select private.ruined_has_leadership_responsibility(${input.actor}::uuid, ${capability}) as allowed`;
+  if (!authority?.allowed) throw new OpsRepositoryError("forbidden", capability === "circle_exception" ? "Tyler/Mitch’s exception review is required. An Administrator can configure this responsibility in Leadership." : "Circle placement responsibility is required. An Administrator can configure this in Leadership.");
+  const reason = input.exceptionReason?.trim() ?? "";
+  if (exceptional && (reason.length < 10 || reason.length > 1000)) throw new OpsRepositoryError("invalid_request", "Explain the capacity exception in 10–1000 characters for Tyler/Mitch’s review.");
+  let reviewId: string | null = null;
+  if (input.reviewId) {
+    if (!UUID_PATTERN.test(input.reviewId)) throw new OpsRepositoryError("invalid_request", "Choose a valid review.");
+    const [review] = await tx<Array<{ id: string; previous_assignment_id: string | null }>>`select id, previous_assignment_id::text from circle_placement_reviews
+      where id = ${input.reviewId}::uuid and member_id = ${input.memberId}::uuid and circle_id = ${input.circleId}::uuid and status = 'pending' for update`;
+    if (!review || review.previous_assignment_id !== (input.previousAssignmentId ?? null)) throw new OpsRepositoryError("conflict", "This exception request is no longer current. Refresh before reviewing.");
+    await tx`update circle_placement_reviews set status = ${exceptional ? "approved" : "placed"}, reviewed_by_auth_user_id = ${input.actor}::uuid,
+      reviewed_at = statement_timestamp(), projected_count = ${input.projectedCount} where id = ${review.id}::uuid`;
+    reviewId = review.id;
+  } else if (exceptional) {
+    const [review] = await tx<Array<{ id: string }>>`insert into circle_placement_reviews(member_id, circle_id, previous_assignment_id, requested_by_auth_user_id, reason, status, reviewed_by_auth_user_id, reviewed_at, projected_count)
+      values (${input.memberId}::uuid, ${input.circleId}::uuid, ${input.previousAssignmentId ?? null}::bigint, ${input.actor}::uuid,
+        ${reason}, 'approved', ${input.actor}::uuid, statement_timestamp(), ${input.projectedCount}) returning id`;
+    reviewId = review.id;
+  }
+  await tx`insert into operator_audit_events(actor_auth_user_id, action, subject_type, subject_id, reason, after_snapshot, metadata, dedupe_key)
+    values (${input.actor}::uuid, ${exceptional ? "circle.placement_exception_approved" : "circle.placement_approved"}, 'member', ${input.memberId}, ${reason || "Routine placement approved"},
+      ${tx.json({ circleId: input.circleId, projectedCount: input.projectedCount, reviewId, previousAssignmentId: input.previousAssignmentId ?? null })}, '{}'::jsonb, gen_random_uuid()::text)`;
+  return reviewId;
+}
+
 export async function assignMemberToCircle({
   actorAuthUserId,
   circleId,
   memberId,
+  exceptionReason,
+  reviewId,
 }: {
   actorAuthUserId: string;
   circleId: string;
   memberId: string;
+  exceptionReason?: string;
+  reviewId?: string;
 }): Promise<OpsCircleAssignmentResult> {
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
     if (!UUID_PATTERN.test(memberId) || !UUID_PATTERN.test(circleId)) {
       throw new OpsRepositoryError("invalid_request", "Choose a valid member and Circle.");
@@ -2140,6 +2196,7 @@ export async function assignMemberToCircle({
     `;
     const existing = existingRows[0];
     if (existing?.circle_id === circleId) {
+      if (reviewId) throw new OpsRepositoryError("conflict", "This member is already placed. Decline the obsolete exception request to close it.");
       return {
         assignedAt: existing.assigned_at.toISOString(),
         circleId: existing.circle_id,
@@ -2169,15 +2226,13 @@ export async function assignMemberToCircle({
       throw new OpsRepositoryError("conflict", "That Circle is not accepting members.");
     }
 
-    const countRows = await tx<Array<{ active_members: number | string }>>`
-      select count(*) as active_members
-      from circle_member_assignments
-      where circle_id = ${circleId}::uuid
-        and ended_at is null
-    `;
-    if (Number(countRows[0]?.active_members ?? 0) >= Number(circle.capacity)) {
-      throw new OpsRepositoryError("conflict", "That Circle has reached capacity.");
-    }
+    const [count] = await tx<Array<{ projected_count: number }>>`
+      select private.ruined_circle_participant_count(${circleId}::uuid) + case when exists (
+        select 1 from circle_staff_assignments staff join platform_users viewer on viewer.auth_user_id = staff.auth_user_id
+        join ruined_members member on member.person_id = viewer.person_id
+        where staff.circle_id = ${circleId}::uuid and staff.role_slug = 'circle_leader' and staff.ended_at is null and member.id = ${memberId}::uuid
+      ) then 0 else 1 end as projected_count`;
+    const approvedReviewId = await approveCirclePlacement(tx, { actor: actorAuthUserId, memberId, circleId, projectedCount: Number(count.projected_count), exceptionReason, reviewId });
 
     const assignmentRows = await tx<
       Array<{ assigned_at: Date; circle_id: string; id: string; member_id: string }>
@@ -2195,6 +2250,7 @@ export async function assignMemberToCircle({
     `;
     const assignment = assignmentRows[0];
     if (!assignment) throw new Error("The Circle assignment could not be created.");
+    if (approvedReviewId) await tx`update circle_placement_reviews set status = 'placed' where id = ${approvedReviewId}::uuid and status = 'approved'`;
 
     await markCalendarAudiencesPendingForCircle(tx, {
       actorAuthUserId,
@@ -2217,15 +2273,20 @@ export async function transferMemberToCircle({
   fromCircleId,
   memberId,
   toCircleId,
+  exceptionReason,
+  reviewId,
 }: {
   actorAuthUserId: string;
   assignmentId: string;
   fromCircleId: string;
   memberId: string;
   toCircleId: string;
+  exceptionReason?: string;
+  reviewId?: string;
 }): Promise<OpsCircleTransferResult> {
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
     if (![memberId, fromCircleId, toCircleId].every((id) => UUID_PATTERN.test(id))
       || !/^[1-9][0-9]{0,18}$/.test(assignmentId)
@@ -2289,10 +2350,14 @@ export async function transferMemberToCircle({
       where circle_id in (${sourceId}::uuid, ${destinationId}::uuid) and ended_at is null
       group by circle_id
     `;
-    const destinationCount = Number(countRows.find((row) => row.circle_id === destinationId)?.active_members ?? 0);
-    if (destinationCount >= Number(destination.capacity)) {
-      throw new OpsRepositoryError("conflict", "The destination Circle is full. Choose a Circle with an open place.");
-    }
+    const [count] = await tx<Array<{ projected_count: number }>>`
+      select private.ruined_circle_participant_count(${destinationId}::uuid) + case when exists (
+        select 1 from circle_staff_assignments staff join platform_users viewer on viewer.auth_user_id = staff.auth_user_id
+        join ruined_members member on member.person_id = viewer.person_id
+        where staff.circle_id = ${destinationId}::uuid and staff.role_slug = 'circle_leader' and staff.ended_at is null and member.id = ${normalizedMemberId}::uuid
+      ) then 0 else 1 end as projected_count`;
+    const approvedReviewId = await approveCirclePlacement(tx, { actor: actorAuthUserId, memberId: normalizedMemberId, circleId: destinationId,
+      projectedCount: Number(count.projected_count), previousAssignmentId: assignmentId, exceptionReason, reviewId });
     const sourceCount = Number(countRows.find((row) => row.circle_id === sourceId)?.active_members ?? 0);
     const endedRows = await tx<Array<{ id: string }>>`
       update circle_member_assignments
@@ -2312,6 +2377,7 @@ export async function transferMemberToCircle({
     `;
     const assignment = newRows[0];
     if (!assignment) throw new Error("The transfer could not be saved.");
+    if (approvedReviewId) await tx`update circle_placement_reviews set status = 'placed' where id = ${approvedReviewId}::uuid and status = 'approved'`;
     const archiveSource = source.status === "active" && sourceCount === 1;
     if (archiveSource) {
       // Preserve existing empty-source/Block reconciliation, with Circle then
@@ -2356,6 +2422,10 @@ export async function endMemberCircleAssignment({
 }): Promise<OpsCircleAssignmentEndResult> {
   const sql = getBillingDatabase();
   return sql.begin(async (tx) => {
+    // Share the service/transfer lock before member, Circle, or staff rows.
+    // Departure closes staff scope in a trigger; optional coverage starts from
+    // a staff row, so these writers must serialize before taking either path.
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, actorAuthUserId);
     if (!UUID_PATTERN.test(memberId)) {
       throw new OpsRepositoryError("invalid_request", "Choose a valid assigned member.");

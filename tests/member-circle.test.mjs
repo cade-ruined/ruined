@@ -24,14 +24,14 @@ test("member Circle is a profile-style room rather than an administrative roster
   assert.match(room, /data-member-circle-room/);
   assert.match(room, /member-profile-dossier/);
   assert.match(room, /<CircleMemberCluster members=\{visibleMembers\}/);
-  assert.match(room, /circle\.members\.slice\(0, 10\)/);
+  assert.doesNotMatch(room, /circle\.members\.slice/);
   assert.match(room, /<CircleRoomCommunication/);
   assert.match(room, /circle\.communication\.chatHref/);
   assert.match(room, /circle\.communication\.chatState/);
   assert.match(room, /Shared with your Circle/);
   assert.match(room, /circle\.resources\.map/);
   assert.match(room, /futureMeetings\[0\]/);
-  assert.match(room, />Shaper</);
+  assert.match(room, />Circle Supporter</);
   assert.match(room, /data-circle-shaper-profile-link/);
   assert.match(room, /\/my\/circle\/people\/\$\{encodeURIComponent\(circle\.shaper\.id\)\}/);
   assert.doesNotMatch(room, /MemberPageHeader/);
@@ -63,10 +63,11 @@ test("Circle Chat and Meet share one restrained, branded room surface", () => {
   assert.doesNotMatch(communication, /border-[btlry]/);
 });
 
-test("the ten-person photo cluster stays data-driven, private, and keyboard accessible", () => {
+test("the photo cluster shows every member and stays private and keyboard accessible", () => {
   assert.match(cluster, /data-circle-member-cluster/);
   assert.match(cluster, /data-circle-member/);
-  assert.match(cluster, /members\.slice\(0, 10\)/);
+  assert.doesNotMatch(cluster, /members\.slice/);
+  assert.match(cluster, /data-expanded/);
   assert.match(cluster, /visibleMembers\.map/);
   assert.match(cluster, /aria-label="Circle members"/);
   assert.match(cluster, /aria-label=\{`View \$\{person\.displayName\}`\}/);
@@ -126,7 +127,7 @@ test("Circle member and Shaper links resolve through the viewer's privacy-safe C
   assert.match(personPage, /getMemberCircle\(authUserId\)/);
   assert.match(personPage, /if \(\(context\.state === "preview" \|\| context\.state === "authenticated"\) && !context\.data\) notFound\(\)/);
   assert.match(personProfile, /data-circle-person-profile/);
-  assert.match(personProfile, /role === "shaper" \? "Shaper"/);
+  assert.match(personProfile, /role === "shaper" \? "Circle Supporter"/);
   assert.match(personProfile, /href=\{`mailto:\$\{person\.email\}`\}/);
   assert.match(personProfile, /href=\{`tel:\$\{person\.phone\}`\}/);
 });

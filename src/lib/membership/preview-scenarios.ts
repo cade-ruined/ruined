@@ -51,10 +51,15 @@ export function memberPreviewSnapshot<T>(fixture: T, scenario: MemberPreviewScen
       : { kind: "account", title: "Review membership", body: access.reason, href: "/my/account" };
   }
   if (!memberCan(access, "learn.read") && "collections" in data) { data.uncollected = []; data.collections = []; }
-  if (!memberCan(access, "circle.read")) {
+  if ("circle" in data) data.revealStatus = identity.foundationsState === "completed" ? "revealed" : "locked";
+  if (!memberCan(access, "circle.read") || identity.foundationsState !== "completed") {
     for (const key of ["circle", "block", "shaper", "nextMeeting", "circleName", "blockName"]) if (key in data) data[key] = null;
     for (const key of ["circleMembers", "members", "meetings", "resources"]) if (key in data) data[key] = [];
     if ("communication" in data) data.communication = { chatHref: null, chatState: "unavailable" };
+    if (data.foundations) {
+      const foundation = data.foundations as { requirements: { activeCircle: { completed: boolean; name: string | null } } };
+      foundation.requirements.activeCircle = { completed: false, name: null };
+    }
     // These fixtures contain public community dates and one private Circle
     // meeting. Keep public dates without implying private-room access.
     for (const key of ["upcomingExperiences", "upcoming", "past"]) {
@@ -93,5 +98,6 @@ export function memberPreviewFoundations(identity: MemberIdentity) {
     }
     state.units = state.units.map((unit) => ({ ...unit, status: "completed" }));
   }
+  if (identity.foundationsState !== "completed") state.activeCircleName = null;
   return state;
 }

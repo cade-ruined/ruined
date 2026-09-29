@@ -46,11 +46,11 @@ function matchingOperator(operators: OperatorAccessEntry[], member: OperatorAcce
 
 const ROLE_COPY: Record<OperatorAccessRole, { label: string; summary: string }> = {
   guide: {
-    label: "Guide",
-    summary: "Supports selected Circles, their members, work, and Experiences.",
+    label: "Legacy Circle support",
+    summary: "Existing scoped access. New service appointments use Circle Supporter.",
   },
   circle_leader: {
-    label: "Shaper",
+    label: "Circle Supporter",
     summary: "Leads selected Circles and the member experience inside them.",
   },
   ops_admin: {
@@ -161,7 +161,7 @@ export default function OperatorAccessManager({
   const [pageNotice, setPageNotice] = useState<Notice>(null);
   const [query, setQuery] = useState(initialExistingOperator?.email ?? "");
   const [roleFilter, setRoleFilter] = useState<"all" | OperatorAccessRole>("all");
-  const [role, setRole] = useState<OperatorAccessRole>("guide");
+  const [role, setRole] = useState<OperatorAccessRole>("ops_admin");
   const [resendEmail, setResendEmail] = useState<string | null>(null);
   const [reviewedMember, setReviewedMember] = useState<OperatorAccessSelectedMember | null>(initialReview);
   const [prefill, setPrefill] = useState<{ displayName: string; email: string } | null>(
@@ -268,7 +268,7 @@ export default function OperatorAccessManager({
   }
 
   function openAddOperator(entry?: OperatorAccessEntry, member?: OperatorAccessSelectedMember) {
-    setRole(entry?.role ?? "guide");
+    setRole(entry?.role ?? "ops_admin");
     setResendEmail(entry?.email ?? null);
     setSelectedCircleIds(entry?.circles.map((circle) => circle.id) ?? []);
     setAdminConfirmed(false);
@@ -352,7 +352,7 @@ export default function OperatorAccessManager({
       });
       formRef.current?.reset();
       setSelectedCircleIds([]);
-      setRole("guide");
+      setRole("ops_admin");
       setAdminConfirmed(false);
       closeAddOperator();
       if (!preview) router.refresh();
@@ -545,8 +545,8 @@ export default function OperatorAccessManager({
           >
             <option value="all">Every responsibility</option>
             <option value="ops_admin">Administrators</option>
-            <option value="circle_leader">Shapers</option>
-            <option value="guide">Guides</option>
+            <option value="circle_leader">Circle Supporters</option>
+            <option value="guide">Legacy Circle support</option>
           </select>
         </label>
       </div>
@@ -713,7 +713,7 @@ export default function OperatorAccessManager({
               <fieldset>
                 <legend className={OPERATOR_LABEL_TEXT_CLASS}>Responsibility</legend>
                 <div className="mt-3 space-y-2">
-                  {(Object.entries(ROLE_COPY) as Array<[OperatorAccessRole, (typeof ROLE_COPY)[OperatorAccessRole]]>).map(([value, copy]) => (
+                  {(Object.entries(ROLE_COPY) as Array<[OperatorAccessRole, (typeof ROLE_COPY)[OperatorAccessRole]]>).filter(([value]) => value === "ops_admin" || (Boolean(resendEmail) && value === role)).map(([value, copy]) => (
                     <label
                       className={`block cursor-pointer rounded-lg border px-3 py-3 transition-colors ${role === value ? "border-black bg-[var(--color-shop)]" : "border-black/15 bg-black/[0.025] hover:border-black/45"}`}
                       key={value}
@@ -724,7 +724,7 @@ export default function OperatorAccessManager({
                           className="mt-1 size-5 accent-black"
                           disabled={pending}
                           name="role"
-                          ref={value === "guide" ? firstRoleRef : undefined}
+                          ref={value === "ops_admin" ? firstRoleRef : undefined}
                           onChange={() => {
                             setRole(value);
                             setSelectedCircleIds([]);
@@ -744,11 +744,15 @@ export default function OperatorAccessManager({
                 </div>
               </fieldset>
 
+              <p className="text-sm leading-relaxed text-black/60">
+                Circle Supporters are appointed from existing members after preparation. <Link className="underline underline-offset-4" href="/ops/leadership">Review Supporter readiness</Link>, then assign them in their Circle.
+              </p>
+
               {role !== "ops_admin" ? (
                 <fieldset>
                   <legend className={OPERATOR_LABEL_TEXT_CLASS}>Circles they help manage</legend>
                   <p className="mt-2 text-sm text-black/50">Choose the Circles they will help run. This does not place them in a Circle as a member.</p>
-                  {role === "circle_leader" ? <p className="mt-2 text-sm text-black/50">Each Circle can have one active or invited Shaper.</p> : null}
+                  {role === "circle_leader" ? <p className="mt-2 text-sm text-black/50">Each Circle can have one active or invited Circle Supporter.</p> : null}
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {circles.map((circle) => {
                       const checked = selectedCircleIds.includes(circle.id);
@@ -773,7 +777,7 @@ export default function OperatorAccessManager({
                   </div>
                   {circles.length === 0 ? (
                     <p className="mt-3 rounded-[4px] bg-[var(--color-poster)]/[0.08] px-4 py-4 text-sm text-[var(--color-poster)]">
-                      A Shaper or Guide needs a forming or active Circle. <Link className="underline underline-offset-4" href="/ops/circles">Open Circles</Link> to create one. Administrators do not need a Circle.
+                      Circle Supporters need a forming or active Circle. <Link className="underline underline-offset-4" href="/ops/circles">Open Circles</Link> to create one. Administrators do not need a Circle.
                     </p>
                   ) : null}
                 </fieldset>

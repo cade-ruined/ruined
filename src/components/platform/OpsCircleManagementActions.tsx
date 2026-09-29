@@ -168,17 +168,17 @@ export default function OpsCircleManagementActions({
 
   async function assignShaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Shaper was not changed." }); return; }
+    if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Circle Supporter was not changed." }); return; }
     if (pending !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const circleId = String(data.get("circleId") ?? "");
     const submittedChoice = String(data.get("shaperAuthUserId") ?? "");
     if (invalidContext || !selectedShaperCircle || circleId !== selectedShaperCircle || !selectedShaper || submittedChoice !== selectedShaper) {
-      setShaperNotice({ kind: "error", text: "Choose a current Circle member or active Shaper again. Nothing was changed." }); return;
+      setShaperNotice({ kind: "error", text: "Choose a current Circle member or active Circle Supporter again. Nothing was changed." }); return;
     }
     if (selectedMember?.requiresShaperAccess && (!memberAccessConfirmed || data.get("grantShaperAccess") !== "on")) {
-      setShaperNotice({ kind: "error", text: "Confirm Shaper access for this Circle before saving. Nothing was changed." }); return;
+      setShaperNotice({ kind: "error", text: "Confirm Circle Supporter access for this Circle before saving. Nothing was changed." }); return;
     }
     const shaperAuthUserId = selectedMember?.authUserId ?? selectedShaper;
     setPending("shaper-assign");
@@ -201,7 +201,7 @@ export default function OpsCircleManagementActions({
                 assignedAt: String(assignment.assignedAt ?? new Date().toISOString()),
                 assignmentId: String(assignment.assignmentId ?? ""),
                 authUserId: shaperAuthUserId,
-                name: shaper?.name ?? "Shaper",
+                name: shaper?.name ?? "Circle Supporter",
               },
             }
           : circle,
@@ -211,10 +211,10 @@ export default function OpsCircleManagementActions({
       setConfirmedShaperMember("");
       setShaperCircleId("");
       setEditingShaper(false);
-      setShaperNotice({ kind: "success", text: `${shaper?.name ?? "Shaper"} is assigned to ${currentCircles.find((circle) => circle.id === circleId)?.name ?? "the selected Circle"}.` });
+      setShaperNotice({ kind: "success", text: `${shaper?.name ?? "Circle Supporter"} is assigned to ${currentCircles.find((circle) => circle.id === circleId)?.name ?? "the selected Circle"}.` });
       router.refresh();
     } catch (error) {
-      setShaperNotice({ kind: "error", text: error instanceof Error ? error.message : "The Shaper could not be assigned." });
+      setShaperNotice({ kind: "error", text: error instanceof Error ? error.message : "The Circle Supporter could not be assigned." });
     } finally {
       setPending(null);
     }
@@ -222,13 +222,13 @@ export default function OpsCircleManagementActions({
 
   async function endShaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Shaper was not changed." }); return; }
+    if (preview) { setShaperNotice({ kind: "success", text: "Preview only. The Circle Supporter was not changed." }); return; }
     if (pending !== null) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const assignmentId = String(data.get("assignmentId") ?? "");
     if (invalidContext || !selectedShaperAssignment || assignmentId !== selectedShaperAssignment) {
-      setShaperNotice({ kind: "error", text: "Choose a current Shaper assignment again. Nothing was changed." }); return;
+      setShaperNotice({ kind: "error", text: "Choose a current Circle Supporter assignment again. Nothing was changed." }); return;
     }
     setPending("shaper-end");
     setShaperNotice(null);
@@ -240,10 +240,10 @@ export default function OpsCircleManagementActions({
       form.reset();
       setShaperAssignmentId("");
       setShaperCircleId(contextKey);
-      setShaperNotice({ kind: "success", text: `The Shaper assignment for ${currentShaperAssignments.find((assignment) => assignment.assignmentId === assignmentId)?.circleName ?? "the selected Circle"} ended. Its history remains recorded.` });
+      setShaperNotice({ kind: "success", text: `The Circle Supporter assignment for ${currentShaperAssignments.find((assignment) => assignment.assignmentId === assignmentId)?.circleName ?? "the selected Circle"} ended. Its history remains recorded.` });
       router.refresh();
     } catch (error) {
-      setShaperNotice({ kind: "error", text: error instanceof Error ? error.message : "The Shaper assignment could not be ended." });
+      setShaperNotice({ kind: "error", text: error instanceof Error ? error.message : "The Circle Supporter assignment could not be ended." });
     } finally {
       setPending(null);
     }
@@ -341,13 +341,13 @@ export default function OpsCircleManagementActions({
 
   const shaperPicker = <>
     <label className={OPERATOR_LABEL_CLASS}>
-      <span className={OPERATOR_LABEL_TEXT_CLASS}>Choose Shaper</span>
+      <span className={OPERATOR_LABEL_TEXT_CLASS}>Choose Circle Supporter</span>
       <select className={OPERATOR_FIELD_CLASS} value={selectedShaper} onChange={(event) => { setShaperId(event.target.value); setConfirmedShaperMember(""); setShaperNotice(null); }} disabled={pending !== null || (!currentCircleMembers.length && !otherShapers.length)} name="shaperAuthUserId" required>
         <option disabled value="">Choose a person</option>
         {currentCircleMembers.length ? <optgroup label="Circle members">
           {currentCircleMembers.map((member) => <option key={member.memberId} value={`member:${member.memberId}`} disabled={Boolean(member.unavailableReason) || !member.authUserId}>{member.name} · {member.email}{member.unavailableReason ? " — unavailable" : ""}</option>)}
         </optgroup> : null}
-        {otherShapers.length ? <optgroup label="Existing Shapers">
+        {otherShapers.length ? <optgroup label="Existing Circle Supporters">
           {otherShapers.map((shaper) => <option key={shaper.authUserId} value={shaper.authUserId}>{shaper.name}</option>)}
         </optgroup> : null}
       </select>
@@ -359,12 +359,12 @@ export default function OpsCircleManagementActions({
   </>;
   const shaperAccessConfirmation = selectedMember?.requiresShaperAccess ? <label className="flex items-start gap-3 text-sm leading-relaxed text-black/75">
     <input className="mt-0.5 size-5 shrink-0 accent-[var(--color-poster)]" type="checkbox" name="grantShaperAccess" checked={memberAccessConfirmed} onChange={(event) => setConfirmedShaperMember(event.target.checked ? selectedMemberKey : "")} required disabled={pending !== null} />
-    <span>Give {selectedMember.name} Shaper access to manage this Circle. This does not grant administrator access.</span>
+    <span>Give {selectedMember.name} Circle Supporter access to manage this Circle. This does not grant administrator access.</span>
   </label> : null;
 
   if (invalidContext) return (
-    <section aria-label="Shaper and Circle resource administration" className="pt-4">
-      <p className="text-sm leading-relaxed text-black/65">This Circle is no longer available for Shaper or resource changes. Nothing has been selected in another Circle.</p>
+    <section aria-label="Circle Supporter and Circle resource administration" className="pt-4">
+      <p className="text-sm leading-relaxed text-black/65">This Circle is no longer available for Circle Supporter or resource changes. Nothing has been selected in another Circle.</p>
       <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/circles">View all Circles</Link>
     </section>
   );
@@ -373,15 +373,16 @@ export default function OpsCircleManagementActions({
   // once, and reveal only the action the operator has asked to perform.
   if (contextCircle && section !== "all") return (
     <section
-      aria-label={section === "shaper" ? "Circle Shaper" : "Circle resources"}
+      aria-label={section === "shaper" ? "Circle Supporter" : "Circle resources"}
       data-operator-pending={pending !== null ? "true" : undefined}
       data-operator-dirty={selectedShaper || selectedResource || selectedPinned || selectedShaperAssignment || selectedResourceAssignment ? "true" : undefined}
       className="operator-bento-card space-y-3"
     >
       {section === "shaper" ? <>
+        <p className="text-sm text-black/65">Approve readiness and arrange temporary coverage in <Link className="underline underline-offset-4" href="/ops/leadership">Leadership</Link>. Only current members of this Circle can serve.</p>
         <header className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="operator-compact-label">Shaper</h3>
+            <h3 className="operator-compact-label">Circle Supporter</h3>
             <p className="mt-1 text-base font-semibold">{contextCircle.shaper?.name ?? "Not assigned"}</p>
           </div>
           {!editingShaper ? <button
@@ -393,25 +394,25 @@ export default function OpsCircleManagementActions({
               setShaperNotice(null);
             }}
             type="button"
-          >{contextCircle.shaper ? "Edit Shaper" : "Assign Shaper"}</button> : null}
+          >{contextCircle.shaper ? "Edit Circle Supporter" : "Assign Circle Supporter"}</button> : null}
         </header>
         {editingShaper ? <div className="space-y-3 rounded-lg bg-black/[0.035] p-4">
           {contextCircle.shaper ? selectedShaperAssignment ? <form className="space-y-3" onSubmit={endShaper}>
             <input name="assignmentId" type="hidden" value={selectedShaperAssignment} />
-            <p className="text-sm text-black/65">Remove {contextCircle.shaper.name} as Shaper? This Circle will have no Shaper until another is assigned. Assignment history is kept.</p>
+            <p className="text-sm text-black/65">Remove {contextCircle.shaper.name} as Circle Supporter? This Circle will have no Circle Supporter until another is assigned. Assignment history is kept.</p>
             <div className="flex flex-wrap gap-3">
               <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} type="submit">{pending === "shaper-end" ? "Removing…" : "Confirm removal"}</button>
               <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => setShaperAssignmentId("")} type="button">Cancel</button>
             </div>
           </form> : <>
-            <p className="text-sm text-black/65">To change the Shaper, remove the current assignment first, then choose someone new.</p>
-            <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} onClick={() => setShaperAssignmentId(contextCircle.shaper?.assignmentId ?? "")} type="button">Remove Shaper</button>
+            <p className="text-sm text-black/65">To change the Circle Supporter, remove the current assignment first, then choose someone new.</p>
+            <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} onClick={() => setShaperAssignmentId(contextCircle.shaper?.assignmentId ?? "")} type="button">Remove Circle Supporter</button>
           </> : <form className="grid gap-3" onSubmit={assignShaper}>
             <input name="circleId" type="hidden" value={selectedShaperCircle} />
             {shaperPicker}
             {shaperAccessConfirmation}
-            {!currentCircleMembers.length && !otherShapers.length ? <p className="text-sm text-black/60">Add a member to this Circle, then choose them here. To bring in someone else, <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite a Shaper</Link> and choose this Circle in the invitation.</p> : null}
-            <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper || !memberAccessConfirmed} type="submit">{pending === "shaper-assign" ? "Assigning…" : "Save Shaper"}</button>
+            {!currentCircleMembers.length && !otherShapers.length ? <p className="text-sm text-black/60">Add a member to this Circle, then choose them here. To bring in someone else, <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite a Circle Supporter</Link> and choose this Circle in the invitation.</p> : null}
+            <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper || !memberAccessConfirmed} type="submit">{pending === "shaper-assign" ? "Assigning…" : "Save Circle Supporter"}</button>
           </form>}
           {!selectedShaperAssignment ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => { setEditingShaper(false); setShaperId(""); }} type="button">Cancel</button> : null}
         </div> : null}
@@ -451,16 +452,16 @@ export default function OpsCircleManagementActions({
   );
 
   return (
-    <section aria-label="Shaper and Circle resource administration" className="grid gap-3 pt-3 lg:grid-cols-2">
+    <section aria-label="Circle Supporter and Circle resource administration" className="grid gap-3 pt-3 lg:grid-cols-2">
       {contextCircle ? <header className="flex flex-wrap items-center justify-between gap-3 lg:col-span-2">
         <p className="text-sm text-black/65">Managing <strong>{contextCircle.name}</strong> only</p>
         <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/circles">View all Circles</Link>
       </header> : null}
       <div>
         <div>
-          <h2 className="ui-heading text-base font-semibold">Shaper</h2>
+          <h2 className="ui-heading text-base font-semibold">Circle Supporter</h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-black/52">
-            The Shaper leads the Circle. Choose a Circle member or an existing Shaper.
+            The Circle Supporter leads the Circle. Choose a Circle member or an existing Circle Supporter.
           </p>
         </div>
         <form className="mt-3 grid gap-3" onSubmit={assignShaper}>
@@ -476,10 +477,10 @@ export default function OpsCircleManagementActions({
           </div>
           {shaperAccessConfirmation}
           <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper || !memberAccessConfirmed} type="submit">
-            {pending === "shaper-assign" ? "Assigning" : "Assign Shaper"}
+            {pending === "shaper-assign" ? "Assigning" : "Assign Circle Supporter"}
           </button>
         </form>
-        {!currentCircleMembers.length && !otherShapers.length ? <p className="mt-3 text-sm text-black/60">Open a Circle to choose one of its members, or <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite someone as a Shaper</Link> and choose their Circle in the invitation. Their assignment is created when they accept; there is no need to assign them again here.</p> : null}
+        {!currentCircleMembers.length && !otherShapers.length ? <p className="mt-3 text-sm text-black/60">Open a Circle to choose one of its members, or <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite someone as a Circle Supporter</Link> and choose their Circle in the invitation. Their assignment is created when they accept; there is no need to assign them again here.</p> : null}
         {currentShaperAssignments.length ? <form className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={endShaper}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Current assignment</span>
@@ -491,9 +492,9 @@ export default function OpsCircleManagementActions({
             </select>
           </label>
           <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || !selectedShaperAssignment} type="submit">
-            {pending === "shaper-end" ? "Removing" : "Remove Shaper"}
+            {pending === "shaper-end" ? "Removing" : "Remove Circle Supporter"}
           </button>
-        </form> : <p className="mt-4 text-sm text-black/60">No Shaper assigned yet.</p>}
+        </form> : <p className="mt-4 text-sm text-black/60">No Circle Supporter assigned yet.</p>}
         <ActionNotice notice={shaperNotice} />
       </div>
 

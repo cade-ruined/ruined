@@ -20,6 +20,7 @@ function load(path, dependencies = {}) {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime") return require(name);
     if (name === "react") return React;
+    if (name === "@/components/platform/CirclePlacementRecommendations") return { __esModule: true, default: () => null };
     if (name === "next/link") return Link;
     if (name === "@/components/platform/OperatorPageFrame") return Frame;
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: "operator-dialog" };

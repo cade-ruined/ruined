@@ -131,7 +131,7 @@ export const PREVIEW_OPS_EXPERIENCE_RECORDS: Record<string, OpsExperienceRecord>
     experienceId: "preview-experience-circle-01",
     history: [
       { actor: "Operator 01", eventType: "experience_created", occurredAt: "2026-08-18T16:00:00.000Z", reason: null },
-      { actor: "Shaper 01", eventType: "experience_published", occurredAt: "2026-08-20T15:00:00.000Z", reason: null },
+      { actor: "Circle Supporter 01", eventType: "experience_published", occurredAt: "2026-08-20T15:00:00.000Z", reason: null },
       { actor: "System", eventType: "registration_waitlisted", occurredAt: "2026-08-27T17:10:00.000Z", reason: "Capacity reached" },
     ],
     kind: "circle_meeting",

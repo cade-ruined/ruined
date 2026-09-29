@@ -174,9 +174,9 @@ export async function saveProfileCardSettings(
         label_ids = excluded.label_ids, version = member_public_cards.version + 1, updated_at = statement_timestamp()
     `;
 }
-async function publicCardRow(token: string): Promise<PublicRow | null> {
+async function publicCardRow(token: string, sql: CardSql = getApplicationDatabase()): Promise<PublicRow | null> {
   if (!MEMBER_CARD_TOKEN.test(token)) return null;
-  const [row] = await getApplicationDatabase()<PublicRow[]>`
+  const [row] = await sql<PublicRow[]>`
     select card.*, member.person_id, member.membership_activated_at,
       profile.display_name, profile.preferred_name, profile.member_tag, profile.avatar_storage_path,
       profile.location_label, profile.bio, profile.building_now, profile.website_url,
@@ -201,6 +201,19 @@ async function publicCardRow(token: string): Promise<PublicRow | null> {
     cancellationEffectiveAt: iso(row.cancellation_effective_at), membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
   };
   return canPublishMemberCard(identity, iso(row.membership_activated_at)) ? row : null;
+}
+/** Server-only scope shared by opt-in Journal publication. Never send this identity to visitors. */
+export async function getPublicMemberCardScope(token: string, sql: CardSql = getApplicationDatabase()) {
+  const row = await publicCardRow(token, sql);
+  return row ? { memberId: row.member_id, token: row.public_token, version: row.version } : null;
+}
+export async function getOwnMemberCardPublicScope(memberId: string, sql: CardSql = getApplicationDatabase()) {
+  const [card] = await sql<{ public_token: string }[]>`
+    select public_token from member_public_cards where member_id = ${memberId}::uuid and public_enabled
+  `;
+  if (!card) return null;
+  const scope = await getPublicMemberCardScope(card.public_token, sql);
+  return scope?.memberId === memberId ? scope : null;
 }
 function publicPortraitPath(row: PublicRow): string | null {
   return row.show_portrait ? ownedMemberPhotoPath(row.member_id, row.avatar_storage_path) : null;

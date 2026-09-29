@@ -294,6 +294,10 @@ export async function createOrReissueOperatorInvitation(input: {
   return sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOpsAdmin(tx, input.actorAuthUserId);
+    if (!(new Set<OperatorAccessRole>(["ops_admin"])).has(input.role)) {
+      throw new OpsAccessRepositoryError("invalid_request", "Invite Circle Supporters as members first, then approve their readiness and start service in Leadership. Guide is a retired title.");
+    }
+
     if (email.length > MAX_EMAIL_LENGTH || !isPlausibleEmail(email)) {
       throw new OpsAccessRepositoryError("invalid_request", "Enter a valid email address.");
     }
@@ -415,7 +419,7 @@ export async function createOrReissueOperatorInvitation(input: {
       if (conflicts[0]) {
         throw new OpsAccessRepositoryError(
           "conflict",
-          `${conflicts[0].circle_name} already has a Shaper or a pending Shaper invitation.`,
+          `${conflicts[0].circle_name} already has a Circle Supporter or a pending Circle Supporter invitation.`,
         );
       }
     }
@@ -636,6 +640,11 @@ export async function updateOperatorAccess(input: {
   restoreAccount: boolean;
   reason: string;
 }): Promise<{ authUserId: string; circles: OperatorAccessCircle[]; role: OperatorAccessRole; status: "active" }> {
+
+  if (input.role === "guide") throw new OpsAccessRepositoryError("invalid_request", "Guide is a retired title. Choose Administrator or manage Circle Supporter service in Leadership.");
+  if (input.role === "circle_leader" && (input.expectedRole !== "circle_leader" || JSON.stringify([...new Set(input.circleIds)].sort()) !== JSON.stringify([...new Set(input.expectedCircleIds)].sort()))) {
+    throw new OpsAccessRepositoryError("invalid_request", "Start or change Circle Supporter service in Leadership after readiness approval.");
+  }
   const rolesAllowed = new Set<OperatorAccessRole>(["ops_admin", "circle_leader", "guide"]);
   const circleIds = [...new Set(input.circleIds)].sort();
   const reason = input.reason.trim();
@@ -716,7 +725,7 @@ export async function updateOperatorAccess(input: {
               and (invitation.expires_at is null or invitation.expires_at > statement_timestamp()))
         ) order by c.name limit 1
       `;
-      if (conflicts[0]) throw new OpsAccessRepositoryError("conflict", `${conflicts[0].name} already has a Shaper or a pending Shaper invitation.`);
+      if (conflicts[0]) throw new OpsAccessRepositoryError("conflict", `${conflicts[0].name} already has a Circle Supporter or a pending Circle Supporter invitation.`);
     }
     await tx`
       update circle_staff_assignments set ended_at = statement_timestamp(), ended_by_auth_user_id = ${input.actorAuthUserId}::uuid, end_reason = ${reason}
@@ -849,6 +858,7 @@ export async function claimPlatformOperatorForViewer(input: {
     `;
     const invitation = invitationRows[0];
     if (!invitation) throw new PlatformAccessDeniedError();
+    if (!(new Set<string>(["ops_admin"])).has(invitation.role_slug)) throw new OpsAccessRepositoryError("forbidden", "This older leadership invitation needs to be replaced. Ask an Administrator for a member invitation; Circle Supporter readiness is approved after joining.");
 
     const circleRows = await tx<Array<{ id: string; name: string }>>`
       select circle_record.id, circle_record.name

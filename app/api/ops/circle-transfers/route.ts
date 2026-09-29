@@ -20,6 +20,8 @@ export async function POST(request: Request) {
   try {
     const transfer = await transferMemberToCircle({
       actorAuthUserId: viewer.authUserId,
+      exceptionReason: typeof body?.exceptionReason === "string" ? body.exceptionReason : undefined,
+      reviewId: typeof body?.reviewId === "string" ? body.reviewId : undefined,
       assignmentId: typeof body?.assignmentId === "string" ? body.assignmentId : "",
       fromCircleId: typeof body?.fromCircleId === "string" ? body.fromCircleId : "",
       memberId: typeof body?.memberId === "string" ? body.memberId : "",

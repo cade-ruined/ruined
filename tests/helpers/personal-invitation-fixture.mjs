@@ -44,6 +44,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
     ${outbox}
   `);
   await db.exec(await source("db/migrations/20260914225359_membership_waitlist.sql"));
+  await db.exec(await source("db/migrations/20260928020000_member_waitlist_joined_at.sql"));
   await db.exec(await source("db/migrations/20260919211000_member_referrals.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260922200000_member_invitation_expiry.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260923000000_personal_member_invitations.sql"));

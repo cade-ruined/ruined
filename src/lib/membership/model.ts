@@ -1,3 +1,4 @@
+import type { MemberBadge } from "./badge-model";
 import type {
   AccountState,
   ArtifactState,
@@ -204,6 +205,7 @@ export type MemberRecordSummary = {
 };
 
 export type MemberHomeSnapshot = {
+  badges?: MemberBadge[];
   access: MemberAccessPolicy;
   announcement: MemberAnnouncementSummary | null;
   artifact: MemberArtifactSummary | null;
@@ -307,6 +309,7 @@ export type MemberOnboardingSnapshot = {
 };
 
 export type MemberCircleSnapshot = {
+  revealStatus?: "locked" | "revealed";
   access: MemberAccessPolicy;
   block: {
     id: string;
@@ -317,6 +320,7 @@ export type MemberCircleSnapshot = {
     id: string;
     name: string;
     status: CircleState;
+    story?: string | null;
   } | null;
   communication: {
     chatHref: string | null;

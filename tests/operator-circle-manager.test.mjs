@@ -20,6 +20,7 @@ function load(path, dependencies = {}, request = noNetwork, environment = {}) {
   new Function("require", "module", "exports", "fetch", "window", "document", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "next/link") return link;
+    if (name === "@/components/platform/CirclePlacementRecommendations" || name === "@/components/platform/CirclePlacementReviewQueue") return { __esModule: true, default: () => null };
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: ({ children }) => children };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "react" || name === "react/jsx-runtime") return require(name);
@@ -144,7 +145,7 @@ function harness(overrides = {}, request = async () => { throw new Error("Unexpe
   function click(label) { return button(label).props.onClick(); }
   function addForm(circle, tree = draw()) {
     const roster = nodes(tree).find((node) => node.props?.id === `roster-${circle.id}`);
-    const result = nodes(roster).find((node) => node.type === "form" && node.props.onSubmit);
+    const result = nodes(roster).find((node) => node.type === "form" && node.props.onSubmit && node.props["data-member-id"]);
     assert.ok(result, `add form for ${circle.name} exists`);
     return result;
   }
@@ -315,7 +316,7 @@ test("Circle workspace renders server-loaded resources only for their matching s
   const second = nodes(changed).find((node) => node.props?.id === `roster-${secondCircle.id}`);
   const loadContext = nodes(second).find((node) => node.props?.href === `/ops/circles?circleId=${secondCircle.id}`);
   assert.ok(loadContext);
-  assert.match(text(loadContext), /Load Shaper, meetings & resources/);
+  assert.match(text(loadContext), /Load Circle Supporter, meetings & resources/);
   const target = new URL(fixture.navigations.at(-1).href, "https://example.test");
   assert.equal(target.searchParams.get("circleId"), secondCircle.id);
   assert.equal(target.searchParams.get("memberQuery"), "A & B");
@@ -366,7 +367,7 @@ test("Circle search and status filters are view-only and keep an already open wo
   const archived = { ...secondCircle, id: "archived", name: "Past Circle", status: "archived", blockName: "Past Block", shaper: null };
   const fixture = harness({ initialCircles: [firstCircle, secondCircle, archived] });
   const cards = () => nodes(fixture.draw()).filter((node) => node.type === "article").map((node) => node.props.id);
-  const query = () => nodes(fixture.draw()).find((node) => node.type === "input" && node.props.placeholder === "Circle, Shaper, or Block");
+  const query = () => nodes(fixture.draw()).find((node) => node.type === "input" && node.props.placeholder === "Circle, Circle Supporter, or Block");
   const filter = () => nodes(fixture.draw()).find((node) => node.type === "select" && node.props.value === "current");
   assert.deepEqual(cards(), [`circle-${firstCircle.id}`, `circle-${secondCircle.id}`]);
   query().props.onChange({ target: { value: "shaper one" } });
@@ -414,7 +415,7 @@ test("search results are visible people with direct Add actions, never hidden in
   const roster = byId(page, `roster-${firstCircle.id}`);
   assert.equal(elements(roster).some((node) => node.tagName === "select"), false);
   const resultList = elements(roster).find((node) => attr(node, "aria-label") === `Member results for ${firstCircle.name}`);
-  assert.match(visibleText(resultList), /New Member.*new@example.test.*Add to Circle/s);
+  assert.match(visibleText(resultList), /New Member.*new@example.test.*Approve placement/s);
   const action = elements(resultList).find((node) => node.tagName === "button");
   assert.equal(attr(action, "disabled"), undefined);
   assert.equal(attr(action, "aria-label"), `Add ${candidate.name} to ${firstCircle.name}`);
@@ -713,8 +714,8 @@ test("roster Move requires choosing another Circle, then posts its exact current
   resolve(ok(movedResponse));
   await moving;
   assert.equal(nodes(circleRoster(fixture, firstCircle)).some((node) => node.type === "li" && node.key === "101"), false);
-  assert.match(text(namedCircle(fixture, firstCircle)), /0\s*\/\s*10 members/);
-  assert.match(text(namedCircle(fixture, secondCircle)), /2\s*\/\s*10 members/);
+  assert.match(text(namedCircle(fixture, firstCircle)), /0 people · target 10/);
+  assert.match(text(namedCircle(fixture, secondCircle)), /2 people · target 10/);
   assert.match(text(fixture.draw()), /First Member moved from Circle 01 to Circle 02/);
   fixture.open(secondCircle);
   assert.ok(nodes(circleRoster(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"));
@@ -756,7 +757,7 @@ test("failed, ambiguous, or mismatched transfer results keep the original roster
 });
 
 test("transfer blockers have direct next steps and no available destination means no request", async () => {
-  for (const change of [{ activeMembers: 10 }, { status: "archived" }, { status: "completed" }]) {
+  for (const change of [{ status: "archived" }, { status: "completed" }]) {
     const fixture = moveFixture({ initialCircles: [firstCircle, { ...secondCircle, ...change }] });
     fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
     assert.equal(fixture.button("Confirm move").props.disabled, true);
@@ -784,7 +785,7 @@ test("transfer blockers have direct next steps and no available destination mean
 
 test("the guarded Create Circle link preserves modified-click navigation without closing this workspace", () => {
   for (const modifiers of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
-    const fixture = moveFixture({ initialCircles: [firstCircle, { ...secondCircle, activeMembers: 10 }] });
+    const fixture = moveFixture({ initialCircles: [firstCircle, { ...secondCircle, status: "archived" }] });
     fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
     const createLink = nodes(fixture.draw()).find((node) => node.type === link.default && text(node) === "Create a Circle");
     assert.ok(createLink);
@@ -798,7 +799,7 @@ test("the guarded Create Circle link preserves modified-click navigation without
   }
 });
 
-test("changed assignment or newly full destination invalidates transfer before submitting", async () => {
+test("changed assignment or newly closed destination invalidates transfer before submitting", async () => {
   const fixture = moveFixture();
   fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
   selectDestination(fixture);
@@ -808,7 +809,7 @@ test("changed assignment or newly full destination invalidates transfer before s
   const full = moveFixture();
   full.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
   selectDestination(full);
-  full.update({ initialCircles: [firstCircle, { ...secondCircle, activeMembers: 10 }] });
+  full.update({ initialCircles: [firstCircle, { ...secondCircle, status: "archived" }] });
   assert.equal(full.button("Confirm move").props.disabled, true);
   await full.click("Confirm move");
   assert.deepEqual(full.calls, []);

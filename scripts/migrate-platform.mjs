@@ -55,6 +55,10 @@ const migrations = [
   "../db/migrations/20260926000000_member_number_zero.sql",
   "../db/migrations/20260927000000_timeline_entry_month.sql",
   "../db/migrations/20260928000000_unified_member_journal.sql",
+  "../db/migrations/20260928010000_member_journal_visibility.sql",
+  "../db/migrations/20260928020000_member_waitlist_joined_at.sql",
+  "../db/migrations/20260929000000_member_badges.sql",
+  "../db/migrations/20260929010000_early_cohort_badges.sql",
   "../db/migrations/20260929000000_public_member_signup.sql",
   "../db/migrations/20260929001000_membership_checkout_plans.sql",
   "../db/migrations/20260929002000_ruined_direct_invitations.sql",
@@ -65,6 +69,10 @@ const migrations = [
   "../db/migrations/20260929007000_membership_checkout_commercial_consent.sql",
   "../db/migrations/20260929008000_membership_cancellation_quotes.sql",
   "../db/migrations/20260929009000_membership_commercial_renewal_notices.sql",
+  "../db/migrations/20260930100000_supporter_service.sql",
+  "../db/migrations/20260930101000_circle_placement.sql",
+  "../db/migrations/20260930102000_circle_reveal.sql",
+  "../db/migrations/20260930103000_leadership_terminology.sql",
   "../db/migrations/20260930110000_member_payment_methods.sql",
 ];
 

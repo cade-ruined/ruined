@@ -367,6 +367,7 @@ async function resolveCalendarAttendees(
        and registration.person_id = member.person_id
       left join circle_member_assignments circle_assignment
         on circle_assignment.member_id = member.id
+       and lifecycle.foundations_state = 'completed'
        and circle_assignment.ended_at is null
       left join block_circle_assignments block_assignment
         on block_assignment.circle_id = circle_assignment.circle_id

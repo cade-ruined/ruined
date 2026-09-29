@@ -15,6 +15,8 @@ export const dynamic = "force-dynamic";
 type CircleAssignmentRequestBody = {
   circleId?: unknown;
   memberId?: unknown;
+  exceptionReason?: unknown;
+  reviewId?: unknown;
 };
 
 function json(body: unknown, status = 200) {
@@ -59,6 +61,8 @@ export async function POST(request: Request) {
       actorAuthUserId: viewer.authUserId,
       circleId,
       memberId,
+      exceptionReason: typeof body?.exceptionReason === "string" ? body.exceptionReason : undefined,
+      reviewId: typeof body?.reviewId === "string" ? body.reviewId : undefined,
     });
     if (assignment.created) {
       try {

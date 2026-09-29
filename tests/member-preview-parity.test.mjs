@@ -81,3 +81,26 @@ test("scenario endpoint is unavailable in production and never changes real role
   assert.doesNotMatch(route, /getApplicationDatabase|signInWithOtp|billing_state|platform_role_grants/);
   assert.equal(scenarios.memberPreviewScenario("ops_admin"), "foundations");
 });
+
+
+test("Foundations preview conceals the same Circle identity and links as the connected reveal gate", () => {
+  for (const scenario of ["foundations", "complimentary"]) {
+    const circle = scenarios.memberPreviewSnapshot(preview.PREVIEW_MEMBER_CIRCLE, scenario);
+    const home = scenarios.memberPreviewSnapshot(preview.PREVIEW_MEMBER_HOME, scenario);
+    assert.equal(circle.revealStatus, "locked");
+    assert.equal(circle.circle, null);
+    assert.equal(circle.shaper, null);
+    assert.deepEqual(circle.members, []);
+    assert.deepEqual(circle.meetings, []);
+    assert.deepEqual(circle.resources, []);
+    assert.equal(circle.communication.chatHref, null);
+    assert.equal(home.foundations.requirements.activeCircle.name, null);
+    assert.equal(scenarios.memberPreviewFoundations(scenarios.memberPreviewIdentity(scenario)).activeCircleName, null);
+  }
+  for (const scenario of ["active", "operator"]) {
+    const circle = scenarios.memberPreviewSnapshot(preview.PREVIEW_MEMBER_CIRCLE, scenario);
+    assert.equal(circle.revealStatus, "revealed");
+    assert.ok(circle.circle);
+    assert.ok(circle.members.length);
+  }
+});

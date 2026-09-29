@@ -171,7 +171,7 @@ export default function OpsSection({
             <OperatorEmptyState
               actionHref={actions ? "#create-circle" : "/ops/members?filter=unassigned"}
               actionLabel={actions ? "Create first Circle" : "View unplaced members"}
-              detail="A Circle holds up to ten members, their Shaper, shared resources, and communication link."
+              detail="A Circle holds up to ten members, their Circle Supporter, shared resources, and communication link."
               eyebrow="Start here"
               title="Build the first Circle."
             />

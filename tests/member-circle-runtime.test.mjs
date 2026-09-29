@@ -26,7 +26,7 @@ async function loadModule(path, dependencies) {
   return loadedModule.exports;
 }
 
-async function fixture() {
+async function fixture({ revealed = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const pg = new PGlite();
   // Read paths use the real SQL against a small isolated relational fixture.
@@ -37,12 +37,12 @@ async function fixture() {
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
     create table ruined_members(id uuid primary key, person_id uuid, deleted_at timestamptz);
-    create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'in_progress', program_state text default 'onboarding', standing_state text default 'active');
+    create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'completed', program_state text default 'onboarding', standing_state text default 'active');
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, timezone text, location_label text, bio text, building_now text, updated_at timestamptz);
     create table person_private_profiles(person_id uuid primary key, legal_name text, mobile_e164 text, birth_date date, default_fulfillment_address jsonb, apparel_sizing jsonb, accessibility_notes text, updated_at timestamptz);
     create table person_email_addresses(person_id uuid, email text, is_primary boolean, verification_state text, retired_at timestamptz, created_at timestamptz default now());
     create table member_directory_preferences(member_id uuid primary key, directory_status text default 'hidden', avatar_visible boolean default true, location_visible boolean default false, bio_visible boolean default false, building_visible boolean default false, email_scope text default 'none', phone_scope text default 'none', version integer default 1, updated_at timestamptz);
-    create table circles(id uuid primary key, name text, status text, activated_at timestamptz, ends_at timestamptz);
+    create table circles(id uuid primary key, name text, status text, activated_at timestamptz, ends_at timestamptz, story text);
     create table circle_member_assignments(id bigint generated always as identity primary key, member_id uuid, circle_id uuid, assigned_at timestamptz default now(), ended_at timestamptz);
     create table circle_staff_assignments(id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, circle_id uuid, assigned_at timestamptz default now(), ended_at timestamptz);
     create table block_circle_assignments(circle_id uuid, block_id uuid, ended_at timestamptz);
@@ -70,7 +70,7 @@ async function fixture() {
   await pg.query("insert into person_private_profiles(person_id,mobile_e164) values($1,'+12025550123')", [ids.shaperPerson]);
   await pg.query("insert into person_email_addresses(person_id,email,is_primary,verification_state) values($1,'shaper@example.test',true,'verified')", [ids.shaperPerson]);
   await pg.query("insert into member_directory_preferences(member_id) values($1),($2)", [ids.member, ids.shaperMember]);
-  await pg.query("insert into circles values($1,'Circle One','active',now()-interval '1 day',null),($2,'Other Circle','active',now()-interval '1 day',null)", [ids.circle, ids.otherCircle]);
+  await pg.query("insert into circles(id,name,status,activated_at,ends_at) values($1,'Circle One','active',now()-interval '1 day',null),($2,'Other Circle','active',now()-interval '1 day',null)", [ids.circle, ids.otherCircle]);
   await pg.query("insert into circle_member_assignments(member_id,circle_id) values($1,$2)", [ids.member, ids.circle]);
   await pg.query("insert into circle_staff_assignments(auth_user_id,role_slug,circle_id) values($1,'circle_leader',$2)", [ids.shaperAuth, ids.circle]);
   for (const [id, circle, visibility] of [[ids.event, ids.circle, "circle"], [ids.otherEvent, ids.otherCircle, "circle"], [ids.allEvent, null, "all_members"]]) {
@@ -91,7 +91,8 @@ async function fixture() {
   await pg.exec(await readFile(new URL("../db/migrations/20260917200000_public_member_cards.sql", import.meta.url), "utf8"));
   await pg.exec(await readFile(new URL("../db/migrations/20260919210000_member_profile_card_sync.sql", import.meta.url), "utf8"));
   await pg.exec(await readFile(new URL("../db/migrations/20260920200000_member_tags.sql", import.meta.url), "utf8"));
-  const identity = { account_state: "active", administrative_onboarding_state: "completed", auth_user_id: ids.auth, billing_state: "active", cancellation_effective_at: null, email: "member@example.test", foundations_state: "in_progress", member_id: ids.member, person_id: ids.person, program_state: "onboarding", standing_state: "active" };
+  const identity = { account_state: "active", administrative_onboarding_state: "completed", auth_user_id: ids.auth, billing_state: "active", cancellation_effective_at: null, email: "member@example.test", foundations_state: revealed ? "completed" : "in_progress", member_id: ids.member, person_id: ids.person, program_state: "onboarding", standing_state: "active" };
+  if (!revealed) await pg.exec("update member_lifecycle set foundations_state='in_progress'");
   const makeDb = (engine) => {
     // postgres-js tags are lazy, composable query objects. A nested tag is SQL,
     // not a value parameter or an independently executed partial statement.
@@ -137,6 +138,7 @@ async function fixture() {
   const cardModel = await loadModule("src/lib/membership/public-card-model.ts", {});
   let cardRepository;
   const repository = await loadModule("src/lib/membership/repository.ts", {
+    "./badge-repository": { getMemberBadges: async () => [] },
     "./public-card-model": cardModel,
     "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },
     "libphonenumber-js/min": require("libphonenumber-js/min"),
@@ -249,7 +251,7 @@ test("an administrator assigned as Shaper appears without a second role grant an
   } finally { await pg.close(); }
 });
 
-test("onboarding members can join and register for only their active Circle gathering", async () => {
+test("revealed members with a legacy onboarding projection can still join their active Circle gathering", async () => {
   const { pg, identity, repository } = await fixture();
   try {
     assert.equal((await repository.getMemberExperiences(ids.auth)).upcoming.length, 1);
@@ -273,7 +275,7 @@ test("onboarding members can join and register for only their active Circle gath
   } finally { await pg.close(); }
 });
 
-test("onboarding opens explicitly assigned Circle resources without opening the general Academy", async () => {
+test("revealed members retain explicitly assigned Circle resources within existing access policy", async () => {
   const { pg, identity, repository } = await fixture();
   try {
     assert.deepEqual((await repository.getMemberLearning(ids.auth)).collections, []);
@@ -454,5 +456,38 @@ test("new profile creation requires a tag and legacy names never become public l
     assert.equal(created.directory.memberTag, "new_member");
     assert.equal(created.directory.preferredName, null);
     assert.equal(created.directory.displayName, "Chosen public name");
+  } finally { await pg.close(); }
+});
+
+
+test("approved placement reveals no Circle data or direct links until Foundations completes", async () => {
+  const { pg, identity, repository } = await fixture({ revealed: false });
+  try {
+    await pg.query("update circles set story='A private Circle story' where id=$1", [ids.circle]);
+    await pg.query("insert into integration_entity_links values('google','circle',$1,'chat_space',false,$2)", [ids.circle, JSON.stringify({ url: "https://chat.google.com/room/private" })]);
+    const hidden = await repository.getMemberCircle(ids.auth);
+    assert.equal(hidden.revealStatus, "locked");
+    assert.equal(hidden.circle, null);
+    assert.equal(hidden.shaper, null);
+    assert.equal(hidden.block, null);
+    for (const field of ["members", "meetings", "resources"]) assert.deepEqual(hidden[field], []);
+    assert.equal(hidden.communication.chatHref, null);
+    assert.doesNotMatch(JSON.stringify(hidden), /Circle One|private Circle story|shaper@example|Private Circle content/);
+    assert.equal(await repository.getMemberCircleChatDestination(ids.auth), null);
+    assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.event), null);
+    assert.equal((await repository.getMemberExperiences(ids.auth)).upcoming.length, 0);
+    assert.equal(await repository.getMemberLearningResource(ids.auth, "circle-notes"), null);
+    await assert.rejects(() => repository.setMemberExperienceRegistration(ids.auth, ids.event, "register"), repository.MembershipAccessDeniedError);
+    identity.foundations_state = "completed";
+    await pg.exec("update member_lifecycle set foundations_state='completed'");
+    const visible = await repository.getMemberCircle(ids.auth);
+    assert.equal(visible.revealStatus, "revealed");
+    assert.equal(visible.circle.name, "Circle One");
+    assert.equal(visible.circle.story, "A private Circle story");
+    assert.ok(visible.members.length);
+    assert.ok(visible.meetings.length);
+    assert.ok(await repository.getMemberCircleChatDestination(ids.auth));
+    assert.ok(await repository.getMemberLearningResource(ids.auth, "circle-notes"));
+    assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.otherEvent), null);
   } finally { await pg.close(); }
 });

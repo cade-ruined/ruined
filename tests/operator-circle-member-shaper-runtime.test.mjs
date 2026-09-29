@@ -44,11 +44,11 @@ async function fixture(t) {
     create table platform_users (auth_user_id uuid primary key, email_normalized text unique, status text, person_id uuid, member_id uuid unique);
     create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid references platform_users, role_slug text, revoked_at timestamptz, revoke_reason text, granted_by_auth_user_id uuid, granted_at timestamptz default now());
     create unique index active_grant on platform_role_grants(auth_user_id,role_slug) where revoked_at is null;
-    create table member_lifecycle (member_id uuid primary key references ruined_members, account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', program_state text default 'active', standing_state text default 'active', cancellation_effective_at timestamptz);
+    create table member_lifecycle (member_id uuid primary key references ruined_members, account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', program_state text default 'active',foundations_state text default 'completed', standing_state text default 'active', cancellation_effective_at timestamptz);
     create table person_profiles (person_id uuid primary key, preferred_name text, display_name text);
     create table user_profiles (auth_user_id uuid primary key, display_name text);
-    create table circles (id uuid primary key, name text, status text, capacity integer default 10, slug text, created_at timestamptz default now());
-    create table circle_member_assignments (id bigint generated always as identity primary key, member_id uuid references ruined_members, circle_id uuid references circles, assigned_at timestamptz default now(), ended_at timestamptz);
+    create table circles (id uuid primary key, name text, status text, capacity integer default 10, story text, slug text, created_at timestamptz default now());
+    create table circle_member_assignments (id bigint generated always as identity primary key, member_id uuid references ruined_members, circle_id uuid references circles, assigned_at timestamptz default now(), ended_at timestamptz, ended_by_auth_user_id uuid);
     create unique index current_member_circle on circle_member_assignments(member_id) where ended_at is null;
     create table circle_staff_assignments (id bigint generated always as identity primary key, circle_id uuid references circles, auth_user_id uuid references platform_users, role_slug text, assigned_by_auth_user_id uuid, assigned_at timestamptz default now(), ended_at timestamptz, ended_by_auth_user_id uuid, end_reason text);
     create unique index active_scope on circle_staff_assignments(circle_id,auth_user_id,role_slug) where ended_at is null;
@@ -74,6 +74,12 @@ async function fixture(t) {
   await db.query("insert into person_profiles values ($1,'Member Name','Full Member Name')", [ids.person]);
   await db.query("insert into circles(id,name,status,slug) values ($1,'Circle A','active','circle-a'),($2,'Circle B','forming','circle-b')", [ids.a, ids.b]);
   await db.query("insert into circle_member_assignments(member_id,circle_id) values ($1,$2)", [ids.member, ids.a]);
+  await db.exec(await readFile(new URL("../db/migrations/20260930100000_supporter_service.sql", import.meta.url), "utf8"));
+  await db.query("insert into leadership_responsibility_grants(auth_user_id,capability,granted_by_auth_user_id,reason) values($1,'supporter_readiness',$1,'Test readiness coordinator')", [ids.admin]);
+  await db.query("insert into supporter_readiness_approvals(auth_user_id,circle_id,approved_by_auth_user_id,reason) values($1,$2,$3,'Prepared and approved')", [ids.account, ids.a, ids.admin]);
+  const placementMigration = await readFile(new URL("../db/migrations/20260930101000_circle_placement.sql", import.meta.url), "utf8");
+  const countStart = placementMigration.indexOf("create or replace function private.ruined_circle_participant_count(");
+  await db.exec(placementMigration.slice(countStart, placementMigration.indexOf("$$;", countStart) + 3));
   const queries = []; const fail = { audit: false };
   function wrap(engine) {
     const sql = async (strings, ...values) => {
@@ -126,9 +132,9 @@ test("selected Circle candidates come from its complete current roster, not dire
   assert.equal((await f.options()).circleMembers.some((member) => member.memberId === ids.member), false);
 });
 
-test("confirmed ordinary member assignment atomically grants only Shaper access, preserves membership, and is idempotent", async (t) => {
+test("confirmed ordinary member assignment atomically grants only Circle Supporter access, preserves membership, and is idempotent", async (t) => {
   const f = await fixture(t); const before = await f.snapshot();
-  await assert.rejects(f.assign({ grantShaperAccess: false }), /Confirm granting Shaper access/);
+  await assert.rejects(f.assign({ grantShaperAccess: false }), /Confirm granting Circle Supporter access/);
   assert.deepEqual(await f.snapshot(), before);
   const result = await f.assign({ circleId: ids.a.toUpperCase() });
   assert.equal(result.authUserId, ids.account); assert.equal(result.memberId, ids.member);
@@ -147,7 +153,7 @@ test("confirmed ordinary member assignment atomically grants only Shaper access,
   assert.equal(audits[1].after_snapshot.role, "circle_leader");
 });
 
-test("active Administrator member becomes the visible Shaper without any role changes or self-payment fiction", async (t) => {
+test("active Administrator member becomes the visible Circle Supporter without any role changes or self-payment fiction", async (t) => {
   const f = await fixture(t);
   await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values ($1,'ops_admin')", [ids.account]);
   await f.db.query("update ruined_members set membership_state='pending' where id=$1", [ids.member]);
@@ -162,15 +168,14 @@ test("active Administrator member becomes the visible Shaper without any role ch
   assert.equal(circles.find((circle) => circle.id === ids.a).shaper.name, "Member Name");
 });
 
-test("existing Shaper member and legacy existing-operator path preserve grants and retry safely", async (t) => {
+test("existing Circle Supporter member and legacy existing-operator path preserve grants and retry safely", async (t) => {
   const f = await fixture(t);
   await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values ($1,'circle_leader')", [ids.account]);
   const before = await f.snapshot(); const result = await f.assign({ grantShaperAccess: undefined });
   assert.equal(result.shaperAccessGranted, false);
   assert.deepEqual((await f.snapshot()).platform_role_grants, before.platform_role_grants);
   const legacy = { actorAuthUserId: ids.admin, circleId: ids.b.toUpperCase(), shaperAuthUserId: ids.other };
-  assert.equal((await f.repository.assignShaperToCircle(legacy)).created, true);
-  assert.equal((await f.repository.assignShaperToCircle(legacy)).created, false);
+  await assert.rejects(f.repository.assignShaperToCircle(legacy), /readiness/);
 });
 
 test("Guide, revoked operator access, disabled accounts, and missing sign-in are explained and never repaired silently", async (t) => {
@@ -215,14 +220,17 @@ test("stale placement, missing onboarding, payment, standing and canonical ident
   before = await f.snapshot(); await assert.rejects(f.assign(), /sign in/); assert.deepEqual(await f.snapshot(), before);
 });
 
-test("competing Shaper and pending Circle invitation leave no partial access grant", async (t) => {
+test("competing Circle Supporter and pending Circle invitation leave no partial access grant", async (t) => {
   const f = await fixture(t);
+  // A legacy assignment can predate readiness rollout and must still block duplicates.
+  await f.db.exec("alter table circle_staff_assignments disable trigger circle_staff_assignments_supporter_readiness");
   await f.db.query("insert into circle_staff_assignments(circle_id,auth_user_id,role_slug) values ($1,$2,'circle_leader')", [ids.a, ids.other]);
-  let before = await f.snapshot(); await assert.rejects(f.assign(), /already has a Shaper/); assert.deepEqual(await f.snapshot(), before);
+  await f.db.exec("alter table circle_staff_assignments enable trigger circle_staff_assignments_supporter_readiness");
+  let before = await f.snapshot(); await assert.rejects(f.assign(), /already has a Circle Supporter/); assert.deepEqual(await f.snapshot(), before);
   await f.db.exec("update circle_staff_assignments set ended_at=now()");
   const invitationId = await f.invite();
-  before = await f.snapshot(); await assert.rejects(f.assign(), /pending Shaper invitation/); assert.deepEqual(await f.snapshot(), before);
-  await assert.rejects(f.repository.assignShaperToCircle({ actorAuthUserId: ids.admin, circleId: ids.a, shaperAuthUserId: ids.other }), /pending Shaper invitation/);
+  before = await f.snapshot(); await assert.rejects(f.assign(), /pending Circle Supporter invitation/); assert.deepEqual(await f.snapshot(), before);
+  await assert.rejects(f.repository.assignShaperToCircle({ actorAuthUserId: ids.admin, circleId: ids.a, shaperAuthUserId: ids.other }), /readiness/);
   await f.db.query("update passwordless_account_invites set revoked_at=now() where id=$1", [invitationId]);
   await f.invite({ expired: true });
   assert.equal((await f.assign()).created, true);

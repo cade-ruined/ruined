@@ -56,9 +56,9 @@ test("the additive migration retires accountability without deleting history or 
   assert.doesNotMatch(migration, /delete from public\.accountability_partner_assignments/);
 });
 
-test("Shaper keeps the stable authorization slug and gains validated append-preserving assignment controls", () => {
+test("Circle Supporter keeps the stable authorization slug and gains validated append-preserving assignment controls", () => {
   assert.match(migration, /where role_slug = 'circle_leader'/);
-  assert.match(migration, /set display_name = 'Shaper'/);
+  assert.match(migration, /set display_name = 'Shaper'/); // Historical migration; current terminology is additive.
   assert.match(migration, /circle_staff_assignments[\s\S]*ended_by_auth_user_id/);
   assert.match(migration, /platform_user\.status = 'active'/);
   assert.match(migration, /role_grant\.role_slug = new\.role_slug/);
@@ -69,7 +69,7 @@ test("Shaper keeps the stable authorization slug and gains validated append-pres
   assert.match(assign, /requireOpsAdmin/);
   assert.match(assign, /role_grant\.role_slug = 'circle_leader'/);
   assert.match(assign, /role_slug = 'circle_leader'/);
-  assert.match(assign, /That Circle already has a Shaper/);
+  assert.match(assign, /That Circle already has a Circle Supporter/);
   assert.match(assign, /insert into circle_staff_assignments/);
   assert.match(assign, /circle\.shaper_assigned/);
 
@@ -112,8 +112,8 @@ test("operator routes and the Circle management surface expose assign and end ac
     assert.match(route, /export async function PATCH/);
     assert.doesNotMatch(route, /export async function DELETE/);
   }
-  assert.match(actions, /Assign Shaper/);
-  assert.match(actions, /Remove Shaper/);
+  assert.match(actions, /Assign Circle Supporter/);
+  assert.match(actions, /Remove Circle Supporter/);
   assert.match(actions, /Remove resource/);
   assert.match(actions, /Add resource/);
   assert.match(actions, /resource\.title\} · v\{resource\.version/);

@@ -3326,3 +3326,14 @@
     transition: none;
   }
 }
+
+.cultureTeachingTabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
+.cultureTeachingTabs button { border: 1px solid currentColor; background: transparent; color: inherit; padding: 0.6rem 0.85rem; font: inherit; font-size: 0.8rem; cursor: pointer; opacity: 0.55; }
+.cultureTeachingTabs button[aria-pressed="true"] { opacity: 1; background: rgba(230,224,208,0.08); }
+.cultureTeachingTabs button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.leadershipTeaching { max-width: 42rem; }
+.leadershipTeaching p, .leadershipTeaching dd { margin: 0.8rem 0; font-size: clamp(0.86rem, 1.1vw, 1rem); line-height: 1.55; }
+.leadershipTeaching dl { margin: 1.5rem 0; display: grid; gap: 1rem; }
+.leadershipTeaching dt { font-weight: 650; }
+.leadershipTeaching dd { margin: 0.25rem 0 0; }
+.leadershipPreparation { border-block: 1px solid rgba(230,224,208,0.2); padding-block: 0.85rem; }

@@ -1004,7 +1004,7 @@ export async function createOpsExperience(input: {
       ) {
         throw new OpsOperatingRepositoryError(
           "forbidden",
-          "A Shaper may create only a meeting for their assigned Circle.",
+          "A Circle Supporter may create only a meeting for their assigned Circle.",
         );
       }
     }
@@ -1103,7 +1103,7 @@ export async function updateOpsExperience(input: {
     if (!access.isAdmin && (draft.circleId !== existing.circle_id || draft.visibility !== "circle")) {
       throw new OpsOperatingRepositoryError(
         "forbidden",
-        "A Shaper cannot move an Experience outside their assigned Circle.",
+        "A Circle Supporter cannot move an Experience outside their assigned Circle.",
       );
     }
     const countRows = await tx<Array<{

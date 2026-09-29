@@ -60,7 +60,7 @@ const renderNavigation = (path, role = "ops_admin", open = true) => render(React
   configuration: connected, operatorRole: role, pathname: path, viewerLabel: "operator@example.test",
 }));
 const sharedRoutes = ["/ops", "/ops/members", "/ops/circles", "/ops/foundations", "/ops/experiences", "/ops/work"];
-const adminRoutes = ["/ops/blocks", "/ops/operators", "/ops/academy", "/ops/artifacts", "/ops/support", "/ops/messages", "/ops/system"];
+const adminRoutes = ["/ops/leadership", "/ops/operators", "/ops/academy", "/ops/artifacts", "/ops/support", "/ops/messages", "/ops/system"];
 
 test("workspace links preserve native link behavior and start the selected page below the fixed header", () => {
   const calls = [];
