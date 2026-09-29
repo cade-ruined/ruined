@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 
 const uuid = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 const self = { auth: uuid(1), person: uuid(2), member: uuid(3) };
@@ -60,6 +61,7 @@ async function fixture() {
   };
   const policy = await load("src/lib/membership/access-policy.ts", {});
   const repository = await load("src/lib/membership/repository.ts", {
+    "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
     "server-only": {},
     "libphonenumber-js/min": {},

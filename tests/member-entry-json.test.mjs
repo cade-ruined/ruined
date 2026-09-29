@@ -1,4 +1,5 @@
 import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -49,6 +50,7 @@ const accessPolicy = await loadModule("src/lib/membership/access-policy.ts", {})
 const memberTags = await loadModule("src/lib/membership/member-tag.ts", {});
 async function loadEntryRepository(database) {
   return loadModule("src/lib/membership/repository.ts", {
+    "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
     "libphonenumber-js/min": require("libphonenumber-js/min"),
     "@/lib/database/server": { getApplicationDatabase: () => database },

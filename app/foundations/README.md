@@ -1,6 +1,13 @@
 # Ruined Foundations
 
-`/foundations` is a 22-moment, full-screen presentation built for a live call.
+`/my/foundations` shows the couch preview until the server-only
+`MEMBERSHIP_FOUNDATIONS_LAUNCHED=true` release flag is explicitly enabled.
+The flag defaults to closed in all environments, independently of membership
+payments. Closed Foundations cannot start, record progress, or complete a Future
+Letter; `/my/foundations/experience` returns to the preview. The old `/foundations`
+URL redirects through the same member access and release gates.
+
+When launched, eligible members can open the 22-moment, full-screen presentation.
 It uses native scroll/swipe snapping, presenter controls, chapter navigation,
 keyboard shortcuts, editable in-memory reflections, and reduced-motion
 alternatives. Reflection writing is never persisted or transmitted.

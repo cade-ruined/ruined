@@ -6,6 +6,7 @@ import ts from "typescript";
 import { Parameter, types } from "../../node_modules/postgres/src/types.js";
 import { loadPGliteForSchemaChecks } from "../../scripts/check-support-schema.mjs";
 import { installOperatorFundingFunctions } from "./operator-funding-fixture.mjs";
+import { loadFoundationsAvailability } from "./foundations-availability-fixture.mjs";
 
 export const timelineIds = {
   member: "11111111-1111-4111-8111-111111111111",
@@ -137,6 +138,8 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
   };
   const access = await loadTypescript("src/lib/membership/access-policy.ts");
   const repository = await loadTypescript("src/lib/membership/repository.ts", {
+    // These persistence scenarios include post-launch Foundations completion.
+    "@/lib/foundations/availability": loadFoundationsAvailability({ MEMBERSHIP_FOUNDATIONS_LAUNCHED: "true" }),
     "server-only": {}, "libphonenumber-js/min": {},
     "./badge-repository": { getMemberBadges: async () => [] },
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },

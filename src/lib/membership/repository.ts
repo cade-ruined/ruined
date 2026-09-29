@@ -6,6 +6,7 @@ import parsePhoneNumber from "libphonenumber-js/min";
 import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
+import { requireFoundationsLaunched } from "@/lib/foundations/availability";
 import {
   mergeUpcomingPublicMemberExperiences,
   publicEventDetailHref,
@@ -3353,6 +3354,7 @@ export async function completeMemberFoundationRequirement(
   authUserId: string,
   requirement: "future_letter" | "timeline",
 ): Promise<MemberFoundationRequirements> {
+  if (requirement === "future_letter") requireFoundationsLaunched();
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   if (!memberCan(access, "foundations.write")) throw new MembershipAccessDeniedError();

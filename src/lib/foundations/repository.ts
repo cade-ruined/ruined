@@ -11,6 +11,7 @@ import type {
 } from "@/lib/foundations/model";
 import type { PlatformViewer } from "@/lib/platform/model";
 import { getApplicationDatabase } from "@/lib/database/server";
+import { requireFoundationsLaunched } from "@/lib/foundations/availability";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
@@ -273,6 +274,7 @@ async function unitRows(
 export async function getMemberFoundationsState(
   authUserId: string,
 ): Promise<MemberFoundationsState | null> {
+  requireFoundationsLaunched();
   const identity = await getMemberIdentity(authUserId);
   if (!identity || !memberCan(deriveMemberAccessPolicy(identity), "foundations.write")) {
     throw new FoundationAccessError();
@@ -424,6 +426,7 @@ export async function getMemberFoundationsState(
 export async function startMemberFoundations(
   viewer: PlatformViewer,
 ): Promise<MemberFoundationsState> {
+  requireFoundationsLaunched();
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     const member = await lockMemberForFoundations(tx, viewer);
@@ -518,6 +521,7 @@ export async function recordMemberFoundationProgress(
   viewer: PlatformViewer,
   momentId: string,
 ): Promise<MemberFoundationsState> {
+  requireFoundationsLaunched();
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     const member = await lockMemberForFoundations(tx, viewer);
@@ -630,6 +634,7 @@ export function isCircleCompletionConstraint(error: unknown): boolean {
 export async function completeMemberFoundations(
   viewer: PlatformViewer,
 ): Promise<MemberFoundationsState> {
+  requireFoundationsLaunched();
   const sql = getApplicationDatabase();
   try {
     await sql.begin(async (tx) => {

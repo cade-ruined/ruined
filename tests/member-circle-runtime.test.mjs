@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -138,6 +139,7 @@ async function fixture({ revealed = true } = {}) {
   const cardModel = await loadModule("src/lib/membership/public-card-model.ts", {});
   let cardRepository;
   const repository = await loadModule("src/lib/membership/repository.ts", {
+    "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
     "./public-card-model": cardModel,
     "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },

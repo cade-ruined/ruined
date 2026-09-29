@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import PresentationShell from "@/components/foundations/PresentationShell";
+import { redirect } from "next/navigation";
 import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {
@@ -11,5 +11,5 @@ export const metadata: Metadata = {
 };
 
 export default function FoundationsPage() {
-  return <PresentationShell />;
+  redirect("/my/foundations");
 }

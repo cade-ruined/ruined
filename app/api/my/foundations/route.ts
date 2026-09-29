@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { FoundationsNotLaunchedError, isFoundationsLaunched } from "@/lib/foundations/availability";
 import {
   CircleRequiredForFoundationCompletionError,
   completeMemberFoundations,
@@ -51,6 +52,12 @@ function isFoundationAction(value: unknown): value is FoundationAction {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof FoundationsNotLaunchedError) {
+    return NextResponse.json(
+      { code: "foundations_not_launched", error: error.message },
+      { status: 423 },
+    );
+  }
   if (error instanceof MembershipConflictError) {
     return NextResponse.json(
       { code: "requirement_conflict", error: error.message },
@@ -105,6 +112,13 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { code: "origin_denied", error: "Request origin is not allowed." },
       { status: 403 },
+    );
+  }
+
+  if (!isFoundationsLaunched()) {
+    return NextResponse.json(
+      { code: "foundations_not_launched", error: "Foundations is not open yet." },
+      { status: 423 },
     );
   }
 
