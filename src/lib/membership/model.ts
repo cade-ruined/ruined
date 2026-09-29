@@ -309,6 +309,7 @@ export type MemberOnboardingSnapshot = {
 };
 
 export type MemberCircleSnapshot = {
+  revealStatus?: "locked" | "revealed";
   access: MemberAccessPolicy;
   block: {
     id: string;
@@ -319,6 +320,7 @@ export type MemberCircleSnapshot = {
     id: string;
     name: string;
     status: CircleState;
+    story?: string | null;
   } | null;
   communication: {
     chatHref: string | null;

@@ -219,6 +219,9 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     await db.exec("update member_lifecycle set billing_state='pending',foundations_state='in_progress',program_state='onboarding'");
     assert.equal(await snapshotEligible(), false);
     await db.query("insert into platform_role_grants(auth_user_id,role_slug) values ($1,'guide')", [ids.auth]);
+    assert.equal(await snapshotEligible(), false); assert.equal(await authorized(), false);
+    assert.equal((await record()).calendar.attendeeCount, 0);
+    await db.exec("update member_lifecycle set foundations_state='completed'");
     assert.equal(await snapshotEligible(), true); assert.equal(await authorized(), true);
     assert.equal((await record()).calendar.attendeeCount, 1);
     const global = { visibility: "all_members", circle_id: null, block_id: null };
@@ -231,6 +234,9 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     await reset();
     await db.exec("update member_lifecycle set billing_state='pending',foundations_state='in_progress',program_state='onboarding'");
     await db.query("insert into member_complimentary_grants(member_id) values ($1)", [ids.member]);
+    assert.equal(await snapshotEligible(), false); assert.equal(await authorized(), false);
+    assert.equal((await record()).calendar.attendeeCount, 0);
+    await db.exec("update member_lifecycle set foundations_state='completed'");
     assert.equal(await snapshotEligible(), true); assert.equal(await authorized(), true);
     assert.equal((await record()).calendar.attendeeCount, 1);
     const global = { visibility: "all_members", circle_id: null, block_id: null };

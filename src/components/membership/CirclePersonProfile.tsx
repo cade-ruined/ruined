@@ -40,7 +40,7 @@ export default function CirclePersonProfile({
 
         <article className="min-w-0">
           <p className="[font-family:var(--font-cadehandy2)] text-[1.55rem] leading-none text-[var(--member-red)] sm:text-[1.8rem]">
-            {person.isSelf ? "You" : role === "shaper" ? "Shaper" : "Circle member"}
+            {person.isSelf ? "You" : role === "shaper" ? "Circle Supporter" : "Circle member"}
           </p>
           <h1 className="ui-heading mt-2 break-words text-[clamp(2.7rem,7vw,6.8rem)] font-black uppercase leading-[0.8] tracking-[-0.06em] text-[#15120f]">
             {person.displayName}

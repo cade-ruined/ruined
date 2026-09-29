@@ -61,8 +61,8 @@ export default function OperatorMemberSetup({ record }: { record: OpsMemberRecor
         <details className="mt-1">
           <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-black/55">How operator access works</summary>
         <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm leading-relaxed text-black/65">
-          <li>Choose Administrator, Shaper, or Guide.</li>
-          <li>Choose Circle access for a Shaper or Guide, then send the invitation.</li>
+          <li>Choose Administrator, Circle Supporter, or Guide.</li>
+          <li>Choose Circle access for a Circle Supporter or Guide, then send the invitation.</li>
           <li>The person opens the sign-in page and, if asked, verifies the newest code. Check for Active access.</li>
         </ol>
         </details>

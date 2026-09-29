@@ -28,7 +28,7 @@ async function fixture(t) {
     create function private.ruined_member_has_complimentary_funding(uuid) returns boolean language sql as 'select false';
     create table ruined_members(id uuid primary key,person_id uuid,deleted_at timestamptz);
     create table member_lifecycle(member_id uuid,account_state text default 'active',billing_state text default 'active',
-      administrative_onboarding_state text default 'completed',standing_state text default 'active',cancellation_effective_at timestamptz,current_progression_level_slug text default 'member');
+      administrative_onboarding_state text default 'completed',foundations_state text default 'completed',standing_state text default 'active',cancellation_effective_at timestamptz,current_progression_level_slug text default 'member');
     create table platform_users(auth_user_id uuid,person_id uuid,status text default 'active');
     create table platform_role_grants(auth_user_id uuid,role_slug text default 'member',revoked_at timestamptz);
     create table person_profiles(person_id uuid,preferred_name text,display_name text,avatar_storage_path text,timezone text,location_label text,bio text,building_now text,updated_at timestamptz);

@@ -67,7 +67,7 @@ function errorResponse(error: unknown) {
     return NextResponse.json(
       {
         code: "circle_required",
-        error: "Join an active Circle before completing Foundations.",
+        error: "Your progress is saved. The team needs to approve your Circle before the final reveal.",
       },
       { status: 409 },
     );

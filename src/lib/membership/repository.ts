@@ -1500,6 +1500,7 @@ type CircleBaseRow = {
     : never;
   circle_id: string;
   circle_name: string;
+  circle_story: string | null;
   circle_status: NonNullable<MemberCircleSnapshot["circle"]>["status"];
 };
 
@@ -1536,8 +1537,9 @@ export async function getMemberCircle(
 ): Promise<MemberCircleSnapshot | null> {
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
-  if (!memberCan(access, "circle.read")) {
+  if (!memberCan(access, "circle.read") || identity.foundationsState !== "completed") {
     return {
+      revealStatus: "locked",
       access,
       block: null,
       circle: null,
@@ -1553,6 +1555,7 @@ export async function getMemberCircle(
     select
       circle.id as circle_id,
       circle.name as circle_name,
+      circle.story as circle_story,
       circle.status as circle_status,
       membership_block.id as block_id,
       membership_block.name as block_name,
@@ -1656,7 +1659,7 @@ export async function getMemberCircle(
       select
         'shaper:' || staff_assignment.id::text as directory_id,
         platform_user.auth_user_id = ${authUserId}::uuid as is_self,
-        coalesce(profile.display_name, profile.preferred_name, 'Shaper') as display_name,
+        coalesce(profile.display_name, profile.preferred_name, 'Circle Supporter') as display_name,
         case when platform_user.auth_user_id = ${authUserId}::uuid
           or preference.directory_status = 'circle_visible'
           then profile.member_tag end as member_tag,
@@ -1784,7 +1787,9 @@ export async function getMemberCircle(
       circle.block_id && circle.block_name && circle.block_status
         ? { id: circle.block_id, name: circle.block_name, status: circle.block_status }
         : null,
+    revealStatus: "revealed",
     circle: {
+      story: circle.circle_story,
       id: circle.circle_id,
       name: circle.circle_name,
       status: circle.circle_status,
@@ -1805,6 +1810,7 @@ export async function getMemberCircleChatDestination(
 ): Promise<string | null> {
   const identity = await requireMemberIdentity(authUserId);
   requireMemberCapability(identity, "circle.read");
+  if (identity.foundationsState !== "completed") return null;
   const sql = getApplicationDatabase();
   const googleLivemode = googleCommunicationLivemode();
   const rows = await sql<Array<{ metadata: unknown }>>`
@@ -1852,6 +1858,7 @@ export async function getMemberExperienceMeetingDestination(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
+        and lifecycle.foundations_state = 'completed'
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -1928,6 +1935,7 @@ export async function getMemberExperiences(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
+        and lifecycle.foundations_state = 'completed'
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -2046,6 +2054,7 @@ export async function setMemberExperienceRegistration(
         from member_lifecycle lifecycle
         left join circle_member_assignments member_assignment
           on member_assignment.member_id = lifecycle.member_id
+          and lifecycle.foundations_state = 'completed'
           and member_assignment.ended_at is null
           and member_assignment.assigned_at <= statement_timestamp()
         left join circles active_circle
@@ -2466,6 +2475,7 @@ export async function getMemberLearning(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
+        and lifecycle.foundations_state = 'completed'
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -2595,6 +2605,7 @@ export async function getMemberLearningResource(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
+        and lifecycle.foundations_state = 'completed'
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -3518,6 +3529,7 @@ export async function getMemberUpdates(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
+        and lifecycle.foundations_state = 'completed'
         and member_assignment.ended_at is null
       left join block_circle_assignments block_assignment
         on block_assignment.circle_id = member_assignment.circle_id
@@ -3534,9 +3546,17 @@ export async function getMemberUpdates(
         notification.created_at as published_at,
         notification.read_at
       from member_notifications notification
+      left join operator_notification_dispatches dispatch on dispatch.id = notification.operator_dispatch_id
       where notification.member_id = ${identity.memberId}::uuid
         and notification.person_id = ${identity.personId}::uuid
         and notification.channel = 'in_app'
+        and (notification.notification_type <> 'circle' or ${identity.foundationsState === "completed"})
+        and (${identity.foundationsState === "completed"} or dispatch.target_type is null or dispatch.target_type not in ('circle', 'block'))
+        and (${identity.foundationsState === "completed"} or notification.announcement_id is null or exists (
+          select 1 from member_announcement_targets target
+          where target.announcement_id = notification.announcement_id
+            and target.target_type not in ('circle', 'block')
+        ))
         and notification.status not in ('failed', 'cancelled')
         and notification.scheduled_for <= statement_timestamp()
         and notification.dismissed_at is null

@@ -94,11 +94,12 @@ async function evaluateExperienceMemberAccess(
     programState: row.program_state,
     standingState: row.standing_state,
   });
-  // Paid Foundations members can attend their own Circle while completing the
-  // program; that exception must not grant general Experience access.
+  // Circle membership is approved during Foundations but revealed only at completion.
   if (!memberCan(access, "experiences.member") && !(
     experience.visibility === "circle" && memberCan(access, "circle.read")
   )) return false;
+
+  if (["circle", "block"].includes(experience.visibility) && row.foundations_state !== "completed") return false;
 
   if (experience.visibility === "circle") {
     const assignments = await tx`

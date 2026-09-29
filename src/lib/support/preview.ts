@@ -19,7 +19,7 @@ export const PREVIEW_SUPPORT_TICKETS: SupportTicket[] = [
     ],
     messages: [
       { id: "preview-message-1", authorType: "member", body: "A friend is in Circle 01. Can you help me check whether there is room to join?", createdAt: "2026-09-02T16:00:00Z" },
-      { id: "preview-message-2", authorType: "operator", body: "We're checking the available places with the Shaper. We'll follow up here.", createdAt: "2026-09-03T15:00:00Z" },
+      { id: "preview-message-2", authorType: "operator", body: "We're checking the available places with the Circle Supporter. We'll follow up here.", createdAt: "2026-09-03T15:00:00Z" },
     ],
   },
   {

@@ -31,7 +31,7 @@ const assignmentOne = { ...resourceOne, assignmentId: "resource-assignment-one",
 const assignmentTwo = { ...resourceTwo, assignmentId: "resource-assignment-two", assignedAt: "2026-09-01", isPinned: false };
 const circles = [
   { id: "forming", name: "Circle 01", status: "forming", shaper: null, resources: [assignmentOne] },
-  { id: "led", name: "Circle 02", status: "active", shaper: { assignmentId: "shaper-assignment", name: "Shaper", authUserId: "one", assignedAt: "2026-09-01" }, resources: [assignmentTwo] },
+  { id: "led", name: "Circle 02", status: "active", shaper: { assignmentId: "shaper-assignment", name: "Circle Supporter", authUserId: "one", assignedAt: "2026-09-01" }, resources: [assignmentTwo] },
   { id: "closed", name: "Circle 03", status: "archived", shaper: null, resources: [] },
 ];
 const nodes = (node) => [node, ...(node.childNodes ?? []).flatMap(nodes)];
@@ -42,21 +42,21 @@ function selectedCircleValues(initialCircleId) {
   const selects = nodes(tree).filter((node) => node.tagName === "select" && attr(node, "name") === "circleId");
   return { tree, values: selects.map((select) => attr(nodes(select).find((node) => node.tagName === "option" && attr(node, "selected") !== undefined), "value")) };
 }
-test("Circle setup preselects only the authorized open Circle, without selecting a Shaper or destructive action", () => {
+test("Circle setup preselects only the authorized open Circle, without selecting a Circle Supporter or destructive action", () => {
   const { tree, values } = selectedCircleValues("forming");
   assert.deepEqual(values, ["forming", "forming"]);
   const otherSelects = nodes(tree).filter((node) => node.tagName === "select" && attr(node, "name") !== "circleId");
   for (const select of otherSelects) assert.equal(attr(nodes(select).find((node) => node.tagName === "option" && attr(node, "selected") !== undefined), "value"), "");
 });
 
-test("split Shaper section is saved-state first and does not repeat Circle or resource selectors", async () => {
+test("split Circle Supporter section is saved-state first and does not repeat Circle or resource selectors", async () => {
   const f = fixture({ initialCircleId: "led", section: "shaper" });
-  assert.match(elementText(f.draw()), /Shaper/);
+  assert.match(elementText(f.draw()), /Circle Supporter/);
   assert.equal(elements(f.draw()).some((node) => node.type === "form"), false);
   assert.equal(elements(f.draw()).some((node) => node.type === "select"), false);
-  f.click("Edit Shaper");
-  assert.equal(elements(f.draw()).some((node) => node.type === "form"), false, "Edit never silently removes the current Shaper");
-  f.click("Remove Shaper");
+  f.click("Edit Circle Supporter");
+  assert.equal(elements(f.draw()).some((node) => node.type === "form"), false, "Edit never silently removes the current Circle Supporter");
+  f.click("Remove Circle Supporter");
   assert.equal(f.requests.length, 0);
   assert.equal(f.draw().props["data-operator-dirty"], "true");
   assert.ok(elements(f.form("endShaper")).some((node) => node.type === "input" && node.props.type === "hidden" && node.props.value === "shaper-assignment"));
@@ -65,10 +65,10 @@ test("split Shaper section is saved-state first and does not repeat Circle or re
   assert.equal(f.requests.length, 0);
 });
 
-test("split Shaper assignment retains exact scope and the pending/dirty modal guards", async () => {
+test("split Circle Supporter assignment retains exact scope and the pending/dirty modal guards", async () => {
   let resolve;
   const f = fixture({ initialCircleId: "forming", section: "shaper" }, () => new Promise((done) => { resolve = done; }));
-  f.click("Assign Shaper");
+  f.click("Assign Circle Supporter");
   assert.equal(f.select("assignShaper", "circleId"), undefined, "there is no second Circle choice inside its manager");
   f.change("assignShaper", "shaperAuthUserId", "one");
   assert.equal(f.draw().props["data-operator-dirty"], "true");
@@ -82,7 +82,7 @@ test("split Shaper assignment retains exact scope and the pending/dirty modal gu
   assert.equal(f.form("assignShaper"), undefined);
   assert.equal(f.draw().props["data-operator-pending"], undefined);
   assert.equal(f.draw().props["data-operator-dirty"], undefined);
-  assert.match(elementText(f.draw()), /Shaper One/);
+  assert.match(elementText(f.draw()), /Circle Supporter One/);
 });
 
 test("split resources show saved titles and only explicit Add/Remove reveals a scoped form", async () => {
@@ -106,7 +106,7 @@ test("split resources show saved titles and only explicit Add/Remove reveals a s
   assert.deepEqual(f.requests[0].body, { assignmentId: "resource-assignment-one" });
   assert.match(elementText(f.draw()), /No resources shared yet/);
 });
-test("an existing Shaper cannot be overwritten by a Circle deep link", () => {
+test("an existing Circle Supporter cannot be overwritten by a Circle deep link", () => {
   assert.deepEqual(selectedCircleValues("led").values, ["", "led"]);
 });
 test("unknown or retired Circle context fails closed; only an absent context offers all current Circles", () => {
@@ -141,7 +141,7 @@ test("explicit Circle context restricts both creation and destructive assignment
 const elements = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(elements) : [node, ...elements(node.props?.children)];
 const elementText = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(elementText).join("") : typeof node === "object" ? elementText(node.props?.children) : String(node);
 function fixture(patch = {}, respond = () => Response.json({ assignment: { assignmentId: "saved", assignedAt: "2026-09-09", created: true } })) {
-  let props = { initialCircles: circles, resources: [resourceOne, resourceTwo], shapers: [{ authUserId: "one", name: "Shaper One" }, { authUserId: "two", name: "Shaper Two" }], preview: false, ...patch };
+  let props = { initialCircles: circles, resources: [resourceOne, resourceTwo], shapers: [{ authUserId: "one", name: "Circle Supporter One" }, { authUserId: "two", name: "Circle Supporter Two" }], preview: false, ...patch };
   const slots = [];
   const effects = [];
   const requests = [];
@@ -198,14 +198,14 @@ function fixture(patch = {}, respond = () => Response.json({ assignment: { assig
 const circleMember = { memberId: "member-one", circleId: "forming", name: "Taylor", email: "taylor@example.test", authUserId: "auth-one", requiresShaperAccess: true, unavailableReason: null };
 const memberAssignment = { assignmentId: "assignment-one", assignedAt: "2026-09-15T12:00:00.000Z", authUserId: "auth-one", circleId: "forming", memberId: "member-one", created: true, shaperAccessGranted: true };
 
-test("Shaper picker lists the selected Circle roster first and keeps blocked people explainable", () => {
+test("Circle Supporter picker lists the selected Circle roster first and keeps blocked people explainable", () => {
   const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember,
     { ...circleMember, memberId: "elsewhere", circleId: "led", name: "Elsewhere" },
     { ...circleMember, memberId: "blocked", name: "Invited person", authUserId: null, unavailableReason: "They need to sign in first." },
   ] });
-  f.click("Assign Shaper");
+  f.click("Assign Circle Supporter");
   const picker = f.select("assignShaper", "shaperAuthUserId");
-  assert.deepEqual(elements(picker).filter((node) => node.type === "optgroup").map((node) => node.props.label), ["Circle members", "Existing Shapers"]);
+  assert.deepEqual(elements(picker).filter((node) => node.type === "optgroup").map((node) => node.props.label), ["Circle members", "Existing Circle Supporters"]);
   assert.match(elementText(picker), /Taylor · taylor@example.test/);
   assert.doesNotMatch(elementText(picker), /Elsewhere/);
   assert.equal(elements(picker).find((node) => node.type === "option" && node.props.value === "member:blocked").props.disabled, true);
@@ -213,9 +213,9 @@ test("Shaper picker lists the selected Circle roster first and keeps blocked peo
   assert.equal(picker.props.value, "", "no member is preselected");
 });
 
-test("making a Circle member Shaper needs a deliberate access confirmation, and sends only the member identity", async () => {
+test("making a Circle member Circle Supporter needs a deliberate access confirmation, and sends only the member identity", async () => {
   const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember] }, () => Response.json({ assignment: memberAssignment }));
-  f.click("Assign Shaper");
+  f.click("Assign Circle Supporter");
   f.change("assignShaper", "shaperAuthUserId", "member:member-one");
   assert.match(elementText(f.draw()), /This does not grant administrator access/);
   assert.equal(elements(f.form("assignShaper")).find((node) => node.type === "button" && node.props.type === "submit").props.disabled, true);
@@ -230,8 +230,8 @@ test("making a Circle member Shaper needs a deliberate access confirmation, and 
 });
 
 test("existing operator members retain access without requiring or sending a new grant", async () => {
-  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [{ ...circleMember, requiresShaperAccess: false }], shapers: [{ authUserId: "auth-one", name: "Taylor" }, { authUserId: "other", name: "Other Shaper" }] }, () => Response.json({ assignment: { ...memberAssignment, shaperAccessGranted: false } }));
-  f.click("Assign Shaper");
+  const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [{ ...circleMember, requiresShaperAccess: false }], shapers: [{ authUserId: "auth-one", name: "Taylor" }, { authUserId: "other", name: "Other Circle Supporter" }] }, () => Response.json({ assignment: { ...memberAssignment, shaperAccessGranted: false } }));
+  f.click("Assign Circle Supporter");
   const options = elements(f.select("assignShaper", "shaperAuthUserId")).filter((node) => node.type === "option");
   assert.equal(options.filter((node) => /Taylor/.test(elementText(node))).length, 1, "member is not duplicated in both groups");
   f.change("assignShaper", "shaperAuthUserId", "member:member-one");
@@ -240,9 +240,9 @@ test("existing operator members retain access without requiring or sending a new
   assert.deepEqual(f.requests[0].body, { circleId: "forming", memberId: "member-one", grantShaperAccess: false });
 });
 
-test("member eligibility and identity refresh clear stale Shaper consent without choosing another person", async () => {
+test("member eligibility and identity refresh clear stale Circle Supporter consent without choosing another person", async () => {
   const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember] });
-  f.click("Assign Shaper");
+  f.click("Assign Circle Supporter");
   f.change("assignShaper", "shaperAuthUserId", "member:member-one");
   f.check("assignShaper", "grantShaperAccess", true);
   f.rerender({ circleMembers: [{ ...circleMember, authUserId: "relinked-account" }] });
@@ -255,9 +255,9 @@ test("member eligibility and identity refresh clear stale Shaper consent without
   assert.equal(f.select("assignShaper", "shaperAuthUserId").props.value, "");
 });
 
-test("a mismatched saved member assignment is never displayed as a successful Shaper change", async () => {
+test("a mismatched saved member assignment is never displayed as a successful Circle Supporter change", async () => {
   const f = fixture({ initialCircleId: "forming", section: "shaper", circleMembers: [circleMember] }, () => Response.json({ assignment: { ...memberAssignment, circleId: "led" } }));
-  f.click("Assign Shaper");
+  f.click("Assign Circle Supporter");
   f.change("assignShaper", "shaperAuthUserId", "member:member-one");
   f.check("assignShaper", "grantShaperAccess", true);
   await f.submit("assignShaper", { circleId: "forming", shaperAuthUserId: "member:member-one", grantShaperAccess: "on" });
@@ -284,7 +284,7 @@ test("all selects are controlled and an ineligible Circle clears immediately wit
   assert.equal(f.select("assignResource", "circleId").props.value, "", "a returning option must be deliberately selected again");
 });
 
-test("a refreshed Shaper assignment invalidates only the now-ineligible Circle selector, never choosing another Circle", () => {
+test("a refreshed Circle Supporter assignment invalidates only the now-ineligible Circle selector, never choosing another Circle", () => {
   const f = fixture({ initialCircleId: "forming" });
   const refreshed = circles.map((circle) => circle.id === "forming" ? { ...circle, shaper: circles[1].shaper } : circle);
   const tree = f.rerender({ initialCircles: refreshed }, false);
@@ -292,11 +292,11 @@ test("a refreshed Shaper assignment invalidates only the now-ineligible Circle s
   assert.equal(f.select("assignResource", "circleId", tree).props.value, "forming");
 });
 
-test("removed Shaper, publication, or exact resource version is cleared rather than replaced", () => {
+test("removed Circle Supporter, publication, or exact resource version is cleared rather than replaced", () => {
   const f = fixture({ initialCircleId: "forming" });
   f.change("assignShaper", "shaperAuthUserId", "one");
   f.change("assignResource", "resourceId", "resource-one");
-  let tree = f.rerender({ shapers: [{ authUserId: "two", name: "Shaper Two" }], resources: [resourceTwo] }, false);
+  let tree = f.rerender({ shapers: [{ authUserId: "two", name: "Circle Supporter Two" }], resources: [resourceTwo] }, false);
   assert.equal(f.select("assignShaper", "shaperAuthUserId", tree).props.value, "");
   assert.equal(f.select("assignResource", "resourceId", tree).props.value, "");
   f.draw();
@@ -345,7 +345,7 @@ test("contextual handlers reject injected cross-Circle targets and unselected as
   f.change("assignResource", "resourceId", "resource-one");
   await f.submit("assignShaper", { circleId: "led", shaperAuthUserId: "one" });
   await f.submit("assignResource", { circleId: "led", resourceId: "resource-one" });
-  assert.equal(f.form("endShaper"), undefined, "a Shaper from another Circle is not even offered for removal");
+  assert.equal(f.form("endShaper"), undefined, "a Circle Supporter from another Circle is not even offered for removal");
   await f.submit("endResource", { assignmentId: "resource-assignment-two" });
   assert.equal(f.requests.length, 0);
   const led = fixture({ initialCircleId: "led" });
@@ -385,11 +385,11 @@ test("empty Circle shows concise status instead of disabled removal forms, with 
   assert.equal(f.form("endShaper"), undefined);
   assert.equal(f.form("endResource"), undefined);
   const tree = parseFragment(renderToStaticMarkup(f.draw()));
-  assert.match(visibleText(tree), /No Shaper assigned yet/);
+  assert.match(visibleText(tree), /No Circle Supporter assigned yet/);
   assert.match(visibleText(tree), /No resources shared yet/);
   assert.match(visibleText(tree), /Add resource/);
   const filled = parseFragment(renderToStaticMarkup(fixture({ initialCircleId: "led" }).draw()));
-  assert.match(visibleText(filled), /Remove Shaper/);
+  assert.match(visibleText(filled), /Remove Circle Supporter/);
   assert.match(visibleText(filled), /Remove resource/);
   assert.match(visibleText(filled), /Second lesson · v2/);
 });

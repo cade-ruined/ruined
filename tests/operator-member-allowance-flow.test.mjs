@@ -22,6 +22,7 @@ function load(path, dependencies = {}) {
     if (name === "react/jsx-runtime") return require(name);
     if (name === "react") return React;
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: ({ children }) => children };
+    if (name === "@/components/platform/CirclePlacementRecommendations") return { __esModule: true, default: () => null };
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() { throw new Error("Allowance UI must not refresh or claim identity"); } }) };
     if (name === "@/components/platform/operatorStyles") return new Proxy({}, { get: () => "control" });

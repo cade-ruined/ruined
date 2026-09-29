@@ -20,6 +20,7 @@ function load(path, dependencies = {}, request = noNetwork) {
   new Function("require", "module", "exports", "fetch", "FormData", output)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "next/link") return link;
+    if (name === "@/components/platform/CirclePlacementRecommendations" || name === "@/components/platform/CirclePlacementReviewQueue") return { __esModule: true, default: () => null };
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: ({ children }) => children };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "react" || name === "react/jsx-runtime") return require(name);
@@ -56,12 +57,12 @@ function assertNotCollapsed(node) {
 test("authorized member preselection exposes the numbered placement flow and accepts an empty forming Circle", () => {
   const tree = render();
   assertNotCollapsed(byId(tree, "assign-member"));
-  assert.match(text(tree), /1\. Choose member.*2\. Choose Circle.*3\. Assign member/s);
+  assert.match(text(tree), /1\. Choose member.*2\. Choose Circle.*3\. Approve placement/s);
   assert.match(text(tree), /Assign members first/);
   const memberSelect = find(tree, "select", (node) => attr(node, "name") === "memberId");
   assert.equal(attr(find(memberSelect, "option", (node) => attr(node, "value") === member.memberId), "selected"), "");
   const circleSelect = find(tree, "select", (node) => attr(node, "name") === "circleId");
-  assert.match(text(circleSelect), /Circle 01 · forming · 10 spaces/);
+  assert.match(text(circleSelect), /Circle 01 · forming · 0 people · target 10/);
   assert.equal(attr(find(byId(tree, "assign-member"), "button"), "disabled"), "", "explicit Circle choice is required");
   assertNotCollapsed(byId(tree, "activate-circle"));
   assert.match(text(byId(tree, "activate-circle")), /Place its first member above/);
@@ -94,7 +95,7 @@ test("blocked preselected members receive specific prerequisites and a membershi
   assert.equal(getCirclePlacementIssue({ ...member, programState: "active" }), null);
 });
 
-test("full, archived and completed Circles cannot be selected, while active spaces remain available", () => {
+test("target-sized Circles remain available, while archived and completed Circles cannot be selected", () => {
   const tree = render({ initialCircles: [
     circle,
     { ...circle, id: "active", name: "Active Circle", status: "active", activeMembers: 9 },
@@ -103,15 +104,16 @@ test("full, archived and completed Circles cannot be selected, while active spac
     { ...circle, id: "completed", name: "Completed Circle", status: "completed" },
   ] });
   const select = find(byId(tree, "assign-member"), "select", (node) => attr(node, "name") === "circleId");
-  assert.match(text(select), /Active Circle · active · 1 space/);
-  assert.doesNotMatch(text(select), /Full Circle|Archived Circle|Completed Circle/);
+  assert.match(text(select), /Active Circle · active · 9 people · target 10/);
+  assert.match(text(select), /Full Circle/);
+  assert.doesNotMatch(text(select), /Archived Circle|Completed Circle/);
 });
 
 test("empty and full rosters have visible explanations and a Create Circle destination", () => {
-  for (const initialCircles of [[], [{ ...circle, activeMembers: 10 }]]) {
+  for (const initialCircles of [[], [{ ...circle, status: "archived", activeMembers: 10 }]]) {
     const tree = render({ initialCircles });
     assert.ok(byId(tree, "assign-member"));
-    assert.match(text(byId(tree, "circle-space-help")), /No Circles have an open space/);
+    assert.match(text(byId(tree, "circle-space-help")), /No current Circles are available/);
     assert.equal(attr(find(byId(tree, "circle-space-help"), "a"), "href"), "#create-circle");
   }
   assert.equal(attr(byId(render({ initialCircles: [] }), "create-circle"), "open"), "");

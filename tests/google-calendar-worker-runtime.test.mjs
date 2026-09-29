@@ -128,7 +128,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       create table ruined_members(id uuid primary key,person_id uuid references people(id),unique(id,person_id));
       create table platform_users(auth_user_id uuid primary key,person_id uuid,status text,member_id uuid);
       create table platform_role_grants(auth_user_id uuid references platform_users(auth_user_id),role_slug text,revoked_at timestamptz,id bigint generated always as identity primary key);
-      create table member_lifecycle(member_id uuid,account_state text,billing_state text,administrative_onboarding_state text,standing_state text,cancellation_effective_at timestamptz);
+      create table member_lifecycle(member_id uuid,account_state text,billing_state text,administrative_onboarding_state text,standing_state text,cancellation_effective_at timestamptz,foundations_state text default 'completed');
       create table person_profiles(person_id uuid,preferred_name text,display_name text);
       create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
       create table circle_member_assignments(member_id uuid,circle_id uuid,ended_at timestamptz);

@@ -24,7 +24,7 @@ const OPERATIONS_NAVIGATION: OperationsNavigationGroup[] = [
   ] },
   { id: "circles", label: "Circles", items: [
     { href: "/ops/circles", label: "Circles", task: "Open a Circle roster" },
-    { href: "/ops/blocks", label: "Blocks", task: "Organize Circles into Blocks", adminOnly: true },
+    { href: "/ops/leadership", label: "Supporters", task: "Review service and reimbursements", adminOnly: true },
   ] },
   { id: "events", label: "Events", items: [
     { href: "/ops/experiences", label: "Events", task: "Plan events and take attendance" },

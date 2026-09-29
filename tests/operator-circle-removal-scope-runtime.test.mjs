@@ -154,3 +154,13 @@ test("PATCH forwards an optional expected Circle, does not discard malformed sup
     if (status === 409) assert.match(payload.error, /Refresh the roster/);
   }
 });
+
+test("Circle departure serializes with service and coverage before taking account, member, Circle or staff locks", async t => {
+  const f=await fixture(t);await f.end({circleId:circleB});
+  assert.match(f.statements[0],/pg_advisory_xact_lock\(hashtext\('ruined-operator-admins'\), 1\)/);
+  const administrator=f.statements.findIndex(sql=>/from platform_users.*for update/.test(sql));
+  const memberLock=f.statements.findIndex(sql=>/from ruined_members.*for update/.test(sql));
+  const circleLock=f.statements.findIndex(sql=>/from circles.*for update/.test(sql));
+  const departure=f.statements.findIndex(sql=>/^update circle_member_assignments/.test(sql));
+  assert.ok(administrator>0 && memberLock>administrator && circleLock>memberLock && departure>circleLock);
+});

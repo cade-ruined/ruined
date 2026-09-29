@@ -72,7 +72,7 @@ test("Experience reads and writes reauthorize active, scoped operators", () => {
   assert.match(repository, /platform_user\.status = 'active'/);
   assert.match(repository, /role_grant\.revoked_at is null/);
   assert.match(repository, /staff_assignment\.ended_at is null/);
-  assert.match(repository, /A Shaper may create only a meeting for their assigned Circle/);
+  assert.match(repository, /A Circle Supporter may create only a meeting for their assigned Circle/);
   assert.match(repository, /draft\.kind !== "circle_meeting"/);
   assert.match(repository, /draft\.visibility !== "circle"/);
   assert.match(repository, /Only an operations administrator can manage a non-Circle Experience/);

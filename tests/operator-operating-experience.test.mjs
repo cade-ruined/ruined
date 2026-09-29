@@ -53,7 +53,7 @@ test("the member directory opens one unified, server-projected operating record"
   assert.match(memberRecord, /OperatorNoteAction/);
   assert.match(memberRecord, /OperatorOverrideAction/);
   assert.doesNotMatch(memberRecord, /Accountability|OperatorAccountabilityAction/);
-  assert.match(memberRecord, /Shaper · \{community\.circle\.shaperName/);
+  assert.match(memberRecord, /Circle Supporter · \{community\.circle\.shaperName/);
 });
 
 test("operator navigation stays restrained while every working surface remains reachable", () => {
@@ -61,7 +61,7 @@ test("operator navigation stays restrained while every working surface remains r
     "/ops/members",
     "/ops/foundations",
     "/ops/circles",
-    "/ops/blocks",
+    "/ops/leadership",
     "/ops/experiences",
     "/ops/work",
   ]) {

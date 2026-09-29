@@ -165,7 +165,7 @@ async function fixture(t) {
   const pending = await load("src/lib/platform/ops-member-invitation-repository.ts", { ...deps, "@/lib/platform/ops-repository": members });
   const operators = await load("src/lib/platform/ops-access-repository.ts", { ...deps, "@/lib/platform/repository": platform });
   const allowMember = (overrides = {}) => members.createOrReissueMemberInvitation({ actorAuthUserId: admin, email, ...overrides });
-  const allowGuide = () => operators.createOrReissueOperatorInvitation({ actorAuthUserId: admin, email, displayName: "Test Guide", role: "guide", circleIds: [circle] });
+  const allowAdministrator = () => operators.createOrReissueOperatorInvitation({ actorAuthUserId: admin, email, displayName: "Test Administrator", role: "ops_admin", circleIds: [] });
   const grants = async () => (await db.query("select role_slug from platform_role_grants where auth_user_id=$1 and revoked_at is null order by role_slug", [auth])).rows.map((row) => row.role_slug);
   async function personal({ recipient = email, expiresIn = '48 hours', owner = null, complimentary = false, complimentaryEndsIn = null } = {}) {
     const memberId = owner ?? crypto.randomUUID(), personId = crypto.randomUUID(), inviterAuth = crypto.randomUUID();
@@ -182,13 +182,13 @@ async function fixture(t) {
       values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval,$6,$7,case when $8::text is null then null else statement_timestamp()+$8::interval end,$9::uuid) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn,complimentary ? 'complimentary' : 'standard',complimentary ? 'Founding member' : null,complimentaryEndsIn,complimentary ? inviterAuth : null]);
     return { token, memberId, inviterAuth, ...result.rows[0] };
   }
-  return { db, members, pending, operators, platform, admission, personal, allowMember, allowGuide, grants,
+  return { db, members, pending, operators, platform, admission, personal, allowMember, allowAdministrator, grants,
     beforeCommit: callback => { beforeCommit = callback; }, clock: value => { testClock = new Date(value); } };
 }
 
 test("member reissue and revoke preserve the pending operator invitation and immutable scope", async (t) => {
   const f = await fixture(t);
-  const staff = await f.allowGuide();
+  const staff = await f.allowAdministrator();
   const originalStaff = (await f.db.query("select * from passwordless_account_invites where intended_user_type='staff'")).rows;
   const member = await f.allowMember();
   assert.equal(member.reissued, false, "An unrelated staff invitation is not a member reissue");
@@ -199,7 +199,7 @@ test("member reissue and revoke preserve the pending operator invitation and imm
   assert.equal((await f.db.query("select count(*)::int as count from passwordless_account_invites where intended_user_type='member' and revoked_at is null")).rows[0].count, 1);
   assert.deepEqual(await f.members.revokeLiveMemberInvitations({ actorAuthUserId: admin, email }), { email, revoked: 1 });
   assert.deepEqual((await f.db.query("select * from passwordless_account_invites where intended_user_type='staff'")).rows, originalStaff);
-  assert.equal((await f.db.query("select role_slug from operator_invitation_configs where invitation_id=$1", [staff.entry.id.slice(11)])).rows[0].role_slug, "guide");
+  assert.equal((await f.db.query("select role_slug from operator_invitation_configs where invitation_id=$1", [staff.entry.id.slice(11)])).rows[0].role_slug, "ops_admin");
   assert.deepEqual(await f.grants(), [], "Allow/reissue/revoke grants no role before verification");
   await assert.rejects(f.members.revokeLiveMemberInvitations({ actorAuthUserId: admin, email }), (error) => error.code === "not_found");
 });
@@ -208,8 +208,8 @@ test("operator reissue and revoke preserve a pending member invitation and its s
   const f = await fixture(t);
   await f.allowMember();
   const originalMember = (await f.db.query("select * from passwordless_account_invites where intended_user_type='member'")).rows;
-  const first = await f.allowGuide();
-  const second = await f.allowGuide();
+  const first = await f.allowAdministrator();
+  const second = await f.allowAdministrator();
   assert.equal(first.reissued, false);
   assert.equal(second.reissued, true);
   assert.deepEqual((await f.db.query("select * from passwordless_account_invites where intended_user_type='member'")).rows, originalMember);
@@ -230,15 +230,15 @@ test("member-only verified claim grants only membership, never operator privileg
   await assert.rejects(f.allowMember(), (error) => error.code === "conflict");
 });
 
-test("parallel approved invitation types claim one identity and only the specifically configured Guide scope", async (t) => {
+test("parallel approved invitation types claim one identity and only the explicitly configured Administrator role", async (t) => {
   const f = await fixture(t);
   await f.allowMember();
-  await f.allowGuide();
+  await f.allowAdministrator();
   await f.allowMember();
   await f.operators.claimPlatformOperatorForViewer({ authUserId: auth, email });
   const claimed = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email });
-  assert.deepEqual(await f.grants(), ["guide", "member"]);
-  assert.deepEqual((await f.db.query("select circle_id,role_slug from circle_staff_assignments where auth_user_id=$1", [auth])).rows, [{ circle_id: circle, role_slug: "guide" }]);
+  assert.deepEqual(await f.grants(), ["member", "ops_admin"]);
+  assert.deepEqual((await f.db.query("select circle_id,role_slug from circle_staff_assignments where auth_user_id=$1", [auth])).rows, []);
   const users = (await f.db.query("select person_id,member_id from platform_users where auth_user_id=$1", [auth])).rows;
   assert.deepEqual(users, [{ person_id: claimed.personId, member_id: claimed.memberId }]);
   assert.equal((await f.db.query("select count(*)::int as count from passwordless_account_invites where accepted_at is not null")).rows[0].count, 2);
@@ -368,7 +368,7 @@ test("personal invitations cannot restore suspended, closed, deleted, merged or 
 test("acceptance uses the exact personal allowance and preserves the first inviter when a second card is accepted", async (t) => {
   const f = await fixture(t), first = await f.personal(), second = await f.personal();
   await f.allowMember();
-  await f.allowGuide();
+  await f.allowAdministrator();
   const staffBefore = (await f.db.query("select * from passwordless_account_invites where intended_user_type='staff'")).rows;
   const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, first.token);
   assert.deepEqual(await f.grants(), ['member']);

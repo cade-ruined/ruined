@@ -735,6 +735,20 @@ const COMMITMENT_SESSION = {
   symbolPieceId: "commitment",
 } as const satisfies FoundationChapter;
 
+// Member-facing teaching extends the Culture moment without changing saved unit IDs.
+export const FOUNDATION_LEADERSHIP = {
+  title: "Service, not status.",
+  introduction: "Leadership is recognized over time. A responsibility to carry, never a rank to pursue.",
+  roles: [
+    { title: "Member", body: "Do the work alongside your Circle. Contribute, listen, and support one another." },
+    { title: "Circle Supporter", body: "A member entrusted to welcome people, facilitate WHY and BUILD, and help the Circle thrive." },
+  ],
+  recognition: "Character. Contribution. Competency. Commitment. Observed patterns, not a checklist for a title.",
+  preparation: ["Observe", "Co-facilitate", "Lead", "Debrief"],
+  support: "Tyler and Mitch support Circle Supporters through one monthly training call and help when a situation needs more support.",
+  belonging: "Capacity changes. You can step back from a role and still belong. Sometimes you carry others; sometimes you let others carry you.",
+} as const;
+
 export const FOUNDATION_SESSIONS = [
   STORY_SESSION,
   PHILOSOPHY_SESSION,

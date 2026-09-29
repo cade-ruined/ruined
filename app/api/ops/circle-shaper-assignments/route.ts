@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     if (!body || (body.memberId !== undefined && typeof body.memberId !== "string")
       || (body.shaperAuthUserId !== undefined && typeof body.shaperAuthUserId !== "string")
       || (body.grantShaperAccess !== undefined && typeof body.grantShaperAccess !== "boolean")) {
-      return json({ error: "Choose a valid Circle and Shaper." }, 400);
+      return json({ error: "Choose a valid Circle and Circle Supporter." }, 400);
     }
     const assignment = await assignShaperToCircle({
       actorAuthUserId: context.viewer.authUserId,
@@ -72,10 +72,10 @@ export async function POST(request: Request) {
     return json({ assignment }, assignment.created ? 201 : 200);
   } catch (error) {
     if (error instanceof OpsRepositoryError) return repositoryErrorResponse(error);
-    console.error("Operations Shaper assignment could not be created", {
+    console.error("Operations Circle Supporter assignment could not be created", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
-    return json({ error: "The Shaper assignment could not be created." }, 503);
+    return json({ error: "The Circle Supporter assignment could not be created." }, 503);
   }
 }
 
@@ -91,9 +91,9 @@ export async function PATCH(request: Request) {
     return json({ assignment });
   } catch (error) {
     if (error instanceof OpsRepositoryError) return repositoryErrorResponse(error);
-    console.error("Operations Shaper assignment could not be ended", {
+    console.error("Operations Circle Supporter assignment could not be ended", {
       errorType: error instanceof Error ? error.name : "UnknownError",
     });
-    return json({ error: "The Shaper assignment could not be ended." }, 503);
+    return json({ error: "The Circle Supporter assignment could not be ended." }, 503);
   }
 }

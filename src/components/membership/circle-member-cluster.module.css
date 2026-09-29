@@ -16,6 +16,20 @@
   z-index: 1;
 }
 
+.cluster[data-expanded="true"] {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.8rem, 2vw, 1.4rem);
+  aspect-ratio: auto;
+  padding: 0.5rem;
+}
+
+.cluster[data-expanded="true"] .member {
+  position: relative;
+  inset: auto;
+  width: 100%;
+}
+
 .member:has(.memberButton[aria-pressed="true"]),
 .member:has(.memberButton:hover),
 .member:has(.memberButton:focus-visible) {
@@ -107,6 +121,11 @@
 }
 
 @media (max-width: 639px) {
+  .cluster[data-expanded="true"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    margin-left: 0;
+  }
   .cluster {
     width: calc(100% + 0.5rem);
     margin-left: -0.25rem;
