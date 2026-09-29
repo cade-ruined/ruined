@@ -1,111 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import test from "node:test";
-import React from "react";
-import ts from "typescript";
-
-const require = createRequire(import.meta.url);
-const compiled = ts.transpileModule(readFileSync(new URL("../src/components/membership/MemberBadges.tsx", import.meta.url), "utf8"), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-}).outputText;
-const nodes = node => !React.isValidElement(node) ? [] : [node, ...React.Children.toArray(node.props.children).flatMap(nodes)];
-const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : typeof node === "string" || typeof node === "number" ? String(node) : "";
+import { badgeUIFixture, nodes, text } from "./helpers/member-badge-ui-fixture.mjs";
 const award = { key: "early-supporter", label: "I Was Here", description: "Joined the waitlist, then activated a Founders or Originals membership.", earnedAt: "2026-09-28T23:30:00-07:00" };
-
-function fixture(initial = {}) {
-  const props = { badges: [award], ...initial };
-  const slots = [], effects = [], frames = [], buttons = new Map(), elements = new Map();
-  let cursor = 0;
-  const document = { activeElement: null, body: { style: { overflow: "scroll" } } };
-  class Element {
-    constructor(name) {
-      this.name = name; this.isConnected = true; this.listeners = new Map();
-      this.scrollLeft = 0; this.scrollWidth = 300; this.clientWidth = 300;
-      this.offsetLeft = 0; this.offsetWidth = 56; this.parentElement = null;
-    }
-    focus(options) { document.activeElement = this; this.focusOptions = options; }
-    getBoundingClientRect() { const left = this.offsetLeft - (this.parentElement?.scrollLeft ?? 0); return { left, right: left + this.offsetWidth, top: 0, width: this.offsetWidth, height: 76 }; }
-    scrollIntoView(options) { this.scrollIntoViewOptions = options; }
-    scrollTo(options) { this.scrollLeft = options.left ?? this.scrollLeft; this.scrollToOptions = options; }
-    scrollBy(options) { this.scrollLeft += options.left ?? 0; this.scrollByOptions = options; }
-    addEventListener(type, listener) { const listeners = this.listeners.get(type) ?? new Set(); listeners.add(listener); this.listeners.set(type, listeners); }
-    removeEventListener(type, listener) { this.listeners.get(type)?.delete(listener); }
-    dispatch(type, event) { this.listeners.get(type)?.forEach(listener => listener(event)); }
-  }
-  const window = new Element("window");
-  window.matchMedia = () => ({ matches: false });
-  const original = new Element("original-focus");
-  document.activeElement = original;
-  const dialog = new Element("dialog");
-  dialog.opens = 0; dialog.closes = 0;
-  dialog.showModal = () => { dialog.opens++; };
-  dialog.close = () => { dialog.closes++; };
-  function memo(callback, dependencies) {
-    const key = cursor++, previous = slots[key];
-    if (!previous || dependencies.some((value, index) => !Object.is(value, previous.dependencies[index]))) slots[key] = { dependencies, value: callback() };
-    return slots[key].value;
-  }
-  const hooks = { ...React,
-    useId: () => "member-badge-test",
-    useRef(initial) { const key = cursor++; return slots[key] ??= { current: initial }; },
-    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === "function" ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === "function" ? next(slots[key]) : next; }]; },
-    useCallback: (callback, dependencies) => memo(() => callback, dependencies),
-    useMemo: memo,
-    useEffect(callback, dependencies) {
-      const key = cursor++, previous = slots[key];
-      if (!previous || dependencies.some((value, index) => !Object.is(value, previous.dependencies[index]))) {
-        const slot = { dependencies }; slots[key] = slot;
-        effects.push(() => { previous?.cleanup?.(); slot.cleanup = callback(); });
-      }
-    },
-  };
-  const loaded = { exports: {} };
-  new Function("require", "module", "exports", "document", "HTMLElement", "requestAnimationFrame", "cancelAnimationFrame", "window", "ResizeObserver", compiled)(name => {
-    if (name === "next/image") return { __esModule: true, default: "img" };
-    if (name === "react") return hooks;
-    if (name === "react/jsx-runtime") return require(name);
-    if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
-    throw Error(`Unexpected badge dependency: ${name}`);
-  }, loaded, loaded.exports, document, Element, callback => { frames.push(callback); return frames.length; }, id => { frames[id - 1] = null; }, window, class { observe() {} disconnect() {} });
-  function setRef(ref, value) { if (typeof ref === "function") ref(value); else if (ref) ref.current = value; }
-  function draw(next) {
-    Object.assign(props, next); cursor = 0;
-    const tree = loaded.exports.default(props);
-    for (const node of nodes(tree)) {
-      if (node.type === "button") {
-        const label = node.props["aria-label"] ?? text(node);
-        if (!buttons.has(label)) buttons.set(label, new Element(label));
-        setRef(node.props.ref, buttons.get(label));
-      }
-      else if (node.type === "dialog") setRef(node.props.ref, dialog);
-      else if (node.props.ref) {
-        const key = node.props.className ?? node.props["aria-label"] ?? node.type;
-        if (!elements.has(key)) elements.set(key, new Element(key));
-        setRef(node.props.ref, elements.get(key));
-      }
-    }
-    effects.splice(0).forEach(effect => effect());
-    return tree;
-  }
-  function button(label) { const node = nodes(draw()).find(node => node.type === "button" && (node.props["aria-label"] ?? text(node)) === label); assert.ok(node, `Missing button: ${label}`); return node; }
-  function click(label) { button(label).props.onClick({ currentTarget: buttons.get(label) }); return draw(); }
-  function layout({ width = 156, itemWidth = 52, padding = 6 } = {}) {
-    const tree = draw(), row = elements.get("row");
-    assert.ok(row, "Expected a scrollable dock");
-    row.offsetWidth = width; row.clientWidth = width; row.scrollWidth = props.badges.length * itemWidth + padding * 2;
-    nodes(tree).filter(node => node.type === "button" && node.props["aria-haspopup"] === "dialog").forEach((node, index) => {
-      const element = buttons.get(node.props["aria-label"]);
-      element.parentElement = row; element.offsetLeft = padding + index * itemWidth; element.offsetWidth = itemWidth;
-    });
-    return row;
-  }
-  return { draw, button, click, buttons, elements, dialog, document, original,
-    layout,
-    flushFrames() { frames.splice(0).forEach(frame => frame?.()); },
-    unmount() { slots.forEach(slot => slot?.cleanup?.()); },
-  };
-}
+const fixture = (initial = {}) => badgeUIFixture({ badges: [award], ...initial });
 
 test("members without awards have no badge row or locked placeholders", () => {
   const ui = fixture({ badges: [] });
@@ -243,7 +140,7 @@ test("a compact earned badge opens an accessible native detail modal with its UT
   const tree = ui.click("I Was Here badge. View details");
   const dialog = nodes(tree).find(node => node.type === "dialog");
   assert.equal(ui.dialog.opens, 1, "Native showModal traps focus and makes the rest of the page inert");
-  assert.equal(ui.document.body.style.overflow, "hidden");
+  assert.equal(ui.document.body.style.overflow, "scroll", "CSS locks the open modal without replacing another owner's inline scroll state");
   assert.equal(ui.document.activeElement.name, "Close badge details");
   assert.equal(dialog.props.id, trigger.props["aria-controls"]);
   assert.equal(text(nodes(tree).find(node => node.props.id === dialog.props["aria-labelledby"])), award.label);

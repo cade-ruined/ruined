@@ -75,6 +75,7 @@ const migrations = [
   "../db/migrations/20260930103000_leadership_terminology.sql",
   "../db/migrations/20260930110000_member_payment_methods.sql",
   "../db/migrations/20260930111000_supporter_shared_billing.sql",
+  "../db/migrations/20260930112000_member_badge_acknowledgements.sql",
 ];
 
 function migrationBody(migration, migrationName) {

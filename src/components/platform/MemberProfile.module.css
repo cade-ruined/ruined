@@ -26,25 +26,11 @@
 .profileControls { display:flex; align-items:center; justify-content:space-between; gap:24px; border-top:1px solid var(--member-rule); border-bottom:1px solid var(--member-rule); margin-bottom:28px; }
 .tabs { display:flex; gap:30px; min-width:0; }
 .entryAction { flex-shrink:0; }
-.profileDetails { margin-top:28px; border-top:1px solid var(--member-rule); scroll-margin-top:24px; }
-.profileDetails>summary { padding:20px 0; cursor:pointer; font-size:12px; color:var(--member-muted); }
-.profileDetails[open]>summary { color:var(--member-ink); margin-bottom:12px; }
-.profileDetails>summary:focus-visible { outline-offset:4px; }
 .entryAction :global(.member-button) { min-height:40px; padding:8px 14px; font-size:12px; white-space:nowrap; }
 .tabs button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:56px; position:relative; font-size:13px; color:var(--member-muted); }
 .tabs button[aria-selected="true"] { color:var(--member-ink); font-weight:500; }
 .tabs button[aria-selected="true"]::after { content:""; height:3px; position:absolute; bottom:-1px; left:0; right:0; background:var(--member-accent,#d0312d); }
-.nextAction { display:flex; justify-content:space-between; align-items:center; gap:24px; padding:26px 0 0; margin:28px 0 0; border-top:1px solid var(--member-rule); }
-.nextAction>div { min-width:0; }
-.nextLabel { display:block; font-size:14px; line-height:1.5; margin-bottom:4px; }
-.nextAction p { font-size:12px; line-height:1.6; color:var(--member-muted); }
-.nextBody { display:block; margin-top:6px; font-size:11px; line-height:1.6; color:var(--member-muted); max-width:65ch; }
-.nextAction>a { flex-shrink:0; }
-.progressTicks { display:flex; gap:4px; width:112px; margin-top:12px; }
-.progressTicks span { flex:1; height:2px; background:var(--member-rule); }
-.progressTicks span[data-state="complete"] { background:var(--member-muted); }
-.progressTicks span[data-state="next"] { height:4px; margin-top:-1px; background:var(--member-yellow); }
-.about{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:44px 40px}.facts{margin:20px 0;display:grid;gap:18px}.facts dt{font-size:10px;color:var(--member-muted);margin-bottom:5px}.facts dd{font-size:14px;line-height:1.65;overflow-wrap:anywhere;white-space:pre-wrap}.full{grid-column:1/-1}.sectionLine{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}.sectionLine>a,.sectionLine>span{font-size:11px;color:var(--member-muted)}.recordList{list-style:none;margin-top:20px;padding:0}.recordList li{display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid var(--member-rule);padding:18px 0;font-size:14px}.recordList time{flex-shrink:0;font-size:10px;color:var(--member-muted)}.recordNote{display:block;font-size:10px;color:var(--member-muted);margin-top:5px}.smallTitle{font-size:24px;margin-top:28px}.muted{font-size:12px;line-height:1.7;color:var(--member-muted);margin-top:12px}.artifacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;padding:0;gap:16px;margin-top:20px}.artifacts li{padding:22px;background:var(--member-soft);border:1px solid var(--member-rule)}.artifacts span,.artifacts p{font-size:10px;color:var(--member-muted)}.artifacts h3{font-size:25px;margin:16px 0}.timelineHeader{margin-bottom:28px}.profile [role="tabpanel"]:focus-visible{outline-offset:8px}.profile [hidden]{display:none!important}
+.profile [role="tabpanel"]:focus-visible{outline-offset:8px}.profile [hidden]{display:none!important}
 
 @media(max-width:700px) {
   .identity { grid-template-columns:156px minmax(0,1fr); gap:20px; padding:2px 0 20px; }
@@ -69,14 +55,6 @@
   .entryAction { min-width:0; }
   .entryAction :global(.member-button) { min-height:44px; min-width:44px; padding:8px 10px; font-size:12px; }
   .tabs button { font-size:13px; min-width:0; min-height:56px; gap:5px; }
-  .nextAction { margin-top:22px; padding-top:22px; gap:20px; }
-  .nextAction p { font-size:12px; }
-  .nextLabel { font-size:13px; }
-  .nextBody { display:none; }
-  .nextAction>a { min-height:46px; font-size:12px; padding:10px 14px; }
-  .about { grid-template-columns:1fr; gap:32px; }
-  .artifacts { grid-template-columns:1fr; }
-  .recordList li { font-size:13px; }
 }
 @media(max-width:359px) {
   .identity { grid-template-columns:128px minmax(0,1fr); column-gap:16px; }

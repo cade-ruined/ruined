@@ -93,8 +93,38 @@
   font-weight: 500;
 }
 
+.profile {
+  width: 100%;
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  border: 1px solid var(--member-rule, #2a2a2a30);
+  background: var(--member-soft, #2a2a2a08);
+}
+
+.profile .copy {
+  flex-basis: 200px;
+}
+
+.profile .title {
+  margin: 0;
+}
+
+.profile .installButton {
+  border-color: var(--member-ink, #2a2a2a);
+  background: var(--member-ink, #2a2a2a);
+  color: var(--member-paper, #e5e0d5);
+  font-weight: 600;
+}
+
+.profile .installButton:hover {
+  opacity: .85;
+}
+
 @media (max-width: 480px) {
   .install { padding: 20px 0; }
   .summary { gap: 12px; }
   .actions { gap: 4px; }
+  .profile { margin-bottom: 20px; padding: 16px; }
+  .profile .copy { flex-basis: 100%; }
+  .profile .actions, .profile .installButton { width: 100%; }
 }

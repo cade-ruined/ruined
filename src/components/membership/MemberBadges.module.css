@@ -57,3 +57,13 @@
 .detailStamp[data-artwork] { width:min(216px,100%); margin-inline:auto; box-shadow:none; }
 @media(max-height:700px) { .detail { padding-top:46px; } .patchMount { padding-block:20px; } .detailStamp[data-artwork] { width:min(174px,100%); } .detailStamp { width:154px; } .cardCopy { padding-top:16px; } .earned { margin-top:18px; } }
 @media(forced-colors:active) { .detail { filter:none; background:Canvas; border:1px solid CanvasText; } .cardEdge,.cardStock,.hangerRim { display:none; } .cardBrand { filter:none; forced-color-adjust:none; } .cardBrand,.cardSeries,.eyebrow,.detail h2,.description,.earned time { color:CanvasText; text-shadow:none; } .dialog .saveBadge { color:LinkText; background:Canvas; border-color:LinkText; } .dialog .saveBadge:focus-visible { outline-color:Highlight; } }
+
+/* The existing eyelet anchors one quiet arrival; reduced motion stays still. */
+/* A native modal owns this lock only while open; other dialogs' inline locks stay untouched. */
+:global(body):has(.dialog[open]) { overflow:hidden!important; }
+.dialog[open] .reveal { transform-origin:50% 24px; animation:badgeHang 760ms cubic-bezier(.2,.65,.25,1) both; }
+.dialog[open] .reveal .patchMount { animation:badgeAppear 480ms 160ms ease-out both; }
+.dialog .close:disabled { cursor:wait; opacity:.45; }
+@keyframes badgeHang { 0% { opacity:0; transform:translateY(-22px) rotate(-3deg); } 60% { opacity:1; transform:translateY(2px) rotate(1deg); } 82% { transform:translateY(0) rotate(-.4deg); } 100% { opacity:1; transform:translateY(0) rotate(0); } }
+@keyframes badgeAppear { from { opacity:0; transform:translateY(4px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+@media(prefers-reduced-motion:reduce) { .dialog[open] .reveal,.dialog[open] .reveal .patchMount { animation:none; } }

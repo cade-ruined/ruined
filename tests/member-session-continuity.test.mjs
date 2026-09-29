@@ -133,16 +133,19 @@ test("continuity retains the same child subtree during outages, expiry and recov
     "@/lib/auth/member-session-monitor": { startMemberSessionMonitor(args) { notify = args.onStatus; return { stop() {}, async check() {} }; } },
   })).default;
   const draft = React.createElement("textarea", { defaultValue: "An unfinished journal entry" });
-  const render = () => h.render(() => Component({ children: draft, enabled: true, ownerId: "owner-one" }));
+  const celebration = React.createElement("dialog", { "aria-label": "New badge" });
+  const render = () => h.render(() => Component({ children: draft, celebration, enabled: true, ownerId: "owner-one" }));
   const initial = render(); const wrapper = initial.props.children[0];
+  assert.equal(wrapper.props.children[1], celebration);
   let childModalCloses = 0;
   wrapper.props.ref.current = { querySelectorAll(selector) { assert.equal(selector, "dialog[open]"); return [{ close() { childModalCloses++; } }]; } };
   const recoveryDialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; } };
-  nodes(initial).find(node => node.type === "dialog").props.ref.current = recoveryDialog;
+  nodes(initial).find(node => node.type === "dialog" && node.props.ref).props.ref.current = recoveryDialog;
   for (const status of ["offline", "reconnecting", "signed_out", "connected", "account_changed"]) {
     notify(status); const tree = render(); const same = tree.props.children[0];
     assert.equal(same.type, wrapper.type); assert.equal(same.key, wrapper.key);
-    assert.equal(same.props.children, draft); assert.equal(same.props.hidden, status === "account_changed");
+    assert.equal(same.props.children[0], draft); assert.equal(same.props.hidden, status === "account_changed");
+    assert.equal(same.props.children[1], status === "connected" ? celebration : null, "new badge reveals unmount until the same account is verified again");
     assert.equal(refreshes, 0);
     assert.equal(recoveryDialog.open, status === "signed_out", "recovery must remain reachable above an existing modal");
     assert.equal(childModalCloses, status === "account_changed" ? 1 : 0, "only a changed account releases child modals so Open profile remains reachable");

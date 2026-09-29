@@ -136,6 +136,7 @@ test("home consumes the portrait override without mutating its cached member or 
     react: { ...React, useState: value => [value, () => {}], useRef: value => ({ current: value }), useId: () => "test", useEffect: () => {} },
     "next/image": Image,
     "next/link": Link,
+    "@/components/membership/InstallRuined": () => null,
     "@/components/membership/MemberJournal": () => null,
     "@/components/membership/MemberBadges": () => null,
     "@/components/membership/MemberPortraitState": { useMemberPortrait: fixture.read },
@@ -164,7 +165,7 @@ test("home consumes the portrait override without mutating its cached member or 
 });
 
 test("layout scopes portrait memory to verified members inside session recovery and outside every page shell", async () => {
-  const Session = () => null, Portrait = () => null, Draft = () => null, JournalDraft = () => null, Shell = () => null;
+  const Session = () => null, Portrait = () => null, Draft = () => null, JournalDraft = () => null, Shell = () => null, Celebration = () => null;
   for (const status of ["authenticated", "signed_out", "unavailable"]) {
     const layout = load("app/my/layout.tsx", {
       "next/navigation": { notFound: () => assert.fail("member area is visible") },
@@ -173,6 +174,7 @@ test("layout scopes portrait memory to verified members inside session recovery 
       "@/lib/membership/preview-scenarios": {},
       "@/components/membership/MemberJourneyShell": Shell,
       "@/components/membership/MemberSessionContinuity": Session,
+      "@/components/membership/MemberBadgeCelebration": Celebration,
       "@/components/membership/MemberPortraitState": Portrait,
       "@/components/membership/MemberTimelineDraftState": Draft,
       "@/components/membership/MemberJournalDraftState": JournalDraft,
@@ -184,6 +186,10 @@ test("layout scopes portrait memory to verified members inside session recovery 
     }).default;
     const tree = await layout({ children: "page" });
     assert.equal(tree.type, Session);
+    if (status === "authenticated") {
+      assert.equal(tree.props.celebration.type, Celebration);
+      assert.equal(tree.props.celebration.props.ownerId, "verified-owner");
+    } else assert.equal(tree.props.celebration, null);
     const portrait = tree.props.children;
     assert.equal(portrait.type, Portrait);
     assert.equal(portrait.props.ownerId, status === "authenticated" ? "verified-owner" : undefined);

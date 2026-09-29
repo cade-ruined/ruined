@@ -136,7 +136,7 @@ test("taken tags can be corrected and retried while true profile version conflic
 
 test("home shows the saved display name and only adds a distinct secondary @tag", async () => {
   const state = hooks();
-  const Home = await load("src/components/platform/MemberHome.tsx", { react: state.react, "next/link": Stub, "next/image": Stub, "@/components/membership/MemberJournal": Stub, "@/components/membership/MemberBadges": Stub, "@/components/membership/MemberPortraitState": { useMemberPortrait: avatarUrl => ({ avatarUrl }) }, "@/components/membership/MemberProfileShare": Stub, "@/lib/membership/member-number": memberNumber, "@/lib/membership/access-policy": { memberCan: () => false }, "./MemberProfile.module.css": new Proxy({}, { get: (_, key) => key }) });
+  const Home = await load("src/components/platform/MemberHome.tsx", { react: state.react, "next/link": Stub, "next/image": Stub, "@/components/membership/InstallRuined": Stub, "@/components/membership/MemberJournal": Stub, "@/components/membership/MemberBadges": Stub, "@/components/membership/MemberPortraitState": { useMemberPortrait: avatarUrl => ({ avatarUrl }) }, "@/components/membership/MemberProfileShare": Stub, "@/lib/membership/member-number": memberNumber, "@/lib/membership/access-policy": { memberCan: () => false }, "./MemberProfile.module.css": new Proxy({}, { get: (_, key) => key }) });
   const render = (displayName, memberTag) => state.render(Home, { member: { displayName, profile: { memberTag, displayName }, circleMembers: [], identity: { standingState: "active" }, nextAction: { kind: "explore" } } });
   const named = render("Public Name", "member_tag");
   const heading = elements(named).find(node => node.type === "h1");

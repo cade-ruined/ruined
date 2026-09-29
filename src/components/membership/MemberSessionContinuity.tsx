@@ -6,8 +6,9 @@ import PasswordlessAccessForm from "@/components/platform/PasswordlessAccessForm
 import { startMemberSessionMonitor, type MemberSessionStatus } from "@/lib/auth/member-session-monitor";
 import styles from "./MemberSessionContinuity.module.css";
 
-export default function MemberSessionContinuity({ children, enabled, ownerId, initiallyUnavailable = false }: {
+export default function MemberSessionContinuity({ children, celebration, enabled, ownerId, initiallyUnavailable = false }: {
   children: React.ReactNode;
+  celebration?: React.ReactNode;
   enabled: boolean;
   ownerId?: string;
   initiallyUnavailable?: boolean;
@@ -58,7 +59,10 @@ export default function MemberSessionContinuity({ children, enabled, ownerId, in
   const changed = enabled && status === "account_changed";
   const notice = enabled && status !== "connected";
   return <>
-    <div ref={content} hidden={changed} inert={changed ? true : undefined}>{children}</div>
+    <div ref={content} hidden={changed} inert={changed ? true : undefined}>
+      {children}
+      {enabled && status === "connected" ? celebration : null}
+    </div>
     {notice ? <aside className={styles.notice} aria-live="polite" aria-atomic="true">
       <p>{status === "offline" ? "You’re offline. Keep this page open to keep your unfinished work." :
         status === "reconnecting" ? ownerId ? "Reconnecting to Ruined. Your unfinished work is still here." : "Reconnecting to Ruined. Please keep this page open." :

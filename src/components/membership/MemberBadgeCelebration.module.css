@@ -1,0 +1,9 @@
+.celebration { padding-bottom:20px; }
+.actions { color:#f0e8d4; text-align:center; margin-top:14px; }
+.counter { margin:0 0 10px; font-size:11px; line-height:1.5; letter-spacing:.04em; }
+.error { max-width:310px; margin:12px auto; font-size:13px; line-height:1.5; text-wrap:balance; }
+.celebration .continue { min-height:44px; min-width:132px; border:1px solid #e6ddc56b; border-radius:2px; background:#ede3ce; color:#29291f; padding:10px 24px; font:600 13px/1.5 var(--font-body),sans-serif; cursor:pointer; }
+.celebration .continue:hover { background:#fff4db; }
+.celebration .continue:disabled { cursor:wait; opacity:.65; }
+.celebration .continue:focus-visible { outline:2px solid #f0e8d4; outline-offset:4px; }
+@media(forced-colors:active) { .actions { color:CanvasText; } .celebration .continue { background:ButtonFace; color:ButtonText; border-color:ButtonText; } }

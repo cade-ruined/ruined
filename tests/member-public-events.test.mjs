@@ -162,9 +162,8 @@ test("membership preview derives public events without requiring a permanent nam
   );
 });
 
-test("profile next actions use their server-selected canonical destination", () => {
-  assert.match(memberHome, /const next=member.nextAction/);
-  assert.match(memberHome, /href=\{next.href\}/);
+test("profile omits redundant next-action and raw meeting links", () => {
+  assert.doesNotMatch(memberHome, /member\.nextAction|data-member-next-action/);
   assert.doesNotMatch(memberHome, /href=\{.*meetingUrl/);
 });
 

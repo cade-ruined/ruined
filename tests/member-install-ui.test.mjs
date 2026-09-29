@@ -59,7 +59,7 @@ function harness(options = {}) {
     let tree, passes = 0;
     do {
       cursor = 0; changed = false;
-      tree = loaded.exports.default({ className: "shell-install" });
+      tree = loaded.exports.default({ className: "shell-install", variant: options.variant });
       if (flushEffects) while (effects.length) effects.shift()();
       assert.ok(++passes < 10, "effects should settle");
     } while (flushEffects && changed);
@@ -159,4 +159,38 @@ test("external installation hides the suggestion and unmount removes all listene
   ui.unmount();
   assert.equal(ui.window.count(), 0);
   assert.equal(ui.media.count(), 0);
+});
+
+test("the persistent profile control ignores an older Not now dismissal without opening instructions", () => {
+  const suggestion = harness();
+  button(suggestion.render(), "Not now").props.onClick();
+  assert.equal(suggestion.render(), null);
+  const profile = harness({ variant: "profile", storage: suggestion.storage });
+  const tree = profile.render();
+  assert.match(text(tree), /Ruined, on your home screen\./);
+  assert.ok(button(tree, "Install Ruined"));
+  assert.equal(button(tree, "Not now"), undefined);
+  assert.equal(button(tree, "Install Ruined").props["aria-expanded"], false);
+  assert.equal(descendants(tree).some(element => element.type === "ol"), false);
+  profile.unmount();
+});
+
+test("profile installation remains hidden when installed and retries failed native prompts on a fresh click", async () => {
+  assert.equal(harness({ variant: "profile", standalone: true }).render(), null);
+  assert.equal(harness({ variant: "profile", userAgent: "iPhone", iosStandalone: true }).render(), null);
+  const ui = harness({ variant: "profile", storageError: true });
+  ui.render();
+  let prompted = 0;
+  ui.window.dispatch("beforeinstallprompt", { preventDefault() {}, async prompt() { prompted++; throw new Error("Unavailable"); } });
+  assert.equal(prompted, 0, "an install event never opens its own prompt");
+  await button(ui.render(), "Install Ruined").props.onClick();
+  assert.equal(prompted, 1);
+  assert.match(text(ui.render()), /Install app or Add to Home screen/);
+  assert.equal(button(ui.render(), "Install Ruined").props.disabled, false);
+  ui.window.dispatch("beforeinstallprompt", { preventDefault() {}, async prompt() { prompted++; return { outcome: "accepted" }; } });
+  assert.equal(prompted, 1);
+  await button(ui.render(), "Install Ruined").props.onClick();
+  assert.equal(prompted, 2);
+  assert.equal(ui.render(), null);
+  ui.unmount();
 });

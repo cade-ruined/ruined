@@ -25,6 +25,7 @@ const mod = { exports: {} };
 new Function("require", "module", "exports", compiled)((name) => {
   if (name === "react/jsx-runtime" || name === "react") return require(name);
   if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: ({badges}) => React.createElement("div", {"data-earned-badges": true}, badges.map(badge => React.createElement("span", {key:badge.key}, badge.label))) };
+  if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: ({variant}) => React.createElement("section", {"data-profile-install": variant}, "Install Ruined") };
   if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: JournalStub };
   if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
@@ -86,32 +87,41 @@ test("both profile tabs point to the shared accessible panel",()=>{
  for(const tab of tabs)assert.ok(nodes.some(node=>attr(node,"role")==="tabpanel"&&attr(node,"id")===attr(tab,"aria-controls")));
  assert.equal(tabs.filter(node=>attr(node,"aria-selected")==="true").length,1);
 });
-test("profile details keep membership and artifacts outside the entry navigation",()=>{
- const tree=render(memberFixture());const nodes=elements(tree);const details=nodes.find(node=>node.tagName==="details");
- assert.equal(attr(details,"id"),"about");assert.equal(attr(details,"open"),undefined);
- assert.equal(text(elements(details).find(node=>node.tagName==="summary")),"Profile details");
- assert.match(text(details),/Your membership/);assert.match(text(details),/Your artifacts/);
- assert.equal(elements(details).some(node=>attr(node,"role")==="tab"),false);
+test("profile removes redundant details and keeps installation before entry navigation",()=>{
+ const tree=render(memberFixture());const nodes=elements(tree);
+ assert.equal(nodes.some(node=>node.tagName==="details"),false);
+ assert.doesNotMatch(text(tree),/Profile details|Your membership|Your artifacts|Worth a look|Meet your Circle/);
+ const install=region(tree,"data-profile-install");
+ assert.equal(attr(install,"data-profile-install"),"profile");
+ const header=nodes.find(node=>node.tagName==="header");
+ const tablist=nodes.find(node=>attr(node,"role")==="tablist");
+ assert.ok(nodes.indexOf(install)>nodes.indexOf(header));
+ assert.ok(nodes.indexOf(install)<nodes.indexOf(tablist));
+ assert.equal(nodes.filter(node=>attr(node,"data-profile-install")!==undefined).length,1);
+ assert.ok(nodes.some(node=>attr(node,"href")==="/my/profile"));
 });
 test("owner profile enables explicit Journal sharing in production and preview",()=>{
  for(const props of [{},{preview:true}])assert.equal(attr(region(render(memberFixture(),props),"data-journal-sharing"),"data-journal-sharing"),"true");
 });
-test("member record keeps full totals, explicit truncation, and credited attendance distinct",()=>{
- const tree=render(memberFixture());assert.match(text(tree),/12 milestones · 7 attended/);
- assert.match(text(tree),/Showing the 2 most recent milestones of 12/);
- assert.match(text(tree),/Attendance confirmed/);assert.match(text(tree),/Credited attendance/);
- assert.match(text(tree),/7 attended and 2 credited/);
- assert.equal(elements(tree).some(node=>attr(node,"href")==="https://meet.example/private-room"),false);
+test("profile does not repeat private records, artifacts or membership next steps",()=>{
+ for(const kind of ["circle","onboarding","billing","account","foundations","explore"]){
+  const member=memberFixture();member.nextAction={kind,title:"A redundant action",body:"Next step body",href:"/my/account"};
+  const before=JSON.stringify(member),tree=render(member);
+  assert.doesNotMatch(text(tree),/A redundant action|Next step body|Your next step|Worth a look|12 milestones|First artifact|The attended gathering|The credited experience|Ruined Foundations complete/);
+  assert.equal(elements(tree).some(node=>attr(node,"data-member-next-action")!==undefined),false);
+  assert.equal(elements(tree).some(node=>attr(node,"href")==="https://meet.example/private-room"),false);
+  assert.equal(JSON.stringify(member),before,"simplifying the profile does not alter its underlying member record");
+ }
 });
-test("limited profile states suppress records and retain a useful next action",()=>{
- for(const mode of ["entry","limited","suspended"]){const member=memberFixture();member.access={mode,capabilities:["home.read","profile.read","account.read"]};member.nextAction={kind:"account",title:"Review membership",body:"",href:"/my/account"};const tree=render(member);
- assert.doesNotMatch(text(tree),/The attended gathering|The credited experience|Ruined Foundations complete|Private announcement body|Future Circle room|Circle person/);
- assert.match(text(tree),/Review membership/);assert.equal(attr(region(tree,"data-journal-writable"),"data-journal-writable"),"false");}
-});
-test("artifacts preserve earned, gifted, and purchased distinctions",()=>{
- const member=memberFixture();member.artifacts.push({...member.artifacts[0],awardId:"gift",name:"Gifted piece",acquisitionType:"gifted"},{...member.artifacts[0],awardId:"purchase",name:"Purchased piece",acquisitionType:"purchased"});const tree=render(member);
- assert.match(text(tree),/EarnedFirst artifact/);assert.match(text(tree),/GiftedGifted piece/);assert.match(text(tree),/PurchasedPurchased piece/);
- assert.ok(elements(tree).some(node=>attr(node,"href")==="/my/artifacts"));
+test("limited profile states keep Journal read-only and the existing profile controls available",()=>{
+ for(const mode of ["entry","limited","suspended"]){
+  const member=memberFixture();member.access={mode,capabilities:["home.read","profile.read","account.read"]};
+  const tree=render(member);
+  assert.doesNotMatch(text(tree),/The attended gathering|The credited experience|Ruined Foundations complete|Private announcement body|Future Circle room|Circle person|Worth a look|Your next step/);
+  assert.equal(attr(region(tree,"data-journal-writable"),"data-journal-writable"),"false");
+  assert.ok(elements(tree).some(node=>attr(node,"href")==="/my/profile"));
+  assert.equal(attr(region(tree,"data-profile-install"),"data-profile-install"),"profile");
+ }
 });
 
 test("the owner header uses full name for a generated tag without changing public identity", () => {
@@ -178,6 +188,7 @@ function interactiveProfile(hash = "#journal") {
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return require(name);
     if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: () => null };
+    if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: () => null };
     if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: Journal };
     if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
     if (name === "@/lib/membership/access-policy") return { memberCan: (access, capability) => access.capabilities.includes(capability) };
@@ -215,7 +226,6 @@ function interactiveProfile(hash = "#journal") {
   return { window, render, tabs, nodes,
     journal() { const journals = nodes(render()).filter(node => node.type === Journal); assert.equal(journals.length, 1); return journals[0]; },
     panel() { return nodes(render()).find(node => node.props.id === "profile-test-entries-panel"); },
-    details() { return nodes(render()).find(node => node.type === "details"); },
     journalPath() { return journalPath(render()); },
     navigate(next, event = "hashchange") { window.location.hash = next; listeners.get(event)?.(); render(); },
     focus: () => focused,
@@ -241,32 +251,25 @@ test("Journal and Timeline tabs select their own views while hashes and browser 
   ui.unmount();
 });
 
-test("one entry owner persists when legacy Saved selects Timeline and About opens profile details", () => {
+test("legacy Saved selects Timeline while About and unknown hashes safely select Journal without remounting", () => {
   const ui = interactiveProfile("#timeline"), initial = ui.journal(), initialPath = ui.journalPath();
   const content = ui.panel().props.children;
   assert.equal(content.props["data-journal-content"], "true");
-  assert.equal(ui.details().props.open, false);
-  for (const hash of ["#saved", "#about", "#timeline"]) {
+  for (const hash of ["#saved", "#about", "#timeline", "#unknown"]) {
     ui.navigate(hash);
-    const journal = ui.journal();
+    const journal = ui.journal(), timeline = hash === "#saved" || hash === "#timeline";
     assert.equal(journal.type, initial.type); assert.equal(journal.key, initial.key);
     assert.deepEqual(ui.journalPath(), initialPath, "view switches must not move or remount the draft owner");
     assert.equal(ui.panel().props.children.type, content.type);
     assert.equal(ui.panel().props.children.key, content.key);
-    assert.equal(ui.panel().props.children.props["data-journal-content"], "true");
     assert.equal(Boolean(ui.panel().props.hidden), false);
-    assert.equal(ui.panel().props["aria-labelledby"], "profile-test-timeline-tab");
-    assert.equal(journal.props.view ?? "journal", "journal"); assert.equal(journal.props.initialMode, "timeline");
-    if(hash==="#about")assert.equal(ui.details().props.open, true);
+    assert.equal(ui.panel().props["aria-labelledby"], `profile-test-${timeline ? "timeline" : "journal"}-tab`);
+    assert.equal(journal.props.initialMode, timeline ? "timeline" : "all");
+    assert.equal(ui.nodes(ui.render()).some(node => node.type === "details"), false);
   }
-  ui.tabs()[0].props.onClick(); assert.equal(ui.window.location.hash, "#journal");
-  assert.equal(ui.journal().props.initialMode, "all");
-  assert.equal(ui.panel().props["aria-labelledby"], "profile-test-journal-tab");
-  ui.details().props.onToggle({currentTarget:{open:false}});
-  assert.equal(ui.details().props.open,false);
   ui.unmount();
   const legacyAbout=interactiveProfile("#about");
-  assert.equal(legacyAbout.details().props.open,true);
+  assert.equal(legacyAbout.journal().props.initialMode,"all");
   assert.equal(legacyAbout.panel().props["aria-labelledby"],"profile-test-journal-tab");
   legacyAbout.unmount();
 });

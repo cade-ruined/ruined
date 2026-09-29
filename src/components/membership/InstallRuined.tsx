@@ -22,7 +22,7 @@ function rememberDismissal() {
   }
 }
 
-export default function InstallRuined({ className }: { className?: string }) {
+export default function InstallRuined({ className, variant = "suggestion" }: { className?: string; variant?: "suggestion" | "profile" }) {
   const instructionsId = useId();
   const [ready, setReady] = useState(false);
   const [installed, setInstalled] = useState(false);
@@ -88,6 +88,7 @@ export default function InstallRuined({ className }: { className?: string }) {
       const result = await prompt.prompt();
       const choice = prompt.userChoice ? await prompt.userChoice : result;
       if (choice?.outcome === "accepted") {
+        setInstalled(true);
         setDismissed(true);
         rememberDismissal();
       } else {
@@ -101,22 +102,22 @@ export default function InstallRuined({ className }: { className?: string }) {
     }
   }
 
-  if (!ready || installed || dismissed) return null;
+  if (!ready || installed || (dismissed && variant !== "profile")) return null;
 
   return (
-    <section className={[styles.install, className].filter(Boolean).join(" ")} aria-label="Install Ruined">
+    <section className={[styles.install, variant === "profile" ? styles.profile : null, className].filter(Boolean).join(" ")} aria-label="Install Ruined">
       <div className={styles.summary}>
         <div className={styles.copy}>
-          <p className={styles.title}>Keep Ruined close.</p>
-          <p>Open your membership from your home screen.</p>
+          <p className={styles.title}>{variant === "profile" ? "Ruined, on your home screen." : "Keep Ruined close."}</p>
+          {variant !== "profile" ? <p>Open your membership from your home screen.</p> : null}
         </div>
         <div className={styles.actions}>
           <button type="button" className={styles.installButton} onClick={install} disabled={openingPrompt} aria-expanded={showInstructions} aria-controls={instructionsId}>
             {openingPrompt ? "Opening…" : "Install Ruined"}
           </button>
-          <button type="button" className={styles.dismissButton} onClick={() => { setDismissed(true); rememberDismissal(); }} aria-label="Dismiss install suggestion">
+          {variant !== "profile" ? <button type="button" className={styles.dismissButton} onClick={() => { setDismissed(true); rememberDismissal(); }} aria-label="Dismiss install suggestion">
             Not now
-          </button>
+          </button> : null}
         </div>
       </div>
       {showInstructions ? (

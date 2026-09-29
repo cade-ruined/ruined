@@ -6,6 +6,7 @@ import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario } from "@/lib/membership/p
 
 import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import MemberSessionContinuity from "@/components/membership/MemberSessionContinuity";
+import MemberBadgeCelebration from "@/components/membership/MemberBadgeCelebration";
 import MemberPortraitState from "@/components/membership/MemberPortraitState";
 import MemberTimelineDraftState from "@/components/membership/MemberTimelineDraftState";
 import MemberJournalDraftState from "@/components/membership/MemberJournalDraftState";
@@ -42,7 +43,8 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
   }
 
   return (
-    <MemberSessionContinuity enabled={session?.status === "authenticated" || session?.status === "unavailable"} ownerId={viewer?.authUserId} initiallyUnavailable={session?.status === "unavailable"}>
+    <MemberSessionContinuity enabled={session?.status === "authenticated" || session?.status === "unavailable"} ownerId={viewer?.authUserId} initiallyUnavailable={session?.status === "unavailable"}
+      celebration={viewer ? <MemberBadgeCelebration key={viewer.authUserId} ownerId={viewer.authUserId} /> : null}>
     <MemberPortraitState ownerId={viewer?.authUserId}>
     <MemberTimelineDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
     <MemberJournalDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
