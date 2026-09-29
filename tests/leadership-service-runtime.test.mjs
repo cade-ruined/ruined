@@ -34,6 +34,7 @@ async function fixture(t) {
   `);
   await installOperatorFundingFunctions(db);
   await db.exec(await source("db/migrations/20260930100000_supporter_service.sql"));
+  await db.exec(await source("db/migrations/20260930111000_supporter_shared_billing.sql"));
   await db.query("insert into people(id) values($1)",[ids.person]);
   await db.query("insert into ruined_members(id,person_id) values($1,$2)",[ids.member,ids.person]);
   await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized) values($1,$2,$3,'supporter@example.test'),($4,null,null,'admin@example.test'),($5,null,null,'coordinator@example.test'),($6,null,null,'finance@example.test')",[ids.supporter,ids.member,ids.person,ids.admin,ids.coordinator,ids.finance]);
@@ -203,4 +204,39 @@ test("funding readers tuple-lock only Administrator grants, never service grants
     const grantAfter=(await tx.query("select xmax::text as lock_xid from member_complimentary_grants where member_id=$1",[ids.member])).rows[0];
     assert.notEqual(grantAfter.lock_xid,grantBefore.lock_xid,"Independent complimentary funding must still serialize with revocation");
   });
+});
+
+test("a couple Supporter follows shared funding and cannot use stale personal billing after the payer becomes inactive", async t => {
+  const f = await fixture(t);
+  const payer = "77777777-7777-4777-8777-777777777777", person = "88888888-8888-4888-8888-888888888888", reservation = "99999999-9999-4999-8999-999999999999";
+  await f.db.query("insert into people(id) values($1)", [person]);
+  await f.db.query("insert into ruined_members(id,person_id) values($1,$2)", [payer,person]);
+  await f.db.query("insert into member_lifecycle(member_id) values($1)", [payer]);
+  await f.db.query("insert into stripe_subscriptions(id,member_id,stripe_status) values('sub_shared_supporter',$1,'active')", [payer]);
+  await f.db.query("insert into membership_commercial_reservations(id,payer_member_id,kind,status,stripe_subscription_id,created_at) values($1,$2,'couple','activated','sub_shared_supporter',statement_timestamp())", [reservation,payer]);
+  await f.db.query("insert into membership_commercial_participants(reservation_id,member_id) values($1,$2),($1,$3)", [reservation,payer,ids.member]);
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [ids.member]);
+  await f.prepare();
+  await f.start();
+  assert.equal((await f.db.query("select count(*)::int n from circle_staff_assignments where ended_at is null")).rows[0].n, 1);
+  await f.run(ids.coordinator, { action:"end", assignmentId:"1", coverAuthUserId:null });
+  // Deliberately stale own projection: only the payer's canonical funding wins.
+  await f.db.query("update member_lifecycle set billing_state='active' where member_id=$1", [ids.member]);
+  for (const billing of ["pending", "attention_required", "ended"]) {
+    await f.db.query("update member_lifecycle set billing_state=$2 where member_id=$1", [payer,billing]);
+    await assert.rejects(f.run(ids.coordinator, { action:"ready",authUserId:ids.supporter,circleId:ids.circle }), /active member/);
+    await assert.rejects(f.start(), /active member/);
+    await assert.rejects(f.db.query("insert into circle_staff_assignments(auth_user_id,circle_id,role_slug,assigned_by_auth_user_id) values($1,$2,'circle_leader',$3)", [ids.supporter,ids.circle,ids.coordinator]), /eligible current member/);
+  }
+  await f.db.query("update member_lifecycle set billing_state='active' where member_id=$1", [payer]);
+  for (const status of ["past_due", "canceled"]) {
+    await f.db.query("update stripe_subscriptions set stripe_status=$1 where id='sub_shared_supporter'", [status]);
+    await assert.rejects(f.start(), /active member/);
+    await assert.rejects(f.db.query("insert into circle_staff_assignments(auth_user_id,circle_id,role_slug,assigned_by_auth_user_id) values($1,$2,'circle_leader',$3)", [ids.supporter,ids.circle,ids.coordinator]), /eligible current member/);
+  }
+  assert.equal((await f.db.query("select count(*)::int n from circle_staff_assignments where ended_at is null")).rows[0].n, 0);
+  assert.equal((await f.db.query("select count(*)::int n from platform_role_grants where role_slug='member' and revoked_at is null")).rows[0].n, 1);
+  await f.db.query("update stripe_subscriptions set stripe_status='active' where id='sub_shared_supporter'");
+  await f.start();
+  assert.equal((await f.db.query("select count(*)::int n from circle_staff_assignments where ended_at is null")).rows[0].n, 1);
 });

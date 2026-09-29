@@ -40,7 +40,8 @@ async function requireEligibleSupporter(tx: postgres.TransactionSql, authUserId:
       and lifecycle.account_state = 'active' and lifecycle.administrative_onboarding_state = 'completed'
       and lifecycle.program_state in ('active','onboarding') and lifecycle.foundations_state = 'completed'
       and (lifecycle.standing_state = 'active' or (lifecycle.standing_state = 'cancellation_requested' and lifecycle.cancellation_effective_at > statement_timestamp()))
-      and ((lifecycle.billing_state = 'active' and member.membership_state = 'active') or private.ruined_member_has_complimentary_funding(member.id))
+      and ((coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) = 'active'
+        and member.membership_state = 'active') or private.ruined_member_has_complimentary_funding(member.id))
       and exists(select 1 from platform_role_grants access where access.auth_user_id = account.auth_user_id and access.role_slug = 'member' and access.revoked_at is null)
       and circle.id = ${circleId}::uuid and circle.status in ('active','forming')
       and placement.ended_at is null and placement.assigned_at <= statement_timestamp()

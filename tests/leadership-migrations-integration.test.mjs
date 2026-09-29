@@ -39,6 +39,14 @@ test("full migration chain preserves funding, service departure, capacity approv
   for (let i = 0; i < migrations.length; i++) {
     try { await db.exec(migrations[i]); } catch (error) { throw new Error(`Migration failed: ${paths[i]}`, { cause: error }); }
   }
+  // Later leadership/reveal migrations must retain commercial shared billing.
+  for (const signature of ["private.ruined_current_active_access_member_id()", "private.ruined_current_updates_member_id()", "private.ruined_member_can_share_invitation(uuid)", "private.ruined_guard_new_supporter_service()"]) {
+    const definition = (await db.query("select pg_get_functiondef($1::regprocedure) as body", [signature])).rows[0].body;
+    assert.match(definition, /ruined_member_shared_billing_state\(member.id\)/, signature);
+  }
+  const circleAccess = (await db.query("select pg_get_functiondef('private.ruined_current_active_access_block_id()'::regprocedure) as body")).rows[0].body;
+  assert.match(circleAccess, /ruined_current_circle_is_revealed\(\)/);
+  assert.match(circleAccess, /ruined_current_active_access_member_id\(\)/);
   function wrap(engine) {
     const sql = async (strings, ...values) => {
       let query = strings[0];
