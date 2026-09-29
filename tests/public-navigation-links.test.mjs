@@ -27,6 +27,24 @@ const navigation = load("src/data/navigation.ts");
 const membership = load("src/data/public-membership.ts");
 const searchContract = load("src/data/search-contract.ts");
 
+test("the public Foundations route redirects to member access without loading the presentation", () => {
+  const destination = "https://members.theruinedproject.com/my/foundations";
+  const redirectSignal = new Error("NEXT_REDIRECT");
+  const route = load("app/foundations/page.tsx", {
+    "next/navigation": {
+      redirect: (href) => {
+        assert.equal(href, destination);
+        throw redirectSignal;
+      },
+    },
+    "@/lib/sharing": { privateSharingMetadata: { robots: { index: false, follow: false } } },
+  });
+
+  assert.throws(() => route.default(), (error) => error === redirectSignal);
+  assert.equal(route.metadata.title, "Foundations");
+  assert.deepEqual(route.metadata.robots, { index: false, follow: false });
+});
+
 function click(href, overrides = {}) {
   return {
     button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false,

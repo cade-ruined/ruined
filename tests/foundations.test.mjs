@@ -66,7 +66,7 @@ test("foundations data defines the ordered four-session, 22-moment journey", asy
   }
 });
 
-test("foundations route is local, private by default, and presentation-ready", async () => {
+test("foundations metadata stays private and the underlying presentation keeps reflections local", async () => {
   const files = [
     "app/foundations/page.tsx",
     "app/foundations/README.md",
@@ -103,6 +103,9 @@ test("foundations route is local, private by default, and presentation-ready", a
   assert.match(shell, /aria-live="polite"/);
   assert.doesNotMatch(
     joined,
-    /localStorage|sessionStorage|document\.cookie|fetch\(|https?:\/\//
+    /localStorage|sessionStorage|document\.cookie|fetch\(/
   );
+  // The entry route now redirects to the member host; the presentation itself
+  // still has no remote dependencies or reflection transmission.
+  assert.doesNotMatch(sources.slice(2).join("\n"), /https?:\/\//);
 });

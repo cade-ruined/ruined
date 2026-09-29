@@ -1,7 +1,10 @@
 # Ruined Foundations
 
-`/foundations` is a 22-moment, full-screen presentation built for a live call.
-It uses native scroll/swipe snapping, presenter controls, chapter navigation,
+The public `/foundations` route redirects to
+`https://members.theruinedproject.com/my/foundations`, where member access and
+launch availability are enforced. It never renders the presentation publicly.
+
+The underlying 22-moment presentation uses native scroll/swipe snapping, presenter controls, chapter navigation,
 keyboard shortcuts, editable in-memory reflections, and reduced-motion
 alternatives. Reflection writing is never persisted or transmitted.
 
