@@ -91,6 +91,7 @@ function rethrowMemberTagConflict(error: unknown): never {
 type IdentityRow = {
   complimentary_funded: boolean;
   operator_funded: boolean;
+  shared_billing_state?: BillingState | null;
   account_state: AccountState;
   administrative_onboarding_state: MemberIdentity["administrativeOnboardingState"];
   auth_user_id: string;
@@ -111,11 +112,11 @@ function toIso(value: Date | string | null | undefined): string | null {
 
 function identityFromRow(row: IdentityRow): MemberIdentity {
   return {
-    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
+    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
     authUserId: row.auth_user_id,
-    billingState: row.billing_state,
+    billingState: row.shared_billing_state ?? row.billing_state,
     cancellationEffectiveAt: toIso(row.cancellation_effective_at),
     email: row.email,
     foundationsState: row.foundations_state,
@@ -139,6 +140,7 @@ export async function getMemberIdentity(
       lifecycle.account_state,
       lifecycle.billing_state,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state,
       lifecycle.foundations_state,
@@ -830,7 +832,7 @@ export async function completeMemberAdministrativeOnboarding(
       update member_onboardings onboarding
       set
         state = 'completed',
-        billing_confirmed_at = case when lifecycle.billing_state = 'active'
+        billing_confirmed_at = case when coalesce(private.ruined_member_shared_billing_state(onboarding.member_id), lifecycle.billing_state) = 'active'
           then coalesce(onboarding.billing_confirmed_at, statement_timestamp())
           else onboarding.billing_confirmed_at end,
         completed_at = coalesce(onboarding.completed_at, statement_timestamp()),
@@ -838,13 +840,15 @@ export async function completeMemberAdministrativeOnboarding(
           'source', 'member_entry_reconciliation',
           'funding', case when private.ruined_member_has_operator_funding(onboarding.member_id)
             then 'operator' when private.ruined_member_has_complimentary_funding(onboarding.member_id)
-            then 'complimentary' else 'self' end),
+            then 'complimentary' when private.ruined_member_has_couple_funding(onboarding.member_id)
+            then 'couple' else 'self' end),
         version = onboarding.version + 1,
         updated_at = statement_timestamp()
       from member_lifecycle lifecycle
       where onboarding.member_id = ${identity.memberId}::uuid
         and lifecycle.member_id = onboarding.member_id
-        and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(onboarding.member_id))
+        and (coalesce(private.ruined_member_shared_billing_state(onboarding.member_id), lifecycle.billing_state) = 'active'
+          or private.ruined_member_has_complimentary_funding(onboarding.member_id))
         and lifecycle.account_state = 'active'
         and onboarding.profile_completed_at is not null
         and onboarding.agreement_completed_at is not null
@@ -957,13 +961,21 @@ export async function getMemberAccount(
       agreement_title: string | null;
       agreement_version: number | null;
       receipt_id: string | null;
+      cancel_at_period_end: boolean | null;
+      cancel_at: Date | string | null;
+      current_period_end: Date | string | null;
+      stripe_status: string | null;
     }>
   >`
     select
       acceptance.accepted_at,
       acceptance.agreement_title_snapshot as agreement_title,
       acceptance.agreement_version_snapshot as agreement_version,
-      receipt.id as receipt_id
+      receipt.id as receipt_id,
+      subscription.cancel_at_period_end,
+      subscription.cancel_at,
+      subscription.current_period_end,
+      subscription.stripe_status
     from ruined_members member
     left join lateral (
       select accepted.*
@@ -975,6 +987,13 @@ export async function getMemberAccount(
     ) acceptance on true
     left join membership_agreement_receipts receipt
       on receipt.acceptance_id = acceptance.id
+    left join lateral (
+      select cancel_at_period_end, cancel_at, current_period_end, stripe_status
+      from stripe_subscriptions
+      where member_id = member.id and stripe_customer_id = member.stripe_customer_id
+      order by (stripe_status not in ('canceled', 'incomplete_expired')) desc, created_at desc
+      limit 1
+    ) subscription on true
     where member.id = ${identity.memberId}::uuid
       and member.person_id = ${identity.personId}::uuid
     limit 1
@@ -992,6 +1011,12 @@ export async function getMemberAccount(
           : String(agreement.agreement_version),
     },
     billingState: identity.billingState,
+    subscription: agreement?.stripe_status ? {
+      cancelAtPeriodEnd: agreement.cancel_at_period_end === true,
+      cancelAt: toIso(agreement.cancel_at),
+      currentPeriodEnd: toIso(agreement.current_period_end),
+      status: agreement.stripe_status,
+    } : null,
     membershipFunding: identity.membershipFunding,
     email: identity.email,
     standingState: identity.standingState,
@@ -3220,6 +3245,7 @@ export async function requireLockedMemberWriteAccess(tx: postgres.TransactionSql
     select account.auth_user_id, member.id as member_id, member.person_id,
       member.email, lifecycle.account_state, lifecycle.billing_state,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state, lifecycle.foundations_state,
       lifecycle.administrative_onboarding_state, lifecycle.standing_state,

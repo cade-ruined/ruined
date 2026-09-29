@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   }
 
   const configuration = getPlatformConfiguration();
-  if (configuration.mode !== "connected" || configuration.stripe !== "connected") {
+  if (configuration.mode !== "connected" || !configuration.stripePortalReady) {
     return NextResponse.json({ error: "Stripe billing is not configured yet." }, { status: 503 });
   }
 

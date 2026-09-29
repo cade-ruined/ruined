@@ -72,7 +72,7 @@ export type OpsCircleShaperAssignment = {
 };
 
 export type OpsCircleMemberAssignment = {
-  membershipFunding?: "self" | "operator" | "complimentary";
+  membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   administrativeOnboardingState?: "completed" | "in_progress" | "not_started";
   standingState?: string;
   cancellationEffectiveAt?: string | null;
@@ -808,7 +808,7 @@ export async function getOpsCircleMemberAssignments(
         lifecycle.standing_state,
         lifecycle.cancellation_effective_at,
         lifecycle.account_state,
-        lifecycle.billing_state,
+        coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
         lifecycle.program_state
       from circle_member_assignments assignment
       join ruined_members member on member.id = assignment.member_id
@@ -1024,7 +1024,7 @@ async function getCircleShaperMemberRows(
       platform_user.auth_user_id, circle.status as circle_status,
       person.status as person_status, platform_user.status as user_status,
       lifecycle.account_state, lifecycle.administrative_onboarding_state,
-      lifecycle.billing_state, member.membership_state, lifecycle.program_state,
+      coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state, member.membership_state, lifecycle.program_state,
       coalesce(lifecycle.standing_state = 'active' or (
         lifecycle.standing_state = 'cancellation_requested'
         and lifecycle.cancellation_effective_at > statement_timestamp()
@@ -2096,7 +2096,7 @@ export async function assignMemberToCircle({
     >`
       select
         lifecycle.account_state,
-        lifecycle.billing_state,
+        coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
         lifecycle.program_state,
         member.membership_state,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
@@ -2246,7 +2246,7 @@ export async function transferMemberToCircle({
       complimentary_funded: boolean; operator_funded: boolean; administrative_onboarding_state: string; standing_state: string;
       cancellation_effective_at: Date | string | null;
     }>>`
-      select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, member.membership_state,
+      select lifecycle.account_state, coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state, lifecycle.program_state, member.membership_state,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
         private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.administrative_onboarding_state, lifecycle.standing_state, lifecycle.cancellation_effective_at

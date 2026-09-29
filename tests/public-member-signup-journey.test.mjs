@@ -21,8 +21,10 @@ const environment = Object.freeze({
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "local-test-no-network",
   STRIPE_SECRET_KEY: "sk_test_local_journey_fixture", NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_local_journey_fixture",
   STRIPE_WEBHOOK_SECRET: "whsec_local_journey_fixture", STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID: "price_monthly",
-  STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual", STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION: "ruined_membership-v2",
-  STRIPE_TAX_ENABLED: "false",
+  STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual", STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION: "ruined_membership-v2", STRIPE_BILLING_PORTAL_CONFIGURATION_ID: "bpc_reviewed_test",
+  STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_ANNUAL_PRICE_ID: "price_founding_annual",
+  STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID: "bpc_commitment_test",
+  STRIPE_TAX_ENABLED: "false", STRIPE_MEMBERSHIP_COMMERCIAL_READY: "true",
 });
 const denyNetwork = async () => { throw new Error("Network calls are forbidden in the signup journey test."); };
 class OfflineStripe extends Stripe {
@@ -126,22 +128,36 @@ test("Ruined invitation signup reaches paid onboarding through the real issuance
     "@/lib/google/calendar": noCommunication,
     "@/lib/support/delivery": noCommunication,
   });
-  const routes = Object.fromEntries(["membership/signup/invitation", "auth/otp/request", "auth/otp/verify", "my/onboarding", "my/agreement", "stripe/checkout", "stripe/webhook"]
+  const routes = Object.fromEntries(["membership/signup/invitation", "auth/otp/request", "auth/otp/verify", "my/onboarding", "my/agreement", "stripe/checkout", "stripe/membership-offer", "stripe/webhook"]
     .map(path => [path, load(`app/api/${path}/route.ts`)]));
   const identity = load("src/lib/membership/repository.ts");
   const signup = load("src/lib/membership/public-signup-admission.ts");
   const policy = load("src/lib/membership/access-policy.ts");
   const server = load("src/lib/stripe/server.ts");
   const stripe = server.getStripe();
-  const price = { id: "price_annual", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", transform_quantity: null,
-    currency: "usd", unit_amount: 504000, recurring: { interval: "year", interval_count: 1, usage_type: "licensed" } };
-  let session, subscription;
+  const price = { id: "price_founding_annual", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", transform_quantity: null,
+    currency: "usd", tax_behavior: "exclusive", unit_amount: 349000, recurring: { interval: "year", interval_count: 1, usage_type: "licensed" } };
+  let session, subscription, latestInvoice;
+  stripe.customers.retrieve = async () => ({ id: "cus_offline_journey", email: viewer.email, address: { country: "US" } });
+  stripe.invoices.retrieve = async () => latestInvoice;
+  stripe.invoicePayments.list = async () => ({ has_more: false, data: [{ id: "inpay_fixture", invoice: latestInvoice.id, status: "paid", livemode: false, currency: "usd", amount_paid: price.unit_amount, payment: { type: "payment_intent", payment_intent: "pi_fixture" } }] });
+  stripe.paymentIntents.retrieve = async () => ({ id: "pi_fixture", status: "succeeded", livemode: false, customer: "cus_offline_journey", latest_charge: "ch_fixture" });
+  stripe.charges.retrieve = async () => ({ id: "ch_fixture", paid: true, captured: true, status: "succeeded", refunded: false, amount_refunded: 0, disputed: false, amount: price.unit_amount, currency: "usd", livemode: false, customer: "cus_offline_journey" });
+  stripe.refunds.list = async () => ({ has_more: false, data: [] });
   stripe.prices.retrieve = async id => { assert.equal(id, price.id); return price; };
+  stripe.billingPortal.configurations.retrieve = async id => {
+    assert.equal(id, "bpc_commitment_test");
+    return { id, active: true, livemode: false, features: {
+      invoice_history: { enabled: true }, payment_method_update: { enabled: true },
+      subscription_cancel: { enabled: false, mode: "at_period_end", proration_behavior: "none" },
+      subscription_update: { enabled: false },
+    } };
+  };
   stripe.checkout.sessions.create = async (params, options) => {
     creations.push({ params, options });
     session = { id: "cs_offline_journey", client_secret: "local_fixture_client_secret", status: "open", expires_at: Math.floor(Date.now() / 1000) + 3600,
       mode: "subscription", livemode: false, ui_mode: "embedded_page", currency: "usd", amount_subtotal: price.unit_amount,
-      metadata: params.metadata, customer_email: viewer.email, customer: null, subscription: null };
+      shipping_address_collection: params.shipping_address_collection, metadata: params.metadata, consent_collection: params.consent_collection, custom_text: params.custom_text, customer_email: viewer.email, customer: null, subscription: null };
     return session;
   };
   stripe.checkout.sessions.retrieve = async id => { assert.equal(id, session.id); return session; };
@@ -168,7 +184,7 @@ test("Ruined invitation signup reaches paid onboarding through the real issuance
   const agreement = { affirmativeAction: "checkbox_and_submit", ageConfirmed: true, agreementVersionId: agreementId, attemptId: randomUUID(), signerName: "Integration Test Member" };
   let acceptanceId;
   const checkoutAttemptId = randomUUID();
-  const checkoutBody = () => ({ acceptanceId, attemptId: checkoutAttemptId, plan: "annual", recurringPaymentAccepted: true });
+  const checkoutBody = () => ({ acceptanceId, attemptId: checkoutAttemptId, commercialReservationId: checkoutAttemptId, plan: "annual", recurringPaymentAccepted: true });
 
   let invitationToken;
   const invitationRequest = { requestId: randomUUID(), recipientName: "Integration Test Member", recipientEmail: viewer.email, billingPlan: "annual" };
@@ -280,26 +296,29 @@ test("Ruined invitation signup reaches paid onboarding through the real issuance
   await t.test("explicit recurring consent creates one annual checkout with real durable evidence", async () => {
     await expectResponse(post("stripe/checkout", { ...checkoutBody(), recurringPaymentAccepted: false }), 400);
     assert.equal(creations.length, 0);
+    const offered = await expectResponse(post("stripe/membership-offer", { requestId: checkoutAttemptId, kind: "individual", plan: "annual" }), 200);
+    assert.equal(offered.body.quote.offer.id, "founding_individual_annual");
+    assert.equal(offered.body.quote.offer.amount, 349000);
     const opened = await expectResponse(post("stripe/checkout", checkoutBody()), 200);
-    assert.deepEqual(opened.body, { clientSecret: session.client_secret, plan: "annual" });
+    assert.deepEqual(opened.body, { clientSecret: session.client_secret, plan: "annual", commercialReservationId: checkoutAttemptId });
     assert.deepEqual((await expectResponse(post("stripe/checkout", checkoutBody()), 200)).body, opened.body);
     assert.equal(creations.length, 1, "Resume an existing payment instead of charging twice.");
-    assert.deepEqual(creations[0].params.line_items, [{ price: "price_annual", quantity: 1 }]);
+    assert.deepEqual(creations[0].params.line_items, [{ price: "price_founding_annual", quantity: 1 }]);
     assert.equal(creations[0].params.metadata.agreement_acceptance_id, acceptanceId);
     assert.equal(creations[0].params.metadata.ruined_checkout_attempt_id, checkoutAttemptId);
     const consent = await row("select billing_plan,billing_consent_auth_user_id,recurring_payment_terms,recurring_payment_accepted_at from stripe_checkout_attempts");
     assert.equal(consent.billing_plan, "annual");
     assert.equal(consent.billing_consent_auth_user_id, viewer.authUserId);
-    assert.equal(consent.recurring_payment_terms.amount, 504000);
+    assert.equal(consent.recurring_payment_terms.amount, 349000);
     assert.equal(consent.recurring_payment_terms.interval, "year");
     assert.equal(consent.recurring_payment_terms.firstPayment, "upfront");
     assert.ok(consent.recurring_payment_accepted_at);
     await assertEntryOnly();
   });
 
-  await t.test("only the paid signed invoice unlocks onboarding; Checkout completion and replays do not", async () => {
+  await t.test("signed invoices unlock access and scheduled cancellation preserves it until the subscription ends", async () => {
     const now = Math.floor(Date.now() / 1000);
-    subscription = { id: "sub_offline_journey", object: "subscription", livemode: false, status: "active", customer: "cus_offline_journey",
+    subscription = { id: "sub_offline_journey", start_date: now, latest_invoice: "in_offline_journey", object: "subscription", livemode: false, status: "active", customer: "cus_offline_journey",
       metadata: creations[0].params.subscription_data.metadata, automatic_tax: { enabled: false }, cancel_at_period_end: false,
       items: { has_more: false, data: [{ id: "si_offline_journey", quantity: 1, price, current_period_start: now, current_period_end: now + 365 * 86400 }] } };
     session = { ...session, status: "complete", customer: subscription.customer, subscription: subscription.id, payment_status: "paid" };
@@ -313,16 +332,28 @@ test("Ruined invitation signup reaches paid onboarding through the real issuance
     assert.equal(completed.body.handled, true);
     await assertEntryOnly();
     const invoice = { id: "in_offline_journey", object: "invoice", livemode: false, currency: "usd", status: "paid",
-      amount_due: price.unit_amount, amount_paid: price.unit_amount, amount_remaining: 0, billing_reason: "subscription_create",
+      amount_due: price.unit_amount, amount_paid: price.unit_amount, amount_remaining: 0, total: price.unit_amount, total_excluding_tax: price.unit_amount,
+      starting_balance: 0, ending_balance: 0, pre_payment_credit_notes_amount: 0, post_payment_credit_notes_amount: 0, customer_address: { country: "US" }, billing_reason: "subscription_create",
       customer: subscription.customer, customer_email: viewer.email, parent: { subscription_details: { subscription: subscription.id, metadata: subscription.metadata } },
-      lines: { has_more: false, data: [{ id: "il_offline_journey", livemode: false, currency: "usd", quantity: 1, subtotal: price.unit_amount,
+      lines: { has_more: false, data: [{ id: "il_offline_journey", livemode: false, currency: "usd", quantity: 1, subtotal: price.unit_amount, period: { start: now, end: now + 365 * 86400 },
         pricing: { price_details: { price: price.id } }, parent: { type: "subscription_item_details", subscription_item_details: {
           subscription: subscription.id, subscription_item: subscription.items.data[0].id, proration: false } } }] } };
+    latestInvoice = invoice;
     const paidEvent = event("evt_offline_paid", "invoice.paid", invoice);
     const paid = await expectResponse(webhook(paidEvent), 200);
     assert.equal(paid.body.handled, true);
+    const commitment = await row("select * from stripe_membership_commitments");
+    assert.equal(commitment.id, checkoutAttemptId);
+    assert.equal(commitment.terms_snapshot.offerId, "founding_individual_annual");
+    assert.equal(commitment.terms_snapshot.totalInitialDues, 349000);
+    assert.equal(commitment.terms_snapshot.startsAt, new Date(now * 1000).toISOString());
+    assert.equal((await row("select status from membership_commercial_reservations")).status, "activated");
     const member = await identity.getMemberIdentity(viewer.authUserId);
     assert.equal(member.billingState, "active");
+    const contract = await row("select terms_snapshot from stripe_membership_commitments");
+    assert.equal(contract.terms_snapshot.offerId, "founding_individual_annual");
+    assert.equal(contract.terms_snapshot.totalInitialDues, 349000);
+    assert.equal(contract.terms_snapshot.billingTermsVersion, "membership-billing-v2");
     assert.equal(member.administrativeOnboardingState, "completed");
     assert.equal(member.programState, "onboarding");
     assert.equal(policy.deriveMemberAccessPolicy(member).mode, "onboarding");
@@ -336,5 +367,28 @@ test("Ruined invitation signup reaches paid onboarding through the real issuance
     assert.equal(Number((await row("select count(*) from member_referrals")).count), 0);
     assert.equal(verified.length, 2);
     assert.ok(workflowPasses > 0, "Follow-up work stays queued; the real sender is never invoked.");
+
+    subscription.cancel_at = subscription.items.data[0].current_period_end;
+    subscription.cancel_at_period_end = false;
+    await expectResponse(webhook({ ...event("evt_offline_cancel_scheduled", "customer.subscription.updated", subscription), created: now + 1 }), 200);
+    const scheduledMember = await identity.getMemberIdentity(viewer.authUserId);
+    assert.equal(scheduledMember.billingState, "active", "Stopping renewal must not remove the paid term.");
+    assert.equal(policy.memberCan(policy.deriveMemberAccessPolicy(scheduledMember), "foundations.write"), true);
+    const account = await identity.getMemberAccount(viewer.authUserId);
+    assert.deepEqual(account.subscription, {
+      cancelAtPeriodEnd: false, cancelAt: new Date(subscription.cancel_at * 1000).toISOString(), status: "active",
+      currentPeriodEnd: new Date(subscription.items.data[0].current_period_end * 1000).toISOString(),
+    });
+    subscription.cancel_at = null;
+    await expectResponse(webhook({ ...event("evt_offline_cancel_resumed", "customer.subscription.updated", subscription), created: now + 2 }), 200);
+    assert.equal((await identity.getMemberAccount(viewer.authUserId)).subscription.cancelAt, null, "resuming clears the canonical scheduled end");
+    subscription.cancel_at_period_end = true;
+    await expectResponse(webhook({ ...event("evt_offline_legacy_cancel", "customer.subscription.updated", subscription), created: now + 3 }), 200);
+    assert.equal((await identity.getMemberAccount(viewer.authUserId)).subscription.cancelAtPeriodEnd, true);
+    subscription.status = "canceled";
+    await expectResponse(webhook({ ...event("evt_offline_cancel_effective", "customer.subscription.deleted", subscription), created: now + 4 }), 200);
+    const endedMember = await identity.getMemberIdentity(viewer.authUserId);
+    assert.equal(endedMember.billingState, "ended");
+    assert.equal(policy.memberCan(policy.deriveMemberAccessPolicy(endedMember), "foundations.write"), false);
   });
 });

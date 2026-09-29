@@ -3,7 +3,8 @@ import "server-only";
 import postgres from "postgres";
 import type Stripe from "stripe";
 
-import { MEMBERSHIP_PLANS, isMembershipBillingPlan, type MembershipBillingPlan } from "@/lib/membership/pricing";
+import { MEMBERSHIP_OFFERS, isMembershipBillingPlan, type MembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
+import { lockCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
 
 import { getBillingDatabase } from "@/lib/stripe/database";
 import {
@@ -33,10 +34,13 @@ export type MembershipCheckoutReservation = {
   existingAcceptanceMatches: boolean;
   existingStripeSessionId: string | null;
   memberId: string;
+  commercialReservationId: string;
+  offerId: MembershipOfferId;
+  expiresAt: Date;
 };
 
 export class MembershipCheckoutConflictError extends Error {
-  constructor() {
+  constructor(public readonly code = "checkout_conflict") {
     super("This email already has membership billing in progress.");
     this.name = "MembershipCheckoutConflictError";
   }
@@ -53,6 +57,7 @@ export type SubscriptionSnapshot = {
   automaticTaxDisabledReason: string | null;
   automaticTaxEnabled: boolean;
   cancelAtPeriodEnd: boolean;
+  cancelAt: Date | null;
   currentPeriodEnd: Date | null;
   currentPeriodStart: Date | null;
   customerId: string;
@@ -150,6 +155,7 @@ export async function reserveMembershipCheckout({
   plan,
   stripePriceId,
   paidAgreementVersion,
+  commercialReservationId,
 }: {
   acceptanceId: string;
   attemptId: string;
@@ -158,7 +164,9 @@ export async function reserveMembershipCheckout({
   plan: MembershipBillingPlan;
   stripePriceId: string;
   paidAgreementVersion: string;
+  commercialReservationId: string;
 }): Promise<MembershipCheckoutReservation> {
+  if (!commercialReservationId || attemptId !== commercialReservationId) throw new MembershipCheckoutConflictError();
   const sql = getBillingDatabase();
   const emailNormalized = normalizeEmail(email);
 
@@ -185,10 +193,12 @@ export async function reserveMembershipCheckout({
         and member_grant.revoked_at is null
       join ruined_members member on member.person_id = platform_user.person_id
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      join person_private_profiles private_profile on private_profile.person_id = member.person_id
       where platform_user.auth_user_id = ${authUserId}::uuid
         and platform_user.email_normalized = ${emailNormalized}
         and platform_user.status = 'active'
         and lifecycle.account_state = 'active'
+        and private_profile.default_fulfillment_address->>'countryCode' = 'US'
       limit 1
       for update of member
     `;
@@ -208,6 +218,13 @@ export async function reserveMembershipCheckout({
     if (!funding || funding.complimentary_funded || member.membership_state === "active" || member.membership_state === "attention_required") {
       throw new MembershipCheckoutConflictError();
     }
+
+    // Existing profile/funding writers lock the member before the commercial
+    // ledger; preserve that order while binding the quote and billing attempt.
+    const commercial = await lockCommercialMembershipReservation(commercialReservationId, tx);
+    if (!commercial || commercial.status !== "reserved" || commercial.plan !== plan ||
+      commercial.stripePriceId !== stripePriceId || commercial.memberId !== member.id) throw new MembershipCheckoutConflictError();
+    const offer = MEMBERSHIP_OFFERS[commercial.offerId];
 
     const acceptanceRows = await tx<
       Array<{
@@ -296,10 +313,14 @@ export async function reserveMembershipCheckout({
         stripe_price_id: string | null;
         expires_at: Date;
         recurring_payment_accepted_at: Date | null;
+        commercial_reservation_id: string | null;
+        offer_id: string | null;
+        recurring_payment_terms: { version?: string } | null;
       }>
     >`
       select
         billing_plan, stripe_price_id, expires_at, recurring_payment_accepted_at,
+        commercial_reservation_id, offer_id, recurring_payment_terms,
         id,
         stripe_session_id,
         agreement_acceptance_id,
@@ -316,6 +337,9 @@ export async function reserveMembershipCheckout({
     const existingAttempt = attemptRows[0];
 
     if (existingAttempt) {
+      // Never resume an older policy's session under newly displayed v2 consent.
+      if (existingAttempt.commercial_reservation_id !== commercial.id || existingAttempt.offer_id !== offer.id ||
+        existingAttempt.recurring_payment_terms?.version !== "membership-billing-v2") throw new MembershipCheckoutConflictError();
       if (!isMembershipBillingPlan(existingAttempt.billing_plan) || !existingAttempt.stripe_price_id || !existingAttempt.recurring_payment_accepted_at) {
         throw new MembershipCheckoutConflictError();
       }
@@ -344,8 +368,17 @@ export async function reserveMembershipCheckout({
           existingAttempt.agreement_version === agreementVersion,
         existingStripeSessionId: existingAttempt.stripe_session_id,
         memberId: member.id,
+        commercialReservationId: commercial.id,
+        offerId: offer.id,
+        expiresAt: existingAttempt.expires_at,
       };
     }
+
+    if (commercial.expiresAt.getTime() <= Date.now()) throw new MembershipCheckoutConflictError("membership_offer_expired");
+    // A member may start payment throughout the quoted offer's validity. Stripe
+    // requires at least 30 minutes for a new Session; persist the extension once
+    // so every retry keeps identical provider parameters and the same hold.
+    const checkoutExpiresAt = new Date(Math.max(commercial.expiresAt.getTime(), Date.now() + 31 * 60_000));
 
     await tx`
       update member_onboardings
@@ -367,6 +400,8 @@ export async function reserveMembershipCheckout({
         recurring_payment_accepted_at,
         billing_consent_auth_user_id,
         recurring_payment_terms,
+        commercial_reservation_id,
+        offer_id,
         expires_at
       ) values (
         ${attemptId},
@@ -380,8 +415,14 @@ export async function reserveMembershipCheckout({
         ${stripePriceId},
         statement_timestamp(),
         ${authUserId}::uuid,
-        ${tx.json({ version: 'membership-billing-v1', plan, ...MEMBERSHIP_PLANS[plan], firstPayment: 'upfront', recurring: true })}::jsonb,
-        now() + interval '23 hours'
+        ${tx.json({ version: "membership-billing-v2", ...offer, firstPayment: "upfront", recurring: true,
+          offerId: offer.id, buyoutCap: 150_000, buyoutReplacesRemainingInstallments: true,
+          commercialReservationId: commercial.id,
+          participants: commercial.participants.map(participant => ({ memberId: participant.memberId, personId: participant.personId })),
+        })}::jsonb,
+        ${commercial.id}::uuid,
+        ${offer.id},
+        ${checkoutExpiresAt}
       ) returning recurring_payment_accepted_at
     `;
 
@@ -399,6 +440,9 @@ export async function reserveMembershipCheckout({
       existingAcceptanceMatches: true,
       existingStripeSessionId: null,
       memberId: member.id,
+      commercialReservationId: commercial.id,
+      offerId: offer.id,
+      expiresAt: checkoutExpiresAt,
     };
   });
 }
@@ -667,8 +711,13 @@ export async function findMemberBySubscription(
 
 export async function hasMembershipCheckoutConsent(
   tx: BillingTransaction,
-  input: { memberId: string; attemptId: string; acceptanceId: string; plan: MembershipBillingPlan; priceId: string; subscriptionId: string },
+  input: { memberId: string; attemptId: string; acceptanceId: string; plan: MembershipBillingPlan; priceId: string; subscriptionId: string;
+    billingTermsVersion?: string; offerId?: string; commercialReservationId?: string },
 ): Promise<boolean> {
+  const termsVersion = input.billingTermsVersion ?? "membership-billing-v1";
+  if (termsVersion !== "membership-billing-v1" && termsVersion !== "membership-billing-v2") return false;
+  const commercialOffer = input.offerId && Object.hasOwn(MEMBERSHIP_OFFERS, input.offerId) ? MEMBERSHIP_OFFERS[input.offerId as MembershipOfferId] : null;
+  if (termsVersion === "membership-billing-v2" && (!commercialOffer || !input.commercialReservationId || commercialOffer.plan !== input.plan)) return false;
   const rows = await tx<Array<{ id: string }>>`
     select id from stripe_checkout_attempts
     where id = ${input.attemptId}::uuid
@@ -678,7 +727,17 @@ export async function hasMembershipCheckoutConsent(
       and stripe_price_id = ${input.priceId}
       and recurring_payment_accepted_at is not null
       and billing_consent_auth_user_id is not null
-      and recurring_payment_terms->>'version' = 'membership-billing-v1'
+      and recurring_payment_terms->>'version' = ${termsVersion}
+      and (${termsVersion} <> 'membership-billing-v2' or (
+        commercial_reservation_id = ${input.commercialReservationId ?? null}::uuid
+        and offer_id = ${input.offerId ?? null}
+        and recurring_payment_terms->>'commercialReservationId' = ${input.commercialReservationId ?? null}
+        and recurring_payment_terms->>'offerId' = ${input.offerId ?? null}
+        and recurring_payment_terms->>'amount' = ${commercialOffer ? String(commercialOffer.amount) : null}
+        and recurring_payment_terms->>'initialTermAmount' = ${commercialOffer ? String(commercialOffer.initialTermAmount) : null}
+        and recurring_payment_terms->>'initialTermMonths' = '12'
+        and recurring_payment_terms->>'buyoutCap' = '150000'
+      ))
       and status in ('creating', 'open', 'completed')
       and (stripe_subscription_id is null or stripe_subscription_id = ${input.subscriptionId})
     limit 1
@@ -779,6 +838,7 @@ export async function upsertSubscription(
       automatic_tax_enabled,
       automatic_tax_disabled_reason,
       cancel_at_period_end,
+      cancel_at,
       latest_invoice_id,
       last_event_created
     ) values (
@@ -792,6 +852,7 @@ export async function upsertSubscription(
       ${input.automaticTaxEnabled},
       ${input.automaticTaxDisabledReason},
       ${input.cancelAtPeriodEnd},
+      ${input.cancelAt},
       ${input.latestInvoiceId},
       ${input.eventCreated}
     )
@@ -806,6 +867,7 @@ export async function upsertSubscription(
       automatic_tax_enabled = excluded.automatic_tax_enabled,
       automatic_tax_disabled_reason = excluded.automatic_tax_disabled_reason,
       cancel_at_period_end = excluded.cancel_at_period_end,
+      cancel_at = excluded.cancel_at,
       latest_invoice_id = excluded.latest_invoice_id,
       last_event_created = excluded.last_event_created,
       updated_at = now()
@@ -875,12 +937,22 @@ async function reconcileAdministrativeOnboardingAfterPaidMembership(
     select webhook_event.event_id
     from stripe_webhook_events webhook_event
     join stripe_invoices invoice on invoice.id = webhook_event.object_id
-    join ruined_members member on member.id = invoice.member_id and member.deleted_at is null
+    join ruined_members member on member.id = ${input.memberId}::uuid and member.deleted_at is null
     where webhook_event.event_id = ${input.sourceEventId}
       and webhook_event.event_type = 'invoice.paid'
-      and invoice.member_id = ${input.memberId}::uuid
       and invoice.purpose = 'membership'
       and invoice.amount_paid > 0
+      and (invoice.member_id = ${input.memberId}::uuid or exists (
+        select 1 from membership_commercial_reservations reservation
+        join membership_commercial_participants participant on participant.reservation_id = reservation.id
+          and participant.member_id = ${input.memberId}::uuid
+        join stripe_subscriptions subscription on subscription.id = reservation.stripe_subscription_id
+          and subscription.member_id = reservation.payer_member_id and subscription.latest_invoice_id = invoice.id
+          and subscription.stripe_status = 'active'
+        where reservation.status = 'activated' and reservation.kind = 'couple'
+          and reservation.payer_member_id = invoice.member_id and subscription.id = invoice.stripe_subscription_id
+          and private.ruined_member_has_couple_funding(${input.memberId}::uuid)
+      ))
     limit 1
   `;
 

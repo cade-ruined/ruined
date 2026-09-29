@@ -9,6 +9,9 @@ export type PlatformConfiguration = {
   mode: PlatformMode;
   stripe: PlatformConnection;
   stripeCheckoutReady: boolean;
+  stripePaymentSetupReady: boolean;
+  membershipSignupReady: boolean;
+  stripePortalReady: boolean;
   supabase: PlatformConnection;
 };
 
@@ -32,9 +35,13 @@ export function getPlatformConfiguration(): PlatformConfiguration {
   const stripeConfigured =
     Boolean(stripeSecretMode) && hasEnvironmentValue("STRIPE_WEBHOOK_SECRET");
   const paidCheckoutConfigured =
+    // This release hold applies to both test and live keys. A Stripe price alone
+    // does not implement the commitment, eligibility, or couple membership rules.
+    process.env.STRIPE_MEMBERSHIP_COMMERCIAL_READY?.trim().toLowerCase() === "true" &&
     hasEnvironmentValue("STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID") &&
     hasEnvironmentValue("STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID") &&
     hasEnvironmentValue("STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION") &&
+    hasEnvironmentValue("STRIPE_BILLING_PORTAL_CONFIGURATION_ID") &&
     stripeSecretMode === stripePublishableMode &&
     (stripeSecretMode === "test" || process.env.STRIPE_MEMBERSHIP_LIVE_ENABLED?.trim().toLowerCase() === "true");
   const requestedMode = process.env.PLATFORM_MODE?.trim().toLowerCase() || "preview";
@@ -49,6 +56,19 @@ export function getPlatformConfiguration(): PlatformConfiguration {
     10,
   );
 
+  const stripePaymentSetupReady = mode === "connected" &&
+      supabaseConfigured &&
+      databaseConfigured &&
+      stripeConfigured &&
+      process.env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED?.trim().toLowerCase() === "true" &&
+      /^acct_[A-Za-z0-9]+$/.test(process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ?? "");
+  const stripeCheckoutReady = mode === "connected" &&
+      supabaseConfigured &&
+      databaseConfigured &&
+      stripeConfigured &&
+      paidCheckoutConfigured &&
+      stripePublishableKeyConfigured;
+
   return {
     database: databaseConfigured ? "connected" : "disconnected",
     minimumAge:
@@ -57,13 +77,14 @@ export function getPlatformConfiguration(): PlatformConfiguration {
         : 18,
     mode,
     stripe: stripeConfigured ? "connected" : "disconnected",
-    stripeCheckoutReady:
-      mode === "connected" &&
-      supabaseConfigured &&
-      databaseConfigured &&
-      stripeConfigured &&
-      paidCheckoutConfigured &&
-      stripePublishableKeyConfigured,
+    stripePortalReady: stripeConfigured && hasEnvironmentValue("STRIPE_BILLING_PORTAL_CONFIGURATION_ID"),
+    // Saving a payment method neither starts a subscription nor authorizes a
+    // charge. It has its own explicit release gate while paid checkout is held.
+    stripePaymentSetupReady,
+    stripeCheckoutReady,
+    // Saving a card for an invited account does not itself open public signup.
+    membershipSignupReady: stripeCheckoutReady || (stripePaymentSetupReady &&
+      process.env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_SIGNUP_ENABLED?.trim().toLowerCase() === "true"),
     supabase: supabaseConfigured ? "connected" : "disconnected",
   };
 }

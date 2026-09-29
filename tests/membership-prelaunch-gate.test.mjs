@@ -17,14 +17,15 @@ class AccessDenied extends Error {}
 
 // Fully populated synthetic live configuration; never read process.env or make
 // a network request. Missing payment setup must not mask a broken launch gate.
-function liveEnvironment(enabled) {
+function liveEnvironment(enabled, { commercialReady = "true", mode = "live" } = {}) {
   return {
     NODE_ENV: "production", PLATFORM_MODE: "connected", DATABASE_URL: "offline-no-network",
     NEXT_PUBLIC_SITE_URL: origin, NEXT_PUBLIC_SUPABASE_URL: "https://supabase.invalid",
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "offline-no-network",
-    STRIPE_SECRET_KEY: "sk_live_synthetic_fixture", NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_live_synthetic_fixture",
+    STRIPE_SECRET_KEY: `sk_${mode}_synthetic_fixture`, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: `pk_${mode}_synthetic_fixture`,
     STRIPE_WEBHOOK_SECRET: "whsec_synthetic_fixture", STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID: "price_monthly",
-    STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual", STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION: "ruined_membership-v2",
+    STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual", STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION: "ruined_membership-v2", STRIPE_BILLING_PORTAL_CONFIGURATION_ID: "bpc_reviewed_test",
+    ...(commercialReady === null ? {} : { STRIPE_MEMBERSHIP_COMMERCIAL_READY: commercialReady }),
     ...(enabled === undefined ? {} : { STRIPE_MEMBERSHIP_LIVE_ENABLED: enabled }),
   };
 }
@@ -43,8 +44,8 @@ async function load(path, dependencies = {}, env = {}, globals = {}) {
   return loaded.exports;
 }
 
-async function fixture(enabled) {
-  const env = liveEnvironment(enabled);
+async function fixture(enabled, options) {
+  const env = liveEnvironment(enabled, options);
   const config = await load("src/lib/platform/config.ts", {}, env);
   const authRequest = await load("src/lib/auth/request.ts", {}, env);
   const pricing = await load("src/lib/membership/pricing.ts");
@@ -112,6 +113,9 @@ async function fixture(enabled) {
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => viewer },
     "@/lib/membership/repository": { getMemberIdentity: async () => ({ membershipFunding: "self" }) },
     "@/lib/membership/pricing": pricing,
+    "@/lib/membership/commercial-repository": {},
+    "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: fail },
+    "@/lib/stripe/portal": { validateMembershipPortalConfiguration: fail },
     "@/lib/stripe/membership-state": await load("src/lib/stripe/membership-state.ts"),
     "@/lib/stripe/billing-repository": {
       MembershipCheckoutConflictError: class extends Error {}, MembershipCheckoutPlanConflictError: class extends Error {},
@@ -255,7 +259,7 @@ for (const enabled of [undefined, "false"]) {
   });
 }
 
-test("explicit launch authorization enables card issuance while legacy direct OTP signup stays forbidden", async () => {
+test("explicit commercial readiness and launch authorization enable issuance while legacy direct OTP signup stays forbidden", async () => {
   const f = await fixture("true");
   assert.equal(f.config.getPlatformConfiguration().stripeCheckoutReady, true);
   assert.equal((await f.signupPage.default({ searchParams: Promise.resolve({ plan: "annual" }) })).props.enabled, true);
@@ -275,4 +279,42 @@ test("explicit launch authorization enables card issuance while legacy direct OT
   assert.equal(f.calls.verifications.length, 0);
   assert.equal(f.calls.claims.length, 0);
   assert.equal(f.calls.stripe, 0);
+});
+
+for (const mode of ["live", "test"]) {
+  for (const commercialReady of [null, "false", "yes"]) {
+    test(`${mode} credentials cannot open paid signup while commercial readiness is ${commercialReady ?? "missing"}`, async () => {
+      const f = await fixture("true", { commercialReady, mode });
+      const configuration = f.config.getPlatformConfiguration();
+      assert.equal(configuration.stripeCheckoutReady, false);
+      assert.equal(configuration.stripePortalReady, true, "the purchase hold must preserve existing billing management");
+      assert.equal((await f.signupPage.default({ searchParams: Promise.resolve({ plan: "annual" }) })).props.enabled, false);
+      const invitation = await f.post(f.directInvitation, { requestId: viewer.authUserId,
+        recipientName: "New Member", recipientEmail: "new@example.test", billingPlan: "annual" });
+      assert.equal(invitation.status, 503);
+      const checkout = await f.post(f.checkout, { plan: "annual", attemptId: viewer.authUserId,
+        acceptanceId: invitee.authUserId, recurringPaymentAccepted: true });
+      assert.equal(checkout.status, 503);
+      assert.equal(f.calls.stripe, 0);
+      assert.equal(f.calls.directIssues.length, 0);
+      assert.equal(f.calls.invitationDeliveries.length, 0);
+      assert.equal(f.calls.claims.length, 0);
+    });
+  }
+}
+
+test("optional storage has an independent explicit release gate and never releases paid signup", async () => {
+  const env = liveEnvironment("false", {commercialReady:"false"});
+  for (const key of ["STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID", "STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID", "STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION", "STRIPE_BILLING_PORTAL_CONFIGURATION_ID", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"]) delete env[key];
+  env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID = "acct_example";
+  for (const flag of [undefined,"false","true"]) {
+    env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED = flag;
+    const config = (await load("src/lib/platform/config.ts", {}, env)).getPlatformConfiguration();
+    assert.equal(config.stripePaymentSetupReady, flag === "true");
+    assert.equal(config.stripeCheckoutReady, false);
+  }
+  for (const missing of ["DATABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PAYMENT_SETUP_ACCOUNT_ID"]) {
+    const broken = {...env}; delete broken[missing];
+    assert.equal((await load("src/lib/platform/config.ts", {}, broken)).getPlatformConfiguration().stripePaymentSetupReady, false, missing);
+  }
 });

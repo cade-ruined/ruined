@@ -1,5 +1,7 @@
 # Membership launch preparation
 
+**Historical September 25 snapshot.** The owner revised pricing and cancellation terms on September 28. Use `stripe-policy-setup-2026-09-28.md` and `membership-release-readiness-2026-09-28.md` for current work. The $5,040 annual price below is now archived; it is not the current offer. A separate commercial-readiness gate now blocks both live and test purchases until the revised model is implemented.
+
 Prepared September 25, 2026. **Keep the public waitlist until Cade authorizes the final launch.**
 This preparation does not open paid signup, publish paid terms, or deploy the pending integration.
 

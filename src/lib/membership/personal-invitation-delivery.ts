@@ -105,7 +105,7 @@ async function withLockedDelivery<T>(sql: Database, claim: Claimed, lease: strin
     const [delivery] = await tx<Delivery[]>`
       select invitation.*, expires_at > clock_timestamp() as active,
              (case when origin = 'ruined_direct' then
-               ${getPlatformConfiguration().stripeCheckoutReady === true} and private.ruined_direct_invitation_available(id)
+               ${getPlatformConfiguration().membershipSignupReady === true} and private.ruined_direct_invitation_available(id)
                else private.ruined_member_can_share_invitation(member_id) end
                and private.ruined_personal_invitation_benefit_available(id)) as eligible
       from member_personal_invitations invitation
@@ -143,7 +143,7 @@ export async function processPersonalInvitationEmailBatch(requestedLimit = 10,
         with candidate as (
           select id from member_personal_invitations
           where (${options.invitationId ?? null}::uuid is null or id = ${options.invitationId ?? null}::uuid)
-            and (origin = 'member' or ${getPlatformConfiguration().stripeCheckoutReady === true})
+            and (origin = 'member' or ${getPlatformConfiguration().membershipSignupReady === true})
             and ((delivery_status in ('queued', 'failed') and next_attempt_at <= clock_timestamp())
               or (delivery_status = 'sending' and delivery_locked_at < clock_timestamp() - interval '5 minutes'))
           order by issued_at, id limit 1 for update skip locked

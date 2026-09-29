@@ -14,6 +14,9 @@ for (const funding of ["operator", "complimentary", "self"]) test(`checkout chec
   const dependencies = {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid }) },
+    "@/lib/membership/commercial-repository": {},
+    "@/lib/membership/published-agreement": {},
+    "@/lib/stripe/portal": {},
     "@/lib/membership/pricing": { isMembershipBillingPlan: value => value === "monthly" || value === "annual" },
     "@/lib/membership/repository": { getMemberIdentity: async () => ({ membershipFunding: funding }) },
     "@/lib/platform/config": { getPlatformConfiguration: () => { configurationReads++; return { stripeCheckoutReady: false }; } },

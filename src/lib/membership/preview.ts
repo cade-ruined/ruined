@@ -619,6 +619,7 @@ export const PREVIEW_MEMBER_ACCOUNT: MemberAccountSnapshot = {
     version: "preview-v1",
   },
   billingState: "active",
+  subscription: null,
   email: PREVIEW_MEMBER_IDENTITY.email,
   standingState: "active",
 };

@@ -38,6 +38,7 @@ import { isMembershipBillingPlan } from "@/lib/membership/pricing";
 type WebhookResult = {
   duplicate: boolean;
   handled: boolean;
+  runMembershipWork?: boolean;
 };
 
 function expandableId(value: { id: string } | string | null | undefined): string | null {
@@ -153,6 +154,7 @@ function subscriptionSnapshot(
     automaticTaxDisabledReason: subscription.automatic_tax.disabled_reason,
     automaticTaxEnabled: subscription.automatic_tax.enabled,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    cancelAt: unixSecondsToDate(subscription.cancel_at),
     currentPeriodEnd: unixSecondsToDate(primaryItem?.current_period_end),
     currentPeriodStart: unixSecondsToDate(primaryItem?.current_period_start),
     customerId: expandableId(subscription.customer) ?? "",
@@ -202,7 +204,9 @@ async function handleInvoice(
 ): Promise<boolean> {
   const metadata = metadataFromInvoice(invoice);
   const subscriptionId = subscriptionIdFromInvoice(invoice);
-  const isMembership = metadata?.ruined_context === MEMBERSHIP_CONTEXT;
+  // Buyout invoices replace installments; they must never activate membership.
+  const replacementFee = Boolean(invoice.metadata?.ruined_cancellation_id) || invoice.metadata?.ruined_context === "membership_cancellation";
+  const isMembership = !replacementFee && metadata?.ruined_context === MEMBERSHIP_CONTEXT;
   const customerId = expandableId(invoice.customer);
   let member: BillingMember | null = null;
   let subscription: Stripe.Subscription | null = null;
@@ -210,6 +214,9 @@ async function handleInvoice(
 
   if (isMembership && subscriptionId) {
     subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+    if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
+      invoice = await getStripe().invoices.retrieve(invoice.id);
+    }
     member = await ensureMemberFromSubscription(tx, subscription, invoice.customer_email);
     membershipPriceMatches = matchesMembershipInvoice(invoice, subscription, getMembershipPriceConfiguration());
     const plan = subscription.metadata.ruined_billing_plan;
@@ -220,6 +227,11 @@ async function handleInvoice(
         await hasMembershipCheckoutConsent(tx, {
           memberId: member.id, attemptId, acceptanceId, plan,
           priceId: subscription.items.data[0].price.id, subscriptionId: subscription.id,
+          ...(subscription.metadata.billing_terms_version === "membership-billing-v2" ? {
+            billingTermsVersion: subscription.metadata.billing_terms_version,
+            offerId: subscription.metadata.ruined_offer_id,
+            commercialReservationId: subscription.metadata.ruined_commercial_reservation_id,
+          } : {}),
         });
     }
   }
@@ -260,7 +272,18 @@ async function handleInvoice(
   }
   await upsertSubscription(tx, snapshot);
 
-  const paymentProblem =
+  const v2 = subscription.metadata.billing_terms_version === "membership-billing-v2";
+  if (v2) {
+    const { invalidateCommitmentFromInvoice } = await import("@/lib/stripe/commitment-webhook");
+    await invalidateCommitmentFromInvoice(tx, invoice, event);
+    if (expandableId(subscription.latest_invoice) !== invoice.id) return true; // Old invoices cannot overwrite the current paid projection.
+  }
+  let verifiedPayment = hasFullMembershipPayment(invoice, subscription) && membershipPriceMatches;
+  if (v2 && verifiedPayment) {
+    const { hasVerifiedCommitmentInvoicePayment } = await import("@/lib/stripe/commitment-webhook");
+    verifiedPayment = await hasVerifiedCommitmentInvoicePayment(getStripe(), invoice, subscription);
+  }
+  const paymentProblem = v2 ? !verifiedPayment :
     event.type === "invoice.marked_uncollectible" ||
     event.type === "invoice.payment_failed" ||
     event.type === "invoice.payment_action_required" ||
@@ -270,7 +293,7 @@ async function handleInvoice(
     isStripeTaxEnabled() &&
     (!subscription.automatic_tax.enabled || Boolean(subscription.automatic_tax.disabled_reason));
   const currentState = deriveMembershipState({
-    paidInvoice: event.type === "invoice.paid" && invoice.amount_paid > 0 && hasFullMembershipPayment(invoice, subscription) && membershipPriceMatches,
+    paidInvoice: (v2 ? verifiedPayment : event.type === "invoice.paid" && invoice.amount_paid > 0 && verifiedPayment),
     previousState: member.membershipState,
     subscriptionState: subscription.status as StripeSubscriptionState,
   });
@@ -279,12 +302,21 @@ async function handleInvoice(
     state: currentState,
   });
 
+  if (v2 && membershipPriceMatches) {
+    const { prepareCommitmentInvoiceProjection } = await import("@/lib/stripe/commitment-webhook");
+    await prepareCommitmentInvoiceProjection(tx, { event, subscription, invoice, memberId: member.id,
+      paidActivation: verifiedPayment && state === "active" });
+  }
   await updateMemberBillingState(tx, {
     eventCreated: event.created,
     memberId: member.id,
     sourceEventId: event.id,
     state,
   });
+  if (v2) {
+    const { projectCommercialParticipantBillingState } = await import("@/lib/stripe/commitment-webhook");
+    await projectCommercialParticipantBillingState(tx, { subscription, payerMemberId: member.id, state, event });
+  }
 
   return true;
 }
@@ -327,12 +359,20 @@ async function handleSubscription(
     state: currentState,
   });
 
+  if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
+    const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+    await lockCommitmentSubscriptionProjection(tx, subscription);
+  }
   await updateMemberBillingState(tx, {
     eventCreated: event.created,
     memberId: member.id,
     sourceEventId: event.id,
     state,
   });
+  if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
+    const { projectCommercialParticipantBillingState } = await import("@/lib/stripe/commitment-webhook");
+    await projectCommercialParticipantBillingState(tx, { subscription, payerMemberId: member.id, state, event });
+  }
 
   return true;
 }
@@ -346,7 +386,17 @@ async function dispatchStripeEvent(
     case "checkout.session.async_payment_succeeded":
     case "checkout.session.completed":
     case "checkout.session.expired":
+      if (event.data.object.mode === "setup") {
+        const { handlePaymentMethodSetupEvent } = await import("@/lib/stripe/payment-method-service");
+        return handlePaymentMethodSetupEvent(tx, event);
+      }
       return handleCheckoutSession(tx, event, event.data.object);
+
+    case "setup_intent.succeeded":
+    case "payment_method.detached": {
+      const { handlePaymentMethodSetupEvent } = await import("@/lib/stripe/payment-method-service");
+      return handlePaymentMethodSetupEvent(tx, event);
+    }
 
     case "invoice.marked_uncollectible":
     case "invoice.paid":
@@ -354,6 +404,25 @@ async function dispatchStripeEvent(
     case "invoice.payment_failed":
     case "invoice.voided":
       return handleInvoice(tx, event, event.data.object);
+
+    case "credit_note.created":
+    case "credit_note.updated":
+    case "credit_note.voided": {
+      const invoiceId = expandableId(event.data.object.invoice);
+      if (!invoiceId) return false;
+      const invoice = await getStripe().invoices.retrieve(invoiceId);
+      const { invalidateCommitmentFromInvoice } = await import("@/lib/stripe/commitment-webhook");
+      return invalidateCommitmentFromInvoice(tx, invoice, event);
+    }
+    case "charge.refunded":
+    case "charge.dispute.created":
+    case "charge.dispute.closed":
+    case "refund.created":
+    case "refund.updated":
+    case "refund.failed": {
+      const { invalidateCommitmentFromPaymentAdjustment } = await import("@/lib/stripe/commitment-webhook");
+      return invalidateCommitmentFromPaymentAdjustment(tx, getStripe(), event);
+    }
 
     case "customer.subscription.deleted":
     case "customer.subscription.updated":
@@ -378,7 +447,11 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
       const handled = await dispatchStripeEvent(tx, event);
       await completeWebhookEvent(tx, event.id);
 
-      return { duplicate: false, handled };
+      const setupOnly = event.type === "setup_intent.succeeded"
+        || event.type === "payment_method.detached"
+        || (event.type.startsWith("checkout.session.")
+          && (event.data.object as Stripe.Checkout.Session).mode === "setup");
+      return { duplicate: false, handled, ...(setupOnly ? { runMembershipWork: false } : {}) };
     });
   } catch (error) {
     try {

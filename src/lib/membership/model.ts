@@ -53,7 +53,7 @@ export type MemberAccessPolicy = {
 
 export type MemberIdentity = {
   /** Derived on the server from current operator grants, never from a form. */
-  membershipFunding?: "self" | "operator" | "complimentary";
+  membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   accountState: AccountState;
   administrativeOnboardingState: AdministrativeOnboardingState;
   authUserId: string;
@@ -277,7 +277,7 @@ export type MemberProfileSnapshot = {
 
 export type MemberOnboardingSnapshot = {
   billingState: BillingState;
-  membershipFunding?: "self" | "operator" | "complimentary";
+  membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   agreement: {
     acceptanceId: string | null;
     acceptedAt: string | null;
@@ -410,7 +410,7 @@ export type MemberUpdatesSnapshot = {
 };
 
 export type MemberAccountSnapshot = {
-  membershipFunding?: "self" | "operator" | "complimentary";
+  membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   access: MemberAccessPolicy;
   agreement: {
     acceptedAt: string | null;
@@ -419,6 +419,12 @@ export type MemberAccountSnapshot = {
     version: string | null;
   };
   billingState: BillingState;
+  subscription: {
+    cancelAtPeriodEnd: boolean;
+    cancelAt: string | null;
+    currentPeriodEnd: string | null;
+    status: string;
+  } | null;
   email: string;
   standingState: MembershipStandingState;
 };

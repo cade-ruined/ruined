@@ -1,13 +1,35 @@
 import type Stripe from "stripe";
 
-import { MEMBERSHIP_PLANS, type MembershipBillingPlan } from "@/lib/membership/pricing";
+import { MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS, type MembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
 
 export type MembershipPriceConfiguration = {
   monthly: string | null;
   annual: string | null;
   legacy: string | null;
   livemode: boolean;
+  offers?: Partial<Record<MembershipOfferId, string>>;
 };
+
+export function isMembershipOfferId(value: unknown): value is MembershipOfferId {
+  return typeof value === "string" && Object.hasOwn(MEMBERSHIP_OFFERS, value);
+}
+
+export function matchesMembershipOfferPrice(
+  price: Stripe.Price,
+  offerId: MembershipOfferId,
+  configuration: MembershipPriceConfiguration,
+  requireActive = false,
+): boolean {
+  const expected = MEMBERSHIP_OFFERS[offerId];
+  const priceId = configuration.offers?.[offerId];
+  return Boolean(priceId && price.id === priceId &&
+    Object.values(configuration.offers ?? {}).filter(id => id === priceId).length === 1 &&
+    price.livemode === configuration.livemode && (!requireActive || price.active) &&
+    price.type === "recurring" && price.billing_scheme === "per_unit" && !price.transform_quantity &&
+    price.tax_behavior === "exclusive" && price.currency === expected.currency &&
+    price.unit_amount === expected.amount && price.recurring?.interval === expected.interval &&
+    price.recurring.interval_count === 1 && price.recurring.usage_type === "licensed");
+}
 
 export function matchesMembershipPrice(
   price: Stripe.Price,
@@ -42,6 +64,12 @@ export function recognizesMembershipSubscription(
   const item = subscription.items.data[0];
   if (item.quantity !== 1 || item.price.livemode !== configuration.livemode) return false;
   const plan = subscription.metadata.ruined_billing_plan;
+  if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
+    const offerId = subscription.metadata.ruined_offer_id;
+    return isMembershipOfferId(offerId) && MEMBERSHIP_OFFERS[offerId].plan === plan &&
+      Boolean(subscription.metadata.ruined_commercial_reservation_id) &&
+      matchesMembershipOfferPrice(item.price, offerId, configuration);
+  }
   if (plan === "monthly" && matchesMembershipPrice(item.price, "monthly", configuration)) return true;
   if (plan === "annual" && matchesMembershipPrice(item.price, "annual", configuration)) return true;
 

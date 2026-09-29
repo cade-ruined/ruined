@@ -386,7 +386,7 @@ async function requireGoogleCommunicationEntityAccess(
 }
 
 function nextDecision(input: {
-  membershipFunding?: "self" | "operator" | "complimentary";
+  membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   administrativeOnboarding: string;
   billing: string;
   circleId: string | null;
@@ -454,7 +454,7 @@ export async function getOpsMemberOperatingRecord(
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
         private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.account_state,
-        lifecycle.billing_state,
+        coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
         lifecycle.foundations_state,
         lifecycle.artifact_state,
         lifecycle.admission_state,
@@ -1414,7 +1414,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           lifecycle.administrative_onboarding_state,
           lifecycle.cancellation_effective_at,
           lifecycle.account_state,
-          lifecycle.billing_state,
+          coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
           lifecycle.foundations_state,
           lifecycle.program_state,
           lifecycle.standing_state,

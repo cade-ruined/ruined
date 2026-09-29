@@ -17,7 +17,7 @@ import { getMemberIdentity } from "@/lib/membership/repository";
 type FoundationTransaction = postgres.TransactionSql;
 
 type LockedMember = {
-  membershipFunding: "self" | "operator" | "complimentary";
+  membershipFunding: "self" | "operator" | "complimentary" | "couple";
   accountState: "active" | "closed" | "invited" | "provisional" | "suspended";
   administrativeOnboardingState: "completed" | "in_progress" | "not_started";
   billingState: "active" | "attention_required" | "ended" | "pending";
@@ -145,7 +145,7 @@ async function lockMemberForFoundations(
     select
       account_state,
       administrative_onboarding_state,
-      billing_state,
+      coalesce(private.ruined_member_shared_billing_state(member_id), billing_state) as billing_state,
       cancellation_effective_at,
       foundations_state,
       program_state,
@@ -310,7 +310,7 @@ export async function getMemberFoundationsState(
       and platform_user.status = 'active'
       and lifecycle.account_state = 'active'
       and lifecycle.administrative_onboarding_state = 'completed'
-      and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(member.id))
+      and (coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) = 'active' or private.ruined_member_has_complimentary_funding(member.id))
       and lifecycle.standing_state in ('active', 'cancellation_requested')
       and (
         lifecycle.standing_state = 'active'

@@ -30,4 +30,26 @@ export async function installComplimentaryFundingFunctions(db) {
     assert.ok(start >= 0 && end > start, `Missing shipped function: ${name}`);
     await db.exec(migration.slice(start, end + 3));
   }
+  await installSharedMembershipFundingFunctions(db);
+}
+
+export async function installSharedMembershipFundingFunctions(db) {
+  // The shared access predicate is also shipped SQL. Unrelated fixtures keep
+  // empty commercial tables; commercial-database.test exercises actual pairs.
+  await db.exec(`
+    create table if not exists public.membership_commercial_reservations (
+      id uuid primary key, payer_member_id uuid, kind text, status text, stripe_subscription_id text, created_at timestamptz
+    );
+    create table if not exists public.membership_commercial_participants (reservation_id uuid, member_id uuid);
+    create table if not exists public.membership_enrollment_episodes (reservation_id uuid, member_id uuid, ended_at timestamptz);
+    create table if not exists public.stripe_subscriptions (id text primary key, member_id uuid, stripe_status text, cancel_at timestamptz);
+    alter table public.stripe_subscriptions add column if not exists cancel_at timestamptz;
+  `);
+  const commercial = await readFile(new URL("../../db/migrations/20260929006000_membership_commercial_eligibility.sql", import.meta.url), "utf8");
+  for (const name of ["private.ruined_member_shared_billing_state", "private.ruined_member_has_couple_funding"]) {
+    const start = commercial.indexOf(`create function ${name}(`);
+    const end = commercial.indexOf("$$;", start);
+    assert.ok(start >= 0 && end > start, `Missing shipped function: ${name}`);
+    await db.exec(commercial.slice(start, end + 3).replace("create function", "create or replace function"));
+  }
 }

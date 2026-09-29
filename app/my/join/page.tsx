@@ -32,6 +32,7 @@ export default async function JoinMyRuinedPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
+  const sharedMembership = context.data.membershipFunding === "couple" && context.data.billingState === "active";
   if (context.state === "authenticated" && context.data.state === "completed"
     && (complimentary || context.data.billingState === "active")) {
     redirect("/my");
@@ -42,7 +43,8 @@ export default async function JoinMyRuinedPage() {
     : "monthly";
   const publishableKey = getStripePublishableKey();
   const writable = context.state === "authenticated";
-  const checkoutEnabled = writable && !complimentary && context.configuration.stripeCheckoutReady;
+  const checkoutEnabled = writable && !complimentary && !sharedMembership && context.configuration.stripeCheckoutReady;
+  const prelaunch = !complimentary && !sharedMembership && context.data.billingState === "pending" && !checkoutEnabled;
   const disabledReason =
     context.state === "preview"
       ? "Preview only. Member details and agreement acceptance are not saved."
@@ -80,7 +82,7 @@ export default async function JoinMyRuinedPage() {
         </header>
 
         <section className="member-entry-fields" aria-label="Membership entry">
-          <MembershipEntryProgress complimentary={complimentary} />
+          {!prelaunch ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">Your profile / Before launch</p>}
           <JoinForm
             checkoutDisabledReason={checkoutDisabledReason}
             checkoutEnabled={checkoutEnabled}
@@ -91,6 +93,8 @@ export default async function JoinMyRuinedPage() {
             minimumAge={context.configuration.minimumAge}
             photoStorageReady={isMemberPhotoStorageConfigured()}
             publishableKey={publishableKey}
+            paymentSetupEnabled={context.configuration.stripePaymentSetupReady}
+            preview={context.state === "preview"}
           />
         </section>
       </MembershipEntryProgressProvider>

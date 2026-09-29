@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { MEMBERSHIP_LINKS } from "@/data/public-membership";
-import { formatMembershipPrice, MEMBERSHIP_PLANS } from "@/lib/membership/pricing";
+import { formatMembershipPrice, MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS } from "@/lib/membership/pricing";
 import MembershipSignup from "./MembershipSignup";
 import styles from "./MembershipOverview.module.css";
 
@@ -23,7 +23,8 @@ const questions = [
   { question: "What are the renewal and cancellation terms?", answer: "You’ll review the applicable renewal, cancellation, and refund terms in your membership agreement before confirming payment. Your first payment is taken at signup, and your chosen plan renews monthly or annually." },
 ];
 
-export default function MembershipOverview({ preview = false, signupEnabled = false }: { preview?: boolean; signupEnabled?: boolean }) {
+export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false }: { preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean }) {
+  const invitationAvailable = signupEnabled || (preview && paymentSetupOnly);
   const [annual, setAnnual] = useState(false);
   const filmDialog = useRef<HTMLDialogElement>(null);
   const signupDialog = useRef<HTMLDialogElement>(null);
@@ -66,11 +67,11 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
         <p className={styles.heroDescription}>A private membership for people making something of their lives. A place to find your people, get clear, and put intention into practice.</p>
         <p className={styles.handwritten}>You don’t have to do it alone.</p>
         <div className={styles.heroActions}>
-          <button className={styles.primary} type="button" onClick={join}>{signupEnabled ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
+          <button className={styles.primary} type="button" onClick={join}>{invitationAvailable ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
           <a className={styles.textLink} href="#inside-membership">Take a look inside <span aria-hidden="true">↓</span></a>
         </div>
         <p className={styles.heroPrice}>{formatMembershipPrice(MEMBERSHIP_PLANS.monthly.amount)} / month <span>or annual membership.</span> <a href="#membership-pricing">See pricing</a></p>
-        <p className={styles.paymentTiming}>{signupEnabled ? "Your invitation comes first. Payment completes signup." : "Join the waitlist. We’ll be in touch when membership opens."}</p>
+        <p className={styles.paymentTiming}>{paymentSetupOnly ? "Prepare your profile now. Saving a payment method is optional; nothing is charged." : signupEnabled ? "Your invitation comes first. Payment completes signup." : "Join the waitlist. We’ll be in touch when membership opens."}</p>
       </div>
       <figure className={styles.heroArt}>
         <div className={styles.heroPhoto}>
@@ -119,11 +120,11 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
           <div className={styles.priceReadout} aria-live="polite" aria-atomic="true">
             <p className={styles.price}>{formatMembershipPrice(price.amount)}<span>/ {price.interval}</span></p>
             <p className={styles.billing}>{annual ? `${formatMembershipPrice(price.amount)} paid upfront each year.` : `${formatMembershipPrice(price.amount)} billed each month.`}</p>
-            <p className={styles.equivalent}>{annual ? `Equivalent to ${formatMembershipPrice(MEMBERSHIP_PLANS.annual.amount / 12)} per month. Save ${formatMembershipPrice(MEMBERSHIP_PLANS.monthly.amount * 12 - MEMBERSHIP_PLANS.annual.amount)} over twelve monthly payments.` : "A monthly commitment. Full membership access."}</p>
+            <p className={styles.equivalent}>{annual ? `A full year for the price of 10 monthly payments. Save ${formatMembershipPrice(MEMBERSHIP_OFFERS.individual_annual.annualSavings)} over twelve monthly payments.` : `12-month initial commitment. 12 payments totaling ${formatMembershipPrice(MEMBERSHIP_OFFERS.individual_monthly.initialTermAmount)}, plus applicable tax.`}</p>
           </div>
-          <button className={styles.primary} type="button" onClick={join}>{signupEnabled ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
-          <p className={styles.priceReassurance}>{signupEnabled ? "Your first payment is due at signup." : "No payment is taken to join the waitlist."}</p>
-          <div className={styles.priceFootnote}><span>All prices in USD.</span><p>You’ll review your billing choice, applicable taxes, and membership terms before confirming payment.</p></div>
+          <button className={styles.primary} type="button" onClick={join}>{invitationAvailable ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
+          <p className={styles.priceReassurance}>{paymentSetupOnly ? "No payment is due now. Your membership begins only after you choose and confirm a paid offer." : signupEnabled ? "Your first payment is due at signup." : "No payment is taken to join the waitlist."}</p>
+          <div className={styles.priceFootnote}><span>U.S. membership. All prices in USD; applicable tax is added.</span><p>You’ll review your billing choice, commitment, and cancellation terms before confirming payment.</p></div>
           <p className={styles.alreadyMember}>Already a member? <Link href={preview ? "/access" : MEMBERSHIP_LINKS.signIn}>Sign in ↗</Link></p>
         </div>
       </div>
@@ -132,19 +133,19 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
     <section className={`${styles.wrap} ${styles.how}`} id="how-to-join" aria-labelledby="join-heading">
       <div className={styles.sectionHeader}><p className={styles.eyebrow}>03 / Your next step</p><h2 id="join-heading">Find your place.<br /><em>Then begin.</em></h2><p>Know what happens next.<br />Decide when you’re ready.</p></div>
       <ol className={styles.steps}>
-        <li><span>01</span><h3>Open your invitation.</h3><p>When membership opens, choose your plan and request an invitation with your name and email. Your personalized card arrives by email and is valid for 48 hours.</p></li>
-        <li><span>02</span><h3>Join Ruined.</h3><p>Accept your invitation, verify your email, complete your profile, and review the agreement. Your membership begins when payment is confirmed.</p></li>
-        <li><span>03</span><h3>Begin the work.</h3><p>Enter your member space, make your profile your own, and begin Foundations while we connect your Circle.</p></li>
+        <li><span>01</span><h3>Open your invitation.</h3><p>{paymentSetupOnly ? "Choose your preferred future plan and request an invitation with your name and email." : "When membership opens, choose your plan and request an invitation with your name and email."} Your personalized card arrives by email and is valid for 48 hours.</p></li>
+        <li><span>02</span><h3>{paymentSetupOnly ? "Make it yours." : "Join Ruined."}</h3><p>{paymentSetupOnly ? "Accept your invitation, verify your email, and complete your profile. You can optionally save a payment method for a future checkout you choose to complete." : "Accept your invitation, verify your email, complete your profile, and review the agreement. Your membership begins when payment is confirmed."}</p></li>
+        <li><span>03</span><h3>{paymentSetupOnly ? "Begin when you’re ready." : "Begin the work."}</h3><p>{paymentSetupOnly ? "When paid membership opens, review the current offer, membership agreement, and payment terms. Confirming your payment starts your membership. Preparing a profile does not reserve an offer." : "Enter your member space, make your profile your own, and begin Foundations while we connect your Circle."}</p></li>
       </ol>
       <p className={styles.invitationNote}><Image src="/ruined-mark.svg" alt="" width={284} height={400} />Already have a personal invitation? Follow its link to join so your invitation stays connected. Complimentary invitations skip payment.</p>
     </section>
 
     <section className={`${styles.wrap} ${styles.faq}`} aria-labelledby="questions-heading">
       <div><p className={styles.eyebrow}>A few things to know</p><h2 id="questions-heading">Good questions.</h2><p>Something else on your mind?<br /><a href="mailto:connect@theruinedproject.com">Talk to us ↗</a></p></div>
-      <div className={styles.questions}>{questions.map(item => <details key={item.question}><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{item.answer}</p></details>)}</div>
+      <div className={styles.questions}>{questions.map(item => <details key={item.question}><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{paymentSetupOnly && item.question === "What are the renewal and cancellation terms?" ? "No payment is due during profile setup. You’ll review the membership agreement, current offer, renewal, and cancellation terms before choosing to pay. Saving a method does not authorize future charges." : item.answer}</p></details>)}</div>
     </section>
 
-    <section className={`${styles.wrap} ${styles.closing}`} aria-labelledby="closing-heading"><p className={styles.handwritten}>This is for you.</p><h2 id="closing-heading">You’re allowed to<br /><em>become someone new.</em></h2><button className={styles.primary} type="button" onClick={join}>{signupEnabled ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button><p>{signupEnabled ? "Start with your invitation. Take the next step when you’re ready." : "Join the waitlist for your next step."}</p></section>
+    <section className={`${styles.wrap} ${styles.closing}`} aria-labelledby="closing-heading"><p className={styles.handwritten}>This is for you.</p><h2 id="closing-heading">You’re allowed to<br /><em>become someone new.</em></h2><button className={styles.primary} type="button" onClick={join}>{invitationAvailable ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button><p>{signupEnabled ? "Start with your invitation. Take the next step when you’re ready." : "Join the waitlist for your next step."}</p></section>
 
     <dialog ref={filmDialog} className={styles.filmDialog} aria-label="Ruined membership film" onClose={() => setModal(null)} onCancel={() => setModal(null)} onClick={event => { if (event.target === event.currentTarget) setModal(null); }}>
       <button className={styles.filmClose} type="button" aria-label="Close film" onClick={() => setModal(null)}>Close <span aria-hidden="true">×</span></button>
@@ -155,7 +156,7 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
       <div className={styles.signupContent}>
         <p className={styles.eyebrow}>{preview ? "Signup preview" : "Your next step"}</p>
         <h2 id="signup-heading">Your place<br /><em>begins here.</em></h2>
-        {modal === "signup" ? <MembershipSignup key={signupVersion} enabled={signupEnabled} preview={preview} plan={annual ? "annual" : "monthly"} onPlanChange={plan => setAnnual(plan === "annual")} /> : null}
+        {modal === "signup" ? <MembershipSignup previewInvitation={preview && paymentSetupOnly} paymentSetupOnly={paymentSetupOnly} key={signupVersion} enabled={signupEnabled} preview={preview} plan={annual ? "annual" : "monthly"} onPlanChange={plan => setAnnual(plan === "annual")} /> : null}
       </div>
     </dialog>
   </main>;

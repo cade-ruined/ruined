@@ -97,7 +97,9 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.match(photoUpload, /type="file"/);
   assert.doesNotMatch(joinForm, /Photo upload will open/);
 
-  const progressIndex = joinPage.indexOf("<MembershipEntryProgress complimentary={complimentary} />");
+  const progressIndex = joinPage.indexOf("<MembershipEntryProgress complimentary={complimentary || sharedMembership} />");
+  assert.match(joinPage, /const sharedMembership = context\.data\.membershipFunding === "couple" && context\.data\.billingState === "active"/);
+  assert.match(joinPage, /membershipFunding === "couple"/);
   const heroIndex = joinPage.indexOf('member-entry-artwork');
   assert.ok(heroIndex >= 0 && progressIndex > heroIndex);
   assert.doesNotMatch(joinForm, /StageLine|Membership progress/);
@@ -129,7 +131,7 @@ test("member entry uses a live accessible step rail beneath the header", () => {
   assert.doesNotMatch(entryProgress, /color-highlight|sticky|rounded/);
   assert.match(joinForm, /useMembershipEntryProgressStage\(stage\)/);
   assert.match(joinForm, /previousStage\.current === stage[\s\S]*stageHeadingRef\.current\?\.focus\(\)/);
-  assert.equal((joinForm.match(/ref=\{stageHeadingRef\}/g) ?? []).length, 4);
+  assert.equal((joinForm.match(/ref=\{stageHeadingRef\}/g) ?? []).length, 5);
   assert.doesNotMatch(joinForm, /complete=\{Boolean\(clientSecret\)\}/);
   assert.match(platformShell, /const membershipEntry = member && pathname === "\/my\/join";/);
   assert.match(platformShell, /membershipEntry[\s\S]*\? "pb-10 sm:pb-14 lg:pb-16"/);

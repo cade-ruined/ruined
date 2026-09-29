@@ -9,7 +9,7 @@ import styles from "./MemberInvitation.module.css";
 
 type AuthResponse = { error?: string; redirectTo?: string; requestId?: string };
 
-export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", preview = false }: {
+export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", paymentSetupOnly = false, preview = false }: {
   invitationToken?: string;
   recipientName: string;
   inviterName: string;
@@ -18,6 +18,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
   complimentaryEndsAt?: string | null;
   invitationSource?: "member" | "ruined_direct";
   preview?: boolean;
+  paymentSetupOnly?: boolean;
 }) {
   const expired = useInvitationExpired(expiresAt);
   const direct = invitationSource === "ruined_direct";
@@ -93,7 +94,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
     <span id="join-ruined" aria-hidden="true" />
     <p className={styles.eyebrow}>{direct ? "Ruined Direct / " : ""}For {recipientName}</p>
     <h2 id="invitation-join-title">{requested ? "Verify your email." : "Accept your invitation."}</h2>
-    <p>{direct ? "Your personal invitation from The Ruined Project begins here. Verify your email, then complete your profile, membership agreement, and payment." : <>Your invitation from {sender} is your approval to join. Verify your email, then complete your profile and membership.</>}</p>
+    <p>{direct && paymentSetupOnly ? "Your personal invitation from The Ruined Project begins here. Verify your email and complete your profile. You can optionally save a payment method; nothing is charged and your membership starts only after you choose and confirm payment later." : direct ? "Your personal invitation from The Ruined Project begins here. Verify your email, then complete your profile, membership agreement, and payment." : <>Your invitation from {sender} is your approval to join. Verify your email, then complete your profile and membership.</>}</p>
     {membershipType === "complimentary" ? <p className={styles.complimentaryNotice}><strong>Complimentary membership.</strong> {complimentaryEndsAt ? <>No payment is needed through <time dateTime={complimentaryEndsAt}>{complimentaryMembershipDeadline(complimentaryEndsAt)}</time>.</> : "No payment is needed. Your complimentary membership is ongoing."} You’ll still complete your profile and accept the membership agreement.</p> : null}
     {expired ? <p role="status">{expiryMessage}{direct ? <> <Link href="/signup">Request a new invitation ↗</Link></> : null}</p> : <p className={styles.note}>Accept by <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
     <form className={styles.form} onSubmit={requested ? verifyCode : submitEmail} aria-label={requested ? "Verify invitation email" : "Accept personal invitation"} aria-busy={pending}>

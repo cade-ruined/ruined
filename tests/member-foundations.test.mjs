@@ -161,7 +161,7 @@ test("member Foundations pages keep paid access gates and preview writes disable
   assert.match(readState, /join member_lifecycle lifecycle/);
   assert.match(readState, /platform_user\.status = 'active'/);
   assert.match(readState, /lifecycle\.account_state = 'active'/);
-  assert.match(readState, /lifecycle\.billing_state = 'active'/);
+  assert.match(readState, /coalesce\(private\.ruined_member_shared_billing_state\(member\.id\), lifecycle\.billing_state\) = 'active'/);
   assert.match(readState, /lifecycle\.program_state in \('onboarding', 'active'\)/);
 });
 

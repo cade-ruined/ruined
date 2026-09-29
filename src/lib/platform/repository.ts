@@ -537,6 +537,7 @@ export async function claimPlatformMemberForViewer(
 type MemberSnapshotRow = {
   complimentary_funded: boolean;
   operator_funded: boolean;
+  shared_billing_state?: BillingState | null;
   administrative_onboarding_state: string;
   account_state: AccountState;
   artifact_state: ArtifactState;
@@ -562,11 +563,12 @@ export async function getMemberPlatformSnapshot(
       member.id as member_id,
       member.email,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.administrative_onboarding_state,
       profile.display_name,
       lifecycle.account_state,
-      lifecycle.billing_state,
+      coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
       lifecycle.program_state,
       lifecycle.foundations_state,
       lifecycle.artifact_state,
@@ -620,7 +622,7 @@ export async function getMemberPlatformSnapshot(
   return {
     accountState: row.account_state,
     artifactState: row.artifact_state,
-    billingState: row.billing_state,
+    billingState: row.shared_billing_state ?? row.billing_state,
     blockName: row.block_name,
     blockStatus: row.block_status,
     circleName: row.circle_name,
@@ -632,8 +634,8 @@ export async function getMemberPlatformSnapshot(
     name: row.display_name?.trim() || "Member",
     nextAction: nextMemberAction({
       artifactState: row.artifact_state,
-      billingState: row.billing_state,
-      membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
+      billingState: row.shared_billing_state ?? row.billing_state,
+      membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
       administrativeOnboardingState: row.administrative_onboarding_state,
       foundationsState: row.foundations_state,
       hasCircle: row.circle_status === "active",
@@ -666,6 +668,7 @@ export async function getOperatorRole(authUserId: string): Promise<OperatorRole 
 type OperatorMemberRow = {
   complimentary_funded?: boolean;
   operator_funded?: boolean;
+  shared_billing_state?: BillingState | null;
   administrative_onboarding_state?: OperatorMemberSummary["administrativeOnboardingState"];
   standing_state?: string;
   cancellation_effective_at?: Date | string | null;
@@ -694,13 +697,13 @@ function operatorMemberSummary(
   const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
   return {
     ...(row.membership_state ? { membershipState: row.membership_state } : {}),
-    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
+    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
     administrativeOnboardingState: row.administrative_onboarding_state,
     standingState: row.standing_state,
     cancellationEffectiveAt: row.cancellation_effective_at ? new Date(row.cancellation_effective_at).toISOString() : null,
     accountState: row.account_state,
     artifactState: row.artifact_state,
-    billingState: row.billing_state,
+    billingState: row.shared_billing_state ?? row.billing_state,
     blockName: row.block_name,
     blockStatus: row.block_status,
     circleName: row.circle_name,
@@ -714,8 +717,8 @@ function operatorMemberSummary(
       || "Member",
     nextAction: nextMemberAction({
       artifactState: row.artifact_state,
-      billingState: row.billing_state,
-      membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
+      billingState: row.shared_billing_state ?? row.billing_state,
+      membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
       administrativeOnboardingState: row.administrative_onboarding_state,
       foundationsState: row.foundations_state,
       hasCircle: row.circle_status === "active",
@@ -858,13 +861,14 @@ export async function getOperatorMemberDirectoryPage(
         member.email,
         member.membership_state,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
         private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.administrative_onboarding_state,
         lifecycle.standing_state,
         lifecycle.cancellation_effective_at,
         coalesce(nullif(btrim(person_profile.preferred_name), ''), nullif(btrim(person_profile.display_name), ''), nullif(btrim(profile.display_name), '')) as display_name,
         lifecycle.account_state,
-        lifecycle.billing_state,
+        coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
         lifecycle.program_state,
         lifecycle.foundations_state,
         lifecycle.artifact_state,
@@ -999,13 +1003,14 @@ export async function getOperatorDashboard(
       member.id as member_id,
       member.email,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.administrative_onboarding_state,
       lifecycle.standing_state,
       lifecycle.cancellation_effective_at,
       profile.display_name,
       lifecycle.account_state,
-      lifecycle.billing_state,
+      coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
       lifecycle.program_state,
       lifecycle.foundations_state,
       lifecycle.artifact_state,
@@ -1072,12 +1077,13 @@ export async function getOperatorDashboard(
       select
         member.id,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
         private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
         lifecycle.administrative_onboarding_state,
         lifecycle.standing_state,
         lifecycle.cancellation_effective_at,
         lifecycle.account_state,
-        lifecycle.billing_state,
+        coalesce(private.ruined_member_shared_billing_state(member.id), lifecycle.billing_state) as billing_state,
         lifecycle.program_state
       from ruined_members member
       join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null

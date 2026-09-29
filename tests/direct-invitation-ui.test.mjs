@@ -80,10 +80,11 @@ test("unopened signup renders the waitlist; launched signup keeps exact prices a
   })).default;
   const render = props => renderToStaticMarkup(React.createElement(component, { plan: "annual", onPlanChange() {}, ...props }));
   const closed = render({ enabled: false });
-  assert.match(closed, /Membership waitlist/); assert.doesNotMatch(closed, /data-request-plan|\$5,040|Verify email/);
+  assert.match(closed, /Membership waitlist/); assert.doesNotMatch(closed, /data-request-plan|\$4,990|Verify email/);
   assert.match(render({ enabled: false, preview: true }), /data-disabled="true"/);
   const live = render({ enabled: true });
-  assert.match(live, /\$5,040/); assert.match(live, /data-request-plan="annual"/); assert.match(live, /Your invitation/);
+  assert.match(live, /\$4,990/); assert.match(live, /data-request-plan="annual"/); assert.match(live, /Your invitation/);
+  assert.doesNotMatch(live, /founding|couple|\$349|\$699/);
   assert.doesNotMatch(live, /Membership waitlist/);
 });
 
@@ -159,4 +160,70 @@ test("direct card preview uses an explicit source and fictional recipient while 
   assert.equal(direct.props.invitationSource, "ruined_direct"); assert.equal(direct.props.recipientName, "Cherry Hill");
   assert.equal(direct.props.membershipType, "standard"); assert.equal(direct.props.preview, true);
   mode = "connected"; await assert.rejects(page.default(params), /not_found/);
+});
+
+test("setup-only signup names optional card storage and makes plan choice a preference", async () => {
+  const component = (await load("src/components/public-members/MembershipSignup.tsx", {
+    react: React, "@/lib/membership/pricing": pricing,
+    "./DirectInvitationRequestForm": props => React.createElement("div", { "data-setup-only": String(props.paymentSetupOnly) }),
+    "./MembershipWaitlistForm": Stub,
+  })).default;
+  const html = renderToStaticMarkup(React.createElement(component, { enabled: true, paymentSetupOnly: true, plan: "monthly", onPlanChange() {} }));
+  assert.match(html, /Optional payment setup/); assert.match(html, /Nothing is charged/);
+  assert.match(html, /preference, not a purchase or reserved offer/); assert.match(html, /No payment is due now/);
+  assert.match(html, /data-setup-only="true"/); assert.doesNotMatch(html, /first payment completes signup|due at signup/);
+});
+
+test("signup and membership routes pass setup-only mode only for deliberately opened admission", async () => {
+  let configuration = { mode: "connected", stripeCheckoutReady: false, membershipSignupReady: true };
+  const dependencies = { "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
+    "@/lib/membership/pricing": pricing, "@/components/public-members/MembershipSignupPage": Stub,
+    "@/components/public-members/MembershipOverview": Stub };
+  const signup = await load("app/signup/page.tsx", dependencies);
+  const overview = await load("app/membership/page.tsx", dependencies);
+  assert.equal((await signup.default({ searchParams: Promise.resolve({}) })).props.paymentSetupOnly, true);
+  assert.equal((await overview.default()).props.paymentSetupOnly, true);
+  configuration = { ...configuration, stripeCheckoutReady: true };
+  assert.equal((await overview.default()).props.paymentSetupOnly, false);
+  configuration = { ...configuration, stripeCheckoutReady: false, membershipSignupReady: false };
+  assert.equal((await overview.default()).props.signupEnabled, false);
+  assert.equal((await signup.default({ searchParams: Promise.resolve({}) })).props.enabled, false);
+});
+
+test("public setup admission is separately enabled and never opens paid Checkout", async () => {
+  const env = { NODE_ENV: "production", PLATFORM_MODE: "connected", DATABASE_URL: "offline",
+    NEXT_PUBLIC_SUPABASE_URL: "https://offline.invalid", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "offline",
+    STRIPE_SECRET_KEY: "sk_live_offline", STRIPE_WEBHOOK_SECRET: "whsec_offline", STRIPE_PAYMENT_SETUP_ACCOUNT_ID: "acct_offline",
+    STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED: "true" };
+  const config = await load("src/lib/platform/config.ts", { "server-only": {} }, { process: { env } });
+  assert.equal(config.getPlatformConfiguration().stripePaymentSetupReady, true);
+  assert.equal(config.getPlatformConfiguration().membershipSignupReady, false, "saving for invited accounts does not silently open acquisition");
+  env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_SIGNUP_ENABLED = "true";
+  assert.equal(config.getPlatformConfiguration().membershipSignupReady, true);
+  assert.equal(config.getPlatformConfiguration().stripeCheckoutReady, false);
+  env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED = "false";
+  assert.equal(config.getPlatformConfiguration().membershipSignupReady, false);
+});
+
+
+test("payment-setup preview shows inert copy only outside production admission", async () => {
+  let configuration = { mode: "preview", stripeCheckoutReady: false, membershipSignupReady: false };
+  const deps = { "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
+    "@/lib/membership/pricing": pricing, "@/components/public-members/MembershipSignupPage": Stub,
+    "@/components/public-members/MembershipOverview": Stub };
+  const signup = await load("app/signup/page.tsx", deps);
+  const overview = await load("app/membership/page.tsx", deps);
+  const props = { searchParams: Promise.resolve({ preview: "payment-setup" }) };
+  assert.equal((await signup.default(props)).props.previewInvitation, true);
+  assert.equal((await signup.default(props)).props.paymentSetupOnly, true);
+  assert.equal((await signup.default(props)).props.enabled, false);
+  assert.equal((await overview.default(props)).props.paymentSetupOnly, true);
+  for (const mode of ["connected", "unavailable"]) {
+    configuration = { ...configuration, mode };
+    assert.equal((await signup.default(props)).props.paymentSetupOnly, false);
+    assert.equal((await signup.default(props)).props.previewInvitation, false);
+    assert.equal((await signup.default(props)).props.enabled, false);
+    assert.equal((await overview.default(props)).props.paymentSetupOnly, false);
+    assert.equal((await overview.default(props)).props.signupEnabled, false);
+  }
 });

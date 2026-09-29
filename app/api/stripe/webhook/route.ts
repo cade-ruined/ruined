@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await processStripeWebhookEvent(event);
-    if (result.handled && !result.duplicate) {
+    if (result.handled && !result.duplicate && result.runMembershipWork !== false) {
       try {
         await processWorkflowBatch(8);
       } catch (workflowError) {

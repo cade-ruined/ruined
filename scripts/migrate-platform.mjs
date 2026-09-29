@@ -58,6 +58,14 @@ const migrations = [
   "../db/migrations/20260929000000_public_member_signup.sql",
   "../db/migrations/20260929001000_membership_checkout_plans.sql",
   "../db/migrations/20260929002000_ruined_direct_invitations.sql",
+  "../db/migrations/20260929003000_membership_renewal_notices.sql",
+  "../db/migrations/20260929004000_stripe_subscription_cancel_at.sql",
+  "../db/migrations/20260929005000_membership_commitments.sql",
+  "../db/migrations/20260929006000_membership_commercial_eligibility.sql",
+  "../db/migrations/20260929007000_membership_checkout_commercial_consent.sql",
+  "../db/migrations/20260929008000_membership_cancellation_quotes.sql",
+  "../db/migrations/20260929009000_membership_commercial_renewal_notices.sql",
+  "../db/migrations/20260930110000_member_payment_methods.sql",
 ];
 
 function migrationBody(migration, migrationName) {

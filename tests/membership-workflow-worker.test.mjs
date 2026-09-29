@@ -51,7 +51,7 @@ test("membership workflow endpoint is private and has scheduled recovery", async
 
   assert.match(route, /process\.env\.CRON_SECRET/);
   assert.match(route, /timingSafeEqual/);
-  assert.match(route, /processWorkflowBatch\(50\)/);
+  assert.match(route, /processWorkflowBatch\(50, deadline\)/);
   assert.match(vercel, /\/api\/internal\/membership\/process/);
 });
 

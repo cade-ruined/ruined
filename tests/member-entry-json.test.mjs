@@ -352,13 +352,14 @@ for (const funding of ["self", "operator", "complimentary"]) test(`entry saves, 
     }
     if (funding === "complimentary") {
       const billing = await loadModule("src/lib/stripe/billing-repository.ts", {
+        "@/lib/membership/commercial-repository": {},
         "@/lib/membership/pricing": await loadModule("src/lib/membership/pricing.ts", {}),
         postgres, "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
         "@/lib/stripe/membership-state": { normalizeEmail: email => email.trim().toLowerCase() },
       });
-      await assert.rejects(() => billing.reserveMembershipCheckout({ acceptanceId: accepted.acceptance.id, attemptId: ids.attempt, authUserId: ids.auth, email: "member@example.test" }), error => error instanceof billing.MembershipCheckoutConflictError);
+      await assert.rejects(() => billing.reserveMembershipCheckout({ acceptanceId: accepted.acceptance.id, attemptId: ids.attempt, commercialReservationId: ids.attempt, authUserId: ids.auth, email: "member@example.test" }), error => error instanceof billing.MembershipCheckoutConflictError);
       staleCheckoutProjection = true;
-      await assert.rejects(() => billing.reserveMembershipCheckout({ acceptanceId: accepted.acceptance.id, attemptId: ids.attempt, authUserId: ids.auth, email: "member@example.test" }), error => error instanceof billing.MembershipCheckoutConflictError);
+      await assert.rejects(() => billing.reserveMembershipCheckout({ acceptanceId: accepted.acceptance.id, attemptId: ids.attempt, commercialReservationId: ids.attempt, authUserId: ids.auth, email: "member@example.test" }), error => error instanceof billing.MembershipCheckoutConflictError);
       assert.equal(staleProjectionObserved, true);
       assert.equal(freshFundingObserved, true, "A grant committed during the member-lock wait must prevent checkout before any attempt is inserted");
       staleCheckoutProjection = false;

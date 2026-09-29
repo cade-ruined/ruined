@@ -30,12 +30,12 @@ const pricing = await load("src/lib/membership/pricing.ts");
 
 async function fixture(options = {}) {
   const calls = [], logs = [];
-  const state = { trusted: true, mode: "connected", checkoutReady: true, emailReady: true,
+  const state = { trusted: true, mode: "connected", checkoutReady: true, setupAdmissionReady: false, emailReady: true,
     rateAllowed: true, eligible: true, issued: { invitationId: "22222222-2222-4222-8222-222222222222", created: true }, ...options };
   const route = await load("app/api/membership/signup/invitation/route.ts", {
     "next/server": { NextResponse },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => state.trusted },
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: state.mode, stripeCheckoutReady: state.checkoutReady }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: state.mode, stripeCheckoutReady: state.checkoutReady, membershipSignupReady: state.checkoutReady || state.setupAdmissionReady }) },
     "@/lib/membership/pricing": pricing,
     "@/lib/membership/invitation-model": invitationModel,
     "@/lib/membership/personal-invitation-model": personalModel,
@@ -157,4 +157,12 @@ test("repository and delivery failures expose no recipient, token, provider payl
     assert.deepEqual(f.logs, [["Ruined Direct invitation request failed", { errorType: "Error" }]]);
     if (failure !== "deliveryError") assert.equal(f.calls.some(call => call.delivery), false);
   }
+});
+
+test("explicit save-card admission issues a direct card while paid checkout remains closed", async () => {
+  const f = await fixture({ checkoutReady: false, setupAdmissionReady: true });
+  await generic(await f.POST(f.request()));
+  assert.equal(f.calls.filter(call => call.issue).length, 1);
+  assert.equal(f.calls.filter(call => call.delivery).length, 1);
+  assert.equal(f.state.checkoutReady, false);
 });

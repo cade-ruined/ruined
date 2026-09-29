@@ -103,8 +103,11 @@ test("shipped SQL funds only current canonical operators, preserves unpaid recor
 
 test("entry renders activation instead of checkout for operators and server rejects complimentary checkout", async () => {
   const form = await source("src/components/membership/JoinForm.tsx");
-  assert.match(form, /stage === "payment" && complimentary/);
-  assert.match(form, /stage === "payment" && !complimentary/);
+  assert.match(form, /const complimentary = \(onboarding\.membershipFunding === "operator" \|\| onboarding\.membershipFunding === "complimentary"\)/);
+  assert.match(form, /const noSeparatePayment = complimentary \|\| sharedMembership/);
+  assert.match(form, /const sharedMembership = onboarding\.membershipFunding === "couple" && onboarding\.billingState === "active"/);
+  assert.match(form, /stage === "payment" && noSeparatePayment/);
+  assert.match(form, /stage === "payment" && !noSeparatePayment/);
   assert.match(form, /JSON.stringify\(\{ action: "complete" \}\)/);
   assert.match(await source("src/lib/stripe/billing-repository.ts"), /funding\.complimentary_funded \|\|/);
 });

@@ -5,9 +5,10 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import type { MembershipBillingPlan } from "@/lib/membership/pricing";
 import styles from "./MembershipOverview.module.css";
 
-export default function DirectInvitationRequestForm({ billingPlan, onRequestStateChange, preview = false }: {
+export default function DirectInvitationRequestForm({ billingPlan, onRequestStateChange, preview = false, paymentSetupOnly = false }: {
   billingPlan: MembershipBillingPlan;
   preview?: boolean;
+  paymentSetupOnly?: boolean;
   onRequestStateChange: (locked: boolean) => void;
 }) {
   const id = useId();
@@ -53,6 +54,6 @@ export default function DirectInvitationRequestForm({ billingPlan, onRequestStat
     </fieldset>
     {preview ? <p className={styles.signupPreviewNotice}>Preview only. Invitation delivery, account creation, and payments are disabled.</p> : null}
     {error ? <p className={styles.invitationError} role="alert">{error}</p> : null}
-    <p className={styles.signupTerms}>Your invitation is valid for 48 hours after it is created. Payment comes after email verification, your profile, and the membership agreement.</p>
+    <p className={styles.signupTerms}>Your invitation is valid for 48 hours after it is created. {paymentSetupOnly ? "Verify your email and complete your profile. Saving a payment method is optional and does not start a membership or authorize a charge." : "Payment comes after email verification, your profile, and the membership agreement."}</p>
   </form>;
 }

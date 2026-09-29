@@ -2,8 +2,9 @@ import "server-only";
 
 import Stripe from "stripe";
 
-import type { MembershipBillingPlan } from "@/lib/membership/pricing";
-import { matchesMembershipPrice, type MembershipPriceConfiguration } from "@/lib/stripe/price-policy";
+import type { MembershipBillingPlan, MembershipOfferId } from "@/lib/membership/pricing";
+import { LIVE_MEMBERSHIP_PRICE_IDS, SANDBOX_MEMBERSHIP_PRICE_IDS } from "@/lib/stripe/membership-catalog";
+import { matchesMembershipOfferPrice, matchesMembershipPrice, type MembershipPriceConfiguration } from "@/lib/stripe/price-policy";
 
 export const STRIPE_API_VERSION = "2026-08-26.dahlia" as const;
 
@@ -54,12 +55,34 @@ export function getStripeLivemode(): boolean {
 }
 
 export function getMembershipPriceConfiguration(): MembershipPriceConfiguration {
+  const livemode = getStripeLivemode();
+  const catalog = livemode ? LIVE_MEMBERSHIP_PRICE_IDS : SANDBOX_MEMBERSHIP_PRICE_IDS;
+  const offers = Object.fromEntries(Object.entries(catalog).map(([offerId, catalogPriceId]) => [
+    offerId, process.env[`STRIPE_MEMBERSHIP_${offerId.toUpperCase()}_PRICE_ID`]?.trim() || catalogPriceId,
+  ])) as Record<MembershipOfferId, string>;
   return {
     monthly: process.env.STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID?.trim() || null,
     annual: process.env.STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID?.trim() || null,
     legacy: process.env.STRIPE_MEMBERSHIP_PRICE_ID?.trim() || null,
-    livemode: getStripeLivemode(),
+    livemode,
+    offers,
   };
+}
+
+export function getStripeMembershipOfferPriceId(offerId: MembershipOfferId): string {
+  const priceId = getMembershipPriceConfiguration().offers?.[offerId];
+  if (!priceId) throw new Error("Membership offer price is not configured.");
+  return priceId;
+}
+
+export async function validateStripeMembershipOfferPrice(offerId: MembershipOfferId): Promise<string> {
+  const configuration = getMembershipPriceConfiguration();
+  const priceId = getStripeMembershipOfferPriceId(offerId);
+  const price = await getStripe().prices.retrieve(priceId);
+  if (!matchesMembershipOfferPrice(price, offerId, configuration, true)) {
+    throw new Error("The configured Stripe membership price does not match the approved offer.");
+  }
+  return priceId;
 }
 
 export function getPaidMembershipAgreementVersion(): string {

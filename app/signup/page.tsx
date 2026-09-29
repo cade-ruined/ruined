@@ -17,10 +17,12 @@ export default async function SignupPage({ searchParams }: {
   const params = await searchParams;
   const requestedPlan = params.plan;
   const configuration = getPlatformConfiguration();
+  const setupPreview = configuration.mode === "preview" && params.preview === "payment-setup";
   return <MembershipSignupPage
     initialPlan={isMembershipBillingPlan(requestedPlan) ? requestedPlan : "monthly"}
-    enabled={configuration.mode === "connected" && configuration.stripeCheckoutReady}
+    enabled={configuration.mode === "connected" && configuration.membershipSignupReady === true}
+    paymentSetupOnly={setupPreview || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)}
     preview={configuration.mode === "preview"}
-    previewInvitation={configuration.mode === "preview" && params.preview === "invitation"}
+    previewInvitation={configuration.mode === "preview" && (params.preview === "invitation" || setupPreview)}
   />;
 }

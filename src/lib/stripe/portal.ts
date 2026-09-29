@@ -1,7 +1,22 @@
 import "server-only";
 
 import { findBillingMemberById } from "@/lib/stripe/billing-repository";
-import { getStripe } from "@/lib/stripe/server";
+import { getMemberBillingCommitment } from "@/lib/stripe/commitment-account";
+import { matchesMembershipPortalPolicy, type MembershipPortalKind } from "@/lib/stripe/portal-policy";
+import { getStripe, getStripeLivemode } from "@/lib/stripe/server";
+
+export async function validateMembershipPortalConfiguration(kind: MembershipPortalKind = "legacy"): Promise<string> {
+  const variable = kind === "commitment"
+    ? "STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID"
+    : "STRIPE_BILLING_PORTAL_CONFIGURATION_ID";
+  const configurationId = process.env[variable]?.trim();
+  if (!configurationId) throw new Error(`${variable} is not configured.`);
+  const configuration = await getStripe().billingPortal.configurations.retrieve(configurationId);
+  if (!matchesMembershipPortalPolicy(configuration, configurationId, getStripeLivemode(), kind)) {
+    throw new Error("The configured billing portal does not match the membership cancellation policy.");
+  }
+  return configurationId;
+}
 
 /**
  * Call only after the application has authenticated the member and obtained
@@ -35,9 +50,28 @@ export async function createBillingPortalSessionForMember({
     throw new Error("The authenticated member has no Stripe Customer.");
   }
 
-  const configuration = process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID?.trim();
+  const contract = await getMemberBillingCommitment(memberId);
+  let kind: MembershipPortalKind = contract ? "commitment" : "legacy";
+  if (!contract) {
+    // Checkout can be paid before its invoice webhook creates the local contract.
+    // Never expose a new v2 subscription to the legacy cancellation controls in
+    // that delivery window. Provider failure must not fall back to legacy policy.
+    for await (const subscription of getStripe().subscriptions.list({ customer: member.stripeCustomerId, status: "all", limit: 100 })) {
+      const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+      if (customerId !== member.stripeCustomerId || subscription.livemode !== getStripeLivemode()) {
+        throw new Error("The billing subscription does not match this member's customer.");
+      }
+      if (subscription.metadata.billing_terms_version === "membership-billing-v2"
+        && !["canceled", "incomplete_expired"].includes(subscription.status)) {
+        if (subscription.metadata.ruined_member_id !== memberId) throw new Error("The paid membership owner could not be verified.");
+        kind = "commitment";
+        break;
+      }
+    }
+  }
+  const configuration = await validateMembershipPortalConfiguration(kind);
   const session = await getStripe().billingPortal.sessions.create({
-    ...(configuration ? { configuration } : {}),
+    configuration,
     customer: member.stripeCustomerId,
     return_url: returnUrl,
   });

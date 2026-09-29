@@ -152,10 +152,10 @@ async function fixture(t) {
     ...basic, "@/lib/database/server": database, "@/lib/identity/repository": identity,
     "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
   });
-  let checkoutReady = true;
+  let checkoutReady = true, setupAdmissionReady = false;
   const admission = await load("src/lib/membership/personal-invitation-admission.ts", {
     ...basic, "@/lib/database/server": database, "@/lib/identity/repository": identity,
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: checkoutReady }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: checkoutReady, membershipSignupReady: checkoutReady || setupAdmissionReady }) },
     "@/lib/membership/public-signup-admission": signup,
   });
   let beforeCommit = async () => {};
@@ -202,6 +202,7 @@ async function fixture(t) {
   }
   return { db, members, pending, operators, platform, admission, personal, direct, allowMember, allowGuide, grants,
     checkout: ready => { checkoutReady = ready; },
+    setupAdmission: ready => { setupAdmissionReady = ready; },
     beforeCommit: callback => { beforeCommit = callback; }, clock: value => { testClock = new Date(value); } };
 }
 
@@ -521,4 +522,24 @@ test("expired complimentary funding cannot be renewed by replaying its accepted 
   assert.deepEqual(await f.grants(), ["member"]);
   assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }), member, "The original account can sign in without restoring its expired funding");
   assert.equal((await f.db.query('select billing_state from member_lifecycle where member_id=$1', [member.memberId])).rows[0].billing_state, "pending");
+});
+
+test("save-card admission permits verified direct profile setup without a paid membership or checkout", async t => {
+  const f = await fixture(t); f.checkout(false); f.setupAdmission(true);
+  const direct = await f.direct();
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, direct.token), true);
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, direct.token);
+  assert.deepEqual(await f.grants(), ["member"]);
+  const lifecycle = (await f.db.query("select account_state,billing_state,program_state,standing_state,administrative_onboarding_state from member_lifecycle where member_id=$1", [member.memberId])).rows[0];
+  assert.deepEqual(lifecycle, { account_state: "active", billing_state: "pending", program_state: "prospect", standing_state: "pre_active", administrative_onboarding_state: "in_progress" });
+  assert.equal((await f.db.query("select membership_state from ruined_members where id=$1", [member.memberId])).rows[0].membership_state, "pending");
+  assert.equal((await f.db.query("select billing_plan from member_onboardings where member_id=$1", [member.memberId])).rows[0].billing_plan, "annual");
+  const claimed = (await f.db.query("select accepted_at,direct_joined_at from member_personal_invitations where id=$1", [direct.id])).rows[0];
+  assert.ok(claimed.accepted_at); assert.equal(claimed.direct_joined_at, null);
+  assert.equal((await f.db.query("select count(*)::int count from stripe_subscriptions")).rows[0].count, 0);
+  assert.equal((await f.db.query("select count(*)::int count from stripe_checkout_attempts")).rows[0].count, 0);
+  f.setupAdmission(false);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, direct.token), false);
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, direct.token), f.platform.PlatformAccessDeniedError);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }), member, "closing admission does not remove existing verified account access");
 });

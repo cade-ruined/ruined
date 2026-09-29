@@ -33,7 +33,7 @@ export async function getPersonalInvitationAdmissionEligibility(email: string, t
       where invitation.public_token = ${token} and invitation.recipient_email_normalized = ${normalized}
         and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
         and private.ruined_personal_invitation_benefit_available(invitation.id)
-        and ((invitation.origin = 'ruined_direct' and ${getPlatformConfiguration().stripeCheckoutReady === true}
+        and ((invitation.origin = 'ruined_direct' and ${getPlatformConfiguration().membershipSignupReady === true}
           and private.ruined_direct_invitation_available(invitation.id))
           or (invitation.origin = 'member' and private.ruined_member_can_share_invitation(invitation.member_id)
             and inviter.email_normalized <> ${normalized}
@@ -60,7 +60,7 @@ export async function lockPersonalInvitationClaim(tx: TransactionSql, viewer: Pl
   if (!TOKEN.test(token)) return deny();
   const [source] = await tx<Array<{ member_id: string | null; origin: string }>>`select member_id, origin from member_personal_invitations where public_token = ${token}`;
   if (!source) return deny();
-  if (source.origin === "ruined_direct" && !getPlatformConfiguration().stripeCheckoutReady) return deny();
+  if (source.origin === "ruined_direct" && !getPlatformConfiguration().membershipSignupReady) return deny();
   if (source.member_id !== null) {
     // Current staff or independent complimentary funding is locked before the
     // source member, preventing a concurrent revocation from approving admission.
@@ -83,7 +83,7 @@ export async function lockPersonalInvitationClaim(tx: TransactionSql, viewer: Pl
 
 async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: PersonalInvitationClaim) {
   if (invitation.origin === "ruined_direct") {
-    if (!getPlatformConfiguration().stripeCheckoutReady) return deny();
+    if (!getPlatformConfiguration().membershipSignupReady) return deny();
     const [direct] = await tx<Array<{ eligible: boolean }>>`select exists (
       select 1 from member_personal_invitations where id = ${invitation.id}::uuid and origin = 'ruined_direct'
         and member_id is null and membership_type = 'standard' and revoked_at is null and expires_at > clock_timestamp()

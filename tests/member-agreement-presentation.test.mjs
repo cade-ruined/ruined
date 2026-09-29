@@ -75,7 +75,9 @@ const JoinForm = load("src/components/membership/JoinForm.tsx", {
   "@stripe/stripe-js": { loadStripe: () => { throw new Error("Rendering must not initialize Stripe or create a payment"); } },
   "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
   "@/components/membership/AgreementText": { __esModule: true, default: AgreementText },
+  "@/components/membership/CoupleMembershipApproval": { __esModule: true, default: () => null },
   "@/components/membership/MemberPhotoUpload": { __esModule: true, default: () => null },
+  "@/components/membership/MemberPaymentMethod": { __esModule: true, default: () => null },
   "@/lib/membership/entry-stage": load("src/lib/membership/entry-stage.ts"),
   "@/lib/membership/pricing": load("src/lib/membership/pricing.ts"),
   "@/lib/membership/phone": load("src/lib/membership/phone.ts"),
@@ -113,7 +115,7 @@ test("only test checkout shows the documented no-charge instructions and test ca
   assert.match(html, /4242 4242 4242 4242/);
   assert.match(html, /Any future date/);
   assert.match(html, /Any 3-digit number/);
-  assert.match(html, /Open test checkout/);
+  assert.match(html, /Review membership offer/);
   assert.doesNotMatch(html, /Payment is the final step|Open secure payment/);
 });
 
@@ -123,6 +125,6 @@ test("live, missing, and non-test keys never claim that real checkout is a test;
     assert.doesNotMatch(html, /4242|no real charge|Do not enter a real|Any future date|Any 3-digit|Test checkout/);
     assert.match(html, /Membership payment/);
   }
-  assert.match(join("pk_live_fixture"), /Open secure payment/);
+  assert.match(join("pk_live_fixture"), /Review membership offer/);
   assert.doesNotMatch(join("pk_test_fixture", "profile"), /4242|no real charge|Test checkout/);
 });

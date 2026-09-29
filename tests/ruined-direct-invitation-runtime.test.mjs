@@ -9,6 +9,7 @@ async function directFixture(t) {
   const f = await fixture(t);
   const repository = await load("src/lib/membership/direct-invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => f.sql },
+    "@/lib/platform/config": { getPlatformConfiguration: () => f.configuration },
     "./invitation-model": model, "./personal-invitation-model": f.personalModel, "./pricing": pricing,
   });
   const history = await load("src/lib/platform/ops-direct-invitations-repository.ts", {
@@ -198,4 +199,19 @@ test("a deleted recipient's accepted direct card stays unavailable after identit
   const history = await f.getOpsDirectInvitations(first.auth);
   assert.equal(history.counts.joined, 1, "historical conversion remains operator-private");
   assert.equal(history.entries[0].acceptedMemberId, newcomer.member);
+});
+
+test("direct issuance and public card share the admission gate, with honest setup-only presentation", async t => {
+  const f = await directFixture(t);
+  f.configuration.stripeCheckoutReady = false;
+  f.configuration.membershipSignupReady = false;
+  assert.equal(await f.issue(), null);
+  assert.equal((await f.db.query("select count(*)::int count from member_personal_invitations")).rows[0].count, 0);
+  f.configuration.membershipSignupReady = true;
+  const issued = await f.issue(); const invitation = await f.row(issued.invitationId);
+  const card = await f.repository.getPublicMemberInvitation(invitation.public_token);
+  assert.equal(card.paymentSetupOnly, true); assert.equal(card.invitationSource, "ruined_direct");
+  f.configuration.membershipSignupReady = false;
+  assert.equal(await f.repository.getPublicMemberInvitation(invitation.public_token), null);
+  assert.equal(await f.issue(input(2)), null);
 });

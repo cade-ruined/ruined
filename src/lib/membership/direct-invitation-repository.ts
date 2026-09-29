@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getPlatformConfiguration } from "@/lib/platform/config";
 import { randomBytes } from "node:crypto";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { MemberInvitationError } from "./invitation-model";
@@ -33,6 +34,7 @@ function parseInput(value: unknown): RuinedDirectInvitationInput {
  */
 export async function issueRuinedDirectInvitation(value: RuinedDirectInvitationInput): Promise<RuinedDirectInvitationIssue | null> {
   const input = parseInput(value);
+  if (!getPlatformConfiguration().membershipSignupReady) return null;
   return getApplicationDatabase().begin(async tx => {
     // Serialize request collisions first, then duplicate recipients. Namespace 2
     // is separate from admission's email lock (1): claim locks invitation first.

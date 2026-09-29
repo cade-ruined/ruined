@@ -84,7 +84,7 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
         select member_id, origin, expires_at, recipient_name, membership_type, complimentary_ends_at from member_personal_invitations
         where public_token = ${token} and revoked_at is null and expires_at > clock_timestamp()
           and private.ruined_personal_invitation_benefit_available(id)
-          and (origin = 'member' or (${getPlatformConfiguration().stripeCheckoutReady === true}
+          and (origin = 'member' or (${getPlatformConfiguration().membershipSignupReady === true}
             and private.ruined_direct_invitation_available(id)))
       ) invitation left join ruined_members member on member.id = invitation.member_id
       left join person_profiles profile on profile.person_id = member.person_id
@@ -93,7 +93,8 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
       limit 1
     `;
     return row ? { card: invitationCard(row.name, wearSeed(row.member_id ?? "ruined-direct"), row.member_tag),
-      ...(row.origin === "ruined_direct" ? { invitationSource: "ruined_direct" as const } : {}),
+      ...(row.origin === "ruined_direct" ? { invitationSource: "ruined_direct" as const,
+        ...(!getPlatformConfiguration().stripeCheckoutReady ? { paymentSetupOnly: true } : {}) } : {}),
       expiresAt: expiresAt(row.expires_at),
       ...(row.recipient_name !== null ? { recipientName: row.recipient_name, membershipType: row.membership_type,
         complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) } : null;

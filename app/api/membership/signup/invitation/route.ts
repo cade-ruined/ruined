@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Request origin is not allowed." }, { status: 403, headers });
   }
   const configuration = getPlatformConfiguration();
-  if (configuration.mode !== "connected" || !configuration.stripeCheckoutReady || !getPersonalInvitationEmailReady()) {
+  if (configuration.mode !== "connected" || !configuration.membershipSignupReady || !getPersonalInvitationEmailReady()) {
     return NextResponse.json({ error: "Membership invitations are not available yet. Join the waitlist to hear when we open." }, { status: 503, headers });
   }
   try {

@@ -31,6 +31,7 @@ type PublicRow = CardRow & SourceRow & {
   program_state: MemberAccessIdentity["programState"]; standing_state: MemberAccessIdentity["standingState"];
   administrative_onboarding_state: MemberAccessIdentity["administrativeOnboardingState"];
   cancellation_effective_at: Date | string | null; complimentary_funded: boolean; operator_funded: boolean;
+  shared_billing_state?: MemberAccessIdentity["billingState"] | null;
 };
 const iso = (value: Date | string | null) => value ? new Date(value).toISOString() : null;
 function wearSeed(memberId: string) { return createHash("sha256").update(`ruined-member-card:${memberId}`).digest("hex").slice(0, 24); }
@@ -141,6 +142,7 @@ export async function saveProfileCardSettings(
       tx<PublicRow[]>`select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state,
         lifecycle.standing_state, lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
         private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded
         from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id
         where member.id = ${identity.memberId}::uuid and member.person_id = ${identity.personId}::uuid
@@ -151,9 +153,9 @@ export async function saveProfileCardSettings(
     ]);
     const live = liveRows[0];
     const latestIdentity: MemberAccessIdentity | null = live ? {
-      accountState: live.account_state, billingState: live.billing_state, programState: live.program_state,
+      accountState: live.account_state, billingState: live.shared_billing_state ?? live.billing_state, programState: live.program_state,
       standingState: live.standing_state, administrativeOnboardingState: live.administrative_onboarding_state,
-      cancellationEffectiveAt: iso(live.cancellation_effective_at), membershipFunding: live.operator_funded ? "operator" : live.complimentary_funded ? "complimentary" : "self",
+      cancellationEffectiveAt: iso(live.cancellation_effective_at), membershipFunding: live.operator_funded ? "operator" : live.complimentary_funded ? "complimentary" : live.shared_billing_state ? "couple" : "self",
     } : null;
     if (!latestIdentity || !memberCan(deriveMemberAccessPolicy(latestIdentity, latestIdentity.cancellationEffectiveAt), "profile.write")) {
       throw new PublicCardError(403, "This account cannot change its member card.");
@@ -181,6 +183,7 @@ async function publicCardRow(token: string): Promise<PublicRow | null> {
       lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
       lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded
     from member_public_cards card join ruined_members member on member.id = card.member_id
     join member_lifecycle lifecycle on lifecycle.member_id = member.id
@@ -193,9 +196,9 @@ async function publicCardRow(token: string): Promise<PublicRow | null> {
   `;
   if (!row) return null;
   const identity: MemberAccessIdentity = {
-    accountState: row.account_state, billingState: row.billing_state, programState: row.program_state,
+    accountState: row.account_state, billingState: row.shared_billing_state ?? row.billing_state, programState: row.program_state,
     standingState: row.standing_state, administrativeOnboardingState: row.administrative_onboarding_state,
-    cancellationEffectiveAt: iso(row.cancellation_effective_at), membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : "self",
+    cancellationEffectiveAt: iso(row.cancellation_effective_at), membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
   };
   return canPublishMemberCard(identity, iso(row.membership_activated_at)) ? row : null;
 }

@@ -12,7 +12,7 @@ export type OperatorMemberGuidance = {
 };
 
 type GuidanceState = {
-  membershipFunding?: "self" | "operator" | "complimentary";
+  membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   projection: "summary" | "record";
   account: string;
   billing: string;

@@ -76,6 +76,12 @@ function errorResponse(error: unknown) {
   const databaseError = error && typeof error === "object"
     ? error as Record<string, unknown>
     : null;
+  if (databaseError?.code === "P4205") {
+    return NextResponse.json({
+      error: "A founding place is temporarily reserved in another checkout. Please try again shortly.",
+      code: "founding_place_pending",
+    }, { status: 409 });
+  }
   const constraint = databaseError?.constraint_name ?? databaseError?.constraint;
   // Log only bounded schema metadata. PostgreSQL detail/message/query/parameters
   // may contain the member's phone, name, address, or other private values.

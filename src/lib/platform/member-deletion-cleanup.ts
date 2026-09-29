@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { getApplicationDatabase } from "@/lib/database/server";
+import { cleanupWithdrawnMemberPaymentMethods } from "@/lib/stripe/payment-method-service";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FILE_UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -94,7 +95,7 @@ export async function cleanupMemberProviderData(client: CleanupClient, job: Pick
   }
 }
 
-export async function processMemberDeletionCleanupBatch(requestedLimit = 3, cleanupId: string | null = null) {
+export async function processMemberDeletionCleanupBatch(requestedLimit = 3, cleanupId: string | null = null, requestedDeadline = Date.now() + 22_000) {
   const result = { claimed: 0, completed: 0, deferred: 0, failed: 0 };
   const config = cleanupConfiguration();
   if (!config) return result;
@@ -105,7 +106,7 @@ export async function processMemberDeletionCleanupBatch(requestedLimit = 3, clea
   });
   const sql = getApplicationDatabase();
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(3, Math.trunc(requestedLimit))) : 1;
-  const deadline = Date.now() + 22_000;
+  const deadline = Math.min(Date.now() + 22_000, requestedDeadline);
   for (let index = 0; index < limit && Date.now() < deadline; index += 1) {
     const leaseToken = randomUUID();
     const [job] = await sql<CleanupJob[]>`
@@ -142,6 +143,8 @@ export async function processMemberDeletionCleanupBatch(requestedLimit = 3, clea
       `;
       if (!safety?.safe) throw new Error("Member cleanup identity changed.");
       await cleanupMemberProviderData(client, job, deadline);
+      const paymentCleanup = await cleanupWithdrawnMemberPaymentMethods({ memberId: job.member_id, limit: 1, deadline });
+      if (paymentCleanup.pending > 0) throw new Error("Member payment-method cleanup is pending.");
       const finalSweepAt = new Date(new Date(job.created_at).getTime() + FINAL_SWEEP_DELAY_MS);
       const complete = finalSweepAt.getTime() <= Date.now();
       const updated = await sql`

@@ -75,10 +75,11 @@ export async function fixture(t, { applyExpiry = true } = {}) {
       programState: row.program_state, foundationsState: row.foundations_state, administrativeOnboardingState: row.administrative_onboarding_state,
       standingState: row.standing_state, cancellationEffectiveAt: row.cancellation_effective_at, membershipFunding: row.operator ? "operator" : "self" };
   }
+  const configuration = { stripeCheckoutReady: true, membershipSignupReady: true };
   const repository = await load("src/lib/membership/invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, read) => read() },
     "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity }, "./invitation-model": model,
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
   });
   const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": model });
   const personalRepository = await load("src/lib/membership/personal-invitation-repository.ts", {
@@ -115,5 +116,5 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   async function enable(who = first) { const own = await repository.getOwnMemberInvitation(who.auth); return repository.saveOwnMemberInvitation(who.auth, { enabled: true, version: own.version }); }
   async function submit(who, token, name = "Interested Person") { return waitlist.joinMembershipWaitlist(waitlistModel.parseMembershipWaitlistInput({ name, email: who.email, ...(token ? { invitationToken: token } : {}) })); }
   await addMember(first, true, true); await addMember(second, true, true);
-  return { db, sql, repository, personalRepository, personalModel, waitlist, ops, opsReferrals, addMember, activate, enable, submit };
+  return { db, sql, configuration, repository, personalRepository, personalModel, waitlist, ops, opsReferrals, addMember, activate, enable, submit };
 }

@@ -40,7 +40,7 @@ test("every member page context handles denied before its unavailable fallback",
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
   const pages = [...modernPages, ...legacyPages];
 
-  assert.equal(modernPages.length, 12);
+  assert.equal(modernPages.length, 13);
   assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');

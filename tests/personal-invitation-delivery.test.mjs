@@ -82,7 +82,7 @@ async function fixture(t) {
     };
     return tag;
   }
-  const configuration = { mode: "connected", stripeCheckoutReady: true };
+  const configuration = { mode: "connected", stripeCheckoutReady: true, setupAdmissionReady: false, get membershipSignupReady() { return this.stripeCheckoutReady || this.setupAdmissionReady; } };
   const worker = await load("src/lib/membership/personal-invitation-delivery.ts", {
     "server-only": {}, "node:crypto": crypto,
     "@/lib/database/server": { getApplicationDatabase: () => wrap(pg) },
@@ -247,4 +247,14 @@ test("Ruined Direct delivery is held while launch is closed and resumes when rea
   assert.equal((await f.row()).delivery_status, 'queued');
   f.configuration.stripeCheckoutReady = true;
   assert.equal((await f.worker.processPersonalInvitationEmailBatch()).sent, 1);
+});
+
+test("explicit save-card admission delivers direct invitations without opening paid checkout", async t => {
+  const f = await fixture(t);
+  await f.pg.query("update member_personal_invitations set origin='ruined_direct',member_id=null,inviter_name='Ruined',inviter_tag=null where id=$1", [f.id]);
+  f.configuration.stripeCheckoutReady = false;
+  f.configuration.setupAdmissionReady = true;
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).sent, 1);
+  assert.equal(f.sends.length, 1);
+  assert.equal(f.configuration.stripeCheckoutReady, false);
 });

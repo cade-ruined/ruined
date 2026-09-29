@@ -16,7 +16,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
 
   assert.match(checkoutRoute, /const viewer = await getCurrentPlatformViewer\(\)/);
   assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
-  assert.match(checkoutRoute, /validateStripeMembershipPrice\(plan\)/);
+  assert.match(checkoutRoute, /validateStripeMembershipOfferPrice\(commercial\.offerId\)/);
   assert.match(checkoutRoute, /line_items:\s*\[\{ price: priceId, quantity: 1 \}\]/);
   assert.doesNotMatch(requestType, /email|price|priceId|amount|quantity/i);
   assert.doesNotMatch(checkoutRoute, /body\.(email|price|priceId|amount|quantity)/);
@@ -30,16 +30,17 @@ test("embedded membership Checkout fixes the offer on the server", () => {
     /return_url:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
   );
   assert.doesNotMatch(checkoutRoute, /\b(?:success_url|cancel_url|payment_method_types)\s*:/);
-  assert.doesNotMatch(checkoutRoute, /customer_update|reservation\.stripeCustomerId/);
+  assert.doesNotMatch(checkoutRoute, /reservation\.stripeCustomerId/);
+  assert.match(checkoutRoute, /customer: savedMethod\.customerId/);
 });
 
 test("embedded Checkout returns a non-cacheable client secret and selected plan and mounts with Stripe.js", () => {
   assert.match(
     checkoutRoute,
-    /function clientSecretResponse\(clientSecret: string, plan: MembershipBillingPlan\)[\s\S]*?\{ clientSecret, plan \}[\s\S]*?"Cache-Control": "no-store"/,
+    /function clientSecretResponse\(clientSecret: string, plan: MembershipBillingPlan, commercialReservationId: string\)[\s\S]*?\{ clientSecret, plan, commercialReservationId \}[\s\S]*?"Cache-Control": "no-store"/,
   );
-  assert.match(checkoutRoute, /return clientSecretResponse\(existingSession\.client_secret, reservation\.plan\)/);
-  assert.match(checkoutRoute, /return clientSecretResponse\(session\.client_secret, reservation\.plan\)/);
+  assert.match(checkoutRoute, /return clientSecretResponse\(existingSession\.client_secret, reservation\.plan, reservation\.commercialReservationId\)/);
+  assert.match(checkoutRoute, /return clientSecretResponse\(session\.client_secret, reservation\.plan, reservation\.commercialReservationId\)/);
   assert.doesNotMatch(checkoutRoute, /\{\s*checkoutUrl:/);
 
   assert.match(checkoutClient, /cache:\s*"no-store"/);

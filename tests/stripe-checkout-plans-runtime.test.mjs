@@ -56,16 +56,18 @@ test("webhooks recognize existing legacy subscriptions but never mistake modifie
 
 const uuid = "11111111-1111-4111-8111-111111111111";
 const memberId = "22222222-2222-4222-8222-222222222222";
+const quoteExpiresAt = new Date(Date.now()+23*3600000);
 class CheckoutConflict extends Error {}
 class PlanConflict extends CheckoutConflict { constructor(plan) { super(); this.plan = plan; } }
 function reservation(plan = "monthly", changes = {}) {
-  return { memberId, plan, stripePriceId: configuration[plan], attemptId: uuid, agreementAcceptanceId: uuid, agreementAcceptedAt: new Date("2026-09-24T12:00:00Z"), agreementContentSha256: "hash", agreementKey: "ruined_membership", agreementVersion: "ruined_membership-v2", ageAttestedAt: new Date("2026-09-24T12:00:00Z"), recurringPaymentAcceptedAt: new Date("2026-09-24T12:00:00Z"), existingStripeSessionId: null, ...changes };
+  return { memberId, plan, commercialReservationId: uuid, offerId: `individual_${plan}`, expiresAt: quoteExpiresAt, stripePriceId: configuration[plan], attemptId: uuid, agreementAcceptanceId: uuid, agreementAcceptedAt: new Date("2026-09-24T12:00:00Z"), agreementContentSha256: "hash", agreementKey: "ruined_membership", agreementVersion: "ruined_membership-v2", ageAttestedAt: new Date("2026-09-24T12:00:00Z"), recurringPaymentAcceptedAt: new Date("2026-09-24T12:00:00Z"), existingStripeSessionId: null, ...changes };
 }
 function openSession(plan = "monthly", changes = {}) {
-  return { id: "cs_existing", status: "open", mode: "subscription", livemode: false, ui_mode: "embedded_page", metadata: { ruined_member_id: memberId, ruined_billing_plan: plan, ruined_price_id: configuration[plan], agreement_acceptance_id: uuid }, amount_subtotal: pricing.MEMBERSHIP_PLANS[plan].amount, currency: "usd", client_secret: "safe_test_secret", ...changes };
+  return { id: "cs_existing", status: "open", mode: "subscription", livemode: false, ui_mode: "embedded_page", shipping_address_collection:{allowed_countries:["US"]}, consent_collection: { terms_of_service: "required" }, custom_text: { terms_of_service_acceptance: { message: "I agree to the [Ruined Membership Agreement](https://members.example.test/membership/agreement/ruined_membership-v2)." } }, metadata: { billing_terms_version: "membership-billing-v2", ruined_offer_id: `individual_${plan}`, ruined_commercial_reservation_id: uuid, ruined_member_id: memberId, ruined_billing_plan: plan, ruined_price_id: configuration[plan], agreement_acceptance_id: uuid }, amount_subtotal: pricing.MEMBERSHIP_PLANS[plan].amount, currency: "usd", client_secret: "safe_test_secret", ...changes };
 }
-async function routeHarness({ reserve, retrieve, validationError } = {}) {
-  const creations = [], expirations = [], opened = [], reserved = [];
+async function routeHarness({ reserve, retrieve, validationError, agreementPublished = true, portalError, savedMethod = null, savedMethodError } = {}) {
+  const creations = [], expirations = [], opened = [], reserved = [], released = [];
+  let requestedPlan = "monthly";
   const stripe = { checkout: { sessions: {
     retrieve: async id => retrieve ? retrieve(id) : openSession(),
     create: async (params, options) => { creations.push({ params, options }); return { id: "cs_new", expires_at: 1790290800, client_secret: "safe_test_secret" }; },
@@ -75,6 +77,19 @@ async function routeHarness({ reserve, retrieve, validationError } = {}) {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid, email: "Member@Example.test" }) },
     "@/lib/membership/repository": { getMemberIdentity: async () => ({ membershipFunding: "self" }) },
+    "@/lib/membership/commercial-repository": {
+      getCommercialMembershipReservation: async () => ({...reservation(requestedPlan),id:uuid,status:"reserved"}),
+      releaseCommercialMembershipReservation: async input => released.push(input),
+    },
+    "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: async () => agreementPublished ? { version: 2, body: "Test-only agreement" } : null },
+    "@/lib/stripe/payment-method-service": { getSavedPaymentMethodForCheckout: async (id, attemptId) => {
+      assert.equal(attemptId, uuid);
+      assert.equal(id, memberId);
+      assert.equal(reserved.length > 0, true, "paid reservation must precede saved-method lookup");
+      if (savedMethodError) throw savedMethodError;
+      return savedMethod;
+    } },
+    "@/lib/stripe/portal": { validateMembershipPortalConfiguration: async () => { if (portalError) throw portalError; return "bpc_test"; } },
     "@/lib/membership/pricing": pricing,
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true, minimumAge: 18 }) },
     "@/lib/platform/repository": { PlatformAccessDeniedError: class extends Error {}, requireActivePlatformMemberLink: async () => ({ memberId }) },
@@ -85,9 +100,9 @@ async function routeHarness({ reserve, retrieve, validationError } = {}) {
       openMembershipCheckoutAttempt: async value => opened.push(value),
     },
     "@/lib/stripe/membership-state": { MEMBERSHIP_CONTEXT: "membership", MEMBERSHIP_OFFER: "founding_membership", isUuid: value => value === uuid, normalizeEmail: value => value.toLowerCase() },
-    "@/lib/stripe/server": { isTrustedCheckoutOrigin: () => true, getStripe: () => stripe, getStripeLivemode: () => false, getPaidMembershipAgreementVersion: () => "ruined_membership-v2", validateStripeMembershipPrice: async plan => { if (validationError) throw validationError; return configuration[plan]; }, getApplicationOrigin: () => "https://members.example.test", isStripeTaxEnabled: () => false },
+    "@/lib/stripe/server": { isTrustedCheckoutOrigin: () => true, getStripe: () => stripe, getStripeLivemode: () => false, getPaidMembershipAgreementVersion: () => "ruined_membership-v2", validateStripeMembershipOfferPrice: async offerId => { if (validationError) throw validationError; return configuration[pricing.MEMBERSHIP_OFFERS[offerId].plan]; }, getApplicationOrigin: () => "https://members.example.test", isStripeTaxEnabled: () => false },
   });
-  return { creations, expirations, opened, reserved, post: body => route.POST(new Request("https://members.example.test/api/stripe/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acceptanceId: uuid, attemptId: uuid, recurringPaymentAccepted: true, plan: "monthly", ...body }) })) };
+  return { creations, expirations, opened, reserved, released, post: body => { requestedPlan = body.plan ?? "monthly"; return route.POST(new Request("https://members.example.test/api/stripe/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acceptanceId: uuid, attemptId: uuid, recurringPaymentAccepted: true, commercialReservationId: uuid, plan: "monthly", ...body }) })); } };
 }
 
 test("checkout requires an approved plan and explicit recurring-payment consent before Stripe is called", async () => {
@@ -102,14 +117,21 @@ test("checkout requires an approved plan and explicit recurring-payment consent 
 test("parallel tabs reuse the same bound attempt and Stripe idempotency parameters", async () => {
   const harness = await routeHarness();
   const responses = await Promise.all([harness.post({ plan: "annual" }), harness.post({ plan: "annual", priceId: "price_bad", amount: 1 })]);
-  assert.deepEqual(await Promise.all(responses.map(r => r.json())), [{ clientSecret: "safe_test_secret", plan: "annual" }, { clientSecret: "safe_test_secret", plan: "annual" }]);
+  assert.deepEqual(await Promise.all(responses.map(r => r.json())), [{ clientSecret: "safe_test_secret", plan: "annual", commercialReservationId: uuid }, { clientSecret: "safe_test_secret", plan: "annual", commercialReservationId: uuid }]);
   assert.deepEqual(harness.creations[0], harness.creations[1]);
   const request = harness.creations[0];
   assert.deepEqual(request.params.line_items, [{ price: "price_annual", quantity: 1 }]);
   assert.equal(request.params.subscription_data.billing_mode.type, "flexible");
+  assert.deepEqual(request.params.shipping_address_collection,{allowed_countries:["US"]});
+  assert.equal(request.params.billing_address_collection,"required");
   assert.equal(request.params.subscription_data.trial_period_days, undefined);
   assert.match(request.options.idempotencyKey, /:annual:price_annual$/);
-  assert.equal(request.params.metadata.billing_terms_version, "membership-billing-v1");
+  assert.equal(request.params.metadata.billing_terms_version, "membership-billing-v2");
+  assert.equal(request.params.metadata.ruined_offer_id, "individual_annual");
+  assert.equal(request.params.metadata.ruined_commercial_reservation_id, uuid);
+  assert.deepEqual(request.params.consent_collection, { terms_of_service: "required" });
+  assert.equal(request.params.custom_text.terms_of_service_acceptance.message, "I agree to the [Ruined Membership Agreement](https://members.example.test/membership/agreement/ruined_membership-v2).");
+  assert.match(request.params.custom_text.submit.message, /Refund requests are reviewed individually/);
 });
 
 test("existing sessions are resumed; a competing plan cannot replace an in-flight payment", async () => {
@@ -124,13 +146,16 @@ test("existing sessions are resumed; a competing plan cannot replace an in-fligh
   assert.equal(conflicting.creations.length, 0);
 });
 
-test("only a remotely expired session is replaced, and a completed or mismatched payment blocks new checkout", async () => {
+test("a remotely expired session requires a new reviewed offer; completed or mismatched payments block new checkout", async () => {
   let count = 0;
   const expired = await routeHarness({ reserve: input => reservation(input.plan, { attemptId: input.attemptId, plan: count === 0 ? "annual" : input.plan, existingStripeSessionId: ++count === 1 ? "cs_expired" : null }), retrieve: () => openSession("monthly", { status: "expired" }) });
-  assert.equal((await expired.post({})).status, 200);
+  const expiredResponse = await expired.post({});
+  assert.equal(expiredResponse.status, 409);
+  assert.equal((await expiredResponse.json()).code, "membership_offer_expired");
   assert.equal(expired.expirations.length, 1);
-  assert.notEqual(expired.reserved[0].attemptId, expired.reserved[1].attemptId);
-  for (const changes of [{ status: "complete" }, { livemode: true }, { amount_subtotal: 100 }, { metadata: {} }]) {
+  assert.equal(expired.creations.length, 0);
+  assert.deepEqual(expired.released,[{reservationId:uuid,reason:"checkout_expired"}]);
+  for (const changes of [{shipping_address_collection:null}, {shipping_address_collection:{allowed_countries:["US","CA"]}}, {status: "complete" }, { livemode: true }, { amount_subtotal: 100 }, { metadata: {} }, { consent_collection: null }, { custom_text: {} }]) {
     const harness = await routeHarness({ reserve: () => reservation("monthly", { existingStripeSessionId: "cs_existing" }), retrieve: () => openSession("monthly", changes) });
     assert.equal((await harness.post({})).status, 409);
     assert.equal(harness.expirations.length, 0);
@@ -211,4 +236,36 @@ test("an expired session without a Customer releases its durable attempt without
   assert.equal(harness.reconciled.length, 1);
   assert.equal(harness.reconciled[0].status, "expired");
   assert.deepEqual(harness.states, []);
+});
+
+
+test("checkout stops before reserving or charging when paid terms or cancellation portal are unavailable", async () => {
+  for (const setup of [{ agreementPublished: false }, { portalError: Error("Wrong environment or cancellation policy") }]) {
+    const harness = await routeHarness(setup);
+    assert.equal((await harness.post({})).status, 502);
+    assert.equal(harness.reserved.length, 0);
+    assert.equal(harness.creations.length, 0);
+  }
+});
+
+
+test("saved payment storage supplies a verified customer only after fresh paid consent", async () => {
+  const f = await routeHarness({ savedMethod: { customerId: "cus_saved", paymentMethodId: "pm_saved" } });
+  assert.equal((await f.post({ recurringPaymentAccepted: false })).status, 400);
+  assert.equal(f.creations.length, 0);
+  assert.equal((await f.post({})).status, 200);
+  const { params } = f.creations[0];
+  assert.equal(params.customer, "cus_saved");
+  assert.equal(params.customer_email, undefined);
+  assert.equal(params.mode, "subscription");
+  assert.equal(params.payment_method_collection, "always");
+  assert.deepEqual(params.customer_update, { address: "auto" });
+  assert.equal(params.payment_intent_data, undefined);
+  assert.equal(params.subscription_data.default_payment_method, undefined);
+});
+
+test("saved-method verification failure cannot silently create a different billing customer", async () => {
+  const f = await routeHarness({ savedMethodError: new Error("Wrong Stripe account") });
+  assert.equal((await f.post({})).status, 502);
+  assert.equal(f.creations.length, 0);
 });

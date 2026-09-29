@@ -25,6 +25,7 @@ async function fixture(t) {
   await pg.exec(`
     create schema private;
     create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql as 'select false';
+    create function private.ruined_member_shared_billing_state(uuid) returns text language sql stable as 'select null::text';
     create function private.ruined_member_has_complimentary_funding(uuid) returns boolean language sql as 'select false';
     create table ruined_members(id uuid primary key,person_id uuid,deleted_at timestamptz);
     create table member_lifecycle(member_id uuid,account_state text default 'active',billing_state text default 'active',

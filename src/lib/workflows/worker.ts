@@ -14,12 +14,12 @@ export type WorkflowWorkerResult = Readonly<{
   processed: number;
 }>;
 
-export async function processWorkflowBatch(requestedLimit = 20): Promise<WorkflowWorkerResult> {
+export async function processWorkflowBatch(requestedLimit = 20, deadline = Number.POSITIVE_INFINITY): Promise<WorkflowWorkerResult> {
   const result = { claimed: 0, failed: 0, processed: 0 };
   const limit = Math.max(1, Math.min(50, Math.trunc(requestedLimit)));
   const workerId = createWorkflowWorkerId();
 
-  for (let index = 0; index < limit; index += 1) {
+  for (let index = 0; index < limit && Date.now() < deadline; index += 1) {
     const action = await claimNextWorkflowAction(workerId);
     if (!action) break;
     result.claimed += 1;

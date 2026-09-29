@@ -55,6 +55,11 @@ async function fixture(options = {}) {
     "server-only": {}, "node:crypto": { randomUUID: () => lease },
     "@supabase/supabase-js": { createClient: (...args) => { calls.push({ type: "client", args }); return p.client; } },
     "@/lib/database/server": { getApplicationDatabase: () => sql },
+    "@/lib/stripe/payment-method-service": { cleanupWithdrawnMemberPaymentMethods: async input => {
+      calls.push({ type: "payment-cleanup", input });
+      if (options.paymentCleanupFailure) throw new Error("Payment provider unavailable");
+      return { processed: 0, pending: options.paymentCleanupPending ?? 0 };
+    } },
   }, { Date: Clock, process: { env } });
   return { ...p, core, workerCalls: calls };
 }
@@ -176,4 +181,25 @@ test("missing cleanup configuration and invalid selected job ids never reach pro
   const configured = await fixture();
   await assert.rejects(configured.core.processMemberDeletionCleanupBatch(1, "not-a-job"), /Invalid/);
   assert.equal(configured.workerCalls.length, 0);
+});
+
+test("deletion cannot finish until its own withdrawn payment methods are removed", async () => {
+  for (const options of [{ paymentCleanupPending: 1 }, { paymentCleanupFailure: true }]) {
+    const f = await fixture({ ...options, jobs: [queuedJob(126)] });
+    assert.deepEqual(await f.core.processMemberDeletionCleanupBatch(1), { claimed: 1, completed: 0, deferred: 0, failed: 1 });
+    assert.equal(f.calls.filter(call => call.type === "auth").length, 1, "a Stripe outage must not prevent sign-in erasure");
+    const cleanupCall = f.workerCalls.find(call => call.type === "payment-cleanup");
+    assert.deepEqual(cleanupCall.input, { memberId: member, limit: 1, deadline: now + 22_000 });
+    assert.equal(f.workerCalls.some(call => call.query?.includes("last_error = null")), false);
+    assert.ok(f.workerCalls.some(call => call.query?.includes("Provider cleanup needs retry.")));
+  }
+  const unsafe = await fixture({ jobs: [queuedJob(126)], safe: false });
+  await unsafe.core.processMemberDeletionCleanupBatch(1);
+  assert.equal(unsafe.workerCalls.some(call => call.type === "payment-cleanup"), false);
+});
+
+test("shared cron deadline prevents claiming new deletion jobs", async () => {
+  const f = await fixture({ jobs: [queuedJob(126)] });
+  assert.deepEqual(await f.core.processMemberDeletionCleanupBatch(1, null, now), { claimed: 0, completed: 0, deferred: 0, failed: 0 });
+  assert.equal(f.workerCalls.some(call => call.query || call.type === "payment-cleanup"), false);
 });
