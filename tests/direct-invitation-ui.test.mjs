@@ -174,6 +174,26 @@ test("setup-only signup names optional card storage and makes plan choice a pref
   assert.match(html, /data-setup-only="true"/); assert.doesNotMatch(html, /first payment completes signup|due at signup/);
 });
 
+test("overview payment FAQ matches optional setup without changing paid signup terms", async () => {
+  const component = (await load("src/components/public-members/MembershipOverview.tsx", {
+    react: React, "next/image": Stub, "next/link": "a",
+    "@/data/public-membership": { MEMBERSHIP_LINKS: { signIn: "/access" } },
+    "@/lib/membership/pricing": pricing, "./MembershipSignup": Stub,
+  })).default;
+  const faq = (paymentSetupOnly, question) => {
+    const html = renderToStaticMarkup(React.createElement(component, { signupEnabled: true, paymentSetupOnly }));
+    return [...html.matchAll(/<details>([\s\S]*?)<\/details>/g)].map(match => match[1]).find(answer => answer.includes(question));
+  };
+  const setup = faq(true, "When do I pay?");
+  assert.match(setup, /Nothing is charged while you prepare your profile/);
+  assert.match(setup, /Saving a payment method is optional and does not activate your membership/);
+  assert.match(setup, /When paid membership opens.*review the current offer, agreement, and payment terms.*explicitly confirm payment before your membership begins/);
+  assert.doesNotMatch(setup, /At signup|payment is due when you join/);
+  assert.match(faq(true, "What are the renewal and cancellation terms?"), /Saving a method does not authorize future charges/);
+  assert.match(faq(false, "When do I pay?"), /At signup\. Your first monthly payment or full annual payment is due when you join/);
+  assert.match(faq(false, "What are the renewal and cancellation terms?"), /Your first payment is taken at signup, and your chosen plan renews monthly or annually/);
+});
+
 test("signup and membership routes pass setup-only mode only for deliberately opened admission", async () => {
   let configuration = { mode: "connected", stripeCheckoutReady: false, membershipSignupReady: true };
   const dependencies = { "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
