@@ -38,13 +38,20 @@ function weeklyUtcSlots(preferences: CirclePreferences, now: Date): Set<number> 
   return result;
 }
 
-export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{ circleId: string; name: string; activeMembers: number; connectionPresent: boolean; participantPreferences: CirclePreferences[] }>, now = new Date()): CircleRecommendation[] {
+export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{ circleId: string; name: string; activeMembers: number; connectionPresent: boolean; participantPreferences: CirclePreferences[]; incomingSeats?: number }>, now = new Date(), couple?: { memberCircleId: string | null; partnerCircleId: string | null }): CircleRecommendation[] {
   const wanted = weeklyUtcSlots(member, now);
-  return circles.map(circle => {
+  // An unplaced partner joins the existing Circle. Established pairs may move
+  // together; the write path checks both members and capacity atomically.
+  const requiredCircleId = couple && !couple.memberCircleId ? couple.partnerCircleId : null;
+  return circles.filter(circle => !requiredCircleId || circle.circleId === requiredCircleId).map(circle => {
     const reasons: string[] = []; let score = 0;
-    if (circle.activeMembers < CIRCLE_TARGET) { score += 30; reasons.push("Below the target of 10 people"); }
+    const incomingSeats = circle.incomingSeats ?? (couple ? Number(couple.memberCircleId !== circle.circleId) + Number(couple.partnerCircleId !== circle.circleId) : 1);
+    const exceptionRequired = circle.activeMembers + incomingSeats > CIRCLE_NORMAL_MAXIMUM;
+    if (couple) reasons.push(circle.circleId === couple.partnerCircleId ? "Your partner is in this Circle; shared memberships stay together" : "Both partners are placed together");
+    if (exceptionRequired) { score -= 30; reasons.push(`Adding ${incomingSeats === 1 ? "a person" : "both partners"} needs Tyler/Mitch’s exception review`); }
+    else if (circle.activeMembers < CIRCLE_TARGET) { score += 30; reasons.push("Below the target of 10 people"); }
     else if (circle.activeMembers < CIRCLE_NORMAL_MAXIMUM) { score += 10; reasons.push("Within the normal 8–12 range"); }
-    else { score -= 30; reasons.push("Adding a person needs Tyler/Mitch’s exception review"); }
+
     if (circle.connectionPresent) { score += 25; reasons.push("A preferred connection or inviter is here; placement is not guaranteed"); }
     let overlapCount = 0; let knownAvailability = 0;
     for (const person of circle.participantPreferences) {
@@ -56,6 +63,6 @@ export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{
     else if (!knownAvailability) reasons.push("Circle availability is not yet recorded");
     else { const proportion = overlapCount / knownAvailability; score += Math.round(proportion * 30); reasons.push(`Availability overlaps with ${overlapCount} of ${knownAvailability} people who shared it (current time-zone offsets)`); }
     if (member.timezone && circle.participantPreferences.some(person => person.timezone === member.timezone)) { score += 5; reasons.push("Shared time zone"); }
-    return { circleId: circle.circleId, name: circle.name, activeMembers: circle.activeMembers, score, reasons, exceptionRequired: circle.activeMembers >= CIRCLE_NORMAL_MAXIMUM };
+    return { circleId: circle.circleId, name: circle.name, activeMembers: circle.activeMembers, score, reasons, exceptionRequired };
   }).sort((a, b) => b.score - a.score || a.activeMembers - b.activeMembers || a.name.localeCompare(b.name));
 }

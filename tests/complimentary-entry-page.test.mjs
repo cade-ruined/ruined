@@ -14,6 +14,9 @@ function fixture({ membershipFunding = "self", billingState = "pending", state =
   const dependencies = {
     "react/jsx-runtime": { jsx, jsxs },
     "next/image": () => null,
+    "next/headers": { cookies: async () => ({ get: () => undefined }) },
+    "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
+    "@/lib/membership/preview-scenarios": { memberRegistrationPreview: () => null, memberPreviewScenario: () => "active" },
     "next/navigation": { redirect: href => { throw Object.assign(new Error("redirect"), { href }); } },
     "@/components/membership/JoinForm": JoinForm,
     "@/components/membership/MembershipEntryProgress": { MembershipEntryProgress: Progress, MembershipEntryProgressProvider: () => null },

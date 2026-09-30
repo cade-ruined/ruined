@@ -144,6 +144,8 @@ export default function JoinForm({
   photoStorageReady,
   publishableKey,
   paymentSetupEnabled = false,
+  registrationOnly = false,
+  registrationRequiresPaymentMethod = true,
   preview = false,
 }: {
   disabledReason: string | null;
@@ -156,6 +158,8 @@ export default function JoinForm({
   photoStorageReady: boolean;
   publishableKey: string | null;
   paymentSetupEnabled?: boolean;
+  registrationOnly?: boolean;
+  registrationRequiresPaymentMethod?: boolean;
   preview?: boolean;
 }) {
   const checkoutAttempt = useRef<string | null>(null);
@@ -182,7 +186,7 @@ export default function JoinForm({
   const complimentary = (onboarding.membershipFunding === "operator" || onboarding.membershipFunding === "complimentary");
   const sharedMembership = onboarding.membershipFunding === "couple" && onboarding.billingState === "active";
   const noSeparatePayment = complimentary || sharedMembership;
-  const prelaunch = !noSeparatePayment && onboarding.billingState === "pending" && !checkoutEnabled;
+  const prelaunch = registrationOnly || !noSeparatePayment && onboarding.billingState === "pending" && !checkoutEnabled;
   const agreementComplete = Boolean(acceptanceId);
   const stage = membershipEntryStage(profileComplete, agreementComplete);
   const testCheckout = publishableKey?.startsWith("pk_test_") ?? false;
@@ -296,14 +300,17 @@ export default function JoinForm({
           setMemberTagError(payload.error || "That member tag is already taken. Choose another.");
           memberTagRef.current?.focus();
         }
-        throw new Error(payload.error || "Your member profile could not be saved.");
+        throw new Error(payload.error || (registrationOnly ? "Your details could not be saved." : "Your member profile could not be saved."));
       }
       setOnboarding(payload.onboarding);
+      if (registrationOnly && payload.onboarding.requiredFieldsComplete) {
+        window.location.assign(registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered");
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Your member profile could not be saved.",
+          : registrationOnly ? "Your details could not be saved." : "Your member profile could not be saved.",
       );
     } finally {
       setSubmitting(false);
@@ -312,7 +319,7 @@ export default function JoinForm({
 
   async function acceptAgreement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!enabled || submitting || !onboarding.agreement.id) return;
+    if (registrationOnly || !enabled || submitting || !onboarding.agreement.id) return;
     setError(null);
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
@@ -439,7 +446,7 @@ export default function JoinForm({
   }
 
   async function activateComplimentaryMembership() {
-    if (!enabled || !noSeparatePayment || !profileComplete || !agreementComplete || submitting) return;
+    if (registrationOnly || !enabled || !noSeparatePayment || !profileComplete || !agreementComplete || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -464,7 +471,7 @@ export default function JoinForm({
     <div className="mt-8">
       {stage === "profile" ? (
         <form className="grid gap-8" onSubmit={saveProfile}>
-          <h2 className="sr-only" ref={stageHeadingRef} tabIndex={-1}>Profile</h2>
+          <h2 className="sr-only" ref={stageHeadingRef} tabIndex={-1}>{registrationOnly ? "Your details" : "Profile"}</h2>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <label className={fieldLabelClass} htmlFor="member-legal-name">
@@ -510,7 +517,7 @@ export default function JoinForm({
                   value={memberTag}
                 />
               </span>
-              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-tag-help">Your unique @tag. Use 3–24 letters, numbers, or underscores. It appears alongside your display name when you share your card or invitation.</span>
+              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-tag-help">{registrationOnly ? "Reserve your unique @tag for Ruined. Use 3–24 letters, numbers, or underscores." : "Your unique @tag. Use 3–24 letters, numbers, or underscores. It appears alongside your display name when you share your card or invitation."}</span>
               <span className="text-xs leading-relaxed text-[var(--member-red)]" id="member-tag-error" role="status">{memberTagError}</span>
             </label>
             <label className={fieldLabelClass} htmlFor="member-email">
@@ -679,7 +686,7 @@ export default function JoinForm({
             </label>
           </fieldset>
 
-          <div>
+          {!registrationOnly ? <div>
             <p className={fieldLabelTextClass}>Profile photo / Optional</p>
             <p className="mt-2 text-xs leading-relaxed text-[var(--member-muted)]">Public · If you add a photo, it will appear on your public profile.</p>
             <MemberPhotoUpload
@@ -690,18 +697,25 @@ export default function JoinForm({
               onDraftChange={setPhotoDraft}
               onChange={(avatarUrl) => setOnboarding((current) => ({ ...current, profile: { ...current.profile, avatarUrl } }))}
             />
-          </div>
+          </div> : null}
 
           {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
           {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft} type="submit">{submitting ? "Saving profile" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
+      {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Preview card step · no details saved</Link> : null}
 
-      {profileComplete && prelaunch ? <div className="mt-9">
+      {profileComplete && prelaunch && !registrationOnly ? <div className="mt-9">
         <h3 className="font-[var(--font-display)] text-4xl" ref={stageHeadingRef} tabIndex={-1}>Your profile is ready.</h3>
         <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Membership opens at launch. You’ll review your membership offer and confirm payment before joining.</p>
         {paymentSetupEnabled || preview ? <div className="mt-7"><MemberPaymentMethod preview={preview} /></div> : <div className="mt-6"><p className="text-sm text-[var(--member-muted)]">There’s nothing to pay today. You can return to your account whenever you need.</p><Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/account">Go to my account</Link></div>}
+      </div> : null}
+
+      {profileComplete && registrationOnly ? <div className="mt-9">
+        <h3 className="font-[var(--font-display)] text-4xl" tabIndex={-1}>Your details are saved.</h3>
+        <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{registrationRequiresPaymentMethod ? "Save a card securely with Stripe to finish registration. No charge is made today." : "Your complimentary registration does not require a payment card."}</p>
+        <Link className="mt-6 inline-flex min-h-12 items-center bg-white px-6 py-3 text-sm font-semibold text-black" href={registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered"}>{preview ? "Preview next step" : "Continue registration"}</Link>
       </div> : null}
 
       {stage === "agreement" && !prelaunch ? (

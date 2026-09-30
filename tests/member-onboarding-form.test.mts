@@ -83,7 +83,7 @@ test("member entry uses the friendly image-led form hierarchy", () => {
   assert.match(joinPage, /member-entry-title/);
   assert.doesNotMatch(joinForm, /color-highlight/);
   assert.doesNotMatch(joinPage, /<main className="[^"]*border-t/);
-  assert.match(joinForm, /<h2 className="sr-only"[^>]*>Profile<\/h2>/);
+  assert.match(joinForm, /<h2 className="sr-only"[^>]*>\{registrationOnly \? "Your details" : "Profile"\}<\/h2>/);
   assert.match(joinForm, />Full name<\/span>/);
   assert.doesNotMatch(joinForm, />Default shipping address<\/legend>/);
   assert.match(joinForm, /<legend className="sr-only">Shipping address<\/legend>/);

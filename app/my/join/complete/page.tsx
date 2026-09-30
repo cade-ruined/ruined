@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
+import { getMemberRegistrationDestination } from "@/lib/membership/registration-repository";
 import { getMemberPageContext } from "@/lib/platform/page-data";
 import { privateSharingMetadata } from "@/lib/sharing";
 
@@ -19,6 +20,19 @@ export default async function MembershipCheckoutCompletePage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (context.state === "unavailable") return <PlatformUnavailable accessHref="/my/access" />;
+  if (context.state === "authenticated") {
+    if (!context.viewer) return <PlatformUnavailable accessHref="/my/access" />;
+    let registrationDestination: string | null;
+    try {
+      registrationDestination = await getMemberRegistrationDestination(context.viewer.authUserId);
+    } catch (error) {
+      console.error("Registration completion access could not be checked", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      return <PlatformUnavailable accessHref="/my/access" />;
+    }
+    if (registrationDestination) redirect(registrationDestination);
+  }
   if (context.member?.billingState === "active") redirect("/my");
 
   return (

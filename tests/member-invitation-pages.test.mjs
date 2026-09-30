@@ -41,6 +41,7 @@ const descendants = element => React.isValidElement(element)
 
 async function publicRoute(read) {
   return load("app/invitation/[token]/page.tsx", {
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
     react: { ...React, cache: fn => fn },
     "next/navigation": { notFound },
     "@/components/membership/MemberInvitation": { InvitationLanding: renderInvitation },
@@ -73,7 +74,8 @@ test("public invitation routes pass the card and token without the owner's priva
   let current = { card, expiresAt, membershipType: "complimentary", complimentaryEndsAt: "2099-12-31T06:59:59.999Z", complimentaryReason: "PRIVATE REASON", complimentaryAuthorizedByAuthUserId: "PRIVATE ACTOR", joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL" };
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
   const rendered = await page.default(params(token));
-  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "token"]);
+  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "registrationOnly", "token"]);
+  assert.equal(rendered.props.registrationOnly, false);
   assert.equal(rendered.props.membershipType, "complimentary"); assert.equal(rendered.props.complimentaryEndsAt, current.complimentaryEndsAt);
   assert.equal(rendered.props.expiresAt, expiresAt); assert.deepEqual(rendered.props.card, card); assert.equal(rendered.props.token, token);
   assert.match(renderToStaticMarkup(rendered), /Chosen &lt;name&gt;/);
@@ -219,7 +221,7 @@ test("personal landings route directly to email acceptance while legacy invitati
     const elements = descendants(landing);
     assert.equal(elements.some(element => element.type === renderWaitlist), false);
     const acceptance = elements.find(element => element.type === renderAcceptance);
-    assert.deepEqual(acceptance.props, { invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, invitationSource: "member", expiresAt, membershipType: "standard", complimentaryEndsAt: null, preview });
+    assert.deepEqual(acceptance.props, { registrationOnly: false, invitationToken: token, recipientName: "Alex Rivera", inviterName: card.name, invitationSource: "member", expiresAt, membershipType: "standard", complimentaryEndsAt: null, preview });
     assert.doesNotMatch(JSON.stringify(acceptance.props), /recipientEmail|personId|joinedCount/);
     if (!preview) assert.match(renderToStaticMarkup(landing.props.headerActions), /Accept invitation/);
   }

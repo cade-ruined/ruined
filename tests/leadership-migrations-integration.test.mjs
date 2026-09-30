@@ -68,6 +68,8 @@ test("full migration chain preserves funding, service departure, capacity approv
     },
   });
   const ops = await load("src/lib/platform/ops-repository.ts", {
+    // This legacy fixture runs with registration-only enrollment disabled.
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: async () => {} },
     "server-only": {}, "node:crypto": crypto, "@/lib/identity/repository": {},
     "@/lib/platform/calendar-audience-invalidation": calendars,
     "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) }, "@/lib/stripe/membership-state": {},

@@ -11,7 +11,7 @@ async function load(name) {
   new Function("require", "module", "exports", output)(name => { assert.equal(name, "three"); return THREE; }, loaded, loaded.exports);
   return loaded.exports;
 }
-const { getArchiveLightLayout, archiveDustIllumination } = await load("archive-lighting");
+const { getArchiveLightLayout, getArchiveStageRegistration, archiveDustIllumination } = await load("archive-lighting");
 const { archiveLampPosition, archiveFloorFootprint, createArchiveTableCalibration, projectArchiveShadow } = await load("archive-card-lighting");
 const { createMemberCardGeometry } = await load("card-geometry");
 const { CARD_CAMERA, CARD_REST_ROTATION: rest, cardBoundsCorners, cardGroundHeight, restingCardCameraDistance, requiredCardCameraDistance } = await load("card-framing");
@@ -142,3 +142,20 @@ test("dust shares the lamp and pool while room fill keeps it visible outside the
 });
 
 test.after(() => { geometry.stock.dispose(); geometry.fibers.dispose(); });
+
+
+test("embedded archive lighting stays registered while its entire room scrolls", () => {
+  const room = { left: 0, top: 1500, width: 1440, height: 980 };
+  const stage = { left: 112, top: 1770, width: 630, height: 620 };
+  const registration = getArchiveStageRegistration(stage, room);
+  assert.deepEqual(registration.rect, { left: 112, top: 270, width: 630, height: 620 });
+  assert.equal(registration.layout.portrait, false);
+  for (const scroll of [0, 400, 1700, 2400]) {
+    assert.deepEqual(getArchiveStageRegistration({ ...stage, top: stage.top - scroll }, { ...room, top: room.top - scroll }), registration);
+  }
+  const phone = getArchiveStageRegistration({ left: 20, top: 400, width: 350, height: 440 }, { left: 0, top: 200, width: 390, height: 1600 });
+  assert.equal(phone.layout.portrait, true, "section aspect ratio selects the same portrait source as its image and dust");
+  assert.deepEqual(phone.rect, { left: 20, top: 200, width: 350, height: 440 });
+  const viewport = getArchiveStageRegistration(stage, { left: 0, top: 0, width: 1440, height: 900 }, false);
+  assert.deepEqual(viewport.rect, stage, "existing fixed full-page archive coordinates are preserved");
+});

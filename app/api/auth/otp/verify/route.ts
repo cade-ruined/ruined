@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { isTrustedPlatformOrigin, MEMBER_INVITATION_CONTEXT_COOKIE, MEMBER_SIGNUP_CONTEXT_COOKIE } from "@/lib/auth/request";
+import { isTrustedPlatformOrigin, DIRECT_SIGNUP_CONTEXT_COOKIE, MEMBER_INVITATION_CONTEXT_COOKIE, MEMBER_SIGNUP_CONTEXT_COOKIE } from "@/lib/auth/request";
 import { completePlatformSignIn, getSupportSignInDestination, getUnifiedAccessEligibility } from "@/lib/auth/platform-access";
 import { getPersonalInvitationAdmissionEligibility } from "@/lib/membership/personal-invitation-admission";
+import { resolveRuinedDirectInvitationToken } from "@/lib/membership/direct-invitation-repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   PlatformAccessDeniedError,
@@ -24,6 +25,7 @@ type VerifyBody = {
   returnTo?: unknown;
   invitationToken?: unknown;
   signup?: unknown;
+  directSignup?: unknown;
 };
 
 async function denyVerifiedSession(request: NextRequest, status: 401 | 409 | 503, message = ACCESS_DENIED_MESSAGE) {
@@ -66,16 +68,30 @@ export async function POST(request: NextRequest) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const invitationToken = body?.invitationToken;
   const signup = body?.signup;
+  const directSignup = body?.directSignup === true;
+  const directContext = directSignup ? request.cookies.get(DIRECT_SIGNUP_CONTEXT_COOKIE)?.value : undefined;
 
   if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email) || !TOKEN_PATTERN.test(token)
     || (invitationToken !== undefined && (typeof invitationToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(invitationToken)))
-    || signup !== undefined) {
+    || signup !== undefined || (body?.directSignup !== undefined && !directSignup)
+    || (directSignup && (invitationToken !== undefined || !directContext || !/^[A-Za-z0-9_-]{43}$/.test(directContext)))) {
     return denyVerifiedSession(request, 401);
   }
 
+  let verifiedInvitationToken = typeof invitationToken === "string" ? invitationToken : undefined;
   try {
-    const eligible = invitationToken
-      ? await getPersonalInvitationAdmissionEligibility(email, invitationToken)
+    if (directSignup) {
+      if (!getPlatformConfiguration().membershipSignupReady) return denyVerifiedSession(request, 401);
+      const access = await getUnifiedAccessEligibility(email);
+      // Existing accounts sign in without recording another acquisition or
+      // changing their plan. New identities need an exact direct invitation.
+      if (access.member !== "returning" && access.operator !== "returning") {
+        verifiedInvitationToken = await resolveRuinedDirectInvitationToken(email, { token: directContext! }) ?? undefined;
+        if (!verifiedInvitationToken) return denyVerifiedSession(request, 401);
+      }
+    }
+    const eligible = verifiedInvitationToken
+      ? await getPersonalInvitationAdmissionEligibility(email, verifiedInvitationToken)
       : (await getUnifiedAccessEligibility(email)).eligible;
     if (!eligible) {
       return denyVerifiedSession(request, 401);
@@ -113,10 +129,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { redirectTo } = invitationToken
-      ? await completePlatformSignIn({ authUserId, email: verifiedEmail }, { invitationToken })
+    const { redirectTo } = verifiedInvitationToken
+      ? await completePlatformSignIn({ authUserId, email: verifiedEmail }, { invitationToken: verifiedInvitationToken })
       : await completePlatformSignIn({ authUserId, email: verifiedEmail });
-    const destination = invitationToken || body?.returnTo === undefined ? redirectTo : await getSupportSignInDestination(
+    const destination = verifiedInvitationToken || directSignup || body?.returnTo === undefined ? redirectTo : await getSupportSignInDestination(
       { authUserId, email: verifiedEmail }, body.returnTo, redirectTo,
     );
     const authorizedResponse = NextResponse.json({ redirectTo: destination });
@@ -126,13 +142,17 @@ export async function POST(request: NextRequest) {
       if (name !== "set-cookie" && name !== "content-type") authorizedResponse.headers.set(name, value);
     });
     response.cookies.getAll().forEach((cookie) => authorizedResponse.cookies.set(cookie));
-    if (invitationToken) authorizedResponse.cookies.set(MEMBER_INVITATION_CONTEXT_COOKIE, "", {
+    if (verifiedInvitationToken) authorizedResponse.cookies.set(MEMBER_INVITATION_CONTEXT_COOKIE, "", {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
       path: "/my/confirmed", maxAge: 0,
     });
     authorizedResponse.cookies.set(MEMBER_SIGNUP_CONTEXT_COOKIE, "", {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
       path: "/my/confirmed", maxAge: 0,
+    });
+    if (directSignup) authorizedResponse.cookies.set(DIRECT_SIGNUP_CONTEXT_COOKIE, "", {
+      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax",
+      path: "/", maxAge: 0,
     });
     authorizedResponse.headers.set("Cache-Control", "private, no-store");
     return authorizedResponse;

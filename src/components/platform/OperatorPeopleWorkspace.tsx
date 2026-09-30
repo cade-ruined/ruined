@@ -46,6 +46,7 @@ export default function OperatorPeopleWorkspace({ children, pendingJoining, dire
     <header className="operator-record-header mb-3 flex flex-wrap items-center justify-between gap-3">
       <h2 className="operator-page-heading">Members</h2>
       <div className="flex flex-wrap items-center gap-3">
+        {showHistory ? <Link className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4" href="/ops/registrations">Registrations</Link> : null}
         {showHistory ? <Link className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4" href="/ops/members/history" onClick={(event) => {
           if (pendingPanel.current?.querySelector('[data-operator-pending="true"]')) {
             event.preventDefault();

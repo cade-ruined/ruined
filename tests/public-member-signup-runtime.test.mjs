@@ -47,7 +47,12 @@ async function fixture(t) {
     return sql;
   };
   const identity = await load("src/lib/identity/repository.ts", { "server-only": {}, "node:crypto": crypto });
+  const registration = await load("src/lib/membership/registration-repository.ts", {
+    "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
+  });
   const api = await load("src/lib/membership/public-signup-admission.ts", {
+    "@/lib/membership/registration-repository": registration,
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/identity/repository": identity, "@/lib/membership/pricing": pricing,
   });

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import type { MemberPreviewScenario } from "@/lib/membership/preview-scenarios";
 
-const labels = { foundations: "In Foundations", joining: "Still joining", active: "Active member", operator: "Complimentary operator", limited: "Paused membership" };
+const labels = { foundations: "In Foundations", joining: "Still joining", active: "Active member", operator: "Complimentary operator", limited: "Paused membership", "registration-info": "Registration · details", "registration-card": "Registration · card", registered: "Registration · receipt" };
 export default function MemberPreviewSwitcher({ scenario }: { scenario: MemberPreviewScenario }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +16,8 @@ export default function MemberPreviewSwitcher({ scenario }: { scenario: MemberPr
     try {
       const response = await fetch("/api/preview/member-scenario", { method: "POST", headers: { Accept: "application/json" }, body });
       if (!response.ok) throw new Error("The demo account could not be changed. Try again.");
-      window.location.assign("/my");
+      const selected = body.get("scenario");
+      window.location.assign(selected === "registration-info" ? "/my/join" : selected === "registration-card" ? "/my/payment-method" : selected === "registered" ? "/my/registered" : "/my");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The demo account could not be changed.");
       setPending(false);

@@ -115,6 +115,7 @@ test("each destination exists locally and every task has a concrete action label
 test("exact and nested locations select one section/page without prefix collisions or unauthorized fallbacks", () => {
   const groups = getOperationsNavigation("ops_admin");
   assert.equal(getOperationsLocation("/ops/members/member-id", groups).item.label, "Members");
+  assert.equal(getOperationsLocation("/ops/registrations", groups).item.label, "Members");
   assert.equal(getOperationsLocation("/ops/experiences/event-id/attendance", groups).group.label, "Events");
   assert.equal(getOperationsLocation("/ops/operators?memberId=example#record", groups).item.label, "Operators");
   assert.equal(isOperationsPathCurrent("/ops/memberships", "/ops/members"), false);

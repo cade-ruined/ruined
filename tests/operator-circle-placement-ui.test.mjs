@@ -132,7 +132,7 @@ test("an assigned member's forming Circle is preselected for explicit activation
   assert.equal(attr(find(byId(ambiguous, "activate-circle"), "button"), "disabled"), "");
 });
 
-function interactiveHarness(response) {
+function interactiveHarness(response, overrides = {}) {
   const state = [];
   const refs = [];
   const calls = [];
@@ -151,7 +151,7 @@ function interactiveHarness(response) {
     calls.push({ url, ...options, body: JSON.parse(options.body) });
     return response ?? { ok: true, json: async () => ({ assignment: { created: true } }) };
   });
-  const draw = () => { cursor = 0; refCursor = 0; return loadedModule.OpsCircleActions(props); };
+  const draw = () => { cursor = 0; refCursor = 0; return loadedModule.OpsCircleActions({ ...props, ...overrides }); };
   return { calls, draw };
 }
 function reactNodes(element) {
@@ -179,6 +179,37 @@ test("mocked placement posts only the selected IDs, then offers activation witho
   assert.equal(attr(find(activation, "option", (node) => attr(node, "value") === circle.id), "selected"), "");
   assert.equal(attr(find(activation, "button"), "disabled"), undefined);
   assert.equal(harness.calls.length, 1, "activation requires a separate deliberate submission");
+});
+
+test("placement at eleven routes an explained couple exception to review while a single person remains routine", async () => {
+  for (const reason of ["", "   ", "Keep these shared-membership partners together"]) {
+    const harness = interactiveHarness(undefined, { initialCircles: [{ ...circle, activeMembers: 11 }] });
+    reactNodes(harness.draw()).find(node => node.type === "select" && node.props.name === "circleId").props.onChange({ target: { value: circle.id } });
+    const field = reactNodes(harness.draw()).find(node => node.type === "textarea" && node.props.maxLength === 1000);
+    assert.ok(field); assert.equal(field.props.required, false);
+    assert.match(text(parseFragment(renderToStaticMarkup(harness.draw()))), /for placing a couple.*A couple would bring this Circle to 13 people/);
+    field.props.onChange({ target: { value: reason } });
+    const form = reactNodes(harness.draw()).find(node => node.type === "form");
+    await form.props.onSubmit({ preventDefault() {}, currentTarget: { memberId: member.memberId, circleId: circle.id } });
+    assert.deepEqual(harness.calls.map(({ url, method, body }) => ({ url, method, body })), [{
+      url: reason.trim() ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-assignments", method: "POST",
+      body: { memberId: member.memberId, circleId: circle.id, ...(reason.trim() ? { reason } : {}) },
+    }]);
+    if (reason.trim()) assert.match(text(parseFragment(renderToStaticMarkup(harness.draw()))), /Exception requested/);
+  }
+});
+
+test("placement below eleven has no review field and twelve still requires the capacity review", async () => {
+  for (const count of [10, 12]) {
+    const harness = interactiveHarness(undefined, { initialCircles: [{ ...circle, activeMembers: count }] });
+    reactNodes(harness.draw()).find(node => node.type === "select" && node.props.name === "circleId").props.onChange({ target: { value: circle.id } });
+    const field = reactNodes(harness.draw()).find(node => node.type === "textarea" && node.props.maxLength === 1000);
+    assert.equal(Boolean(field), count === 12);
+    if (field) { assert.equal(field.props.required, true); field.props.onChange({ target: { value: "Approved capacity review needed" } }); }
+    await reactNodes(harness.draw()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { memberId: member.memberId, circleId: circle.id } });
+    assert.equal(harness.calls[0].url, count === 12 ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-assignments");
+    assert.match(text(parseFragment(renderToStaticMarkup(harness.draw()))), /Shared-membership partners are placed together\. Both must meet placement requirements/);
+  }
 });
 
 test("mocked stale failure preserves selections; forged submission never sends a request", async () => {

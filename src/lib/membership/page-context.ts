@@ -1,5 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { getMemberRegistrationDestination } from "./registration-repository";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberPreviewSnapshot } from "@/lib/membership/preview-scenarios";
 
 import { resolveCurrentPlatformSession } from "@/lib/auth/session";
@@ -62,6 +64,20 @@ export async function getMembershipPageContext<T>(
       return { configuration, data: null, state: session.status, viewer: null };
     }
     viewer = session.viewer;
+  } catch (error) {
+    console.error(`Ruined Membership ${area} session could not be loaded`, safeErrorDetails(error));
+    return { configuration, data: null, state: "unavailable", viewer };
+  }
+  let destination: string | null = null;
+  if (!["entry", "payment-method", "registration"].includes(area)) {
+    try { destination = await getMemberRegistrationDestination(viewer.authUserId); }
+    catch (error) {
+      console.error(`Ruined Membership ${area} registration could not be loaded`, safeErrorDetails(error));
+      return { configuration, data: null, state: "unavailable", viewer };
+    }
+  }
+  if (destination) redirect(destination);
+  try {
     const data = await load(viewer.authUserId);
     return {
       configuration,

@@ -24,6 +24,8 @@ const nodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(n
 const { operatorMemberReturnLocation } = load("src/lib/platform/operator-return-location.ts");
 
 test("member return locations reject external, nested, encoded and malformed destinations", () => {
+  assert.equal(operatorMemberReturnLocation("/ops/registrations"), "/ops/registrations");
+  assert.equal(operatorMemberReturnLocation("/ops/registrations?next=https://evil.test"), "/ops/members");
   for (const value of [undefined, null, [], {}, 12, "https://evil.test/ops/members", "//evil.test/ops/members", "javascript:alert(1)", "/ops/members/123", "/ops/members/../system", "/ops/members%3Fq=member", "/ops/members\\evil", "/ops/members#other", `/ops/members?q=${"a".repeat(1601)}`]) {
     assert.equal(operatorMemberReturnLocation(value), "/ops/members", String(value));
   }

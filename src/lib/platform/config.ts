@@ -11,6 +11,7 @@ export type PlatformConfiguration = {
   stripeCheckoutReady: boolean;
   stripePaymentSetupReady: boolean;
   membershipSignupReady: boolean;
+  membershipRegistrationOnly: boolean;
   stripePortalReady: boolean;
   supabase: PlatformConnection;
 };
@@ -62,7 +63,8 @@ export function getPlatformConfiguration(): PlatformConfiguration {
       stripeConfigured &&
       process.env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED?.trim().toLowerCase() === "true" &&
       /^acct_[A-Za-z0-9]+$/.test(process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ?? "");
-  const stripeCheckoutReady = mode === "connected" &&
+  const membershipRegistrationOnly = process.env.MEMBERSHIP_REGISTRATION_ONLY_ENABLED?.trim().toLowerCase() === "true";
+  const stripeCheckoutReady = !membershipRegistrationOnly && mode === "connected" &&
       supabaseConfigured &&
       databaseConfigured &&
       stripeConfigured &&
@@ -81,6 +83,7 @@ export function getPlatformConfiguration(): PlatformConfiguration {
     // Saving a payment method neither starts a subscription nor authorizes a
     // charge. It has its own explicit release gate while paid checkout is held.
     stripePaymentSetupReady,
+    membershipRegistrationOnly,
     stripeCheckoutReady,
     // Saving a card for an invited account does not itself open public signup.
     membershipSignupReady: stripeCheckoutReady || (stripePaymentSetupReady &&

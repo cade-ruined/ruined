@@ -42,6 +42,26 @@ const nextConfig = {
   // Keep a release check from overwriting the active local development cache.
   distDir: process.env.RUINED_BUILD_CHECK === "true" ? ".next-ops-build-check" : ".next",
   reactStrictMode: true,
+  serverExternalPackages: ["@napi-rs/canvas"],
+  // Welcome emails render the same invitation artwork on the server. Keep its
+  // local textures and fonts in every function that can deliver that email.
+  outputFileTracingIncludes: Object.fromEntries([
+    "/api/internal/membership/registration-messages",
+    "/api/my/onboarding",
+    "/api/stripe/webhook",
+    "/api/ops/members/*/registration",
+    "/api/preview/registration-email/image",
+  ].map(route => [route, [
+    "./public/ruined-mark.svg",
+    "./public/ruined-wordmark.svg",
+    "./public/membership/design/distressed-paper.jpg",
+    "./public/membership/design/printers-ink.jpg",
+    "./public/membership/foundations/beginning.webp",
+    "./public/membership/card/archive-room-v1.webp",
+    "./public/fonts/IvyOraText-Regular.ttf",
+    "./public/fonts/Inter-Variable-Latin.woff2",
+    "./public/fonts/CadeHandy2.otf",
+  ]])),
   async redirects() {
     return [
       {

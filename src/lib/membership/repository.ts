@@ -1,4 +1,5 @@
 import "server-only";
+import { completeMemberRegistration } from "./registration-repository";
 import { getMemberBadges } from "./badge-repository";
 
 import type { MemberCardInput } from "./public-card-model";
@@ -91,6 +92,7 @@ function rethrowMemberTagConflict(error: unknown): never {
 }
 
 type IdentityRow = {
+  registration_held?: boolean;
   complimentary_funded: boolean;
   operator_funded: boolean;
   shared_billing_state?: BillingState | null;
@@ -114,6 +116,7 @@ function toIso(value: Date | string | null | undefined): string | null {
 
 function identityFromRow(row: IdentityRow): MemberIdentity {
   return {
+    registrationHeld: row.registration_held === true,
     membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
@@ -142,6 +145,7 @@ export async function getMemberIdentity(
       lifecycle.account_state,
       lifecycle.billing_state,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      not private.ruined_member_profile_released(member.id) as registration_held,
       private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state,
@@ -238,7 +242,7 @@ export async function getMemberOnboarding(
   authUserId: string,
 ): Promise<MemberOnboardingSnapshot | null> {
   const identity = await requireMemberIdentity(authUserId);
-  requireMemberCapability(identity, "profile.read");
+  requireMemberCapability(identity, "onboarding.read");
   const sql = getApplicationDatabase();
   const rows = await sql<Array<OnboardingRow>>`
     with current_agreement as (
@@ -399,7 +403,7 @@ export async function saveMemberOnboardingProfile(
   input: MemberOnboardingProfileInput,
 ): Promise<MemberOnboardingSnapshot> {
   const identity = await requireMemberIdentity(authUserId);
-  requireMemberCapability(identity, "profile.write");
+  requireMemberCapability(identity, "onboarding.write");
   const clean = validateOnboardingProfile(input);
   const sql = getApplicationDatabase();
 
@@ -509,6 +513,7 @@ export async function saveMemberOnboardingProfile(
     `;
   }).catch(rethrowMemberTagConflict);
 
+  await completeMemberRegistration(authUserId);
   const onboarding = await getMemberOnboarding(authUserId);
   if (!onboarding) throw new Error("Saved onboarding could not be reloaded.");
   return onboarding;
@@ -1677,6 +1682,7 @@ export async function getMemberCircle(
       ) primary_email on true
       where assignment.circle_id = ${circle.circle_id}::uuid
         and target_member.deleted_at is null
+        and private.ruined_member_profile_released(target_member.id)
         and assignment.ended_at is null
         and assignment.assigned_at <= statement_timestamp()
       order by assignment.assigned_at, assignment.id
@@ -1726,6 +1732,7 @@ export async function getMemberCircle(
       ) primary_email on true
       where staff_assignment.circle_id = ${circle.circle_id}::uuid
         and staff_assignment.role_slug = 'circle_leader'
+        and (shaper_member.id is null or private.ruined_member_profile_released(shaper_member.id))
         and staff_assignment.ended_at is null
         and staff_assignment.assigned_at <= statement_timestamp()
         and exists (
@@ -3261,6 +3268,7 @@ export async function requireLockedMemberWriteAccess(tx: postgres.TransactionSql
     select account.auth_user_id, member.id as member_id, member.person_id,
       member.email, lifecycle.account_state, lifecycle.billing_state,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      not private.ruined_member_profile_released(member.id) as registration_held,
       private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state, lifecycle.foundations_state,

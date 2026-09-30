@@ -6,12 +6,13 @@ import type { MembershipBillingPlan } from "@/lib/membership/pricing";
 import MembershipSignup from "./MembershipSignup";
 import styles from "./MembershipOverview.module.css";
 
-export default function MembershipSignupPage({ initialPlan, enabled, preview, previewInvitation = false, paymentSetupOnly = false }: {
+export default function MembershipSignupPage({ initialPlan, enabled, preview, previewInvitation = false, paymentSetupOnly = false, registrationOnly = false }: {
   initialPlan: MembershipBillingPlan;
   enabled: boolean;
   preview: boolean;
   previewInvitation?: boolean;
   paymentSetupOnly?: boolean;
+  registrationOnly?: boolean;
 }) {
   const [plan, setPlan] = useState(initialPlan);
 
@@ -27,7 +28,7 @@ export default function MembershipSignupPage({ initialPlan, enabled, preview, pr
       <Link className={styles.signupBack} href="/membership">← Membership</Link>
       <p className={styles.eyebrow}>The Ruined Project / Membership</p>
       <h1>Your place<br /><em>begins here.</em></h1>
-      <MembershipSignup paymentSetupOnly={paymentSetupOnly} enabled={enabled} preview={preview} previewInvitation={previewInvitation} plan={plan} onPlanChange={changePlan} />
+      <MembershipSignup registrationOnly={registrationOnly} paymentSetupOnly={paymentSetupOnly} enabled={enabled} preview={preview} previewInvitation={previewInvitation} plan={plan} onPlanChange={changePlan} />
       <p className={styles.alreadyMember}>Already a member? <Link href="/access">Sign in ↗</Link></p>
     </div>
   </main>;

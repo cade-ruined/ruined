@@ -15,6 +15,10 @@ function fixture({ failure = false, workerFailure = false } = {}) {
   const ids = new Set();
   let workerCalls = 0;
   const dependencies = {
+    "@/lib/membership/registration-message-delivery": {
+      getRegistrationMessageConfiguration: () => ({ ready: false }),
+      processRegistrationMessageBatch: () => assert.fail("Disabled registration delivery must not run."),
+    },
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/stripe/server": { STRIPE_API_VERSION: apiVersion, getStripe: () => stripe,
       getStripeLivemode: () => false, getStripeWebhookSecret: () => secret },

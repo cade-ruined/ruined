@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "path": "/api/internal/membership/registration-messages",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/internal/communications/process",
       "schedule": "0 12 * * *"
     },

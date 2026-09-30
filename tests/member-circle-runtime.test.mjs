@@ -1,3 +1,4 @@
+import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
@@ -59,6 +60,7 @@ async function fixture({ revealed = true } = {}) {
     create table circle_resources(id uuid default gen_random_uuid(), circle_id uuid, learning_resource_version_id uuid, ended_at timestamptz, is_pinned boolean, position integer, created_at timestamptz default now());
   `);
   await installOperatorFundingFunctions(pg);
+  await installRegistrationProfileReleaseFunction(pg);
   const community = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_03_community_experiences.sql", import.meta.url), "utf8");
   await pg.exec(community.match(/create table if not exists public\.member_directory_preference_events \([\s\S]*?\n\);/)[0]);
   await pg.query("insert into people(id) values($1),($2)", [ids.person, ids.shaperPerson]);
@@ -141,6 +143,7 @@ async function fixture({ revealed = true } = {}) {
   const repository = await loadModule("src/lib/membership/repository.ts", {
     "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
+    "./registration-repository": existingMemberRegistration,
     "./public-card-model": cardModel,
     "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },
     "libphonenumber-js/min": require("libphonenumber-js/min"),

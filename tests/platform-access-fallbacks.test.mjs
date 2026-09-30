@@ -36,11 +36,11 @@ test("permission and connection fallbacks use distinct plain-language copy", asy
 });
 
 test("every member page context handles denied before its unavailable fallback", async () => {
-  const modernPages = await contextPages("app/my", "getMembershipPageContext(");
+  const modernPages = await contextPages("app/my", "getMembershipPageContext");
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
   const pages = [...modernPages, ...legacyPages];
 
-  assert.equal(modernPages.length, 13);
+  assert.equal(modernPages.length, 15);
   assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
@@ -58,7 +58,7 @@ test("every operator page context uses operator permission copy for denied accou
   ];
   const overview = await readFile(new URL("../app/ops/page.tsx", import.meta.url), "utf8");
 
-  assert.equal(pages.length, 19);
+  assert.equal(pages.length, 20);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
     const deniedFallback = contents.indexOf('reason="operator_access"');

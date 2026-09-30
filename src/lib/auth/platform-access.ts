@@ -1,4 +1,7 @@
 import "server-only";
+import { getMemberRegistrationDestination } from "@/lib/membership/registration-repository";
+
+type SignInDestination = "/my" | "/my/join" | "/ops" | "/my/payment-method" | "/my/registered";
 
 import type { PlatformViewer } from "@/lib/platform/model";
 import { getSupportReturnTo } from "@/lib/auth/support-return";
@@ -15,8 +18,9 @@ import { ensureOperatorMemberProfile } from "@/lib/platform/operator-member-prof
 export async function getSupportSignInDestination(
   viewer: PlatformViewer,
   requestedReturnTo: unknown,
-  fallback: "/my" | "/my/join" | "/ops",
+  fallback: SignInDestination,
 ): Promise<string> {
+  if (fallback === "/my/payment-method" || fallback === "/my/registered") return fallback;
   const returnTo = getSupportReturnTo(requestedReturnTo);
   if (!returnTo) return fallback;
   if (returnTo.startsWith("/ops/") && await getOperatorRole(viewer.authUserId) !== "ops_admin") return fallback;
@@ -43,12 +47,12 @@ export async function getUnifiedAccessEligibility(email: string) {
 export async function completePlatformSignIn(
   viewer: PlatformViewer,
   options?: { invitationToken: string },
-): Promise<{ redirectTo: "/my" | "/my/join" | "/ops" }> {
+): Promise<{ redirectTo: SignInDestination }> {
   if (options?.invitationToken !== undefined) {
     // A personal invitation approves membership only. Its claim revalidates
     // the exact recipient, deadline and eligibility in the same transaction.
     await claimPlatformMemberForViewer(viewer, options.invitationToken);
-    return { redirectTo: "/my/join" };
+    return { redirectTo: (await getMemberRegistrationDestination(viewer.authUserId) ?? "/my/join") as SignInDestination };
   }
   const access = await getUnifiedAccessEligibility(viewer.email);
   if (!access.eligible) throw new PlatformAccessDeniedError();
@@ -88,6 +92,8 @@ export async function completePlatformSignIn(
   }
 
   if (memberAuthorized) {
+    const registration = await getMemberRegistrationDestination(viewer.authUserId);
+    if (registration) return { redirectTo: registration as SignInDestination };
     return { redirectTo: !operatorAuthorized && access.member === "invited" ? "/my/join" : "/my" };
   }
   if (operatorAuthorized) return { redirectTo: "/ops" };

@@ -42,6 +42,7 @@ async function transaction<T>(tx: CommercialTransaction | undefined, work: (sql:
 async function translate<T>(work: () => Promise<T>): Promise<T> {
   try { return await work(); } catch (error) {
     const known = error as { code?: string; message?: string };
+    if (known.code === "40001") throw new CommercialMembershipError(409, "Your membership or Circle placement changed. Please try again.");
     if (known.code?.startsWith("P42")) throw new CommercialMembershipError(known.code === "P4200" ? 400 : 409,
       known.message ?? "This membership offer is unavailable.", known.code === "P4205" ? "founding_place_pending" : "membership_offer_unavailable");
     throw error;

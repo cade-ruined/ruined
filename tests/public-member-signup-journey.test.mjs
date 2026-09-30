@@ -71,12 +71,80 @@ function sourceLoader(overrides) {
       return requirePackage(name);
     };
     new Function("require", "module", "exports", "process", "globalThis", "fetch", code)(
-      requireSource, loaded, loaded.exports, { env: environment }, localGlobals, denyNetwork,
+      requireSource, loaded, loaded.exports, { env: environment, cwd: () => root }, localGlobals, denyNetwork,
     );
     return loaded.exports;
   }
   return load;
 }
+
+test("inline card registration issues one direct invitation and accepts it only after email proof using the complete schema", async t => {
+  const db = new PGlite();
+  t.after(() => db.close());
+  await db.exec("create role anon; create role authenticated; create role service_role;");
+  const migrations = [...read("scripts/migrate-platform.mjs").matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g)];
+  assert.ok(migrations.some(match => match[1].endsWith("20260930130000_direct_signup_confirmation.sql")));
+  for (const migration of migrations) await db.exec(read(migration[1]));
+  const sql = sqlFor(db), sent = [], verified = [];
+  const viewer = { authUserId: randomUUID(), email: "inline-signup@example.test" };
+  const load = sourceLoader({
+    "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, callback) => callback() },
+    "@/lib/supabase/server": { createSupabaseCurrentResponseClient: ({ response }) => ({ auth: {
+      signInWithOtp: async input => { sent.push(input); return { error: null }; },
+      verifyOtp: async input => {
+        verified.push(input);
+        if (input.token !== "123456") return { data: { user: null }, error: { code: "otp_expired" } };
+        response.cookies.set("test-session", "verified", { httpOnly: true, path: "/" });
+        return { data: { user: { id: viewer.authUserId, email: viewer.email } }, error: null };
+      },
+      signOut: async options => { assert.deepEqual(options, { scope: "local" }); response.cookies.set("test-session", "", { maxAge: 0 }); return { error: null }; },
+    } }) },
+  });
+  const start = load("app/api/membership/signup/start/route.ts").POST;
+  const verify = load("app/api/auth/otp/verify/route.ts").POST;
+  const payload = { requestId: randomUUID(), recipientName: "Inline Member", recipientEmail: viewer.email, billingPlan: "annual" };
+  const request = (path, body, cookie) => new NextRequest(origin + path, { method: "POST",
+    headers: { origin, "content-type": "application/json", ...(cookie ? { cookie: `ruined-direct-signup-context=${cookie}` } : {}) }, body: JSON.stringify(body) });
+  const started = await start(request("/api/membership/signup/start", payload));
+  assert.equal(started.status, 200);
+  assert.deepEqual(await started.json(), { ok: true, requestId: payload.requestId });
+  const context = started.cookies.get("ruined-direct-signup-context").value;
+  const [issued] = (await db.query("select * from member_personal_invitations")).rows;
+  assert.equal(issued.origin, "ruined_direct"); assert.equal(issued.public_token, context);
+  assert.equal(issued.email_requested, false); assert.equal(issued.delivery_status, "not_requested");
+  assert.equal(issued.accepted_at, null); assert.equal(issued.direct_joined_at, null);
+  assert.equal(new Date(issued.expires_at) - new Date(issued.issued_at), 48 * 60 * 60 * 1000);
+  for (const table of ["ruined_members", "platform_users", "member_onboardings", "platform_role_grants", "member_referrals"])
+    assert.equal((await db.query(`select count(*)::int as count from ${table}`)).rows[0].count, 0, `${table} remains empty before email proof`);
+  assert.equal(sent.length, 1); assert.equal(sent[0].options.shouldCreateUser, true);
+  const retried = await start(request("/api/membership/signup/start", payload, context));
+  assert.equal(retried.cookies.get("ruined-direct-signup-context").value, context);
+  assert.equal((await db.query("select count(*)::int as count from member_personal_invitations")).rows[0].count, 1);
+  const verifyBody = { email: viewer.email, token: "123456", directSignup: true };
+  const wrongRecipient = await verify(request("/api/auth/otp/verify", { ...verifyBody, email: "another@example.test" }, context));
+  assert.equal(wrongRecipient.status, 401); assert.equal(verified.length, 0);
+  const wrongCode = await verify(request("/api/auth/otp/verify", { ...verifyBody, token: "999999" }, context));
+  assert.equal(wrongCode.status, 401);
+  assert.equal((await db.query("select count(*)::int as count from ruined_members")).rows[0].count, 0);
+  const result = await verify(request("/api/auth/otp/verify", verifyBody, context));
+  assert.equal(result.status, 200); assert.deepEqual(await result.json(), { redirectTo: "/my/join" });
+  assert.equal(result.cookies.get("test-session").value, "verified");
+  assert.equal(result.cookies.get("ruined-direct-signup-context").maxAge, 0);
+  const [accepted] = (await db.query("select * from member_personal_invitations")).rows;
+  assert.ok(accepted.accepted_at); assert.equal(accepted.accepted_by_auth_user_id, viewer.authUserId);
+  assert.equal(accepted.public_token, context); assert.deepEqual(accepted.expires_at, issued.expires_at);
+  assert.equal(accepted.direct_joined_at, null, "A verified profile is not a paid joining.");
+  const [member] = (await db.query("select * from ruined_members")).rows;
+  assert.equal(member.id, accepted.accepted_member_id); assert.equal(member.membership_state, "pending");
+  assert.equal((await db.query("select billing_plan from member_onboardings")).rows[0].billing_plan, "annual");
+  assert.equal((await db.query("select count(*)::int as count from member_referrals")).rows[0].count, 0);
+  const returnStart = await start(request("/api/membership/signup/start", { ...payload, requestId: randomUUID() }));
+  assert.equal(returnStart.status, 200); assert.equal(sent.at(-1).options.shouldCreateUser, false);
+  assert.equal((await db.query("select count(*)::int as count from member_personal_invitations")).rows[0].count, 1);
+  const returnResult = await verify(request("/api/auth/otp/verify", verifyBody, returnStart.cookies.get("ruined-direct-signup-context").value));
+  assert.equal(returnResult.status, 200); assert.deepEqual(await returnResult.json(), { redirectTo: "/my" });
+  assert.equal((await db.query("select count(*)::int as count from ruined_members")).rows[0].count, 1);
+});
 
 test("Ruined invitation signup reaches paid onboarding through the real issuance, OTP, profile, agreement, checkout and signed webhook handlers", async t => {
   const db = new PGlite();

@@ -55,6 +55,7 @@ export function getOperationsNavigation(role: OperatorNavigationRole | null | un
 
 export function isOperationsPathCurrent(pathname: string, href: string): boolean {
   const path = pathname.split(/[?#]/, 1)[0].replace(/\/$/, "");
+  if (href === "/ops/members" && path === "/ops/registrations") return true;
   if (href === "/ops/messages" && /^\/ops\/(announcements|notifications)(\/|$)/.test(path)) return true;
   if (href === "/ops/experiences" && /^\/ops\/community(?:\/|$)/.test(path)) return true;
   return path === href || (href !== "/ops" && path.startsWith(`${href}/`));

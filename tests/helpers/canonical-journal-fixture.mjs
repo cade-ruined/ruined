@@ -1,3 +1,4 @@
+import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
@@ -60,6 +61,7 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
     ${automation.slice(start, end)}
   `);
   await installOperatorFundingFunctions(db);
+  await installRegistrationProfileReleaseFunction(db);
   if (monthMigration) {
     await db.exec(await source("db/migrations/20260927000000_timeline_entry_month.sql"));
     await db.exec(await source("db/migrations/20260916230000_member_journal.sql"));
@@ -142,6 +144,7 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
     "@/lib/foundations/availability": loadFoundationsAvailability({ MEMBERSHIP_FOUNDATIONS_LAUNCHED: "true" }),
     "server-only": {}, "libphonenumber-js/min": {},
     "./badge-repository": { getMemberBadges: async () => [] },
+    "./registration-repository": existingMemberRegistration,
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/membership/access-policy": access,
     "@/lib/membership/member-tag": await loadTypescript("src/lib/membership/member-tag.ts", {}),

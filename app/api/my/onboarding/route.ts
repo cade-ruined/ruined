@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { getRegistrationMessageConfiguration, processRegistrationMessageBatch } from "@/lib/membership/registration-message-delivery";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
@@ -142,6 +143,10 @@ export async function POST(request: Request) {
         });
       }
     }
+    if (getRegistrationMessageConfiguration().ready) after(async () => {
+      try { await processRegistrationMessageBatch(8); }
+      catch { console.error("Registration email follow-up remains queued."); }
+    });
     return NextResponse.json(
       { onboarding },
       { headers: { "Cache-Control": "no-store" } },

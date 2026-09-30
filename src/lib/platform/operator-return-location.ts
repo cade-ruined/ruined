@@ -1,5 +1,6 @@
 /** Keep directory state without accepting an arbitrary return URL. */
 export function operatorMemberReturnLocation(value: unknown): string {
+  if (value === "/ops/registrations") return value;
   if (typeof value !== "string" || value.length > 1600 || !/^\/ops\/members(?:\?|$)/.test(value)) return "/ops/members";
   const url = new URL(value, "https://operator.invalid");
   if (url.pathname !== "/ops/members" || url.origin !== "https://operator.invalid") return "/ops/members";

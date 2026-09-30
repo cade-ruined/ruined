@@ -21,6 +21,8 @@ async function loadRepository(database) {
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", output)((name) => {
     if (name === "server-only") return {};
+    // Exercise the original operator entry flow with registration-only enrollment disabled.
+    if (name === "@/lib/membership/registration-repository") return { enrollNewMemberRegistration: async () => {} };
     if (name === "node:crypto") return { randomUUID: () => ids.member };
     if (name === "@/lib/platform/repository") return { PlatformAccessDeniedError };
     if (name === "@/lib/platform/calendar-audience-invalidation") return { markCalendarAudiencesPendingForMember: async () => {} };

@@ -62,7 +62,7 @@ function portraitStore() {
 
 async function writableIdentity(authUserId: string) {
   const identity = await getMemberIdentity(authUserId);
-  if (!identity || !memberCan(deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt), "profile.write")) {
+  if (!identity || !memberCan(deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt), "onboarding.write")) {
     throw new MemberPhotoError(403, "This account cannot change its profile photo.");
   }
   return identity;
@@ -210,7 +210,7 @@ export async function getAuthorizedMemberPhoto(authUserId: string, memberId: str
   if (currentUrl !== requestedUrl) return null;
   const identity = await getMemberIdentity(authUserId);
   const access = identity ? deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt) : null;
-  const ownerCanRead = identity?.memberId === memberId && !!access && memberCan(access, "profile.read");
+  const ownerCanRead = identity?.memberId === memberId && !!access && (memberCan(access, "profile.read") || memberCan(access, "onboarding.read"));
   const isOpsAdmin = !ownerCanRead && await getOperatorRole(authUserId) === "ops_admin";
   const circleCanRead = !!access && memberCan(access, "circle.read");
   const circle = !ownerCanRead && !isOpsAdmin && circleCanRead ? await getMemberCircle(authUserId) : null;

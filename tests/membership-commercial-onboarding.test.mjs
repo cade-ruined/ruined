@@ -14,7 +14,8 @@ test("complimentary onboarding returns a safe retriable founding-place response"
   class MembershipConflictError extends Error {}
   class MembershipAccessDeniedError extends Error {}
   const dependencies = {
-    "next/server": { NextResponse },
+    "next/server": { NextResponse, after: () => assert.fail("No email follow-up after failed onboarding") },
+    "@/lib/membership/registration-message-delivery": { getRegistrationMessageConfiguration: () => ({ ready: false }), processRegistrationMessageBatch: () => assert.fail("No registration message work in this error fixture") },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: "verified-member" }) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },

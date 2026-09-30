@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import JoinForm from "@/components/membership/JoinForm";
@@ -14,11 +15,13 @@ import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
 import { getMemberOnboarding } from "@/lib/membership/repository";
 import { isMemberPhotoStorageConfigured } from "@/lib/membership/photos";
 import { getMemberSignupPlan } from "@/lib/membership/public-signup-admission";
+import { getMemberRegistration } from "@/lib/membership/registration-repository";
+import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberRegistrationPreview } from "@/lib/membership/preview-scenarios";
 import { getStripePublishableKey } from "@/lib/platform/config";
 
 export const metadata: Metadata = {
   title: "Enter Ruined Membership",
-  description: "Complete your Ruined Membership profile.",
+  description: "Complete your registration for Ruined.",
 };
 export const dynamic = "force-dynamic";
 
@@ -31,9 +34,17 @@ export default async function JoinMyRuinedPage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
+  const registration = context.state === "authenticated" && context.viewer
+    ? await getMemberRegistration(context.viewer.authUserId)
+    : context.state === "preview" ? memberRegistrationPreview(memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value)) : null;
+  const registrationOnly = Boolean(registration && registration.state !== "activated");
+  if (context.state === "authenticated" && registrationOnly && registration) {
+    if (registration.state === "registered" && registration.ready) redirect("/my/registered");
+    if (registration.profileComplete) redirect(registration.requiresPaymentMethod && !registration.ready ? "/my/payment-method" : "/my/registered");
+  }
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
   const sharedMembership = context.data.membershipFunding === "couple" && context.data.billingState === "active";
-  if (context.state === "authenticated" && context.data.state === "completed"
+  if (!registrationOnly && context.state === "authenticated" && context.data.state === "completed"
     && (complimentary || context.data.billingState === "active")) {
     redirect("/my");
   }
@@ -43,11 +54,11 @@ export default async function JoinMyRuinedPage() {
     : "monthly";
   const publishableKey = getStripePublishableKey();
   const writable = context.state === "authenticated";
-  const checkoutEnabled = writable && !complimentary && !sharedMembership && context.configuration.stripeCheckoutReady;
-  const prelaunch = !complimentary && !sharedMembership && context.data.billingState === "pending" && !checkoutEnabled;
+  const checkoutEnabled = !registrationOnly && writable && !complimentary && !sharedMembership && context.configuration.stripeCheckoutReady;
+  const prelaunch = registrationOnly || !complimentary && !sharedMembership && context.data.billingState === "pending" && !checkoutEnabled;
   const disabledReason =
     context.state === "preview"
-      ? "Preview only. Member details and agreement acceptance are not saved."
+      ? registrationOnly ? "Preview only. Your details are not saved and no registration is created." : "Preview only. Member details and agreement acceptance are not saved."
       : writable
         ? null
         : "Membership entry is temporarily unavailable.";
@@ -82,10 +93,12 @@ export default async function JoinMyRuinedPage() {
         </header>
 
         <section className="member-entry-fields" aria-label="Membership entry">
-          {!prelaunch ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">Your profile / Before launch</p>}
+          {!prelaunch ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">{registrationOnly ? "Registration / Your details" : "Your profile / Before launch"}</p>}
           <JoinForm
             checkoutDisabledReason={checkoutDisabledReason}
             checkoutEnabled={checkoutEnabled}
+            registrationOnly={registrationOnly}
+            registrationRequiresPaymentMethod={registration?.requiresPaymentMethod ?? true}
             disabledReason={disabledReason}
             enabled={writable}
             initialOnboarding={context.data}

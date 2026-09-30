@@ -5,6 +5,8 @@ import type {
 } from "@/lib/membership/model";
 
 const ENTRY_CAPABILITIES = [
+  "onboarding.read",
+  "onboarding.write",
   "account.read",
   "home.read",
   "profile.read",
@@ -29,6 +31,7 @@ const FULL_CAPABILITIES = [
 ] as const satisfies readonly MemberCapability[];
 
 const LIMITED_CAPABILITIES = [
+  "onboarding.read",
   "account.read",
   "artifacts.read",
   "foundations.summary",
@@ -80,6 +83,11 @@ function deriveBaseMemberAccessPolicy(
       mode: "limited",
       reason: "This membership is closed.",
     };
+  }
+
+  if (identity.registrationHeld) {
+    return { accessEndsAt, capabilities: ["account.read", "onboarding.read", "onboarding.write"],
+      mode: "entry", reason: "Your registration is being collected. Your profile opens when Ruined activates it." };
   }
 
   if (identity.accountState !== "active") {

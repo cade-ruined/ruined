@@ -26,6 +26,7 @@ async function load(path, dependencies) {
 async function accessModule(member, operator, overrides = {}) {
   const calls = [];
   const api = await load("src/lib/auth/platform-access.ts", {
+    "@/lib/membership/registration-repository": { getMemberRegistrationDestination: async () => null },
     "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts", {}),
     "@/lib/platform/repository": {
       PlatformAccessDeniedError,
@@ -123,6 +124,7 @@ async function routeModule(kind, options = {}) {
   });
   const api = await load(`app/api/auth/otp/${kind}/route.ts`, {
     "next/server": { NextResponse },
+    "@/lib/membership/direct-invitation-repository": { resolveRuinedDirectInvitationToken: async () => assert.fail("Legacy OTP flows must not resolve direct signup context.") },
     "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context", isTrustedPlatformOrigin: () => options.trusted !== false, getMemberEmailConfirmationUrl: () => "https://ruined.example/my/confirmed" },
     "@/lib/membership/personal-invitation-admission": {
       getPersonalInvitationAdmissionEligibility: async (email, token) => {

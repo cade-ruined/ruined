@@ -25,6 +25,8 @@ async function fixture() {
   const PGlite = await loadPGliteForSchemaChecks(); const pg = new PGlite();
   await pg.exec(`
     set timezone='UTC'; create role anon; create role authenticated; create schema private;
+    -- These isolated fixtures represent existing members without registration holds.
+    create function private.ruined_member_profile_released(uuid) returns boolean language sql stable as 'select true';
     create table ruined_members(id uuid primary key, person_id uuid, email text, membership_activated_at timestamptz);
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active');
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz);

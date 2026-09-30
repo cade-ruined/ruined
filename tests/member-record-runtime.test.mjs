@@ -1,3 +1,4 @@
+import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -39,6 +40,7 @@ async function fixture() {
     create table experience_registrations(id uuid primary key, experience_id uuid, person_id uuid, status text);
   `);
   await installOperatorFundingFunctions(pg);
+  await installRegistrationProfileReleaseFunction(pg);
   const foundations = await source("db/migrations/20260826_membership_operating_spine_04_foundations_automation.sql");
   const community = await source("db/migrations/20260826_membership_operating_spine_03_community_experiences.sql");
   for (const [migration, table] of [[foundations, "member_milestones"], [foundations, "artifact_awards"], [community, "experience_attendance_events"]]) {
@@ -63,6 +65,7 @@ async function fixture() {
   const repository = await load("src/lib/membership/repository.ts", {
     "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
+    "./registration-repository": existingMemberRegistration,
     "server-only": {},
     "libphonenumber-js/min": {},
     "@/lib/database/server": { getApplicationDatabase: () => sql },

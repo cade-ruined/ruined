@@ -2,7 +2,7 @@ import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-pol
 import { PREVIEW_MEMBER_IDENTITY, PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/membership/preview";
 import type { MemberIdentity } from "@/lib/membership/model";
 
-export const MEMBER_PREVIEW_SCENARIOS = ["foundations", "joining", "active", "operator", "complimentary", "limited"] as const;
+export const MEMBER_PREVIEW_SCENARIOS = ["foundations", "joining", "active", "operator", "complimentary", "limited", "registration-info", "registration-card", "registered"] as const;
 export type MemberPreviewScenario = typeof MEMBER_PREVIEW_SCENARIOS[number];
 export const MEMBER_PREVIEW_COOKIE = "ruined-member-preview";
 export function memberPreviewScenario(value: unknown): MemberPreviewScenario {
@@ -13,7 +13,7 @@ export function memberPreviewScenario(value: unknown): MemberPreviewScenario {
 // existing non-production preview mode; it never authorizes a real account.
 export function memberPreviewIdentity(scenario: MemberPreviewScenario) {
   const identity = { ...PREVIEW_MEMBER_IDENTITY, membershipFunding: "self" as "self" | "operator" | "complimentary" };
-  if (scenario === "joining") Object.assign(identity, { billingState: "pending", administrativeOnboardingState: "in_progress", standingState: "pre_active", programState: "prospect", foundationsState: "not_started" });
+  if (scenario === "joining" || isRegistrationPreview(scenario)) Object.assign(identity, { billingState: "pending", administrativeOnboardingState: "in_progress", standingState: "pre_active", programState: "prospect", foundationsState: "not_started" });
   if (scenario === "active" || scenario === "operator") Object.assign(identity, { programState: "active", foundationsState: "completed" });
   if (scenario === "operator") Object.assign(identity, { membershipFunding: "operator", billingState: "pending" });
   if (scenario === "complimentary") Object.assign(identity, { membershipFunding: "complimentary", billingState: "pending" });
@@ -33,9 +33,9 @@ export function memberPreviewSnapshot<T>(fixture: T, scenario: MemberPreviewScen
   if ("billingState" in data) data.billingState = identity.billingState;
   if ("standingState" in data) data.standingState = identity.standingState;
   if ("agreement" in data) data.membershipFunding = identity.membershipFunding;
-  if (scenario === "joining" && "agreement" in data) {
+  if ((scenario === "joining" || isRegistrationPreview(scenario)) && "agreement" in data) {
     data.agreement = { ...(data.agreement as object), acceptanceId: null, acceptedAt: null, receiptId: null };
-    if ("requiredFieldsComplete" in data) { data.requiredFieldsComplete = false; data.state = "in_progress"; data.completedAt = null; }
+    if ("requiredFieldsComplete" in data) { data.requiredFieldsComplete = scenario === "registration-card" || scenario === "registered"; data.state = "in_progress"; data.completedAt = null; }
   }
   if (data.foundations && identity.foundationsState === "completed") {
     const foundations = data.foundations as { progressPercent: number; state: string; requirements: { moments: { completed: number; total: number }; futureLetter: { completed: boolean; completedAt: string | null } } };
@@ -100,4 +100,23 @@ export function memberPreviewFoundations(identity: MemberIdentity) {
   }
   if (identity.foundationsState !== "completed") state.activeCircleName = null;
   return state;
+}
+
+/** Inert registration fixtures; callers must check configuration.mode first. */
+export function isRegistrationPreview(scenario: MemberPreviewScenario) {
+  return scenario === "registration-info" || scenario === "registration-card" || scenario === "registered";
+}
+
+export function memberRegistrationPreview(scenario: MemberPreviewScenario) {
+  if (!isRegistrationPreview(scenario)) return null;
+  return {
+    memberId: PREVIEW_MEMBER_IDENTITY.memberId,
+    state: scenario === "registered" ? "registered" as const : "collecting" as const,
+    registeredAt: scenario === "registered" ? "2026-09-30T16:00:00.000Z" : null,
+    profileActivatedAt: null,
+    requiresPaymentMethod: true,
+    profileComplete: scenario !== "registration-info",
+    ready: scenario === "registered",
+    version: 1,
+  };
 }

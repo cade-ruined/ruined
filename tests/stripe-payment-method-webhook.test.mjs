@@ -30,7 +30,8 @@ async function harness({duplicate = false, failure = false} = {}) {
     }},
   });
   const route = await load('app/api/stripe/webhook/route.ts', {
-    'next/server': {NextResponse: {json: Response.json}},
+    'next/server': {NextResponse: {json: Response.json}, after: () => assert.fail('No registration email worker for this fixture')},
+    '@/lib/membership/registration-message-delivery': { getRegistrationMessageConfiguration: () => ({ ready: false }), processRegistrationMessageBatch: forbidden },
     '@/lib/stripe/server': {STRIPE_API_VERSION:'fixture',getStripeLivemode:()=>false,getStripeWebhookSecret:()=> 'fixture',getStripe:()=>({webhooks:{constructEvent: raw=>JSON.parse(raw)}})},
     '@/lib/stripe/webhook': processor,
     '@/lib/workflows/worker': {processWorkflowBatch: forbidden},

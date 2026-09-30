@@ -24,7 +24,7 @@ function hooks() {
     useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }]; },
     useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
     useId() { const i = cursor++; if (!(i in slots)) slots[i] = `fixture-${i}`; return slots[i]; },
-    useEffect(effect) { const i = cursor++; if (!(i in slots)) { slots[i] = true; effects.push(effect); } },
+    useEffect(effect) { const i = cursor++; if (!(i in slots)) { slots[i] = effects.length; effects.push(effect); } else effects[slots[i]] = effect; },
   }, render(component, props) { cursor = 0; return component(props); } };
 }
 const nodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : [];
@@ -53,6 +53,7 @@ async function fixture({ state = "not_saved", changes = {}, props = {} } = {}) {
     submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {} }),
     setResponse: value => { response = value; }, fail: value => { failure = value; }, destination: value => { destination = value; },
     reload: async () => { h.effects[0](); await flush(); },
+    receiptEffect: () => h.effects[1](),
   };
 }
 
@@ -210,6 +211,9 @@ test("payment-method page uses entry access without a paid agreement and ignores
   const Panel = () => null;
   const Page = (await load("app/my/payment-method/page.tsx", {
     "next/link": Link, "next/navigation": { redirect: href => { throw Object.assign(Error("redirect"), { href }); } },
+    "next/headers": { cookies: async () => ({ get: () => undefined }) },
+    "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
+    "@/lib/membership/preview-scenarios": { memberRegistrationPreview: () => null, memberPreviewScenario: () => "active" },
     "@/components/membership/MemberPaymentMethod": Panel,
     "@/components/membership/MemberSettingsHeader": Stub, "@/components/platform/PlatformUnavailable": Stub,
     "@/lib/membership/page-context": { getMembershipPageContext: async (_preview, _load, area) => { assert.equal(area,"payment-method"); return context; } },
@@ -224,4 +228,49 @@ test("payment-method page uses entry access without a paid agreement and ignores
   assert.equal(panel.props.preview,true); assert.equal(panel.props.initialPreviewState,"saved");
   context = { state: "signed_out", data: null };
   await assert.rejects(page,error => error.href === "/my/access");
+});
+
+
+test("new registration requires card setup without offering profile access or an optional bypass", async () => {
+  const f = await fixture({ props: { registrationOnly: true, returnState: "cancelled" } });
+  assert.match(text(f.render()), /Save your card to finish registration/);
+  assert.doesNotMatch(text(f.render()), /optional|Do this later|Back to my account/i);
+  assert.match(text(f.render()), /Registration does not open member access/);
+  assert.equal(nodes(f.render()).some(node => node.props.href === "/my"), false);
+  assert.ok(text(f.render()).includes(paymentModel.PAYMENT_SETUP_CONSENT_TEXT));
+  assert.equal(f.consent().props.checked, false);
+  assert.equal(nodes(f.render()).some(node => node.props.href === "/my/registered"), false);
+  assert.equal(nodes(f.render()).some(node => node.props.href === "/my/account"), false);
+});
+
+test("registration receipt link appears only after authoritative saved state, never a return query", async () => {
+  const f = await fixture({ state: "pending", props: { registrationOnly: true, returnState: "returned" } });
+  assert.equal(nodes(f.render()).some(node => node.props.href === "/my/registered"), false);
+  f.setResponse(snapshot("saved")); await f.reload();
+  assert.ok(nodes(f.render()).some(node => node.props.href === "/my/registered" && text(node) === "Continue to registration receipt"));
+  assert.doesNotMatch(text(f.render()), /Your profile|Do this later/);
+  f.button("Remove saved payment method").props.onClick();
+  f.setResponse(snapshot()); await f.button("Remove payment method").props.onClick();
+  assert.equal(nodes(f.render()).some(node => node.props.href === "/my/registered"), false);
+  assert.match(text(f.render()), /Save a card again to finish registration/);
+});
+
+test("registration preview receipt remains clearly inert", async () => {
+  const f = await fixture({ props: { registrationOnly: true, preview: true, initialPreviewState: "saved" } });
+  assert.equal(f.calls.length, 0);
+  assert.ok(nodes(f.render()).some(node => node.props.href === "/my/registered" && text(node) === "Preview registration receipt"));
+  assert.match(text(f.render()), /no payment methods are saved or removed/);
+});
+
+
+test("Stripe return advances new registration only after saved confirmation; management and preview do not auto-navigate", async () => {
+  const f = await fixture({ state: "pending", props: { registrationOnly: true, returnState: "returned" } });
+  f.render(); f.receiptEffect(); assert.deepEqual(f.redirects, []);
+  f.setResponse(snapshot("saved")); await f.reload(); f.render(); f.receiptEffect();
+  assert.deepEqual(f.redirects, ["/my/registered"]);
+  f.receiptEffect(); assert.equal(f.redirects.length, 1);
+  for (const props of [{ registrationOnly: true }, { registrationOnly: false, returnState: "returned" }, { registrationOnly: true, returnState: "returned", preview: true, initialPreviewState: "saved" }]) {
+    const separate = await fixture({ state: "saved", props }); separate.render(); separate.receiptEffect();
+    assert.deepEqual(separate.redirects, []);
+  }
 });

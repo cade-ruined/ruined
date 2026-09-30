@@ -34,7 +34,8 @@ async function loadRoute(failure) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const dependencies = {
-    "next/server": { NextResponse },
+    "next/server": { NextResponse, after: () => assert.fail("No email follow-up after failed onboarding") },
+    "@/lib/membership/registration-message-delivery": { getRegistrationMessageConfiguration: () => ({ ready: false }), processRegistrationMessageBatch: () => assert.fail("No registration message work in this error fixture") },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: "11111111-1111-4111-8111-111111111111" }) },
     "@/lib/membership/repository": {

@@ -20,24 +20,26 @@ function appearanceValue(value: string | null): MemberAppearance {
   return value === "paper" || value === "ink" ? value : "system";
 }
 
-export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel }: {
+export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, registrationOnly: restrictedRegistration = false }: {
   children: React.ReactNode;
   configuration: PlatformConfiguration;
   operatorRole?: OperatorNavigationRole | null;
   viewerLabel?: string | null;
+  registrationOnly?: boolean;
 }) {
   const pathname = usePathname();
+  const registrationOnly = restrictedRegistration || pathname === "/my/registered";
   const [appearance, setAppearance] = useState<MemberAppearance>("system");
   const [systemDark, setSystemDark] = useState(false);
-  const threshold = pathname === "/access" || ["/my/access", "/my/confirmed", "/my/join"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
-  const focused = pathname.startsWith("/my/foundations/experience");
-  const cardRoom = pathname === "/my/card" || pathname === "/my/invitation";
+  const threshold = registrationOnly || pathname === "/access" || ["/my/access", "/my/confirmed", "/my/join"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  const focused = !registrationOnly && pathname.startsWith("/my/foundations/experience");
+  const cardRoom = !registrationOnly && (pathname === "/my/card" || pathname === "/my/invitation");
   const membershipEntry = pathname === "/my/join";
   const hasNavigation = !threshold && !focused;
   const preview = configuration.mode === "preview";
   const current = currentMemberDestination(pathname);
   const currentPrimary = currentMemberPrimaryDestination(pathname);
-  const pageLabel = MEMBER_DESTINATIONS.find(({ href }) => href === current)?.label ?? "Membership";
+  const pageLabel = registrationOnly ? "Registration" : MEMBER_DESTINATIONS.find(({ href }) => href === current)?.label ?? "Membership";
   const theme = appearance === "system" ? systemDark ? "ink" : "paper" : appearance;
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
           </button>
           {hasNavigation ? <MemberNavigationFab {...menuProps} trigger="search" /> : <Link className={styles.quietLink} href={focused ? "/my/foundations" : "mailto:connect@theruinedproject.com"}>{focused ? "Back to Foundations" : "Support"}</Link>}
           {hasNavigation ? <Link className={styles.iconButton} aria-label="Updates" title="Updates" href="/my/updates"><MemberIcon name="bell" /></Link> : null}
-          <MemberNavigationFab {...menuProps} trigger="settings" />
+          {registrationOnly ? viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post"><button className={styles.quietLink} type="submit">Sign out</button></form> : null : <MemberNavigationFab {...menuProps} trigger="settings" />}
         </div>
       </header>
       {configuration.mode !== "connected" ? <p className={styles.notice} role="status">{preview ? "Preview only. Changes here do not affect your membership." : "Membership is temporarily unavailable. Please try again shortly."}</p> : null}

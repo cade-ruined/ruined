@@ -64,8 +64,21 @@ export async function getCircleRecommendations(actor: string, memberId: string) 
       left join member_referrals referral on referral.referred_member_id = member.id
       where member.id = ${memberId}::uuid`;
     if (!member) throw new OpsRepositoryError("not_found", "Member not found.");
-    const circles = await tx<Array<{ id: string; name: string; active_members: number; connection_present: boolean }>>`
+    const [couple] = await tx<Array<{ partner_id: string | null; member_circle_id: string | null; partner_circle_id: string | null }>>`
+      select pair.partner_id,
+        (select circle_id from circle_member_assignments where member_id = ${memberId}::uuid and ended_at is null) as member_circle_id,
+        (select circle_id from circle_member_assignments where member_id = pair.partner_id and ended_at is null) as partner_circle_id
+      from (select private.ruined_circle_couple_partner(${memberId}::uuid) as partner_id) pair`;
+    const circles = await tx<Array<{ id: string; name: string; active_members: number; connection_present: boolean; incoming_seats: number }>>`
       select circle.id, circle.name, private.ruined_circle_participant_count(circle.id) as active_members,
+        (select count(*)::integer from unnest(array_remove(array[${memberId}::uuid, ${couple?.partner_id ?? null}::uuid], null)) incoming(member_id)
+          where not exists (select 1 from circle_member_assignments placement
+            where placement.circle_id = circle.id and placement.member_id = incoming.member_id and placement.ended_at is null)
+          and not exists (select 1 from circle_staff_assignments staff
+            join platform_users viewer on viewer.auth_user_id = staff.auth_user_id
+            join ruined_members supporter on supporter.person_id = viewer.person_id
+            where staff.circle_id = circle.id and staff.role_slug = 'circle_leader' and staff.ended_at is null
+              and supporter.id = incoming.member_id)) as incoming_seats,
         exists (select 1 from circle_member_assignments assignment where assignment.circle_id = circle.id
           and assignment.ended_at is null and assignment.member_id = ${member.connection_id}::uuid) as connection_present
       from circles circle where circle.status in ('forming', 'active') order by circle.name`;
@@ -75,7 +88,7 @@ export async function getCircleRecommendations(actor: string, memberId: string) 
       left join member_circle_preferences preference on preference.member_id = member.id
       left join person_profiles profile on profile.person_id = member.person_id
       where assignment.ended_at is null and member.id <> ${memberId}::uuid`;
-    return scoreCirclePlacement({ timezone: member.timezone ?? "", availability: member.availability ?? [], preferredConnectionId: member.connection_id }, circles.map(circle => ({ circleId: circle.id, name: circle.name, activeMembers: Number(circle.active_members), connectionPresent: circle.connection_present, participantPreferences: people.filter(person => person.circle_id === circle.id).map(person => ({ timezone: person.timezone ?? "", availability: person.availability ?? [], preferredConnectionId: null })) })));
+    return scoreCirclePlacement({ timezone: member.timezone ?? "", availability: member.availability ?? [], preferredConnectionId: member.connection_id }, circles.map(circle => ({ circleId: circle.id, name: circle.name, activeMembers: Number(circle.active_members), incomingSeats: Number(circle.incoming_seats), connectionPresent: circle.connection_present, participantPreferences: people.filter(person => person.circle_id === circle.id).map(person => ({ timezone: person.timezone ?? "", availability: person.availability ?? [], preferredConnectionId: null })) })), new Date(), couple?.partner_id ? { memberCircleId: couple.member_circle_id, partnerCircleId: couple.partner_circle_id } : undefined);
   });
 }
 

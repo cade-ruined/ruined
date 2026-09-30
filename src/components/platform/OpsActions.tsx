@@ -411,6 +411,8 @@ export function OpsCircleActions({
     (member) => Boolean(member.circleName) && !endedMemberIds.has(member.memberId),
   );
   const selectedCircle = acceptingCircles.find((circle) => circle.id === selectedCircleId);
+  const requestsCapacityReview = Boolean(selectedCircle && (selectedCircle.activeMembers >= 12
+    || selectedCircle.activeMembers === 11 && exceptionReason.trim()));
 
   async function submitCircle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -450,9 +452,11 @@ export function OpsCircleActions({
 
     try {
       if (!member || !circle) throw new Error("Choose an eligible member and a forming or active Circle with an open space.");
-      if (circle.activeMembers >= 12) {
+      if (circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim()) {
         await postJson("/api/ops/circle-placement-reviews", { circleId, memberId, reason: exceptionReason });
         setAssignmentNotice({ kind: "success", text: "Exception requested. Tyler/Mitch must approve before placement." });
+        setExceptionReason("");
+        router.refresh();
         return;
       }
       const result = await postJson<{ assignment: { created: boolean } }>("/api/ops/circle-assignments", {
@@ -596,7 +600,7 @@ export function OpsCircleActions({
       <section className="scroll-mt-40 rounded-[4px] bg-[var(--color-shop)]/25 p-5 sm:p-6" id="assign-member" aria-labelledby="assign-member-title">
         <h2 className="font-[var(--font-display)] text-2xl" id="assign-member-title">Assign a member</h2>
         <p className="mt-2 text-sm leading-relaxed text-black/60">
-          Assign members first. A forming Circle can accept them now; activate it afterward when it is ready.
+          Assign members first. A forming Circle can accept them now; activate it afterward when it is ready. Shared-membership partners are placed together. Both must meet placement requirements.
         </p>
         <form className="mt-5 grid gap-4" onSubmit={submitAssignment} ref={assignmentFormRef}>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -607,7 +611,7 @@ export function OpsCircleActions({
                 className={INPUT_CLASS}
                 disabled={assigning || eligibleMembers.length === 0}
                 name="memberId"
-                onChange={(event) => { setSelectedMemberId(event.target.value); setAssignmentNotice(null); }}
+                onChange={(event) => { setSelectedMemberId(event.target.value); setExceptionReason(""); setAssignmentNotice(null); }}
                 required
                 value={selectedMember?.memberId ?? ""}
               >
@@ -623,7 +627,7 @@ export function OpsCircleActions({
                 className={INPUT_CLASS}
                 disabled={assigning || acceptingCircles.length === 0}
                 name="circleId"
-                onChange={(event) => { setSelectedCircleId(event.target.value); setAssignmentNotice(null); }}
+                onChange={(event) => { setSelectedCircleId(event.target.value); setExceptionReason(""); setAssignmentNotice(null); }}
                 required
                 value={selectedCircle?.id ?? ""}
               >
@@ -650,13 +654,13 @@ export function OpsCircleActions({
             </div>
           </div>
           {selectedMember && !selectedMemberIssue ? <CirclePlacementRecommendations memberId={selectedMember.memberId} /> : null}
-          {selectedCircle && selectedCircle.activeMembers >= 12 ? <label className="block text-sm">Exception reason<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required /></label> : null}
+          {selectedCircle && selectedCircle.activeMembers >= 11 ? <label className="block text-sm">{selectedCircle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={selectedCircle.activeMembers >= 12} />{selectedCircle.activeMembers === 11 ? <span className="mt-2 block text-xs text-black/60">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
           <button
             className={`${BUTTON_CLASS} w-fit`}
             disabled={assigning || !selectedMember || Boolean(selectedMemberIssue) || !selectedCircle}
             type="submit"
           >
-            {assigning ? "Saving…" : selectedCircle && selectedCircle.activeMembers >= 12 ? "3. Request exception" : "3. Approve placement"}
+            {assigning ? "Saving…" : requestsCapacityReview ? "3. Request exception" : "3. Approve placement"}
           </button>
           <Notice notice={assignmentNotice} />
         </form>

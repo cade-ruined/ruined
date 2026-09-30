@@ -185,7 +185,7 @@ test("passwordless OTP endpoints enforce origin, shared eligibility, and generic
 test("verified members enter membership checkout while paid states return home", () => {
   assert.match(
     authAccess,
-    /Promise<\{ redirectTo: "\/my" \| "\/my\/join" \| "\/ops" \}>/,
+    /Promise<\{ redirectTo: SignInDestination \}>/,
   );
   assert.match(
     authAccess,

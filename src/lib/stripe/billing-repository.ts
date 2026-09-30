@@ -199,6 +199,7 @@ export async function reserveMembershipCheckout({
         and platform_user.email_normalized = ${emailNormalized}
         and platform_user.status = 'active'
         and lifecycle.account_state = 'active'
+        and private.ruined_member_profile_released(member.id)
         and private_profile.default_fulfillment_address->>'countryCode' = 'US'
       limit 1
       for update of member

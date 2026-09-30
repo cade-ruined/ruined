@@ -4,48 +4,88 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { MEMBERSHIP_LINKS } from "@/data/public-membership";
-import { formatMembershipPrice, MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS } from "@/lib/membership/pricing";
+import type { MembershipBillingPlan } from "@/lib/membership/pricing";
+import MembershipInvitationCard, { MembershipInvitationRoom } from "./MembershipInvitationCard";
 import MembershipSignup from "./MembershipSignup";
+import MembershipFoundationsSection from "./MembershipFoundationsSection";
+import MembershipMonthlySection from "./MembershipMonthlySection";
+import MembershipCommunitySection from "./MembershipCommunitySection";
+import MembershipOfferSection, { type MembershipLandingMode } from "./MembershipOfferSection";
+import MembershipQuestions from "./MembershipQuestions";
 import styles from "./MembershipOverview.module.css";
 
-const includes = [
-  { number: "01", title: "Foundations", detail: "A clearer starting point.", body: "Guided reflection, your personal timeline, and practical work to understand where you are and what you want to build.", image: "/membership/archive-material-placeholder.webp", alt: "An editorial study of cloth, worked metal, and unfinished paper.", className: "foundations" },
-  { number: "02", title: "Your Circle", detail: "People to do the work with.", body: "Up to ten members, guided by a Shaper. A smaller space for honest conversation, shared work, and showing up for one another.", image: "/ruined-hero-lounge.jpg", alt: "A warm gathering room with worn leather seating.", className: "circle" },
-  { number: "03", title: "Beyond the screen", detail: "Put it into practice.", body: "Learning resources to return to and opportunities to gather in person. Bring what you’re working on into the rest of your life.", image: "/events/byob-01/gallery/01-img-8059.webp", alt: "People gathering at a Ruined community event beside Tibble Fork.", className: "experiences" },
-];
+const chapters = [
+  { id: "how-it-works", label: "Overview" },
+  { id: "foundations", label: "The work" },
+  { id: "your-invitation", label: "Pricing & join" },
+] as const;
 
-const questions = [
-  { question: "Do I need an invitation?", answer: "You can request your own personal invitation from The Ruined Project when membership opens. Choose your plan and leave your name and email. If a member invited you, use their invitation link and the email address it was sent to." },
-  { question: "When do I pay?", answer: "At signup. Your first monthly payment or full annual payment is due when you join. Review your plan and membership terms, then confirm payment to start your membership. Standard invitations follow the same payment step.", setupAnswer: "Nothing is charged while you prepare your profile. Saving a payment method is optional and does not activate your membership. When paid membership opens, you’ll review the current offer, agreement, and payment terms, then explicitly confirm payment before your membership begins." },
-  { question: "What if my invitation is complimentary?", answer: "Your invitation will say so, including an end date if one applies. You’ll complete your profile and agreement without a payment step. Complimentary access does not automatically become a paid subscription." },
-  { question: "Are gatherings and physical items included?", answer: "Each experience lists its own access, availability, and any separate cost. Specific garments and artifacts are shared separately. Membership does not promise every event or physical item at no additional charge." },
-  { question: "What happens after I join?", answer: "You’ll have your own member space, begin Foundations, and be connected with your Circle. You can start Foundations while your Circle is being arranged; completing it requires an active Circle assignment." },
-  { question: "What are the renewal and cancellation terms?", answer: "You’ll review the applicable renewal, cancellation, and refund terms in your membership agreement before confirming payment. Your first payment is taken at signup, and your chosen plan renews monthly or annually.", setupAnswer: "No payment is due during profile setup. You’ll review the membership agreement, current offer, renewal, and cancellation terms before choosing to pay. Saving a method does not authorize future charges." },
-];
+function MembershipSectionNav() {
+  const [active, setActive] = useState<string>(chapters[0].id);
+  const navigation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      // Include the breathing room used by section scroll margins, including subpixel rounding.
+      const edge = (navigation.current?.getBoundingClientRect().bottom ?? 130) + 40;
+      let current: string = chapters[0].id;
+      for (const chapter of chapters) {
+        const section = document.getElementById(chapter.id);
+        if (section && section.getBoundingClientRect().top <= edge) current = chapter.id;
+      }
+      setActive(current);
+    };
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    document.addEventListener("toggle", schedule, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("toggle", schedule, true);
+    };
+  }, []);
+  return <nav ref={navigation} className={styles.chapterNav} aria-label="Explore membership"><div className={styles.wrap}>
+    {chapters.map((chapter, index) => <a key={chapter.id} href={`#${chapter.id}`} aria-current={active === chapter.id ? "location" : undefined}><span aria-hidden="true">0{index + 1}</span>{chapter.label}{chapter.id === "your-invitation" && <span className={styles.joinArrow} aria-hidden="true">↗</span>}</a>)}
+  </div></nav>;
+}
 
-export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false }: { preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean }) {
+export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false }: { preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean }) {
   const invitationAvailable = signupEnabled || (preview && paymentSetupOnly);
-  const [annual, setAnnual] = useState(false);
+  const mode: MembershipLandingMode = !invitationAvailable ? "waitlist" : paymentSetupOnly ? "payment-setup" : "paid";
+  const ctaLabel = invitationAvailable ? "Create my invitation" : "Join the waitlist";
+  const [plan, setPlan] = useState<MembershipBillingPlan>("monthly");
+  const [recipientName, setRecipientName] = useState("");
+  const [registrationLocked, setRegistrationLocked] = useState(false);
   const filmDialog = useRef<HTMLDialogElement>(null);
-  const signupDialog = useRef<HTMLDialogElement>(null);
   const film = useRef<HTMLVideoElement>(null);
-  const [modal, setModal] = useState<"film" | "signup" | null>(null);
-  const [signupVersion, setSignupVersion] = useState(0);
-  const price = annual ? MEMBERSHIP_PLANS.annual : MEMBERSHIP_PLANS.monthly;
+  const [filmOpen, setFilmOpen] = useState(false);
+
+  const openFilm = () => {
+    const dialog = filmDialog.current;
+    const video = film.current;
+    if (!dialog || !video) return;
+    dialog.showModal();
+    setFilmOpen(true);
+    // Start within the click gesture so mobile browsers can play with sound.
+    void video.play().catch(() => { /* Native controls remain available if playback is interrupted. */ });
+  };
 
   useEffect(() => {
-    if (!modal) return;
-    const dialog = (modal === "film" ? filmDialog : signupDialog).current;
+    if (!filmOpen) return;
+    const dialog = filmDialog.current;
     const video = film.current;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    dialog?.showModal();
     return () => {
       dialog?.close();
       video?.pause();
       document.body.style.overflow = previousOverflow;
     };
-  }, [modal]);
+  }, [filmOpen]);
 
   useEffect(() => {
     const video = film.current;
@@ -54,110 +94,82 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
     return () => { document.removeEventListener("visibilitychange", pauseHidden); video?.pause(); };
   }, []);
 
-  function join() {
-    setSignupVersion(version => version + 1);
-    setModal("signup");
-  }
-
   return <main className={styles.page}>
-    <section className={`${styles.wrap} ${styles.hero}`} aria-labelledby="membership-title">
-      <div className={styles.heroCopy}>
-        <p className={styles.eyebrow}>The Ruined Project <span>/</span> Membership</p>
-        <h1 id="membership-title">Good company.<br /><em>Real work.</em></h1>
-        <p className={styles.heroDescription}>A private membership for people making something of their lives. A place to find your people, get clear, and put intention into practice.</p>
-        <p className={styles.handwritten}>You don’t have to do it alone.</p>
-        <div className={styles.heroActions}>
-          <button className={styles.primary} type="button" onClick={join}>{invitationAvailable ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
-          <a className={styles.textLink} href="#inside-membership">Take a look inside <span aria-hidden="true">↓</span></a>
-        </div>
-        <p className={styles.heroPrice}>{formatMembershipPrice(MEMBERSHIP_PLANS.monthly.amount)} / month <span>or annual membership.</span> <a href="#membership-pricing">See pricing</a></p>
-        <p className={styles.paymentTiming}>{paymentSetupOnly ? "Prepare your profile now. Saving a payment method is optional; nothing is charged." : signupEnabled ? "Your invitation comes first. Payment completes signup." : "Join the waitlist. We’ll be in touch when membership opens."}</p>
+    <section className={styles.hero} aria-labelledby="membership-title">
+      <Image className={styles.heroBackground} src="/membership/hero-couch-wide.jpg" alt="" fill priority sizes="100vw" />
+      <div className={`${styles.wrap} ${styles.heroInner}`}>
+        <h1 id="membership-title">After the fear<br /><em>You become the author</em></h1>
+        <p className={styles.heroDescription}>A personal-development community for honest conversations, meaningful work, and people who follow through. Start with your story. Build what comes next.</p>
+        <div className={styles.heroActions}><a className={styles.primary} href="#your-invitation">{ctaLabel}<span aria-hidden="true">↗</span></a><a className={styles.textLink} href="#how-it-works">See how it works <span aria-hidden="true">↓</span></a></div>
+        <a className={styles.invitationTeaser} href="#your-invitation" aria-label="See your Ruined invitation">
+          <span className={styles.teaserCard} aria-hidden="true"><span>You’re allowed</span><Image src="/ruined-mark.svg" alt="" width={60} height={86} /><span>to become someone new.</span></span>
+          <span className={styles.teaserNote}>This is for you.<span>Your invitation awaits ↗</span></span>
+        </a>
       </div>
-      <figure className={styles.heroArt}>
-        <div className={styles.heroPhoto}>
-          <Image src="/membership/foundations/beginning.webp" alt="A well-worn couch, an open field, and room to begin." fill priority sizes="(min-width: 900px) 48vw, 100vw" />
-          <button className={styles.filmTrigger} type="button" onClick={() => setModal("film")} aria-label="Watch the Ruined membership film, 2 minutes 15 seconds">
-            <span className={styles.play} aria-hidden="true">▶</span><span>Meet Ruined<small>Watch the film · 2:15</small></span><span className={styles.filmArrow} aria-hidden="true">↗</span>
-          </button>
-        </div>
-        <figcaption><span>Somewhere to begin.</span><span>Alpine, Utah / Ruined</span></figcaption>
-      </figure>
     </section>
 
-    <nav className={`${styles.wrap} ${styles.chapterNav}`} aria-label="Membership overview">
-      <a href="#inside-membership"><span>01</span> What’s inside <span aria-hidden="true">↓</span></a>
-      <a href="#membership-pricing"><span>02</span> The membership <span aria-hidden="true">↓</span></a>
-      <a href="#how-to-join"><span>03</span> Your next step <span aria-hidden="true">↓</span></a>
-    </nav>
+    <MembershipSectionNav />
 
-    <section className={`${styles.wrap} ${styles.inside}`} id="inside-membership" aria-labelledby="inside-heading">
-      <div className={styles.sectionHeader}><p className={styles.eyebrow}>01 / What’s inside</p><h2 id="inside-heading">Make room for<br /><em>what matters.</em></h2><p>Space to reflect. People to return to.<br />Something to put into practice.</p></div>
-      <div className={styles.includes}>
-        {includes.map(item => <article key={item.number} className={styles.inclusion}>
-          <div className={`${styles.inclusionImage} ${styles[item.className]}`}><Image src={item.image} alt={item.alt} fill sizes="(min-width: 760px) 32vw, 100vw" /><span>{item.number}</span></div>
-          <h3>{item.title}</h3><p className={styles.inclusionDetail}>{item.detail}</p><p className={styles.inclusionBody}>{item.body}</p>
-        </article>)}
-      </div>
-      <p className={styles.smallPrint}>Circle imagery is illustrative. Experiences list their availability and any separate cost.</p>
+    <section className={styles.meetRuined} id="inside-membership" aria-labelledby="inside-heading">
+      <button className={styles.featureFilmTrigger} type="button" onClick={openFilm} aria-label="Play Meet Ruined, 2 minutes 15 seconds">
+        <Image src="/ruined-hero-lounge.jpg" alt="" fill sizes="100vw" />
+        <span className={styles.featureFilmPlay} aria-hidden="true">▶</span>
+        <span className={styles.featureFilmCaption} aria-hidden="true">Watch the film <span>2:15 ↗</span></span>
+      </button>
+      <h2 className={styles.featureFilmTitle} id="inside-heading">Meet Ruined.</h2>
     </section>
 
-    <section className={styles.membershipBand} id="membership-pricing" aria-labelledby="price-heading">
-      <div className={`${styles.wrap} ${styles.membershipGrid}`}>
-        <div className={styles.membershipCopy}>
-          <p className={styles.eyebrow}>02 / The membership</p>
-          <h2 id="price-heading">One membership.<br /><em>A shared commitment.</em></h2>
-          <p>Come with something you’re working on. Be willing to look at it honestly. Make room for other people to do the same.</p>
-          <ul className={styles.includedList}>
-            <li>Guided Foundations experience</li><li>A small Circle, guided by a Shaper</li><li>Academy lessons and resources</li><li>Your personal journal and member space</li><li>Opportunities to connect in person</li>
-          </ul>
-          <p className={styles.membershipNote}>The same membership, whichever way you pay.</p>
+    <section className={`${styles.wrap} ${styles.explanation}`} id="how-it-works" aria-labelledby="how-heading">
+      <div className={styles.explanationIntro}><div><p className={styles.eyebrow}>One community. A shared practice.</p><h2 id="how-heading">A place to begin.<br />People to keep going with.</h2></div></div>
+      <ol className={styles.journeyMap} aria-label="Your membership journey">
+        <li><a href="#foundations"><span>01<span> / BEGIN</span></span><h3>Foundations <span aria-hidden="true">↗</span></h3><strong>4 live virtual sessions · 90 minutes each</strong><p>A one-time starting point before the ongoing monthly work.</p></a></li>
+        <li><a href="#monthly-work"><span>02<span> / PRACTICE</span></span><h3>Each Month <span aria-hidden="true">↗</span></h3><strong>1 topic · 4 calls</strong><p>SEE. FACE. CUT. GROW. Put the work into your life.</p></a></li>
+        <li><a href="#circles"><span>03<span> / CONNECT</span></span><h3>Your Circle <span aria-hidden="true">↗</span></h3><strong>8–12 people · Twice a month</strong><p>Familiar faces. Honest conversation and follow-through.</p></a></li>
+      </ol>
+    </section>
+
+    <MembershipFoundationsSection ctaLabel={ctaLabel} />
+    <MembershipMonthlySection ctaLabel={ctaLabel} />
+    <MembershipCommunitySection ctaLabel={ctaLabel} />
+    <section className={styles.invitationBand} id="your-invitation" aria-labelledby="invitation-heading">
+      <MembershipInvitationRoom className={styles.invitationRoom} frameToCard>
+      <div className={`${styles.wrap} ${styles.invitationGrid}`}>
+        <div className={styles.invitationArt}>
+          <p className={styles.eyebrow}>From The Ruined Project. To you.</p>
+          <h2 id="invitation-heading">It starts with<br /><em>an invitation.</em></h2>
+          <MembershipInvitationCard recipientName={recipientName} />
         </div>
-        <div className={styles.pricePanel}>
-          <fieldset className={styles.planSwitch}><legend className={styles.srOnly}>Choose membership billing</legend>
-            <label data-selected={!annual}><input type="radio" name="membership-billing" value="monthly" checked={!annual} onChange={() => setAnnual(false)} />Monthly</label>
-            <label data-selected={annual}><input type="radio" name="membership-billing" value="annual" checked={annual} onChange={() => setAnnual(true)} />Annual <span>Save {formatMembershipPrice(MEMBERSHIP_PLANS.monthly.amount * 12 - MEMBERSHIP_PLANS.annual.amount)}</span></label>
-          </fieldset>
-          <div className={styles.priceReadout} aria-live="polite" aria-atomic="true">
-            <p className={styles.price}>{formatMembershipPrice(price.amount)}<span>/ {price.interval}</span></p>
-            <p className={styles.billing}>{annual ? `${formatMembershipPrice(price.amount)} paid upfront each year.` : `${formatMembershipPrice(price.amount)} billed each month.`}</p>
-            <p className={styles.equivalent}>{annual ? `A full year for the price of 10 monthly payments. Save ${formatMembershipPrice(MEMBERSHIP_OFFERS.individual_annual.annualSavings)} over twelve monthly payments.` : `12-month initial commitment. 12 payments totaling ${formatMembershipPrice(MEMBERSHIP_OFFERS.individual_monthly.initialTermAmount)}, plus applicable tax.`}</p>
+        <div className={styles.registration}>
+          <div className={styles.invitationSignup} id="membership-details">
+            <h3>{invitationAvailable ? "Make it yours." : "Be here for the beginning."}</h3>
+            <MembershipSignup compact showPricing={false} registrationOnly={registrationOnly} previewInvitation={preview && mode === "payment-setup"} paymentSetupOnly={mode === "payment-setup"} enabled={signupEnabled} preview={preview} plan={plan} onPlanChange={setPlan} onRecipientNameChange={setRecipientName} onRequestStateChange={setRegistrationLocked} />
           </div>
-          <button className={styles.primary} type="button" onClick={join}>{invitationAvailable ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button>
-          <p className={styles.priceReassurance}>{paymentSetupOnly ? "No payment is due now. Your membership begins only after you choose and confirm a paid offer." : signupEnabled ? "Your first payment is due at signup." : "No payment is taken to join the waitlist."}</p>
-          <div className={styles.priceFootnote}><span>U.S. membership. All prices in USD; applicable tax is added.</span><p>You’ll review your billing choice, commitment, and cancellation terms before confirming payment.</p></div>
+          <div className={styles.registrationPricing}>
+            <MembershipOfferSection plan={plan} onPlanChange={setPlan} mode={mode} registrationOnly={registrationOnly} disabled={registrationLocked} />
+          </div>
           <p className={styles.alreadyMember}>Already a member? <Link href={preview ? "/access" : MEMBERSHIP_LINKS.signIn}>Sign in ↗</Link></p>
         </div>
       </div>
+      </MembershipInvitationRoom>
     </section>
 
-    <section className={`${styles.wrap} ${styles.how}`} id="how-to-join" aria-labelledby="join-heading">
-      <div className={styles.sectionHeader}><p className={styles.eyebrow}>03 / Your next step</p><h2 id="join-heading">Find your place.<br /><em>Then begin.</em></h2><p>Know what happens next.<br />Decide when you’re ready.</p></div>
-      <ol className={styles.steps}>
-        <li><span>01</span><h3>Open your invitation.</h3><p>{paymentSetupOnly ? "Choose your preferred future plan and request an invitation with your name and email." : "When membership opens, choose your plan and request an invitation with your name and email."} Your personalized card arrives by email and is valid for 48 hours.</p></li>
-        <li><span>02</span><h3>{paymentSetupOnly ? "Make it yours." : "Join Ruined."}</h3><p>{paymentSetupOnly ? "Accept your invitation, verify your email, and complete your profile. You can optionally save a payment method for a future checkout you choose to complete." : "Accept your invitation, verify your email, complete your profile, and review the agreement. Your membership begins when payment is confirmed."}</p></li>
-        <li><span>03</span><h3>{paymentSetupOnly ? "Begin when you’re ready." : "Begin the work."}</h3><p>{paymentSetupOnly ? "When paid membership opens, review the current offer, membership agreement, and payment terms. Confirming your payment starts your membership. Preparing a profile does not reserve an offer." : "Enter your member space, make your profile your own, and begin Foundations while we connect your Circle."}</p></li>
+    <section className={`${styles.wrap} ${styles.nextSteps}`} aria-labelledby="next-heading">
+      <div><h2 id="next-heading">How it starts.</h2></div>
+      <ol>
+        <li><span>01</span><h3>{mode === "waitlist" ? "Join the list." : "Make your invitation."}</h3><p>{mode === "waitlist" ? "Leave your details. We’ll email you when it’s time to begin." : "Add your name and watch your card become yours. Create your invitation right here."}</p></li>
+        <li><span>02</span><h3>{mode === "waitlist" ? "Hear from Ruined." : "Verify your email."}</h3><p>{mode === "waitlist" ? "You’ll receive the next steps and the membership offer before deciding to join." : registrationOnly ? "Enter your email code, then fill out your information." : "Enter the confirmation code we send to your email to continue to your profile."}</p></li>
+        <li><span>03</span><h3>{mode === "waitlist" ? "Get ready to begin." : registrationOnly ? "You’re registered." : "Make your profile."}</h3><p>{registrationOnly && mode !== "waitlist" ? "Save your card securely, with no charge today. Your welcome email confirms registration. We’ll send another email when your profile is ready." : mode === "paid" ? "Choose your member tag, complete your profile, and review your agreement. Confirm payment to activate membership." : mode === "payment-setup" ? "Create your profile and review your agreement. Saving a card is optional; no charge or paid membership starts until you explicitly confirm payment." : "When membership opens, review your agreement and confirm payment before starting Foundations."}</p></li>
       </ol>
-      <p className={styles.invitationNote}><Image src="/ruined-mark.svg" alt="" width={284} height={400} />Already have a personal invitation? Follow its link to join so your invitation stays connected. Complimentary invitations skip payment.</p>
     </section>
 
-    <section className={`${styles.wrap} ${styles.faq}`} aria-labelledby="questions-heading">
-      <div><p className={styles.eyebrow}>A few things to know</p><h2 id="questions-heading">Good questions.</h2><p>Something else on your mind?<br /><a href="mailto:connect@theruinedproject.com">Talk to us ↗</a></p></div>
-      <div className={styles.questions}>{questions.map(item => <details key={item.question}><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{paymentSetupOnly ? item.setupAnswer ?? item.answer : item.answer}</p></details>)}</div>
-    </section>
 
-    <section className={`${styles.wrap} ${styles.closing}`} aria-labelledby="closing-heading"><p className={styles.handwritten}>This is for you.</p><h2 id="closing-heading">You’re allowed to<br /><em>become someone new.</em></h2><button className={styles.primary} type="button" onClick={join}>{invitationAvailable ? "Get my invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span></button><p>{signupEnabled ? "Start with your invitation. Take the next step when you’re ready." : "Join the waitlist for your next step."}</p></section>
+    <MembershipQuestions mode={mode} registrationOnly={registrationOnly} />
 
-    <dialog ref={filmDialog} className={styles.filmDialog} aria-label="Ruined membership film" onClose={() => setModal(null)} onCancel={() => setModal(null)} onClick={event => { if (event.target === event.currentTarget) setModal(null); }}>
-      <button className={styles.filmClose} type="button" aria-label="Close film" onClick={() => setModal(null)}>Close <span aria-hidden="true">×</span></button>
-      <video ref={film} controls playsInline preload="none" data-cursor-native poster="/membership/foundations/beginning.webp" width={720} height={1280} aria-label="Inside Ruined — membership film"><source src="/media/membership-introduction.mp4" type="video/mp4" /><a href="/media/membership-introduction.mp4">Watch the membership film</a></video>
-    </dialog>
-    <dialog ref={signupDialog} className={styles.signupDialog} aria-labelledby="signup-heading" onClose={() => setModal(null)} onCancel={() => setModal(null)} onClick={event => { if (event.target === event.currentTarget) setModal(null); }}>
-      <button className={styles.signupClose} type="button" aria-label="Close membership signup" onClick={() => setModal(null)}>×</button>
-      <div className={styles.signupContent}>
-        <p className={styles.eyebrow}>{preview ? "Signup preview" : "Your next step"}</p>
-        <h2 id="signup-heading">Your place<br /><em>begins here.</em></h2>
-        {modal === "signup" ? <MembershipSignup previewInvitation={preview && paymentSetupOnly} paymentSetupOnly={paymentSetupOnly} key={signupVersion} enabled={signupEnabled} preview={preview} plan={annual ? "annual" : "monthly"} onPlanChange={plan => setAnnual(plan === "annual")} /> : null}
-      </div>
+    <div className={styles.finalNote}><p>What happens next is still yours.</p><span>After the fear.</span></div>
+
+    <dialog ref={filmDialog} className={styles.filmDialog} aria-label="Ruined membership film" onClose={() => setFilmOpen(false)} onCancel={() => setFilmOpen(false)} onClick={event => { if (event.target === event.currentTarget) setFilmOpen(false); }}>
+      <button className={styles.filmClose} type="button" aria-label="Close film" onClick={() => setFilmOpen(false)}>Close <span aria-hidden="true">×</span></button>
+      <video ref={film} controls playsInline preload="none" data-cursor-native poster="/media/membership-introduction-poster.jpg" width={720} height={1280} aria-label="Inside Ruined — membership film"><source src="/media/membership-introduction.mp4" type="video/mp4" /><a href="/media/membership-introduction.mp4">Watch the membership film</a></video>
     </dialog>
   </main>;
 }

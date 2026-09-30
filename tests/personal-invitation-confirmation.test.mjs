@@ -39,11 +39,12 @@ test("confirmation page forwards only the validated navigation cookie and never 
   const route = await load("../app/my/confirmed/page.tsx", {
     "next/headers": { cookies: async () => ({ get: name => {
       if (name === "ruined-signup-context") return { value: "annual" };
+      if (name === "ruined-direct-signup-context") return undefined;
       assert.equal(name, "ruined-invitation-context");
       return cookieValue === undefined ? undefined : { value: cookieValue };
     } }) },
     "@/components/platform/MemberEmailConfirmationStatus": { default: Status },
-    "@/lib/auth/request": { MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context" },
+    "@/lib/auth/request": { DIRECT_SIGNUP_CONTEXT_COOKIE: "ruined-direct-signup-context", MEMBER_INVITATION_CONTEXT_COOKIE: "ruined-invitation-context", MEMBER_SIGNUP_CONTEXT_COOKIE: "ruined-signup-context" },
     "@/lib/membership/invitation-model": { MEMBER_INVITATION_TOKEN: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/sharing": { privateSharingMetadata: { robots: { index: false, follow: false } } },
   });
@@ -51,7 +52,7 @@ test("confirmation page forwards only the validated navigation cookie and never 
     cookieValue = invitation;
     const tree = await route.default({ searchParams: Promise.resolve({ invitation: "Q".repeat(43), code: "SECRET-CODE", access_token: "SECRET-ACCESS", email: "PRIVATE@example.test", next: "https://attacker.example" }) });
     const status = elements(tree).find(element => element.type === Status);
-    assert.deepEqual(status.props, { invitationToken: invitation === token ? token : undefined });
+    assert.deepEqual(status.props, { invitationToken: invitation === token ? token : undefined, directSignup: false });
     assert.doesNotMatch(JSON.stringify(tree), /SECRET|PRIVATE|attacker|Q{43}/);
   }
   assert.equal(route.metadata.referrer, "no-referrer");
@@ -73,7 +74,7 @@ async function statusFixture() {
     "@/lib/auth/email-confirmation": confirmation,
   });
   return {
-    render: (invitationToken, signupPlan) => loaded.default({ invitationToken, signupPlan }),
+    render: (invitationToken, signupPlan, directSignup = false) => loaded.default({ invitationToken, signupPlan, directSignup }),
     consume: () => effect(),
     link: tree => elements(tree).find(element => element.type === Link),
   };
@@ -142,4 +143,13 @@ test("legacy signup plan context cannot bypass the invitation or authorize membe
     assert.match(content(tree), /does not confirm an email or grant access/);
     assert.equal(fixture.link(fixture.render(token, plan)).props.href, `/invitation/${token}#accept-invitation`);
   }
+});
+
+test("direct signup confirmation returns to inline registration without exposing a card token or claiming membership", async () => {
+  const fixture = await statusFixture();
+  const tree = fixture.render(token, undefined, true);
+  assert.equal(fixture.link(tree).props.href, "/membership#your-invitation");
+  assert.match(content(tree), /Continue registration/);
+  assert.match(content(tree), /request a one-time code/);
+  assert.doesNotMatch(JSON.stringify(tree), new RegExp(token));
 });

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { archiveDustIllumination, getArchiveLightLayout } from "./archive-lighting";
 
 /** Airborne paper dust, visible primarily where it crosses the room's light. */
-export default function AmbientParticles({ className, archive = false }: { className?: string; archive?: boolean }) {
+export default function AmbientParticles({ className, archive = false, roomRelative = false }: { className?: string; archive?: boolean; roomRelative?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const element = canvas.current;
@@ -79,7 +79,7 @@ export default function AmbientParticles({ className, archive = false }: { class
         ? width < 600 ? [130, 230, 1700] : [300, motes.length, 2400]
         : width < 600 ? [44, 70, 5200] : [98, motes.length, 8500];
       const count = Math.min(maximum, Math.max(minimum, Math.round(area / areaPerMote)));
-      const lightLayout = archive ? getArchiveLightLayout(width, height, roomSource.matches) : null;
+      const lightLayout = archive ? getArchiveLightLayout(width, height, roomRelative ? undefined : roomSource.matches) : null;
       // Seconds stay tied to visible time; archive drift needs enough travel to
       // read as airborne dust rather than stationary grain on the room image.
       const motionTime = elapsed * (archive ? 6 : 1);
@@ -130,6 +130,6 @@ export default function AmbientParticles({ className, archive = false }: { class
     const intersection = new IntersectionObserver(entries => { intersecting = entries[0]?.isIntersecting ?? false; sync(); }); intersection.observe(element);
     media.addEventListener("change", sync); roomSource.addEventListener("change", sync); document.addEventListener("visibilitychange", sync); resize();
     return () => { leaf.onload = null; cancelAnimationFrame(frame); observer.disconnect(); intersection.disconnect(); media.removeEventListener("change", sync); roomSource.removeEventListener("change", sync); document.removeEventListener("visibilitychange", sync); };
-  }, [archive]);
+  }, [archive, roomRelative]);
   return <canvas ref={canvas} className={className} aria-hidden="true" style={{ pointerEvents: "none" }} />;
 }

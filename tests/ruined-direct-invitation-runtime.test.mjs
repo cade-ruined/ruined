@@ -55,6 +55,49 @@ test("direct creation rejects privilege injection and malformed recipient, plan 
   assert.equal((await f.db.query("select * from member_personal_invitations")).rows.length, 0);
 });
 
+test("inline direct registration keeps tracking and lifetime without enqueuing an invitation email", async t => {
+  const f = await directFixture(t);
+  const issued = await f.issueRuinedDirectInvitation(input(), { emailDelivery: false });
+  const original = await f.row(issued.invitationId);
+  assert.equal(original.email_requested, false);
+  assert.equal(original.delivery_status, "not_requested");
+  assert.equal(original.next_attempt_at, null);
+  assert.equal(original.accepted_at, null);
+  assert.equal(original.membership_type, "standard");
+  assert.equal(new Date(original.expires_at) - new Date(original.issued_at), 48 * 60 * 60 * 1000);
+  assert.deepEqual(await f.issueRuinedDirectInvitation(input(), { emailDelivery: false }), { invitationId: issued.invitationId, created: false });
+  assert.deepEqual(await f.issue(input(2)), { invitationId: issued.invitationId, created: false });
+  assert.deepEqual(await f.row(issued.invitationId), original, "A later request cannot change delivery, preference or deadline.");
+  const token = await f.resolveRuinedDirectInvitationToken(newcomer.email, { invitationId: issued.invitationId });
+  assert.equal(token, original.public_token);
+  assert.equal(await f.resolveRuinedDirectInvitationToken(newcomer.email, { token }), token);
+  assert.equal(await f.resolveRuinedDirectInvitationToken(first.email, { token }), null);
+  await f.addMember(newcomer, false, true); await accept(f, issued.invitationId); await f.activate(newcomer);
+  assert.equal((await f.getOpsDirectInvitations(first.auth)).counts.joined, 1);
+  assert.equal((await f.db.query("select * from member_referrals")).rows.length, 0);
+});
+
+test("inline context lookup cannot use member-issued, revoked, expired, or malformed invitation identifiers", async t => {
+  const f = await directFixture(t);
+  const personal = await f.personalRepository.createOwnPersonalInvitation(first.auth, {
+    requestId: uuid(8980), recipientName: "Alex", recipientEmail: newcomer.email, sendEmail: false,
+  });
+  const memberToken = personal.invitations[0].url.split("/").pop();
+  assert.equal(await f.resolveRuinedDirectInvitationToken(newcomer.email, { token: memberToken }), null);
+  const issued = await f.issueRuinedDirectInvitation(input(), { emailDelivery: false });
+  const original = await f.row(issued.invitationId);
+  await f.db.query("update member_personal_invitations set revoked_at=clock_timestamp() where id=$1", [issued.invitationId]);
+  assert.equal(await f.resolveRuinedDirectInvitationToken(newcomer.email, { token: original.public_token }), null);
+  await f.db.query(`insert into member_personal_invitations(id,origin,member_id,request_id,public_token,recipient_name,
+    recipient_email_normalized,inviter_name,email_requested,membership_type,billing_plan,issued_at,expires_at)
+    values($1,'ruined_direct',null,$2,$3,'Expired Recipient',$4,'Ruined',false,'standard','monthly',
+      statement_timestamp()-interval '49 hours',statement_timestamp()-interval '1 hour')`,
+  [uuid(8981), uuid(8982), "X".repeat(43), newcomer.email]);
+  assert.equal(await f.resolveRuinedDirectInvitationToken(newcomer.email, { token: "X".repeat(43) }), null);
+  assert.equal(await f.resolveRuinedDirectInvitationToken(newcomer.email, { token: "invalid" }), null);
+  assert.equal(await f.resolveRuinedDirectInvitationToken(newcomer.email, { invitationId: "invalid" }), null);
+});
+
 test("retries preserve the original name, plan, token and fixed deadline without duplicating email work", async t => {
   const f = await directFixture(t), original = await f.issue(), before = await f.row(original.invitationId);
   assert.deepEqual(await f.issue(), { invitationId: original.invitationId, created: false });

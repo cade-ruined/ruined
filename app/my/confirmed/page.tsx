@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
 import MemberEmailConfirmationStatus from "@/components/platform/MemberEmailConfirmationStatus";
-import { MEMBER_INVITATION_CONTEXT_COOKIE } from "@/lib/auth/request";
+import { DIRECT_SIGNUP_CONTEXT_COOKIE, MEMBER_INVITATION_CONTEXT_COOKIE } from "@/lib/auth/request";
 import { MEMBER_INVITATION_TOKEN } from "@/lib/membership/invitation-model";
 import { privateSharingMetadata } from "@/lib/sharing";
 
@@ -21,6 +21,7 @@ export default async function MyRuinedEmailConfirmedPage() {
   const invitationToken = typeof invitation === "string" && MEMBER_INVITATION_TOKEN.test(invitation)
     ? invitation
     : undefined;
+  const directSignup = MEMBER_INVITATION_TOKEN.test(cookieStore.get(DIRECT_SIGNUP_CONTEXT_COOKIE)?.value ?? "");
   return (
     <main className="member-journey-page member-confirmation-page grid min-h-[68vh] gap-14 border-t border-[var(--member-rule)] pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-24">
       <div>
@@ -32,7 +33,7 @@ export default async function MyRuinedEmailConfirmedPage() {
         </h1>
       </div>
 
-      <MemberEmailConfirmationStatus invitationToken={invitationToken} />
+      <MemberEmailConfirmationStatus invitationToken={invitationToken} directSignup={directSignup} />
     </main>
   );
 }

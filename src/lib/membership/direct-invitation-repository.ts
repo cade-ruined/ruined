@@ -32,8 +32,12 @@ function parseInput(value: unknown): RuinedDirectInvitationInput {
 /** Called only after the launch/readiness and public signup rate-limit gates.
  * The public response must never include the token, recipient identity or eligibility.
  */
-export async function issueRuinedDirectInvitation(value: RuinedDirectInvitationInput): Promise<RuinedDirectInvitationIssue | null> {
+export async function issueRuinedDirectInvitation(
+  value: RuinedDirectInvitationInput,
+  options: { emailDelivery?: boolean } = {},
+): Promise<RuinedDirectInvitationIssue | null> {
   const input = parseInput(value);
+  const emailDelivery = options.emailDelivery !== false;
   if (!getPlatformConfiguration().membershipSignupReady) return null;
   return getApplicationDatabase().begin(async tx => {
     // Serialize request collisions first, then duplicate recipients. Namespace 2
@@ -69,8 +73,31 @@ export async function issueRuinedDirectInvitation(value: RuinedDirectInvitationI
       member_id,origin,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,inviter_tag,
       email_requested,delivery_status,next_attempt_at,membership_type,billing_plan)
       values(null,'ruined_direct',${input.requestId}::uuid,${randomBytes(32).toString("base64url")},${input.recipientName},${input.recipientEmail},
-        'Ruined',null,true,'queued',statement_timestamp(),'standard',${input.billingPlan}) returning id`;
+        'Ruined',null,${emailDelivery},${emailDelivery ? "queued" : "not_requested"},
+        case when ${emailDelivery} then statement_timestamp() else null end,'standard',${input.billingPlan}) returning id`;
     if (!created) throw new MemberInvitationError(503, "Your invitation could not be prepared. Please try again.");
     return { invitationId: created.id, created: true };
   });
+}
+
+/** Server-only navigation context. It never authorizes identity or membership;
+ * the verified recipient and invitation are checked again during atomic claim.
+ */
+export async function resolveRuinedDirectInvitationToken(
+  recipientEmail: string,
+  context: { invitationId: string } | { token: string },
+): Promise<string | null> {
+  const invitationId = "invitationId" in context ? context.invitationId : null;
+  const token = "token" in context ? context.token : null;
+  if ((invitationId !== null && !PERSONAL_INVITATION_UUID.test(invitationId))
+    || (token !== null && !/^[A-Za-z0-9_-]{43}$/.test(token))) return null;
+  const [row] = await getApplicationDatabase()<Array<{ public_token: string }>>`
+    select public_token from member_personal_invitations
+    where origin = 'ruined_direct' and member_id is null and membership_type = 'standard'
+      and recipient_email_normalized = ${recipientEmail.trim().toLowerCase()}
+      and ((${invitationId}::uuid is not null and id = ${invitationId}::uuid)
+        or (${token}::text is not null and public_token = ${token}))
+      and revoked_at is null and expires_at > clock_timestamp()
+    limit 1`;
+  return row?.public_token ?? null;
 }

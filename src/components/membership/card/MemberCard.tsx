@@ -21,7 +21,7 @@ class SceneBoundary extends Component<{ children: ReactNode; onError: () => void
 }
 const restingPose: CardPose = { x: 0, y: 0, tiltX: 0, tiltY: 0, roll: 0, lifted: false, side: "front", reduced: false, reset: 0 };
 
-export default function MemberCard({ card, compact = false, archive = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, invitationSource = "member", onDownload, onArchiveShadow }: { card: PublicMemberCard; compact?: boolean; archive?: boolean; variant?: CardVariant; invitationExpiresAt?: string | null; invitationRecipientName?: string | null; invitationSource?: "member" | "ruined_direct"; onDownload?: () => void; onArchiveShadow?: (shadow: ArchiveShadow | null) => void }) {
+export default function MemberCard({ card, compact = false, archive = false, embedded = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, invitationSource = "member", onDownload, onArchiveShadow }: { card: PublicMemberCard; compact?: boolean; archive?: boolean; embedded?: boolean; variant?: CardVariant; invitationExpiresAt?: string | null; invitationRecipientName?: string | null; invitationSource?: "member" | "ruined_direct"; onDownload?: () => void; onArchiveShadow?: (shadow: ArchiveShadow | null) => void }) {
   const direct = variant === "invitation" && invitationSource === "ruined_direct";
   const identity = direct ? "The Ruined Project" : publicMemberCardIdentity(card);
   const id = useId(), stage = useRef<HTMLDivElement>(null), handle = useRef<HTMLDivElement>(null), flatCanvas = useRef<HTMLCanvasElement>(null);
@@ -52,9 +52,9 @@ export default function MemberCard({ card, compact = false, archive = false, var
         const refined = await createCardArtwork(card, variant, invitationExpiresAt, invitationRecipientName, invitationSource);
         if (!cancelled) setArtworkResult({ card, variant, invitationExpiresAt, invitationRecipientName, invitationSource, artwork: refined });
       }
-    }).catch(() => { if (!cancelled) { setArtworkError(true); setStatus("The image could not load. Every card detail is available below."); } });
+    }).catch(() => { if (!cancelled) { setArtworkError(true); setStatus(embedded ? "The invitation image could not load. You can still request your invitation." : "The image could not load. Every card detail is available below."); } });
     return () => { cancelled = true; };
-  }, [card, variant, invitationExpiresAt, invitationRecipientName, invitationSource]);
+  }, [card, variant, invitationExpiresAt, invitationRecipientName, invitationSource, embedded]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     function sync() { setPose(value => ({ ...value, reduced: media.matches })); }
@@ -120,10 +120,10 @@ export default function MemberCard({ card, compact = false, archive = false, var
     finally { setDownloading(false); }
   }
   const flatView = flat || failed || artworkError || pose.reduced;
-  return <section className={styles.viewer} data-member-card data-card-side={pose.side} data-card-renderer={flatView ? "flat" : ready && artwork ? "3d" : "loading"} data-compact={compact || undefined} aria-label={variant === 'invitation' ? `An invitation from ${identity}` : `${identity}'s Ruined member card`}>
+  return <section className={styles.viewer} data-member-card data-card-side={pose.side} data-card-renderer={flatView ? "flat" : ready && artwork ? "3d" : "loading"} data-compact={compact || undefined} data-embedded={embedded || undefined} aria-label={variant === 'invitation' ? `An invitation from ${identity}` : `${identity}'s Ruined member card`}>
     <div ref={stage} className={styles.stage} data-lifted={pose.lifted || undefined} aria-describedby={`${id}-hint`}>
-      {compact ? <AmbientParticles className={styles.particles} /> : null}
-      {!archive ? <div className={styles.ground} aria-hidden="true" /> : null}
+      {compact && !embedded ? <AmbientParticles className={styles.particles} /> : null}
+      {!archive && !embedded ? <div className={styles.ground} aria-hidden="true" /> : null}
       <div className={styles.flat} data-visible={flatView || !ready || !artwork} aria-hidden="true">
         {artwork ? <canvas ref={flatCanvas} /> : <div className={styles.placeholder}><img src="/ruined-wordmark.svg" alt="" /><div className={styles.emptyPortrait} /><span>{identity}</span></div>}
       </div>
@@ -132,18 +132,19 @@ export default function MemberCard({ card, compact = false, archive = false, var
         onClick={(event) => { if (event.detail === 0 || flatView || !ready || !artwork) flip(); }}
         onPointerLeave={() => { if (!drag.current) setPose(value => ({ ...value, tiltX: 0, tiltY: 0 })); }}
         onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); flip(); } if (event.key === "Escape") { event.preventDefault(); const active = drag.current; drag.current = null; if (active && event.currentTarget.hasPointerCapture(active.id)) event.currentTarget.releasePointerCapture(active.id); setPose(value => ({ ...restingPose, reduced: value.reduced, reset: value.reset + 1 })); } }} />
-      <p className={styles.hint} id={`${id}-hint`}>{flatView ? "Your card, front and back." : !artwork || !ready ? "Preparing your card…" : "Drag to rotate · Tap to flip"}</p>
+      <p className={embedded ? styles.visuallyHidden : styles.hint} id={`${id}-hint`}>{flatView ? "Your card, front and back." : !artwork || !ready ? "Preparing your card…" : "Drag to rotate · Tap to flip"}</p>
     </div>
     <div className={styles.controls}>
-      <button type="button" onClick={flip}><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><path d="M4 4h9v12H4zM16 6l2 3-2 3M1 8l-2 3 2 3" /></svg>Flip card</button>
-      <button type="button" onClick={download} disabled={!artwork || downloading}>{downloading ? "Preparing…" : "Save image"}<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><path d="M10 2v11m-4-4 4 4 4-4M3 14v4h14v-4" /></svg></button>
-      {!pose.reduced && !failed ? <button className={styles.flatToggle} type="button" onClick={() => setFlat(value => !value)} aria-pressed={flat}>{flat ? "3D view" : "Still view"}</button> : null}
+      <button type="button" onClick={flip}><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><path d="M4 4h9v12H4zM16 6l2 3-2 3M1 8l-2 3 2 3" /></svg>{embedded ? "Flip" : "Flip card"}</button>
+      {!embedded ? <button type="button" onClick={download} disabled={!artwork || downloading}>{downloading ? "Preparing…" : "Save image"}<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><path d="M10 2v11m-4-4 4 4 4-4M3 14v4h14v-4" /></svg></button> : null}
+      {!pose.reduced && !failed ? <button className={styles.flatToggle} type="button" onClick={() => setFlat(value => !value)} aria-pressed={flat}>{embedded ? flat ? "Resume motion" : "Pause motion" : flat ? "3D view" : "Still view"}</button> : null}
     </div>
-    <p className={styles.status} role="status">{status}</p>
-    <details className={styles.details}><summary>{variant === "invitation" ? "Read invitation" : "Read card details"}<span aria-hidden="true">+</span></summary><div>
+    <p className={embedded ? styles.visuallyHidden : styles.status} role="status">{status}</p>
+    {embedded ? <p className={styles.visuallyHidden}>{invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new. {memberInvitationDeadline(invitationExpiresAt) ? `Valid until ${memberInvitationDeadline(invitationExpiresAt)}.` : "Valid for 48 hours once created."}</p> : null}
+    {!embedded ? <details className={styles.details}><summary>{variant === "invitation" ? "Read invitation" : "Read card details"}<span aria-hidden="true">+</span></summary><div>
       <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${identity}` : card.name}</p>{variant === "invitation" ? <><p>{invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new.</p>{memberInvitationDeadline(invitationExpiresAt) ? <p>Valid until <time dateTime={invitationExpiresAt!}>{memberInvitationDeadline(invitationExpiresAt)}</time>.</p> : <p>Valid for 48 hours once created.</p>}<p>{direct ? "Ruined Direct. Accept below, verify your email, then complete your profile, agreement, and payment." : "A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining."}</p></> : null}
       {!direct ? <dl>{card.memberTag ? <div><dt>Member tag</dt><dd>@{card.memberTag}</dd></div> : null}{card.memberSince ? <div><dt>Member since</dt><dd>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince))}</dd></div> : null}{card.location ? <div><dt>Based in</dt><dd>{card.location}</dd></div> : null}{card.buildingNow ? <div><dt>Currently building</dt><dd>{card.buildingNow}</dd></div> : null}{card.bio ? <div><dt>About</dt><dd>{card.bio}</dd></div> : null}{card.labels.length ? <div><dt>Along the way</dt><dd>{card.labels.join(" · ")}</dd></div> : null}</dl> : null}
       {!direct && card.websiteUrl ? <a href={card.websiteUrl} target="_blank" rel="noopener noreferrer">Visit website ↗</a> : null}
-    </div></details>
+    </div></details> : null}
   </section>;
 }

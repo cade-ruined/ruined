@@ -490,6 +490,42 @@ test("adding posts the exact member and Circle once, then uses the real assignme
   assert.equal(fixture.refreshes(), 1);
 });
 
+function capacityReasonControl(fixture, tree = fixture.draw()) {
+  return nodes(tree).find(node => node.type === "textarea" && node.props.maxLength === 1000);
+}
+
+test("eleven-person add has an optional couple reason that requests review without changing the roster", async () => {
+  const circle = { ...firstCircle, activeMembers: 11 };
+  const reason = "Keep both shared-membership partners in this Circle";
+  const fixture = harness({ initialCircleId: circle.id, initialCircles: [circle, secondCircle] }, async () => ok({ review: { id: "review-1" } }));
+  const field = capacityReasonControl(fixture);
+  assert.ok(field); assert.equal(field.props.required, false);
+  assert.match(text(fixture.draw()), /for placing a couple.*A couple would bring this Circle to 13 people/);
+  assert.match(text(fixture.draw()), /Shared-membership partners are placed together\. Both must meet placement requirements/);
+  field.props.onChange({ target: { value: reason } });
+  assert.equal(text(fixture.button(`Add ${candidate.name} to ${circle.name}`)), "Request exception");
+  await fixture.submitAdd(circle);
+  assert.deepEqual(fixture.calls, [{ url: "/api/ops/circle-placement-reviews", method: "POST", body: { memberId: candidate.memberId, circleId: circle.id, reason } }]);
+  assert.match(text(namedCircle(fixture, circle)), /11 people/);
+  assert.equal(nodes(circleRoster(fixture, circle)).some(node => node.type === "li" && node.key === "103"), false);
+  assert.equal(fixture.refreshes(), 1);
+  assert.equal(capacityReasonControl(fixture).props.value, "", "a completed review request does not leak its reason into the next candidate");
+});
+
+test("eleven-person add stays routine with a blank reason, twelve requires review, and lower counts omit the field", async () => {
+  for (const activeMembers of [10, 11, 12]) {
+    const circle = { ...firstCircle, activeMembers };
+    const fixture = harness({ initialCircleId: circle.id, initialCircles: [circle, secondCircle] }, async () => ok({ assignment: { id: "103", assignedAt: "2026-09-08T00:00:00Z", circleId: circle.id, memberId: candidate.memberId, created: true } }));
+    const field = capacityReasonControl(fixture);
+    assert.equal(Boolean(field), activeMembers >= 11);
+    if (field) assert.equal(field.props.required, activeMembers >= 12);
+    if (activeMembers === 12) field.props.onChange({ target: { value: "An approved larger Circle is needed" } });
+    await fixture.submitAdd(circle);
+    assert.equal(fixture.calls[0].url, activeMembers === 12 ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-assignments");
+    assert.equal(fixture.refreshes(), 1);
+  }
+});
+
 test("removal is a separate confirmation bound to the displayed Circle and preserves the other roster", async () => {
   const fixture = harness({ initialCircleId: secondCircle.id }, async () => ok({ assignment: { circleId: secondCircle.id, circleStatus: "archived", blockId: "block-1", blockStatus: "archived" } }));
   fixture.click(`Remove ${secondAssignment.name} from ${secondCircle.name}`);
@@ -721,6 +757,61 @@ test("roster Move requires choosing another Circle, then posts its exact current
   assert.ok(nodes(circleRoster(fixture, secondCircle)).some((node) => node.type === "li" && node.key === "201"));
   assert.ok(nodes(circleRoster(fixture, secondCircle)).some((node) => node.type === "li" && node.key === secondAssignment.assignmentId));
   assert.equal(fixture.refreshes(), 1);
+});
+
+test("moving a couple into eleven people can request review; a blank reason keeps the existing transfer contract", async () => {
+  for (const reason of ["", "Move the shared-membership partners together"]) {
+    const destination = { ...secondCircle, activeMembers: 11 };
+    const fixture = moveFixture({ initialCircles: [firstCircle, destination] }, async () => ok(movedResponse));
+    fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+    selectDestination(fixture, destination.id);
+    const field = capacityReasonControl(fixture);
+    assert.ok(field); assert.equal(field.props.required, false);
+    assert.match(text(fixture.draw()), /Shared-membership partners move together\. Both must meet placement requirements/);
+    assert.match(text(fixture.draw()), /for moving a couple.*A couple would bring this Circle to 13 people/);
+    field.props.onChange({ target: { value: reason } });
+    await fixture.click(reason ? "Request exception" : "Confirm move");
+    assert.deepEqual(fixture.calls, [{ url: reason ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-transfers", method: "POST", body: reason
+      ? { memberId: movableAssignment.memberId, circleId: destination.id, reason }
+      : { memberId: movableAssignment.memberId, fromCircleId: firstCircle.id, assignmentId: movableAssignment.assignmentId, toCircleId: destination.id } }]);
+    assert.equal(fixture.refreshes(), 1);
+    if (reason) {
+      assert.match(text(namedCircle(fixture, destination)), /11 people/);
+      assert.ok(nodes(circleRoster(fixture, firstCircle)).some(node => node.type === "li" && node.key === movableAssignment.assignmentId));
+    }
+  }
+});
+
+test("changing a move destination clears the previous couple review reason", () => {
+  const thirdCircle = { ...secondCircle, id: "third-circle", name: "Third Circle", activeMembers: 11 };
+  const fixture = moveFixture({ initialCircles: [firstCircle, { ...secondCircle, activeMembers: 11 }, thirdCircle] });
+  fixture.click(`Move ${movableAssignment.name} from ${firstCircle.name}`);
+  selectDestination(fixture);
+  capacityReasonControl(fixture).props.onChange({ target: { value: "For the original destination only" } });
+  selectDestination(fixture, thirdCircle.id);
+  assert.equal(capacityReasonControl(fixture).props.value, "");
+  assert.equal(fixture.button("Confirm move").props.disabled, false);
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("the server refresh supplies both partners and exact counts after an atomic move", async () => {
+  const source = { ...firstCircle, activeMembers: 2 };
+  const partner = { ...movableAssignment, assignmentId: "partner-before", memberId: candidate.memberId, name: "Partner", email: candidate.email };
+  const fixture = moveFixture({ initialCircles: [source, secondCircle], initialAssignments: [movableAssignment, partner, secondAssignment] }, async () => ok({ transfer: { ...movedResponse.transfer, fromCircleStatus: "archived" } }));
+  fixture.click(`Move ${movableAssignment.name} from ${source.name}`);
+  selectDestination(fixture);
+  await fixture.click("Confirm move");
+  assert.equal(fixture.refreshes(), 1);
+  fixture.update({ initialCircles: [{ ...source, activeMembers: 0, status: "archived" }, { ...secondCircle, activeMembers: 3 }], initialAssignments: [
+    { ...movableAssignment, assignmentId: movedResponse.transfer.id, circleId: secondCircle.id, assignedAt: movedResponse.transfer.assignedAt },
+    { ...partner, assignmentId: "partner-after", circleId: secondCircle.id, assignedAt: movedResponse.transfer.assignedAt }, secondAssignment,
+  ] });
+  assert.match(text(namedCircle(fixture, source)), /0 people/);
+  assert.match(text(namedCircle(fixture, secondCircle)), /3 people/);
+  assert.equal(nodes(circleRoster(fixture, source)).some(node => node.type === "li" && ["101", "partner-before"].includes(node.key)), false);
+  fixture.open(secondCircle);
+  const keys = nodes(circleRoster(fixture, secondCircle)).filter(node => node.type === "li").map(node => node.key);
+  assert.ok(keys.includes("201")); assert.ok(keys.includes("partner-after"));
 });
 
 test("Move here from an assigned search result preselects the viewed destination, not the person's source", async () => {

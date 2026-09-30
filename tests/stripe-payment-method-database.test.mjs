@@ -49,7 +49,12 @@ test("storage-only Checkout binds consent, mode and method without activating me
     setupIntents:{retrieve:async intentId=>structuredClone(intents.get(intentId))},
     paymentMethods:{retrieve:async methodId=>structuredClone(methods.get(methodId)),update:async(methodId,params)=>Object.assign(methods.get(methodId),params),detach:async methodId=>{if(failDetach)throw new Error("provider unavailable");methods.get(methodId).customer=null;return structuredClone(methods.get(methodId));}},
   };
+  const registration = await load("src/lib/membership/registration-repository.ts", {
+    "@/lib/database/server": { getApplicationDatabase: () => sql },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
+  });
   const service=await load("src/lib/stripe/payment-method-service.ts",{
+    "@/lib/membership/registration-repository": registration,
     "@/lib/stripe/database":{getBillingDatabase:()=>sql},"@/lib/platform/config":{getPlatformConfiguration:()=>({mode:"connected",minimumAge:18,stripePaymentSetupReady:setupEnabled})},
     "@/lib/stripe/server":{getStripe:()=>stripe,getStripeLivemode:()=>mode},"@/lib/stripe/membership-state":{isUuid:value=>typeof value==="string"&&/^[0-9a-f-]{36}$/.test(value)},
     "@/lib/stripe/payment-method-model":model,"@/lib/stripe/payment-method-repository":repository,

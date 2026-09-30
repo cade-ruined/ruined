@@ -16,3 +16,13 @@
 @media(max-width:600px){.stage{--card-stage-height:var(--member-card-stage-height,clamp(365px,122vw,520px))}.controls{gap:18px;padding-top:12px}.controls button{font-size:11px}.details{margin-inline:18px}.handle{width:78%;left:11%}.viewer[data-compact] .stage{--card-stage-height:390px}}
 @media(prefers-reduced-motion:reduce){.flat{transform:translate(-50%,-50%)}.handle{touch-action:pan-y}}
 @media(forced-colors:active){.details{border:1px solid CanvasText}.details summary,.controls button{color:CanvasText}}
+
+/* Inline editorial placement inherits its surroundings; the printed card keeps its own ink. */
+.viewer[data-embedded]{--card-ink:currentColor;--card-muted:currentColor;color:inherit}
+.viewer[data-embedded] .stage{--card-stage-height:var(--membership-invitation-height,clamp(380px,46vw,560px))}
+.viewer[data-embedded] .handle{touch-action:pan-y pinch-zoom}
+.viewer[data-embedded] .handle:focus-visible{outline-color:currentColor}
+.viewer[data-embedded] .controls{gap:24px;padding:0 0 4px}
+.viewer[data-embedded] .controls button{font-size:11px;color:inherit;opacity:.75}
+.viewer[data-embedded] .controls button:hover{opacity:1}
+.visuallyHidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}

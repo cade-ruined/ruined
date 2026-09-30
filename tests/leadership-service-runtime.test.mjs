@@ -51,7 +51,9 @@ async function fixture(t) {
     };
     sql.json = driver.json; sql.begin = fn => engine.transaction(tx => fn(wrap(tx))); return sql;
   }
-  const ops = await load("src/lib/platform/ops-repository.ts", { "server-only":{}, "node:crypto":crypto, "@/lib/identity/repository":{}, "@/lib/platform/calendar-audience-invalidation":{}, "@/lib/stripe/database":{getBillingDatabase:()=>wrap(db)}, "@/lib/stripe/membership-state":{} });
+  const ops = await load("src/lib/platform/ops-repository.ts", {
+    // This legacy fixture runs with registration-only enrollment disabled.
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: async () => {} }, "server-only":{}, "node:crypto":crypto, "@/lib/identity/repository":{}, "@/lib/platform/calendar-audience-invalidation":{}, "@/lib/stripe/database":{getBillingDatabase:()=>wrap(db)}, "@/lib/stripe/membership-state":{} });
   const model = await load("src/lib/platform/leadership-model.ts", {});
   const repository = await load("src/lib/platform/leadership-repository.ts", { "server-only":{}, "@/lib/stripe/database":{getBillingDatabase:()=>wrap(db)}, "@/lib/platform/ops-repository":ops, "@/lib/platform/leadership-model":model });
   const run = (actor,body) => repository.executeLeadershipCommand(actor,{ reason:"Reviewed in person.",...body });

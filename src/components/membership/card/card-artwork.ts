@@ -19,21 +19,20 @@ function randomFrom(seed: string) {
   return () => { value |= 0; value = value + 0x6d2b79f5 | 0; let n = Math.imul(value ^ value >>> 15, 1 | value); n ^= n + Math.imul(n ^ n >>> 7, 61 | n); return ((n ^ n >>> 14) >>> 0) / 4294967296; };
 }
 
-function canvas(width = CARD_WIDTH, height = CARD_HEIGHT) {
-  const value = document.createElement("canvas"); value.width = width; value.height = height; return value;
-}
+export type CardVariant = "member" | "invitation";
+export type CardArtworkEnvironment = {
+  createCanvas: (width: number, height: number) => HTMLCanvasElement;
+  loadImage: (src: string) => Promise<HTMLImageElement | null>;
+  loadFonts: (requests: string[]) => Promise<unknown>;
+  handwritingFamily: () => string;
+  editionYear: () => number;
+};
 
-function loadImage(src: string): Promise<HTMLImageElement | null> {
-  return new Promise(resolve => {
-    const value = new Image();
-    value.decoding = "async";
-    const timer = window.setTimeout(() => { value.onload = null; value.onerror = null; resolve(null); }, 9000);
-    value.onload = () => { clearTimeout(timer); resolve(value); };
-    value.onerror = () => { clearTimeout(timer); resolve(null); };
-    // Public and private portraits are same-origin, consent-filtered routes.
-    value.src = src;
-  });
-}
+/** The browser and transactional email print the same artwork. Each renderer owns
+ * its cache and drawing runtime; server rendering never mutates browser globals. */
+export function createCardArtworkRenderer(environment: CardArtworkEnvironment) {
+function canvas(width = CARD_WIDTH, height = CARD_HEIGHT) { return environment.createCanvas(width, height); }
+const loadImage = environment.loadImage;
 
 function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string = palette.muted, size = 19) {
   ctx.fillStyle = color; ctx.font = `500 ${size}px "Inter Variable", Inter, sans-serif`;
@@ -229,13 +228,9 @@ function cardMaterials(seed: string, photo: HTMLImageElement | null, variant: Ca
 
 function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number) { ctx.beginPath(); ctx.roundRect(x, y, w, h, radius); }
 
-export type CardVariant = "member" | "invitation";
+function handwritingFamily() { return environment.handwritingFamily(); }
 
-function handwritingFamily() {
-  return window.getComputedStyle(document.body).getPropertyValue("--font-cadehandy2").trim() || '"CadeHandy", cursive';
-}
-
-export function cardArtworkFontRequests(variant: CardVariant) {
+function cardArtworkFontRequests(variant: CardVariant) {
   return ['400 72px "IvyOra Text"', '500 20px "Inter Variable"', ...(variant === "invitation" ? ['700 38px "Inter Variable"', `400 118px ${handwritingFamily()}`] : [])];
 }
 
@@ -245,7 +240,7 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   mark(front, wordmark, 52, 49, 266, 80, "#ffffff");
   front.fillStyle = cream; front.font = '700 38px "Inter Variable", Inter, sans-serif';
   front.textBaseline = "top"; front.textAlign = "right";
-  const year = String(new Date().getUTCFullYear());
+  const year = String(environment.editionYear());
   front.fillText(year.slice(0, 2), 936, 52); front.fillText(year.slice(2), 936, 86);
   front.textAlign = "left";
 
@@ -292,10 +287,10 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   back.textAlign = "left";
 }
 
-export async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null, invitationSource: "member" | "ruined_direct" = "member"): Promise<CardArtwork> {
+async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null, invitationSource: "member" | "ruined_direct" = "member"): Promise<CardArtwork> {
   const invitation = variant === "invitation";
   const card = invitation ? { ...source, ...(invitationSource === "ruined_direct" ? { name: "The Ruined Project", memberTag: null } : {}), avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
-  const fonts = document.fonts ? Promise.allSettled(cardArtworkFontRequests(variant).map(font => document.fonts.load(font))) : Promise.resolve();
+  const fonts = environment.loadFonts(cardArtworkFontRequests(variant));
   let fontTimer: ReturnType<typeof setTimeout> | undefined;
   const [, [portrait, leaf, wordmark, paperPhoto, inkPhoto, invitationPhoto]] = await Promise.all([
     Promise.race([fonts, new Promise<void>(resolve => { fontTimer = setTimeout(resolve, 1800); })]).finally(() => { if (fontTimer) clearTimeout(fontTimer); }),
@@ -391,6 +386,27 @@ export async function createCardArtwork(source: PublicMemberCard, variant: CardV
   const roughness = canvas(512, 512); roughness.getContext("2d")!.drawImage(materials.front.roughness, 0, 0, 512, 512);
   return { front, back, roughness, frontRoughness: materials.front.roughness, backRoughness: materials.back.roughness, frontBump: materials.front.bump, backBump: materials.back.bump, frontFoilMask: foil.mask, backFoilMask: foil.mask, materialSeed: card.wearSeed };
 }
+
+return { createCardArtwork, cardArtworkFontRequests };
+}
+
+const browserArtworkRenderer = createCardArtworkRenderer({
+  createCanvas: (width, height) => { const value = document.createElement("canvas"); value.width = width; value.height = height; return value; },
+  loadImage: src => new Promise(resolve => {
+    const value = new Image();
+    value.decoding = "async";
+    const timer = window.setTimeout(() => { value.onload = null; value.onerror = null; resolve(null); }, 9000);
+    value.onload = () => { clearTimeout(timer); resolve(value); };
+    value.onerror = () => { clearTimeout(timer); resolve(null); };
+    // Public and private portraits are same-origin, consent-filtered routes.
+    value.src = src;
+  }),
+  loadFonts: requests => document.fonts ? Promise.allSettled(requests.map(font => document.fonts.load(font))) : Promise.resolve(),
+  handwritingFamily: () => window.getComputedStyle(document.body).getPropertyValue("--font-cadehandy2").trim() || '"CadeHandy", cursive',
+  editionYear: () => new Date().getUTCFullYear(),
+});
+export const createCardArtwork = browserArtworkRenderer.createCardArtwork;
+export const cardArtworkFontRequests = browserArtworkRenderer.cardArtworkFontRequests;
 
 export async function downloadCardArtwork(card: PublicMemberCard, artwork: CardArtwork, side: "front" | "back", variant: CardVariant = "member") {
   const blob = await new Promise<Blob | null>(resolve => artwork[side].toBlob(resolve, "image/png"));

@@ -1,3 +1,4 @@
+import { existingMemberRegistration } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -68,6 +69,8 @@ function contexts(session, { data = { private: "member snapshot" }, failure = nu
     "@/lib/platform/config": configuration,
     "@/lib/membership/preview-scenarios": {},
     "@/lib/membership/repository": { MembershipAccessDeniedError },
+    "./registration-repository": existingMemberRegistration,
+    "next/navigation": { redirect },
   }, logs);
   return { reads, logs, getters: [
     () => membership.getMembershipPageContext({ preview: true }, read, "test"),

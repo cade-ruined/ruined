@@ -46,3 +46,13 @@ export function archiveDustIllumination(x: number, y: number, layout: ArchiveLig
   const below = 1 - smooth(table.pool.y, table.frontY + reach * .045, y);
   return clamp(.16 + .84 * cone * above * below * (.76 + .24 * (1 - progress)), .16, 1);
 }
+
+export type ArchiveBounds = { left: number; top: number; width: number; height: number };
+
+/** A section's photograph travels with its card, so page scrolling cancels out. */
+export function getArchiveStageRegistration(stage: ArchiveBounds, room: ArchiveBounds, portraitSource?: boolean) {
+  return {
+    layout: getArchiveLightLayout(room.width, room.height, portraitSource),
+    rect: { left: stage.left - room.left, top: stage.top - room.top, width: stage.width, height: stage.height },
+  };
+}

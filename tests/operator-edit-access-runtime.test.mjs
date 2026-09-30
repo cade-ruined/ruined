@@ -52,7 +52,8 @@ async function fixture(t) {
     sql.begin = (options, callback) => engine.transaction((tx) => (callback ?? options)(wrap(tx)));
     return sql;
   }
-  const dependencies = { "server-only": {}, "node:crypto": crypto, "@/lib/identity/repository": {}, "@/lib/platform/repository": {},
+  // This legacy invitation/access fixture runs with registration-only enrollment disabled.
+  const dependencies = { "@/lib/membership/registration-repository": { enrollNewMemberRegistration: async () => {} }, "server-only": {}, "node:crypto": crypto, "@/lib/identity/repository": {}, "@/lib/platform/repository": {},
     "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) }, "@/lib/stripe/membership-state": { normalizeEmail: (value) => value.trim().toLowerCase(), isPlausibleEmail: (value) => value.includes("@") },
     "@/lib/platform/calendar-audience-invalidation": { markCalendarAudiencesPendingForMember: (tx, input) => tx`insert into test_calendar values (${input.memberId}::uuid)` } };
   const access = await load("src/lib/platform/ops-access-repository.ts", dependencies);

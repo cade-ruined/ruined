@@ -103,6 +103,8 @@ async function fixture(t, { migrate = true } = {}) {
     db, statements,
     create: async (name) => {
       const creationRepository = await load("src/lib/platform/ops-repository.ts", {
+    // This legacy fixture runs with registration-only enrollment disabled.
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: async () => {} },
         "server-only": {}, "node:crypto": crypto,
         "@/lib/identity/repository": {},
         "@/lib/platform/calendar-audience-invalidation": {},

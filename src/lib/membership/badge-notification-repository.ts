@@ -27,6 +27,7 @@ async function lockBadgeOwner(tx: TransactionSql, authUserId: string): Promise<s
     join platform_role_grants member_grant on member_grant.auth_user_id = account.auth_user_id
       and member_grant.role_slug = 'member' and member_grant.revoked_at is null
     where account.auth_user_id = ${authUserId}::uuid and account.status = 'active'
+      and private.ruined_member_profile_released(member.id)
     for share of account, member, person, lifecycle, member_grant
   `;
   if (!owner) throw new BadgeNotificationError(403, "Your member badges are unavailable.");

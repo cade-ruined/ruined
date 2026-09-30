@@ -1,3 +1,4 @@
+import { enrollNewMemberRegistration } from "@/lib/membership/registration-repository";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -155,6 +156,7 @@ export async function preparePersonalInvitationClaim(tx: TransactionSql, viewer:
     [member] = await tx<typeof members>`insert into ruined_members(id,person_id,email,email_normalized,membership_state)
       values(${randomUUID()}::uuid,${personId}::uuid,${email},${email},'pending') returning id,person_id,email_normalized,deleted_at`;
     if (!member) return deny();
+    await enrollNewMemberRegistration(tx, member.id);
   }
 
   // Referral attribution still uses its canonical first-interest row, but

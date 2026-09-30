@@ -75,6 +75,14 @@ If adding or transferring a person would take the destination above 12, the ordi
 
 Approval and placement are recorded together. A pending or declined review never places or moves the person. A larger Circle has no arbitrary hard cap introduced by this policy; each placement exceeding the normal range needs the recorded review.
 
+### Couples stay together
+
+Two people registered on the same confirmed couples membership are placed in the same Circle. Placement and transfers apply to both partners in one transaction; both must meet the existing entry and active-membership requirements. If either placement fails, neither is changed. When a partner is already placed, choose that Circle or move them together from the current Circle.
+
+Count room for both partners, including any existing Supporter seat. Adding a couple to a Circle with 11 people needs a capacity exception even though adding one individual would not. A shared membership awaiting payment stays linked until its checkout reservation is explicitly released. An ended membership no longer ties future placement to the former partner. Removing a person from a Circle is an explicit departure, not a transfer; it does not close or remove their partner's account.
+
+The database also rejects split placements and a new couples checkout for people already in different Circles. Resolve those placements before payment. Deploy `20260930113000_couple_circle_placement.sql` before the application changes; this document records the local implementation, not a production migration.
+
 ### Final Foundations moment
 
 An operator may prepare Circle placement while the member completes Foundations. Until completion, the member does not see that Circle's identity, roster, chat, shared resources, scoped announcements, or Circle meetings through member routes and permissions.

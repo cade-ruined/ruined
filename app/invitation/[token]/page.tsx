@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { InvitationLanding } from "@/components/membership/MemberInvitation";
 import { getPublicMemberInvitation } from "@/lib/membership/invitation-repository";
 import { MEMBER_INVITATION_TOKEN } from "@/lib/membership/invitation-model";
+import { getPlatformConfiguration } from "@/lib/platform/config";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -48,7 +49,7 @@ export default async function InvitationPage({ params }: Props) {
   if (!MEMBER_INVITATION_TOKEN.test(token)) notFound();
   const invitation = await readInvitation(token);
   if (!invitation) notFound();
-  return <InvitationLanding {...(invitation.invitationSource ? { invitationSource: invitation.invitationSource } : {})} card={invitation.card} expiresAt={invitation.expiresAt} token={token}
+  return <InvitationLanding registrationOnly={getPlatformConfiguration().membershipRegistrationOnly} {...(invitation.invitationSource ? { invitationSource: invitation.invitationSource } : {})} card={invitation.card} expiresAt={invitation.expiresAt} token={token}
     {...(invitation.paymentSetupOnly ? { paymentSetupOnly: true } : {})} membershipType={invitation.membershipType} complimentaryEndsAt={invitation.complimentaryEndsAt}
     {...(invitation.recipientName ? { recipientName: invitation.recipientName } : {})} />;
 }

@@ -50,6 +50,7 @@ function fixture({ allowed = true, rows = [] } = {}) {
   };
   const noSideEffect = () => { throw new Error("Unexpected write/provider/identity action in roster reader"); };
   const dependencies = {
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: noSideEffect },
     "server-only": {},
     "node:crypto": { randomUUID: noSideEffect },
     "@/lib/identity/repository": { ensurePersonForEmail: noSideEffect },

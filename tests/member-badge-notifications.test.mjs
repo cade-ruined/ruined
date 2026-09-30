@@ -37,6 +37,8 @@ async function fixture(t, { migrate = true } = {}) {
   t.after(() => db.close());
   await db.exec(`
     create role anon; create role authenticated; create schema private;
+    -- These isolated fixtures represent existing members without registration holds.
+    create function private.ruined_member_profile_released(uuid) returns boolean language sql stable as 'select true';
     create table people(id uuid primary key, status text default 'active');
     create table ruined_members(id uuid primary key, person_id uuid, member_number integer, deleted_at timestamptz);
     create table platform_users(auth_user_id uuid primary key, member_id uuid, person_id uuid, status text default 'active');

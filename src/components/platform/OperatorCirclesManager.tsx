@@ -139,6 +139,7 @@ export default function OperatorCirclesManager({
   }
 
   function beginMove(member: OpsCircleMemberAssignment, panelCircleId: string, toCircleId = "") {
+    setExceptionReason("");
     setConfirmation({ kind: "move", circleId: panelCircleId, memberId: member.memberId, assignmentId: member.assignmentId, toCircleId });
   }
   function searchHref(circleId: string, page = 1, query = memberQuery) {
@@ -164,6 +165,7 @@ export default function OperatorCirclesManager({
     setNotices((current) => ({ ...current, [key]: null }));
     try {
       const text = await work();
+      setExceptionReason("");
       setNotices((current) => ({ ...current, [key]: { error: false, text } }));
       setConfirmation(null);
       router.refresh();
@@ -180,7 +182,7 @@ export default function OperatorCirclesManager({
     const member = eligibleMembers.find((candidate) => candidate.memberId === memberId);
     if (!member || !available(circle)) return;
     await change(circle.id, async () => {
-      if (circle.activeMembers >= 12) {
+      if (circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim()) {
         await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: circle.id, reason: exceptionReason });
         return `Exception requested for ${member.name}. Tyler/Mitch must review before placement.`;
       }
@@ -217,7 +219,7 @@ export default function OperatorCirclesManager({
       const source = circles.find((item) => item.id === member?.circleId);
       if (!member || !source || !destination || source.id === destination.id || !available(destination) || transferIssue(member)) return;
       await change(circle.id, async () => {
-        if (destination.activeMembers >= 12) {
+        if (destination.activeMembers >= 12 || destination.activeMembers === 11 && exceptionReason.trim()) {
           await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: destination.id, reason: exceptionReason });
           return `Move requested for ${member.name}. Tyler/Mitch must review the capacity exception.`;
         }
@@ -294,10 +296,13 @@ export default function OperatorCirclesManager({
       const destination = circles.find((item) => item.id === confirmation.toCircleId);
       const destinations = circles.filter((item) => item.id !== member.circleId && available(item));
       const issue = transferIssue(member);
+      const requestsCapacityReview = Boolean(destination && (destination.activeMembers >= 12
+        || destination.activeMembers === 11 && exceptionReason.trim()));
       return <div className="mt-3 rounded-[4px] bg-[var(--color-shop)]/35 p-4" role="group" aria-label={`Move ${member.name} to another Circle`}>
         <p className="text-sm">Move <strong>{member.name}</strong> from <strong>{source?.name ?? "their Circle"}</strong>.</p>
+        <p className="mt-2 text-sm text-black/65">Shared-membership partners move together. Both must meet placement requirements.</p>
         {issue ? <p className="mt-2 text-sm text-[var(--color-poster)]">{issue} <Link className="underline" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership</Link></p> : destinations.length ? <>
-          <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Move to</span><select ref={destinationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label={`New Circle for ${member.name}`} value={confirmation.toCircleId} disabled={pending} onChange={(event) => setConfirmation({ ...confirmation, toCircleId: event.target.value })}>
+          <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Move to</span><select ref={destinationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label={`New Circle for ${member.name}`} value={confirmation.toCircleId} disabled={pending} onChange={(event) => { setExceptionReason(""); setConfirmation({ ...confirmation, toCircleId: event.target.value }); }}>
             <option value="">Choose a Circle</option>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target 10 · {item.status}</option>)}
           </select></label>
           <p className="mt-3 text-xs leading-relaxed text-black/65">Their membership and history stay intact. Above 12 people, Tyler/Mitch review the exception before the move.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
@@ -309,8 +314,8 @@ export default function OperatorCirclesManager({
           setCreateOpen(true);
           router.replace("/ops/circles#create-circle", { scroll: false });
         }}>Create a Circle</Link> first.</p>}
-        {destination && destination.activeMembers >= 12 ? <label className="mt-3 block text-sm">Exception reason<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} placeholder="Why is this placement appropriate above the normal range?" /></label> : null}
-        <div className="mt-3 flex flex-wrap gap-2"><button className={BUTTON} disabled={pending || !!issue || !destination || !available(destination) || destination.id === member.circleId} onClick={() => confirmChange(circle)} type="button">{pending ? "Saving…" : destination && destination.activeMembers >= 12 ? "Request exception" : "Confirm move"}</button><button className={SECONDARY} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
+        {destination && destination.activeMembers >= 11 ? <label className="mt-3 block text-sm">{destination.activeMembers === 11 ? "Capacity review reason · for moving a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={destination.activeMembers >= 12} placeholder="Why is this placement appropriate above the normal range?" />{destination.activeMembers === 11 ? <span className="mt-2 block text-xs text-black/60">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when moving one person.</span> : null}</label> : null}
+        <div className="mt-3 flex flex-wrap gap-2"><button className={BUTTON} disabled={pending || !!issue || !destination || !available(destination) || destination.id === member.circleId} onClick={() => confirmChange(circle)} type="button">{pending ? "Saving…" : requestsCapacityReview ? "Request exception" : "Confirm move"}</button><button className={SECONDARY} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
       </div>;
     }
     if (confirmation.kind === "delete" || confirmation.kind === "archive") {
@@ -396,6 +401,7 @@ export default function OperatorCirclesManager({
                   </div>
                   <details id={`member-search-${circle.id}`} open={!!memberQuery || !!initialMemberId || roster.length === 0} className="scroll-mt-4 rounded-[4px] bg-black/[0.035] p-4"><summary className="min-h-11 cursor-pointer content-center font-semibold focus-visible:outline-2">Add a member</summary><div className="mt-3">
                     {available(circle) ? <>
+                      <p className="mb-4 text-sm leading-relaxed text-black/60">Shared-membership partners are placed together. Both must meet placement requirements.</p>
                       <form action={`/ops/circles#member-search-${circle.id}`} method="get" className="mb-4 flex flex-wrap gap-2">
                         <input type="hidden" name="circleId" value={circle.id} />
                         <label className="min-w-0 flex-1"><span className="sr-only">Find a member for {circle.name}</span><input className={OPERATOR_FIELD_CLASS} defaultValue={memberQuery} name="memberQuery" placeholder="Search name or email" type="search" maxLength={120} disabled={pending} /></label>
@@ -405,7 +411,7 @@ export default function OperatorCirclesManager({
                         <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members without a Circle"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
                         {memberQuery ? <Link className="underline underline-offset-4" href={searchHref(circle.id, 1, "")}>Clear search</Link> : null}
                       </div>
-                      {circle.activeMembers >= 12 ? <label className="mb-4 block text-sm">Exception reason<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} placeholder="Explain why this placement should exceed the normal range. Tyler/Mitch will review it." /></label> : null}
+                      {circle.activeMembers >= 11 ? <label className="mb-4 block text-sm">{circle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={circle.activeMembers >= 12} placeholder="Explain why this placement should exceed the normal range. Tyler/Mitch will review it." />{circle.activeMembers === 11 ? <span className="mt-2 block text-xs text-black/60">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
                       <ul aria-label={`Member results for ${circle.name}`} className="grid gap-3">
                         {candidates.map((member) => {
                           const issue = placementIssue(member);
@@ -414,7 +420,7 @@ export default function OperatorCirclesManager({
                             {member.memberId === pinnedMemberId ? <p className="mb-2 text-xs font-semibold text-black/60">Selected from member profile</p> : null}
                             <form aria-label={`Add ${member.name} to ${circle.name}`} data-member-id={member.memberId} onSubmit={(event) => addMember(event, circle, member.memberId)} className="flex flex-wrap items-center justify-between gap-3">
                               <div className="flex min-w-0 flex-1 items-center gap-3"><OperatorMemberAvatar memberId={member.memberId} className="h-10 w-10" /><div className="min-w-0"><Link className="text-sm font-semibold underline decoration-black/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="break-all text-xs text-black/55">{member.email}</p></div></div>
-                              {assignment && assignment.circleId !== circle.id ? <button className={`${BUTTON} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : circle.activeMembers >= 12 ? "Request exception" : "Approve placement"}</button>}
+                              {assignment && assignment.circleId !== circle.id ? <button className={`${BUTTON} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${BUTTON} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim() ? "Request exception" : "Approve placement"}</button>}
                             </form>
                             {!issue ? <CirclePlacementRecommendations memberId={member.memberId} preview={preview} previewCircles={circles} /> : null}
                             {issue ? <div className="mt-2 text-xs leading-relaxed text-black/60"><p>{issue}</p>{assignment ? assignment.circleId !== circle.id ? <Link className="mt-1 inline-flex min-h-11 items-center underline underline-offset-4" href={searchHref(assignment.circleId)}>Open their Circle →</Link> : null : <Link className="mt-1 inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership →</Link>}</div> : null}

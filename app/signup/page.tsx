@@ -5,7 +5,7 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 
 export const metadata: Metadata = {
   title: "Join Ruined",
-  description: "Request your personal invitation, verify your email, and join Ruined.",
+  description: "Create your personal invitation, confirm your email with a code, and join Ruined.",
   robots: { index: false, follow: false },
   referrer: "no-referrer",
 };
@@ -19,6 +19,7 @@ export default async function SignupPage({ searchParams }: {
   const configuration = getPlatformConfiguration();
   const setupPreview = configuration.mode === "preview" && params.preview === "payment-setup";
   return <MembershipSignupPage
+    registrationOnly={configuration.membershipRegistrationOnly || setupPreview}
     initialPlan={isMembershipBillingPlan(requestedPlan) ? requestedPlan : "monthly"}
     enabled={configuration.mode === "connected" && configuration.membershipSignupReady === true}
     paymentSetupOnly={setupPreview || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)}

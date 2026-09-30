@@ -98,6 +98,8 @@ async function fixture(t) {
     return sql;
   }
   const repository = await load("src/lib/platform/ops-repository.ts", {
+    // This legacy fixture runs with registration-only enrollment disabled.
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: async () => {} },
     "server-only": {}, "node:crypto": crypto, "@/lib/identity/repository": {},
     "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },

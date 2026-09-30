@@ -1,3 +1,4 @@
+import { reconcileMemberRegistration } from "@/lib/membership/registration-repository";
 import "server-only";
 import type Stripe from "stripe";
 import type { BillingTransaction } from "@/lib/stripe/billing-repository";
@@ -264,6 +265,7 @@ export async function handlePaymentMethodSetupEvent(tx: BillingTransaction, even
   await tx`update member_payment_method_accounts set stripe_payment_method_id=${method.id},payment_method_display=${tx.json(displayFor(method))},saved_at=clock_timestamp(),updated_at=clock_timestamp()
     where member_id=${attempt.member_id}::uuid and stripe_account_id=${context.accountId} and livemode=${context.livemode}
       and consent_attempt_id=${attempt.id}::uuid and consent_revoked_at is null`;
+  await reconcileMemberRegistration(tx, attempt.member_id);
   return true;
 }
 

@@ -146,6 +146,12 @@ async function fixture(t) {
     return sql;
   };
   const basic = { "server-only": {}, "node:crypto": crypto };
+  const registration = await load("src/lib/membership/registration-repository.ts", {
+    ...basic,
+    "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
+  });
+  basic["@/lib/membership/registration-repository"] = registration;
   const identity = await load("src/lib/identity/repository.ts", basic);
   const database = { getApplicationDatabase: () => wrap(db), withFreshApplicationDatabaseRead: (_stage, read) => read() };
   const signup = await load("src/lib/membership/public-signup-admission.ts", {

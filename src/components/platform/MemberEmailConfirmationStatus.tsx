@@ -43,8 +43,10 @@ const INVITATION_MESSAGES: Record<MemberEmailConfirmationStatus, string> = {
 
 export default function MemberEmailConfirmationStatus({
   invitationToken,
+  directSignup = false,
 }: {
   invitationToken?: string;
+  directSignup?: boolean;
 }) {
   const [status, setStatus] = useState<MemberEmailConfirmationStatus>("neutral");
   const consumed = useRef(false);
@@ -63,7 +65,7 @@ export default function MemberEmailConfirmationStatus({
 
   const copy = STATUS_COPY[status];
   const hasInvitation = typeof invitationToken === "string" && /^[A-Za-z0-9_-]{43}$/.test(invitationToken);
-  const destination = hasInvitation ? `/invitation/${invitationToken}#accept-invitation` : "/access";
+  const destination = directSignup ? "/membership#your-invitation" : hasInvitation ? `/invitation/${invitationToken}#accept-invitation` : "/access";
 
   return (
     <section className="lg:pt-12" aria-live="polite" aria-labelledby="confirmation-status">
@@ -77,14 +79,18 @@ export default function MemberEmailConfirmationStatus({
         {copy.title}
       </h2>
       <p className="mt-5 text-sm leading-relaxed text-white/50">
-        {hasInvitation ? INVITATION_MESSAGES[status] : copy.message}
+        {directSignup
+          ? status === "confirmed"
+            ? "Your email address is confirmed. Return to registration to request a fresh one-time code and finish creating your profile."
+            : "Return to registration to request a one-time code and continue with your invitation."
+          : hasInvitation ? INVITATION_MESSAGES[status] : copy.message}
       </p>
       <Link
         className="mt-10 inline-flex min-h-12 items-center border border-white bg-white px-5 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white"
         href={destination}
         referrerPolicy="no-referrer"
       >
-        {hasInvitation
+        {directSignup ? "Continue registration" : hasInvitation
           ? status === "confirmed" ? "Continue to invitation" : "Return to invitation"
           : status === "confirmed" ? "Continue to access" : "Return to access"}
       </Link>

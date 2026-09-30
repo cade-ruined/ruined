@@ -23,6 +23,8 @@ export type MembershipStandingState =
   | "alumni";
 
 export type MemberCapability =
+  | "onboarding.read"
+  | "onboarding.write"
   | "account.read"
   | "artifacts.read"
   | "artifacts.write"
@@ -53,6 +55,7 @@ export type MemberAccessPolicy = {
 };
 
 export type MemberIdentity = {
+  registrationHeld?: boolean;
   /** Derived on the server from current operator grants, never from a form. */
   membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   accountState: AccountState;

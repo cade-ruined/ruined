@@ -1,3 +1,4 @@
+import { enrollNewMemberRegistration } from "@/lib/membership/registration-repository";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -196,6 +197,7 @@ export async function ensureOperatorMemberProfile(input: {
       `;
       member = insertedMembers[0];
       if (!member) throw new Error("The operator member profile could not be created.");
+      await enrollNewMemberRegistration(tx, member.id);
 
       // Insert the concrete onboarding record before lifecycle triggers create
       // their generic fallback. This is the same intake shape members use.

@@ -29,3 +29,34 @@ test("target 10 is soft, 12 needs review for the next arrival, connections never
 test("legacy invalid or absent timezones never fail the recommendation directory", () => {
   assert.doesNotThrow(() => scoreCirclePlacement({ ...preferences, timezone: "unknown" }, [{ circleId: "one", name: "One", activeMembers: 4, connectionPresent: false, participantPreferences: [{ ...preferences, timezone: "invalid" }] }]));
 });
+
+
+test("an unplaced couple member must join their partner's Circle, regardless of score", () => {
+  const results = scoreCirclePlacement(preferences, [
+    { circleId: "partner", name: "Partner's Circle", activeMembers: 11, incomingSeats: 1, connectionPresent: false, participantPreferences: [] },
+    { circleId: "other", name: "Other Circle", activeMembers: 2, incomingSeats: 2, connectionPresent: true, participantPreferences: [preferences] },
+  ], now, { memberCircleId: null, partnerCircleId: "partner" });
+  assert.deepEqual(results.map(item => item.circleId), ["partner"]);
+  assert.equal(results[0].exceptionRequired, false);
+  assert.match(results[0].reasons.join(" "), /shared memberships stay together/);
+});
+
+test("unplaced pairs and paired transfers budget for both seats", () => {
+  for (const memberCircleId of [null, "old-circle"]) {
+    const results = scoreCirclePlacement(preferences, [10, 11].map(count => ({
+      circleId: String(count), name: `Circle ${count}`, activeMembers: count,
+      incomingSeats: 2, connectionPresent: false, participantPreferences: [],
+    })), now, { memberCircleId, partnerCircleId: memberCircleId });
+    assert.equal(results.length, 2);
+    assert.equal(results.find(item => item.activeMembers === 10)!.exceptionRequired, false);
+    assert.equal(results.find(item => item.activeMembers === 11)!.exceptionRequired, true);
+    assert.match(results[0].reasons.join(" "), /Both partners are placed together/);
+  }
+});
+
+test("a coupled Circle Supporter does not consume the same seat twice", () => {
+  const [result] = scoreCirclePlacement(preferences, [{ circleId: "one", name: "One", activeMembers: 11,
+    incomingSeats: 1, connectionPresent: false, participantPreferences: [] }], now,
+    { memberCircleId: null, partnerCircleId: null });
+  assert.equal(result.exceptionRequired, false);
+});

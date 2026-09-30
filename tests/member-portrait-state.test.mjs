@@ -181,6 +181,7 @@ test("layout scopes portrait memory to verified members inside session recovery 
       "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status, viewer: { authUserId: "verified-owner", email: "private@example.test" } }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
       "@/lib/platform/repository": { getOperatorRole: async () => null },
+      "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
       "@/lib/platform/visibility": { isMyRuinedVisible: () => true },
       "@/lib/sharing": { privateSharingMetadata: {} },
     }).default;

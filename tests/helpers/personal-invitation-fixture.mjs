@@ -52,6 +52,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   if (applyExpiry) await db.exec(await source("db/migrations/20260925000000_complimentary_member_invitations.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260929000000_public_member_signup.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260929002000_ruined_direct_invitations.sql"));
+  if (applyExpiry) await db.exec(await source("db/migrations/20260930130000_direct_signup_confirmation.sql"));
   function wrap(client) {
     const sql = (strings, ...values) => {
       const parameters = values.map((value, index) => {
@@ -76,7 +77,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
       programState: row.program_state, foundationsState: row.foundations_state, administrativeOnboardingState: row.administrative_onboarding_state,
       standingState: row.standing_state, cancellationEffectiveAt: row.cancellation_effective_at, membershipFunding: row.operator ? "operator" : "self" };
   }
-  const configuration = { stripeCheckoutReady: true, membershipSignupReady: true };
+  const configuration = { stripeCheckoutReady: true, membershipSignupReady: true, membershipRegistrationOnly: false };
   const repository = await load("src/lib/membership/invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, read) => read() },
     "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity }, "./invitation-model": model,
@@ -90,8 +91,13 @@ export async function fixture(t, { applyExpiry = true } = {}) {
     "./invitation-model": model, "./personal-invitation-model": personalModel,
   });
   const waitlist = await load("src/lib/membership/waitlist-repository.ts", { "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => sql } });
+  const registration = await load("src/lib/membership/registration-repository.ts", {
+    "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => sql },
+    "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
+  });
   const ops = await load("src/lib/platform/ops-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/identity/repository": {}, "@/lib/platform/calendar-audience-invalidation": {},
+    "@/lib/membership/registration-repository": registration,
     "@/lib/stripe/database": { getBillingDatabase: () => sql }, "@/lib/stripe/membership-state": {},
   });
   const opsReferrals = await load("src/lib/platform/ops-member-referrals-repository.ts", {

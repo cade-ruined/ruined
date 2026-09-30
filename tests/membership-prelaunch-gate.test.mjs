@@ -65,6 +65,7 @@ async function fixture(enabled, options) {
     getPublicMembershipSignupEligibility: async email => { calls.publicEligibility.push(email); return true; },
   };
   const platformAccess = await load("src/lib/auth/platform-access.ts", {
+    "@/lib/membership/registration-repository": { getMemberRegistrationDestination: async () => null },
     "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts"),
     "@/lib/platform/repository": repository,
     "@/lib/platform/ops-access-repository": { claimPlatformOperatorForViewer: fail },
@@ -72,6 +73,7 @@ async function fixture(enabled, options) {
     "@/lib/membership/public-signup-admission": admission,
   }, env);
   const dependencies = {
+    "@/lib/membership/direct-invitation-repository": { resolveRuinedDirectInvitationToken: fail },
     "next/server": { NextResponse }, "@/lib/auth/request": authRequest,
     "@/lib/platform/config": config, "@/lib/auth/platform-access": platformAccess,
     "@/lib/platform/repository": repository,
@@ -103,6 +105,7 @@ async function fixture(enabled, options) {
     },
   }, env);
   const directAdmission = await load("src/lib/membership/personal-invitation-admission.ts", {
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: fail },
     "node:crypto": { randomUUID: fail }, "@/lib/database/server": { getApplicationDatabase: fail, withFreshApplicationDatabaseRead: fail },
     "@/lib/identity/repository": {}, "@/lib/platform/config": config,
   }, env);

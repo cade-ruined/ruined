@@ -7,7 +7,7 @@ import type { CardArtwork } from "./card-artwork";
 import { createMemberCardGeometry } from "./card-geometry";
 import { createCardFaceMaterial } from "./card-foil-material";
 import { CARD_CAMERA, CARD_REST_ROTATION, cardBoundsCorners, cardGroundHeight, nextCardCameraDistance, requiredCardCameraDistance, restingCardCameraDistance } from "./card-framing";
-import { getArchiveLightLayout, type ArchiveLightLayout, type ArchiveShadow } from "./archive-lighting";
+import { getArchiveStageRegistration, type ArchiveLightLayout, type ArchiveShadow } from "./archive-lighting";
 import { archiveLampPosition, createArchiveTableCalibration, projectArchiveShadow, type ArchiveStageRect, type ArchiveTableCalibration } from "./archive-card-lighting";
 
 export type CardPose = { x: number; y: number; tiltX: number; tiltY: number; roll: number; lifted: boolean; side: "front" | "back"; reduced: boolean; reset: number };
@@ -117,13 +117,16 @@ function CardObject({ artwork, pose, visible, onReady, onLost, archive = false, 
   useEffect(() => {
     if (!archive || !visible || pose.reduced) { shadowCallback.current?.(null); return; }
     let pending = 0;
+    const section = gl.domElement.closest("[data-archive-room]");
+    const surface = section?.querySelector("[data-archive-room-surface]") ?? section;
     const measure = () => {
       pending = 0;
       const bounds = gl.domElement.getBoundingClientRect(), root = document.documentElement;
-      const width = root.clientWidth || window.innerWidth, height = root.clientHeight || window.innerHeight;
+      const sectionBounds = surface?.getBoundingClientRect();
+      const width = sectionBounds?.width ?? (root.clientWidth || window.innerWidth);
+      const height = sectionBounds?.height ?? (root.clientHeight || window.innerHeight);
       room.current = {
-        layout: getArchiveLightLayout(width, height, window.matchMedia("(max-aspect-ratio: 4/5)").matches),
-        rect: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
+        ...getArchiveStageRegistration(bounds, sectionBounds ?? { left: 0, top: 0, width, height }, sectionBounds ? undefined : window.matchMedia("(max-aspect-ratio: 4/5)").matches),
         revision: (room.current?.revision ?? 0) + 1,
       };
       invalidate();
@@ -132,6 +135,8 @@ function CardObject({ artwork, pose, visible, onReady, onLost, archive = false, 
     measure();
     const observer = new ResizeObserver(schedule);
     observer.observe(gl.domElement); observer.observe(document.documentElement);
+    if (section) { observer.observe(section); for (const child of section.children) observer.observe(child); }
+    if (surface && surface !== section) observer.observe(surface);
     const viewer = gl.domElement.closest("[data-member-card]");
     if (viewer) observer.observe(viewer);
     // Details, wrapping controls and a share status can move an unchanged canvas
