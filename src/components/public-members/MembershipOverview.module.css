@@ -175,11 +175,12 @@
 .invitationCodeStatus { margin-top: 8px !important; font: 400 11px/1.65 var(--font-header); color: #53544e; overflow-wrap: anywhere; }
 .invitationError { margin-top: 12px; color: #a92d24; }
 .invitationVerification .invitationError { color: #a92d24; }
-.signupPage { display: grid; justify-items: center; padding: calc(var(--ruined-header-height, 4.5rem) + 35px) 20px 80px; min-height: 85svh; }
-.signupPageContent { width: min(100%, 560px); padding: 30px 40px 40px; background: var(--paper); background-image: linear-gradient(#e5e0d5bd, #e5e0d5bd), var(--texture-paper); background-size: auto, 800px auto; color: var(--ink); }
-.signupPageContent > .signupBack { margin-top: 0; margin-bottom: 20px; }
-.signupPageContent h1 { margin-top: 22px; font-size: clamp(39px, 7vw, 58px); line-height: 1.07; }
-.signupPageContent > .eyebrow { color: #63635b; }
+.signupPage { min-width: 0; }
+.signupPage .signupRoom { min-height: calc(100svh - var(--ruined-header-height, 4.5rem)); padding-block: 36px 56px; }
+.signupArt > .signupBack { width: fit-content; margin: 0 0 12px; color: var(--paper); }
+.signupArt h1 { font-size: clamp(44px, 4.5vw, 64px); line-height: 1; margin-bottom: 24px; }
+.signupArt h1 em { display: inline-block; line-height: 1.3; color: var(--yellow); }
+.signupPageContent h2 { font: 600 clamp(25px, 2.4vw, 34px)/1.1 var(--font-header) !important; letter-spacing: -.04em; }
 
 @media (max-width: 1100px) {
   .wrap { width: calc(100% - 72px); }
@@ -220,6 +221,10 @@
   .registration { padding: 28px 22px; }
   .invitationSignup > h3 { font-size: 28px; }
   .signupPrice { font-size: 25px; }
+  .signupPage .signupRoom { padding-block: 20px 36px; }
+  .signupPage .signupArt { --membership-invitation-height: clamp(280px, 76vw, 340px); }
+  .signupArt > .signupBack { margin-bottom: 4px; }
+  .signupArt h1 { font-size: clamp(42px, 10vw, 62px); margin-bottom: 4px; }
   .faq { grid-template-columns: 1fr; gap: 28px; padding-block: 44px; }
   .faq h2 { font-size: 36px; }
   .faq .textLink { margin-top: 16px; }
@@ -237,8 +242,6 @@
   .registration { padding-inline: 18px; }
 }
 @media (max-width: 400px) {
-  .signupPage { padding: calc(var(--ruined-header-height, 4rem) + 20px) 12px 40px; }
-  .signupPageContent { padding: 22px 20px 28px; }
   .signupForm .planSwitch label { font-size: 12px; gap: 6px; }
   .signupForm .planSwitch label span { font-size: 9px; }
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { MembershipBillingPlan } from "@/lib/membership/pricing";
+import MembershipInvitationCard, { MembershipInvitationRoom } from "./MembershipInvitationCard";
 import MembershipSignup from "./MembershipSignup";
 import styles from "./MembershipOverview.module.css";
 
@@ -15,6 +16,7 @@ export default function MembershipSignupPage({ initialPlan, enabled, preview, pr
   registrationOnly?: boolean;
 }) {
   const [plan, setPlan] = useState(initialPlan);
+  const [recipientName, setRecipientName] = useState("");
 
   function changePlan(nextPlan: MembershipBillingPlan) {
     setPlan(nextPlan);
@@ -24,12 +26,19 @@ export default function MembershipSignupPage({ initialPlan, enabled, preview, pr
   }
 
   return <main className={`${styles.page} ${styles.signupPage}`}>
-    <div className={styles.signupPageContent}>
-      <Link className={styles.signupBack} href="/membership">← Membership</Link>
-      <p className={styles.eyebrow}>The Ruined Project / Membership</p>
-      <h1>Your place<br /><em>begins here.</em></h1>
-      <MembershipSignup registrationOnly={registrationOnly} paymentSetupOnly={paymentSetupOnly} enabled={enabled} preview={preview} previewInvitation={previewInvitation} plan={plan} onPlanChange={changePlan} />
-      <p className={styles.alreadyMember}>Already a member? <Link href="/access">Sign in ↗</Link></p>
-    </div>
+    <MembershipInvitationRoom className={`${styles.invitationRoom} ${styles.signupRoom}`} frameToCard>
+      <div className={`${styles.wrap} ${styles.invitationGrid}`}>
+        <div className={`${styles.invitationArt} ${styles.signupArt}`}>
+          <Link className={styles.signupBack} href="/membership">← Membership</Link>
+          <h1>It starts with<br /><em>an invitation.</em></h1>
+          <MembershipInvitationCard recipientName={recipientName} />
+        </div>
+        <div className={`${styles.registration} ${styles.signupPageContent}`}>
+          <h2>Make it yours.</h2>
+          <MembershipSignup registrationOnly={registrationOnly} paymentSetupOnly={paymentSetupOnly} enabled={enabled} preview={preview} previewInvitation={previewInvitation} plan={plan} onPlanChange={changePlan} onRecipientNameChange={setRecipientName} />
+          <p className={styles.alreadyMember}>Already a member? <Link href="/access">Sign in ↗</Link></p>
+        </div>
+      </div>
+    </MembershipInvitationRoom>
   </main>;
 }
