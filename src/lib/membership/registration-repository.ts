@@ -51,7 +51,8 @@ async function ownerMemberId(tx: TransactionSql, authUserId: string, allowRestri
 async function readRegistration(tx: TransactionSql, memberId: string): Promise<MemberRegistrationSnapshot | null> {
   const [row] = await tx<Array<RegistrationRow>>`select registration.*,
     (private.ruined_member_has_complimentary_funding(registration.member_id) or private.ruined_member_has_operator_funding(registration.member_id)) as complimentary,
-    (onboarding.profile_completed_at is not null and (registration.profile_activated_at is not null
+    (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(registration.member_id)
+      and (registration.profile_activated_at is not null
       or private.ruined_registration_intake_eligibility_error(profile.birth_date,
         profile.default_fulfillment_address->>'countryCode') is null)) as profile_complete,
     private.ruined_member_registration_ready(registration.member_id) as ready
@@ -136,7 +137,8 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
       couple_partner_email: string | null; couple_partner_member_id: string | null }>>`
       select registration.*,coalesce(nullif(profile.legal_name,''),nullif(public_profile.display_name,''),member.email) as display_name,member.email,
         (private.ruined_member_has_complimentary_funding(member.id) or private.ruined_member_has_operator_funding(member.id)) as complimentary,
-        (onboarding.profile_completed_at is not null and (registration.profile_activated_at is not null
+        (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(registration.member_id)
+      and (registration.profile_activated_at is not null
           or private.ruined_registration_intake_eligibility_error(profile.birth_date,
             profile.default_fulfillment_address->>'countryCode') is null)) as profile_complete,
         private.ruined_member_registration_ready(member.id) as ready,

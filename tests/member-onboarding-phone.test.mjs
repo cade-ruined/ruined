@@ -26,6 +26,9 @@ test("phone fix is a new bounded atomic migration with escape-independent E.164 
 class MembershipInputError extends Error {}
 class MembershipConflictError extends Error {}
 class MembershipAccessDeniedError extends Error {}
+class RegistrationLegalError extends Error {
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
+}
 
 async function loadRoute(failure) {
   const logs = [];
@@ -35,12 +38,13 @@ async function loadRoute(failure) {
   }).outputText;
   const dependencies = {
     "next/server": { NextResponse, after: () => assert.fail("No email follow-up after failed onboarding") },
+    "@/lib/membership/registration-legal": { RegistrationLegalError },
     "@/lib/membership/registration-message-delivery": { getRegistrationMessageConfiguration: () => ({ ready: false }), processRegistrationMessageBatch: () => assert.fail("No registration message work in this error fixture") },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: "11111111-1111-4111-8111-111111111111" }) },
     "@/lib/membership/repository": {
       MembershipInputError, MembershipConflictError, MembershipAccessDeniedError,
-      saveMemberOnboardingProfile: async () => { throw failure; },
+      saveMemberOnboardingProfile: async (_auth, input) => { if (typeof failure === "function") return failure(input); throw failure; },
     },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
     "@/lib/workflows/worker": {},
@@ -53,12 +57,13 @@ async function loadRoute(failure) {
   return { ...cjsModule.exports, logs };
 }
 
-function request() {
+function request(changes = {}) {
   return new Request("https://members.example.test/api/my/onboarding", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({
       action: "save_profile", apparelTopSize: "M", birthDate: "1990-01-01",
       legalName: "Test Member", memberTag: "test_member", mobile: "+12025550123",
+      ...changes,
       shippingAddress: { addressLine1: "Test street", addressLine2: null, city: "Test", region: "UT", countryCode: "US", postalCode: "84004" },
     }),
   });
@@ -111,4 +116,23 @@ test("an unavailable tag stays a retryable 409 with a distinct code", async () =
 test("member phone constraint accepts valid international numbers and fails safely in isolated PostgreSQL", async () => {
   const result = await checkMemberPhoneSchema(await loadPGliteForSchemaChecks());
   assert.equal(result.checks.length, 4);
+});
+
+
+test("registration legal API validates the exact acknowledgment payload and preserves stale-document recovery", async () => {
+  const valid = { acknowledged: true, privacyVersion: "privacy-2026-08-19", agreementVersionId: "11111111-1111-4111-8111-111111111111" };
+  for (const acknowledgment of [{ ...valid, acknowledged: false }, { ...valid, extra: true }, { ...valid, agreementVersionId: "invalid" }, { ...valid, privacyVersion: 1 }]) {
+    const route = await loadRoute(() => assert.fail("Invalid acknowledgment must not reach profile saving"));
+    assert.equal((await route.POST(request({ legalAcknowledgment: acknowledgment }))).status, 400);
+  }
+  let received;
+  const route = await loadRoute(input => {
+    received = input.legalAcknowledgment;
+    throw new RegistrationLegalError(409, "The registration documents have changed. Reload and review them before continuing.", "registration_documents_changed");
+  });
+  const response = await route.POST(request({ legalAcknowledgment: valid }));
+  assert.deepEqual(received, valid);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, "registration_documents_changed");
+  assert.deepEqual(route.logs, []);
 });

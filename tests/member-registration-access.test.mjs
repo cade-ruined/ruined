@@ -24,6 +24,7 @@ const environment = {
   STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_ANNUAL_PRICE_ID: "price_founding_annual",
   STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID: "bpc_commitment_test",
   STRIPE_TAX_ENABLED: "false", STRIPE_MEMBERSHIP_COMMERCIAL_READY: "true",
+  MEMBERSHIP_REGISTRATION_TERMS_VERSION: "ruined_registration-v1",
   MEMBERSHIP_REGISTRATION_ONLY_ENABLED: "true", STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED: "true",
   STRIPE_MEMBERSHIP_PAYMENT_SETUP_SIGNUP_ENABLED: "true", STRIPE_PAYMENT_SETUP_ACCOUNT_ID: "acct_RegistrationTest",
 };
@@ -84,11 +85,19 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec("create role anon; create role authenticated; create role service_role;");
   const migrations = [...read("scripts/migrate-platform.mjs").matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g)];
   assert.ok(migrations.some(match => match[1].endsWith("20260930140000_member_registration_access.sql")));
-  for (const migration of migrations) await db.exec(read(migration[1]));
+  const legalMigration = "db/migrations/20260930220000_registration_legal_acknowledgment.sql";
+  for (const migration of migrations) if (migration[1] !== legalMigration) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
   const memberRepository = load("src/lib/membership/repository.ts");
+  const legal = load("src/lib/membership/registration-legal.ts");
+  const published = load("src/lib/membership/published-agreement.ts");
+  const registrationAgreementId = randomUUID();
+  let currentRegistrationAgreementId = registrationAgreementId;
+  const registrationTerms = "Synthetic registration terms for offline regression testing only. No real member agreement is being published.";
+  await db.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_registration',1,'Test registration terms',$2,$3,'draft',null)",
+    [registrationAgreementId,registrationTerms,createHash("sha256").update(registrationTerms).digest("hex")]);
   const policy = load("src/lib/membership/access-policy.ts");
   const config = load("src/lib/platform/config.ts");
   const row = async (query, values=[]) => (await db.query(query, values)).rows[0];
@@ -99,6 +108,7 @@ test("registration holds survive launch changes and release profiles only after 
   }
   async function profile(viewer, changes = {}) {
     return memberRepository.saveMemberOnboardingProfile(viewer.authUserId, {
+      legalAcknowledgment: { acknowledged: true, privacyVersion: "privacy-2026-08-19", agreementVersionId: currentRegistrationAgreementId },
       apparelTopSize: "M", birthDate: "1990-01-01", legalName: "Registration Test", mobile: "+12025550123",
       memberTag: `member${viewer.member_id.replaceAll("-", "").slice(0,14)}`,
       shippingAddress: { addressLine1: "123 Test Street", addressLine2: null, city: "Denver", countryCode: "US", postalCode: "80202", region: "CO" },
@@ -118,12 +128,86 @@ test("registration holds survive launch changes and release profiles only after 
       [id,`pm_${token}`,viewer.member_id,accountId,livemode]);
     return id;
   }
+  // Real migration fixture: preserve earlier completed and activated records,
+  // while requiring the new notice for an unfinished registration.
+  const priorRegistered = await member("prior-registered@example.test");
+  const priorActivated = await member("prior-activated@example.test");
+  const priorIncomplete = await member("prior-incomplete@example.test");
+  for (const prior of [priorRegistered, priorActivated]) {
+    await db.query("insert into person_private_profiles(person_id,legal_name,birth_date,default_fulfillment_address) values($1,'Prior Registration','1990-01-01','{\"countryCode\":\"US\"}')", [prior.person_id]);
+    await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1", [prior.member_id]);
+    await db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary' where member_id=$1", [prior.member_id]);
+  }
+  await db.query("update member_registration_access set profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1", [priorActivated.member_id, priorActivated.authUserId]);
+  await db.exec(read(legalMigration));
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
   const admin = await member("admin@example.test");
   await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[admin.authUserId]);
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="true";
   const fresh = await member("new@example.test");
+
+  await t.test("migration exempts completed registrations and preserves prior member access", async () => {
+    for (const prior of [priorRegistered, priorActivated]) {
+      assert.equal((await row("select legal_acknowledgment_required as required from member_registration_access where member_id=$1", [prior.member_id])).required, false);
+      assert.equal(await legal.getMemberRegistrationLegalNotice(prior.authUserId), null);
+      assert.equal((await registration.getMemberRegistration(prior.authUserId)).profileComplete, true);
+      await profile(prior, { legalAcknowledgment: undefined });
+    }
+    assert.equal((await row("select legal_acknowledgment_required as required from member_registration_access where member_id=$1", [priorIncomplete.member_id])).required, true);
+    assert.equal((await legal.getMemberRegistrationLegalNotice(priorIncomplete.authUserId)).state, "unavailable");
+  });
+  await t.test("registration documents must be published, effective, and independently pinned", async () => {
+    const configured = environment.MEMBERSHIP_REGISTRATION_TERMS_VERSION;
+    delete environment.MEMBERSHIP_REGISTRATION_TERMS_VERSION;
+    assert.equal((await legal.getCurrentRegistrationLegalNotice()).state, "unavailable");
+    environment.MEMBERSHIP_REGISTRATION_TERMS_VERSION = configured;
+    assert.equal((await legal.getCurrentRegistrationLegalNotice()).state, "unavailable");
+    await assert.rejects(() => profile(fresh), { name: "RegistrationLegalError", status: 503 });
+    await db.query("update membership_agreement_versions set status='published',published_at=now(),effective_at=now()+interval '1 day' where id=$1", [registrationAgreementId]);
+    assert.equal((await legal.getCurrentRegistrationLegalNotice()).state, "unavailable");
+    // Publication fields are immutable; use a clock-unrestricted original draft
+    // for the effective fixture rather than mutating any published document.
+    await db.query("update membership_agreement_versions set status='retired',retired_at=now() where id=$1", [registrationAgreementId]);
+    const effectiveId = randomUUID();
+    await db.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_registration',2,'Test effective registration terms',$2,$3,'published',now())", [effectiveId,registrationTerms,createHash("sha256").update(registrationTerms).digest("hex")]);
+    environment.MEMBERSHIP_REGISTRATION_TERMS_VERSION = "ruined_registration-v2";
+    currentRegistrationAgreementId = effectiveId;
+    const terms = await legal.getCurrentRegistrationLegalNotice();
+    assert.equal(terms.state, "required");
+    assert.equal(terms.agreementHref, "/membership/agreement/ruined_registration-v2");
+    assert.equal((await published.getPublicMembershipAgreement("ruined_registration-v2")).body, registrationTerms);
+    assert.equal(await published.getPublishedMembershipAgreement("ruined_registration-v2"), null, "Registration terms cannot satisfy paid Checkout's agreement resolver");
+    environment.MEMBERSHIP_REGISTRATION_TERMS_VERSION = "ruined_membership-v2";
+    assert.equal((await legal.getCurrentRegistrationLegalNotice()).state, "unavailable");
+    environment.MEMBERSHIP_REGISTRATION_TERMS_VERSION = "ruined_registration-v2";
+  });
+  await t.test("new details reject missing, false, and stale review before any profile write", async () => {
+    await assert.rejects(() => profile(fresh, { legalAcknowledgment: undefined }), { name: "RegistrationLegalError", status: 400 });
+    await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: false } }), { name: "RegistrationLegalError", status: 400 });
+    await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: true, privacyVersion: "privacy-2026-08-19", agreementVersionId: registrationAgreementId } }), { status: 409, code: "registration_documents_changed" });
+    await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: true, privacyVersion: "old", agreementVersionId: currentRegistrationAgreementId } }), { status: 409 });
+    assert.equal((await row("select count(*)::int as count from person_private_profiles where person_id=$1", [fresh.person_id])).count, 0);
+    assert.equal((await row("select count(*)::int as count from member_consents where member_id=$1", [fresh.member_id])).count, 0);
+    assert.equal((await legal.getMemberRegistrationLegalNotice(fresh.authUserId)).state, "required");
+    await db.query("update platform_users set member_id=null where auth_user_id=$1", [fresh.authUserId]);
+    assert.equal((await legal.getMemberRegistrationLegalNotice(fresh.authUserId)).state, "required", "Legacy canonical-person identities receive the same notice");
+    await db.query("update platform_users set member_id=$1 where auth_user_id=$2", [fresh.member_id,fresh.authUserId]);
+  });
+  await t.test("stale profile timestamps cannot bypass legal review or start card setup", async () => {
+    const stale = await member("stale-documents@example.test");
+    await db.query("insert into person_private_profiles(person_id,legal_name,birth_date,default_fulfillment_address) values($1,'Stale Fixture','1990-01-01','{\"countryCode\":\"US\"}')", [stale.person_id]);
+    await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1", [stale.member_id]);
+    assert.equal((await registration.getMemberRegistration(stale.authUserId)).profileComplete, false);
+    assert.equal(await registration.getMemberRegistrationDestination(stale.authUserId), "/my/join");
+    const setup = await load("src/lib/stripe/payment-method-repository.ts").findSetupMember(sql, stale.authUserId, 18);
+    assert.match(setup.reason, /Privacy Policy and Membership Terms/);
+    await assert.rejects(() => db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary' where member_id=$1", [stale.member_id]), error => error.code === "P4302");
+    await assert.rejects(() => db.query("update member_registration_access set legal_acknowledgment_required=false where member_id=$1", [stale.member_id]), /immutable/);
+    await assert.rejects(() => db.query("insert into member_registration_access(member_id,legal_acknowledgment_required) values($1,false)", [existing.member_id]), /require document acknowledgment/);
+    await db.query("insert into person_private_profiles(person_id,legal_name,birth_date,default_fulfillment_address) values($1,'Existing Fixture','1990-01-01','{\"countryCode\":\"US\"}')", [existing.person_id]);
+    await assert.rejects(() => db.query("insert into member_registration_access(member_id,registered_at,completion_basis) values($1,now(),'complimentary')", [existing.member_id]), error => error.code === "P4302");
+  });
 
   await t.test("registration eligibility includes the eighteenth birthday and rejects younger, missing, and non-US details", async () => {
     const check = async (birthDate, country, today = "2026-09-30") => (await row(
@@ -152,7 +236,7 @@ test("registration holds survive launch changes and release profiles only after 
     await sql.begin(tx => admission.claimPublicMembershipSignupInTransaction(tx,existing,"monthly"));
     assert.equal(await registration.getMemberRegistration(existing.authUserId),null);
     assert.ok(policy.memberCan(policy.deriveMemberAccessPolicy(await memberRepository.getMemberIdentity(existing.authUserId)),"profile.read"));
-    await profile(existing, { birthDate: "2018-01-01", shippingAddress: { addressLine1: "1 Test Street", addressLine2: null, city: "Toronto", countryCode: "CA", postalCode: "M5V 1A1", region: "ON" } });
+    await profile(existing, { legalAcknowledgment: undefined, birthDate: "2018-01-01", shippingAddress: { addressLine1: "1 Test Street", addressLine2: null, city: "Toronto", countryCode: "CA", postalCode: "M5V 1A1", region: "ON" } });
     assert.equal((await row("select default_fulfillment_address->>'countryCode' as country from person_private_profiles where person_id=$1", [existing.person_id])).country, "CA");
   });
   await t.test("new pending account can edit intake but cannot read or write profile, journal, or badges",async()=>{
@@ -174,11 +258,30 @@ test("registration holds survive launch changes and release profiles only after 
   });
   await t.test("personal information alone does not complete registration or send welcome",async()=>{
     await profile(fresh);
+    await profile(fresh, { legalAcknowledgment: undefined });
+    assert.equal(await legal.getMemberRegistrationLegalNotice(fresh.authUserId), null);
+    const legalEvidence = await row("select * from member_consents where member_id=$1 and consent_type='privacy'", [fresh.member_id]);
+    assert.equal(legalEvidence.actor_auth_user_id, fresh.authUserId);
+    assert.equal(legalEvidence.evidence.membershipTerms.id, currentRegistrationAgreementId);
+    assert.equal(legalEvidence.evidence.membershipTerms.body, registrationTerms);
+    assert.equal(legalEvidence.evidence.registrationTermsAccepted, true);
+    assert.equal(legalEvidence.evidence.paidAgreementAccepted, false);
+    assert.equal(legalEvidence.evidence.chargeAuthorized, false);
+    assert.equal((await row("select count(*)::int as count from member_consents where member_id=$1 and consent_type='privacy'", [fresh.member_id])).count, 1);
+    assert.equal((await row("select agreement_completed_at from member_onboardings where member_id=$1", [fresh.member_id])).agreement_completed_at, null);
+    await assert.rejects(() => db.query("delete from member_consents where id=$1", [legalEvidence.id]), /append-only/);
     const before = await registration.getMemberRegistration(fresh.authUserId);
     assert.equal(before.profileComplete,true);assert.equal(before.requiresPaymentMethod,true);assert.equal(before.ready,false);
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/payment-method");
     assert.equal((await row("select count(*)::int as count from member_registration_messages")).count,0);
     await assert.rejects(()=>registration.activateMemberRegistration(admin.authUserId,fresh.member_id,before.version),{status:409});
+  });
+  await t.test("a failed details transaction rolls back its legal evidence", async () => {
+    const other = await member("tag-conflict@example.test");
+    const tag = (await row("select member_tag from person_profiles where person_id=$1", [fresh.person_id])).member_tag;
+    await assert.rejects(() => profile(other, { memberTag: tag }), { name: "MembershipConflictError" });
+    assert.equal((await row("select count(*)::int as count from member_consents where member_id=$1", [other.member_id])).count, 0);
+    assert.equal((await legal.getMemberRegistrationLegalNotice(other.authUserId)).state, "required");
   });
   await t.test("wrong Stripe mode cannot satisfy registration and reads never reconcile state",async()=>{
     await savedCard(fresh,{livemode:true});
@@ -226,7 +329,7 @@ test("registration holds survive launch changes and release profiles only after 
     const access=policy.deriveMemberAccessPolicy(await memberRepository.getMemberIdentity(fresh.authUserId));
     assert.ok(policy.memberCan(access,"profile.read"));assert.equal(policy.memberCan(access,"circle.read"),false);
     assert.equal((await row("select billing_state from member_lifecycle where member_id=$1",[fresh.member_id])).billing_state,"pending");
-    assert.equal((await registration.getOpsMemberRegistrations(admin.authUserId))[0].memberId,fresh.member_id);
+    assert.equal((await registration.getOpsMemberRegistrations(admin.authUserId)).find(item => item.memberId === fresh.member_id)?.state, "activated");
   });
   await t.test("released registrations retain historical profile editing without losing readiness", async () => {
     await profile(fresh, { birthDate: "2018-01-01", shippingAddress: { addressLine1: "1 Test Street", addressLine2: null, city: "Toronto", countryCode: "CA", postalCode: "M5V 1A1", region: "ON" } });
@@ -292,6 +395,9 @@ test("registration holds survive launch changes and release profiles only after 
     assert.equal((await registration.completeMemberRegistration(complimentary.authUserId)).state, "collecting");
     assert.equal(await registration.getMemberRegistrationDestination(complimentary.authUserId), "/my/join");
     await assert.rejects(() => db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary',profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1", [complimentary.member_id, admin.authUserId]), error => error.code === "P4301");
+    await db.query("update person_private_profiles set birth_date='1990-01-01',default_fulfillment_address='{\"countryCode\":\"US\"}' where person_id=$1", [complimentary.person_id]);
+    assert.equal((await registration.completeMemberRegistration(complimentary.authUserId)).state, "collecting");
+    await assert.rejects(() => profile(complimentary, { legalAcknowledgment: undefined }), { status: 400 });
     await profile(complimentary);
     const result=await registration.getMemberRegistration(complimentary.authUserId);
     assert.equal(result.requiresPaymentMethod,false);assert.equal(result.ready,true);assert.equal(result.state,"registered");

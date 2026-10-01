@@ -32,6 +32,8 @@ export async function findSetupMember(tx: BillingTransaction, authUserId: string
         when not exists (select 1 from person_email_addresses email where email.person_id=member.person_id
           and email.email_normalized=viewer.email_normalized and email.verification_state='verified' and email.retired_at is null)
           then 'Verify your email before saving a payment method.'
+        when not private.ruined_registration_legal_complete(member.id)
+          then 'Review the Privacy Policy and Membership Terms before saving a payment method.'
         when onboarding.profile_completed_at is null then 'Complete your profile before saving a payment method.'
         when private_profile.birth_date is null or private_profile.birth_date > current_date - make_interval(years => ${minimumAge})
           then 'You must meet the membership age requirement before saving a payment method.'

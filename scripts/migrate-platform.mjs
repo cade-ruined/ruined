@@ -81,6 +81,7 @@ const migrations = [
   "../db/migrations/20260930140000_member_registration_access.sql",
   "../db/migrations/20260930200000_registration_eligibility.sql",
   "../db/migrations/20260930210000_registration_couples.sql",
+  "../db/migrations/20260930220000_registration_legal_acknowledgment.sql",
 ];
 
 function migrationBody(migration, migrationName) {

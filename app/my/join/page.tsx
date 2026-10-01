@@ -16,6 +16,7 @@ import { getMemberOnboarding } from "@/lib/membership/repository";
 import { isMemberPhotoStorageConfigured } from "@/lib/membership/photos";
 import { getMemberSignupPlan } from "@/lib/membership/public-signup-admission";
 import { getMemberRegistration } from "@/lib/membership/registration-repository";
+import { getMemberRegistrationLegalNotice } from "@/lib/membership/registration-legal";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberRegistrationPreview } from "@/lib/membership/preview-scenarios";
 import { getStripePublishableKey } from "@/lib/platform/config";
 
@@ -38,10 +39,13 @@ export default async function JoinMyRuinedPage() {
     ? await getMemberRegistration(context.viewer.authUserId)
     : context.state === "preview" ? memberRegistrationPreview(memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value)) : null;
   const registrationOnly = Boolean(registration && registration.state !== "activated");
-  const onboarding = registrationOnly && registration && !registration.profileComplete
+  const registrationLegalNotice = registrationOnly && context.state === "authenticated" && context.viewer
+    ? await getMemberRegistrationLegalNotice(context.viewer.authUserId)
+    : null;
+  const onboarding = registrationOnly && registration && (!registration.profileComplete || registrationLegalNotice)
     ? { ...context.data, requiredFieldsComplete: false }
     : context.data;
-  if (context.state === "authenticated" && registrationOnly && registration) {
+  if (context.state === "authenticated" && registrationOnly && registration && !registrationLegalNotice) {
     if (registration.state === "registered" && registration.ready) redirect("/my/registered");
     if (registration.profileComplete) redirect(registration.requiresPaymentMethod && !registration.ready ? "/my/payment-method" : "/my/registered");
   }
@@ -102,6 +106,7 @@ export default async function JoinMyRuinedPage() {
             checkoutEnabled={checkoutEnabled}
             registrationOnly={registrationOnly}
             registrationRequiresPaymentMethod={registration?.requiresPaymentMethod ?? true}
+            registrationLegalNotice={registrationLegalNotice}
             disabledReason={disabledReason}
             enabled={writable}
             initialOnboarding={onboarding}

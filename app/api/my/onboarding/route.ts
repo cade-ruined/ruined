@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { RegistrationLegalError } from "@/lib/membership/registration-legal";
 import { getRegistrationMessageConfiguration, processRegistrationMessageBatch } from "@/lib/membership/registration-message-delivery";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
@@ -36,6 +37,15 @@ function isAddress(value: unknown): value is MemberOnboardingProfileInput["shipp
   );
 }
 
+function isLegalAcknowledgment(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const input = value as Record<string, unknown>;
+  return input.acknowledged === true && typeof input.privacyVersion === "string"
+    && input.privacyVersion.length <= 80 && typeof input.agreementVersionId === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.agreementVersionId)
+    && Object.keys(input).every(key => ["acknowledged", "privacyVersion", "agreementVersionId"].includes(key));
+}
+
 function isOnboardingAction(value: unknown): value is OnboardingAction {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -50,9 +60,11 @@ function isOnboardingAction(value: unknown): value is OnboardingAction {
     typeof candidate.mobile === "string" &&
     typeof candidate.memberTag === "string" &&
     isAddress(candidate.shippingAddress) &&
+    (candidate.legalAcknowledgment === undefined || isLegalAcknowledgment(candidate.legalAcknowledgment)) &&
     Object.keys(candidate).every((key) =>
       [
         "action",
+        "legalAcknowledgment",
         "apparelTopSize",
         "birthDate",
         "legalName",
@@ -65,6 +77,7 @@ function isOnboardingAction(value: unknown): value is OnboardingAction {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof RegistrationLegalError) return NextResponse.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
   if (error instanceof MembershipInputError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

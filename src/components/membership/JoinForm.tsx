@@ -22,6 +22,7 @@ import MemberPaymentMethod from "@/components/membership/MemberPaymentMethod";
 import { formatMembershipPrice, isMembershipBillingPlan, MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS, type MembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
 import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
+import type { RegistrationLegalNotice } from "@/lib/membership/registration-legal-model";
 import {
   formatPhoneInput,
   mobileToE164,
@@ -155,6 +156,7 @@ export default function JoinForm({
   paymentSetupEnabled = false,
   registrationOnly = false,
   registrationRequiresPaymentMethod = true,
+  registrationLegalNotice = null,
   preview = false,
 }: {
   disabledReason: string | null;
@@ -169,10 +171,13 @@ export default function JoinForm({
   paymentSetupEnabled?: boolean;
   registrationOnly?: boolean;
   registrationRequiresPaymentMethod?: boolean;
+  registrationLegalNotice?: RegistrationLegalNotice | null;
   preview?: boolean;
 }) {
   const checkoutAttempt = useRef<string | null>(null);
   const registrationCouple = useRegistrationCouple({ enabled: registrationOnly, preview });
+  const legalAcknowledgmentRef = useRef<HTMLInputElement>(null);
+  const legalNotice = registrationOnly ? registrationLegalNotice : null;
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const memberTagRef = useRef<HTMLInputElement>(null);
   const [memberTag, setMemberTag] = useState(initialOnboarding.profile.memberTag ?? "");
@@ -181,6 +186,7 @@ export default function JoinForm({
   const [acceptanceId, setAcceptanceId] = useState(initialOnboarding.agreement.acceptanceId);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [legalRefreshRequired, setLegalRefreshRequired] = useState(false);
   const [plan, setPlan] = useState<MembershipBillingPlan>(initialPlan);
   const [recurringPaymentAccepted, setRecurringPaymentAccepted] = useState(false);
   const [lockedPlan, setLockedPlan] = useState<MembershipBillingPlan | null>(null);
@@ -258,11 +264,18 @@ export default function JoinForm({
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (photoPending || photoDraft) return;
-    if (!enabled || submitting) return;
+    if (!enabled || submitting || legalRefreshRequired) return;
     if (registrationOnly && (registrationCouple.loading || registrationCouple.loadError)) return;
+    if (legalNotice?.state === "unavailable") { setError(legalNotice.message); return; }
     setError(null);
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
+    if (legalNotice?.state === "required" && form.get("registration-legal-acknowledged") !== "on") {
+      setError("Read the Privacy Policy and Membership Terms, then check the acknowledgment to continue.");
+      legalAcknowledgmentRef.current?.focus();
+      setSubmitting(false);
+      return;
+    }
     const tag = String(form.get("member-tag") ?? "").trim().replace(/^@/, "").toLowerCase();
     if (!/^[a-z0-9_]{3,24}$/.test(tag)) {
       setMemberTagError("Use 3–24 letters, numbers, or underscores.");
@@ -293,6 +306,11 @@ export default function JoinForm({
           legalName: String(form.get("legal-name") ?? ""),
           mobile,
           memberTag: tag,
+          ...(legalNotice?.state === "required" ? { legalAcknowledgment: {
+            acknowledged: true,
+            privacyVersion: legalNotice.privacyVersion,
+            agreementVersionId: legalNotice.agreementVersionId,
+          } } : {}),
           shippingAddress: {
             addressLine1: String(form.get("address-line-1") ?? ""),
             addressLine2: String(form.get("address-line-2") ?? "").trim() || null,
@@ -307,6 +325,10 @@ export default function JoinForm({
       });
       const payload = (await response.json()) as OnboardingResponse;
       if (!response.ok || !payload.onboarding) {
+        if (payload.code === "registration_documents_changed") {
+          setLegalRefreshRequired(true);
+          if (legalAcknowledgmentRef.current) legalAcknowledgmentRef.current.checked = false;
+        }
         if (payload.code === "member_tag_unavailable") {
           setMemberTagError(payload.error || "That member tag is already taken. Choose another.");
           memberTagRef.current?.focus();
@@ -715,9 +737,20 @@ export default function JoinForm({
             />
           </div> : null}
 
+          {legalNotice?.state === "required" ? <div className="border-t border-[var(--member-rule)] pt-6">
+            <label className="flex items-start gap-3 text-sm leading-relaxed">
+              <input aria-describedby="registration-legal-help" className="mt-1 size-4 shrink-0 accent-current" defaultChecked={false} disabled={submitting} name="registration-legal-acknowledged" onChange={() => setError(null)} ref={legalAcknowledgmentRef} required type="checkbox" />
+              <span>{legalNotice.noticeText.split(/(Privacy Policy|Membership Terms)/).map((part, index) => part === "Privacy Policy" || part === "Membership Terms"
+                ? <a key={index} className="underline underline-offset-4" href={part === "Privacy Policy" ? legalNotice.privacyHref : legalNotice.agreementHref} target="_blank" rel="noopener noreferrer">{part}</a>
+                : part)}</span>
+            </label>
+            <p className="mt-3 pl-7 text-xs leading-relaxed text-[var(--member-muted)]" id="registration-legal-help">The links open in a new tab so your details stay here. Before paid membership begins, you’ll separately review the price and terms and confirm payment.</p>
+          </div> : legalNotice?.state === "unavailable" ? <div className="border-t border-[var(--member-rule)] pt-6 text-sm leading-relaxed" role="alert"><p>{legalNotice.message}</p><button className="mt-2 inline-flex min-h-11 items-center underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload registration ↻</button></div> : null}
+
           {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
+          {legalRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload & review updated documents ↻</button> : null}
           {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
       {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Preview card step · no details saved</Link> : null}

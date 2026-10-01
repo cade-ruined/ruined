@@ -23,9 +23,15 @@ const registration = changes => ({ memberId: "test-member", state: "collecting",
 const onboarding = changes => ({ state: "in_progress", billingState: "pending", membershipFunding: "self", requiredFieldsComplete: false, email: "new@example.test", agreement: { acceptanceId: null, id: null, body: null }, profile: {}, ...changes });
 const context = (changes = {}) => ({ state: "authenticated", viewer: { authUserId: "test-auth", email: "new@example.test" }, data: onboarding(), configuration: { mode: "connected", stripeCheckoutReady: true, stripePaymentSetupReady: true, minimumAge: 18 }, ...changes });
 const previewDeps = { MEMBER_PREVIEW_COOKIE: "fixture", memberPreviewScenario: value => value, memberRegistrationPreview: value => value === "registered" ? registration({ state: "registered", profileComplete: true }) : registration() };
+const legalNotice = {
+  state: "required", privacyVersion: "privacy-2026-08-19", privacyHref: "/privacy",
+  agreementVersionId: "11111111-1111-4111-8111-111111111111", agreementVersion: 1,
+  agreementTitle: "Ruined Registration Terms", agreementHref: "/membership/agreement/ruined_registration-v1",
+  noticeText: "I have read the Privacy Policy and reviewed the Membership Terms. Registration and saving a card do not start a paid membership or authorize a charge.",
+};
 
-async function pageFixture(path, initialRegistration, initialContext = context()) {
-  let currentRegistration = initialRegistration, currentContext = initialContext;
+async function pageFixture(path, initialRegistration, initialContext = context(), initialLegalNotice = null) {
+  let currentRegistration = initialRegistration, currentContext = initialContext, currentLegalNotice = initialLegalNotice;
   const Form = () => null, Payment = () => null, Receipt = () => null, Progress = () => null;
   const page = (await load(path, {
     "next/image": Image, "next/link": Link, "next/navigation": { redirect },
@@ -39,6 +45,7 @@ async function pageFixture(path, initialRegistration, initialContext = context()
       return currentContext;
     } },
     "@/lib/membership/registration-repository": { getMemberRegistration: async () => currentRegistration },
+    "@/lib/membership/registration-legal": { getMemberRegistrationLegalNotice: async () => currentLegalNotice },
     "@/lib/membership/preview-scenarios": previewDeps,
     "@/lib/membership/repository": { getMemberOnboarding: () => assert.fail("No live database reads") },
     "@/lib/membership/preview": { PREVIEW_MEMBER_ONBOARDING: {} },
@@ -48,7 +55,7 @@ async function pageFixture(path, initialRegistration, initialContext = context()
     "@/lib/platform/config": { getStripePublishableKey: () => null },
   })).default;
   return { page: () => page({ searchParams: Promise.resolve({}) }), Form, Payment, Receipt, Progress,
-    setRegistration: value => { currentRegistration = value; }, setContext: value => { currentContext = value; } };
+    setRegistration: value => { currentRegistration = value; }, setContext: value => { currentContext = value; }, setLegalNotice: value => { currentLegalNotice = value; } };
 }
 
 test("held join ignores live checkout availability and offers registration details without agreement progress", async () => {
@@ -78,6 +85,18 @@ test("stale ineligible registration details reopen intake even when the onboardi
   assert.equal(form.props.initialOnboarding.requiredFieldsComplete, false);
   assert.equal(form.props.initialOnboarding.profile.legalName, "Saved Name", "Preserve saved details for correction");
   assert.equal(form.props.initialOnboarding.profile.fulfillmentAddress.countryCode, "CA");
+});
+
+test("registration legal acknowledgment keeps completed details on intake until the notice is recorded", async () => {
+  const f = await pageFixture("app/my/join/page.tsx", registration({ profileComplete: true }), context({ data: onboarding({ requiredFieldsComplete: true }) }), legalNotice);
+  for (const notice of [legalNotice, { state: "unavailable", message: "The membership terms are temporarily unavailable." }]) {
+    f.setLegalNotice(notice);
+    const form = nodes(await f.page()).find(node => node.type === f.Form);
+    assert.equal(form.props.registrationLegalNotice, notice);
+    assert.equal(form.props.initialOnboarding.requiredFieldsComplete, false);
+  }
+  f.setLegalNotice(null);
+  await assert.rejects(f.page, error => error.href === "/my/payment-method");
 });
 
 test("card page sends incomplete details back to entry and exempts complimentary registration", async () => {
@@ -123,7 +142,7 @@ function hookFixture() {
 
 async function detailsFixture(requiresPaymentMethod, changes = {}) {
   const h = hookFixture(), calls = [], redirects = [];
-  let ok = true, preferenceFails = false, preferenceSaves = 0;
+  let ok = true, preferenceFails = false, preferenceSaves = 0, errorPayload = { error: "Try again." };
   const preference = { saved: { status: "none", partnerEmail: null }, kind: "individual", partnerEmail: "", consent: false, loading: false, loadError: null,
     save: async () => { assert.ok(calls.some(call => call.url === "/api/my/onboarding"), "Save details before pairing"); preferenceSaves++; if (preferenceFails) throw Error("Your Circle preference could not be saved."); } };
   const values = { "member-tag": "new_member", "mobile-country": "US", "mobile-national": "8015550123", "legal-name": "New Member", "birth-date": "1990-01-01", "apparel-size": "M", "address-line-1": "123 Main", city: "Provo", region: "UT", "postal-code": "84601", "country-code": "US" };
@@ -138,13 +157,69 @@ async function detailsFixture(requiresPaymentMethod, changes = {}) {
     "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
   }, {
     FormData: class { get(key) { return values[key] ?? ""; } },
-    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok, json: async () => ok ? { onboarding: onboarding({ requiredFieldsComplete: true }) } : { error: "Try again." } }; },
+    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok, json: async () => ok ? { onboarding: onboarding({ requiredFieldsComplete: true }) } : errorPayload }; },
     window: { location: { assign: url => redirects.push(url) } },
   })).default;
   const props = { enabled: true, checkoutEnabled: false, disabledReason: null, checkoutDisabledReason: null, initialOnboarding: onboarding(), minimumAge: 18, photoStorageReady: false, publishableKey: null, registrationOnly: true, registrationRequiresPaymentMethod: requiresPaymentMethod, ...changes };
   const render = () => h.render(Form, props);
-  return { calls, redirects, render, preference, preferenceSaves: () => preferenceSaves, fail: () => { ok = false; }, failPreference: value => { preferenceFails = value; }, submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} }) };
+  return { calls, redirects, render, preference, values, preferenceSaves: () => preferenceSaves, fail: payload => { ok = false; if (payload) errorPayload = payload; }, failPreference: value => { preferenceFails = value; }, submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} }) };
 }
+
+test("new registrations must acknowledge linked documents without accepting paid terms", async () => {
+  for (const requiresPaymentMethod of [true, false]) {
+    const f = await detailsFixture(requiresPaymentMethod, { registrationLegalNotice: legalNotice });
+    const tree = f.render();
+    const acknowledgment = nodes(tree).find(node => node.props.name === "registration-legal-acknowledged");
+    assert.equal(acknowledgment.props.required, true);
+    assert.equal(acknowledgment.props.defaultChecked, false, "Consent must begin unchecked");
+    for (const href of ["/privacy", "/membership/agreement/ruined_registration-v1"]) {
+      const link = nodes(tree).find(node => node.type === "a" && node.props.href === href);
+      assert.equal(link?.props.target, "_blank", "Reading the docs must preserve entered details");
+      assert.equal(link?.props.rel, "noopener noreferrer");
+    }
+    assert.match(renderToStaticMarkup(tree), /do not start a paid membership or authorize a charge/);
+    assert.match(renderToStaticMarkup(tree), /separately review the price and terms and confirm payment/);
+    await f.submit();
+    assert.deepEqual(f.calls, [], "An unchecked acknowledgment must block programmatic submission too");
+    assert.deepEqual(f.redirects, []);
+    assert.equal(f.preferenceSaves(), 0);
+    f.values["registration-legal-acknowledged"] = "on";
+    await f.submit();
+    assert.deepEqual(f.calls.map(call => call.url), ["/api/my/onboarding"]);
+    assert.deepEqual(f.calls[0].body.legalAcknowledgment, { acknowledged: true, privacyVersion: legalNotice.privacyVersion, agreementVersionId: legalNotice.agreementVersionId });
+    assert.equal("affirmativeAction" in f.calls[0].body, false, "Acknowledgment does not submit paid agreement acceptance");
+    assert.deepEqual(f.redirects, [requiresPaymentMethod ? "/my/payment-method" : "/my/registered"]);
+  }
+});
+
+test("unavailable terms block intake with a recovery link while existing paid intake stays unchanged", async () => {
+  const f = await detailsFixture(true, { registrationLegalNotice: { state: "unavailable", message: "The membership terms are temporarily unavailable." } });
+  assert.equal(nodes(f.render()).find(node => node.type === "button" && node.props.type === "submit").props.disabled, true);
+  assert.ok(nodes(f.render()).some(node => node.type === "button" && node.props.children === "Reload registration ↻"));
+  await f.submit();
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.redirects, []);
+  for (const registrationOnly of [true, false]) {
+    const existing = await detailsFixture(true, { registrationOnly, registrationLegalNotice: registrationOnly ? null : legalNotice });
+    assert.equal(nodes(existing.render()).some(node => node.props.name === "registration-legal-acknowledged"), false);
+    await existing.submit();
+    assert.equal("legalAcknowledgment" in existing.calls[0].body, false);
+  }
+});
+
+test("a changed registration document requires a fresh review before retrying", async () => {
+  const f = await detailsFixture(true, { registrationLegalNotice: legalNotice });
+  f.values["registration-legal-acknowledged"] = "on";
+  f.fail({ code: "registration_documents_changed", error: "The registration documents have changed. Reload and review them before continuing." });
+  await f.submit();
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(f.redirects, []);
+  assert.equal(f.preferenceSaves(), 0);
+  const tree = f.render();
+  assert.equal(nodes(tree).find(node => node.type === "button" && node.props.type === "submit").props.disabled, true);
+  assert.ok(nodes(tree).some(node => node.type === "button" && node.props.children === "Reload & review updated documents ↻"));
+  await f.submit();
+  assert.equal(f.calls.length, 1, "Do not retry with an obsolete document version");
+});
 
 test("details save follows server confirmation to required card or complimentary receipt without activating membership", async () => {
   for (const required of [true, false]) {

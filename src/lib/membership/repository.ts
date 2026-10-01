@@ -1,4 +1,6 @@
 import "server-only";
+import { recordRegistrationLegalAcknowledgment } from "./registration-legal";
+import type { RegistrationLegalAcknowledgment } from "./registration-legal-model";
 import { completeMemberRegistration } from "./registration-repository";
 import { getMemberBadges } from "./badge-repository";
 
@@ -325,6 +327,7 @@ export async function getMemberOnboarding(
 }
 
 export type MemberOnboardingProfileInput = {
+  legalAcknowledgment?: RegistrationLegalAcknowledgment;
   apparelTopSize: string;
   birthDate: string;
   legalName: string;
@@ -421,6 +424,7 @@ export async function saveMemberOnboardingProfile(
         where member_id=${identity.memberId}::uuid and profile_activated_at is null`;
       if (eligibility?.error) throw new MembershipInputError(eligibility.error);
     }
+    await recordRegistrationLegalAcknowledgment(tx, identity.memberId, authUserId, input.legalAcknowledgment);
     await tx`
       insert into person_profiles (person_id, display_name, member_tag)
       values (${identity.personId}::uuid, ${`@${clean.memberTag}`}, ${clean.memberTag})
