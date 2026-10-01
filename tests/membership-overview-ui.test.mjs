@@ -356,67 +356,6 @@ test("Foundations offers three closed expandable cards while preserving each exe
   assert.equal(nodes(initial).some(node => node.type === "a" && node.props.href === "#your-invitation"), false);
 });
 
-test("the three chapter links track reading position, layout changes, and release all listeners on unmount", async () => {
-  const h = hooks(), frames = new Map(), windowListeners = new Map(), documentListeners = new Map();
-  const positions = new Map([["how-it-works", 0], ["foundations", 700], ["your-invitation", 1900]]);
-  let nextFrame = 0, scroll = 0, navigationBottom = 100;
-  const window = {
-    requestAnimationFrame(callback) { const id = ++nextFrame; frames.set(id, callback); return id; },
-    cancelAnimationFrame(id) { frames.delete(id); },
-    addEventListener(name, callback, options) { windowListeners.set(name, { callback, options }); },
-    removeEventListener(name, callback) { assert.equal(windowListeners.get(name)?.callback, callback); windowListeners.delete(name); },
-  };
-  const document = {
-    getElementById: id => positions.has(id) ? { getBoundingClientRect: () => ({ top: positions.get(id) - scroll }) } : null,
-    addEventListener(name, callback, capture) { documentListeners.set(name, { callback, capture }); },
-    removeEventListener(name, callback, capture) { assert.equal(documentListeners.get(name)?.callback, callback); assert.equal(documentListeners.get(name)?.capture, capture); documentListeners.delete(name); },
-  };
-  const c = await components(h.react, { window, document });
-  const root = h.render(c.Overview, {});
-  const navigation = nodes(root).find(node => typeof node.type === "function" && node.type.name === "MembershipSectionNav");
-  assert.ok(navigation);
-  h.reset();
-  const render = () => h.render(navigation.type, navigation.props);
-  const initial = render();
-  initial.props.ref.current = { getBoundingClientRect: () => ({ bottom: navigationBottom }) };
-  h.flushEffects();
-  const flushFrame = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()); };
-  const active = () => nodes(render()).filter(node => node.type === "a" && node.props["aria-current"] === "location").map(node => node.props.href);
-  assert.deepEqual(nodes(initial).filter(node => node.type === "a").map(node => node.props.href), ["#how-it-works", "#foundations", "#your-invitation"]);
-  assert.deepEqual(nodes(initial).filter(node => node.type === "a").map(accessibleText), ["Overview", "The work", "Pricing & join"]);
-  assert.equal(windowListeners.get("scroll").options.passive, true);
-  assert.equal(documentListeners.get("toggle").capture, true);
-  flushFrame();
-  assert.deepEqual(active(), ["#how-it-works"]);
-  navigationBottom = 130; scroll = 541.83;
-  windowListeners.get("scroll").callback(); flushFrame();
-  assert.deepEqual(active(), ["#foundations"], "an anchor landing with breathing room and subpixel rounding must select its destination");
-  navigationBottom = 100;
-  for (const [offset, expected] of [[650, "#foundations"], [1800, "#your-invitation"], [2500, "#your-invitation"], [0, "#how-it-works"]]) {
-    scroll = offset;
-    windowListeners.get("scroll").callback();
-    windowListeners.get("scroll").callback();
-    assert.equal(frames.size, 1, "scroll events are coalesced into one frame");
-    flushFrame();
-    assert.deepEqual(active(), [expected]);
-  }
-  scroll = 1700;
-  windowListeners.get("scroll").callback(); flushFrame();
-  assert.deepEqual(active(), ["#foundations"]);
-  navigationBottom = 210;
-  windowListeners.get("resize").callback(); flushFrame();
-  assert.deepEqual(active(), ["#your-invitation"], "responsive navigation height updates the active section boundary");
-  positions.set("your-invitation", 2400);
-  documentListeners.get("toggle").callback(); flushFrame();
-  assert.deepEqual(active(), ["#foundations"], "opening a long exercise recalculates which chapter the reader is in");
-  windowListeners.get("scroll").callback();
-  assert.equal(frames.size, 1);
-  h.cleanup();
-  assert.equal(frames.size, 0);
-  assert.equal(windowListeners.size, 0);
-  assert.equal(documentListeners.size, 0);
-});
-
 test("preview invitation interactions never send email or create membership, and waitlist preview cannot submit", async () => {
   const h = hooks(), requests = [], locks = [];
   const c = await components(h.react, { fetch: (...args) => { requests.push(args); throw Error("Preview must not submit"); } });

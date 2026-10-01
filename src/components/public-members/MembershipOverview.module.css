@@ -7,7 +7,7 @@
 .page :is(a, button, summary, input):focus-visible { outline: 2px solid var(--red); outline-offset: 5px; }
 .page :is(button, a, summary, input) { -webkit-tap-highlight-color: transparent; }
 .page button { cursor: pointer; }
-.page section[id], .registration { scroll-margin-top: calc(var(--ruined-header-height, 4.5rem) + 72px); }
+.page section[id], .registration { scroll-margin-top: calc(var(--ruined-header-height, 4.5rem) + 24px); }
 .wrap { width: min(100% - 112px, 1320px); margin-inline: auto; }
 .eyebrow { font: 500 11px/1.5 var(--font-header); letter-spacing: .12em; text-transform: uppercase; }
 .primary { min-height: 54px; display: inline-flex; align-items: center; justify-content: space-between; gap: 36px; border: 1px solid #b83229; background: #b83229; color: #fff7ed; padding: 14px 20px; font: 600 14px/1.5 var(--font-header); text-decoration: none; border-radius: 0; transition: background .2s, border-color .2s; }
@@ -55,15 +55,6 @@
 .featureFilmCaption { position: absolute; z-index: 1; right: max(56px, calc((100% - 1320px) / 2)); bottom: 52px; display: flex; align-items: baseline; gap: 24px; font: 500 14px/1.5 var(--font-header); }
 .featureFilmCaption > span { font-size: 12px; font-weight: 400; }
 
-.chapterNav { position: sticky; top: var(--ruined-header-height, 4.5rem); z-index: 35; background: var(--ink) var(--texture-ink) center / 1000px auto; border-bottom: 1px solid #e5e0d530; }
-.chapterNav > div { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
-.chapterNav a { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 48px; color: #b6b4aa; font: 500 13px/1.5 var(--font-header); text-decoration: none; transition: color .2s, background .2s; }
-.chapterNav a > span { font-size: 10px; color: #8f9187; }
-.chapterNav a .joinArrow { font-size: 18px; color: inherit; }
-.chapterNav a[aria-current] { color: #fff8e7; }
-.chapterNav a[aria-current]::after { content: ''; position: absolute; bottom: -1px; left: 30%; right: 30%; height: 2px; background: var(--yellow); }
-.chapterNav a:hover { color: #fff8e7; background: #e5e0d50a; }
-.page .chapterNav a:focus-visible { outline-offset: -5px; }
 .explanation { padding-block: 62px; }
 .explanationIntro { max-width: 680px; }
 .explanationIntro .eyebrow { margin-bottom: 20px; color: var(--muted); }
@@ -212,7 +203,6 @@
   .featureFilmTitle { left: 20px; bottom: 42px; font-size: clamp(42px, 9vw, 64px); }
   .featureFilmCaption { left: 20px; right: 20px; bottom: 20px; justify-content: space-between; font-size: 11px; }
   .featureFilmCaption > span { font-size: 11px; }
-  .chapterNav .wrap { width: calc(100% - 16px); }.chapterNav a { min-height: 44px; font-size: 12px; gap: 5px; }.chapterNav a > span:not(.joinArrow) { display: none; }
   .explanation { padding-block: 42px; }
   .explanationIntro { grid-template-columns: 1fr; gap: 20px; }
   .explanationIntro h2 { font-size: clamp(27px,7vw,40px); }

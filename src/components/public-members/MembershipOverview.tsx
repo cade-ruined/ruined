@@ -14,45 +14,6 @@ import MembershipOfferSection, { type MembershipLandingMode } from "./Membership
 import MembershipQuestions from "./MembershipQuestions";
 import styles from "./MembershipOverview.module.css";
 
-const chapters = [
-  { id: "how-it-works", label: "Overview" },
-  { id: "foundations", label: "The work" },
-  { id: "your-invitation", label: "Pricing & join" },
-] as const;
-
-function MembershipSectionNav() {
-  const [active, setActive] = useState<string>(chapters[0].id);
-  const navigation = useRef<HTMLElement>(null);
-  useEffect(() => {
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      // Include the breathing room used by section scroll margins, including subpixel rounding.
-      const edge = (navigation.current?.getBoundingClientRect().bottom ?? 130) + 40;
-      let current: string = chapters[0].id;
-      for (const chapter of chapters) {
-        const section = document.getElementById(chapter.id);
-        if (section && section.getBoundingClientRect().top <= edge) current = chapter.id;
-      }
-      setActive(current);
-    };
-    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
-    schedule();
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    document.addEventListener("toggle", schedule, true);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-      document.removeEventListener("toggle", schedule, true);
-    };
-  }, []);
-  return <nav ref={navigation} className={styles.chapterNav} aria-label="Explore membership"><div className={styles.wrap}>
-    {chapters.map((chapter, index) => <a key={chapter.id} href={`#${chapter.id}`} aria-current={active === chapter.id ? "location" : undefined}><span aria-hidden="true">0{index + 1}</span>{chapter.label}{chapter.id === "your-invitation" && <span className={styles.joinArrow} aria-hidden="true">↗</span>}</a>)}
-  </div></nav>;
-}
-
 export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false }: { preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean }) {
   const invitationAvailable = signupEnabled || (preview && paymentSetupOnly);
   const mode: MembershipLandingMode = !invitationAvailable ? "waitlist" : paymentSetupOnly ? "payment-setup" : "paid";
@@ -107,8 +68,6 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
         </a>
       </div>
     </section>
-
-    <MembershipSectionNav />
 
     <section className={styles.meetRuined} id="inside-membership" aria-labelledby="inside-heading">
       <button className={styles.featureFilmTrigger} type="button" onClick={openFilm} aria-label="Play Meet Ruined, 2 minutes 15 seconds">
