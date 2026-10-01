@@ -1,8 +1,8 @@
 # Circle Supporters and placement operations
 
-**Status:** local implementation for review. These changes, migrations, and responsibility grants have not been applied to production as part of this work.
+**Status:** operating guidance for Circle Supporters, placement, and Administrator access.
 
-**Reviewed:** 29 September 2026
+**Reviewed:** 1 October 2026
 
 This guide records the approved operating decisions and the corresponding app workflow. It supplements the [Operator SOP](operator-admin-sop.md). The supplied Foundations and Internal leadership PDFs are source references; this implementation does not replace or edit those PDFs.
 
@@ -11,35 +11,29 @@ This guide records the approved operating decisions and the corresponding app wo
 - **Member** and **Circle Supporter** are the member-facing service roles. Tyler and Mitch oversee Supporter readiness, ongoing support, and temporary coverage.
 - Builder, Author, and Partner are retired leadership titles. Shaper and Guide are retired public role names. Historical role identifiers and records remain for compatibility; new Guide or direct Supporter operator invitations are not issued.
 - **Builders remains a signup cohort**, alongside Founders, Originals, Pillars, and Members. Signup cohort records are not leadership permissions.
-- **Administrator** is an internal access permission. Specific placement, readiness, and reimbursement decisions additionally require an explicit current responsibility grant.
+- **Administrator** is an internal access permission that includes routine Circle placement, capacity exceptions, Supporter readiness/coverage, and reimbursement approval/processing. No separate responsibility assignment is required.
 - A Circle targets **10 people including its Supporter**, normally **8–12**. A member who also serves as Supporter counts once. The range is a planning target; recorded exception approval allows a larger Circle.
 - Supporter service creates **discretionary reimbursement eligibility**, never a guarantee or automatic complimentary membership. Libby both approves and processes reimbursements.
 - Place members before final Foundations completion. Completing the final Foundations moment reveals their Circle; welcome them immediately and include them in the next available WHY/BUILD meetings. There is no additional wait-until-next-month rule.
 
-## Configure the actual responsibility owners
+## Administrator access and business leads
 
 Open **Operations → Supporters**. This opens the **Leadership** page at `/ops/leadership`.
 
-The names in the page copy express the operating policy; they do not identify accounts or grant authority. An existing Administrator must select the verified accounts explicitly. No grants are seeded by display name, email, or member number.
+Every active Administrator automatically receives all four Leadership permissions:
 
-1. Confirm the intended people have active **Administrator** accounts under **Operators**. The responsibility form cannot promote a member or Circle Supporter to Administrator.
-2. Open **Configure responsibility**.
-3. Choose the correct Administrator account, responsibility, **Assign responsibility**, and a factual reason.
-4. Select **Save responsibility**, then verify the name under the relevant responsibility.
-5. Configure the following grants:
-
-| Account to verify | Responsibility label | Capability identifier |
+| Permission | Capability identifier | Business lead |
 | --- | --- | --- |
-| Libby | Routine Circle placement | `circle_placement` |
-| Libby | Reimbursement approval and processing | `reimbursements` |
-| Tyler | Circle placement exceptions | `circle_exception` |
-| Tyler | Supporter readiness and coverage | `supporter_readiness` |
-| Mitch | Circle placement exceptions | `circle_exception` |
-| Mitch | Supporter readiness and coverage | `supporter_readiness` |
+| Routine Circle placement | `circle_placement` | Libby |
+| Reimbursement approval and processing | `reimbursements` | Libby |
+| Circle placement exceptions | `circle_exception` | Tyler and Mitch |
+| Supporter readiness and coverage | `supporter_readiness` | Tyler and Mitch |
 
-These are separate grants. Administrator access alone does not permit the listed decisions or reveal the private reimbursement ledger. An unconfigured action fails closed with a message directing the operator to configure responsibility. The app checks current account status, Administrator access, and the relevant responsibility when an action is saved.
+The business leads coordinate the work; these are not exclusive account permissions. Confirm Administrator access under **Operators**. There is no additional responsibility configuration step, and names in page copy do not grant access.
 
-To change an owner, use the same form with **Remove responsibility**, record why, and then assign the correct account. The original grant and revocation remain in history. Removing a responsibility does not delete membership or historical service/payment records.
+The server checks current account status and an active Administrator role whenever a decision is saved. Suspended accounts, revoked Administrators, Circle Supporters, and legacy Guides do not inherit these permissions or access to the reimbursement ledger. Member eligibility, Foundations completion, readiness, capacity reviews, and audit requirements still apply.
+
+Earlier responsibility grants and revocations remain in history. They neither restrict an active Administrator nor authorize a non-Administrator. Use **Operators → Edit access** to manage Administrator access under the existing confirmation and audit rules.
 
 ## Prepare and reveal a member's Circle
 
@@ -55,7 +49,7 @@ Preferences are private to the placement team. A known person's Circle is a pref
 
 ### Review and save routine placement
 
-1. Libby opens the member record and **Review Circle placement**, or finds the member in **Circles**.
+1. An Administrator opens the member record and **Review Circle placement**, or finds the member in **Circles**. Libby coordinates routine placement.
 2. Open **Review placement suggestions** to review group size, known invitation connections, shared time zone, and available overlap evidence.
 3. Check the Circle's actual meeting schedule. Suggestions rank candidates; they do not create recurring schedules, place anyone automatically, or guarantee that an available slot matches every future meeting.
 4. Open the chosen forming or active Circle, review the member's joining and membership eligibility, and use **Approve placement**. An existing placement uses the **Move** workflow instead.
@@ -67,8 +61,8 @@ The count uses distinct people across the Circle's membership and Supporter assi
 
 If adding or transferring a person would take the destination above 12, the ordinary placement action does not silently bypass the target range.
 
-1. Libby records why the larger placement is appropriate and requests review.
-2. Tyler or Mitch opens **Circles → Placement exceptions**.
+1. An Administrator records why the larger placement is appropriate and requests review.
+2. An Administrator opens **Circles → Placement exceptions**. Tyler and Mitch coordinate exception reviews.
 3. Review the named member, intended Circle, and reason.
 4. Select **Approve and place** or **Decline**.
 5. Approval rechecks the current source placement, member eligibility, Circle status, and projected count before saving. If the underlying record changed, reload and review it; do not assume the old request still applies.
@@ -81,7 +75,7 @@ Two people registered on the same confirmed couples membership are placed in the
 
 Count room for both partners, including any existing Supporter seat. Adding a couple to a Circle with 11 people needs a capacity exception even though adding one individual would not. A shared membership awaiting payment stays linked until its checkout reservation is explicitly released. An ended membership no longer ties future placement to the former partner. Removing a person from a Circle is an explicit departure, not a transfer; it does not close or remove their partner's account.
 
-The database also rejects split placements and a new couples checkout for people already in different Circles. Resolve those placements before payment. Deploy `20260930113000_couple_circle_placement.sql` before the application changes; this document records the local implementation, not a production migration.
+The database also rejects split placements and a new couples checkout for people already in different Circles. Resolve those placements before payment. The platform migration chain includes `20260930113000_couple_circle_placement.sql` for these protections; preserve it when deploying later changes.
 
 ### Final Foundations moment
 
@@ -93,7 +87,7 @@ Completing the final Foundations moment reveals the Circle. Welcome the member i
 
 ## Approve readiness and start service
 
-Supporter selection follows **observe → co-facilitate → lead → debrief**. Tyler/Mitch make the readiness decision; the form records it rather than treating activity attendance as automatic approval.
+Supporter selection follows **observe → co-facilitate → lead → debrief**. Tyler and Mitch lead readiness and coverage; any active Administrator can record the decision. The form records that review rather than treating activity attendance as automatic approval.
 
 1. Confirm the person is a current member of the intended Circle, has completed membership entry **and Foundations**, and has active eligible membership access. A pre-reveal member cannot receive Supporter operating privileges as a shortcut around the Foundations gate.
 2. Explain the responsibility, support available, and discretionary reimbursement arrangement before the person accepts service. There is no guaranteed reimbursement or automatic free membership.
@@ -109,7 +103,7 @@ Readiness alone does not start service. Service grants scoped Circle Supporter a
 
 A person can step down immediately; finding a replacement is not a prerequisite.
 
-1. Tyler or Mitch opens **End service / arrange coverage**.
+1. An Administrator opens **End service / arrange coverage**, coordinating with Tyler or Mitch as appropriate.
 2. Choose the active service record.
 3. Choose **End now; arrange coverage separately**, or an eligible, readiness-approved current Circle member for **Temporary coverage**.
 4. Record the reason and select **End service**.
@@ -121,7 +115,7 @@ Removing or transferring a member out of their Circle also closes that Circle's 
 
 ## Record discretionary reimbursements
 
-Only the Administrator with **Reimbursement approval and processing** responsibility can view or act on these private financial records. Libby owns both decisions and processing; no Tyler/Mitch approval step is required.
+Every active Administrator can view and act on these private financial records. Libby remains the business lead for decisions and processing; no Tyler/Mitch approval step is required. Circle Supporter and legacy Guide access does not include the ledger.
 
 The ledger records **manual external payments**. Saving, approving, or marking a record processed does not call Stripe, send a payout, issue a refund, or change membership billing.
 
@@ -153,16 +147,18 @@ The date must fall between approval and today. A recorded payment reference cann
 
 ## Release and operating checks
 
-The code is currently local. No production responsibility owners, Supporter service records, reimbursements, payouts, or membership changes have been created by this implementation.
+The Administrator-access update changes effective permissions only. It preserves existing responsibility grants, audit history, membership records, and billing; it does not place members or issue payments.
 
-Apply the platform migrations through the existing migration runner, in this order, as part of the authorized release:
+Apply the full platform migration chain through the existing migration runner in its registered order. Relevant migrations include:
 
 1. `20260930100000_supporter_service.sql` — responsibilities, readiness/service metadata, private reimbursement ledger, departure closure, and funding policy.
 2. `20260930101000_circle_placement.sql` — preferences, suggestions' supporting data, participant counting, and placement exception records/rules.
 3. `20260930102000_circle_reveal.sql` — member Circle visibility and scoped access/notification gates.
 4. `20260930103000_leadership_terminology.sql` — current role terminology and retirement of new progression-title grants while retaining history.
+5. `20260930111000_supporter_shared_billing.sql` and `20260930113000_couple_circle_placement.sql` — shared funding and couples placement protections.
+6. `20261001130000_administrator_leadership_access.sql` — active Administrators inherit all four Leadership permissions, without rewriting historical grants or audits. Apply this before promoting the corresponding application changes.
 
-Then configure and verify the actual responsibility accounts. Do not use preview names as production account selectors. Check a non-owner Administrator cannot make the protected decisions or read reimbursement details, and that a suspended/revoked owner no longer retains authority.
+Verify that an active Administrator with no explicit responsibility grants has all four permissions and can access the reimbursement ledger. Confirm suspended accounts, revoked Administrators, non-Administrators, and unknown capability identifiers remain denied. Use the actual verified account when checking production; preview names are not account selectors.
 
 Before launch, review any existing Circle/Block Calendar meetings whose attendees were synchronized before the reveal gate. If members still in Foundations are already on those external events, use the existing meeting audience reconciliation/update workflow and verify its result. The in-app gate does not retract an email already delivered by Google. Likewise, a saved Google Chat link does not manage membership in the external Chat space; coordinate that access with the final reveal.
 

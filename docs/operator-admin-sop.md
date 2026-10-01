@@ -2,11 +2,11 @@
 
 **For:** Administrators who operate the Ruined member experience
 
-**Version:** 2.0 — Circle Supporters and placement responsibilities (local review)
+**Version:** 2.1 — Administrator Leadership access
 
-**Last reviewed:** 29 September 2026
+**Last reviewed:** 1 October 2026
 
-This revision adds the approved Circle Supporter, placement, final Foundations reveal, and discretionary reimbursement workflows to the existing Operations guidance. It describes the local implementation under review; these leadership changes and responsibility grants have not been deployed to production. See [Leadership operations](leadership-operations.md) for setup, permissions, and release prerequisites.
+This revision adds the approved Circle Supporter, placement, final Foundations reveal, and discretionary reimbursement workflows to the existing Operations guidance. Active Administrators inherit all four Leadership permissions without separate responsibility assignments. See [Leadership operations](leadership-operations.md) for setup, permissions, and release prerequisites.
 
 ## The simple mental model
 
@@ -61,7 +61,7 @@ Opening either link does not assign a Circle, send an email, or grant access. Yo
 
 ## 1. Before adding a new operator
 
-Operator access is not open signup. An active Administrator can invite another Administrator. Circle Supporter service starts through **Supporters** after an explicitly assigned readiness coordinator approves an eligible existing Circle member. A direct Guide or Circle Supporter operator invitation is no longer available.
+Operator access is not open signup. An active Administrator can invite another Administrator. Circle Supporter service starts through **Supporters** after an active Administrator approves readiness for an eligible existing Circle member. A direct Guide or Circle Supporter operator invitation is no longer available.
 
 The first Administrator cannot be created through the operator screen; that account and role must be provisioned internally. The workflow below adds every subsequent Administrator.
 
@@ -160,12 +160,12 @@ The message “an access code is on its way” protects account privacy. It does
 
 | Responsibility | What they can work with | What they cannot do |
 | --- | --- | --- |
-| **Administrator** | General member and operational administration; configure explicit leadership responsibilities | Cannot infer placement, readiness, or reimbursement authority from the Administrator role alone; cannot bypass required member evidence or remove themselves/the final Administrator |
+| **Administrator** | General member and operational administration; routine Circle placement, capacity exceptions, Supporter readiness/coverage, and reimbursement approval/processing | Cannot bypass required member evidence, readiness, capacity reviews, or audit requirements; cannot remove themselves/the final Administrator |
 | **Circle Supporter** | Members, progress, community information, rosters, and meetings inside assigned Circles; define assigned-Circle meetings | Cannot see global administration or private reimbursement records; cannot work outside assigned Circles; receives no automatic free membership |
 
 One active Supporter holds a Circle at a time. The Supporter counts once within its people total. Previous Guide grants and historical assignments remain recorded for compatibility, but Guide is no longer an available new role.
 
-An Administrator configures the actual accounts under **Supporters → Configure responsibility**. Libby receives **Routine Circle placement** and **Reimbursement approval and processing**. Tyler and Mitch each receive **Circle placement exceptions** and **Supporter readiness and coverage**. Names in explanatory copy do not grant access. The server requires both an active Administrator account and the specific current responsibility. Unconfigured actions are unavailable. Reimbursement records are visible only to the assigned reimbursement owner.
+Every active Administrator automatically has all four Leadership permissions, including access to private reimbursement records. No additional responsibility configuration is needed. Libby leads routine placement and reimbursements; Tyler and Mitch lead placement exceptions, readiness, and coverage. These business leads do not limit another Administrator’s technical access. The server rechecks active account and Administrator status on each action; suspended or revoked accounts and non-Administrators remain denied. Earlier responsibility grants remain in history but do not restrict Administrator access.
 
 The support queue remains private to Administrators. Circle Supporter or legacy Guide access does not reveal members' support conversations.
 
@@ -190,7 +190,7 @@ The support queue remains private to Administrators. Circle Supporter or legacy 
 | --- | --- | --- |
 | **Support** | Search or filter request cards, then read and reply in the conversation | **Update status** opens a separate window. When enabled, email alerts connect@ and the member but does not synchronize email replies. Members see only their own requests and can ask for help even when payment needs attention. |
 | **Academy** | Browse **Lessons** or **Collections**; use **+ New lesson** or **+ New collection** to open a creation window | A lesson opens on Content, Audience, and Publication cards. **Edit lesson** opens its editor. Saving creates a new version. Members keep seeing the published version until a new version is deliberately published. |
-| **Supporters** | Configure responsibility owners, approve readiness, start or end service, arrange optional temporary coverage, and review reimbursements | Opens the Leadership page at `/ops/leadership`. Only explicitly assigned owners can act; reimbursement decisions and external payment records are private to the reimbursement owner. Historical Block records and `/ops/blocks` remain, but Blocks is no longer a primary navigation destination. |
+| **Supporters** | Approve readiness, start or end service, arrange optional temporary coverage, and review reimbursements | Opens the Leadership page at `/ops/leadership`. All active Administrators can perform these actions and view reimbursement records; no separate responsibility assignment is required. Historical Block records and `/ops/blocks` remain, but Blocks is no longer a primary navigation destination. |
 | **Artifacts** | Switch between **Production**, **Templates**, and **Shipping**; review the saved cards, then use **Award an Artifact**, **+ New template**, or **+ Add tracking** for the intended task | Each action opens a focused window. The selected storefront product is checked again before saving. An award opens production work, not a Shopify order. Future unpublishing or deletion in Shopify can still make a saved link unavailable. |
 | **Messages → Board posts** | Draft and publish a durable announcement to all active members, a Block, a Circle, or one member | **Write announcement** creates a draft. Review the audience before publishing. Posts appear on the member announcement board; no email or text is sent. |
 | **Messages → Alerts** | Review notification delivery and send an immediate in-app alert | **Write notification** opens the message window; **Review notification** precedes the final send. “Delivered” means stored in the member app, not delivered by email or SMS. |
@@ -228,7 +228,7 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 | --- | --- |
 | **Member · Complete joining** | Share the sign-in instructions. The member verifies their own email, fills in their profile, accepts the agreement, and completes payment themselves. Review the missing requirement under Membership. |
 | **Member · Continue Foundations** | Help them understand the next step, but leave their Timeline, Future Letter, and completion work with them. |
-| **Operator · Review Circle placement** | Libby, with routine placement responsibility, reviews eligibility and suggestions before explicitly adding the member. Tyler/Mitch review recorded exceptions. Circle Supporters refer placement changes to the placement team. |
+| **Operator · Review Circle placement** | An Administrator reviews eligibility and suggestions before explicitly adding the member, or reviews a recorded capacity exception. Libby leads routine placement; Tyler/Mitch lead exceptions. Circle Supporters refer placement changes to the placement team. |
 | **Operator · Review Circle activation** | The placement is already saved. An Administrator activates the forming Circle when the group is ready; do not add the person again. |
 | **Support · Check payment/joining confirmation** | Evidence may already be recorded while another status has not caught up. Ask the system owner or Support to investigate; do not ask the member to pay or accept the agreement again. |
 | **Support · Review a suspension, pause, or ended membership** | Review the recorded restriction with an Administrator. Circle placement or an operator invitation must not be used to bypass it. |
@@ -259,7 +259,7 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 7. When a forming Circle has at least one member, an Administrator can open **Manage Circle** and select **Activate [Circle name]**, then **Confirm activation**. **A first meeting is not required; schedule meetings later. Add members before activation.** Activation changes the whole Circle, not just the selected member, and does not create a meeting or send invitations.
 8. Circle roster and Block changes queue Calendar audience updates for linked Experiences. Open the affected Experience's **Overview → Meeting** and check the status. Use **Refresh status** for a queued change. Open **Manage meeting** for **Update invitations** or **Retry invitations** when available; these are deliberate communication actions. A saved roster or pending update does not prove that Google has delivered invitations.
 
-Routine placement is owned by Libby. If adding or moving someone would put the destination above 12 people, record a reason and request an exception. Under **Circles → Placement exceptions**, Tyler or Mitch reviews it and selects **Approve and place** or **Decline**. Requesting review does not move anyone. Approval rechecks current placement, eligibility, and headcount. A Circle may exceed the normal range after approval; the system does not guarantee placement with a friend.
+Libby leads routine placement; any active Administrator can save it. If adding or moving someone would put the destination above 12 people, record a reason and request an exception. Under **Circles → Placement exceptions**, an Administrator reviews it and selects **Approve and place** or **Decline**, with Tyler and Mitch coordinating exception decisions. Requesting review does not move anyone. Approval rechecks current placement, eligibility, and headcount. A Circle may exceed the normal range after approval; the system does not guarantee placement with a friend.
 
 Members can provide private time zone, weekly availability, and an invitation-history connection preference under **My Circle → Help us find your Circle**. Suggestions assist the decision; they do not choose a Circle or create a meeting. Check the actual meeting schedule before placing someone.
 
@@ -413,7 +413,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 1. **5 minutes — Access:** sign in through `/access`, switch from the member profile to **Operations**, and explain numeric codes, environment labels, and sign out.
 2. **5 minutes — Navigation:** show Overview search and its cards, then use the workspace dropdown to open Members, Circles, Events, Academy, Artifacts, Messages, Support, and Settings. Each selection opens its workspace directly; there is no second navigation row. Demonstrate the same paths on mobile and opening/closing one focused task window without saving.
 3. **10 minutes — Member record:** find a member, switch among the five views, show a task or note form, and demonstrate keeping unsaved edits when switching. Explain private notes and corrections; only save a test task in an approved training environment.
-4. **10 minutes — Circle:** choose a card and open **Manage Circle**, show the roster and add/remove/activation confirmations, then the Circle Supporter, resource, and Chat setup controls. Open **Supporters** to show responsibility configuration, readiness, optional coverage, and the reimbursement review flow. Show the top **+ Create a Circle** form and cancel it. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
+4. **10 minutes — Circle:** choose a card and open **Manage Circle**, show the roster and add/remove/activation confirmations, then the Circle Supporter, resource, and Chat setup controls. Open **Supporters** to show included Administrator permissions, readiness, optional coverage, and the reimbursement review flow. Show the top **+ Create a Circle** form and cancel it. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
 5. **10 minutes — Experience:** open **Events → Member events → + New experience**, save a draft only, then show the Overview cards, People, and Activity. Open **Manage meeting** and **••• Event actions**, then close them without acting. Open **Review & publish** and explain the recipient count, link replacement, and queued-versus-sent distinction; close the review without publishing. Do not publish during training unless using approved test recipients and explicit approval.
 6. **5 minutes — Communications and Settings:** compare Board posts, Alerts, Calendar, and Chat; show where delivery and failed work appear. Opening **Write announcement** or **Write notification** is safe; saving or sending is a separate decision.
 
@@ -437,7 +437,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 - **Member:** the person receiving the Ruined membership experience.
 - **Circle:** the member’s primary group; target 10 people, including the Supporter, with a normal range of 8–12 and reviewed exceptions above that range.
 - **Circle Supporter:** a prepared member serving their own Circle, supported by Tyler/Mitch.
-- **Responsibility:** an explicit, audited decision-making grant assigned to an Administrator.
+- **Leadership permissions:** routine placement, capacity exceptions, Supporter readiness/coverage, and reimbursement approval/processing; all included with active Administrator access. Earlier individual responsibility grants remain as historical records.
 - **Reimbursement:** a discretionary approval for an elapsed period of Supporter service; the app records an external payment and never sends it.
 - **Block:** a historical larger operating group retained for existing records and workflows; no longer a primary navigation destination.
 - **Foundations:** the member's core Ruined work; an active Circle is required for final completion.
