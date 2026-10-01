@@ -123,7 +123,7 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
       <div className={styles.explanationIntro}><div><p className={styles.eyebrow}>One community. A shared practice.</p><h2 id="how-heading">A place to begin.<br />People to keep going with.</h2></div></div>
       <ol className={styles.journeyMap} aria-label="Your membership journey">
         <li><a href="#foundations"><span>01<span> / BEGIN</span></span><h3>Foundations <span aria-hidden="true">↗</span></h3><strong>4 live virtual sessions · 90 minutes each</strong><p>A one-time starting point before the ongoing monthly work.</p></a></li>
-        <li><a href="#monthly-work"><span>02<span> / PRACTICE</span></span><h3>Each Month <span aria-hidden="true">↗</span></h3><strong>1 topic · 4 calls</strong><p>SEE. FACE. CUT. GROW. Put the work into your life.</p></a></li>
+        <li><a href="#monthly-work"><span>02<span> / PRACTICE</span></span><h3>Each Month <span aria-hidden="true">↗</span></h3><strong>1 topic · 4 calls · A group challenge</strong><p>SEE. FACE. CUT. GROW. Put the work into your life.</p></a></li>
         <li><a href="#circles"><span>03<span> / CONNECT</span></span><h3>Your Circle <span aria-hidden="true">↗</span></h3><strong>8–12 people · Twice a month</strong><p>Familiar faces. Honest conversation and follow-through.</p></a></li>
       </ol>
     </section>

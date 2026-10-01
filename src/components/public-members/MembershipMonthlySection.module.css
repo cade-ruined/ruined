@@ -35,6 +35,22 @@
 .method > li:nth-child(2) h3 { color: #a3b8a6; }
 .method > li:nth-child(3) h3 { color: var(--monthly-yellow); }
 .stageTitle { margin-top: 18px !important; color: #bdbbb2; font: 400 12px/1.5 var(--font-header); }
+.roadmap { margin-top: 34px; }
+.roadmapHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; }
+.roadmapHeading h3 { font: 500 22px/1.2 var(--font-header); letter-spacing: -.03em; }
+.roadmapHeading p { color: #bdbbb2; font-size: 12px; }
+.months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; list-style: none; margin: 18px 0 0; padding: 0; }
+.months li { min-width: 0; padding: 22px 24px; background: var(--monthly-blue); color: var(--monthly-ink); }
+.months li:nth-child(2) { background: var(--monthly-yellow); }
+.months li:nth-child(3) { background: #a3b8a6; }
+.months time { display: flex; flex-wrap: wrap; gap: 4px 8px; font: 500 11px/1.5 var(--font-header); }
+.months time span { opacity: .7; }
+.months h4 { margin-top: 18px; font: 600 clamp(23px, 2.5vw, 34px)/1.15 var(--font-header); letter-spacing: -.035em; }
+.months p { max-width: 30ch; margin-top: 8px !important; font-size: 12px; line-height: 1.6; }
+.roadmapNote { margin-top: 12px !important; color: #bdbbb2; font-size: 12px; }
+.challenge { display: flex; align-items: baseline; gap: 6px 22px; flex-wrap: wrap; margin-top: 26px !important; padding-top: 24px; border-top: 1px solid #e5e0d54d; }
+.challenge strong { color: var(--monthly-yellow); font: 500 18px/1.4 var(--font-header); letter-spacing: -.025em; }
+.challenge span { color: #bdbbb2; font-size: 13px; }
 .sampleDisclosure { margin-top: 26px; padding-bottom: 4px; }
 .sampleDisclosure > summary { display: inline-flex; align-items: center; justify-content: space-between; gap: 24px; max-width: calc(100% - 4px); min-height: 52px; padding: 12px 20px; border: 1px solid var(--monthly-yellow); background: var(--monthly-yellow); color: var(--monthly-ink); box-shadow: 4px 4px 0 #090907; list-style: none; cursor: pointer; font: 600 14px/1.5 var(--font-header); transition: background .2s, border-color .2s; }
 .sampleDisclosure > summary::-webkit-details-marker { display: none; }
@@ -97,6 +113,16 @@
   .stageNumber { display: none; }
   .stageHeading h3 { font-size: clamp(36px, 10.5vw, 48px); }
   .stageTitle { margin-top: 10px !important; font-size: 12px; }
+  .roadmap { margin-top: 28px; }
+  .roadmapHeading { display: block; }
+  .roadmapHeading p { margin-top: 8px; }
+  .months { grid-template-columns: 1fr; gap: 8px; margin-top: 16px; }
+  .months li { display: grid; grid-template-columns: 82px minmax(0, 1fr); column-gap: 18px; padding: 18px; }
+  .months time { grid-row: span 2; display: block; padding-top: 3px; }
+  .months time span { display: block; }
+  .months h4 { margin-top: 0; font-size: 24px; }
+  .months p { margin-top: 5px !important; font-size: 11px; }
+  .challenge { margin-top: 22px !important; padding-top: 20px; }
   .sampleDisclosure { margin-top: 20px; }
   .sampleDisclosure > summary { font-size: 13px; }
   .sample { grid-template-columns: 1fr; }
@@ -118,6 +144,8 @@
   .sampleIntro h3 { font-size: 43px; }
   .sampleIntro .eyebrow { font-size: 9px; }
   .selectorOption { font-size: 11px; }
+  .months li { grid-template-columns: 68px minmax(0, 1fr); column-gap: 12px; padding: 16px; }
+  .months h4 { font-size: 22px; }
   .example h4 { font-size: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { .disclosureMark, .sampleDisclosure > summary { transition: none; } }

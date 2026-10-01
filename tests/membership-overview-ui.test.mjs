@@ -96,7 +96,7 @@ test("landing modes explain the correct next step without registering or chargin
   assert.doesNotMatch(unavailableSetup, /aria-label="Start your Ruined registration"/);
   assert.match(waitlist, /These are fictional examples, not member stories/);
   assert.match(waitlist, /Illustrative exercise\. This letter is fictional/);
-  assert.match(waitlist, /Sample month.*Example topic/);
+  assert.match(waitlist, /December 2026.*TIME/);
 
   for (const props of [{ preview: true, paymentSetupOnly: true }, { signupEnabled: true, paymentSetupOnly: true }]) {
     const setup = render(props);
@@ -274,18 +274,22 @@ test("registration-only landing explains required card saving and a later profil
   assert.match(text(questions), /signing in before then shows your registration status/);
 });
 
-test("the sample month is optional while all four method steps and the monthly cadence remain visible", async () => {
+test("the TIME example is optional while the method, confirmed roadmap, and monthly challenge remain visible", async () => {
   const h = hooks(), requests = [];
   const Monthly = (await load(`${base}MembershipMonthlySection.tsx`, { react: h.react }, { fetch: (...args) => requests.push(args) })).default;
   const render = () => h.render(Monthly, { ctaLabel: "Join the waitlist" });
   const initial = render();
-  const sample = nodes(initial).find(node => node.type === "details" && text(node).includes("Explore a sample month"));
+  const sample = nodes(initial).find(node => node.type === "details" && text(node).includes("Explore a month: TIME"));
   assert.ok(sample, "the example has an explicit native disclosure");
   assert.equal(sample.props.open, undefined, "the sample does not expand the default page");
   assert.equal(defaultVisibleNodes(initial).filter(node => node.type === "input").length, 0);
-  assert.deepEqual(defaultVisibleNodes(initial).filter(node => node.type === "h3").map(text), ["SEE", "FACE", "CUT", "GROW"]);
+  assert.deepEqual(defaultVisibleNodes(initial).filter(node => node.type === "h3").map(text), ["SEE", "FACE", "CUT", "GROW", "Coming up"]);
   const visibleCopy = defaultVisibleNodes(initial).filter(node => node.type === "p").map(text).join(" ");
   assert.match(visibleCopy, /4 calls.*90 minutes each/);
+  assert.match(visibleCopy, /Foundations only/);
+  assert.match(visibleCopy, /monthly group challenge.*Each topic/);
+  assert.deepEqual(defaultVisibleNodes(initial).filter(node => node.type === "time").map(node => node.props.dateTime), ["2026-11", "2026-12", "2027-01"]);
+  assert.deepEqual(defaultVisibleNodes(initial).filter(node => node.type === "h4").map(text), ["Foundations", "TIME", "Reinvention"]);
   assert.equal(nodes(initial).some(node => node.type === "a" && node.props.href === "#your-invitation"), false, "the monthly section does not repeat the main join action");
   const examples = new Set();
   for (const value of ["SEE", "FACE", "CUT", "GROW"]) {
@@ -293,8 +297,8 @@ test("the sample month is optional while all four method steps and the monthly c
     assert.equal(input.props.type, "radio", "native radios provide keyboard selection");
     input.props.onChange();
     const tree = render();
-    assert.match(text(tree), /Sample month.*Example topic/);
-    assert.match(text(tree), /not a scheduled topic/);
+    assert.match(text(tree), /December 2026.*TIME/);
+    assert.match(text(tree), /An example of how we’ll explore one topic/);
     assert.equal(nodes(tree).filter(node => node.type === "h3" && ["SEE", "FACE", "CUT", "GROW"].includes(text(node))).length, 4);
     const example = nodes(tree).find(node => node.props.id === input.props["aria-controls"]);
     assert.equal(example.props["aria-live"], "polite");
@@ -303,7 +307,7 @@ test("the sample month is optional while all four method steps and the monthly c
     assert.equal(nodes(tree).filter(node => node.type === "input" && node.props.checked).length, 1);
   }
   assert.equal(examples.size, 4, "each stage must expose different practice");
-  assert.doesNotMatch(text(render()), /2027|scheduled for|Circle Shaper|Circle Guide/);
+  assert.doesNotMatch(text(render()), /fictional|not a scheduled topic|Circle Shaper|Circle Guide/);
   assert.deepEqual(requests, []);
 });
 
