@@ -16,6 +16,7 @@ function fixture({ membershipFunding = "self", billingState = "pending", state =
     "next/image": () => null,
     "next/headers": { cookies: async () => ({ get: () => undefined }) },
     "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
+    "@/lib/membership/registration-legal": { getMemberRegistrationLegalNotice: async () => assert.fail("Existing members without held registrations must not require registration terms") },
     "@/lib/membership/preview-scenarios": { memberRegistrationPreview: () => null, memberPreviewScenario: () => "active" },
     "next/navigation": { redirect: href => { throw Object.assign(new Error("redirect"), { href }); } },
     "@/components/membership/JoinForm": JoinForm,

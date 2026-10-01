@@ -8,6 +8,7 @@ import * as phone from "../src/lib/membership/phone.ts";
 import * as memberNumber from "../src/lib/membership/member-number.ts";
 import * as pricing from "../src/lib/membership/pricing.ts";
 import * as entryStage from "../src/lib/membership/entry-stage.ts";
+import * as communicationPreferences from "../src/lib/membership/member-communication-preferences-model.ts";
 
 function hooks() {
   let cursor = 0;
@@ -48,6 +49,7 @@ async function fixture(kind, tag = null) {
     "@/components/membership/MemberPaymentMethod": Stub,
     "@/components/membership/MemberSettingsHeader": Stub, "@/components/membership/MemberPublicSharingSettings": Stub,
     "@/components/support/supportStyles": {}, "@/lib/membership/entry-stage": entryStage, "@/lib/membership/pricing": pricing, "@/lib/membership/phone": phone,
+    "@/lib/membership/member-communication-preferences-model": communicationPreferences,
   }, {
     FormData: class { constructor(values) { this.values = values; } get(name) { return this.values[name] ?? null; } },
     fetch: async (url, request) => { const body = JSON.parse(request.body); calls.push({ url, body }); return responses.shift() ?? { ok: true, status: 200, json: async () => ({ onboarding, profile: { ...initialProfile, directory: { ...initialProfile.directory, memberTag: body.memberTag || null } } }) }; },

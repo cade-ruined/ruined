@@ -1,4 +1,4 @@
-import { existingMemberRegistration } from "./helpers/registration-access-fixture.mjs";
+import { existingMemberIntakeDependencies, existingMemberRegistration } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -146,6 +146,7 @@ test("future-letter completion is gated before shared repository database work w
   const repository = await load("src/lib/membership/repository.ts", {
     "server-only": {}, "./badge-repository": {}, "libphonenumber-js/min": {},
     "./registration-repository": existingMemberRegistration,
+    ...existingMemberIntakeDependencies,
     "@/lib/foundations/availability": gate,
     "@/lib/database/server": { getApplicationDatabase: () => { databaseCalls++; throw databaseSentinel; } },
     "@/lib/events/member-experiences": {}, "@/lib/events/community-event-repository": {}, "@/lib/google/communications": {},

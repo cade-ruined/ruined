@@ -1,4 +1,4 @@
-import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -66,6 +66,7 @@ async function fixture() {
     "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
     "./registration-repository": existingMemberRegistration,
+    ...existingMemberIntakeDependencies,
     "server-only": {},
     "libphonenumber-js/min": {},
     "@/lib/database/server": { getApplicationDatabase: () => sql },

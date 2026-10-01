@@ -1,4 +1,4 @@
-import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./registration-access-fixture.mjs";
+import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
@@ -145,6 +145,7 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
     "server-only": {}, "libphonenumber-js/min": {},
     "./badge-repository": { getMemberBadges: async () => [] },
     "./registration-repository": existingMemberRegistration,
+    ...existingMemberIntakeDependencies,
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/membership/access-policy": access,
     "@/lib/membership/member-tag": await loadTypescript("src/lib/membership/member-tag.ts", {}),

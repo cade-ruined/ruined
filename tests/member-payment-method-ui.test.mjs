@@ -196,6 +196,7 @@ test("prelaunch profile completion offers optional setup before unpublished agre
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
     "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
+    "@/lib/membership/member-communication-preferences-model": await load("src/lib/membership/member-communication-preferences-model.ts"),
   })).default;
   const base = { checkoutEnabled: false, paymentSetupEnabled: true, enabled: true, disabledReason: null, checkoutDisabledReason: null, minimumAge: 18, photoStorageReady: false, publishableKey: null };
   const onboarding = { billingState: "pending", membershipFunding: "self", requiredFieldsComplete: true, agreement: { acceptanceId: null, id: null, body: null }, profile: {} };

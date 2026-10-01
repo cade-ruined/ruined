@@ -82,6 +82,7 @@ const JoinForm = load("src/components/membership/JoinForm.tsx", {
   "@/lib/membership/entry-stage": load("src/lib/membership/entry-stage.ts"),
   "@/lib/membership/pricing": load("src/lib/membership/pricing.ts"),
   "@/lib/membership/phone": load("src/lib/membership/phone.ts"),
+  "@/lib/membership/member-communication-preferences-model": load("src/lib/membership/member-communication-preferences-model.ts"),
 }).default;
 function join(publishableKey, stage = "payment") {
   return renderToStaticMarkup(React.createElement(JoinForm, {

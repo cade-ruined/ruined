@@ -9,6 +9,23 @@ export const existingMemberRegistration = Object.freeze({
   getMemberRegistrationDestination: async () => null,
 });
 
+// Historical intake fixtures have neither registration terms nor reminder
+// choices. Dedicated consent suites exercise real ledger writes and policy
+// checks; these boundaries reject accidental opt-ins in legacy scenarios.
+export const existingMemberIntakeDependencies = Object.freeze({
+  "./registration-legal": {
+    recordRegistrationLegalAcknowledgment: async (_tx, _memberId, _actor, acknowledgment) => {
+      assert.equal(acknowledgment, undefined, "Legacy intake must not invent legal acceptance");
+    },
+  },
+  "./member-communication-preferences": {
+    getMemberCommunicationPreferences: async () => ({ email: null, sms: null, smsPhone: null, revision: "legacy-fixture" }),
+    saveMemberCommunicationPreferences: async (_tx, _member, preferences) => {
+      assert.equal(preferences, undefined, "Legacy intake must not invent reminder choices");
+    },
+  },
+});
+
 export async function installRegistrationProfileReleaseFunction(db) {
   // Execute the shipped predicate against an empty hold table so unrelated
   // legacy fixtures retain access without replacing an authorization check.

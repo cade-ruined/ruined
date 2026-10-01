@@ -1,4 +1,4 @@
-import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 import assert from "node:assert/strict";
@@ -54,6 +54,7 @@ async function loadEntryRepository(database) {
     "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
     "./registration-repository": existingMemberRegistration,
+    ...existingMemberIntakeDependencies,
     "libphonenumber-js/min": require("libphonenumber-js/min"),
     "@/lib/database/server": { getApplicationDatabase: () => database },
     "@/lib/membership/access-policy": accessPolicy,

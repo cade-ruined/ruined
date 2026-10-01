@@ -1,4 +1,4 @@
-import { existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
@@ -144,6 +144,7 @@ async function fixture({ revealed = true } = {}) {
     "@/lib/foundations/availability": loadFoundationsAvailability(),
     "./badge-repository": { getMemberBadges: async () => [] },
     "./registration-repository": existingMemberRegistration,
+    ...existingMemberIntakeDependencies,
     "./public-card-model": cardModel,
     "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },
     "libphonenumber-js/min": require("libphonenumber-js/min"),

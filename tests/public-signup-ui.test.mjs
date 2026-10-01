@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as pricing from "../src/lib/membership/pricing.ts";
 import * as phone from "../src/lib/membership/phone.ts";
 import * as entryStage from "../src/lib/membership/entry-stage.ts";
+import * as communicationPreferences from "../src/lib/membership/member-communication-preferences-model.ts";
 
 function harness() {
   let cursor = 0;
@@ -81,6 +82,7 @@ async function checkoutFixture({ initialPlan = "annual", membershipFunding = "se
     "@/components/membership/AgreementText": Stub, "@/components/membership/MemberPhotoUpload": Stub,
     "@/components/membership/MemberPaymentMethod": Stub,
     "@/lib/membership/pricing": pricing, "@/lib/membership/phone": phone, "@/lib/membership/entry-stage": entryStage,
+    "@/lib/membership/member-communication-preferences-model": communicationPreferences,
   }, {
     fetch: async (url, request) => { const body = JSON.parse(request.body); calls.push({ url, body }); return responses.shift() ?? { ok: true, json: async () => url.endsWith("membership-offer")
       ? body.action === "release" ? {released:true} : {quote:{id:body.requestId,expiresAt:new Date(Date.now()+3600000).toISOString(),offer:pricing.MEMBERSHIP_OFFERS[`founding_individual_${body.plan}`],billingTermsVersion:"membership-billing-v2",buyoutCap:150000,participants:[{memberId:"own",name:"Member"}]}}
