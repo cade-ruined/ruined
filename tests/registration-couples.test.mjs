@@ -25,10 +25,9 @@ async function fixture(t) {
   const f = await coupleCircleFixture(t), {db} = f;
   await db.exec(`
     alter table ruined_members add column email_normalized text unique;
-    alter table platform_users add column email_normalized text,add column member_id uuid,add column status text not null default 'active';
+    alter table platform_users add column email_normalized text,add column member_id uuid;
     create table people(id uuid primary key,status text default 'active');
     create table person_email_addresses(id uuid primary key default gen_random_uuid(),person_id uuid,email_normalized text unique,verification_state text default 'verified',retired_at timestamptz);
-    create table platform_role_grants(auth_user_id uuid,role_slug text,revoked_at timestamptz);
     create table member_registration_access(member_id uuid primary key,registered_at timestamptz,profile_activated_at timestamptz);
     create table member_onboardings(member_id uuid primary key,profile_completed_at timestamptz);
     create table person_private_profiles(person_id uuid primary key,birth_date date,default_fulfillment_address jsonb);
