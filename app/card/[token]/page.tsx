@@ -1,5 +1,6 @@
 import { publicMemberCardIdentity } from "@/lib/membership/public-card-model";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicMemberCard } from "@/lib/membership/public-card-repository";
 import { MEMBER_CARD_TOKEN } from "@/lib/membership/public-card-model";
@@ -23,5 +24,5 @@ export default async function PublicCardPage({ params }: Props) {
   if (!MEMBER_CARD_TOKEN.test(token)) notFound();
   const card = await getPublicMemberCard(token);
   if (!card) notFound();
-  return <PublicMemberCardPage card={card} />;
+  return <PublicMemberCardPage card={card} footerActions={<Link href={`/journal/${token}`}>View Timeline ↗</Link>} />;
 }

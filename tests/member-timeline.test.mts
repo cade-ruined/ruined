@@ -174,7 +174,7 @@ test("approved examples remain presentation-only and in chronological order", ()
   );
 });
 
-test("existing Timeline navigation opens the unified Journal profile", async () => {
+test("Foundations exercise navigation is distinct from the public Timeline", async () => {
   const [navigation, home, page, repository] = await Promise.all([
     readFile(new URL("../src/lib/membership/navigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8"),
@@ -182,10 +182,10 @@ test("existing Timeline navigation opens the unified Journal profile", async () 
     readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "My Timeline"/);
+  assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "Foundations timeline"/);
   assert.match(home, /"journal","timeline"/);
-  assert.match(page, /redirect\("\/my#timeline"\)/);
-  assert.match(repository, /title: "Build My Timeline\."/);
+  assert.doesNotMatch(page, /redirect\("\/my#timeline"\)/);
+  assert.match(repository, /title: "Build your Foundations timeline\."/);
 });
 
 test("the timeline retains its private member API and existing downloadable export pipeline", async () => {
@@ -215,5 +215,5 @@ test("the timeline retains its private member API and existing downloadable expo
   assert.match(exportStudio, /preparedRef\.current !== nextPrepared/);
   assert.doesNotMatch(exportStudio, /html2canvas|dom-to-image|foreignObject/i);
   assert.doesNotMatch(component, /localStorage|sessionStorage|<iframe/i);
-  assert.match(page, /redirect\("\/my#timeline"\)/);
+  assert.match(page, /<RuinedTimeline initialTimeline=\{timeline\}/);
 });

@@ -77,7 +77,10 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
       await db.exec(definition);
     }
     await db.exec(await source("db/migrations/20260928000000_unified_member_journal.sql"));
-    if (visibilityMigration) await db.exec(await source("db/migrations/20260928010000_member_journal_visibility.sql"));
+    if (visibilityMigration) {
+      await db.exec(await source("db/migrations/20260928010000_member_journal_visibility.sql"));
+      await db.exec(await source("db/migrations/20261001120000_public_timeline_posts.sql"));
+    }
   }
   await db.query("insert into people (id) values ($1),($2)", [timelineIds.person, timelineIds.otherMember]);
   await db.query("insert into ruined_members (id,person_id) values ($1,$2),($3,$3)", [timelineIds.member, timelineIds.person, timelineIds.otherMember]);

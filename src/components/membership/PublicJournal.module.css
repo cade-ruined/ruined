@@ -5,6 +5,11 @@
 .identity h1 { margin: 0; font-size: clamp(32px, 6vw, 64px); font-weight: 500; line-height: 1.02; letter-spacing: -.045em; overflow-wrap: anywhere; }
 .portrait { width: 108px; height: 135px; object-fit: cover; }
 .tag { margin: 14px 0 0; color: #66645e; font-size: 13px; overflow-wrap: anywhere; }
+.identityCopy { min-width: 0; }
+.bio { max-width: 600px; margin: 20px 0 0; font-size: 16px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.labels { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 20px 0 0; }
+.labels li { border: 1px solid #ccc9c1; padding: 7px 10px; font-size: 11px; overflow-wrap: anywhere; }
+.badges { margin-top: 12px; --member-ink: #1d1d1b; --member-muted: #66645e; --member-line: #ccc9c1; }
 .journal { border-top: 1px solid #ccc9c1; }
 .journalTitle { margin: 20px 0 48px; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .15em; }
 .entries { display: grid; gap: 52px; }

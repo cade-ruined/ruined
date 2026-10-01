@@ -79,7 +79,7 @@ test("profile uses the actual name, portrait, and full editor link",()=>{
 test("both profile tabs point to the shared accessible panel",()=>{
  const tree=render(memberFixture());const nodes=elements(tree);const tabs=nodes.filter(node=>attr(node,"role")==="tab");
  assert.deepEqual(tabs.map(text),["Journal","Timeline"]);
- assert.ok(elements(tabs[1]).some(node=>node.tagName==="svg"&&attr(node,"aria-label")==="Private"));
+ assert.ok(elements(tabs[0]).some(node=>node.tagName==="svg"&&attr(node,"aria-label")==="Private"));
  assert.equal(nodes.filter(node=>attr(node,"role")==="tabpanel").length,1);
  const tablist=nodes.find(node=>attr(node,"role")==="tablist");
  assert.equal(nodes.filter(node=>attr(node,"data-add-entry")==="true").length,1);
@@ -251,13 +251,13 @@ test("Journal and Timeline tabs select their own views while hashes and browser 
   ui.unmount();
 });
 
-test("legacy Saved selects Timeline while About and unknown hashes safely select Journal without remounting", () => {
+test("legacy Saved, About and unknown hashes safely select private Journal without remounting", () => {
   const ui = interactiveProfile("#timeline"), initial = ui.journal(), initialPath = ui.journalPath();
   const content = ui.panel().props.children;
   assert.equal(content.props["data-journal-content"], "true");
   for (const hash of ["#saved", "#about", "#timeline", "#unknown"]) {
     ui.navigate(hash);
-    const journal = ui.journal(), timeline = hash === "#saved" || hash === "#timeline";
+    const journal = ui.journal(), timeline = hash === "#timeline";
     assert.equal(journal.type, initial.type); assert.equal(journal.key, initial.key);
     assert.deepEqual(ui.journalPath(), initialPath, "view switches must not move or remount the draft owner");
     assert.equal(ui.panel().props.children.type, content.type);
@@ -274,7 +274,7 @@ test("legacy Saved selects Timeline while About and unknown hashes safely select
   legacyAbout.unmount();
 });
 
-test("saving an entry can select its public Journal or private Timeline without remounting the editor", () => {
+test("saving an entry can select its private Journal or shared Timeline without remounting the editor", () => {
   const ui=interactiveProfile("#journal"), initialPath=ui.journalPath();
   ui.journal().props.onModeChange("timeline");
   assert.equal(ui.window.location.hash,"#timeline");
@@ -290,7 +290,7 @@ test("saving an entry can select its public Journal or private Timeline without 
 
 test("two profile tabs keep roving keyboard focus with wrapping boundaries", () => {
   const ui = interactiveProfile("#saved");
-  assert.deepEqual(ui.tabs().map(tab => tab.props.tabIndex), [-1, 0]);
+  assert.deepEqual(ui.tabs().map(tab => tab.props.tabIndex), [0, -1]);
   let prevented = 0;
   ui.tabs()[1].props.onKeyDown({ key: "Home", preventDefault() { prevented++; } });
   assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.focus(), 0);

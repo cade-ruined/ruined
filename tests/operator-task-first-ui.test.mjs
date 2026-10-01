@@ -229,7 +229,7 @@ test("announcement retraction needs confirmation and a reason; preview confirmat
 
 test("profile details are read-first, edits stop preview writes and recover from a failed transport", async (t) => {
   const requests = captureRequests(t, () => { throw new Error("Network unavailable"); });
-  const profile = { preferredName: "Example", displayName: "Example Member", version: 3 };
+  const profile = { preferredName: "Example", displayName: "Example Member", apparelTopSize: "XL", version: 3 };
   const deps = { "@/lib/membership/phone": { SHIPPING_COUNTRY_OPTIONS: [{ code: "US", name: "United States" }] } };
   const preview = hookFixture("src/components/platform/OperatorProfileSupport.tsx", { memberId: "member-one", profile, preview: true }, deps);
   assert.equal(nodes(preview.draw()).some((node) => node.type === "details"), false);
@@ -238,7 +238,7 @@ test("profile details are read-first, edits stop preview writes and recover from
   await nodes(preview.draw()).find((node) => node.type === "form").props.onSubmit({ preventDefault() {}, get currentTarget() { throw new Error("Preview read"); } });
   assert.equal(requests.length, 0);
   const f = hookFixture("src/components/platform/OperatorProfileSupport.tsx", { memberId: "member-one", profile }, deps);
-  assert.match(text(f.draw()), /Location.*Shipping/s);
+  assert.match(text(f.draw()), /Apparel sizeXL.*Location.*Shipping/s);
   assert.equal(nodes(f.draw()).filter((node) => node.type === "dt").some((node) => /Preferred name|Mobile/.test(text(node))), false, "Contact owns name and phone; the support snapshot does not duplicate them");
   assert.equal(nodes(f.draw()).some((node) => node.type === "form"), false);
   f.button("Edit profile detail").props.onClick();
@@ -271,8 +271,12 @@ test("member record action anchors have visible authorized destinations and neve
     "@/components/platform/OperatorProgress": { __esModule: true, default: component },
     "@/components/platform/StateLabel": { __esModule: true, default: component },
   }).default;
-  const tree = Record({ record, preview: true });
+  const tree = Record({ record, preview: true, publicProfileHref: "/journal/consented-profile" });
   const list = nodes(tree);
+  const publicLink = list.find(node => text(node) === "View public profile ↗");
+  assert.equal(publicLink.props.href, "/journal/consented-profile");
+  assert.equal(publicLink.props.target, "_blank");
+  assert.equal(nodes(Record({ record })).some(node => text(node) === "View public profile ↗"), false, "unavailable profiles never get a fabricated link");
   for (const id of ["new-member-task", "new-member-note"]) {
     assert.ok(list.some((node) => node.type === "a" && node.props.href === `#${id}`));
     assert.ok(list.some((node) => node.props?.id === id));

@@ -131,15 +131,16 @@ test("unknown preview IDs never silently manufacture another member's record or 
   }
 });
 
-function routeHarness(context) {
+function routeHarness(context, { record = null, profile = null, publicScope = null } = {}) {
   const calls = [];
   const Page = load("app/ops/members/[memberId]/page.tsx", {
     "next/navigation": { notFound: () => { throw new Error("not_found"); }, redirect: () => { throw new Error("redirect"); } },
     "@/components/platform/OperatorMemberRecord": { __esModule: true, default: "operator-member-record" },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: "platform-unavailable" },
     "@/lib/platform/page-data": { getOperatorPageContext: async () => context },
-    "@/lib/platform/ops-operating-repository": { getOpsMemberOperatingRecord: async () => { throw new Error("Unexpected live record lookup"); } },
-    "@/lib/platform/ops-profile-repository": { getOpsMemberProfileSupport: async () => { throw new Error("Unexpected live profile lookup"); } },
+    "@/lib/platform/ops-operating-repository": { getOpsMemberOperatingRecord: async () => { calls.push(["live-record"]); if (context.state === "preview") throw new Error("Unexpected live record lookup"); return record; } },
+    "@/lib/platform/ops-profile-repository": { getOpsMemberProfileSupport: async () => { calls.push(["live-profile"]); if (context.state === "preview") throw new Error("Unexpected live profile lookup"); return profile; } },
+    "@/lib/membership/public-card-repository": { getOwnMemberCardPublicScope: async (id) => { calls.push(["public-scope", id]); if (context.state === "preview") throw new Error("Unexpected live public profile lookup"); return publicScope; } },
     "@/lib/platform/ops-preview": {
       getPreviewOpsMemberRecord: (id) => { calls.push(["record", id]); return preview.getPreviewOpsMemberRecord(id); },
       getPreviewOpsMemberProfileSupport: (id) => { calls.push(["profile", id]); return preview.getPreviewOpsMemberProfileSupport(id); },
@@ -170,4 +171,24 @@ test("preview identity safeguards do not bypass signed-out or denied route check
   const rendered = await denied.Page({ params: Promise.resolve({ memberId: "preview-03" }) });
   assert.equal(rendered.type, "platform-unavailable");
   assert.deepEqual(denied.calls, []);
+});
+
+
+test("operator public-profile links follow authorized records and the existing public sharing scope", async () => {
+  const record = preview.getPreviewOpsMemberRecord("preview-01");
+  const context = { state: "authenticated", dashboard, viewer: { authUserId: "operator" } };
+  for (const publicScope of [null, { memberId: "member-id", token: "shared-profile-token" }]) {
+    const { Page, calls } = routeHarness(context, { record, profile: { apparelTopSize: "XL" }, publicScope });
+    const rendered = await Page({ params: Promise.resolve({ memberId: "member-id" }) });
+    assert.equal(rendered.props.publicProfileHref, publicScope ? "/journal/shared-profile-token" : null);
+    assert.equal(rendered.props.profileSupport.apparelTopSize, "XL");
+    assert.deepEqual(calls[0], ["live-record"], "record access is checked before resolving a public URL");
+  }
+  const missing = routeHarness(context);
+  await assert.rejects(missing.Page({ params: Promise.resolve({ memberId: "missing" }) }), /not_found/);
+  assert.deepEqual(missing.calls, [["live-record"]]);
+  const restricted = routeHarness(context, { record: { ...record, access: { ...record.access, capabilities: [] } } });
+  const rendered = await restricted.Page({ params: Promise.resolve({ memberId: "member-id" }) });
+  assert.equal(rendered.props.profileSupport, null);
+  assert.equal(restricted.calls.some(([name]) => name === "live-profile"), false, "apparel and address remain restricted to private-profile readers");
 });

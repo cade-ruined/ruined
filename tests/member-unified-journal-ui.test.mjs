@@ -41,7 +41,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
   function listed(url) {
     const params = url.searchParams;
     const values = [...entries.values()].filter(value => (params.get("saved") !== "true" || value.saved)
-      && (!params.get("collection") || (params.get("collection") === "public" ? value.visibility === "public" : value.visibility !== "public"))
+      && (!params.get("collection") || (params.get("collection") === "public" ? value.visibility === "public" && value.includeOnTimeline : value.visibility !== "public"))
       && (params.get("view") !== "timeline" || params.get("collection") === "private" || value.includeOnTimeline)
       && (!params.get("year") || String(value.eventYear) === params.get("year"))
       && (!params.get("search") || `${value.title} ${value.body}`.toLowerCase().includes(params.get("search").toLowerCase())));
@@ -58,7 +58,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     if (overridden !== undefined) return overridden;
     if (method === "PUT") return response({});
     if (url.pathname === "/api/my/timeline") return response(method === "GET" ? { timeline: { completedAt: null, access: { capabilities: timelineCapabilities } } } : { requirements: { timeline: { completedAt: "2026-09-22T13:00:00Z" } } });
-    if (url.pathname === "/api/my/journal/export") return response({ entries: [...entries.values()].filter(value => value.includeOnTimeline && (url.searchParams.get("collection") !== "private" || value.visibility !== "public")).sort((a, b) => a.eventYear - b.eventYear) });
+    if (url.pathname === "/api/my/journal/export") return response({ entries: [...entries.values()].filter(value => value.includeOnTimeline && (!url.searchParams.get("collection") || (url.searchParams.get("collection") === "public" ? value.visibility === "public" : value.visibility !== "public"))).sort((a, b) => a.eventYear - b.eventYear) });
     if (url.pathname === "/api/my/journal/media") {
       const mediaId = id(++uuid); media.set(mediaId, { id: mediaId, mimeType: body.mimeType, size: body.size, url: `/api/my/journal/media/${mediaId}` });
       return response({ id: mediaId, signedUrl: `https://upload.example.test/${mediaId}` });
@@ -350,80 +350,106 @@ test("switching All, Saved and Timeline after unmarking a same-year milestone ne
   assert.equal(ui.mutate().length, 0); ui.unmount();
 });
 
-test("public Journal and private Timeline request separate collections without exposing private entries during switches", async () => {
+test("Journal keeps all owner entries while public Timeline never flashes private entries", async () => {
   const ui = fixture({ sharingEnabled: true, captureRenders: true, initialEntries: [
     entry({ title: "Published words", visibility: "public" }),
     entry({ id: id(2), title: "Private milestone", visibility: "private" }),
     entry({ id: id(3), title: "Private undated thought", visibility: "private", includeOnTimeline: false, eventYear: null }),
+    entry({ id: id(4), title: "Legacy public without Timeline consent", visibility: "public", includeOnTimeline: false }),
   ] });
   await ui.flush();
-  assert.deepEqual(nodes(ui.render()).filter(node => node.type === "article").map(text).map(value => value.includes("Published words")), [true]);
-  assert.equal(ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1).url.searchParams.get("collection"), "public");
+  assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 4);
+  assert.equal(ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1).url.searchParams.get("collection"), null);
   assert.equal(ui.find(node => node.type === "a" && text(node) === "View as visitor ↗").props.href, "/journal/public-member-token");
-  assert.equal(ui.button("Unsave entry"), undefined);
   ui.render({ initialMode: "timeline" }); await ui.flush();
-  const privateCards = nodes(ui.render()).filter(node => node.type === "article");
-  assert.equal(privateCards.length, 2); assert.match(privateCards.map(text).join(), /Private undated thought/);
-  assert.ok(ui.find(node => node.type === "h3" && text(node) === "Undated"));
-  assert.equal(ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1).url.searchParams.get("collection"), "private");
+  const publicCards = nodes(ui.render()).filter(node => node.type === "article");
+  assert.equal(publicCards.length, 1); assert.match(text(publicCards[0]), /Published words/);
+  assert.equal(ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1).url.searchParams.get("collection"), "public");
+  assert.equal(ui.button("Complete Foundations step"), undefined);
+  assert.equal(ui.calls.some(call => call.url.pathname === "/api/my/timeline"), false);
   await ui.click("Export timeline ↗");
-  assert.equal(ui.calls.find(call => call.url.pathname === "/api/my/journal/export").url.searchParams.get("collection"), "private");
-  assert.deepEqual(ui.find(node => node.type === ui.Export).props.entries.map(value => value.title), ["Private milestone"]);
+  assert.equal(ui.calls.find(call => call.url.pathname === "/api/my/journal/export").url.searchParams.get("collection"), "public");
+  assert.deepEqual(ui.find(node => node.type === ui.Export).props.entries.map(value => value.title), ["Published words"]);
   ui.render({ initialMode: "all" }); await ui.flush();
   for (const frame of ui.rendered) {
     const section = nodes(frame).find(node => node.type === "section" && node.props.className === "journal");
-    const cards = nodes(section).filter(node => node.type === "article").map(text).join();
-    if (section.props["aria-label"] === "Journal") assert.doesNotMatch(cards, /Private milestone|Private undated thought/);
-    else if (section.props["aria-label"] === "Timeline") assert.doesNotMatch(cards, /Published words/);
+    if (section.props["aria-label"] === "Timeline") assert.doesNotMatch(nodes(section).filter(node => node.type === "article").map(text).join(), /Private milestone|Private undated thought|Legacy public/);
   }
   ui.unmount();
 });
 
-test("sharing composer starts private and only an explicit public choice publishes the same entry", async () => {
+test("one unchecked sharing checkbox publishes and withdraws the same Journal entry", async () => {
   const ui = fixture({ sharingEnabled: true, initialEntries: [] }); await ui.flush(); await ui.click("Add entry");
-  assert.equal(ui.field("Only me").props.checked, true); assert.equal(ui.field("Public").props.checked, false);
-  assert.equal(ui.field("Mark as a milestone").props.checked, false);
+  assert.equal(ui.field("Add to my public Timeline").props.checked, false);
+  assert.equal(nodes(ui.render()).filter(node => node.type === "input" && node.props.type === "checkbox").length, 1);
   ui.change("Your words", "An undated thought"); await ui.submit(); await ui.flush();
   const privateSave = ui.mutate()[0];
   assert.equal(privateSave.body.visibility, "private"); assert.equal(privateSave.body.eventYear, null); assert.equal(privateSave.body.includeOnTimeline, false);
-  assert.match(text(ui.render()), /Saved privately in your Timeline/);
+  assert.match(text(ui.render()), /Saved privately in your Journal/);
   await ui.click("Open entry: An undated thought"); await ui.click("Edit entry");
-  ui.change("Public", true); assert.equal(ui.guards.at(-1).dirty, true, "visibility alone must protect a draft");
-  assert.ok(ui.button("Publish to Journal")); await ui.submit(); await ui.flush();
-  assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[1].body.visibility, "public");
+  ui.change("Add to my public Timeline", true); assert.equal(ui.guards.at(-1).dirty, true);
+  assert.ok(ui.button("Save to public Timeline")); await ui.submit(); await ui.flush();
+  assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[1].body.visibility, "public"); assert.equal(ui.mutate()[1].body.includeOnTimeline, true);
   assert.equal(ui.mutate()[1].method, "PATCH"); assert.equal(ui.mutate()[1].body.expectedVersion, "1");
-  assert.match(text(ui.render()), /Published to your Journal/);
-  assert.equal(ui.find(node => node.type === "section" && node.props.className === "journal").props["aria-label"], "Journal");
-  await ui.click("Open entry: An undated thought"); await ui.click("Edit entry"); ui.change("Only me", true); await ui.submit(); await ui.flush();
-  assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[2].body.visibility, "private");
-  ui.render({ initialMode: "all" }); await ui.flush();
+  assert.match(text(ui.render()), /Added to your public Timeline/);
+  ui.render({ initialMode: "timeline" }); await ui.flush();
+  assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 1);
+  await ui.click("Open entry: An undated thought"); await ui.click("Edit entry"); ui.change("Add to my public Timeline", false); await ui.submit(); await ui.flush();
+  assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[2].body.visibility, "private"); assert.equal(ui.mutate()[2].body.includeOnTimeline, false);
+  assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 1, "the private entry stays in Journal");
+  ui.render({ initialMode: "timeline" }); await ui.flush();
   assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 0);
   ui.unmount();
 });
 
-test("disabled card sharing blocks publication while allowing an existing public entry to be made private", async () => {
+test("disabled profile sharing still permits withdrawing an existing public entry", async () => {
   const ui = fixture({ sharingEnabled: true, publicUrl: null, initialEntries: [entry({ visibility: "public" })] }); await ui.flush();
   assert.equal(ui.find(node => node.type === "a" && text(node) === "View as visitor ↗"), undefined);
-  assert.equal(ui.find(node => node.type === "a" && text(node) === "Enable member-card sharing ↗").props.href, "/my/profile");
+  assert.equal(ui.find(node => node.type === "a" && text(node) === "Enable public profile sharing ↗").props.href, "/my/profile");
   await ui.click("Open entry: One remembered beginning"); await ui.click("Edit entry");
-  assert.equal(ui.field("Public").props.disabled, true);
-  assert.equal(ui.button("Publish to Journal").props.disabled, true);
+  assert.equal(ui.field("Add to my public Timeline").props.disabled, false, "unchecking must remain available");
+  assert.equal(ui.button("Save to public Timeline").props.disabled, true);
   await ui.submit(); await ui.flush(); assert.equal(ui.mutate().length, 0);
-  assert.match(text(ui.render()), /Enable sharing on your member card before publishing/);
-  ui.change("Only me", true); await ui.submit(); await ui.flush();
+  ui.change("Add to my public Timeline", false); await ui.submit(); await ui.flush();
   assert.equal(ui.mutate().length, 1); assert.equal(ui.entries.get(id(1)).visibility, "private");
-  await ui.click("Add entry"); assert.equal(ui.field("Only me").props.checked, true);
+  await ui.click("Add entry"); assert.equal(ui.field("Add to my public Timeline").props.checked, false);
+  assert.equal(ui.field("Add to my public Timeline").props.disabled, true);
   ui.unmount();
 });
 
-test("a recovered public draft retains its audience, owner guard, and stable retry identifier", async () => {
-  const recovered = { kind: "text", title: "A public draft", body: "Draft words", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: false, visibility: "public",
+test("a recovered explicitly shared draft retains its choice and stable retry identifier", async () => {
+  const recovered = { kind: "text", title: "A public draft", body: "Draft words", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: true, visibility: "public",
     files: [], keptMedia: [], editingId: null, editingVersion: null, attempted: false, draftId: id(88), uploadIds: [], wasPending: false };
   const ui = fixture({ sharingEnabled: true, initialEntries: [], recoveryDraft: recovered }); await ui.flush(); await ui.click("Restore draft");
-  assert.equal(ui.field("Public").props.checked, true); assert.equal(ui.guards.at(-1).dirty, true);
+  assert.equal(ui.field("Add to my public Timeline").props.checked, true); assert.equal(ui.guards.at(-1).dirty, true);
   await ui.submit(); await ui.flush();
   assert.equal(ui.mutate()[0].body.id, id(88)); assert.equal(ui.mutate()[0].body.visibility, "public");
   assert.equal(ui.entries.size, 1); assert.equal(ui.cleared(), 1); ui.unmount();
+});
+
+test("new Timeline drafts start private and legacy private milestones are never opted in", async () => {
+  const ui = fixture({ sharingEnabled: true, initialMode: "timeline" }); await ui.flush(); await ui.click("Add entry");
+  assert.equal(ui.field("Add to my public Timeline").props.checked, false);
+  ui.change("Your words", "Still private from Timeline"); await ui.submit(); await ui.flush();
+  assert.equal(ui.mutate()[0].body.visibility, "private");
+  await ui.click("Open entry: One remembered beginning"); await ui.click("Edit entry");
+  assert.equal(ui.field("Add to my public Timeline").props.checked, false);
+  ui.change("Title", "Kept private"); await ui.submit(); await ui.flush();
+  assert.equal(ui.mutate()[1].body.visibility, "private");
+  assert.equal(ui.entries.get(id(1)).includeOnTimeline, true, "preserve the legacy Foundations milestone without publishing it");
+  ui.unmount();
+});
+
+test("uncertain legacy public drafts become private only after checking whether the save completed", async () => {
+  const recovered = { kind: "text", title: "Legacy draft", body: "Old public choice without timeline consent", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: false, visibility: "public",
+    files: [], keptMedia: [], editingId: null, editingVersion: null, attempted: true, draftId: id(88), uploadIds: [], wasPending: true };
+  const ui = fixture({ sharingEnabled: true, initialEntries: [], recoveryDraft: recovered }); await ui.flush(); await ui.click("Restore draft");
+  assert.equal(ui.field("Add to my public Timeline").props.checked, false);
+  await ui.submit(); assert.equal(ui.mutate().length, 0, "uncertain saves must be checked first");
+  await ui.click("Check saved entry"); await ui.flush();
+  assert.ok(ui.button("Save to Journal")); await ui.submit(); await ui.flush();
+  assert.equal(ui.mutate()[0].body.id, id(88)); assert.equal(ui.mutate()[0].body.visibility, "private");
+  assert.equal(ui.mutate()[0].body.includeOnTimeline, false); ui.unmount();
 });
 
 test("external profile controls expose one working composer action without a duplicate heading or view switch", async () => {

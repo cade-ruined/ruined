@@ -20,13 +20,15 @@ export async function getPublicJournal(token: string, cursor: string | null = nu
   const scope = await getPublicMemberCardScope(token);
   if (!scope) return null;
   const sql = getApplicationDatabase();
+  // Both choices are required. Legacy private Timeline entries never acquire
+  // public consent, and an old public entry without Timeline inclusion is hidden.
   // Cursor identity is derived solely from this member's current public collection.
   const rows = await sql<EntryRow[]>`
     select id, kind, title, body, created_at, current_version from member_journal_entries
-    where member_id = ${scope.memberId}::uuid and visibility = 'public' and deleted_at is null
+    where member_id = ${scope.memberId}::uuid and visibility = 'public' and include_on_timeline and deleted_at is null
       and (${cursor === null} or (created_at, id) < (
         select created_at, id from member_journal_entries where id = ${cursor}::uuid
-          and member_id = ${scope.memberId}::uuid and visibility = 'public' and deleted_at is null
+          and member_id = ${scope.memberId}::uuid and visibility = 'public' and include_on_timeline and deleted_at is null
       ))
     order by created_at desc, id desc limit 31
   `;
@@ -37,14 +39,14 @@ export async function getPublicJournal(token: string, cursor: string | null = nu
       select media.id, media.entry_id, media.mime_type from member_journal_media media
       join member_journal_entries entry on entry.id = media.entry_id and entry.member_id = media.member_id
       where media.member_id = ${scope.memberId}::uuid and entry.id in ${sql(page.map(row => row.id))}
-        and entry.visibility = 'public' and entry.deleted_at is null
+        and entry.visibility = 'public' and entry.include_on_timeline and entry.deleted_at is null
         and media.state = 'ready' and media.verified_at is not null and media.removed_at is null
       order by media.position, media.id
     `;
     // Withdrawals/content edits during media reads discard the stale projection.
     const current = await sql<{ id: string; current_version: number }[]>`
       select id, current_version from member_journal_entries where member_id = ${scope.memberId}::uuid
-        and id in ${sql(page.map(row => row.id))} and visibility = 'public' and deleted_at is null
+        and id in ${sql(page.map(row => row.id))} and visibility = 'public' and include_on_timeline and deleted_at is null
     `;
     if (page.some(row => !current.some(latest => latest.id === row.id && latest.current_version === row.current_version))) return null;
   }
@@ -68,7 +70,7 @@ async function publicMedia(memberId: string, id: string): Promise<PublicMediaRow
     from member_journal_media media join member_journal_entries entry
       on entry.id = media.entry_id and entry.member_id = media.member_id
     where media.id = ${id}::uuid and media.member_id = ${memberId}::uuid
-      and entry.visibility = 'public' and entry.deleted_at is null
+      and entry.visibility = 'public' and entry.include_on_timeline and entry.deleted_at is null
       and media.state = 'ready' and media.verified_at is not null and media.removed_at is null
   `;
   if (!row || !row.storage_path.startsWith(`${memberId}/verified/`)) return null;

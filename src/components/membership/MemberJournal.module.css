@@ -150,11 +150,9 @@
 .visibilityBar { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px 20px; margin-bottom:24px; font-size:12px; line-height:1.7; color:var(--member-muted); }
 .visibilityBar p { margin:0; }
 .visibilityBar a { color:var(--member-ink); text-decoration:underline; text-underline-offset:4px; min-height:32px; }
-.visibilityPicker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; border:0; border-bottom:1px solid var(--member-rule); padding:0 0 20px; margin:8px 0 20px; }
-.visibilityPicker legend { font-size:13px; margin-bottom:12px; }
-.visibilityPicker label { display:flex; align-items:start; gap:10px; padding:14px 12px; border:1px solid var(--member-rule); cursor:pointer; font-size:14px; }
-.visibilityPicker label:has(input:checked) { border-color:var(--member-red); }
-.visibilityPicker input { width:18px; height:18px; flex-shrink:0; accent-color:var(--member-red); margin-top:2px; }
-.visibilityPicker small { display:block; color:var(--member-muted); font-size:11px; line-height:1.5; margin-top:5px; }
-.visibilityPicker p { grid-column:1/-1; color:var(--member-muted); font-size:12px; line-height:1.6; margin:0; }
-@media(max-width:359px) { .visibilityPicker { grid-template-columns:1fr; gap:8px; } }
+.publicationChoice { margin:24px 0 18px; border:1px solid var(--member-rule); padding:16px; }
+.publicationChoice:has(input:checked) { border-color:var(--member-red); }
+.publicationChoice .storyMilestone { margin:0; }
+.publicationChoice input:focus-visible { outline:2px solid var(--member-ink); outline-offset:4px; }
+.publicationChoice p { margin:12px 0 0; font-size:12px; line-height:1.6; color:var(--member-muted); }
+.publicationChoice a { color:var(--member-ink); text-decoration:underline; text-underline-offset:3px; }

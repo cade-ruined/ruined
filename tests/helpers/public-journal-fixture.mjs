@@ -15,7 +15,7 @@ export async function load(path, dependencies = {}) {
   }, loaded, loaded.exports);
   return loaded.exports;
 }
-export async function publicJournalFixture(t, { applyPrivacy = true } = {}) {
+export async function publicJournalFixture(t, { applyPrivacy = true, applyTimelinePosts = true } = {}) {
   const base = await timelineFixture(t, { visibilityMigration: false }), db = base.db;
   await db.exec(`
     alter table ruined_members add column membership_activated_at timestamptz default '2020-01-01';
@@ -28,7 +28,12 @@ export async function publicJournalFixture(t, { applyPrivacy = true } = {}) {
   await db.exec(await source("db/migrations/20260917200000_public_member_cards.sql"));
   await db.exec(await source("db/migrations/20260919210000_member_profile_card_sync.sql"));
   const privacyMigration = await source("db/migrations/20260928010000_member_journal_visibility.sql");
-  if (applyPrivacy) await db.exec(privacyMigration);
+  const timelinePostsMigration = await source("db/migrations/20261001120000_public_timeline_posts.sql");
+  const migratePrivacy = async () => {
+    await db.exec(privacyMigration);
+    if (applyTimelinePosts) await db.exec(timelinePostsMigration);
+  };
+  if (applyPrivacy) await migratePrivacy();
   const token = "a".repeat(43), otherToken = "b".repeat(43);
   for (const [member, person, shareToken] of [[timelineIds.member, timelineIds.person, token], [timelineIds.otherMember, timelineIds.otherMember, otherToken]]) {
     await db.query("insert into person_profiles(person_id,display_name,member_tag,bio,location_label,building_now,website_url) values($1,'Shared name','shared-tag','PRIVATE BIO','PRIVATE LOCATION','PRIVATE BUILDING','https://private.example.test')", [person]);
@@ -75,5 +80,5 @@ export async function publicJournalFixture(t, { applyPrivacy = true } = {}) {
   const visitor = await load("src/lib/membership/public-journal-repository.ts", { ...shared, "./public-card-model": cardModel });
   const enable = (enabled = true, member = timelineIds.member) => db.query("update member_public_cards set public_enabled=$1,version=version+1 where member_id=$2", [enabled,member]);
   return { ...base, model, cardModel, cardRepository, journal, visitor, token, otherToken, blobs, downloads, enable,
-    migratePrivacy: () => db.exec(privacyMigration), setStorageHook: hook => { storageHook = hook; }, setAfterQuery: hook => { afterQuery = hook; } };
+    migratePrivacy, migrateTimelinePosts: () => db.exec(timelinePostsMigration), setStorageHook: hook => { storageHook = hook; }, setAfterQuery: hook => { afterQuery = hook; } };
 }

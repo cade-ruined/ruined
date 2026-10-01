@@ -21,7 +21,7 @@ export default function MemberHome({member,preview=false}:{member:MemberHomeSnap
   useEffect(()=>{
     function synchronize(){
       const value=window.location.hash.slice(1);
-      if(value==="timeline"||value==="saved"){setTab("timeline");setJournalMode("timeline");}
+      if(value==="timeline"){setTab("timeline");setJournalMode("timeline");}
       else {setTab("journal");setJournalMode("all");}
     }
     synchronize();
@@ -63,7 +63,7 @@ export default function MemberHome({member,preview=false}:{member:MemberHomeSnap
 
     <MemberJournal preview={preview} sharingEnabled writable={memberCan(member.access,"profile.write")} initialMode={journalMode} onModeChange={mode=>select(mode==="timeline"?"timeline":"journal")} renderLayout={(content,addEntryAction)=><>
       <div className={styles.profileControls}>
-        <div className={styles.tabs} role="tablist" aria-label="Your profile">{tabs.map((value,index)=><button type="button" role="tab" aria-selected={tab===value} aria-controls={`${id}-entries-panel`} id={`${id}-${value}-tab`} tabIndex={tab===value?0:-1} onClick={()=>select(value)} onKeyDown={event=>keyNavigate(event,index)} ref={element=>{tabRefs.current[index]=element;}} key={value}>{value[0].toUpperCase()+value.slice(1)}{value==="timeline"?<svg aria-label="Private" width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor"><rect x="1" y="6" width="10" height="7" rx="1"/><path d="M3 6V4a3 3 0 0 1 6 0v2"/></svg>:null}</button>)}</div>
+        <div className={styles.tabs} role="tablist" aria-label="Your profile">{tabs.map((value,index)=><button type="button" role="tab" aria-selected={tab===value} aria-controls={`${id}-entries-panel`} id={`${id}-${value}-tab`} tabIndex={tab===value?0:-1} onClick={()=>select(value)} onKeyDown={event=>keyNavigate(event,index)} ref={element=>{tabRefs.current[index]=element;}} key={value}>{value[0].toUpperCase()+value.slice(1)}{value==="journal"?<svg aria-label="Private" width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor"><rect x="1" y="6" width="10" height="7" rx="1"/><path d="M3 6V4a3 3 0 0 1 6 0v2"/></svg>:null}</button>)}</div>
         <div className={styles.entryAction}>{addEntryAction}</div>
       </div>
       <div role="tabpanel" id={`${id}-entries-panel`} aria-labelledby={`${id}-${tab}-tab`} tabIndex={0}>{content}</div>

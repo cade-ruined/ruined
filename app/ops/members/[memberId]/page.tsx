@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
+import { getOwnMemberCardPublicScope } from "@/lib/membership/public-card-repository";
+
 import OperatorMemberRecord from "@/components/platform/OperatorMemberRecord";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
@@ -54,13 +56,23 @@ export default async function OperationsMemberRecordPage({
     return <PlatformUnavailable accessHref="/ops/access" />;
   }
   if (!record) notFound();
-  const profileSupport = record.access.capabilities.includes("member.private_profile.read")
-    ? await getOpsMemberProfileSupport(context.viewer.authUserId, memberId).catch((error) => {
+  const [profileSupport, publicProfile] = await Promise.all([
+    record.access.capabilities.includes("member.private_profile.read")
+      ? getOpsMemberProfileSupport(context.viewer.authUserId, memberId).catch((error) => {
         console.error("Operations member profile support could not be loaded", {
           errorType: error instanceof Error ? error.name : "UnknownError",
         });
         return null;
       })
-    : null;
-  return <OperatorMemberRecord profileSupport={profileSupport} record={record} returnTo={returnTo} />;
+      : Promise.resolve(null),
+    // Resolve only after this operator is authorized to view the member record.
+    // The existing public scope honors profile release and the member's sharing choice.
+    getOwnMemberCardPublicScope(memberId).catch((error) => {
+      console.error("Operations public profile link could not be loaded", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      return null;
+    }),
+  ]);
+  return <OperatorMemberRecord profileSupport={profileSupport} publicProfileHref={publicProfile ? `/journal/${publicProfile.token}` : null} record={record} returnTo={returnTo} />;
 }

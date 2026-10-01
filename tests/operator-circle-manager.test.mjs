@@ -224,6 +224,22 @@ test("Circle directory remains a responsive grid with the selected workspace in 
   assert.doesNotMatch(visibleText(page), /Manage members/);
 });
 
+test("opening an existing populated Circle exposes member search and placement without another disclosure", () => {
+  const page = render({ initialCircleId: firstCircle.id });
+  const search = byId(page, `member-search-${firstCircle.id}`);
+  assert.equal(search.tagName, "section");
+  assert.match(visibleText(search), /Add members/);
+  for (let node = search; node; node = node.parentNode) {
+    assert.notEqual(node.tagName, "details", "Add members must not be hidden in a collapsed disclosure");
+    assert.equal(attr(node, "hidden"), undefined);
+    if (node.tagName === "fieldset") assert.equal(attr(node, "disabled"), undefined);
+  }
+  assert.ok(elements(search).some(node => node.tagName === "input" && attr(node, "name") === "memberQuery"));
+  const add = elements(search).find(node => node.tagName === "button" && attr(node, "aria-label") === `Add ${candidate.name} to ${firstCircle.name}`);
+  assert.ok(add);
+  assert.equal(attr(add, "disabled"), undefined);
+});
+
 test("one top creation action reveals a single form before the directory, and Cancel preserves the draft", () => {
   const page = render();
   const ordered = elements(page);

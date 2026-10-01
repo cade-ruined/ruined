@@ -25,8 +25,8 @@ const expectedDestinations = {
   "/my": "Profile",
   "/my/card": "My Card",
   "/my/invitation": "My Invitation",
-  "/my/foundations/timeline": "My Timeline",
   "/my/artifacts": "Artifacts",
+  "/my/foundations/timeline": "Foundations timeline",
   "/my/circle": "Circle",
   "/my/experiences": "Experiences",
   "/my/foundations": "Foundations",
@@ -194,6 +194,12 @@ test("The member card is searchable, marks its own destination current, and keep
   assert.deepEqual(results.map((node) => node.props.href), ["/my/card"]);
   assert.equal(results[0].props["aria-current"], "page");
   f.unmount();
+});
+
+test("the private Foundations exercise stays in Foundations navigation", () => {
+  assert.equal(currentMemberPrimaryDestination("/my/foundations/timeline"), "/my/foundations");
+  assert.equal(currentMemberPrimaryDestination("/my/foundations/timeline/export"), "/my/foundations");
+  assert.deepEqual(findMemberDestinations("private exercise").map(({ href }) => href), ["/my/foundations/timeline"]);
 });
 
 test("Opening the menu calls showModal, focuses search, and exposes every destination with one current page", () => {

@@ -77,7 +77,9 @@ function fixture({ entries = remembered, writable = true, preview = false, save,
 test("timeline opens for reading with native expandable stories, accessible chronological dates, and no editor", () => {
   const ui = fixture(), tree = ui.render();
   assert.equal(form(tree), undefined);
-  assert.equal(text(nodes(tree).find(node => node.type === "h1")), "My Timeline");
+  assert.equal(text(nodes(tree).find(node => node.type === "h1")), "Foundations timeline");
+  assert.match(text(tree), /Your private Foundations exercise/);
+  assert.match(text(tree), /do not appear on your public Timeline unless you choose to share them from Journal/);
   assert.equal(button(tree, "+ Add moment").props["aria-expanded"], false);
   const stories = nodes(tree).filter(node => node.type === "details");
   assert.equal(stories.length, 3);

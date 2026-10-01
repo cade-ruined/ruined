@@ -36,6 +36,26 @@ test("Journal creation accepts title-only milestones and preserves full day/body
  const bad=await f.POST(req("POST",{...input,id,eventYear:null}));assert.equal(bad.status,400);
  assert.equal(f.calls.filter(call=>call.name==="createJournalEntry").length,1);
 });
+test("public Timeline creation requires both explicit choices but accepts undated words or media",async()=>{
+ const f=await fixture("app/api/my/journal/route.ts");
+ for(const includeOnTimeline of [undefined,false]){
+   const response=await f.POST(req("POST",{id,kind:"text",title:"",body:"Chosen words",mediaIds:[],visibility:"public",includeOnTimeline}));
+   assert.equal(response.status,400);
+ }
+ assert.equal(f.calls.filter(call=>call.name==="createJournalEntry").length,0);
+ for(const fields of [{kind:"text",body:"Chosen words",mediaIds:[]},{kind:"images",body:"",mediaIds:[randomUUID()]}]){
+   const response=await f.POST(req("POST",{id,title:"",visibility:"public",includeOnTimeline:true,...fields}));
+   assert.equal(response.status,201);
+ }
+ const publicCalls=f.calls.filter(call=>call.name==="createJournalEntry");
+ assert.equal(publicCalls.length,2);
+ for(const call of publicCalls){assert.equal(call.args[1].eventYear,null);assert.equal(call.args[1].title,"");assert.equal(call.args[1].visibility,"public");assert.equal(call.args[1].includeOnTimeline,true);}
+ const privateResponse=await f.POST(req("POST",{id,kind:"text",title:"",body:"Private words",mediaIds:[],includeOnTimeline:false,visibility:"private"}));
+ assert.equal(privateResponse.status,201);
+ const omitted=await f.POST(req("POST",{id,kind:"text",title:"",body:"No sharing choice",mediaIds:[]}));
+ assert.equal(omitted.status,201);
+ assert.equal(f.calls.filter(call=>call.name==="createJournalEntry").at(-1).args[1].visibility,undefined);
+});
 test("Journal edit requires explicit version/full fields and preserves bookmark PATCH compatibility",async()=>{
  const f=await fixture("app/api/my/journal/[id]/route.ts");
  let response=await f.PATCH(req("PATCH",{action:"edit",expectedVersion:"2",...input}),context);assert.equal(response.status,200);

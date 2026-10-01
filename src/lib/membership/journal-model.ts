@@ -55,7 +55,11 @@ export function validateJournalInput(value: unknown): JournalCreateInput {
       || (entry.includeOnTimeline !== undefined && typeof entry.includeOnTimeline !== "boolean")) {
     throw new JournalError(400, "Choose a valid year, month and day, or leave the date blank.");
   }
-  if (entry.includeOnTimeline && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to include this entry on your timeline.");
+  // Visibility is never inferred from the legacy, owner-only Timeline flag.
+  // New public posts require the explicit pair; private Foundation milestones
+  // retain their title/date requirements without acquiring publication consent.
+  if (entry.visibility === "public" && entry.includeOnTimeline !== true) throw new JournalError(400, "Choose Add to public Timeline to publish this entry.");
+  if (entry.includeOnTimeline && entry.visibility !== "public" && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to include this entry on your timeline.");
   return { id: entry.id, kind, title: entry.title.trim(), body: entry.body.trim(), mediaIds: entry.mediaIds as string[],
     eventYear: eventYear as number | null, eventMonth: eventMonth as number | null, eventDay: eventDay as number | null,
     includeOnTimeline: entry.includeOnTimeline === true,

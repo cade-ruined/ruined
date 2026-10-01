@@ -49,43 +49,51 @@ export async function getJournal(authUserId:string, cursor:string|null=null, sav
   const oldest=options.order==="oldest";
   // Cursor position is derived from the same filtered owner-only result. A
   // foreign or deleted cursor can never reveal another member's content.
-  const rows=await sql<EntryRow[]>`with filtered as (
-    select * from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null
-      and (${!saved} or saved) and (${!timeline || collection==="private"} or include_on_timeline)
+  const rows=await sql<EntryRow[]>`with dated as (
+    select *,coalesce(event_year,case when visibility='public' and include_on_timeline then extract(year from created_at at time zone 'UTC')::integer end) as timeline_year,
+      case when event_year is null then extract(month from created_at at time zone 'UTC')::integer else event_month end as timeline_month,
+      case when event_year is null then extract(day from created_at at time zone 'UTC')::integer else event_day end as timeline_day
+    from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null
+  ), filtered as (
+    select * from dated where (${!saved} or saved) and (${!timeline && collection!=="public"} or include_on_timeline)
       and (${collection===null} or visibility=${collection})
-      and (${year===null} or event_year=${year}::integer)
+      and (${year===null} or timeline_year=${year}::integer)
       and (${!search} or strpos(lower(coalesce(title,'') || ' ' || coalesce(body,'')),lower(${search}))>0)
   ), ordered as (
     select *,row_number() over (order by
-      case when ${timeline && oldest} then event_year end asc,
-      case when ${timeline && !oldest} then event_year end desc,
-      case when ${timeline} then (event_month is null)::integer end asc,
-      case when ${timeline && oldest} then event_month end asc,
-      case when ${timeline && !oldest} then event_month end desc,
-      case when ${timeline} then (event_day is null)::integer end asc,
-      case when ${timeline && oldest} then event_day end asc,
-      case when ${timeline && !oldest} then event_day end desc,
+      case when ${timeline && oldest} then timeline_year end asc,
+      case when ${timeline && !oldest} then timeline_year end desc,
+      case when ${timeline} then (timeline_month is null)::integer end asc,
+      case when ${timeline && oldest} then timeline_month end asc,
+      case when ${timeline && !oldest} then timeline_month end desc,
+      case when ${timeline} then (timeline_day is null)::integer end asc,
+      case when ${timeline && oldest} then timeline_day end asc,
+      case when ${timeline && !oldest} then timeline_day end desc,
       case when ${timeline} then timeline_position end asc,
       case when ${!timeline && oldest} then created_at end asc,
       case when ${!timeline && !oldest} then created_at end desc,id asc) as ordinal from filtered
   ) select * from ordered where (${cursor===null} or ordinal>(select ordinal from ordered where id=${cursor}::uuid)) order by ordinal limit 31`;
-  const [summary]=await sql<{total:number;years:number[]}[]>`select
-    count(*) filter(where (${year===null} or event_year=${year}::integer))::integer as total,
-    coalesce(array_agg(distinct event_year order by event_year desc) filter(where event_year is not null),'{}'::integer[]) as years
+  const [summary]=await sql<{total:number;years:number[]}[]>`with dated as (
+    select *,coalesce(event_year,case when visibility='public' and include_on_timeline then extract(year from created_at at time zone 'UTC')::integer end) as timeline_year
     from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null
-      and (${!saved} or saved) and (${!timeline || collection==="private"} or include_on_timeline)
+  ) select
+    count(*) filter(where (${year===null} or timeline_year=${year}::integer))::integer as total,
+    coalesce(array_agg(distinct timeline_year order by timeline_year desc) filter(where timeline_year is not null),'{}'::integer[]) as years
+    from dated where (${!saved} or saved) and (${!timeline && collection!=="public"} or include_on_timeline)
       and (${collection===null} or visibility=${collection})
       and (${!search} or strpos(lower(coalesce(title,'') || ' ' || coalesce(body,'')),lower(${search}))>0)`;
   const page=rows.slice(0,30);
   return {entries:await entriesWithMedia(owner.id,page),hasMore:rows.length>30,nextCursor:rows.length>30 ? page.at(-1)!.id : null,
     total:summary?.total ?? 0,years:summary?.years ?? [],writable:owner.writable,mediaReady:journalStorageConfigured(),
-    ...(collection === null ? {} : { publicUrl: await ownPublicJournalUrl(owner.id) })};
+    publicUrl: await ownPublicJournalUrl(owner.id)};
 }
 export async function exportJournalTimeline(authUserId:string, collection?:"private"|"public"):Promise<JournalEntry[]> {
   const owner=await journalOwner(authUserId); const sql=getApplicationDatabase();
   const rows=await sql<EntryRow[]>`select * from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null and include_on_timeline
       and (${collection===undefined} or visibility=${collection??null})
-    order by event_year,coalesce(event_month,13),coalesce(event_day,32),timeline_position,created_at,id`;
+    order by coalesce(event_year,extract(year from created_at at time zone 'UTC')::integer),
+      coalesce(event_month,case when event_year is null then extract(month from created_at at time zone 'UTC')::integer else 13 end),
+      coalesce(event_day,case when event_year is null then extract(day from created_at at time zone 'UTC')::integer else 32 end),timeline_position,created_at,id`;
   return entriesWithMedia(owner.id,rows);
 }
 export async function prepareJournalUpload(authUserId:string, value:unknown) {

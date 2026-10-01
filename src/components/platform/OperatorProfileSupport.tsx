@@ -142,6 +142,7 @@ export default function OperatorProfileSupport({
       <div className="mt-2">
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           {[
+            ["Apparel size", profile.apparelTopSize?.trim() || "Not recorded"],
             ["Location", profile.location ?? "Not recorded"],
             ["Shipping", profileAddress(profile)],
           ].map(([label, value]) => (

@@ -510,7 +510,7 @@ export default function RuinedTimeline({
       <header className={styles.readingHeader}>
         <div>
           <p className={styles.kicker}>PRIVATE / YOUR STORY</p>
-          <h1 className={styles.readingTitle} id={`${rawId}-title`}>My Timeline</h1>
+          <h1 className={styles.readingTitle} id={`${rawId}-title`}>Foundations timeline</h1>
           <p className={styles.readingMeta}>{summaryFor(sortedEntries, examples)}</p>
         </div>
         <div className={styles.readingActions}>
@@ -519,7 +519,7 @@ export default function RuinedTimeline({
         </div>
       </header>
 
-      {examples ? <p className={styles.readingNotice}>An example timeline. Your moments stay private when you build your own.</p> : null}
+      <p className={styles.readingNotice}>{examples ? "An example of the private Foundations exercise. " : "Your private Foundations exercise. "}These moments stay in your Journal. They do not appear on your public Timeline unless you choose to share them from Journal.</p>
       <p className={styles.readingSaveStatus} role="status">{status}</p>
       {error ? <p className={styles.error} id={errorId} role="alert">{error}</p> : null}
       {recoveryDraft ? <div className={styles.readingNotice} role="status">

@@ -380,7 +380,7 @@ test("transfer API enforces origin/session/JSON, uses verified actor, maps domai
   assert.doesNotMatch(JSON.stringify(await unexpected.json()), /Private provider/);
 });
 
-for (const funding of ["operator", "complimentary"]) test(`Circle transfer requires current ${funding} funding and completed unrestricted entry`, async (t) => {
+for (const funding of ["operator", "complimentary"]) test(`Circle placement and transfer require current ${funding} funding and completed unrestricted entry`, async (t) => {
   const f = await fixture(t);
   await f.db.query("insert into people values ($1,'active')", [ids.member]);
   await f.db.query("insert into platform_users (auth_user_id,status,member_id,person_id) values ($1,'active',$1,$1)", [ids.member]);
@@ -409,6 +409,10 @@ for (const funding of ["operator", "complimentary"]) test(`Circle transfer requi
   const result = await f.transfer();
   assert.equal(result.circleId, ids.circleB);
   assert.equal(result.previousAssignmentId, f.placement);
+  await f.db.query("update circle_member_assignments set ended_at=now(), ended_by_auth_user_id=$2 where member_id=$1 and ended_at is null", [ids.member, ids.admin]);
+  const assignment = await f.repository.assignMemberToCircle({ actorAuthUserId: ids.admin, memberId: ids.member, circleId: ids.circleB });
+  assert.equal(assignment.created, true, "A funded member without a Circle can be added without requiring paid billing");
+  assert.equal(assignment.circleId, ids.circleB);
   const state = (await f.db.query("select member.membership_state,lifecycle.billing_state from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id=member.id where member.id=$1", [ids.member])).rows[0];
   assert.deepEqual(state, { membership_state: "pending", billing_state: "pending" });
 });

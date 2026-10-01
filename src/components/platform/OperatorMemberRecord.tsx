@@ -52,11 +52,13 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
 
 export default function OperatorMemberRecord({
   profileSupport,
+  publicProfileHref = null,
   record,
   preview = false,
   returnTo,
 }: {
   profileSupport?: OpsMemberProfileSupport | null;
+  publicProfileHref?: string | null;
   record: OpsMemberRecord;
   preview?: boolean;
   returnTo?: string;
@@ -97,6 +99,7 @@ export default function OperatorMemberRecord({
             {header.circleName ?? "No Circle"}{header.blockName ? ` · ${header.blockName}` : ""}
           </p>
           {header.primaryEmail ? <p className="mt-1 break-all text-sm text-black/55">{header.primaryEmail}</p> : null}
+          {publicProfileHref ? <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={publicProfileHref} target="_blank" rel="noopener noreferrer">View public profile ↗</Link> : <p className="mt-2 text-xs text-black/50">{preview ? "Public profile links appear when sharing is enabled." : "Public profile is not available yet."}</p>}
           <p className="mt-2 text-xs text-black/50">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
           </div>
         </div>

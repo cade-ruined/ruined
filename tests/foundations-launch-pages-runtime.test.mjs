@@ -8,32 +8,35 @@ const require = createRequire(import.meta.url);
 const Preview = () => null;
 const Home = () => null;
 const Experience = () => null;
+const Timeline = () => null;
 const AccessNotice = () => null;
 const Unavailable = () => null;
 const component = (value) => ({ __esModule: true, default: value });
 
-function fixture({ launched = false, state = "authenticated", eligible = false, identity = {} } = {}) {
+function fixture({ launched = false, state = "authenticated", eligible = false, revisit = false, identity = {} } = {}) {
   const calls = [];
   const dependencies = {
     "next/navigation": { redirect: (href) => { throw new Error(`redirect:${href}`); } },
     "@/components/foundations/MemberFoundationsPreview": component(Preview),
     "@/components/foundations/MemberFoundationsHome": component(Home),
     "@/components/foundations/MemberFoundationsExperience": component(Experience),
+    "@/components/membership/RuinedTimeline": component(Timeline),
     "@/components/membership/MemberAccessNotice": component(AccessNotice),
     "@/components/platform/PlatformUnavailable": component(Unavailable),
     "@/lib/foundations/availability": { isFoundationsLaunched: () => launched },
-    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: {} },
+    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: {}, PREVIEW_MEMBER_TIMELINE: { entries: [], revision: "0" } },
     "@/lib/membership/preview-scenarios": { memberPreviewFoundations: () => ({ preview: true }) },
     "@/lib/membership/page-context": {
       getMembershipPageContext: async () => ({ state, data: ["signed_out", "denied", "unavailable"].includes(state) ? null : identity, viewer: { authUserId: "member" } }),
     },
     "@/lib/membership/access-policy": {
       deriveMemberAccessPolicy: () => { calls.push("access"); return {}; },
-      memberCan: () => eligible,
+      memberCan: (_, capability) => capability === "foundations.revisit" ? revisit : eligible,
     },
     "@/lib/membership/repository": {
       getMemberIdentity: async () => identity,
       getMemberFoundationRequirements: async () => { calls.push("requirements"); return {}; },
+      getMemberTimeline: async (owner) => { calls.push(`private-timeline:${owner}`); return { entries: [{ title: "A private moment" }], revision: "1" }; },
     },
     "@/lib/foundations/repository": {
       getMemberFoundationsState: async () => { calls.push("progress"); return { enrollmentId: "enrolled", status: "in_progress" }; },
@@ -57,6 +60,7 @@ function fixture({ launched = false, state = "authenticated", eligible = false, 
 
 const homePath = "app/my/foundations/page.tsx";
 const experiencePath = "app/my/foundations/experience/page.tsx";
+const timelinePath = "app/my/foundations/timeline/page.tsx";
 
 test("before launch, pending, active, complimentary and operator members all get the couch preview without onboarding or progress reads", async () => {
   for (const identity of [
@@ -69,6 +73,7 @@ test("before launch, pending, active, complimentary and operator members all get
     assert.equal((await f.load(homePath)()).type, Preview);
     assert.deepEqual(f.calls, []);
     await assert.rejects(f.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
+    await assert.rejects(f.load(timelinePath)(), /^Error: redirect:\/my\/foundations$/);
     assert.deepEqual(f.calls, []);
   }
 });
@@ -77,15 +82,16 @@ test("a local preview also requires an explicit launch flag before it exposes th
   const closed = fixture({ state: "preview" });
   assert.equal((await closed.load(homePath)()).type, Preview);
   await assert.rejects(closed.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
+  await assert.rejects(closed.load(timelinePath)(), /^Error: redirect:\/my\/foundations$/);
   assert.deepEqual(closed.calls, []);
   const open = fixture({ state: "preview", launched: true, eligible: true });
-  for (const path of [homePath, experiencePath]) {
+  for (const path of [homePath, experiencePath, timelinePath]) {
     assert.equal((await open.load(path)()).props.writable, false);
   }
 });
 
 test("the launch preview preserves authentication and denied-account boundaries", async () => {
-  for (const path of [homePath, experiencePath]) {
+  for (const path of [homePath, experiencePath, timelinePath]) {
     const signedOut = fixture({ state: "signed_out" });
     await assert.rejects(signedOut.load(path)(), /^Error: redirect:\/my\/access$/);
     for (const state of ["denied", "unavailable"]) {
@@ -94,6 +100,25 @@ test("the launch preview preserves authentication and denied-account boundaries"
       assert.deepEqual(f.calls, []);
     }
   }
+});
+
+test("Foundations timeline retains private exercise completion without opening the public Timeline", async () => {
+  const denied = fixture({ launched: true });
+  assert.equal((await denied.load(timelinePath)()).type, AccessNotice);
+  assert.deepEqual(denied.calls, ["access"]);
+
+  const open = fixture({ launched: true, eligible: true });
+  const page = await open.load(timelinePath)();
+  assert.equal(page.type, Timeline);
+  assert.equal(page.props.writable, true);
+  assert.deepEqual(page.props.initialTimeline.entries, [{ title: "A private moment" }]);
+  assert.deepEqual(open.calls, ["access", "private-timeline:member"]);
+
+  const readonly = fixture({ launched: true, revisit: true });
+  const revisitPage = await readonly.load(timelinePath)();
+  assert.equal(revisitPage.type, Timeline);
+  assert.equal(revisitPage.props.writable, false);
+  assert.deepEqual(readonly.calls, ["access", "private-timeline:member"]);
 });
 
 test("launching Foundations retains membership eligibility and loads saved progress for eligible members", async () => {
