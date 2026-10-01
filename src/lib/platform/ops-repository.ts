@@ -2088,9 +2088,9 @@ async function approveCirclePlacement(tx: postgres.TransactionSql, input: { acto
   const exceptional = input.projectedCount > 12;
   const capability = exceptional || input.reviewId ? "circle_exception" : "circle_placement";
   const [authority] = await tx<Array<{ allowed: boolean }>>`select private.ruined_has_leadership_responsibility(${input.actor}::uuid, ${capability}) as allowed`;
-  if (!authority?.allowed) throw new OpsRepositoryError("forbidden", capability === "circle_exception" ? "Tyler/Mitch’s exception review is required. An Administrator can configure this responsibility in Leadership." : "Circle placement responsibility is required. An Administrator can configure this in Leadership.");
+  if (!authority?.allowed) throw new OpsRepositoryError("forbidden", "Active Administrator access is required to approve Circle placement.");
   const reason = input.exceptionReason?.trim() ?? "";
-  if (exceptional && (reason.length < 10 || reason.length > 1000)) throw new OpsRepositoryError("invalid_request", "Explain the capacity exception in 10–1000 characters for Tyler/Mitch’s review.");
+  if (exceptional && (reason.length < 10 || reason.length > 1000)) throw new OpsRepositoryError("invalid_request", "Explain the capacity exception in 10–1000 characters for Administrator review.");
   let reviewId: string | null = null;
   if (input.reviewId) {
     if (!UUID_PATTERN.test(input.reviewId)) throw new OpsRepositoryError("invalid_request", "Choose a valid review.");

@@ -2,7 +2,7 @@ import "server-only";
 import type postgres from "postgres";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { OpsRepositoryError, requireOpsAdmin, writeOpsAudit } from "@/lib/platform/ops-repository";
-import { LEADERSHIP_LABELS, LEADERSHIP_RESPONSIBILITIES, parseLeadershipCommand, type LeadershipDirectory, type LeadershipResponsibility } from "@/lib/platform/leadership-model";
+import { LEADERSHIP_RESPONSIBILITIES, parseLeadershipCommand, type LeadershipDirectory, type LeadershipResponsibility } from "@/lib/platform/leadership-model";
 export class LeadershipRepositoryError extends OpsRepositoryError {}
 
 export async function requireLeadershipResponsibility(tx: postgres.TransactionSql, actorAuthUserId: string, capability: LeadershipResponsibility): Promise<void> {
@@ -10,22 +10,21 @@ export async function requireLeadershipResponsibility(tx: postgres.TransactionSq
   // acquiring member/Circle/service locks throughout the leadership workflow.
   await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
   const rows = await tx<Array<{ allowed: boolean }>>`select private.ruined_has_leadership_responsibility(${actorAuthUserId}::uuid, ${capability}) as allowed`;
-  if (!rows[0]?.allowed) throw new LeadershipRepositoryError("forbidden", `An Administrator must assign you ${LEADERSHIP_LABELS[capability].toLowerCase()} responsibility in Leadership before you can do this.`);
+  if (!rows[0]?.allowed) throw new LeadershipRepositoryError("forbidden", "Active Administrator access is required for this Leadership action.");
 }
 const iso = (value: Date | string) => new Date(value).toISOString();
 const day = (value: Date | string) => iso(value).slice(0, 10);
 
 async function requireLeadershipReader(tx: postgres.TransactionSql, actor: string) {
-  const rows = await tx<Array<{ admin: boolean; capabilities: string[] }>>`
-    select exists(select 1 from platform_role_grants role_grant where role_grant.auth_user_id = account.auth_user_id and role_grant.role_slug = 'ops_admin' and role_grant.revoked_at is null) as admin,
-      array(select grant_row.capability from leadership_responsibility_grants grant_row where grant_row.auth_user_id = account.auth_user_id and grant_row.revoked_at is null) as capabilities
+  const rows = await tx<Array<{ admin: boolean }>>`
+    select exists(select 1 from platform_role_grants role_grant where role_grant.auth_user_id = account.auth_user_id and role_grant.role_slug = 'ops_admin' and role_grant.revoked_at is null) as admin
     from platform_users account
     where account.auth_user_id = ${actor}::uuid and account.status = 'active'
       and exists(select 1 from platform_role_grants role_grant where role_grant.auth_user_id = account.auth_user_id and role_grant.role_slug = 'ops_admin' and role_grant.revoked_at is null)
   `;
   const row = rows[0];
-  if (!row || (!row.admin && !row.capabilities.length)) throw new LeadershipRepositoryError("forbidden", "Leadership responsibility is required to view these private records.");
-  return { canConfigure: row.admin, capabilities: row.capabilities.filter((v): v is LeadershipResponsibility => LEADERSHIP_RESPONSIBILITIES.includes(v as LeadershipResponsibility)) };
+  if (!row?.admin) throw new LeadershipRepositoryError("forbidden", "Active Administrator access is required to view these private records.");
+  return { canConfigure: true, capabilities: [...LEADERSHIP_RESPONSIBILITIES] };
 }
 
 async function requireEligibleSupporter(tx: postgres.TransactionSql, authUserId: string, circleId: string) {
@@ -173,8 +172,8 @@ export async function getLeadershipDirectory(actorAuthUserId: string): Promise<L
       left join supporter_service_details details on details.assignment_id = staff.id
       where staff.role_slug = 'circle_leader' order by staff.ended_at nulls first,staff.assigned_at desc
     `;
-    // Service coordinators do not gain private financial records merely through
-    // readiness responsibility. Administrators can configure owners, not read payments.
+    // Active Administrators inherit reimbursement access along with the other
+    // Leadership decisions. The reader check above excludes all other accounts.
     const reimbursements = access.capabilities.includes("reimbursements") ? await tx<Array<{ id: string; assignment_id: string; period_start: string; period_end: string; amount_minor: number; currency: string; status: "pending" | "approved" | "rejected" | "processed"; reason: string; decision_reason: string | null; payment_reference: string | null; processed_at: string | null }>>`select id,assignment_id::text,period_start,period_end,amount_minor,currency,status,reason,decision_reason,payment_reference,processed_at from supporter_reimbursements order by requested_at desc` : [];
     return {
       ...access,

@@ -75,7 +75,7 @@ async function fixture(t) {
   await db.query("insert into circles(id,name,status,slug) values ($1,'Circle A','active','circle-a'),($2,'Circle B','forming','circle-b')", [ids.a, ids.b]);
   await db.query("insert into circle_member_assignments(member_id,circle_id) values ($1,$2)", [ids.member, ids.a]);
   await db.exec(await readFile(new URL("../db/migrations/20260930100000_supporter_service.sql", import.meta.url), "utf8"));
-  await db.query("insert into leadership_responsibility_grants(auth_user_id,capability,granted_by_auth_user_id,reason) values($1,'supporter_readiness',$1,'Test readiness coordinator')", [ids.admin]);
+  await db.exec(await readFile(new URL("../db/migrations/20261001130000_administrator_leadership_access.sql", import.meta.url), "utf8"));
   await db.query("insert into supporter_readiness_approvals(auth_user_id,circle_id,approved_by_auth_user_id,reason) values($1,$2,$3,'Prepared and approved')", [ids.account, ids.a, ids.admin]);
   const placementMigration = await readFile(new URL("../db/migrations/20260930101000_circle_placement.sql", import.meta.url), "utf8");
   const countStart = placementMigration.indexOf("create or replace function private.ruined_circle_participant_count(");

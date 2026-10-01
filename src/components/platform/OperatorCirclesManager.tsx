@@ -184,7 +184,7 @@ export default function OperatorCirclesManager({
     await change(circle.id, async () => {
       if (circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim()) {
         await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: circle.id, reason: exceptionReason });
-        return `Exception requested for ${member.name}. Tyler/Mitch must review before placement.`;
+        return `Exception requested for ${member.name}. An Administrator must review before placement.`;
       }
       const result = await request<{ assignment: { created: boolean; id: string; assignedAt: string; memberId: string; circleId: string } }>("/api/ops/circle-assignments", "POST", { memberId: member.memberId, circleId: circle.id });
       if (!result.assignment || typeof result.assignment.id !== "string" || !result.assignment.id
@@ -221,7 +221,7 @@ export default function OperatorCirclesManager({
       await change(circle.id, async () => {
         if (destination.activeMembers >= 12 || destination.activeMembers === 11 && exceptionReason.trim()) {
           await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: destination.id, reason: exceptionReason });
-          return `Move requested for ${member.name}. Tyler/Mitch must review the capacity exception.`;
+          return `Move requested for ${member.name}. An Administrator must review the capacity exception.`;
         }
         const result = await request<{ transfer: { id: string; previousAssignmentId: string; assignedAt: string; memberId: string; fromCircleId: string; circleId: string; fromCircleStatus: OpsCircleSummary["status"]; fromBlockId: string | null; fromBlockStatus: OpsCircleSummary["blockStatus"] } }>("/api/ops/circle-transfers", "POST", {
           memberId: member.memberId, fromCircleId: source.id, assignmentId: member.assignmentId, toCircleId: destination.id,
@@ -305,7 +305,7 @@ export default function OperatorCirclesManager({
           <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Move to</span><select ref={destinationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label={`New Circle for ${member.name}`} value={confirmation.toCircleId} disabled={pending} onChange={(event) => { setExceptionReason(""); setConfirmation({ ...confirmation, toCircleId: event.target.value }); }}>
             <option value="">Choose a Circle</option>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target 10 · {item.status}</option>)}
           </select></label>
-          <p className="mt-3 text-xs leading-relaxed text-black/65">Their membership and history stay intact. Above 12 people, Tyler/Mitch review the exception before the move.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
+          <p className="mt-3 text-xs leading-relaxed text-black/65">Their membership and history stay intact. Above 12 people, an Administrator reviews the exception before the move.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
         </> : <p className="mt-3 text-sm">No other Circles have an open place. <Link href="/ops/circles#create-circle" className="underline" onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
@@ -411,7 +411,7 @@ export default function OperatorCirclesManager({
                         <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members without a Circle"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
                         {memberQuery ? <Link className="underline underline-offset-4" href={searchHref(circle.id, 1, "")}>Clear search</Link> : null}
                       </div>
-                      {circle.activeMembers >= 11 ? <label className="mb-4 block text-sm">{circle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={circle.activeMembers >= 12} placeholder="Explain why this placement should exceed the normal range. Tyler/Mitch will review it." />{circle.activeMembers === 11 ? <span className="mt-2 block text-xs text-black/60">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
+                      {circle.activeMembers >= 11 ? <label className="mb-4 block text-sm">{circle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={circle.activeMembers >= 12} placeholder="Explain why this placement should exceed the normal range. An Administrator will review it." />{circle.activeMembers === 11 ? <span className="mt-2 block text-xs text-black/60">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
                       <ul aria-label={`Member results for ${circle.name}`} className="grid gap-3">
                         {candidates.map((member) => {
                           const issue = placementIssue(member);

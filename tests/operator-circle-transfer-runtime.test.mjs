@@ -50,6 +50,7 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
   const driver = postgres({ host: "127.0.0.1", port: 1, max: 1 });
   t.after(async () => { await db.close(); await driver.end(); });
   const placementPolicy = await source("db/migrations/20260930101000_circle_placement.sql");
+  const administratorLeadership = await source("db/migrations/20261001130000_administrator_leadership_access.sql");
   const gate = await source("db/migrations/20260825_membership_foundations_circle_gate.sql");
   const blocks = await source("db/migrations/20260826_membership_blocks_hardening.sql");
   const automation = await source("db/migrations/20260826_membership_operating_spine_04_foundations_automation.sql");
@@ -62,7 +63,7 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
     create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, revoked_at timestamptz);
     create table ruined_members (id uuid primary key, person_id uuid, membership_state text, updated_at timestamptz default now());
     create table circle_staff_assignments (circle_id uuid, auth_user_id uuid, role_slug text, ended_at timestamptz);
-    create function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select true $$;
+    ${shippedFunction(administratorLeadership, "private.ruined_has_leadership_responsibility")}
     create table circle_placement_reviews (id uuid primary key default gen_random_uuid(), member_id uuid, circle_id uuid, previous_assignment_id bigint, requested_by_auth_user_id uuid, reason text, status text, reviewed_by_auth_user_id uuid, reviewed_at timestamptz, projected_count integer);
     create table member_lifecycle (member_id uuid primary key references ruined_members(id), account_state text, billing_state text, program_state text,
       administrative_onboarding_state text default 'completed', standing_state text default 'active', cancellation_effective_at timestamptz);
@@ -417,21 +418,29 @@ for (const funding of ["operator", "complimentary"]) test(`Circle placement and 
   assert.deepEqual(state, { membership_state: "pending", billing_state: "pending" });
 });
 
-test("routine placement requires explicit responsibility even for a general Administrator", async t => {
+test("routine placement and transfer inherit active Administrator authority without a responsibility grant", async t => {
   const f = await fixture(t);
-  await f.db.exec("create or replace function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select false $$");
+  const transfer = await f.transfer();
+  assert.equal(transfer.circleId,ids.circleB);
+  const assignment = await f.repository.assignMemberToCircle({ actorAuthUserId:ids.admin, memberId:ids.other, circleId:ids.circleB });
+  assert.equal(assignment.created,true);
+});
+
+test("revoked Administrator authority blocks routine placements and transfers without writes", async t => {
+  const f = await fixture(t);
+  await f.db.query("update platform_role_grants set revoked_at=statement_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[ids.admin]);
   const before = await f.snapshot();
-  await assert.rejects(f.transfer(), error => error.code === "forbidden" && /responsibility/.test(error.message));
-  await assert.rejects(f.repository.assignMemberToCircle({ actorAuthUserId: ids.admin, memberId: ids.other, circleId: ids.circleB }), error => error.code === "forbidden");
+  await assert.rejects(f.transfer(), error => error.code === "forbidden");
+  await assert.rejects(f.repository.assignMemberToCircle({ actorAuthUserId:ids.admin, memberId:ids.other, circleId:ids.circleB }), error => error.code === "forbidden");
   assert.deepEqual(await f.snapshot(), before);
 });
 
-test("reviewed overrange transfer succeeds with explicit authority and writes permanent review provenance", async t => {
+test("an Administrator overrange transfer still requires review reasons and permanent review provenance", async t => {
   const f = await fixture(t); await fillDestination(f, 12);
-  await f.db.exec("create or replace function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select $2 = 'circle_placement' $$");
-  await assert.rejects(f.transfer({ exceptionReason: "Keep this established connection together" }), error => error.code === "forbidden");
-  await f.db.exec("create or replace function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select true $$");
+  const before = await f.snapshot();
+  await assert.rejects(f.transfer(), error => error.code === "invalid_request");
   await assert.rejects(f.transfer({ exceptionReason: "short" }), error => error.code === "invalid_request");
+  assert.deepEqual(await f.snapshot(), before);
   const result = await f.transfer({ exceptionReason: "Keep this established connection together" });
   assert.equal(result.circleId, ids.circleB);
   const review = (await f.db.query("select * from circle_placement_reviews")).rows[0];
@@ -541,7 +550,7 @@ test("ineligible partner and second-member audit failure roll back every part of
   assert.deepEqual(await f.snapshot(), before, "The first partner's successful placement, history, review, Calendar and notifications all roll back");
 });
 
-test("both members receive current capacity reviews and missing review authority cannot split a couple", async t => {
+test("both members receive current capacity reviews and missing review reasons cannot split a couple", async t => {
   const f = await fixture(t, { sourceMembers: 2 });
   await couple(f); await fillDestination(f, 12);
   const before = await f.snapshot();
@@ -571,17 +580,17 @@ test("a couple cannot take the last routine place without review, even after the
 });
 
 
-test("review-queue approval carries the request reason to both members without widening authority", async t => {
+test("review-queue approval carries the request reason to both members and rejects a revoked Administrator", async t => {
   const f = await fixture(t, { sourceMembers: 2 });
   await couple(f); await fillDestination(f, 12);
   const reviewId = crypto.randomUUID();
   const reason = "Keep this confirmed couples membership together";
   await f.db.query("insert into circle_placement_reviews(id,member_id,circle_id,previous_assignment_id,requested_by_auth_user_id,reason,status) values($1,$2,$3,$4,$5,$6,'pending')", [reviewId, ids.member, ids.circleB, f.placement, ids.admin, reason]);
-  await f.db.exec("create or replace function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select $2 = 'circle_placement' $$");
+  await f.db.query("update platform_role_grants set revoked_at=statement_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[ids.admin]);
   const before = await f.snapshot();
   await assert.rejects(f.transfer({ reviewId, exceptionReason: reason }), error => error.code === "forbidden");
   assert.deepEqual(await f.snapshot(), before);
-  await f.db.exec("create or replace function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select true $$");
+  await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1 and role_slug='ops_admin'",[ids.admin]);
   await f.transfer({ reviewId, exceptionReason: reason });
   const reviews = (await f.db.query("select id,member_id,reason,status,projected_count from circle_placement_reviews order by projected_count")).rows;
   assert.equal(reviews.length, 2);

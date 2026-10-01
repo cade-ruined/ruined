@@ -48,7 +48,7 @@ export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{
     const incomingSeats = circle.incomingSeats ?? (couple ? Number(couple.memberCircleId !== circle.circleId) + Number(couple.partnerCircleId !== circle.circleId) : 1);
     const exceptionRequired = circle.activeMembers + incomingSeats > CIRCLE_NORMAL_MAXIMUM;
     if (couple) reasons.push(circle.circleId === couple.partnerCircleId ? "Your partner is in this Circle; shared memberships stay together" : "Both partners are placed together");
-    if (exceptionRequired) { score -= 30; reasons.push(`Adding ${incomingSeats === 1 ? "a person" : "both partners"} needs Tyler/Mitch’s exception review`); }
+    if (exceptionRequired) { score -= 30; reasons.push(`Adding ${incomingSeats === 1 ? "a person" : "both partners"} needs Administrator exception review`); }
     else if (circle.activeMembers < CIRCLE_TARGET) { score += 30; reasons.push("Below the target of 10 people"); }
     else if (circle.activeMembers < CIRCLE_NORMAL_MAXIMUM) { score += 10; reasons.push("Within the normal 8–12 range"); }
 

@@ -21,7 +21,7 @@ export default function CirclePlacementRecommendations({ memberId, preview = fal
     return () => { active = false; };
   }, [memberId, preview, open, previewCircles]);
   return <details className="mt-3 border-t border-black/10 pt-3" onToggle={event => setOpen(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer content-center text-sm font-medium">Review placement suggestions</summary>
-    <p className="mb-3 text-xs text-black/60">Suggestions do not place anyone. Libby approves routine placements; Tyler/Mitch review exceptions. Check the Circle’s meeting schedule before confirming.</p>
+    <p className="mb-3 text-xs text-black/60">Suggestions do not place anyone. Administrators can approve placements and review capacity exceptions. Check the Circle’s meeting schedule before confirming.</p>
     {preview ? <p className="mb-3 text-xs font-semibold text-black/60">Preview — sample suggestions only. No member records are read or changed.</p> : null}
     {message ? <p className="text-xs" role="status">{message}</p> : items ? <ul className="space-y-3">{items.slice(0, 5).map(item => <li className="rounded bg-black/[0.035] p-3" key={item.circleId}><Link className="text-sm font-semibold underline" href={`/ops/circles?circleId=${item.circleId}&memberId=${memberId}`}>{item.name}</Link><p className="mt-1 text-xs">{item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target 10{item.exceptionRequired ? " · Exception review" : ""}</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-black/60">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul></li>)}</ul> : <p className="text-xs">Loading suggestions…</p>}
   </details>;

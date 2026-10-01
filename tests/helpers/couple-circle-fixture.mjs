@@ -12,7 +12,8 @@ export async function coupleCircleFixture(t) {
   t.after(() => db.close());
   await db.exec(`
     create role anon; create role authenticated; create schema private;
-    create table platform_users(auth_user_id uuid primary key, person_id uuid);
+    create table platform_users(auth_user_id uuid primary key, person_id uuid, status text not null default 'active');
+    create table platform_role_grants(auth_user_id uuid,role_slug text,revoked_at timestamptz);
     create table ruined_members(id uuid primary key, person_id uuid not null, deleted_at timestamptz);
     create table member_lifecycle(member_id uuid primary key references ruined_members,
       account_state text not null default 'active', cancellation_effective_at timestamptz);
@@ -22,7 +23,6 @@ export async function coupleCircleFixture(t) {
       assigned_by_auth_user_id uuid references platform_users, assigned_at timestamptz not null default now(), ended_at timestamptz);
     create unique index one_current_circle on circle_member_assignments(member_id) where ended_at is null;
     create table circle_staff_assignments(circle_id uuid,auth_user_id uuid,role_slug text,ended_at timestamptz);
-    create function private.ruined_has_leadership_responsibility(uuid,text) returns boolean language sql as $$ select false $$;
     create table membership_couple_authorizations(id uuid primary key,payer_member_id uuid references ruined_members,
       partner_member_id uuid references ruined_members,accepted_at timestamptz,accepted_by_auth_user_id uuid,
       expires_at timestamptz default now()+interval '7 days',revoked_at timestamptz);
@@ -36,12 +36,14 @@ export async function coupleCircleFixture(t) {
       reservation_id uuid references membership_commercial_reservations,member_id uuid references ruined_members,ended_at timestamptz);
     create table stripe_subscriptions(id text primary key,member_id uuid references ruined_members,stripe_status text,cancel_at timestamptz);
   `);
+  await db.exec(await source("db/migrations/20261001130000_administrator_leadership_access.sql"));
   await db.exec(await source("db/migrations/20260930101000_circle_placement.sql"));
   await db.exec(`create trigger circle_member_assignments_capacity before insert or update of circle_id,ended_at
     on circle_member_assignments for each row execute function public.ruined_enforce_circle_capacity()`);
   await db.exec(await source(coupleCircleMigration));
   const actor = randomUUID(), circleA = randomUUID(), circleB = randomUUID();
   await db.query("insert into platform_users(auth_user_id) values($1)", [actor]);
+  await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [actor]);
   await db.query("insert into circles(id) values($1),($2)", [circleA, circleB]);
   async function member() {
     const id = randomUUID();

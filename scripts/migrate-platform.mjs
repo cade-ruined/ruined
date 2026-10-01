@@ -83,6 +83,7 @@ const migrations = [
   "../db/migrations/20260930210000_registration_couples.sql",
   "../db/migrations/20260930220000_registration_legal_acknowledgment.sql",
   "../db/migrations/20261001120000_public_timeline_posts.sql",
+  "../db/migrations/20261001130000_administrator_leadership_access.sql",
 ];
 
 function migrationBody(migration, migrationName) {

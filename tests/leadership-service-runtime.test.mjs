@@ -35,6 +35,7 @@ async function fixture(t) {
   await installOperatorFundingFunctions(db);
   await db.exec(await source("db/migrations/20260930100000_supporter_service.sql"));
   await db.exec(await source("db/migrations/20260930111000_supporter_shared_billing.sql"));
+  await db.exec(await source("db/migrations/20261001130000_administrator_leadership_access.sql"));
   await db.query("insert into people(id) values($1)",[ids.person]);
   await db.query("insert into ruined_members(id,person_id) values($1,$2)",[ids.member,ids.person]);
   await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized) values($1,$2,$3,'supporter@example.test'),($4,null,null,'admin@example.test'),($5,null,null,'coordinator@example.test'),($6,null,null,'finance@example.test')",[ids.supporter,ids.member,ids.person,ids.admin,ids.coordinator,ids.finance]);
@@ -58,24 +59,34 @@ async function fixture(t) {
   const repository = await load("src/lib/platform/leadership-repository.ts", { "server-only":{}, "@/lib/stripe/database":{getBillingDatabase:()=>wrap(db)}, "@/lib/platform/ops-repository":ops, "@/lib/platform/leadership-model":model });
   const run = (actor,body) => repository.executeLeadershipCommand(actor,{ reason:"Reviewed in person.",...body });
   const grant = (authUserId,capability) => run(ids.admin,{action:"grant",authUserId,capability});
-  const prepare = async () => { await grant(ids.coordinator,"supporter_readiness"); await run(ids.coordinator,{action:"ready",authUserId:ids.supporter,circleId:ids.circle}); };
+  const prepare = async () => { await run(ids.coordinator,{action:"ready",authUserId:ids.supporter,circleId:ids.circle}); };
   const start = () => run(ids.coordinator,{action:"start",authUserId:ids.supporter,circleId:ids.circle,temporary:false});
   return { db, run, grant, prepare, start, repository, model, failAudit:()=>{auditFailure=true;} };
 }
 const today = () => new Date().toISOString().slice(0,10);
 const request = { action:"request_reimbursement",assignmentId:"1",periodStart:today(),periodEnd:today(),amountMinor:49900,currency:"USD" };
 
-test("responsibilities fail closed, require explicit grants and revocation takes effect immediately",async t=>{
+test("Administrators inherit Leadership access and losing Administrator access takes effect immediately",async t=>{
   const f=await fixture(t);
-  await assert.rejects(f.run(ids.admin,{action:"ready",authUserId:ids.supporter,circleId:ids.circle}),/responsibility/);
+  assert.equal((await f.db.query("select count(*)::int n from leadership_responsibility_grants")).rows[0].n,0);
+  assert.deepEqual((await f.repository.getLeadershipDirectory(ids.admin)).capabilities,f.model.LEADERSHIP_RESPONSIBILITIES);
   await assert.rejects(f.grant(ids.supporter,"reimbursements"),/active Administrator/);
   await f.prepare();
+  // Keep historical responsibility APIs compatible. Revoking this old record
+  // cannot remove permissions included in the still-active Administrator role.
+  await f.grant(ids.coordinator,"supporter_readiness");
   await f.run(ids.admin,{action:"revoke",authUserId:ids.coordinator,capability:"supporter_readiness"});
-  await assert.rejects(f.start(),/responsibility/);
+  assert.equal((await f.db.query("select private.ruined_has_leadership_responsibility($1,'supporter_readiness') allowed",[ids.coordinator])).rows[0].allowed,true);
+  await f.db.query("update platform_role_grants set revoked_at=statement_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[ids.coordinator]);
+  await assert.rejects(f.start(),error=>error.code==="forbidden");
+  await assert.rejects(f.repository.getLeadershipDirectory(ids.coordinator),error=>error.code==="forbidden");
+  await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1 and role_slug='ops_admin'",[ids.coordinator]);
+  await f.db.query("update platform_users set status='disabled' where auth_user_id=$1",[ids.coordinator]);
+  await assert.rejects(f.start(),error=>error.code==="forbidden");
   assert.equal((await f.db.query("select count(*)::int n from operator_audit_events")).rows[0].n,3);
 });
 test("readiness, active membership and Circle membership are required before starting scoped service",async t=>{
-  const f=await fixture(t); await f.grant(ids.coordinator,"supporter_readiness");
+  const f=await fixture(t);
   await assert.rejects(f.start(),/readiness/);
   await f.run(ids.coordinator,{action:"ready",authUserId:ids.supporter,circleId:ids.circle});
   await f.db.exec("update member_lifecycle set billing_state='pending'");
@@ -93,11 +104,11 @@ test("audit failure rolls back service start and permission grant together",asyn
   assert.equal((await f.db.query("select count(*)::int n from circle_staff_assignments")).rows[0].n,0);
   assert.equal((await f.db.query("select count(*)::int n from platform_role_grants where role_slug='circle_leader'")).rows[0].n,0);
 });
-test("Libby-equivalent explicit reimbursement owner can approve and record historical service; other admins cannot",async t=>{
-  const f=await fixture(t);await f.prepare();await f.start();await f.grant(ids.finance,"reimbursements");
+test("Administrators can approve and record historical service without an explicit reimbursement grant",async t=>{
+  const f=await fixture(t);await f.prepare();await f.start();
   await f.run(ids.coordinator,{action:"end",assignmentId:"1",coverAuthUserId:null});
-  await assert.rejects(f.run(ids.admin,request),/responsibility/);
-  await f.run(ids.finance,request);
+  await assert.rejects(f.run(ids.supporter,request),error=>error.code==="forbidden");
+  await f.run(ids.admin,request);
   const record=(await f.db.query("select id from supporter_reimbursements")).rows[0];
   await assert.rejects(f.run(ids.finance,{action:"process",reimbursementId:record.id,reference:"BANK-001",processedAt:today()}),/Only an approved/);
   await f.run(ids.finance,{action:"approve",reimbursementId:record.id});
@@ -105,11 +116,11 @@ test("Libby-equivalent explicit reimbursement owner can approve and record histo
   await assert.rejects(f.run(ids.finance,{action:"process",reimbursementId:record.id,reference:"BANK-001",processedAt:today()}),/Only an approved/);
   assert.equal((await f.db.query("select status from supporter_reimbursements")).rows[0].status,"processed");
   const privateDirectory=await f.repository.getLeadershipDirectory(ids.finance), adminDirectory=await f.repository.getLeadershipDirectory(ids.admin);
-  assert.equal(privateDirectory.reimbursements.length,1);assert.equal(adminDirectory.reimbursements.length,0);
+  assert.equal(privateDirectory.reimbursements.length,1);assert.equal(adminDirectory.reimbursements.length,1);
   assert.equal((await f.db.query("select membership_state from ruined_members")).rows[0].membership_state,"active");
 });
 test("overlapping and future reimbursement claims are blocked; rejected claims may be resubmitted",async t=>{
-  const f=await fixture(t);await f.prepare();await f.start();await f.grant(ids.finance,"reimbursements");await f.run(ids.finance,request);
+  const f=await fixture(t);await f.prepare();await f.start();await f.run(ids.finance,request);
   await assert.rejects(f.run(ids.finance,request),/already covers/);
   await assert.rejects(f.run(ids.finance,{...request,periodEnd:"2099-01-01"}),/elapsed period/);
   const record=(await f.db.query("select id from supporter_reimbursements")).rows[0];
@@ -118,7 +129,7 @@ test("overlapping and future reimbursement claims are blocked; rejected claims m
   await assert.rejects(f.db.exec("update supporter_reimbursements set amount_minor=1"),/immutable/);
   await assert.rejects(f.db.exec("delete from supporter_reimbursements"),/cannot be deleted/);
 });
-test("responsibility-only enrollment preserves independent complimentary funding and administrator funding",async t=>{
+test("Leadership access preserves independent complimentary funding and administrator funding",async t=>{
   const f=await fixture(t);
   await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'guide')",[ids.supporter]);
   const funding=async()=> (await f.db.query("select private.ruined_member_has_complimentary_funding($1) funded",[ids.member])).rows[0].funded;
@@ -180,7 +191,7 @@ test("ending Circle membership automatically ends scoped service, preserves hist
 });
 
 test("incomplete Foundations cannot receive readiness or service privileges before Circle reveal", async t => {
-  const f=await fixture(t);await f.grant(ids.coordinator,"supporter_readiness");
+  const f=await fixture(t);
   await f.db.exec("update member_lifecycle set foundations_state='in_progress'");
   await assert.rejects(f.run(ids.coordinator,{action:"ready",authUserId:ids.supporter,circleId:ids.circle}),/completed membership entry and Foundations/);
   assert.equal((await f.db.query("select count(*)::int n from supporter_readiness_approvals")).rows[0].n,0);

@@ -83,9 +83,9 @@ test("full migration chain preserves funding, service departure, capacity approv
   await db.query("insert into platform_users(auth_user_id,email_normalized,user_type,status) values($1,'integration-admin@example.test','staff','active')", [admin]);
   await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [admin]);
   const command = body => leadership.executeLeadershipCommand(admin, { reason: "Reviewed integration service and placement.", ...body });
-  for (const capability of ["circle_placement", "circle_exception", "supporter_readiness"]) {
-    await command({ action: "grant", authUserId: admin, capability });
-  }
+  assert.equal((await db.query("select count(*)::int count from leadership_responsibility_grants")).rows[0].count, 0);
+  assert.deepEqual((await leadership.getLeadershipDirectory(admin)).capabilities, model.LEADERSHIP_RESPONSIBILITIES,
+    "The full shipped migration chain gives Administrators all Leadership access without account-specific grants");
   await db.query("insert into circles(id,name,slug) values($1,'First Circle','integration-first'),($2,'Second Circle','integration-second')", [circleA,circleB]);
 
   // A legitimate small test curriculum keeps the proof contract exercised:

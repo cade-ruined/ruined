@@ -454,7 +454,7 @@ export function OpsCircleActions({
       if (!member || !circle) throw new Error("Choose an eligible member and a forming or active Circle with an open space.");
       if (circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim()) {
         await postJson("/api/ops/circle-placement-reviews", { circleId, memberId, reason: exceptionReason });
-        setAssignmentNotice({ kind: "success", text: "Exception requested. Tyler/Mitch must approve before placement." });
+        setAssignmentNotice({ kind: "success", text: "Exception requested. An Administrator must approve before placement." });
         setExceptionReason("");
         router.refresh();
         return;
