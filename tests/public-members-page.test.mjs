@@ -140,7 +140,7 @@ test("opening public invitations preserves the film and sends signup to the memb
   assertAccessibleStructure(document);
   assert.equal(descendants(document, "form").length, 0);
   const invitation = descendants(document, "a").find(link => accessibleText(link).trim() === "Request your invitation");
-  assert.equal(attr(invitation, "href"), "https://members.theruinedproject.com/signup");
+  assert.equal(attr(invitation, "href"), "https://members.theruinedproject.com/membership");
   assert.equal(attr(invitation, "target"), undefined, "continue in the same tab");
   assert.equal(descendants(document, "video").length, 1);
   assert.equal(attr(descendants(document, "video")[0], "poster"), "/membership/foundations/beginning.webp");

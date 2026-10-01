@@ -49,7 +49,7 @@ function fixture(headingId = "test-members-heading", signupEnabled = false) {
     if (name === "@/components/public-members/MembershipWaitlistForm") return { __esModule: true, default: WaitlistForm };
     if (name === "@/data/public-membership") return {
       MEMBERSHIP_INTRO: { headline: "A place for what matters." },
-      MEMBERSHIP_LINKS: { signIn: "https://members.theruinedproject.com/access", signUp: "https://members.theruinedproject.com/signup" },
+      MEMBERSHIP_LINKS: { signIn: "https://members.theruinedproject.com/access", signUp: "https://members.theruinedproject.com/membership" },
     };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_target, property) => property }) };
     throw new Error(`Unexpected public signup dependency: ${name}`);
@@ -163,7 +163,7 @@ test("the invitation release retains close and reopen keyboard focus behavior", 
   const f = fixture("invitation-heading", true);
   const initial = f.draw();
   assert.equal(nodes(initial).some(node => node.type === WaitlistForm), false);
-  assert.equal(nodes(initial).find(node => node.type === "a" && text(node).startsWith("Request your invitation")).props.href, "https://members.theruinedproject.com/signup");
+  assert.equal(nodes(initial).find(node => node.type === "a" && text(node).startsWith("Request your invitation")).props.href, "https://members.theruinedproject.com/membership");
   f.close(initial).props.onClick();
   const closed = f.draw();
   assert.equal(f.panel(closed).props.hidden, true);
