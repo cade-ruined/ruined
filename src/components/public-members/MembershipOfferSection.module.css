@@ -10,7 +10,7 @@
 .planSwitch:disabled { opacity: .7; }
 .planSwitch small { font: 450 10px/1.4 var(--font-header); }
 .prices { display: grid; gap: 14px; padding: 0 6px 6px 0; }
-.price { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: center; min-width: 0; min-height: 92px; padding: 18px 14px; border: 1px solid #151611; background: var(--blue, #b7cbdd); color: #151611; box-shadow: 5px 5px 0 #151611; }
+.price { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: center; min-width: 0; min-height: 92px; padding: 18px 14px; border: 1px solid #151611; background: var(--blue, #b1cae0); color: #151611; box-shadow: 5px 5px 0 #151611; }
 .price[data-tier='founding_individual'] { background: var(--yellow, #ffca2c); }
 .price[data-tier='couple'] { background: var(--green, #3b5d4f); color: #f4eedf; }
 .priceHeading { min-width: 0; }

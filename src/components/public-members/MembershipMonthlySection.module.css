@@ -1,7 +1,7 @@
 .monthly {
   --monthly-ink: #171715;
   --monthly-paper: #e5e0d5;
-  --monthly-blue: #b7cbdd;
+  --monthly-blue: #b1cae0;
   --monthly-yellow: #ffca2c;
   padding-block: 56px;
   background-color: var(--monthly-ink);

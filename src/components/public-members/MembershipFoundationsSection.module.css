@@ -56,7 +56,7 @@
 .section .fictionNotice { margin-top: 18px; max-width: 57ch; color: var(--foundation-muted); font: 400 10px/1.75 var(--font-header, sans-serif); }
 
 .cards { display: grid; align-content: start; gap: 14px; min-width: 0; padding: 0 5px 5px 0; }
-.disclosure { --card-color: var(--blue, #b7cbdd); --card-ink: #252622; --card-muted: #3e474b; min-width: 0; border: 1px solid #252622; background: var(--card-color); color: var(--card-ink); box-shadow: 4px 4px 0 #252622; }
+.disclosure { --card-color: var(--blue, #b1cae0); --card-ink: #252622; --card-muted: #3e474b; min-width: 0; border: 1px solid #252622; background: var(--card-color); color: var(--card-ink); box-shadow: 4px 4px 0 #252622; }
 .disclosure[data-tone='green'] { --card-color: var(--green, #3b5d4f); --card-ink: #fff9eb; --card-muted: #e1e7dc; }
 .disclosure[data-tone='yellow'] { --card-color: var(--yellow, #ffca2c); --card-muted: #4a421e; }
 .disclosure > summary:hover .cardHeading > span:first-child { text-decoration: underline; text-underline-offset: 4px; }
