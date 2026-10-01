@@ -40,7 +40,7 @@ test("every member page context handles denied before its unavailable fallback",
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
   const pages = [...modernPages, ...legacyPages];
 
-  assert.equal(modernPages.length, 15);
+  assert.equal(modernPages.length, 16);
   assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
@@ -73,16 +73,18 @@ test("every operator page context uses operator permission copy for denied accou
 });
 
 
-test("the legacy Timeline route redirects to the profile that enforces member authentication", async () => {
-  const [timeline, profile] = await Promise.all([
-    readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/my/page.tsx", import.meta.url), "utf8"),
-  ]);
-  assert.match(timeline, /redirect\("\/my#timeline"\)/);
-  assert.doesNotMatch(timeline, /getMemberTimeline|<RuinedTimeline|<MemberJournal/);
-  assert.match(profile, /getMembershipPageContext\(/);
-  assert.match(profile, /if \(context\.state === "signed_out"\) redirect\("\/my\/access"\)/);
-  assert.match(profile, /if \(context\.state === "denied"\) return <PlatformUnavailable reason="member_access"/);
-  assert.ok(profile.indexOf('context.state === "signed_out"') < profile.indexOf("return <MemberHome"));
-  assert.ok(profile.indexOf('context.state === "denied"') < profile.indexOf("return <MemberHome"));
+test("the private Foundations Timeline enforces member authentication, launch, and exercise access before reading entries", async () => {
+  const timeline = await readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8");
+  assert.match(timeline, /getMembershipPageContext\(/);
+  assert.match(timeline, /if \(context\.state === "signed_out"\) redirect\("\/my\/access"\)/);
+  assert.match(timeline, /if \(context\.state === "denied"\) return <PlatformUnavailable reason="member_access"/);
+  assert.match(timeline, /if \(!isFoundationsLaunched\(\)\) redirect\("\/my\/foundations"\)/);
+  assert.match(timeline, /if \(!writable && !memberCan\(access, "foundations\.revisit"\)\) return <MemberAccessNotice/);
+  assert.match(timeline, /await getMemberTimeline\(context\.viewer\.authUserId\)/);
+  assert.match(timeline, /<RuinedTimeline initialTimeline=\{timeline\} writable=\{writable\}/);
+  assert.doesNotMatch(timeline, /redirect\("\/my#timeline"\)|<MemberJournal/);
+  const privateRead = timeline.indexOf("await getMemberTimeline(");
+  for (const guard of ['context.state === "signed_out"', 'context.state === "denied"', '!isFoundationsLaunched()', '!memberCan(access, "foundations.revisit")', '!context.viewer']) {
+    assert.ok(timeline.indexOf(guard) >= 0 && timeline.indexOf(guard) < privateRead, `${guard} must precede the private Timeline read`);
+  }
 });

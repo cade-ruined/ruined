@@ -24,9 +24,10 @@ const token = "M".repeat(43);
 const fixture = { name: "Chosen <name>", avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [], wearSeed: "safe-seed" };
 const notFound = () => { throw Object.assign(new Error("Not found"), { status: 404 }); };
 const redirect = href => { throw Object.assign(new Error("Redirect"), { href }); };
-const renderCard = ({ card, preview }) => React.createElement("article", { "data-preview": String(!!preview) }, JSON.stringify(card));
+const renderCard = ({ card, preview, footerActions }) => React.createElement("article", { "data-preview": String(!!preview) }, JSON.stringify(card), footerActions);
 async function publicRoute(read) {
   return load("app/card/[token]/page.tsx", {
+    "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/navigation": { notFound },
     "@/lib/membership/public-card-repository": { getPublicMemberCard: read },
     "@/lib/membership/public-card-model": model,
@@ -56,8 +57,9 @@ test("public render accepts only the approved projection and metadata does not p
   let current = fixture;
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
   const result = await page.default(params(token));
-  assert.deepEqual(Object.keys(result.props), ["card"]); assert.deepEqual(result.props.card, fixture);
+  assert.deepEqual(Object.keys(result.props), ["card", "footerActions"]); assert.deepEqual(result.props.card, fixture);
   const html = renderToStaticMarkup(result);
+  assert.match(html, new RegExp(`href="/journal/${token}"`)); assert.match(html, /View Timeline/);
   assert.match(html, /Chosen &lt;name&gt;/); assert.doesNotMatch(html, /PRIVATE|memberId|personId|email|sourceRevision/);
   const metadata = await page.generateMetadata(params(token));
   assert.equal(metadata.referrer, "no-referrer"); assert.deepEqual(metadata.robots, { index: false, follow: false });

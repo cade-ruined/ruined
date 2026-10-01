@@ -206,9 +206,75 @@ test("getProducts passes an eight-second abort signal and falls back to an empty
 });
 
 
-test("existing Foundations Timeline links redirect into the shared Journal without loading private entries", () => {
+function foundationsTimelineFixture({ state = "authenticated", launched = true, capabilities = ["foundations.write"], timeline = { entries: [], revision: "1" }, failRead = false } = {}) {
+  const calls = [];
+  const identity = { memberId: "member-id" };
+  const access = { capabilities };
   const { default: Page } = loadModule("app/my/foundations/timeline/page.tsx", {
     "next/navigation": { redirect: href => { throw Error(`redirect:${href}`); } },
-  });
-  assert.throws(() => Page(), /redirect:\/my#timeline/);
+    "@/components/membership/MemberAccessNotice": component("member-access-notice"),
+    "@/components/membership/RuinedTimeline": component("private-timeline"),
+    "@/components/platform/PlatformUnavailable": component("platform-unavailable"),
+    "@/lib/foundations/availability": { isFoundationsLaunched: () => launched },
+    "@/lib/membership/access-policy": {
+      deriveMemberAccessPolicy: value => { assert.equal(value, identity); return access; },
+      memberCan: (policy, capability) => policy.capabilities.includes(capability),
+    },
+    "@/lib/membership/page-context": { getMembershipPageContext: async () => ({
+      state, data: ["signed_out", "denied", "unavailable"].includes(state) ? null : identity,
+      viewer: state === "authenticated" ? { authUserId: "member-auth-id" } : null,
+    }) },
+    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: identity, PREVIEW_MEMBER_TIMELINE: { entries: [], revision: "0" } },
+    "@/lib/membership/repository": {
+      getMemberIdentity: async () => identity,
+      getMemberTimeline: async authUserId => {
+        calls.push(authUserId);
+        if (failRead) throw new Error("Private Timeline read unavailable");
+        return timeline;
+      },
+    },
+  }, { console: { error: () => {} } });
+  return { calls, Page };
+}
+
+test("private Foundations Timeline links load only the authorized member's entries after launch", async () => {
+  const timeline = { entries: [{ title: "Private milestone" }], revision: "1" };
+  const f = foundationsTimelineFixture({ timeline });
+  const page = await f.Page();
+  assert.equal(page.type, "private-timeline");
+  assert.equal(page.props.initialTimeline, timeline);
+  assert.equal(page.props.writable, true);
+  assert.deepEqual(f.calls, ["member-auth-id"]);
+  const readonly = foundationsTimelineFixture({ capabilities: ["foundations.revisit"] });
+  assert.equal((await readonly.Page()).props.writable, false);
+  assert.deepEqual(readonly.calls, ["member-auth-id"]);
+});
+
+test("Foundation Timeline authentication, launch, and access failures never load private entries", async () => {
+  const signedOut = foundationsTimelineFixture({ state: "signed_out" });
+  await assert.rejects(signedOut.Page(), /^Error: redirect:\/my\/access$/);
+  assert.deepEqual(signedOut.calls, []);
+  const closed = foundationsTimelineFixture({ launched: false });
+  await assert.rejects(closed.Page(), /^Error: redirect:\/my\/foundations$/);
+  assert.deepEqual(closed.calls, []);
+  for (const state of ["denied", "unavailable"]) {
+    const f = foundationsTimelineFixture({ state });
+    const page = await f.Page();
+    assert.equal(page.type, "platform-unavailable");
+    if (state === "denied") assert.equal(page.props.reason, "member_access");
+    assert.deepEqual(f.calls, []);
+  }
+  const ineligible = foundationsTimelineFixture({ capabilities: [] });
+  assert.equal((await ineligible.Page()).type, "member-access-notice");
+  assert.deepEqual(ineligible.calls, []);
+});
+
+test("an unavailable private Foundations Timeline renders the connection fallback without exposing entries", async () => {
+  for (const options of [{ timeline: null }, { failRead: true }]) {
+    const f = foundationsTimelineFixture(options);
+    const page = await f.Page();
+    assert.equal(page.type, "platform-unavailable");
+    assert.equal(page.props.initialTimeline, undefined);
+    assert.deepEqual(f.calls, ["member-auth-id"]);
+  }
 });
