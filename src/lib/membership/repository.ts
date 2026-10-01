@@ -1,4 +1,6 @@
 import "server-only";
+import { getMemberCommunicationPreferences, saveMemberCommunicationPreferences } from "./member-communication-preferences";
+import type { MemberCommunicationPreferencesInput } from "./member-communication-preferences-model";
 import { recordRegistrationLegalAcknowledgment } from "./registration-legal";
 import type { RegistrationLegalAcknowledgment } from "./registration-legal-model";
 import { completeMemberRegistration } from "./registration-repository";
@@ -308,6 +310,7 @@ export async function getMemberOnboarding(
       version: row.agreement_version === null ? null : String(row.agreement_version),
     },
     completedAt: toIso(row.completed_at),
+    communicationPreferences: await getMemberCommunicationPreferences(sql, identity.memberId, { email: identity.email, phone: row.mobile_e164 }),
     billingState: identity.billingState,
     membershipFunding: identity.membershipFunding,
     email: identity.email,
@@ -327,6 +330,7 @@ export async function getMemberOnboarding(
 }
 
 export type MemberOnboardingProfileInput = {
+  communicationPreferences?: MemberCommunicationPreferencesInput;
   legalAcknowledgment?: RegistrationLegalAcknowledgment;
   apparelTopSize: string;
   birthDate: string;
@@ -425,6 +429,8 @@ export async function saveMemberOnboardingProfile(
       if (eligibility?.error) throw new MembershipInputError(eligibility.error);
     }
     await recordRegistrationLegalAcknowledgment(tx, identity.memberId, authUserId, input.legalAcknowledgment);
+    await saveMemberCommunicationPreferences(tx, { memberId: identity.memberId, personId: identity.personId,
+      authUserId, email: identity.email, phone: clean.mobile }, input.communicationPreferences);
     await tx`
       insert into person_profiles (person_id, display_name, member_tag)
       values (${identity.personId}::uuid, ${`@${clean.memberTag}`}, ${clean.memberTag})

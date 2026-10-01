@@ -45,3 +45,39 @@ consent history, communications, and Stripe and other service providers.
 
 The local signup demo may display the candidate with a clear draft notice. Demo
 checks never create acceptance records and are not evidence of live acceptance.
+
+## Optional membership communications
+
+The details form records separate preferences for membership updates and call
+reminders. The user confirmed these do not include promotions or offers. Email
+updates default on only when the member has no saved choice. Text reminders
+start unchecked and require an active choice for the submitted phone number.
+Neither is required to register; both are independent of the legal acknowledgment.
+
+Keep verification, welcome, profile-ready, billing, security, and support emails
+transactional. These preferences must not enroll a Resend marketing topic or
+override an existing provider unsubscribe. The existing service segments are not
+proof of optional reminder consent.
+
+This change captures preferences; it does not connect a text-message service or
+start a reminder campaign. Before enabling either reminder sender, filter its
+audience by the latest destination-bound preference, honor provider suppression,
+and implement a working channel-specific opt-out. SMS delivery also requires
+sender registration and a supported STOP/HELP flow. Until self-service preference
+editing is available, preference changes are handled by
+connect@theruinedproject.com as stated in the form and draft terms.
+
+The shared registration form explicitly clears text selection when its number
+changes. Legacy profile-only requests that omit preferences retain previous
+destination-bound decisions; returning to an older consented number can make
+that historical decision applicable again. Before enabling SMS delivery, extend
+phone-change invalidation to those paths as well, or require a fresh confirmation
+of the current number as part of SMS enrollment.
+
+Documented provider requirements for the default selection:
+
+- [Twilio error 30925: active SMS opt-in](https://www.twilio.com/docs/api/errors/30925)
+- [Resend marketing email consent](https://resend.com/blog/how-to-properly-get-email-consent)
+
+The email default here is an optional membership-service preference, not a record
+of affirmative marketing consent. Do not reuse it for promotional campaigns.

@@ -29,6 +29,9 @@ class MembershipAccessDeniedError extends Error {}
 class RegistrationLegalError extends Error {
   constructor(status, message, code) { super(message); this.status = status; this.code = code; }
 }
+class MemberCommunicationPreferencesError extends Error {
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
+}
 
 async function loadRoute(failure) {
   const logs = [];
@@ -38,6 +41,7 @@ async function loadRoute(failure) {
   }).outputText;
   const dependencies = {
     "next/server": { NextResponse, after: () => assert.fail("No email follow-up after failed onboarding") },
+    "@/lib/membership/member-communication-preferences": { MemberCommunicationPreferencesError },
     "@/lib/membership/registration-legal": { RegistrationLegalError },
     "@/lib/membership/registration-message-delivery": { getRegistrationMessageConfiguration: () => ({ ready: false }), processRegistrationMessageBatch: () => assert.fail("No registration message work in this error fixture") },
     "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
@@ -134,5 +138,27 @@ test("registration legal API validates the exact acknowledgment payload and pres
   assert.deepEqual(received, valid);
   assert.equal(response.status, 409);
   assert.equal((await response.json()).code, "registration_documents_changed");
+  assert.deepEqual(route.logs, []);
+});
+
+test("reminder preferences API rejects malformed input and preserves stale-choice recovery", async () => {
+  const valid = { email: true, sms: true, expectedRevision: "a".repeat(64), noticeVersion: "membership-reminders-v1", smsOptIn: { phone: "+12025550123" } };
+  for (const preferences of [
+    { ...valid, email: "true" }, { ...valid, sms: null }, { ...valid, expectedRevision: "" },
+    { ...valid, noticeVersion: null }, { ...valid, marketing: true },
+    { ...valid, smsOptIn: { phone: "2025550123" } }, { ...valid, smsOptIn: { phone: "+12025550123", actor: "other" } },
+  ]) {
+    const route = await loadRoute(() => assert.fail("Invalid preferences must not reach profile saving"));
+    assert.equal((await route.POST(request({ communicationPreferences: preferences }))).status, 400);
+  }
+  let received;
+  const route = await loadRoute(input => {
+    received = input.communicationPreferences;
+    throw new MemberCommunicationPreferencesError(409, "Your communication preferences changed. Reload before saving them.", "communication_preferences_changed");
+  });
+  const response = await route.POST(request({ communicationPreferences: valid }));
+  assert.deepEqual(received, valid);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, "communication_preferences_changed");
   assert.deepEqual(route.logs, []);
 });

@@ -165,10 +165,13 @@ unnecessary for the feature.
 Google Meet, Google Chat, and Calendar are separate services. Using them may
 reveal your Google display name, email, or contributions to other participants,
 and their own terms and privacy practices apply. We may send essential
-verification, registration, profile-ready, account, security, support, and event
-communications. Marketing choices remain separate; accepting these terms does
-not subscribe you to marketing. Contact connect@theruinedproject.com for privacy
-questions or requests.
+verification, registration, profile-ready, account, security, and support emails.
+Optional membership updates and call reminders have separate email and text
+preferences. You can decline either without affecting registration. Contact
+connect@theruinedproject.com to change those preferences. Marketing choices
+remain separate; accepting these terms or choosing membership reminders does
+not subscribe you to promotional messages. Contact connect@theruinedproject.com
+for privacy questions or requests.
 
 ### 7. Events, guidance, and safety
 

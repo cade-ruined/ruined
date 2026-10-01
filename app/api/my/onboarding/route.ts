@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { MemberCommunicationPreferencesError } from "@/lib/membership/member-communication-preferences";
 import { RegistrationLegalError } from "@/lib/membership/registration-legal";
 import { getRegistrationMessageConfiguration, processRegistrationMessageBatch } from "@/lib/membership/registration-message-delivery";
 
@@ -46,6 +47,18 @@ function isLegalAcknowledgment(value: unknown): boolean {
     && Object.keys(input).every(key => ["acknowledged", "privacyVersion", "agreementVersionId"].includes(key));
 }
 
+function isCommunicationPreferences(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const input = value as Record<string, unknown>;
+  const sms = input.smsOptIn as Record<string, unknown> | undefined;
+  return typeof input.email === "boolean" && typeof input.sms === "boolean"
+    && typeof input.expectedRevision === "string" && input.expectedRevision.length > 0 && input.expectedRevision.length <= 80
+    && typeof input.noticeVersion === "string" && input.noticeVersion.length <= 80
+    && (sms === undefined || (sms !== null && typeof sms === "object" && typeof sms.phone === "string"
+      && /^\+[1-9][0-9]{1,14}$/.test(sms.phone) && Object.keys(sms).every(key => key === "phone")))
+    && Object.keys(input).every(key => ["email", "sms", "expectedRevision", "noticeVersion", "smsOptIn"].includes(key));
+}
+
 function isOnboardingAction(value: unknown): value is OnboardingAction {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -60,11 +73,13 @@ function isOnboardingAction(value: unknown): value is OnboardingAction {
     typeof candidate.mobile === "string" &&
     typeof candidate.memberTag === "string" &&
     isAddress(candidate.shippingAddress) &&
+    (candidate.communicationPreferences === undefined || isCommunicationPreferences(candidate.communicationPreferences)) &&
     (candidate.legalAcknowledgment === undefined || isLegalAcknowledgment(candidate.legalAcknowledgment)) &&
     Object.keys(candidate).every((key) =>
       [
         "action",
         "legalAcknowledgment",
+        "communicationPreferences",
         "apparelTopSize",
         "birthDate",
         "legalName",
@@ -77,6 +92,7 @@ function isOnboardingAction(value: unknown): value is OnboardingAction {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof MemberCommunicationPreferencesError) return NextResponse.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
   if (error instanceof RegistrationLegalError) return NextResponse.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
   if (error instanceof MembershipInputError) {
     return NextResponse.json({ error: error.message }, { status: 400 });

@@ -143,6 +143,7 @@ function hookFixture() {
 async function detailsFixture(requiresPaymentMethod, changes = {}) {
   const h = hookFixture(), calls = [], redirects = [];
   let ok = true, preferenceFails = false, preferenceSaves = 0, errorPayload = { error: "Try again." };
+  let responseOnboarding = onboarding({ requiredFieldsComplete: true });
   const preference = { saved: { status: "none", partnerEmail: null }, kind: "individual", partnerEmail: "", consent: false, loading: false, loadError: null,
     save: async () => { assert.ok(calls.some(call => call.url === "/api/my/onboarding"), "Save details before pairing"); preferenceSaves++; if (preferenceFails) throw Error("Your Circle preference could not be saved."); } };
   const values = { "member-tag": "new_member", "mobile-country": "US", "mobile-national": "8015550123", "legal-name": "New Member", "birth-date": "1990-01-01", "apparel-size": "M", "address-line-1": "123 Main", city: "Provo", region: "UT", "postal-code": "84601", "country-code": "US" };
@@ -155,15 +156,122 @@ async function detailsFixture(requiresPaymentMethod, changes = {}) {
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
     "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
+    "@/lib/membership/member-communication-preferences-model": await load("src/lib/membership/member-communication-preferences-model.ts"),
   }, {
     FormData: class { get(key) { return values[key] ?? ""; } },
-    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok, json: async () => ok ? { onboarding: onboarding({ requiredFieldsComplete: true }) } : errorPayload }; },
+    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok, json: async () => ok ? { onboarding: responseOnboarding } : errorPayload }; },
     window: { location: { assign: url => redirects.push(url) } },
   })).default;
   const props = { enabled: true, checkoutEnabled: false, disabledReason: null, checkoutDisabledReason: null, initialOnboarding: onboarding(), minimumAge: 18, photoStorageReady: false, publishableKey: null, registrationOnly: true, registrationRequiresPaymentMethod: requiresPaymentMethod, ...changes };
   const render = () => h.render(Form, props);
-  return { calls, redirects, render, preference, values, preferenceSaves: () => preferenceSaves, fail: payload => { ok = false; if (payload) errorPayload = payload; }, failPreference: value => { preferenceFails = value; }, submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} }) };
+  return { calls, redirects, render, preference, values, setResponseOnboarding: value => { responseOnboarding = value; }, preferenceSaves: () => preferenceSaves, fail: payload => { ok = false; if (payload) errorPayload = payload; }, failPreference: value => { preferenceFails = value; }, submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} }) };
 }
+
+const updatePreferences = changes => ({ email: null, sms: null, smsPhone: null, revision: "server-revision-0", ...changes });
+const updateOnboarding = changes => onboarding({ profile: { mobile: "+18015550123" }, communicationPreferences: updatePreferences(changes) });
+const inputNamed = (fixture, name) => nodes(fixture.render()).find(node => node.type === "input" && node.props.name === name);
+const chooseUpdate = (fixture, channel, checked) => inputNamed(fixture, `membership-${channel}-updates`).props.onChange({ currentTarget: { checked } });
+
+test("reminder choices preserve saved decisions and remain separate from required legal acceptance", async () => {
+  for (const [saved, expectedEmail, expectedSms] of [
+    [{}, true, false],
+    [{ email: false, sms: false }, false, false],
+    [{ email: true, sms: true, smsPhone: "+18015550123" }, true, true],
+    [{ email: false, sms: true, smsPhone: "+18015550999" }, false, false],
+  ]) {
+    const f = await detailsFixture(true, { initialOnboarding: updateOnboarding(saved), registrationLegalNotice: legalNotice });
+    const email = inputNamed(f, "membership-email-updates"), sms = inputNamed(f, "membership-text-updates");
+    assert.equal(email.props.checked, expectedEmail);
+    assert.equal(sms.props.checked, expectedSms);
+    assert.equal(email.props.required, undefined); assert.equal(sms.props.required, undefined);
+    assert.equal(inputNamed(f, "registration-legal-acknowledged").props.defaultChecked, false);
+    assert.match(renderToStaticMarkup(f.render()), /Message frequency varies.*Message and data rates may apply/);
+    assert.match(renderToStaticMarkup(f.render()), /Security, account and registration emails still arrive/);
+    assert.match(renderToStaticMarkup(f.render()), /mailto:connect@theruinedproject.com/);
+  }
+});
+
+test("independent optional reminder choices submit explicit false and active SMS evidence without click requests", async () => {
+  for (const [email, sms] of [[false, false], [false, true], [true, false], [true, true]]) {
+    const f = await detailsFixture(true, { initialOnboarding: updateOnboarding() });
+    chooseUpdate(f, "email", email); chooseUpdate(f, "text", sms);
+    assert.deepEqual(f.calls, [], "Checkbox clicks must not send or persist anything");
+    await f.submit();
+    assert.deepEqual(f.calls[0].body.communicationPreferences, {
+      email, sms, expectedRevision: "server-revision-0", noticeVersion: "membership-reminders-v1",
+      ...(sms ? { smsOptIn: { phone: "+18015550123" } } : {}),
+    });
+    assert.deepEqual(f.redirects, ["/my/payment-method"], "Declining both channels does not block registration");
+  }
+  const resumed = await detailsFixture(true, { initialOnboarding: updateOnboarding({ sms: true, smsPhone: "+18015550123" }) });
+  await resumed.submit();
+  assert.equal(resumed.calls[0].body.communicationPreferences.sms, true);
+  assert.equal("smsOptIn" in resumed.calls[0].body.communicationPreferences, false, "Do not fabricate a new active selection on resume");
+});
+
+test("changing a consent-bound mobile resets texts until deliberately selected for the new number", async () => {
+  const f = await detailsFixture(true, { initialOnboarding: updateOnboarding({ sms: true, smsPhone: "+18015550123" }) });
+  const editPhone = value => {
+    f.values["mobile-national"] = value;
+    inputNamed(f, "mobile-national").props.onInput({ currentTarget: { value, setCustomValidity() {} } });
+  };
+  editPhone("(801) 555-0123");
+  assert.equal(inputNamed(f, "membership-text-updates").props.checked, true, "Formatting alone does not change the consent target");
+  editPhone("8015550124");
+  assert.equal(inputNamed(f, "membership-text-updates").props.checked, false);
+  assert.match(renderToStaticMarkup(f.render()), /Select text updates again for this number/);
+  chooseUpdate(f, "text", true);
+  await f.submit();
+  assert.deepEqual(f.calls[0].body.communicationPreferences.smsOptIn, { phone: "+18015550124" });
+
+  const autofill = await detailsFixture(true, { initialOnboarding: updateOnboarding({ sms: true, smsPhone: "+18015550123" }) });
+  autofill.values["mobile-national"] = "8015550124";
+  await autofill.submit();
+  assert.equal(autofill.calls[0].body.communicationPreferences.sms, false, "Recheck the actual submitted number even without an input event");
+  assert.equal("smsOptIn" in autofill.calls[0].body.communicationPreferences, false);
+
+  const country = await detailsFixture(true, { initialOnboarding: updateOnboarding({ sms: true, smsPhone: "+18015550123" }) });
+  nodes(country.render()).find(node => node.props.name === "mobile-country").props.onChange({ currentTarget: { value: "GB" } });
+  assert.equal(inputNamed(country, "membership-text-updates").props.checked, false);
+});
+
+test("successful detail saves refresh preference revision before retrying a failed Circle preference", async () => {
+  const f = await detailsFixture(true, { initialOnboarding: updateOnboarding() });
+  chooseUpdate(f, "text", true);
+  f.setResponseOnboarding(onboarding({ requiredFieldsComplete: true, communicationPreferences: updatePreferences({ email: true, sms: true, smsPhone: "+18015550123", revision: "server-revision-1" }) }));
+  f.failPreference(true);
+  await f.submit();
+  assert.deepEqual(f.redirects, []);
+  f.failPreference(false);
+  await f.submit();
+  assert.equal(f.calls[1].body.communicationPreferences.expectedRevision, "server-revision-1");
+  assert.equal("smsOptIn" in f.calls[1].body.communicationPreferences, false, "Successful stored consent is reused without a fabricated second selection");
+  assert.deepEqual(f.redirects, ["/my/payment-method"]);
+});
+
+test("stale reminder choices keep entered details visible and offer a reload instead of overwriting newer choices", async () => {
+  for (const code of ["communication_preferences_changed", "communication_notice_changed"]) {
+    const f = await detailsFixture(true, { initialOnboarding: updateOnboarding() });
+    f.values["legal-name"] = "Still Entered";
+    f.fail({ code, error: "Your update preferences changed. Reload before continuing." });
+    await f.submit();
+    assert.deepEqual(f.redirects, []);
+    assert.equal(f.values["legal-name"], "Still Entered");
+    assert.ok(nodes(f.render()).some(node => node.type === "form"));
+    assert.ok(nodes(f.render()).some(node => node.type === "button" && node.props.children === "Reload current update preferences ↻"));
+    await f.submit();
+    assert.equal(f.calls.length, 1);
+  }
+});
+
+test("legacy missing snapshots and paid profile edits do not invent communication choices", async () => {
+  for (const changes of [{}, { registrationOnly: false, initialOnboarding: updateOnboarding() }]) {
+    const f = await detailsFixture(true, changes);
+    assert.equal(inputNamed(f, "membership-email-updates"), undefined);
+    await f.submit();
+    assert.equal("communicationPreferences" in f.calls[0].body, false);
+  }
+});
 
 test("new registrations must acknowledge linked documents without accepting paid terms", async () => {
   for (const requiresPaymentMethod of [true, false]) {

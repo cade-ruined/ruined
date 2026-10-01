@@ -1,3 +1,4 @@
+import type { MemberCommunicationPreferencesSnapshot } from "./member-communication-preferences-model";
 import type { MemberBadge } from "./badge-model";
 import type {
   AccountState,
@@ -281,6 +282,7 @@ export type MemberProfileSnapshot = {
 };
 
 export type MemberOnboardingSnapshot = {
+  communicationPreferences?: MemberCommunicationPreferencesSnapshot;
   billingState: BillingState;
   membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   agreement: {

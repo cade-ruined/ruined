@@ -24,6 +24,13 @@ import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
 import type { RegistrationLegalNotice } from "@/lib/membership/registration-legal-model";
 import {
+  EMPTY_MEMBER_COMMUNICATION_PREFERENCES,
+  MEMBER_COMMUNICATION_NOTICE_VERSION,
+  MEMBER_EMAIL_UPDATES_NOTICE,
+  MEMBER_SMS_UPDATES_NOTICE,
+  MEMBER_SMS_UPDATES_DETAIL,
+} from "@/lib/membership/member-communication-preferences-model";
+import {
   formatPhoneInput,
   mobileToE164,
   PHONE_COUNTRY_OPTIONS,
@@ -187,6 +194,7 @@ export default function JoinForm({
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [legalRefreshRequired, setLegalRefreshRequired] = useState(false);
+  const [communicationRefreshRequired, setCommunicationRefreshRequired] = useState(false);
   const [plan, setPlan] = useState<MembershipBillingPlan>(initialPlan);
   const [recurringPaymentAccepted, setRecurringPaymentAccepted] = useState(false);
   const [lockedPlan, setLockedPlan] = useState<MembershipBillingPlan | null>(null);
@@ -219,6 +227,17 @@ export default function JoinForm({
   const [phoneNumber, setPhoneNumber] = useState(() =>
     phoneInputFromProfile(onboarding.profile.mobile, initialPhoneCountry),
   );
+  const initialCommunicationPreferences = initialOnboarding.communicationPreferences ?? EMPTY_MEMBER_COMMUNICATION_PREFERENCES;
+  const [communicationPreferences, setCommunicationPreferences] = useState(initialCommunicationPreferences);
+  const [emailUpdates, setEmailUpdates] = useState(initialCommunicationPreferences.email ?? true);
+  const initialMobile = mobileToE164(initialOnboarding.profile.mobile ?? "", initialPhoneCountry);
+  const initialSmsPhone = initialCommunicationPreferences.sms === true && initialCommunicationPreferences.smsPhone === initialMobile ? initialMobile : null;
+  const [smsUpdates, setSmsUpdates] = useState(Boolean(initialSmsPhone));
+  const [smsConsentPhone, setSmsConsentPhone] = useState(initialSmsPhone);
+  const [smsOptInPhone, setSmsOptInPhone] = useState<string | null>(null);
+  const [smsPhoneChanged, setSmsPhoneChanged] = useState(false);
+  const currentMobile = mobileToE164(phoneNumber, phoneCountry);
+  const communicationControlsAvailable = communicationPreferences.revision !== "not_loaded" || preview;
 
   useEffect(() => {
     if (previousStage.current === stage) return;
@@ -232,12 +251,30 @@ export default function JoinForm({
     return checkoutAttempt.current;
   }
 
+  function invalidateTextChoice(nextMobile: string | null) {
+    if (!smsUpdates || nextMobile === smsConsentPhone) return;
+    setSmsUpdates(false);
+    setSmsConsentPhone(null);
+    setSmsOptInPhone(null);
+    setSmsPhoneChanged(true);
+  }
+
+  function changeTextUpdates(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.currentTarget.checked && Boolean(currentMobile);
+    setSmsUpdates(selected);
+    setSmsConsentPhone(selected ? currentMobile : null);
+    setSmsOptInPhone(selected ? currentMobile : null);
+    setSmsPhoneChanged(false);
+  }
+
   function changePhoneCountry(event: ChangeEvent<HTMLSelectElement>) {
     const nextCountry = supportedPhoneCountry(event.currentTarget.value);
     if (!nextCountry) return;
     setError(null);
     phoneInputRef.current?.setCustomValidity("");
-    setPhoneNumber((current) => phoneInputForCountry(current, phoneCountry, nextCountry));
+    const nextNumber = phoneInputForCountry(phoneNumber, phoneCountry, nextCountry);
+    invalidateTextChoice(mobileToE164(nextNumber, nextCountry));
+    setPhoneNumber(nextNumber);
     setPhoneCountry(nextCountry);
   }
 
@@ -245,8 +282,10 @@ export default function JoinForm({
     setError(null);
     event.currentTarget.setCustomValidity("");
     const formatted = formatPhoneInput(event.currentTarget.value, phoneCountry);
+    const nextCountry = phoneCountryFromInput(formatted, phoneCountry);
+    invalidateTextChoice(mobileToE164(formatted, nextCountry));
     setPhoneNumber(formatted);
-    setPhoneCountry((current) => phoneCountryFromInput(formatted, current));
+    setPhoneCountry(nextCountry);
   }
 
   function changeMemberTag(value: string) {
@@ -264,7 +303,7 @@ export default function JoinForm({
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (photoPending || photoDraft) return;
-    if (!enabled || submitting || legalRefreshRequired) return;
+    if (!enabled || submitting || legalRefreshRequired || communicationRefreshRequired) return;
     if (registrationOnly && (registrationCouple.loading || registrationCouple.loadError)) return;
     if (legalNotice?.state === "unavailable") { setError(legalNotice.message); return; }
     setError(null);
@@ -298,6 +337,17 @@ export default function JoinForm({
         phoneInputRef.current?.focus();
         throw new Error("Enter a complete mobile number for the selected country.");
       }
+      // Also compare the submitted value: autofill or a programmatic change may
+      // reach the form without the phone input's normal change handler.
+      const sms = smsUpdates && smsConsentPhone === mobile;
+      if (smsUpdates && !sms) invalidateTextChoice(mobile);
+      const communicationPreferencesInput = registrationOnly && communicationControlsAvailable ? {
+        email: emailUpdates,
+        sms,
+        expectedRevision: communicationPreferences.revision,
+        noticeVersion: MEMBER_COMMUNICATION_NOTICE_VERSION,
+        ...(sms && smsOptInPhone === mobile ? { smsOptIn: { phone: mobile } } : {}),
+      } : undefined;
       const response = await fetch("/api/my/onboarding", {
         body: JSON.stringify({
           action: "save_profile",
@@ -306,6 +356,7 @@ export default function JoinForm({
           legalName: String(form.get("legal-name") ?? ""),
           mobile,
           memberTag: tag,
+          ...(communicationPreferencesInput ? { communicationPreferences: communicationPreferencesInput } : {}),
           ...(legalNotice?.state === "required" ? { legalAcknowledgment: {
             acknowledged: true,
             privacyVersion: legalNotice.privacyVersion,
@@ -325,6 +376,15 @@ export default function JoinForm({
       });
       const payload = (await response.json()) as OnboardingResponse;
       if (!response.ok || !payload.onboarding) {
+        if (payload.code === "communication_preferences_changed" || payload.code === "communication_notice_changed") {
+          setCommunicationRefreshRequired(true);
+        }
+        if (payload.code === "sms_opt_in_required") {
+          setSmsUpdates(false);
+          setSmsConsentPhone(null);
+          setSmsOptInPhone(null);
+          setSmsPhoneChanged(true);
+        }
         if (payload.code === "registration_documents_changed") {
           setLegalRefreshRequired(true);
           if (legalAcknowledgmentRef.current) legalAcknowledgmentRef.current.checked = false;
@@ -334,6 +394,14 @@ export default function JoinForm({
           memberTagRef.current?.focus();
         }
         throw new Error(payload.error || (registrationOnly ? "Your details could not be saved." : "Your member profile could not be saved."));
+      }
+      if (payload.onboarding.communicationPreferences) {
+        const saved = payload.onboarding.communicationPreferences;
+        setCommunicationPreferences(saved);
+        setEmailUpdates(saved.email ?? emailUpdates);
+        setSmsUpdates(saved.sms === true && saved.smsPhone === mobile);
+        setSmsConsentPhone(saved.sms === true ? saved.smsPhone : null);
+        setSmsOptInPhone(null);
       }
       if (registrationOnly) await registrationCouple.save();
       setOnboarding(payload.onboarding);
@@ -737,6 +805,17 @@ export default function JoinForm({
             />
           </div> : null}
 
+          {registrationOnly && communicationControlsAvailable ? <fieldset className="grid gap-3 border-t border-[var(--member-rule)] pt-6" disabled={submitting}>
+            <legend className="sr-only">Optional membership updates and reminders</legend>
+            <label className="flex items-start gap-3 text-sm leading-relaxed"><input checked={emailUpdates} className="mt-1 size-4 shrink-0 accent-current" name="membership-email-updates" onChange={event => setEmailUpdates(event.currentTarget.checked)} type="checkbox" /><span>{MEMBER_EMAIL_UPDATES_NOTICE}</span></label>
+            <div>
+              <label className="flex items-start gap-3 text-sm leading-relaxed"><input aria-describedby="membership-text-updates-help" checked={smsUpdates} className="mt-1 size-4 shrink-0 accent-current" disabled={!currentMobile || submitting} name="membership-text-updates" onChange={changeTextUpdates} type="checkbox" /><span>{MEMBER_SMS_UPDATES_NOTICE}</span></label>
+              <p className="mt-1 pl-7 text-xs leading-relaxed text-[var(--member-muted)]" id="membership-text-updates-help">{MEMBER_SMS_UPDATES_DETAIL} <a className="underline underline-offset-4" href="/privacy" rel="noopener noreferrer" target="_blank">Privacy</a> · <a className="underline underline-offset-4" href={legalNotice?.state === "required" ? legalNotice.agreementHref : "/membership/registration-terms"} rel="noopener noreferrer" target="_blank">Terms</a></p>
+              {!currentMobile || smsPhoneChanged ? <p className="mt-1 pl-7 text-xs leading-relaxed text-[var(--member-muted)]" role="status">{!currentMobile ? "Enter your mobile number above to choose text updates." : "Mobile number changed. Select text updates again for this number."}</p> : null}
+            </div>
+            <p className="pl-7 text-xs leading-relaxed text-[var(--member-muted)]">Security, account and registration emails still arrive if these are off. <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">Contact us</a> to change your preferences anytime.</p>
+          </fieldset> : null}
+
           {legalNotice?.state === "required" ? <div className="border-t border-[var(--member-rule)] pt-6">
             <label className="flex items-start gap-3 text-sm leading-relaxed">
               <input aria-describedby="registration-legal-help" className="mt-1 size-4 shrink-0 accent-current" defaultChecked={false} disabled={submitting} name="registration-legal-acknowledged" onChange={() => setError(null)} ref={legalAcknowledgmentRef} required type="checkbox" />
@@ -749,8 +828,9 @@ export default function JoinForm({
 
           {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
           {legalRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload & review updated documents ↻</button> : null}
+          {communicationRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload current update preferences ↻</button> : null}
           {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || communicationRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
       {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Preview card step · no details saved</Link> : null}
