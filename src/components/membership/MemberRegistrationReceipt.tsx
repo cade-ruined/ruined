@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import RegistrationCouplePreference from "@/components/membership/RegistrationCouplePreference";
 import InstallRuined from "@/components/membership/InstallRuined";
 
 type Props = {
@@ -30,7 +31,7 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
       <div className="grid min-w-0 gap-7 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] sm:gap-12">
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">Keep an eye on your email.</h2>
-          <p className="mt-3 text-sm leading-relaxed text-[var(--member-muted)]">We’ll email <span className="break-words font-medium text-[var(--member-ink)]">{email}</span> when your profile is ready. There’s nothing else you need to do today.</p>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--member-muted)]">We’ll email <span className="break-words font-medium text-[var(--member-ink)]">{email}</span> when your profile is ready. We’ll send your next steps here.</p>
           <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">You can close this page and sign back in whenever you need. Your registration will be here.</p>
         </div>
         <div className="border-t border-[var(--member-rule)] pt-5 sm:border-l sm:border-t-0 sm:pl-7 sm:pt-0">
@@ -39,6 +40,7 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
           {requiresPaymentMethod ? <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Manage saved card</Link> : null}
         </div>
       </div>
+      <RegistrationCouplePreference preview={preview} />
       <div className="mt-8 border-t border-[var(--member-rule)] pt-6"><InstallRuined variant="profile" /></div>
       <a className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="mailto:connect@theruinedproject.com">Need a hand? Contact Ruined</a>
     </section>

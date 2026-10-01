@@ -190,6 +190,7 @@ test("prelaunch profile completion offers optional setup before unpublished agre
   const Join = (await load("src/components/membership/JoinForm.tsx", {
     "next/link": Link, "@stripe/stripe-js": { loadStripe: () => { throw Error("No Stripe payment in prelaunch rendering"); } },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
+    "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => ({ loading: false, loadError: null }), RegistrationCoupleFields: () => null },
     "@/components/membership/CoupleMembershipApproval": Stub, "@/components/membership/AgreementText": Stub,
     "@/components/membership/MemberPhotoUpload": Stub, "@/components/membership/MemberPaymentMethod": Payment,
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),

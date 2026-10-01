@@ -79,6 +79,8 @@ const migrations = [
   "../db/migrations/20260930113000_couple_circle_placement.sql",
   "../db/migrations/20260930130000_direct_signup_confirmation.sql",
   "../db/migrations/20260930140000_member_registration_access.sql",
+  "../db/migrations/20260930200000_registration_eligibility.sql",
+  "../db/migrations/20260930210000_registration_couples.sql",
 ];
 
 function migrationBody(migration, migrationName) {

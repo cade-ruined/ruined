@@ -74,6 +74,7 @@ const JoinForm = load("src/components/membership/JoinForm.tsx", {
   "next/link": { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) },
   "@stripe/stripe-js": { loadStripe: () => { throw new Error("Rendering must not initialize Stripe or create a payment"); } },
   "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
+    "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => ({ loading: false, loadError: null }), RegistrationCoupleFields: () => null },
   "@/components/membership/AgreementText": { __esModule: true, default: AgreementText },
   "@/components/membership/CoupleMembershipApproval": { __esModule: true, default: () => null },
   "@/components/membership/MemberPhotoUpload": { __esModule: true, default: () => null },

@@ -51,9 +51,14 @@ async function ownerMemberId(tx: TransactionSql, authUserId: string, allowRestri
 async function readRegistration(tx: TransactionSql, memberId: string): Promise<MemberRegistrationSnapshot | null> {
   const [row] = await tx<Array<RegistrationRow>>`select registration.*,
     (private.ruined_member_has_complimentary_funding(registration.member_id) or private.ruined_member_has_operator_funding(registration.member_id)) as complimentary,
-    (onboarding.profile_completed_at is not null) as profile_complete,
+    (onboarding.profile_completed_at is not null and (registration.profile_activated_at is not null
+      or private.ruined_registration_intake_eligibility_error(profile.birth_date,
+        profile.default_fulfillment_address->>'countryCode') is null)) as profile_complete,
     private.ruined_member_registration_ready(registration.member_id) as ready
-    from member_registration_access registration left join member_onboardings onboarding on onboarding.member_id=registration.member_id
+    from member_registration_access registration
+    join ruined_members member on member.id=registration.member_id
+    left join person_private_profiles profile on profile.person_id=member.person_id
+    left join member_onboardings onboarding on onboarding.member_id=registration.member_id
     where registration.member_id=${memberId}::uuid`;
   return row ? snapshot(row) : null;
 }
@@ -127,11 +132,17 @@ export async function getOpsMemberRegistration(actor: string, memberId: string) 
 export async function getOpsMemberRegistrations(actor: string): Promise<OpsMemberRegistration[]> {
   return getApplicationDatabase().begin(async tx => {
     await requireAdministrator(tx, actor);
-    const rows = await tx<Array<RegistrationRow & { display_name: string; email: string; welcome_status: string | null; profile_ready_status: string | null }>>`
+    const rows = await tx<Array<RegistrationRow & { display_name: string; email: string; welcome_status: string | null; profile_ready_status: string | null;
+      couple_partner_email: string | null; couple_partner_member_id: string | null }>>`
       select registration.*,coalesce(nullif(profile.legal_name,''),nullif(public_profile.display_name,''),member.email) as display_name,member.email,
         (private.ruined_member_has_complimentary_funding(member.id) or private.ruined_member_has_operator_funding(member.id)) as complimentary,
-        onboarding.profile_completed_at is not null as profile_complete,private.ruined_member_registration_ready(member.id) as ready,
-        welcome.status as welcome_status,ready_message.status as profile_ready_status
+        (onboarding.profile_completed_at is not null and (registration.profile_activated_at is not null
+          or private.ruined_registration_intake_eligibility_error(profile.birth_date,
+            profile.default_fulfillment_address->>'countryCode') is null)) as profile_complete,
+        private.ruined_member_registration_ready(member.id) as ready,
+        welcome.status as welcome_status,ready_message.status as profile_ready_status,
+        couple.partner_email_normalized as couple_partner_email,
+        private.ruined_registration_circle_couple_partner(member.id) as couple_partner_member_id
       from member_registration_access registration join ruined_members member on member.id=registration.member_id and member.deleted_at is null
       join member_lifecycle lifecycle on lifecycle.member_id=member.id and lifecycle.account_state not in ('closed','suspended')
       left join member_onboardings onboarding on onboarding.member_id=member.id
@@ -139,9 +150,12 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
       left join person_profiles public_profile on public_profile.person_id=member.person_id
       left join member_registration_messages welcome on welcome.member_id=member.id and welcome.kind='welcome'
       left join member_registration_messages ready_message on ready_message.member_id=member.id and ready_message.kind='profile_ready'
+      left join member_registration_couple_intents couple on couple.member_id=member.id
       order by registration.profile_activated_at nulls first,registration.created_at desc limit 200`;
     return rows.map(row => ({ ...snapshot(row), name: row.display_name, email: row.email,
-      welcomeStatus: row.welcome_status, activationEmailStatus: row.profile_ready_status }));
+      welcomeStatus: row.welcome_status, activationEmailStatus: row.profile_ready_status,
+      coupleStatus: row.couple_partner_member_id ? "paired" : row.couple_partner_email ? "pending" : "none",
+      couplePartnerEmail: row.couple_partner_email, couplePartnerMemberId: row.couple_partner_member_id }));
   });
 }
 

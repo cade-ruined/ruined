@@ -47,6 +47,63 @@ test("administrator authorization, confirmation, version and reason remain manda
   assert.equal((await db.query("select account_state from member_lifecycle where member_id=$1",[member])).rows[0].account_state,"active");
 });
 
+test("authorized member erasure removes pending and confirmed couples requests in both directions without weakening pair guards",async t=>{
+  for(const scenario of ["pending_outgoing","pending_incoming","paired_outgoing_first","paired_incoming_first"]) {
+    await t.test(scenario,async context=>{
+      const {db,person,remove}=await fixture(context,"active");
+      const partner=id(901),partnerAuth=id(902),unrelated=id(903),unrelatedAuth=id(904),aliasMember=id(905),aliasAuth=id(906);
+      async function completeDetails(memberId,actor,email,personId) {
+        await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member') on conflict do nothing",[actor]);
+        await db.query("update person_email_addresses set verification_state='verified',verified_at=now() where person_id=$1 and email_normalized=$2",[personId,email]);
+        await db.query("insert into person_private_profiles(person_id,birth_date,default_fulfillment_address) values($1,'1990-01-01','{\"countryCode\":\"US\"}') on conflict(person_id) do update set birth_date=excluded.birth_date,default_fulfillment_address=excluded.default_fulfillment_address",[personId]);
+        await db.query("insert into member_onboardings(member_id,form_version,profile_completed_at) values($1,'couple-erasure-test',now()) on conflict(member_id) do update set profile_completed_at=now()",[memberId]);
+        await db.query("insert into member_registration_access(member_id) values($1)",[memberId]);
+      }
+      async function additional(memberId,actor,email) {
+        await db.query("insert into ruined_members(id,email,email_normalized) values($1,$2,$2)",[memberId,email]);
+        const personId=(await db.query("select person_id from ruined_members where id=$1",[memberId])).rows[0].person_id;
+        await db.query("insert into member_lifecycle(member_id,account_state) values($1,'active')",[memberId]);
+        await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,$4,'active')",[actor,memberId,personId,email]);
+        await completeDetails(memberId,actor,email,personId);
+      }
+      const consent=(memberId,actor,email)=>db.query("insert into member_registration_couple_intents(member_id,partner_email_normalized,consented_by_auth_user_id) values($1,$2,$3)",[memberId,email,actor]);
+      await completeDetails(member,auth,"member@example.test",person);
+      await additional(partner,partnerAuth,"partner@example.test");
+      await additional(unrelated,unrelatedAuth,"unrelated@example.test");
+      await additional(aliasMember,aliasAuth,"alias-requester@example.test");
+      await db.query("insert into person_email_addresses(person_id,email,email_normalized,verification_state,verified_at,source) values($1,'former-alias@example.test','former-alias@example.test','verified',now(),'ops_import')",[person]);
+      await consent(unrelated,unrelatedAuth,"keep-this-request@example.test");
+      await consent(aliasMember,aliasAuth,"former-alias@example.test");
+      const unrelatedBefore=(await db.query("select to_jsonb(intent) row from member_registration_couple_intents intent where member_id=$1",[unrelated])).rows[0].row;
+      if(scenario==="pending_outgoing" || scenario==="paired_outgoing_first") await consent(member,auth,"partner@example.test");
+      if(scenario==="pending_incoming" || scenario.startsWith("paired")) await consent(partner,partnerAuth,"member@example.test");
+      if(scenario==="paired_incoming_first") await consent(member,auth,"partner@example.test");
+
+      // A forged session setting cannot authorize member erasure or defeat the
+      // confirmed-pair guard. Browser roles cannot read or mutate pair records.
+      await db.exec("select set_config('ruined.member_deletion_token','00000000-0000-4000-8000-000000000999',false)");
+      await assert.rejects(()=>db.query("update ruined_members set deleted_at=now() where id=$1",[member]),/authorized member deletion/);
+      for(const role of ["anon","authenticated"]) {
+        await assert.rejects(()=>db.transaction(async tx=>{
+          await tx.exec(`set local role ${role}`);
+          await tx.query("delete from member_registration_couple_intents where member_id=$1",[member]);
+        }),error=>error.code==="42501");
+      }
+      if(scenario.startsWith("paired")) {
+        await assert.rejects(()=>db.query("delete from member_registration_couple_intents where member_id=$1",[member]),error=>error.code==="P4210");
+        await assert.rejects(()=>db.query("update member_registration_couple_intents set partner_email_normalized='someone-else@example.test' where member_id=$1",[partner]),error=>error.code==="P4210");
+      }
+      assert.equal((await remove()).deleted,true);
+      const retained=(await db.query("select member_id,partner_email_normalized from member_registration_couple_intents order by member_id")).rows;
+      assert.deepEqual(retained,[{member_id:unrelated,partner_email_normalized:"keep-this-request@example.test"}]);
+      assert.deepEqual((await db.query("select to_jsonb(intent) row from member_registration_couple_intents intent where member_id=$1",[unrelated])).rows[0].row,unrelatedBefore);
+      assert.equal((await db.query("select private.ruined_circle_couple_partner($1) as partner",[partner])).rows[0].partner,null);
+      assert.equal((await db.query("select deleted_at from ruined_members where id=$1",[partner])).rows[0].deleted_at,null,"the surviving adult retains their account");
+      assert.equal((await db.query("select has_function_privilege('authenticated','private.ruined_erase_registration_couple_intents()','execute') as allowed")).rows[0].allowed,false);
+    });
+  }
+});
+
 test("Delete closes every account state atomically, records a real transition once and excludes the historical member from current counts",async t=>{
   for(const state of ["active","provisional","suspended","invited","closed"]){
     await t.test(state,async context=>{

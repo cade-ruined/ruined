@@ -5,7 +5,7 @@
 New standard registrations follow the same sequence whether they arrive through a personal invitation or the public Ruined Direct form:
 
 1. Personalize/accept their invitation and confirm their email code.
-2. Save their personal information and unique member tag.
+2. Save their personal information and unique member tag. New held registrations require an age of at least 18 and a US address, including complimentary registrations. Existing and released members retain their normal profile editing.
 3. Save a payment card securely through Stripe Setup mode, with explicit storage consent.
 4. See the registration receipt and receive the visual welcome email.
 5. Return to the receipt until an Operations Administrator opens their profile and queues the separate profile-ready email.
@@ -34,6 +34,16 @@ Open **Operations → Members → Registrations** (`/ops/registrations`). Admini
 Each release rechecks current readiness and the reviewed record version. Withdrawing a required saved card prevents release until it is saved again. A stale or failed row is reported individually. Refresh before retrying an ambiguous result. The release records the administrator action and queues one profile-ready message atomically; it does not change billing.
 
 This is an event-based two-email sequence: registration welcome, then an administrator-triggered profile-ready email. No dated drip schedule or additional campaign messages are enabled by this work.
+
+## Couples registering before paid launch
+
+After saving eligible personal information, each adult can enter the other adult's email and explicitly agree to link their Circle placement. The pending choice is also available from the registration receipt. The other adult must separately verify their own email, save eligible details, and name the first adult before a pair is confirmed. No partner email is sent, and the member endpoint never reveals whether an address has an account or returns discovered profile details.
+
+Pending requests can be corrected or removed. Confirmed pairs require operator assistance to change. Operations registrations display the entered address, pending/confirmed status. The existing database Circle guard applies to confirmed registration pairs before payment: a pair cannot be assigned to two different current Circles, and joint transfers remain atomic. Existing conflicting placement or a different commercial couple prevents confirmation rather than silently moving anyone.
+
+Each adult still completes their own registration and required card-saving step; complimentary exemptions remain independent. A registration pair does not authorize shared billing, grant membership funding, open either profile, reserve a price, or complete the paid couples agreement. That separate mutual payment approval is still required at paid activation.
+
+Apply `20260930200000_registration_eligibility.sql` and then `20260930210000_registration_couples.sql` before deploying the matching UI/API. Pair rows have RLS and no direct anonymous/authenticated access; the server checks verified identity, adulthood, US registration eligibility, and completed personal information.
 
 ## Delivery and access guarantees
 

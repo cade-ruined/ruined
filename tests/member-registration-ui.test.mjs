@@ -71,6 +71,15 @@ test("returning registrations resume card or receipt while existing activated ac
   await assert.rejects(f.page, error => error.href === "/my");
 });
 
+test("stale ineligible registration details reopen intake even when the onboarding timestamp says complete", async () => {
+  const f = await pageFixture("app/my/join/page.tsx", registration({ profileComplete: false }), context({ data: onboarding({ requiredFieldsComplete: true, profile: { legalName: "Saved Name", birthDate: "2018-01-01", fulfillmentAddress: { countryCode: "CA" } } }) }));
+  const tree = await f.page(), form = nodes(tree).find(node => node.type === f.Form);
+  assert.equal(form.props.registrationOnly, true);
+  assert.equal(form.props.initialOnboarding.requiredFieldsComplete, false);
+  assert.equal(form.props.initialOnboarding.profile.legalName, "Saved Name", "Preserve saved details for correction");
+  assert.equal(form.props.initialOnboarding.profile.fulfillmentAddress.countryCode, "CA");
+});
+
 test("card page sends incomplete details back to entry and exempts complimentary registration", async () => {
   const f = await pageFixture("app/my/payment-method/page.tsx", registration());
   await assert.rejects(f.page, error => error.href === "/my/join");
@@ -112,14 +121,17 @@ function hookFixture() {
   }, render(Component, props) { cursor = 0; return Component(props); } };
 }
 
-async function detailsFixture(requiresPaymentMethod) {
+async function detailsFixture(requiresPaymentMethod, changes = {}) {
   const h = hookFixture(), calls = [], redirects = [];
-  let ok = true;
+  let ok = true, preferenceFails = false, preferenceSaves = 0;
+  const preference = { saved: { status: "none", partnerEmail: null }, kind: "individual", partnerEmail: "", consent: false, loading: false, loadError: null,
+    save: async () => { assert.ok(calls.some(call => call.url === "/api/my/onboarding"), "Save details before pairing"); preferenceSaves++; if (preferenceFails) throw Error("Your Circle preference could not be saved."); } };
   const values = { "member-tag": "new_member", "mobile-country": "US", "mobile-national": "8015550123", "legal-name": "New Member", "birth-date": "1990-01-01", "apparel-size": "M", "address-line-1": "123 Main", city: "Provo", region: "UT", "postal-code": "84601", "country-code": "US" };
   const Form = (await load("src/components/membership/JoinForm.tsx", {
     react: h.react, "next/link": Link, "@stripe/stripe-js": { loadStripe: () => assert.fail("No checkout") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
     "@/components/membership/CoupleMembershipApproval": Stub, "@/components/membership/AgreementText": Stub,
+    "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => preference, RegistrationCoupleFields: Stub },
     "@/components/membership/MemberPhotoUpload": Stub, "@/components/membership/MemberPaymentMethod": Stub,
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
@@ -129,9 +141,9 @@ async function detailsFixture(requiresPaymentMethod) {
     fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok, json: async () => ok ? { onboarding: onboarding({ requiredFieldsComplete: true }) } : { error: "Try again." } }; },
     window: { location: { assign: url => redirects.push(url) } },
   })).default;
-  const props = { enabled: true, checkoutEnabled: false, disabledReason: null, checkoutDisabledReason: null, initialOnboarding: onboarding(), minimumAge: 18, photoStorageReady: false, publishableKey: null, registrationOnly: true, registrationRequiresPaymentMethod: requiresPaymentMethod };
+  const props = { enabled: true, checkoutEnabled: false, disabledReason: null, checkoutDisabledReason: null, initialOnboarding: onboarding(), minimumAge: 18, photoStorageReady: false, publishableKey: null, registrationOnly: true, registrationRequiresPaymentMethod: requiresPaymentMethod, ...changes };
   const render = () => h.render(Form, props);
-  return { calls, redirects, render, fail: () => { ok = false; }, submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} }) };
+  return { calls, redirects, render, preference, preferenceSaves: () => preferenceSaves, fail: () => { ok = false; }, failPreference: value => { preferenceFails = value; }, submit: () => nodes(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} }) };
 }
 
 test("details save follows server confirmation to required card or complimentary receipt without activating membership", async () => {
@@ -146,6 +158,52 @@ test("details save follows server confirmation to required card or complimentary
   }
   const f = await detailsFixture(true); f.fail(); await f.submit();
   assert.deepEqual(f.redirects, []); assert.match(renderToStaticMarkup(f.render()), /Try again/);
+  assert.equal(f.preferenceSaves(), 0, "Failed intake must not save a Circle preference");
+});
+
+test("saved details stay on the form when Circle preference saving fails, and retry advances only after both succeed", async () => {
+  for (const required of [true, false]) {
+    const f = await detailsFixture(required);
+    f.preference.kind = "couple"; f.preference.partnerEmail = "partner@example.test"; f.preference.consent = true;
+    f.failPreference(true);
+    await f.submit();
+    assert.equal(f.calls.length, 1); assert.equal(f.preferenceSaves(), 1);
+    assert.deepEqual(f.redirects, []);
+    assert.ok(nodes(f.render()).some(node => node.type === "form"));
+    assert.match(renderToStaticMarkup(f.render()), /Your Circle preference could not be saved/);
+    f.failPreference(false);
+    await f.submit();
+    assert.equal(f.preferenceSaves(), 2);
+    assert.deepEqual(f.redirects, [required ? "/my/payment-method" : "/my/registered"]);
+  }
+});
+
+test("unknown Circle preference and read-only preview cannot submit profile details", async () => {
+  for (const state of [{ loading: true }, { loadError: "Retry loading" }]) {
+    const f = await detailsFixture(true); Object.assign(f.preference, state);
+    await f.submit(); assert.deepEqual(f.calls, []); assert.deepEqual(f.redirects, []);
+  }
+  const f = await detailsFixture(true, { enabled: false, preview: true });
+  await f.submit(); assert.deepEqual(f.calls, []); assert.deepEqual(f.redirects, []);
+});
+
+test("new registration offers only US shipping while existing intake retains international country choices", async () => {
+  for (const registrationOnly of [true, false]) {
+    const f = await detailsFixture(true, { registrationOnly });
+    const tree = f.render();
+    const shipping = nodes(tree).find(node => node.type === "select" && node.props.name === "country-code");
+    const countries = nodes(shipping).filter(node => node.type === "option").map(node => node.props.value);
+    if (registrationOnly) assert.deepEqual(countries, ["US"]);
+    else {
+      assert.ok(countries.length > 200);
+      for (const country of ["US", "CA", "GB", "AE"]) assert.ok(countries.includes(country), country);
+    }
+    const phone = nodes(tree).find(node => node.type === "select" && node.props.name === "mobile-country");
+    assert.ok(nodes(phone).filter(node => node.type === "option").length > 200, "A US resident may still use an international mobile number");
+    const birthDate = nodes(tree).find(node => node.props.name === "birth-date");
+    if (registrationOnly) assert.match(birthDate.props.max, /^\d{4}-\d{2}-\d{2}$/);
+    else assert.equal(birthDate.props.max, undefined, "Historical details remain editable");
+  }
 });
 
 test("held shell omits member navigation, settings, updates and badge entry points while keeping support and sign-out", async () => {
@@ -165,14 +223,19 @@ test("held shell omits member navigation, settings, updates and badge entry poin
 });
 
 test("registration receipt preserves charge boundaries, email privacy and a visible install control", async () => {
+  const Editor = ({ preview }) => React.createElement("div", { "data-circle-preference-editor": true, "data-preview": preview }, "Registering with your partner?");
   const Receipt = (await load("src/components/membership/MemberRegistrationReceipt.tsx", {
     "next/image": Image, "next/link": Link,
+    "@/components/membership/RegistrationCouplePreference": Editor,
     "@/components/membership/InstallRuined": ({ variant }) => React.createElement("button", { "data-variant": variant }, "Install Ruined"),
   })).default;
   const render = requiresPaymentMethod => renderToStaticMarkup(React.createElement(Receipt, { email: "new@example.test", registeredAt: "2026-09-30T16:00:00Z", requiresPaymentMethod }));
   const html = render(true);
   assert.match(html, /You’re registered/); assert.match(html, /no subscription has started/); assert.match(html, /We’ll email/);
   assert.match(html, /Install Ruined/); assert.match(html, /data-variant="profile"/);
+  assert.match(html, /data-circle-preference-editor="true"/); assert.match(html, /Registering with your partner/);
+  const previewTree = Receipt({ email: "new@example.test", registeredAt: null, requiresPaymentMethod: true, preview: true });
+  assert.equal(nodes(previewTree).find(node => node.type === Editor).props.preview, true);
   assert.doesNotMatch(html, /email (sent|delivered)|href="\/my(?:\"|\/profile|\/circle|\/foundations)/i);
   assert.match(render(false), /No payment card is required/); assert.doesNotMatch(render(false), /Manage saved card|Your card is saved/);
 });

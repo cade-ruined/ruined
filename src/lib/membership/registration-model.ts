@@ -14,4 +14,7 @@ export type OpsMemberRegistration = MemberRegistrationSnapshot & {
   email: string;
   welcomeStatus: string | null;
   activationEmailStatus: string | null;
+  coupleStatus?: "none" | "pending" | "paired";
+  couplePartnerEmail?: string | null;
+  couplePartnerMemberId?: string | null;
 };

@@ -15,6 +15,7 @@ import { loadStripe, type Stripe } from "@stripe/stripe-js";
 
 import { useMembershipEntryProgressStage } from "@/components/membership/MembershipEntryProgress";
 import CoupleMembershipApproval from "@/components/membership/CoupleMembershipApproval";
+import { RegistrationCoupleFields, useRegistrationCouple } from "@/components/membership/RegistrationCouplePreference";
 import AgreementText from "@/components/membership/AgreementText";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import MemberPaymentMethod from "@/components/membership/MemberPaymentMethod";
@@ -133,6 +134,14 @@ function savedString(value: Record<string, unknown> | null, key: string) {
   return value && typeof value[key] === "string" ? String(value[key]) : "";
 }
 
+function latestAdultBirthDate() {
+  const today = new Date();
+  const year = today.getUTCFullYear() - 18;
+  const month = today.getUTCMonth();
+  const day = Math.min(today.getUTCDate(), new Date(Date.UTC(year, month + 1, 0)).getUTCDate());
+  return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
+}
+
 export default function JoinForm({
   disabledReason,
   checkoutDisabledReason,
@@ -163,6 +172,7 @@ export default function JoinForm({
   preview?: boolean;
 }) {
   const checkoutAttempt = useRef<string | null>(null);
+  const registrationCouple = useRegistrationCouple({ enabled: registrationOnly, preview });
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const memberTagRef = useRef<HTMLInputElement>(null);
   const [memberTag, setMemberTag] = useState(initialOnboarding.profile.memberTag ?? "");
@@ -249,6 +259,7 @@ export default function JoinForm({
     event.preventDefault();
     if (photoPending || photoDraft) return;
     if (!enabled || submitting) return;
+    if (registrationOnly && (registrationCouple.loading || registrationCouple.loadError)) return;
     setError(null);
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
@@ -302,6 +313,7 @@ export default function JoinForm({
         }
         throw new Error(payload.error || (registrationOnly ? "Your details could not be saved." : "Your member profile could not be saved."));
       }
+      if (registrationOnly) await registrationCouple.save();
       setOnboarding(payload.onboarding);
       if (registrationOnly && payload.onboarding.requiredFieldsComplete) {
         window.location.assign(registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered");
@@ -537,10 +549,12 @@ export default function JoinForm({
                 className={fieldClass}
                 defaultValue={onboarding.profile.birthDate ?? ""}
                 id="member-birth-date"
+                max={registrationOnly ? latestAdultBirthDate() : undefined}
                 name="birth-date"
                 required
                 type="date"
               />
+              {registrationOnly ? <span className="text-xs leading-relaxed text-[var(--member-muted)]">Membership is for adults 18 and over.</span> : null}
             </label>
             <div className="grid gap-5 sm:col-span-2 sm:grid-cols-[minmax(0,1.35fr)_minmax(12rem,0.65fr)]">
               <fieldset className="min-w-0">
@@ -672,12 +686,12 @@ export default function JoinForm({
               <select
                 autoComplete="shipping country"
                 className={fieldClass}
-                defaultValue={supportedShippingCountry(savedString(address, "countryCode")) ?? "US"}
+                defaultValue={registrationOnly ? "US" : supportedShippingCountry(savedString(address, "countryCode")) ?? "US"}
                 id="shipping-country"
                 name="country-code"
                 required
               >
-                {SHIPPING_COUNTRY_OPTIONS.map((country) => (
+                {SHIPPING_COUNTRY_OPTIONS.filter(country => !registrationOnly || country.code === "US").map((country) => (
                   <option className="text-black" key={country.code} value={country.code}>
                     {country.name}
                   </option>
@@ -685,6 +699,8 @@ export default function JoinForm({
               </select>
             </label>
           </fieldset>
+
+          {registrationOnly ? <div className="border-t border-[var(--member-rule)] pt-6"><p className="mb-5 text-xs leading-relaxed text-[var(--member-muted)]">Registration is currently available in the United States.</p><RegistrationCoupleFields preference={registrationCouple} disabled={submitting} /></div> : null}
 
           {!registrationOnly ? <div>
             <p className={fieldLabelTextClass}>Profile photo / Optional</p>
@@ -701,7 +717,7 @@ export default function JoinForm({
 
           {error || disabledReason ? <p aria-live="polite" className="border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? disabledReason}</p> : null}
           {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
       {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Preview card step · no details saved</Link> : null}

@@ -38,6 +38,9 @@ export default async function JoinMyRuinedPage() {
     ? await getMemberRegistration(context.viewer.authUserId)
     : context.state === "preview" ? memberRegistrationPreview(memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value)) : null;
   const registrationOnly = Boolean(registration && registration.state !== "activated");
+  const onboarding = registrationOnly && registration && !registration.profileComplete
+    ? { ...context.data, requiredFieldsComplete: false }
+    : context.data;
   if (context.state === "authenticated" && registrationOnly && registration) {
     if (registration.state === "registered" && registration.ready) redirect("/my/registered");
     if (registration.profileComplete) redirect(registration.requiresPaymentMethod && !registration.ready ? "/my/payment-method" : "/my/registered");
@@ -68,8 +71,8 @@ export default async function JoinMyRuinedPage() {
       ? "Preview only. Connect Supabase, Postgres, and Stripe to open payment."
       : "Stripe membership payment is not fully configured yet.";
   const initialStage = membershipEntryStage(
-    context.data.requiredFieldsComplete,
-    Boolean(context.data.agreement.acceptanceId),
+    onboarding.requiredFieldsComplete,
+    Boolean(onboarding.agreement.acceptanceId),
   );
 
   return (
@@ -101,7 +104,7 @@ export default async function JoinMyRuinedPage() {
             registrationRequiresPaymentMethod={registration?.requiresPaymentMethod ?? true}
             disabledReason={disabledReason}
             enabled={writable}
-            initialOnboarding={context.data}
+            initialOnboarding={onboarding}
             initialPlan={initialPlan}
             minimumAge={context.configuration.minimumAge}
             photoStorageReady={isMemberPhotoStorageConfigured()}

@@ -411,6 +411,16 @@ export async function saveMemberOnboardingProfile(
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 41)`;
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 44)`;
     await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
+    // Intake eligibility applies only while a new registration is held. Existing
+    // members can still correct their historical details after profile release.
+    if (identity.registrationHeld) {
+      const [eligibility] = await tx<Array<{ error: string | null }>>`
+        select private.ruined_registration_intake_eligibility_error(
+          ${clean.birthDate}::date, ${clean.shippingAddress.countryCode}
+        ) as error from member_registration_access
+        where member_id=${identity.memberId}::uuid and profile_activated_at is null`;
+      if (eligibility?.error) throw new MembershipInputError(eligibility.error);
+    }
     await tx`
       insert into person_profiles (person_id, display_name, member_tag)
       values (${identity.personId}::uuid, ${`@${clean.memberTag}`}, ${clean.memberTag})

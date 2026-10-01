@@ -3,12 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { MemberRegistrationSnapshot } from "@/lib/membership/registration-model";
+import type { OpsMemberRegistration } from "@/lib/membership/registration-model";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "./operatorStyles";
 
-export type OperatorRegistrationRow = MemberRegistrationSnapshot & {
-  name: string; email: string; welcomeStatus: string | null; activationEmailStatus: string | null;
-};
+export type OperatorRegistrationRow = OpsMemberRegistration;
 
 function deliveryLabel(value: string | null) {
   if (value === "sent") return "Sent";
@@ -99,7 +97,7 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
           {row.state === "registered" && row.ready ? <input className="mt-1 size-5 accent-black" type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.memberId)} disabled={pending} onChange={event => choose(row.memberId, event.target.checked)} /> : <span className="w-5" aria-hidden="true" />}
           <div className="min-w-0"><Link className="inline-flex min-h-8 items-center font-semibold underline underline-offset-4" href={`/ops/members/${row.memberId}?returnTo=%2Fops%2Fregistrations`}>{row.name}</Link><p className="break-all text-sm text-black/55">{row.email}</p></div>
         </div>
-        <div className="text-sm"><p>{row.state === "activated" ? "Profile open" : row.state === "registered" && row.ready ? "Registered · profile closed" : row.profileComplete ? row.requiresPaymentMethod ? "Card needed" : "Registration needs review" : "Information needed"}</p><p className="mt-1 text-xs text-black/55">{row.requiresPaymentMethod ? "Standard registration" : "Complimentary · no card required"}</p></div>
+        <div className="text-sm"><p>{row.state === "activated" ? "Profile open" : row.state === "registered" && row.ready ? "Registered · profile closed" : row.profileComplete ? row.requiresPaymentMethod ? "Card needed" : "Registration needs review" : "Information needed"}</p><p className="mt-1 text-xs text-black/55">{row.requiresPaymentMethod ? "Standard registration" : "Complimentary · no card required"}</p>{row.coupleStatus && row.coupleStatus !== "none" ? <p className="mt-2 break-words text-xs leading-5"><strong>{row.coupleStatus === "paired" ? "Couple · confirmed" : "Couple · awaiting confirmation"}</strong><br />{row.couplePartnerEmail}</p> : null}</div>
         <div className="text-xs leading-6 text-black/60"><p>Welcome: {deliveryLabel(row.welcomeStatus)}</p><p>Activation: {deliveryLabel(row.activationEmailStatus)}</p></div>
       </article>)}
       {!visible.length ? <p className="py-10 text-sm text-black/55">No registrations in this view.</p> : null}

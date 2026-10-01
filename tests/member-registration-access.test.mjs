@@ -97,11 +97,12 @@ test("registration holds survive launch changes and release profiles only after 
     await sql.begin(tx => admission.claimPublicMembershipSignupInTransaction(tx,viewer,"monthly"));
     return { ...viewer, ...(await row("select id as member_id,person_id from ruined_members where email_normalized=$1", [email])) };
   }
-  async function profile(viewer) {
+  async function profile(viewer, changes = {}) {
     return memberRepository.saveMemberOnboardingProfile(viewer.authUserId, {
       apparelTopSize: "M", birthDate: "1990-01-01", legalName: "Registration Test", mobile: "+12025550123",
       memberTag: `member${viewer.member_id.replaceAll("-", "").slice(0,14)}`,
       shippingAddress: { addressLine1: "123 Test Street", addressLine2: null, city: "Denver", countryCode: "US", postalCode: "80202", region: "CO" },
+      ...changes,
     });
   }
   async function savedCard(viewer,{livemode=false,accountId="acct_RegistrationTest"}={}) {
@@ -124,11 +125,35 @@ test("registration holds survive launch changes and release profiles only after 
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="true";
   const fresh = await member("new@example.test");
 
+  await t.test("registration eligibility includes the eighteenth birthday and rejects younger, missing, and non-US details", async () => {
+    const check = async (birthDate, country, today = "2026-09-30") => (await row(
+      "select private.ruined_registration_intake_eligibility_error($1::date,$2,$3::date) as error", [birthDate, country, today])).error;
+    assert.equal(await check("2008-09-30", "US"), null);
+    assert.equal(await check("2008-09-29", "US"), null);
+    assert.match(await check("2008-10-01", "US"), /18 and over/);
+    assert.match(await check(null, "US"), /18 and over/);
+    assert.match(await check("1990-01-01", "US", null), /18 and over/);
+    assert.match(await check("2030-01-01", "US"), /18 and over/);
+    assert.match(await check("2008-02-29", "US", "2026-02-28"), /18 and over/);
+    assert.equal(await check("2008-02-29", "US", "2026-03-01"), null);
+    for (const country of ["CA", "GB", "", null]) assert.match(await check("1990-01-01", country), /United States/);
+    assert.equal(await check("1990-01-01", "us"), null);
+  });
+
+  await t.test("new held intake rejects ineligible details before saving them", async () => {
+    await assert.rejects(() => profile(fresh, { birthDate: "2018-01-01" }), { name: "MembershipInputError", message: "Membership registration is for adults 18 and over." });
+    await assert.rejects(() => profile(fresh, { shippingAddress: { addressLine1: "1 Test Street", addressLine2: null, city: "Toronto", countryCode: "CA", postalCode: "M5V 1A1", region: "ON" } }), { name: "MembershipInputError", message: "Membership registration is currently available in the United States." });
+    assert.equal((await row("select count(*)::int as count from person_private_profiles where person_id=$1", [fresh.person_id])).count, 0);
+    assert.equal((await registration.getMemberRegistration(fresh.authUserId)).profileComplete, false);
+  });
+
   await t.test("existing profiles remain accessible and are never backfilled on return", async()=>{
     assert.equal(await registration.getMemberRegistration(existing.authUserId),null);
     await sql.begin(tx => admission.claimPublicMembershipSignupInTransaction(tx,existing,"monthly"));
     assert.equal(await registration.getMemberRegistration(existing.authUserId),null);
     assert.ok(policy.memberCan(policy.deriveMemberAccessPolicy(await memberRepository.getMemberIdentity(existing.authUserId)),"profile.read"));
+    await profile(existing, { birthDate: "2018-01-01", shippingAddress: { addressLine1: "1 Test Street", addressLine2: null, city: "Toronto", countryCode: "CA", postalCode: "M5V 1A1", region: "ON" } });
+    assert.equal((await row("select default_fulfillment_address->>'countryCode' as country from person_private_profiles where person_id=$1", [existing.person_id])).country, "CA");
   });
   await t.test("new pending account can edit intake but cannot read or write profile, journal, or badges",async()=>{
     const access = policy.deriveMemberAccessPolicy(await memberRepository.getMemberIdentity(fresh.authUserId));
@@ -203,6 +228,11 @@ test("registration holds survive launch changes and release profiles only after 
     assert.equal((await row("select billing_state from member_lifecycle where member_id=$1",[fresh.member_id])).billing_state,"pending");
     assert.equal((await registration.getOpsMemberRegistrations(admin.authUserId))[0].memberId,fresh.member_id);
   });
+  await t.test("released registrations retain historical profile editing without losing readiness", async () => {
+    await profile(fresh, { birthDate: "2018-01-01", shippingAddress: { addressLine1: "1 Test Street", addressLine2: null, city: "Toronto", countryCode: "CA", postalCode: "M5V 1A1", region: "ON" } });
+    assert.equal((await registration.getMemberRegistration(fresh.authUserId)).ready, true);
+    assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId), null);
+  });
   await t.test("the real setup webhook completes registration atomically and never opens paid checkout",async()=>{
     const pending = await member("webhook-registered@example.test");
     await profile(pending);
@@ -248,6 +278,20 @@ test("registration holds survive launch changes and release profiles only after 
     const invitation = await row("select public_token from member_personal_invitations where id=$1",[invitationId]);
     await load("src/lib/auth/platform-access.ts").completePlatformSignIn(complimentary,{invitationToken:invitation.public_token});
     Object.assign(complimentary,await row("select id as member_id,person_id from ruined_members where email_normalized=$1",[complimentary.email]));
+    // Simulate stale/imported details predating the intake guard. Complimentary
+    // funding must not allow these records to complete or activate registration.
+    await db.query("insert into person_private_profiles(person_id,birth_date,default_fulfillment_address) values($1,'2018-01-01','{\"countryCode\":\"US\"}')", [complimentary.person_id]);
+    await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1", [complimentary.member_id]);
+    assert.equal((await registration.completeMemberRegistration(complimentary.authUserId)).state, "collecting");
+    assert.equal((await registration.getMemberRegistration(complimentary.authUserId)).ready, false);
+    assert.equal((await registration.getMemberRegistration(complimentary.authUserId)).profileComplete, false);
+    assert.equal(await registration.getMemberRegistrationDestination(complimentary.authUserId), "/my/join");
+    assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1", [complimentary.member_id])).count, 0);
+    await assert.rejects(() => db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary' where member_id=$1", [complimentary.member_id]), error => error.code === "P4301");
+    await db.query("update person_private_profiles set birth_date='1990-01-01',default_fulfillment_address='{\"countryCode\":\"CA\"}' where person_id=$1", [complimentary.person_id]);
+    assert.equal((await registration.completeMemberRegistration(complimentary.authUserId)).state, "collecting");
+    assert.equal(await registration.getMemberRegistrationDestination(complimentary.authUserId), "/my/join");
+    await assert.rejects(() => db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary',profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1", [complimentary.member_id, admin.authUserId]), error => error.code === "P4301");
     await profile(complimentary);
     const result=await registration.getMemberRegistration(complimentary.authUserId);
     assert.equal(result.requiresPaymentMethod,false);assert.equal(result.ready,true);assert.equal(result.state,"registered");

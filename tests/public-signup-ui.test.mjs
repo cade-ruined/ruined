@@ -76,6 +76,7 @@ async function checkoutFixture({ initialPlan = "annual", membershipFunding = "se
     react: hooks.react, "next/link": Stub,
     "@stripe/stripe-js": { loadStripe: () => assert.fail("Do not initialize an actual payment in tests") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
+    "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => ({ loading: false, loadError: null }), RegistrationCoupleFields: () => null },
     "@/components/membership/CoupleMembershipApproval": Stub,
     "@/components/membership/AgreementText": Stub, "@/components/membership/MemberPhotoUpload": Stub,
     "@/components/membership/MemberPaymentMethod": Stub,

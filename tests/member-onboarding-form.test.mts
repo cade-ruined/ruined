@@ -142,7 +142,7 @@ test("member entry uses named country selectors instead of free-form codes", () 
   assert.match(joinForm, /name="mobile-country"/);
   assert.match(joinForm, /name="country-code"/);
   assert.match(joinForm, /PHONE_COUNTRY_OPTIONS\.map/);
-  assert.match(joinForm, /SHIPPING_COUNTRY_OPTIONS\.map/);
+  assert.match(joinForm, /SHIPPING_COUNTRY_OPTIONS/);
   assert.doesNotMatch(joinForm, /maxLength=\{2\}[\s\S]*name="country-code"/);
 });
 

@@ -42,6 +42,7 @@ async function fixture(kind, tag = null) {
   const component = await load(`src/components/membership/${kind === "join" ? "JoinForm" : "MemberProfileEditor"}.tsx`, {
     react: state.react, "next/link": Stub, "@stripe/stripe-js": { loadStripe: () => assert.fail("No payment during profile editing") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
+    "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => ({ loading: false, loadError: null }), RegistrationCoupleFields: Stub },
     "@/components/membership/CoupleMembershipApproval": Stub,
     "@/components/membership/AgreementText": Stub, "@/components/membership/MemberPhotoUpload": Stub,
     "@/components/membership/MemberPaymentMethod": Stub,
