@@ -66,7 +66,7 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
         aria-controls={panelId}
         onClick={() => changeOpen(true)}
       >
-        {signupEnabled ? "Request your invitation" : "Join the waitlist"} <span aria-hidden="true">↗</span>
+        Open membership preview <span aria-hidden="true">↗</span>
       </button>
       {/* Keep the form mounted so dismissing it never clears a draft or resets a submission. */}
       <section id={panelId} hidden={!open} className={styles.preview} aria-labelledby={headingId} data-journey-members-preview data-mobile-internal-scroll>
@@ -74,7 +74,7 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
           ref={closeButton}
           className={styles.close}
           type="button"
-          aria-label="Close registration form"
+          aria-label="Close membership preview"
           onClick={() => changeOpen(false)}
         >
           <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
@@ -103,9 +103,10 @@ export default function JourneyMembersPreview({ headingId }: { headingId: string
         <div className={styles.copy}>
           <h2 id={headingId} className="ui-heading">{MEMBERSHIP_INTRO.headline}</h2>
           <div className={styles.signup}>
-            {signupEnabled ? <a className={styles.invitation} href={MEMBERSHIP_LINKS.signUp}>
-              Request your invitation <span aria-hidden="true">↗</span>
-            </a> : <MembershipWaitlistForm tone="paper" />}
+            <a className={styles.invitation} href={MEMBERSHIP_LINKS.signUp}>
+              Explore membership <span aria-hidden="true">↗</span>
+            </a>
+            {!signupEnabled && <MembershipWaitlistForm tone="paper" />}
           </div>
         </div>
       </section>

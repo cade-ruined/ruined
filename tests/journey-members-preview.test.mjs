@@ -67,8 +67,8 @@ function fixture(headingId = "test-members-heading", signupEnabled = false) {
     return tree;
   }
   const panel = (tree) => nodes(tree).find((node) => node.type === "section");
-  const close = (tree) => nodes(tree).find((node) => node.type === "button" && node.props["aria-label"] === "Close registration form");
-  const reopen = (tree) => nodes(tree).find((node) => node.type === "button" && text(node).startsWith(signupEnabled ? "Request your invitation" : "Join the waitlist"));
+  const close = (tree) => nodes(tree).find((node) => node.type === "button" && node.props["aria-label"] === "Close membership preview");
+  const reopen = (tree) => nodes(tree).find((node) => node.type === "button" && text(node).startsWith("Open membership preview"));
   return { draw, panel, close, reopen, focus };
 }
 
@@ -106,7 +106,7 @@ test("closing hides the paper, preserves the form position, and focuses the reop
   assert.equal(f.reopen(closed).props.hidden, false);
   assert.equal(f.reopen(closed).props["aria-expanded"], false);
   assert.deepEqual(childPath(closed, WaitlistForm), originalForm, "the same child type, key, and position preserve the mounted form and its state");
-  assert.deepEqual(f.focus, [{ label: "Join the waitlist ↗", options: { preventScroll: true } }]);
+  assert.deepEqual(f.focus, [{ label: "Open membership preview ↗", options: { preventScroll: true } }]);
   f.draw();
   assert.equal(f.focus.length, 1, "ordinary rerenders do not repeatedly move focus");
 });
@@ -122,7 +122,7 @@ test("reopening restores the same form and focuses its close control without scr
   assert.equal(f.reopen(reopened).props.hidden, true);
   assert.equal(f.reopen(reopened).props["aria-expanded"], true);
   assert.deepEqual(childPath(reopened, WaitlistForm), childPath(initial, WaitlistForm));
-  assert.deepEqual(f.focus.at(-1), { label: "Close registration form", options: { preventScroll: true } });
+  assert.deepEqual(f.focus.at(-1), { label: "Close membership preview", options: { preventScroll: true } });
 });
 
 test("Escape closes the focused registration area without consuming other keys or closed-state Escape", () => {
@@ -163,12 +163,12 @@ test("the invitation release retains close and reopen keyboard focus behavior", 
   const f = fixture("invitation-heading", true);
   const initial = f.draw();
   assert.equal(nodes(initial).some(node => node.type === WaitlistForm), false);
-  assert.equal(nodes(initial).find(node => node.type === "a" && text(node).startsWith("Request your invitation")).props.href, "https://members.theruinedproject.com/membership");
+  assert.equal(nodes(initial).find(node => node.type === "a" && text(node).startsWith("Explore membership")).props.href, "https://members.theruinedproject.com/membership");
   f.close(initial).props.onClick();
   const closed = f.draw();
   assert.equal(f.panel(closed).props.hidden, true);
-  assert.deepEqual(f.focus.at(-1), { label: "Request your invitation ↗", options: { preventScroll: true } });
+  assert.deepEqual(f.focus.at(-1), { label: "Open membership preview ↗", options: { preventScroll: true } });
   f.reopen(closed).props.onClick();
   assert.equal(f.panel(f.draw()).props.hidden, false);
-  assert.deepEqual(f.focus.at(-1), { label: "Close registration form", options: { preventScroll: true } });
+  assert.deepEqual(f.focus.at(-1), { label: "Close membership preview", options: { preventScroll: true } });
 });

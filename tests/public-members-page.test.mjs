@@ -73,6 +73,7 @@ test("the Members walk section stays focused on its title, signup form, and film
   assert.equal(attr(descendants(preview, "form")[0], "aria-label"), "Membership waitlist");
   assert.deepEqual(descendants(preview, "a").map((link) => attr(link, "href")), [
     "/media/membership-introduction.mp4",
+    "https://members.theruinedproject.com/membership",
   ]);
   assert.equal(descendants(preview, "video").length, 1);
   assert.equal(descendants(preview, "figcaption").length, 0);
@@ -131,7 +132,7 @@ test("the former Members subpage redirects visitors to the signup in the walk", 
   assert.equal(route.metadata, undefined, "the old subpage does not keep a separate canonical URL");
 });
 
-test("opening public invitations preserves the film and sends signup to the member site without a local form", () => {
+test("open registration keeps the film and links clearly to the membership landing page", () => {
   const OpenMembers = load("src/components/sequence/JourneyMembersPreview.tsx", {
     "@/data/public-membership": membership,
     "@/components/public-members/MembershipWaitlistForm": { __esModule: true, default: MembershipWaitlistForm },
@@ -139,7 +140,7 @@ test("opening public invitations preserves the film and sends signup to the memb
   const document = parseFragment(renderToStaticMarkup(React.createElement(OpenMembers, { headingId: "open-members" })));
   assertAccessibleStructure(document);
   assert.equal(descendants(document, "form").length, 0);
-  const invitation = descendants(document, "a").find(link => accessibleText(link).trim() === "Request your invitation");
+  const invitation = descendants(document, "a").find(link => accessibleText(link).trim() === "Explore membership");
   assert.equal(attr(invitation, "href"), "https://members.theruinedproject.com/membership");
   assert.equal(attr(invitation, "target"), undefined, "continue in the same tab");
   assert.equal(descendants(document, "video").length, 1);
@@ -148,7 +149,7 @@ test("opening public invitations preserves the film and sends signup to the memb
   assert.doesNotMatch(text(document), /pay|charge|subscription|\$\s*\d/i, "public CTA must not promise a payment flow before the member site checks readiness");
 });
 
-test("public invitation release is closed unless its build flag explicitly says true", () => {
+test("closed registration keeps its waitlist and still lets visitors explore the landing page", () => {
   for (const value of [undefined, "", "false", "1", "yes"]) {
     const WaitlistMembers = load("src/components/sequence/JourneyMembersPreview.tsx", {
       "@/data/public-membership": membership,
@@ -157,6 +158,8 @@ test("public invitation release is closed unless its build flag explicitly says 
     const document = parseFragment(renderToStaticMarkup(React.createElement(WaitlistMembers, { headingId: "closed-members" })));
     assert.equal(descendants(document, "form").length, 1);
     assert.equal(attr(descendants(document, "form")[0], "aria-label"), "Membership waitlist");
-    assert.equal(descendants(document, "a").some(link => attr(link, "href") === membership.MEMBERSHIP_LINKS.signUp), false);
+    const landing = descendants(document, "a").find(link => accessibleText(link).trim() === "Explore membership");
+    assert.equal(attr(landing, "href"), membership.MEMBERSHIP_LINKS.signUp);
+    assert.equal(attr(landing, "target"), undefined, "the informational page opens in the same tab");
   }
 });
