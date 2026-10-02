@@ -49,6 +49,7 @@ function click(href, overrides = {}) {
   return {
     button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false,
     currentTarget: { href, target: "", hasAttribute: () => false },
+    preventDefault() { this.defaultPrevented = true; },
     ...overrides,
   };
 }
@@ -126,8 +127,17 @@ function hooks(initialStates) {
   };
 }
 
-function headerFixture(currentHref) {
+function headerFixture(currentHref, { acceptWalkRequest = false } = {}) {
   const harness = hooks([true, false, false, 0]);
+  const sceneRequests = [];
+  const browser = {
+    location: { href: currentHref },
+    dispatchEvent(event) {
+      sceneRequests.push(event);
+      if (acceptWalkRequest) event.preventDefault();
+      return !event.defaultPrevented;
+    },
+  };
   const Header = load("src/components/SiteHeader.tsx", {
     react: harness.react,
     "next/link": component(), "next/image": component(),
@@ -142,8 +152,16 @@ function headerFixture(currentHref) {
     "@/lib/site": site,
     "@/lib/navigation-link": links,
     "@/hooks/useBackgroundPathname": { useBackgroundPathname: () => new URL(currentHref).pathname },
-  }, { window: { location: { href: currentHref } } }).default;
-  return { ...harness, tree: Header() };
+  }, {
+    window: browser,
+    CustomEvent: class extends Event {
+      constructor(type, options) {
+        super(type, options);
+        this.detail = options.detail;
+      }
+    },
+  }).default;
+  return { ...harness, sceneRequests, tree: Header() };
 }
 
 test("the actual menu restores its trigger for the current stop but releases focus for new destinations", () => {
@@ -162,6 +180,71 @@ test("the actual menu restores its trigger for the current stop but releases foc
       link.props.onClick(click(href, overrides));
       assert.equal(fixture.refs.at(-1).current, expected);
       assert.deepEqual(fixture.updates.at(-1), [0, false], "the menu closes");
+    }
+  });
+});
+
+test("Members from the Lobby menu requests the mobile room before Next can change only the URL", () => {
+  withHost("https://theruinedproject.com", () => {
+    const fixture = headerFixture("https://theruinedproject.com/#top", { acceptWalkRequest: true });
+    const link = descendants(fixture.tree).find((element) => element.props.href === "/#members");
+    const event = click("/#members");
+
+    link.props.onClick(event);
+
+    assert.equal(fixture.sceneRequests.length, 1);
+    assert.equal(fixture.sceneRequests[0].type, "ruined:home-scene-request");
+    assert.equal(fixture.sceneRequests[0].cancelable, true);
+    assert.deepEqual(fixture.sceneRequests[0].detail, { hash: "#members", index: 3 });
+    assert.equal(event.defaultPrevented, true, "the mobile room owns navigation after accepting the request");
+    assert.deepEqual(fixture.updates.at(-1), [0, false], "the side menu closes");
+    assert.equal(fixture.refs.at(-1).current, false, "closing the menu does not take focus back from a new destination");
+  });
+});
+
+test("a walk link keeps native hash navigation when no mobile room handler accepts it", () => {
+  withHost("https://theruinedproject.com", () => {
+    for (const [href, hash, index] of [["/#top", "#top", 0], ["/#members", "#members", 3]]) {
+      const fixture = headerFixture("https://theruinedproject.com/#top");
+      const link = descendants(fixture.tree).find((element) => element.props.href === href);
+      const event = click(href);
+      link.props.onClick(event);
+      assert.deepEqual(fixture.sceneRequests.map((request) => request.detail), [{ hash, index }]);
+      assert.equal(event.defaultPrevented, false, "desktop can scroll to its physical hash waypoint");
+    }
+  });
+});
+
+test("Members requests preserve modified clicks, another browsing context, and navigation from other pages", () => {
+  withHost("https://theruinedproject.com", () => {
+    const preservedClicks = [
+      { metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 },
+      { defaultPrevented: true },
+      { currentTarget: { href: "/#members", target: "_blank", hasAttribute: () => false } },
+      { currentTarget: { href: "/#members", target: "", hasAttribute: (name) => name === "download" } },
+    ];
+    for (const overrides of preservedClicks) {
+      const fixture = headerFixture("https://theruinedproject.com/#top", { acceptWalkRequest: true });
+      const link = descendants(fixture.tree).find((element) => element.props.href === "/#members");
+      const event = click("/#members", overrides);
+      link.props.onClick(event);
+      assert.deepEqual(fixture.sceneRequests, [], "another click behavior must not move the current room");
+      assert.equal(event.defaultPrevented, overrides.defaultPrevented ?? false);
+      assert.equal(fixture.refs.at(-1).current, true);
+    }
+
+    for (const [location, href] of [
+      ["https://theruinedproject.com/store", "/#members"],
+      ["https://theruinedproject.com/#top", "/store"],
+      ["https://theruinedproject.com/#top", "/about"],
+      ["https://theruinedproject.com/#top", "/community"],
+    ]) {
+      const fixture = headerFixture(location, { acceptWalkRequest: true });
+      const link = descendants(fixture.tree).find((element) => element.props.href === href);
+      const event = click(href);
+      link.props.onClick(event);
+      assert.deepEqual(fixture.sceneRequests, [], "standalone destinations remain regular navigation");
+      assert.equal(event.defaultPrevented, false);
     }
   });
 });

@@ -180,15 +180,17 @@ export default function SiteHeader() {
     event: ReactMouseEvent<HTMLAnchorElement>,
     room: ExploreRoom = EXPLORE_ROOMS[0]
   ) => {
-    if (isHome) closeMenu();
-    else closeMenuForNavigation(event);
+    closeMenuForNavigation(event);
     if (
       !isHome ||
+      event.defaultPrevented ||
       event.button !== 0 ||
       event.metaKey ||
       event.ctrlKey ||
       event.shiftKey ||
-      event.altKey
+      event.altKey ||
+      event.currentTarget.hasAttribute("download") ||
+      (event.currentTarget.target && event.currentTarget.target.toLowerCase() !== "_self")
     ) {
       return;
     }
@@ -303,13 +305,14 @@ export default function SiteHeader() {
                     const active = isHome
                       ? homeSceneIndex === index
                       : activeGlobalId === item.id;
+                    const walkRoom = EXPLORE_ROOMS.find((room) => room.href === item.href);
                     return (
                       <Link
                         key={item.id}
                         ref={index === 0 ? firstMenuItemRef : undefined}
                         href={publicWebsiteHref(item.href)}
                         aria-current={active ? "page" : undefined}
-                        onClick={item.id === "home" ? handleWalkLink : closeMenuForNavigation}
+                        onClick={walkRoom ? (event) => handleWalkLink(event, walkRoom) : closeMenuForNavigation}
                         className={active ? "is-active" : undefined}
                       >
                         <span className="ruined-site-menu-number" aria-hidden="true">

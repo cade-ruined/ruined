@@ -785,7 +785,6 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(header, /aria-modal="true"/);
   assert.match(header, /aria-haspopup="dialog"/);
   assert.match(header, /href=\{publicWebsiteHref\(item\.href\)\}/);
-  assert.match(header, /item\.id === "home" \? handleWalkLink : closeMenuForNavigation/);
   assert.doesNotMatch(
     header,
     /MOBILE_DIRECT_ITEMS|ruined-mobile-nav|feConvolveMatrix|navigationOpen|font-mono|monospace/
