@@ -1,3 +1,4 @@
+import { prepaidFixtureDependencies } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -12,6 +13,7 @@ for (const funding of ["operator", "complimentary", "self"]) test(`checkout chec
   let providerCalls = 0;
   let configurationReads = 0;
   const dependencies = {
+    ...prepaidFixtureDependencies,
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid }) },
     "@/lib/membership/commercial-repository": {},

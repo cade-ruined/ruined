@@ -1,9 +1,11 @@
+import { prepaidFixtureDependencies, foundationsScheduleFixture, prepaidPolicyFixture } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
 async function load(relativePath, dependencies = {}) {
+  dependencies = { ...prepaidFixtureDependencies, ...dependencies };
   const output = ts.transpileModule(await readFile(new URL(relativePath, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -65,20 +67,20 @@ function reservation(plan = "monthly", changes = {}) {
 function openSession(plan = "monthly", changes = {}) {
   return { id: "cs_existing", status: "open", mode: "subscription", livemode: false, ui_mode: "embedded_page", shipping_address_collection:{allowed_countries:["US"]}, consent_collection: { terms_of_service: "required" }, custom_text: { terms_of_service_acceptance: { message: "I agree to the [Ruined Membership Agreement](https://members.example.test/membership/agreement/ruined_membership-v2)." } }, metadata: { billing_terms_version: "membership-billing-v2", ruined_offer_id: `individual_${plan}`, ruined_commercial_reservation_id: uuid, ruined_member_id: memberId, ruined_billing_plan: plan, ruined_price_id: configuration[plan], agreement_acceptance_id: uuid }, amount_subtotal: pricing.MEMBERSHIP_PLANS[plan].amount, currency: "usd", client_secret: "safe_test_secret", ...changes };
 }
-async function routeHarness({ reserve, retrieve, validationError, agreementPublished = true, portalError, savedMethod = null, savedMethodError, firstChargeAt = null, activationOnly = false } = {}) {
+async function routeHarness({ reserve, retrieve, validationError, agreementPublished = true, portalError, savedMethod = null, savedMethodError, firstChargeAt = null, activationOnly = false, billingSchedule = null, commercialExpiresAt = quoteExpiresAt } = {}) {
   const creations = [], expirations = [], opened = [], reserved = [], released = [];
   let requestedPlan = "monthly";
   const stripe = { checkout: { sessions: {
     retrieve: async id => retrieve ? retrieve(id) : openSession(),
     create: async (params, options) => { creations.push({ params, options }); return { id: "cs_new", expires_at: 1790290800, client_secret: "safe_test_secret" }; },
     expire: async () => { throw Error("An active session must not be expired by another tab"); },
-  } } };
+  } }, prices: { retrieve: async () => ({ ...price(requestedPlan), product: "prod_member" }) } };
   const route = await load("../app/api/stripe/checkout/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid, email: "Member@Example.test" }) },
     "@/lib/membership/repository": { getMemberIdentity: async () => ({ membershipFunding: "self" }) },
     "@/lib/membership/commercial-repository": {
-      getCommercialMembershipReservation: async () => ({...reservation(requestedPlan),firstChargeAt,id:uuid,status:"reserved"}),
+      getCommercialMembershipReservation: async () => ({...reservation(requestedPlan),firstChargeAt,billingSchedule,expiresAt:commercialExpiresAt,id:uuid,status:"reserved"}),
       releaseCommercialMembershipReservation: async input => released.push(input),
     },
     "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: async () => agreementPublished ? { version: 2, body: "Test-only agreement" } : null },
@@ -100,7 +102,7 @@ async function routeHarness({ reserve, retrieve, validationError, agreementPubli
       openMembershipCheckoutAttempt: async value => opened.push(value),
     },
     "@/lib/stripe/membership-state": { MEMBERSHIP_CONTEXT: "membership", MEMBERSHIP_OFFER: "founding_membership", isUuid: value => value === uuid, normalizeEmail: value => value.toLowerCase() },
-    "@/lib/stripe/server": { isTrustedCheckoutOrigin: () => true, getStripe: () => stripe, getStripeLivemode: () => false, getPaidMembershipAgreementVersion: () => "ruined_membership-v2", validateStripeMembershipOfferPrice: async offerId => { if (validationError) throw validationError; return configuration[pricing.MEMBERSHIP_OFFERS[offerId].plan]; }, getApplicationOrigin: () => "https://members.example.test", isStripeTaxEnabled: () => false },
+    "@/lib/stripe/server": { isTrustedCheckoutOrigin: () => true, getStripe: () => stripe, getStripeLivemode: () => false, getPaidMembershipAgreementVersion: () => billingSchedule ? "ruined_membership-v3" : "ruined_membership-v2", validateStripeMembershipOfferPrice: async offerId => { if (validationError) throw validationError; return configuration[pricing.MEMBERSHIP_OFFERS[offerId].plan]; }, getApplicationOrigin: () => "https://members.example.test", isStripeTaxEnabled: () => false },
   });
   return { creations, expirations, opened, reserved, released, post: body => { requestedPlan = body.plan ?? "monthly"; return route.POST(new Request("https://members.example.test/api/stripe/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acceptanceId: uuid, attemptId: uuid, recurringPaymentAccepted: true, commercialReservationId: uuid, plan: "monthly", ...body }) })); } };
 }
@@ -303,4 +305,32 @@ test("resuming scheduled checkout accepts only the same zero-due offer and immut
     assert.equal((await changed.post({firstChargeAt:firstChargeAt.toISOString()})).status,409);
     assert.equal(changed.creations.length,0);
   }
+});
+
+
+test("prepaid Checkout near cutoff uses the persisted provider expiry while keeping its earlier accepted cutoff", async () => {
+  const billingSchedule = foundationsScheduleFixture.foundationsBillingScheduleForMonth("2026-11", "monthly");
+  const realNow = Date.now, now = Date.parse(billingSchedule.cutoffAt) - 60_000;
+  Date.now = () => now;
+  try {
+    const attemptExpiresAt = new Date(now + 31 * 60_000);
+    const f = await routeHarness({ billingSchedule, commercialExpiresAt: new Date(billingSchedule.cutoffAt),
+      reserve: () => reservation("monthly", { billingSchedule, agreementVersion: "ruined_membership-v3", expiresAt: attemptExpiresAt }) });
+    const response = await f.post({ billingSchedule });
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+    assert.equal(f.creations.length, 1);
+    const params = f.creations[0].params;
+    assert.equal(params.expires_at, attemptExpiresAt.getTime() / 1000);
+    assert.ok(params.expires_at * 1000 > Date.parse(billingSchedule.cutoffAt));
+    assert.equal(params.metadata.ruined_cohort_cutoff_at, billingSchedule.cutoffAt);
+    assert.equal(params.metadata.ruined_billing_schedule_sha256, prepaidPolicyFixture.prepaidScheduleFingerprint(billingSchedule));
+    assert.match(params.custom_text.submit.message, /Pay your first month today/);
+    assert.match(params.custom_text.submit.message, /Cancel before service starts for a full refund/);
+    assert.ok(params.custom_text.submit.message.length <= 1200, "Stripe custom text maximum");
+    assert.ok(params.custom_text.terms_of_service_acceptance.message.length <= 1200);
+    assert.deepEqual(params.line_items, [{ price: "price_monthly", quantity: 1 }, { price_data: { currency: "usd", unit_amount: 49900, tax_behavior: "exclusive", product: "prod_member" }, quantity: 1 }]);
+    Date.now = () => Date.parse(billingSchedule.cutoffAt);
+    assert.equal((await f.post({ billingSchedule })).status, 409, "exact cutoff must reject even though provider expiry is later");
+    assert.equal(f.creations.length, 1);
+  } finally { Date.now = realNow; }
 });

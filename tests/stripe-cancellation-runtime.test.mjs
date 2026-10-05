@@ -17,7 +17,9 @@ async function load(path, dependencies = {}, env = {}) {
 }
 const pricing = await load("src/lib/membership/pricing.ts");
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
-const prices = await load("src/lib/stripe/price-policy.ts", { "@/lib/membership/pricing": pricing });
+const schedule = await load("src/lib/membership/foundations-schedule.ts");
+const prepaid = await load("src/lib/stripe/prepaid-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing, "@/lib/membership/foundations-schedule": schedule });
+const prices = await load("src/lib/stripe/price-policy.ts", { "@/lib/membership/pricing": pricing, "./prepaid-policy": prepaid });
 const start = new Date(); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0); start.setUTCMonth(start.getUTCMonth() - 10);
 const contract = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member",
   livemode: false, offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v2",
@@ -47,7 +49,7 @@ test("early-exit provider uses pre-tax dues and rejects refunded, credited, part
     refunds: { list: async () => ({ data: [] }) }, invoiceItems: { list: async () => ({ data: [] }) } };
   const provider = await load("src/lib/stripe/cancellation-provider.ts", { "node:crypto": { createHash },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => config },
-    "@/lib/stripe/price-policy": prices, "@/lib/stripe/commitment-policy": policy });
+    "@/lib/stripe/price-policy": prices, "@/lib/stripe/prepaid-policy": prepaid, "@/lib/stripe/commitment-policy": policy });
   assert.equal((await provider.readCommitmentProviderEvidence(contract)).invoices[0].duesPaid, 49900);
   for (const [object, field, value] of [[customer,"balance",100], [customer,"balance",-100], [charge,"captured",false], [charge,"customer","cus_other"], [charge,"amount_refunded",1], [charge,"disputed",true], [invoice,"post_payment_credit_notes_amount",100], [invoice,"status","open"], [invoice,"amount_paid",100], [invoice,"customer","cus_other"]]) {
     const original = object[field]; object[field] = value;

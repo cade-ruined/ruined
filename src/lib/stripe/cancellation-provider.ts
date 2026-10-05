@@ -4,20 +4,65 @@ import { createHash } from "node:crypto";
 import type Stripe from "stripe";
 import { getMembershipPriceConfiguration, getStripe } from "@/lib/stripe/server";
 import { matchesMembershipInvoice, recognizesMembershipSubscription } from "@/lib/stripe/price-policy";
-import { MembershipCommitmentError, type CommitmentInvoice, type CommitmentPrestartProviderSnapshot,
+import { prepaidScheduleFromSubscription, prepaidScheduleFingerprint, normalizePrepaidMembershipInvoiceCoverage } from "@/lib/stripe/prepaid-policy";
+import { MembershipCommitmentError, type CommitmentInvoice, type CommitmentPrestartProviderSnapshot, type CommitmentPrepaidProviderSnapshot,
   type MembershipCommitment } from "@/lib/stripe/commitment-policy";
 
 export const stripeObjectId = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id ?? null;
 
 export function verifyCommitmentSubscription(subscription: Stripe.Subscription, contract: MembershipCommitment) {
+  const schedule = contract.billingSchedule;
+  const providerSchedule = schedule ? prepaidScheduleFromSubscription(subscription) : null;
   if (subscription.id !== contract.subscriptionId || stripeObjectId(subscription.customer) !== contract.customerId
     || subscription.livemode !== contract.livemode || !recognizesMembershipSubscription(subscription, getMembershipPriceConfiguration())
     || subscription.items.data[0]?.price.id !== contract.priceId || subscription.metadata.ruined_member_id !== contract.memberId
     || subscription.schedule || subscription.pause_collection || subscription.pending_update
-    || !["active", "past_due", "unpaid", "canceled"].includes(subscription.status)) {
+    || !(subscription.status === "trialing" && schedule || ["active", "past_due", "unpaid", "canceled"].includes(subscription.status))
+    || schedule && (!providerSchedule || prepaidScheduleFingerprint(providerSchedule) !== prepaidScheduleFingerprint(schedule))) {
     throw new MembershipCommitmentError("subscription_requires_review");
   }
   return subscription.items.data[0];
+}
+
+export async function readPrepaidCancellationEvidence(contract: MembershipCommitment,
+  options: { allowRefund?: boolean; cancellationId?: string; invalidEnrollmentReason?: "cohort_cutoff_missed" } = {}, now = new Date()) {
+  const stripe = getStripe(), subscription = await stripe.subscriptions.retrieve(contract.subscriptionId);
+  verifyCommitmentSubscription(subscription, contract);
+  const schedule = contract.billingSchedule, canceledAt = subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null;
+  const missedCutoff = options.invalidEnrollmentReason === "cohort_cutoff_missed";
+  if (!schedule || !["trialing", "canceled", ...(missedCutoff ? ["active"] : [])].includes(subscription.status)
+    || subscription.status !== "canceled" && ((!missedCutoff && now.getTime() >= Date.parse(contract.startsAt)) || canceledAt !== null
+      || subscription.cancel_at || subscription.cancel_at_period_end)
+    || subscription.status === "canceled" && (!canceledAt || Date.parse(canceledAt) > now.getTime()
+      || !missedCutoff && Date.parse(canceledAt) >= Date.parse(contract.startsAt))) {
+    throw new MembershipCommitmentError("prepaid_cancellation_requires_review");
+  }
+  const { inspectPrepaidMembershipInvoice } = await import("@/lib/stripe/prepaid-provider");
+  const payment = await inspectPrepaidMembershipInvoice(stripe, contract, {
+    allowRefund: options.allowRefund === true, requireOnlyInitialInvoice: true,
+  });
+  const invoicePaidAt = payment.invoice?.status_transitions?.paid_at;
+  if (missedCutoff) {
+    const { getMembershipPrepayment } = await import("@/lib/stripe/billing-repository");
+    const { getBillingDatabase } = await import("@/lib/stripe/database");
+    const proof = await getBillingDatabase().begin(tx => getMembershipPrepayment(tx, { reservationId: contract.id }));
+    if (!proof || proof.reviewReason !== "cohort_cutoff_missed" || proof.activatedAt
+      || proof.contractId !== contract.id || proof.subscriptionId !== contract.subscriptionId
+      || proof.invoiceId !== payment.invoiceId || proof.paymentIntentId !== payment.paymentIntentId || proof.chargeId !== payment.chargeId
+      || !invoicePaidAt || invoicePaidAt < Date.parse(schedule.cutoffAt) / 1000 || invoicePaidAt > now.getTime() / 1000) {
+      throw new MembershipCommitmentError("missed_cohort_refund_requires_review");
+    }
+  }
+  if (payment.refund && (payment.refund.metadata?.ruined_cancellation_id !== options.cancellationId
+    || payment.refund.amount !== payment.amount)) throw new MembershipCommitmentError("prepaid_refund_requires_review");
+  const pending = await stripe.invoiceItems.list({ customer: contract.customerId, pending: true, limit: 1 });
+  if (pending.has_more || pending.data.length) throw new MembershipCommitmentError("prepaid_invoice_requires_review");
+  const snapshot: CommitmentPrepaidProviderSnapshot = { subscriptionId: subscription.id, customerId: contract.customerId,
+    livemode: contract.livemode, status: subscription.status as "trialing" | "active" | "canceled", serviceStartsAt: contract.startsAt,
+    prepaidThrough: schedule.prepaidThrough, canceledAt, observedAt: new Date().toISOString(), invoiceId: payment.invoiceId,
+    paymentIntentId: payment.paymentIntentId, chargeId: payment.chargeId, amount: payment.amount, currency: "usd", pendingInvoiceItems: false,
+    ...(invoicePaidAt ? { invoicePaidAt: new Date(invoicePaidAt * 1000).toISOString() } : {}) };
+  return { subscription, snapshot, refund: payment.refund };
 }
 
 /** The scheduled start is consented and immutable. A no-fee cancellation may
@@ -101,8 +146,9 @@ export async function readCommitmentProviderEvidence(contract: MembershipCommitm
     }
     if (settled !== invoice.total) throw new MembershipCommitmentError("invoice_history_requires_review");
     const line = invoice.lines.data[0];
-    invoices.push({ invoiceId: invoice.id, periodStart: new Date(line.period.start * 1000).toISOString(),
-      periodEnd: new Date(line.period.end * 1000).toISOString(), currency: invoice.currency, priceId: contract.priceId,
+    const prepaid = contract.billingSchedule ? normalizePrepaidMembershipInvoiceCoverage(invoice, subscription) : null;
+    invoices.push({ invoiceId: invoice.id, periodStart: prepaid?.periodStart ?? new Date(line.period.start * 1000).toISOString(),
+      periodEnd: prepaid?.periodEnd ?? new Date(line.period.end * 1000).toISOString(), currency: invoice.currency, priceId: contract.priceId,
       duesBilled: contract.installmentDues, duesPaid: contract.installmentDues, duesRefunded: 0, duesCredited: 0,
       state: "paid", adjustmentState: "none" });
   }

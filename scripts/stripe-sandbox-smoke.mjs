@@ -13,23 +13,24 @@ import ts from "typescript";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const requirePackage = createRequire(new URL("../package.json", import.meta.url));
 const expectedAccount = "acct_1U6AS79rQIwIEzKe";
-const agreementVersion = "ruined_membership-v2";
 const names = ["STRIPE_SECRET_KEY", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIPE_WEBHOOK_SECRET",
   "STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID", "STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID"];
 const read = path => readFileSync(resolve(root, path), "utf8");
 
 export function optionsFrom(args) {
-  const options = { port: 3233, selfTest: false, help: false, deferred: false };
+  const options = { port: 3233, selfTest: false, help: false, deferred: false, prepaid: false };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === "--self-test") options.selfTest = true;
+    else if (arg === "--prepaid") options.prepaid = true;
     else if (arg === "--deferred") options.deferred = true;
     else if (arg === "--help") options.help = true;
     else if (arg === "--port" && /^\d+$/.test(args[index + 1] ?? "")) {
       options.port = Number(args[++index]);
       if (options.port < 1024 || options.port > 65535) throw new Error("Port must be between 1024 and 65535.");
-    } else throw new Error("Unknown or invalid argument. Use --help, --self-test, or --port NUMBER.");
+    } else throw new Error("Unknown or invalid argument. Use --help, --self-test, --prepaid, --deferred, or --port NUMBER.");
   }
+  if (options.prepaid && options.deferred) throw new Error("--prepaid and --deferred are mutually exclusive.");
   return options;
 }
 
@@ -108,7 +109,8 @@ async function createFixture(origin) {
     const fixture = { memberId: randomUUID(), authUserId: randomUUID(), acceptanceId: randomUUID(), attemptId: randomUUID() };
     fixture.email = `stripe-smoke-${fixture.memberId}@example.test`;
     const termsId = randomUUID();
-    const terms = "SANDBOX TEST ONLY. Synthetic adult member consents to the selected test recurring membership amount. No real membership or legal agreement is created.";
+    const agreementNumber = process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION === "ruined_membership-v3" ? 3 : 2;
+    const terms = (agreementNumber === 3 ? "PREPAID COHORT: first period paid now, service begins at the accepted first call, with full initial-payment refund before service begins. " : "") + "SANDBOX TEST ONLY. Synthetic adult member consents to the selected test recurring membership amount. No real membership or legal agreement is created.";
     const hash = createHash("sha256").update(terms).digest("hex");
     await engine.query("insert into ruined_members(id,email,email_normalized) values($1,$2,$2)", [fixture.memberId, fixture.email]);
     fixture.personId = (await engine.query("select person_id from ruined_members where id=$1", [fixture.memberId])).rows[0].person_id;
@@ -121,10 +123,10 @@ async function createFixture(origin) {
     await engine.query("update person_profiles set preferred_name='Sandbox Test Member' where person_id=$1",[fixture.personId]);
     await engine.query("update person_private_profiles set legal_name='Sandbox Test Member',mobile_e164='+12025550123',default_fulfillment_address=$2::jsonb,apparel_sizing='{\"top\":\"M\"}'::jsonb where person_id=$1",[fixture.personId,JSON.stringify({addressLine1:"123 Test Street",city:"Denver",region:"CO",postalCode:"80202",countryCode:"US"})]);
     await engine.query("update member_onboardings set billing_plan='monthly',profile_completed_at=now() where member_id=$1", [fixture.memberId]);
-    await engine.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',2,'Sandbox paid terms',$2,$3,'published',now())", [termsId, terms, hash]);
+    await engine.query(`insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',${agreementNumber},'Sandbox paid terms',$2,$3,'published',now())`, [termsId, terms, hash]);
     const ageId = (await engine.query("insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key) values($1,'age_attestation','sandbox-age18',now(),$2) returning id", [fixture.memberId, `smoke-age:${fixture.memberId}`])).rows[0].id;
     await engine.query(`insert into membership_agreement_acceptances(id,agreement_version_id,person_id,member_id,accepted_by_auth_user_id,age_attestation_id,signer_name_snapshot,signer_email_snapshot,affirmative_action,accepted_at,agreement_key_snapshot,agreement_version_snapshot,agreement_title_snapshot,agreement_content_sha256,agreement_body_snapshot,dedupe_key)
-      values($1,$2,$3,$4,$5,$6,'Sandbox Test Member',$7,'checkbox_and_submit',now(),'ruined_membership',2,'Sandbox paid terms',$8,$9,$10)`,
+      values($1,$2,$3,$4,$5,$6,'Sandbox Test Member',$7,'checkbox_and_submit',now(),'ruined_membership',${agreementNumber},'Sandbox paid terms',$8,$9,$10)`,
     [fixture.acceptanceId, termsId, fixture.personId, fixture.memberId, fixture.authUserId, ageId, fixture.email, hash, terms, `smoke-agreement:${fixture.memberId}`]);
     // Preserve PostgreSQL timestamp precision and order: the checkpoint must
     // refer to an acceptance that already exists, just as the real signup does.
@@ -171,7 +173,7 @@ async function createFixture(origin) {
         const attempts = (await engine.query("select id,status,billing_plan,stripe_price_id,stripe_session_id,stripe_subscription_id,recurring_payment_accepted_at from stripe_checkout_attempts where member_id=$1 order by created_at", [fixture.memberId])).rows;
         const invoices = (await engine.query("select id,purpose,stripe_status,amount_due,amount_paid,currency from stripe_invoices where member_id=$1 order by created_at", [fixture.memberId])).rows;
         const commitments=(await engine.query("select terms_snapshot->>'startsAt' as starts_at,terms_snapshot->>'initialTermEndsAt' as ends_at,status from stripe_membership_commitments where member_id=$1",[fixture.memberId])).rows;
-        const reservations=(await engine.query("select id,status,first_charge_at,stripe_subscription_id from membership_commercial_reservations where payer_member_id=$1",[fixture.memberId])).rows;
+        const reservations=(await engine.query("select id,status,first_charge_at,billing_schedule,stripe_subscription_id from membership_commercial_reservations where payer_member_id=$1",[fixture.memberId])).rows;
         const events = (await engine.query("select event_id,event_type,status,attempts from stripe_webhook_events order by received_at desc limit 20")).rows;
         return { sandboxAccount: expectedAccount, accountVerified, fixtureMemberId: fixture.memberId, member, attempts, reservations, commitments, invoices, events,
           communicationWorkerDisabled: true, acknowledgedWorkerCalls: workerCalls };
@@ -203,16 +205,17 @@ document.addEventListener('securitypolicyviolation',event=>{let source='inline c
 plan.addEventListener('change',()=>{quote=null;consent.checked=false;error.textContent='';if(checkout){checkout.destroy();checkout=null;}button.textContent='Review sandbox offer';});
 async function refresh(){try{const response=await fetch('/status',{cache:'no-store'});if(!response.ok)throw Error('Status unavailable');document.getElementById('state').textContent=JSON.stringify(await response.json(),null,2);}catch{document.getElementById('state').textContent='Harness stopped or unavailable.';}}
 document.getElementById('form').addEventListener('submit',async event=>{event.preventDefault();if(busy)return;busy=true;button.disabled=true;plan.disabled=true;consent.disabled=true;error.textContent='';try{
- if(!quote){const offerResponse=await fetch('/api/stripe/membership-offer',{method:'POST',headers,body:JSON.stringify({requestId:crypto.randomUUID(),kind:'individual',plan:plan.value})});const offerResult=await offerResponse.json();if(!offerResponse.ok)throw Error(offerResult.error||'Offer unavailable');quote=offerResult.quote;document.getElementById('offer').textContent=JSON.stringify({amount:quote.offer.amount/100,currency:quote.offer.currency,plan:quote.offer.plan,firstChargeAt:quote.firstChargeAt,dueToday:quote.firstChargeAt?0:quote.offer.amount/100});consent.checked=false;button.textContent='Confirm and open sandbox Checkout';return;}
+ if(!quote){const offerResponse=await fetch('/api/stripe/membership-offer',{method:'POST',headers,body:JSON.stringify({requestId:crypto.randomUUID(),kind:'individual',plan:plan.value})});const offerResult=await offerResponse.json();if(!offerResponse.ok)throw Error(offerResult.error||'Offer unavailable');quote=offerResult.quote;document.getElementById('offer').textContent=JSON.stringify({amount:quote.offer.amount/100,currency:quote.offer.currency,plan:quote.offer.plan,firstChargeAt:quote.firstChargeAt,dueToday:quote.firstChargeAt?0:quote.offer.amount/100,billingSchedule:quote.billingSchedule??null});consent.checked=false;button.textContent='Confirm and open sandbox Checkout';return;}
  if(!consent.checked)throw Error('Confirm the displayed payment terms first.');
- const response=await fetch('/api/stripe/checkout',{method:'POST',headers,body:JSON.stringify({plan:plan.value,recurringPaymentAccepted:consent.checked,acceptanceId:config.acceptanceId,attemptId:quote.id,commercialReservationId:quote.id,firstChargeAt:quote.firstChargeAt})});
+ if(quote.billingSchedule&&Date.now()>=Math.min(Date.parse(quote.expiresAt),Date.parse(quote.billingSchedule.cutoffAt))){quote=null;consent.checked=false;throw Error('Offer expired. Review the next eligible cohort before payment.');}
+ const response=await fetch('/api/stripe/checkout',{method:'POST',headers,body:JSON.stringify({plan:plan.value,recurringPaymentAccepted:consent.checked,acceptanceId:config.acceptanceId,attemptId:quote.id,commercialReservationId:quote.id,firstChargeAt:quote.firstChargeAt,...(quote.billingSchedule?{billingSchedule:quote.billingSchedule}:{})})});
  const result=await response.json();if(!response.ok){if(result.plan){plan.value=result.plan;consent.checked=false;}throw Error(result.error||'Checkout could not open');}
  plan.value=result.plan;
  if(checkout)checkout.destroy();checkout=await Stripe(config.publishableKey).createEmbeddedCheckoutPage({clientSecret:result.clientSecret});checkout.mount('#checkout');button.textContent='Resume sandbox Checkout';
  }catch(problem){error.textContent=problem.message||'Checkout could not open';}finally{busy=false;button.disabled=false;plan.disabled=false;consent.disabled=false;refresh();}});
 document.getElementById('replay').addEventListener('click',async()=>{try{const r=await fetch('/replay-events',{method:'POST',headers,body:'{}'});error.textContent=JSON.stringify(await r.json());refresh();}catch{error.textContent='Signed event replay failed';}});
 document.getElementById('snapshots').addEventListener('click',async()=>{try{const r=await fetch('/replay-snapshots',{method:'POST',headers,body:'{}'});error.textContent=JSON.stringify(await r.json());refresh();}catch{error.textContent='Signed snapshot replay failed';}});
-document.getElementById('cancel').addEventListener('click',async()=>{try{const q=await fetch('/api/stripe/cancellation',{method:'POST',headers,body:JSON.stringify({action:'quote',intent:'cancel_before_start'})});const b=await q.json();if(!q.ok)throw Error(b.error);if(b.quote.feeTotal!==0)throw Error('Expected no fee');if(!confirm('Cancel this test membership before its first payment? $0 fee.'))return;const r=await fetch('/api/stripe/cancellation',{method:'POST',headers,body:JSON.stringify({action:'confirm',quoteId:b.quote.id,confirmed:true})});error.textContent=JSON.stringify(await r.json());refresh();}catch(e){error.textContent=e.message;}});
+document.getElementById('cancel').addEventListener('click',async()=>{try{const q=await fetch('/api/stripe/cancellation',{method:'POST',headers,body:JSON.stringify({action:'quote',intent:'cancel_before_start'})});const b=await q.json();if(!q.ok)throw Error(b.error);if(b.quote.feeTotal!==0)throw Error('Expected no fee');if(!confirm(b.quote.refundAmount?'Cancel this test membership before service begins and refund $'+(b.quote.refundAmount/100).toFixed(2)+'? $0 fee.':'Cancel this test membership before its first payment? $0 fee.'))return;const r=await fetch('/api/stripe/cancellation',{method:'POST',headers,body:JSON.stringify({action:'confirm',quoteId:b.quote.id,confirmed:true})});error.textContent=JSON.stringify(await r.json());refresh();}catch(e){error.textContent=e.message;}});
 refresh();setInterval(refresh,2500);
 </script></html>`;
 }
@@ -398,15 +401,148 @@ async function selfTest() {
   console.log("Offline self-test passed: full migration schema, real commercial offer and Checkout routes, immutable first-charge consent, signed out-of-order webhooks, pending future commitment, full paid invoice activation, free prestart cancellation, late completion and replay idempotency. In-memory database only; no external communication or provider network calls.");
 }
 
+async function selfTestPrepaid() {
+  const fake = { STRIPE_SECRET_KEY: "sk_test_local_prepaid", NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_local_prepaid",
+    STRIPE_WEBHOOK_SECRET: "whsec_local_prepaid", STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID: "price_monthly", STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual",
+    STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID: "bpc_fixture",
+    STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_MONTHLY_PRICE_ID: "price_foundingmonthly", STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_ANNUAL_PRICE_ID: "price_foundingannual" };
+  assert.throws(() => optionsFrom(["--prepaid", "--deferred"]), /mutually exclusive/);
+  assert.equal(optionsFrom(["--self-test", "--prepaid"]).prepaid, true);
+  assert.throws(() => validateEnvironment({ ...fake, STRIPE_SECRET_KEY: "sk_live_forbidden" }), /Live Stripe/);
+  Object.assign(process.env, fake);
+  for (const plan of ["monthly", "annual"]) {
+    const app = await createFixture("http://127.0.0.1:3233");
+    const stripe = app.server.getStripe();
+    // Any accidentally unmocked provider operation must fail locally, never reach Stripe.
+    stripe._requestSender._request = () => { throw new Error("Provider network forbidden in offline prepaid test."); };
+    const amount = plan === "monthly" ? 34900 : 349000;
+    const price = { id: `price_founding${plan}`, product: "prod_fixture", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", transform_quantity: null,
+      tax_behavior: "exclusive", currency: "usd", unit_amount: amount, recurring: { interval: plan === "monthly" ? "month" : "year", interval_count: 1, usage_type: "licensed" } };
+    let session, expectedSchedule, creations = 0;
+    const post = (handler, path, body) => handler.POST(new Request(`${app.origin}${path}`, { method: "POST", headers: { origin: app.origin }, body: JSON.stringify(body) }));
+    stripe.prices.retrieve = async id => { assert.equal(id, price.id); return price; };
+    stripe.billingPortal.configurations.retrieve = async () => ({ id: "bpc_fixture", active: true, livemode: false,
+      features: { invoice_history: { enabled: true }, payment_method_update: { enabled: true }, subscription_cancel: { enabled: false }, subscription_update: { enabled: false } } });
+    stripe.checkout.sessions.create = async (params, options) => {
+      creations++;
+      assert.equal(params.mode, "subscription");
+      assert.deepEqual(params.line_items, [{ price: price.id, quantity: 1 }, { price_data: { currency: "usd", unit_amount: amount, tax_behavior: "exclusive", product: "prod_fixture" }, quantity: 1 }]);
+      assert.equal(params.subscription_data.trial_end, Date.parse(expectedSchedule.prepaidThrough) / 1000);
+      assert.equal(params.subscription_data.billing_cycle_anchor, undefined);
+      assert.equal(params.subscription_data.proration_behavior, undefined);
+      assert.equal(params.subscription_data.trial_settings.end_behavior.missing_payment_method, "cancel");
+      assert.equal(params.metadata.ruined_billing_schedule_version, "foundations-prepaid-v1");
+      assert.equal(params.metadata.ruined_cohort_month, expectedSchedule.cohortMonth);
+      assert.equal(params.metadata.ruined_service_starts_at, expectedSchedule.serviceStartsAt);
+      assert.equal(params.metadata.ruined_first_charge_at, undefined);
+      assert.equal(params.metadata.billing_terms_version, "membership-billing-v2");
+      assert.match(params.custom_text.terms_of_service_acceptance.message, /ruined_membership-v3/);
+      assert.match(params.custom_text.submit.message, /Pay your first (month|year) today/);
+      assert.equal(params.return_url, `${app.origin}/my/activate?checkout=returned`);
+      assert.ok(options.idempotencyKey);
+      session = { id: "cs_prepaid_fixture", ...params, client_secret: "sandbox_prepaid_secret", status: "open", amount_subtotal: amount, amount_total: amount, currency: "usd", livemode: false, payment_status: "unpaid" };
+      return session;
+    };
+    stripe.checkout.sessions.retrieve = async () => session;
+    try {
+      const agreement = (await app.engine.query("select agreement_version_snapshot from membership_agreement_acceptances where id=$1", [app.fixture.acceptanceId])).rows[0];
+      assert.equal(agreement.agreement_version_snapshot, 3);
+      const quoted = await post(app.offer, "/api/stripe/membership-offer", { requestId: app.fixture.attemptId, kind: "individual", plan });
+      assert.equal(quoted.status, 200, JSON.stringify(await quoted.clone().json()));
+      const quote = (await quoted.json()).quote;
+      expectedSchedule = quote.billingSchedule;
+      assert.equal(quote.firstChargeAt, null);
+      assert.equal(expectedSchedule.version, "foundations-prepaid-v1");
+      assert.equal(expectedSchedule.callStartsAt.length, 4);
+      assert.equal(expectedSchedule.serviceStartsAt, expectedSchedule.callStartsAt[0]);
+      const input = { attemptId: quote.id, commercialReservationId: quote.id, acceptanceId: app.fixture.acceptanceId, plan, firstChargeAt: null, billingSchedule: expectedSchedule, recurringPaymentAccepted: true };
+      assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, recurringPaymentAccepted: false })).status, 400);
+      assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, billingSchedule: null })).status, 409);
+      assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, billingSchedule: { ...expectedSchedule, serviceStartsAt: expectedSchedule.nextChargeAt } })).status, 409);
+      assert.equal(creations, 0);
+      const opened = await post(app.checkout, "/api/stripe/checkout", input);
+      assert.equal(opened.status, 200, JSON.stringify(await opened.clone().json()));
+      assert.equal((await post(app.checkout, "/api/stripe/checkout", input)).status, 200, "stored paid-due session must resume without another provider creation");
+      assert.equal(creations, 1);
+      const status = await app.status();
+      assert.equal(status.member.billing_state, "pending");
+      assert.equal(status.invoices.length, 0);
+      assert.equal(status.commitments.length, 0, "opening Checkout is not confirmed payment");
+      assert.deepEqual(status.reservations[0].billing_schedule, expectedSchedule);
+      const now = Math.floor(Date.now() / 1000), end = Date.parse(expectedSchedule.prepaidThrough) / 1000;
+      const subscription = { id: "sub_prepaid_fixture", status: "trialing", customer: "cus_prepaid_fixture", livemode: false,
+        start_date: now, trial_end: end, billing_cycle_anchor: end, cancel_at_period_end: false, cancel_at: null,
+        automatic_tax: { enabled: false, disabled_reason: null }, latest_invoice: "in_prepaid_fixture", metadata: session.subscription_data.metadata,
+        items: { has_more: false, data: [{ id: "si_prepaid_fixture", quantity: 1, price, current_period_start: now, current_period_end: end }] } };
+      const invoice = { id: "in_prepaid_fixture", livemode: false, status: "paid", billing_reason: "subscription_create", customer: subscription.customer,
+        customer_email: app.fixture.email, currency: "usd", total: amount, total_excluding_tax: amount, total_discount_amounts: [],
+        amount_due: amount, amount_paid: amount, amount_remaining: 0, pre_payment_credit_notes_amount: 0, post_payment_credit_notes_amount: 0,
+        starting_balance: 0, ending_balance: 0, customer_address: { country: "US" }, status_transitions: { paid_at: now }, metadata: {},
+        parent: { subscription_details: { subscription: subscription.id, metadata: subscription.metadata } },
+        lines: { has_more: false, data: [
+          { id: "il_upfront", livemode: false, currency: "usd", quantity: 1, subtotal: amount, amount, period: { start: now, end },
+            pricing: { type: "price_details", price_details: { price: "price_upfront", product: "prod_fixture" } },
+            parent: { type: "invoice_item_details", invoice_item_details: { subscription: subscription.id, invoice_item: "ii_upfront", proration: false } } },
+          { id: "il_recurring", livemode: false, currency: "usd", quantity: 1, subtotal: 0, amount: 0, period: { start: now, end },
+            pricing: { type: "price_details", price_details: { price: price.id, product: "prod_fixture" } },
+            parent: { type: "subscription_item_details", subscription_item_details: { subscription: subscription.id, subscription_item: "si_prepaid_fixture", proration: false } } },
+        ] } };
+      stripe.customers.retrieve = async () => ({ id: subscription.customer, email: app.fixture.email, livemode: false, balance: 0, invoice_credit_balance: { usd: 0 }, cash_balance: { available: { usd: 0 } } });
+      stripe.subscriptions.retrieve = async () => subscription;
+      stripe.invoices.retrieve = async () => invoice;
+      stripe.invoices.list = () => ({ data: [invoice], has_more: false, async *[Symbol.asyncIterator]() { yield invoice; } });
+      stripe.creditNotes.list = async () => ({ data: [], has_more: false });
+      stripe.invoicePayments.list = async () => ({ has_more: false, data: [{ invoice: invoice.id, livemode: false, currency: "usd", status: "paid", amount_paid: amount, payment: { type: "payment_intent", payment_intent: "pi_prepaid_fixture" } }] });
+      stripe.paymentIntents.retrieve = async () => ({ status: "succeeded", livemode: false, customer: subscription.customer, latest_charge: "ch_prepaid_fixture", amount_received: amount, currency: "usd" });
+      stripe.charges.retrieve = async () => ({ id: "ch_prepaid_fixture", status: "succeeded", paid: true, captured: true, refunded: false, amount_refunded: 0, disputed: false,
+        amount, currency: "usd", livemode: false, customer: subscription.customer, payment_intent: "pi_prepaid_fixture" });
+      stripe.refunds.list = async () => ({ data: [], has_more: false });
+      const deliver = async (type, object, eventId) => {
+        const payload = JSON.stringify({ id: eventId, object: "event", api_version: app.server.STRIPE_API_VERSION, created: now, livemode: false, type, data: { object } });
+        const signature = stripe.webhooks.generateTestHeaderString({ payload, secret: fake.STRIPE_WEBHOOK_SECRET });
+        const result = await app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`, { method: "POST", headers: { "stripe-signature": signature }, body: payload }));
+        assert.equal(result.status, 200, JSON.stringify({ response: await result.clone().json(), failures: (await app.engine.query("select last_error from stripe_webhook_events where event_id=$1", [eventId])).rows }));
+        return result.json();
+      };
+      await deliver("customer.subscription.updated", subscription, "evt_prepaid_before_checkout");
+      assert.equal((await app.status()).member.billing_state, "pending");
+      session = { ...session, status: "complete", payment_status: "paid", customer: subscription.customer, subscription: subscription.id,
+        customer_details: { email: app.fixture.email }, consent: { terms_of_service: "accepted" } };
+      await deliver("checkout.session.completed", session, "evt_prepaid_checkout");
+      await deliver("invoice.paid", invoice, "evt_prepaid_invoice");
+      assert.equal((await deliver("invoice.paid", invoice, "evt_prepaid_invoice")).duplicate, true);
+      const paidStatus = await app.status();
+      assert.equal(paidStatus.member.billing_state, "pending", "prepaid cash never opens service before the accepted cohort begins");
+      assert.equal(paidStatus.reservations[0].status, "reserved");
+      assert.equal(paidStatus.commitments.length, 1);
+      assert.equal(new Date(paidStatus.commitments[0].starts_at).toISOString(), expectedSchedule.serviceStartsAt);
+      assert.equal(paidStatus.invoices[0].amount_paid, amount);
+      const proofs = (await app.engine.query("select amount_paid,service_starts_at,prepaid_through,refund_state,activated_at from stripe_membership_prepaid_proofs where member_id=$1", [app.fixture.memberId])).rows;
+      assert.equal(proofs.length, 1);
+      assert.equal(proofs[0].amount_paid, amount);
+      assert.equal(new Date(proofs[0].service_starts_at).toISOString(), expectedSchedule.serviceStartsAt);
+      assert.equal(new Date(proofs[0].prepaid_through).toISOString(), expectedSchedule.prepaidThrough);
+      assert.equal(proofs[0].refund_state, "none");
+      assert.equal(proofs[0].activated_at, null);
+      const page = html(app, "fixture-token");
+      assert.match(page, /billingSchedule:quote.billingSchedule/);
+      assert.ok(!page.includes(fake.STRIPE_SECRET_KEY) && !page.includes(fake.STRIPE_WEBHOOK_SECRET));
+    } finally { await app.engine.close(); }
+  }
+  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly and annual immutable schedule offers, fresh consent, rejected missing/tampered schedules, exact one-time plus recurring Checkout inputs, delayed recurring trial end, idempotent session resume, signed subscription/Checkout/invoice projection, durable paid proof, webhook replay and pending service before the cohort starts. No provider network calls or live changes. Real payment collection, due service activation and refunds require their separate runtime and sandbox checks.");
+}
+
 async function main() {
   const options = optionsFrom(process.argv.slice(2));
   if (options.help) {
-    console.log("Usage: node scripts/stripe-sandbox-smoke.mjs [--deferred] [--port 3233]\n       node scripts/stripe-sandbox-smoke.mjs --self-test\n\nOnly 127.0.0.1; Ruined sandbox only. Read docs/stripe-sandbox-smoke.md. Never load an app .env file.");
+    console.log("Usage: node scripts/stripe-sandbox-smoke.mjs [--deferred | --prepaid] [--port 3233]\n       node scripts/stripe-sandbox-smoke.mjs --self-test [--prepaid]\n\nOnly 127.0.0.1; Ruined sandbox only. Read docs/stripe-sandbox-smoke.md. Never load an app .env file.");
     return;
   }
   // Make origin and paid agreement independent of any deployed environment.
   process.env.NODE_ENV = "development";
-  process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = agreementVersion;
+  process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = options.prepaid ? "ruined_membership-v3" : "ruined_membership-v2";
+  process.env.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED = String(options.prepaid);
+  if (options.prepaid) delete process.env.STRIPE_MEMBERSHIP_FIRST_CHARGE_AT;
   process.env.STRIPE_MEMBERSHIP_LIVE_ENABLED = "false";
   process.env.STRIPE_TAX_ENABLED = "false";
   process.env.MEMBER_REGISTRATION_EMAILS_ENABLED="false";
@@ -415,7 +551,7 @@ async function main() {
   if (options.selfTest) {
     if (process.env.DATABASE_URL || Object.keys(process.env).some(name => /SUPABASE/.test(name) && process.env[name])) throw new Error("Remove database and Supabase environment variables before running this test.");
     if (/^(?:sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "") || /^pk_live_/.test(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "")) throw new Error("Remove live Stripe credentials before running this test.");
-    return selfTest();
+    return options.prepaid ? selfTestPrepaid() : selfTest();
   }
   Object.assign(process.env, validateEnvironment(process.env));
   const origin = `http://127.0.0.1:${options.port}`;

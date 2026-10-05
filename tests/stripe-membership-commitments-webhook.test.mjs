@@ -1,3 +1,4 @@
+import { prepaidFixtureDependencies } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -5,6 +6,7 @@ import test from "node:test";
 import ts from "typescript";
 
 async function load(path, dependencies = {}) {
+  dependencies = { ...prepaidFixtureDependencies, ...dependencies };
   const output = ts.transpileModule(await readFile(new URL(`../${path}`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const loaded = { exports: {} }; new Function("require", "module", "exports", output)(name => { assert.ok(name in dependencies, name); return dependencies[name]; }, loaded, loaded.exports); return loaded.exports;
 }
@@ -140,4 +142,36 @@ test("the first paid scheduled invoice anchors the commitment to the disclosed d
   assert.equal(h.activated.length,1);
   await assert.rejects(h.helper.prepareCommitmentInvoiceProjection(h.tx,{event:{id:"evt_early"},subscription:sub,
     invoice:invoice({lines:{data:[{period:{start:firstChargeAt.getTime()/1000-1}}]}}),memberId,paidActivation:true}),/scheduled_billing_date_mismatch/);
+});
+
+
+test("a November 1 v2 schedule retains its accepted agreement and dates after new offers switch to v3 prepaid", async () => {
+  const priorAgreement = process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION;
+  const priorPrepaid = process.env.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED;
+  process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v3";
+  process.env.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED = "true";
+  try {
+    const firstChargeAt = new Date("2026-11-01T06:00:00Z"), h = await helperHarness({ firstChargeAt }), sub = subscription();
+    sub.metadata.ruined_first_charge_at = firstChargeAt.toISOString(); sub.metadata.ruined_price_id = "price_member";
+    sub.metadata.agreement_version = "ruined_membership-v2";
+    sub.billing_cycle_anchor = firstChargeAt.getTime() / 1000; sub.latest_invoice = null;
+    const session = { status: "complete", mode: "subscription", payment_status: "no_payment_required", amount_total: 0, livemode: false,
+      consent: { terms_of_service: "accepted" }, customer: sub.customer, subscription: sub.id, metadata: { ...sub.metadata } };
+    await h.helper.prepareScheduledMembershipProjection(h.tx, { subscription: sub, session, memberId });
+    const accepted = h.created[0];
+    assert.equal(accepted.agreementVersion, "ruined_membership-v2");
+    assert.equal(accepted.startsAt, "2026-11-01T06:00:00.000Z");
+    assert.equal(accepted.initialTermEndsAt, "2027-11-01T06:00:00.000Z");
+    assert.ok(!accepted.billingSchedule);
+    assert.equal(h.activated.length, 0);
+    const later = await helperHarness({ firstChargeAt, existing: { contract: accepted } });
+    sub.latest_invoice = "in_paid";
+    await later.helper.prepareCommitmentInvoiceProjection(later.tx, { event: { id: "evt_legacy_v2_paid" }, subscription: sub,
+      invoice: invoice({ lines: { data: [{ period: { start: firstChargeAt.getTime() / 1000 } }] } }), memberId, paidActivation: true });
+    assert.equal(later.created.length, 0, "accepted contract is retained");
+    assert.equal(later.activated.length, 1, "accepted November 1 charge remains eligible for normal paid activation");
+  } finally {
+    if (priorAgreement === undefined) delete process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION; else process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = priorAgreement;
+    if (priorPrepaid === undefined) delete process.env.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED; else process.env.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED = priorPrepaid;
+  }
 });

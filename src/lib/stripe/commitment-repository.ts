@@ -12,6 +12,8 @@ import {
   quoteMembershipCancellation,
   quoteMembershipRenewalCancellation,
   quoteMembershipPrestartCancellation,
+  quoteMembershipPrepaidCancellation,
+  quoteMembershipMissedCohortCancellation,
   type CommitmentInvoice,
   type CommitmentLedger,
   type MembershipCancellationQuote,
@@ -31,8 +33,19 @@ export type MembershipCancellationRecord = {
   quote: MembershipCancellationQuote;
   providerIdempotencyKey: string;
   replacementInvoiceId: string | null;
+  billingStopEvidence?: CommitmentBillingStopEvidence | null;
 };
 function json(value: unknown): postgres.JSONValue { return JSON.parse(JSON.stringify(value)) as postgres.JSONValue; }
+
+async function hasMissedCohortRefundAuthority(tx: CommitmentTransaction, contractId: string): Promise<boolean> {
+  const rows = await tx`select proof.contract_id from stripe_membership_prepaid_proofs proof
+    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
+    join stripe_invoices invoice on invoice.id=proof.stripe_invoice_id and invoice.stripe_subscription_id=proof.stripe_subscription_id
+    where proof.contract_id=${contractId}::uuid and proof.review_reason='cohort_cutoff_missed'
+      and proof.activated_at is null and reservation.status='reserved'
+      and invoice.paid_at >= (reservation.billing_schedule->>'cutoffAt')::timestamptz`;
+  return rows.length === 1;
+}
 
 /** Call inside the webhook transaction after verifying the actual paid Checkout.
  * Both agreement acceptance and the separate v2 recurring-payment consent must match.
@@ -52,6 +65,10 @@ export async function createMembershipCommitment(tx: CommitmentTransaction, cont
       and acceptance.agreement_key_snapshot || '-v' || acceptance.agreement_version_snapshot::text = ${contract.agreementVersion}
       and acceptance.accepted_at = ${contract.acceptedAt}::timestamptz
       and attempt.billing_plan = ${contract.billingPlan} and attempt.stripe_price_id = ${contract.priceId}
+      and attempt.billing_schedule is not distinct from ${contract.billingSchedule ? tx.json(json(contract.billingSchedule)) : null}::jsonb
+      and nullif(attempt.recurring_payment_terms->'billingSchedule', 'null'::jsonb) is not distinct from ${contract.billingSchedule ? tx.json(json(contract.billingSchedule)) : null}::jsonb
+      and (${!contract.billingSchedule} or ((attempt.billing_schedule->>'serviceStartsAt')::timestamptz = ${contract.startsAt}::timestamptz
+        and (attempt.billing_schedule->>'initialTermEndsAt')::timestamptz = ${contract.initialTermEndsAt}::timestamptz))
       and (attempt.first_charge_at is null or (attempt.first_charge_at = ${contract.startsAt}::timestamptz
         and (attempt.recurring_payment_terms->>'firstChargeAt')::timestamptz = attempt.first_charge_at))
       and attempt.recurring_payment_accepted_at is not null and attempt.billing_consent_auth_user_id is not null
@@ -196,7 +213,7 @@ export async function invalidateMembershipCommitmentLedger(tx: CommitmentTransac
 export async function getMembershipCancellation(tx: CommitmentTransaction, id: string): Promise<MembershipCancellationRecord | null> {
   const rows = await tx<Array<MembershipCancellationRecord>>`
     select id, contract_id as "contractId", status, quote_snapshot as quote,
-      provider_idempotency_key as "providerIdempotencyKey", replacement_invoice_id as "replacementInvoiceId"
+    provider_idempotency_key as "providerIdempotencyKey", replacement_invoice_id as "replacementInvoiceId", billing_stop_evidence as "billingStopEvidence"
     from stripe_membership_cancellations where id = ${id}::uuid
   `;
   return rows[0] ?? null;
@@ -221,14 +238,21 @@ export async function reserveMembershipCancellation(tx: CommitmentTransaction, i
     return existing;
   }
   if (quote.intent !== "disable_renewal" && record.status !== "active" || now.getTime() >= Date.parse(quote.expiresAt) || Date.parse(quote.quotedAt) > now.getTime()
-    || quote.intent === "cancel_before_start" && now.getTime() >= Date.parse(record.contract.startsAt)
+    || quote.intent === "cancel_before_start" && !quote.invalidEnrollmentReason && now.getTime() >= Date.parse(record.contract.startsAt)
     || quote.fingerprint !== cancellationQuoteFingerprint(quote)) throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
-  const fresh = quote.intent === "cancel_before_start" && quote.prestartProviderSnapshot
+  if (quote.invalidEnrollmentReason && !await hasMissedCohortRefundAuthority(tx, quote.contractId)) {
+    throw new MembershipCommitmentError("missed_cohort_refund_requires_review");
+  }
+  const fresh = quote.intent === "cancel_before_start" && quote.invalidEnrollmentReason === "cohort_cutoff_missed" && quote.prepaidProviderSnapshot
+    ? quoteMembershipMissedCohortCancellation(record.contract, quote.prepaidProviderSnapshot, new Date(quote.quotedAt))
+    : quote.intent === "cancel_before_start" && quote.prepaidProviderSnapshot
+    ? quoteMembershipPrepaidCancellation(record.contract, quote.prepaidProviderSnapshot, new Date(quote.quotedAt))
+    : quote.intent === "cancel_before_start" && quote.prestartProviderSnapshot
     ? quoteMembershipPrestartCancellation(record.contract, quote.prestartProviderSnapshot, new Date(quote.quotedAt))
     : quote.intent === "disable_renewal" && quote.renewalProviderSnapshot
     ? quoteMembershipRenewalCancellation(record.contract, quote.renewalProviderSnapshot, new Date(quote.quotedAt))
     : quoteMembershipCancellation(record.contract, record.ledger, quote.intent, new Date(quote.quotedAt));
-  const observedAt = quote.intent === "cancel_before_start" ? quote.prestartProviderSnapshot?.observedAt
+  const observedAt = quote.intent === "cancel_before_start" ? quote.prepaidProviderSnapshot?.observedAt ?? quote.prestartProviderSnapshot?.observedAt
     : quote.intent === "disable_renewal" ? quote.renewalProviderSnapshot?.observedAt : record.ledger.reconciledAt;
   if (fresh.fingerprint !== quote.fingerprint || !observedAt
     || now.getTime() - Date.parse(observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
@@ -262,11 +286,14 @@ export type CommitmentBillingStopEvidence = {
   customerId: string;
   livemode: boolean;
   observedAt: string;
-  subscriptionStatus: "active" | "past_due" | "unpaid" | "canceled";
+  subscriptionStatus: "active" | "past_due" | "unpaid" | "canceled" | "trialing";
   cancelAt: string | null;
   canceledAt?: string | null;
   firstChargeAt?: string;
   noInvoices?: boolean;
+  prepaidInvoiceId?: string;
+  invalidEnrollmentReason?: "cohort_cutoff_missed";
+  refund?: CommitmentPrepaidRefundEvidence;
   /** For an early exit, ordinary unpaid invoices must be voided/replaced first. */
   openOrdinaryInvoiceIds: string[];
   pendingProrationOrInvoiceItems: boolean;
@@ -284,15 +311,20 @@ export async function confirmMembershipBillingStopped(tx: CommitmentTransaction,
     select terms_snapshot, ledger_revision from stripe_membership_commitments where id = ${quote.contractId}::uuid for update
   `;
   const contract = contractRows[0];
+  const missedCutoff = quote.invalidEnrollmentReason === "cohort_cutoff_missed"
+    && evidence.invalidEnrollmentReason === "cohort_cutoff_missed" && await hasMissedCohortRefundAuthority(tx, quote.contractId);
   if (!contract || evidence.subscriptionId !== quote.subscriptionId || evidence.customerId !== contract.terms_snapshot.customerId
+    || quote.invalidEnrollmentReason && !missedCutoff
     || evidence.livemode !== quote.livemode || !Number.isFinite(Date.parse(evidence.observedAt))
     || now.getTime() < Date.parse(evidence.observedAt) || now.getTime() - Date.parse(evidence.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS
     || evidence.subscriptionStatus !== "canceled" && (!evidence.cancelAt || Date.parse(evidence.cancelAt) !== Date.parse(quote.effectiveAt))
     || quote.intent === "early_exit" && (contract.ledger_revision !== quote.ledgerRevision || evidence.openOrdinaryInvoiceIds.length > 0 || evidence.pendingProrationOrInvoiceItems)
     || quote.intent === "cancel_before_start" && (evidence.subscriptionStatus !== "canceled" || !evidence.canceledAt
-      || !Number.isFinite(Date.parse(evidence.canceledAt)) || Date.parse(evidence.canceledAt) >= Date.parse(contract.terms_snapshot.startsAt)
+      || !Number.isFinite(Date.parse(evidence.canceledAt)) || !missedCutoff && Date.parse(evidence.canceledAt) >= Date.parse(contract.terms_snapshot.startsAt)
       || Date.parse(evidence.canceledAt) > Date.parse(evidence.observedAt)
-      || evidence.firstChargeAt !== contract.terms_snapshot.startsAt || evidence.noInvoices !== true
+      || evidence.firstChargeAt !== contract.terms_snapshot.startsAt
+      || (quote.prepaidProviderSnapshot ? !contract.terms_snapshot.billingSchedule
+        || evidence.prepaidInvoiceId !== quote.prepaidProviderSnapshot.invoiceId : evidence.noInvoices !== true)
       || evidence.openOrdinaryInvoiceIds.length > 0 || evidence.pendingProrationOrInvoiceItems)) {
     throw new MembershipCommitmentError("ordinary_billing_not_safely_stopped");
   }
@@ -301,6 +333,56 @@ export async function confirmMembershipBillingStopped(tx: CommitmentTransaction,
       billing_stopped_at = ${now}::timestamptz, updated_at = ${now}::timestamptz
     where id = ${cancellationId}::uuid and status = 'requested' returning id
   `;
+  return rows.length === 1;
+}
+
+export type CommitmentPrepaidRefundEvidence = {
+  id: string; status: "pending" | "succeeded" | "failed" | "canceled" | "requires_action";
+  cancellationId: string; invoiceId: string; paymentIntentId: string; chargeId: string;
+  amount: number; currency: string; livemode: boolean; observedAt: string;
+};
+
+/** Fence the one full refund before contacting Stripe. An expired uncertain key
+ * requires provider reconciliation; it never authorizes a new refund attempt. */
+export async function fenceMembershipPrepaidRefund(tx: CommitmentTransaction, cancellationId: string, now = new Date()) {
+  const cancellation = await getMembershipCancellation(tx, cancellationId);
+  if (!cancellation?.quote.prepaidProviderSnapshot || !cancellation.quote.refundAmount) return null;
+  await tx`select id from stripe_membership_commitments where id = ${cancellation.contractId}::uuid for update`;
+  const rows = await tx<Array<{ providerIdempotencyKey: string }>>`
+    update stripe_membership_cancellations set status = 'collection_in_flight',
+      first_collection_attempt_at = coalesce(first_collection_attempt_at, ${now}::timestamptz), updated_at = ${now}::timestamptz
+    where id = ${cancellationId}::uuid and intent = 'cancel_before_start'
+      and status in ('billing_stopped', 'collection_in_flight')
+      and billing_stop_evidence->>'subscriptionStatus' = 'canceled'
+      and quote_snapshot->'prepaidProviderSnapshot' is not null
+      and (first_collection_attempt_at is null or first_collection_attempt_at > ${now}::timestamptz - interval '23 hours')
+      and (first_collection_attempt_at is not null or billing_stopped_at >= ${now}::timestamptz - interval '5 minutes')
+    returning provider_idempotency_key as "providerIdempotencyKey"
+  `;
+  return rows[0] ?? null;
+}
+
+/** The provider refund identity is durable before a response or release. Pending,
+ * failed and action-required refunds never mean the member has received money. */
+export async function recordMembershipPrepaidRefundEvidence(tx: CommitmentTransaction, cancellationId: string,
+  refund: CommitmentPrepaidRefundEvidence, now = new Date()): Promise<boolean> {
+  const cancellation = await getMembershipCancellation(tx, cancellationId), payment = cancellation?.quote.prepaidProviderSnapshot;
+  if (!cancellation || !payment || cancellation.quote.intent !== "cancel_before_start"
+    || refund.cancellationId !== cancellationId || !refund.id.startsWith("re_")
+    || refund.invoiceId !== payment.invoiceId || refund.paymentIntentId !== payment.paymentIntentId || refund.chargeId !== payment.chargeId
+    || refund.amount !== payment.amount || refund.amount !== cancellation.quote.refundAmount || refund.currency !== payment.currency
+    || refund.livemode !== payment.livemode || !Number.isFinite(Date.parse(refund.observedAt))
+    || Date.parse(refund.observedAt) > now.getTime() || now.getTime() - Date.parse(refund.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS
+    || !["pending", "succeeded", "failed", "canceled", "requires_action"].includes(refund.status)
+    || cancellation.billingStopEvidence?.refund && (cancellation.billingStopEvidence.refund.id !== refund.id
+      || cancellation.billingStopEvidence.refund.status === "succeeded" && refund.status !== "succeeded")) {
+    throw new MembershipCommitmentError("prepaid_refund_requires_review");
+  }
+  await tx`select id from stripe_membership_commitments where id = ${cancellation.contractId}::uuid for update`;
+  const rows = await tx`update stripe_membership_cancellations set
+    billing_stop_evidence = jsonb_set(billing_stop_evidence, '{refund}', ${tx.json(json(refund))}::jsonb), updated_at = ${now}::timestamptz
+    where id = ${cancellationId}::uuid and status in ('collection_in_flight', 'completed')
+      and first_collection_attempt_at is not null and billing_stop_evidence->>'subscriptionStatus' = 'canceled' returning id`;
   return rows.length === 1;
 }
 
@@ -343,8 +425,13 @@ export async function completeMembershipCancellation(tx: CommitmentTransaction, 
   if (!cancellation) return false;
   await tx`select id from stripe_membership_commitments where id = ${cancellation.contractId}::uuid for update`;
   if (cancellation.status === "completed") return cancellation.replacementInvoiceId === input.replacementInvoiceId;
+  if (cancellation.quote.prepaidProviderSnapshot && (cancellation.billingStopEvidence?.refund?.status !== "succeeded"
+    || cancellation.billingStopEvidence.refund.amount !== cancellation.quote.refundAmount)) {
+    throw new MembershipCommitmentError("prepaid_refund_not_confirmed");
+  }
   if (cancellation.quote.buyoutDues > 0 && (!input.replacementInvoiceId?.startsWith("in_") || cancellation.status !== "collection_in_flight")
-    || cancellation.quote.buyoutDues === 0 && (input.replacementInvoiceId !== null || cancellation.status !== "billing_stopped")) {
+    || cancellation.quote.buyoutDues === 0 && (input.replacementInvoiceId !== null
+      || cancellation.status !== (cancellation.quote.prepaidProviderSnapshot ? "collection_in_flight" : "billing_stopped"))) {
     throw new MembershipCommitmentError("replacement_invoice_not_confirmed");
   }
   const rows = await tx`

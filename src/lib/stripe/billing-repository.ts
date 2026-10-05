@@ -2,6 +2,7 @@ import "server-only";
 
 import postgres from "postgres";
 import type Stripe from "stripe";
+import type { FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
 
 import { MEMBERSHIP_OFFERS, isMembershipBillingPlan, type MembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
 import { lockCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
@@ -38,7 +39,14 @@ export type MembershipCheckoutReservation = {
   offerId: MembershipOfferId;
   expiresAt: Date;
   firstChargeAt: Date | null;
+  billingSchedule: FoundationsBillingSchedule | null;
 };
+
+function sameBillingSchedule(a: FoundationsBillingSchedule | null | undefined, b: FoundationsBillingSchedule | null | undefined) {
+  const canonical = (value: FoundationsBillingSchedule | null | undefined) => value == null ? null
+    : JSON.stringify(Object.keys(value).sort().map(key => [key, value[key as keyof FoundationsBillingSchedule]]));
+  return canonical(a) === canonical(b);
+}
 
 export class MembershipCheckoutConflictError extends Error {
   constructor(public readonly code = "checkout_conflict") {
@@ -326,6 +334,7 @@ export async function reserveMembershipCheckout({
         stripe_price_id: string | null;
         expires_at: Date;
         first_charge_at: Date | null;
+        billing_schedule: FoundationsBillingSchedule | null;
         recurring_payment_accepted_at: Date | null;
         commercial_reservation_id: string | null;
         offer_id: string | null;
@@ -333,7 +342,7 @@ export async function reserveMembershipCheckout({
       }>
     >`
       select
-        billing_plan, stripe_price_id, expires_at, first_charge_at, recurring_payment_accepted_at,
+        billing_plan, stripe_price_id, expires_at, first_charge_at, billing_schedule, recurring_payment_accepted_at,
         commercial_reservation_id, offer_id, recurring_payment_terms,
         id,
         stripe_session_id,
@@ -351,6 +360,7 @@ export async function reserveMembershipCheckout({
     const existingAttempt = attemptRows[0];
 
     if (existingAttempt) {
+      if (!sameBillingSchedule(existingAttempt.billing_schedule, commercial.billingSchedule)) throw new MembershipCheckoutConflictError();
       if ((existingAttempt.first_charge_at?.getTime() ?? null) !== (commercial.firstChargeAt?.getTime() ?? null)) throw new MembershipCheckoutConflictError();
       // Never resume an older policy's session under newly displayed v2 consent.
       if (existingAttempt.commercial_reservation_id !== commercial.id || existingAttempt.offer_id !== offer.id ||
@@ -387,6 +397,7 @@ export async function reserveMembershipCheckout({
         offerId: offer.id,
         expiresAt: existingAttempt.expires_at,
         firstChargeAt: existingAttempt.first_charge_at,
+        billingSchedule: existingAttempt.billing_schedule ?? null,
       };
     }
 
@@ -422,6 +433,7 @@ export async function reserveMembershipCheckout({
         commercial_reservation_id,
         offer_id,
         first_charge_at,
+        billing_schedule,
         expires_at
       ) values (
         ${attemptId},
@@ -435,7 +447,7 @@ export async function reserveMembershipCheckout({
         ${stripePriceId},
         statement_timestamp(),
         ${authUserId}::uuid,
-        ${tx.json({ version: "membership-billing-v2", ...offer, firstPayment: commercial.firstChargeAt ? "scheduled" : "upfront", firstChargeAt: commercial.firstChargeAt?.toISOString() ?? null, recurring: true,
+        ${tx.json({ version: "membership-billing-v2", ...offer, firstPayment: commercial.billingSchedule ? "prepaid" : commercial.firstChargeAt ? "scheduled" : "upfront", billingSchedule: commercial.billingSchedule ?? null, firstChargeAt: commercial.firstChargeAt?.toISOString() ?? null, recurring: true,
           offerId: offer.id, buyoutCap: 150_000, buyoutReplacesRemainingInstallments: true,
           commercialReservationId: commercial.id,
           participants: commercial.participants.map(participant => ({ memberId: participant.memberId, personId: participant.personId })),
@@ -443,6 +455,7 @@ export async function reserveMembershipCheckout({
         ${commercial.id}::uuid,
         ${offer.id},
         ${commercial.firstChargeAt ?? null},
+        ${commercial.billingSchedule ? tx.json(JSON.parse(JSON.stringify(commercial.billingSchedule))) : null}::jsonb,
         ${checkoutExpiresAt}
       ) returning recurring_payment_accepted_at
     `;
@@ -465,6 +478,7 @@ export async function reserveMembershipCheckout({
       offerId: offer.id,
       expiresAt: checkoutExpiresAt,
       firstChargeAt: commercial.firstChargeAt ?? null,
+      billingSchedule: commercial.billingSchedule ?? null,
     };
   });
 }
@@ -734,7 +748,7 @@ export async function findMemberBySubscription(
 export async function hasMembershipCheckoutConsent(
   tx: BillingTransaction,
   input: { memberId: string; attemptId: string; acceptanceId: string; plan: MembershipBillingPlan; priceId: string; subscriptionId: string;
-    billingTermsVersion?: string; offerId?: string; commercialReservationId?: string; firstChargeAt?: string | null },
+    billingTermsVersion?: string; offerId?: string; commercialReservationId?: string; firstChargeAt?: string | null; billingSchedule?: FoundationsBillingSchedule | null },
 ): Promise<boolean> {
   const termsVersion = input.billingTermsVersion ?? "membership-billing-v1";
   if (termsVersion !== "membership-billing-v1" && termsVersion !== "membership-billing-v2") return false;
@@ -761,6 +775,7 @@ export async function hasMembershipCheckoutConsent(
         and recurring_payment_terms->>'buyoutCap' = '150000'
       ))
       and first_charge_at is not distinct from ${input.firstChargeAt ?? null}::timestamptz
+      and billing_schedule is not distinct from ${input.billingSchedule ? tx.json(JSON.parse(JSON.stringify(input.billingSchedule))) : null}::jsonb
       and status in ('creating', 'open', 'completed')
       and (stripe_subscription_id is null or stripe_subscription_id = ${input.subscriptionId})
     limit 1
@@ -1319,4 +1334,123 @@ export async function updateMemberBillingState(
     state: updatedMember.membership_state,
   });
 
+}
+
+/** Provider payment evidence is private and separate from membership access. */
+export type MembershipPrepayment = {
+  reservationId: string; contractId: string; memberId: string; subscriptionId: string;
+  invoiceId: string; paymentIntentId: string; chargeId: string;
+  serviceStartsAt: Date; prepaidThrough: Date; duesAmount: number; amountPaid: number;
+  currency: "usd"; livemode: boolean; verifiedAt: Date;
+  billingSchedule: FoundationsBillingSchedule;
+  refundState: "none" | "pending" | "partial" | "refunded" | "review_required";
+  amountRefunded: number; refundId: string | null; cancellationId: string | null;
+  refundVerifiedAt: Date | null; canceledAt: Date | null; reviewReason: string | null; activatedAt: Date | null;
+};
+type PrepaymentRow = {
+  reservation_id: string; contract_id: string; member_id: string; stripe_subscription_id: string;
+  stripe_invoice_id: string; stripe_payment_intent_id: string; stripe_charge_id: string;
+  service_starts_at: Date | string; prepaid_through: Date | string; dues_amount: number | string; amount_paid: number | string;
+  currency: "usd"; livemode: boolean; verified_at: Date | string; billing_schedule: FoundationsBillingSchedule;
+  refund_state: MembershipPrepayment["refundState"]; amount_refunded: number | string;
+  stripe_refund_id: string | null; cancellation_id: string | null; refund_verified_at: Date | string | null;
+  provider_canceled_at: Date | string | null; review_reason: string | null; activated_at: Date | string | null;
+};
+function prepaymentDate(value: Date | string) { return value instanceof Date ? value : new Date(value); }
+function prepayment(row: PrepaymentRow): MembershipPrepayment {
+  return { reservationId: row.reservation_id, contractId: row.contract_id, memberId: row.member_id,
+    subscriptionId: row.stripe_subscription_id, invoiceId: row.stripe_invoice_id, paymentIntentId: row.stripe_payment_intent_id,
+    chargeId: row.stripe_charge_id, serviceStartsAt: prepaymentDate(row.service_starts_at), prepaidThrough: prepaymentDate(row.prepaid_through),
+    duesAmount: Number(row.dues_amount), amountPaid: Number(row.amount_paid), currency: row.currency, livemode: row.livemode,
+    verifiedAt: prepaymentDate(row.verified_at), billingSchedule: row.billing_schedule, refundState: row.refund_state,
+    amountRefunded: Number(row.amount_refunded), refundId: row.stripe_refund_id, cancellationId: row.cancellation_id,
+    refundVerifiedAt: row.refund_verified_at ? prepaymentDate(row.refund_verified_at) : null,
+    canceledAt: row.provider_canceled_at ? prepaymentDate(row.provider_canceled_at) : null, reviewReason: row.review_reason,
+    activatedAt: row.activated_at ? prepaymentDate(row.activated_at) : null };
+}
+
+export async function getMembershipPrepayment(tx: BillingTransaction, input: { reservationId: string; subscriptionId?: never } | { subscriptionId: string; reservationId?: never }): Promise<MembershipPrepayment | null> {
+  const rows = await tx<PrepaymentRow[]>`select proof.*, reservation.billing_schedule
+    from stripe_membership_prepaid_proofs proof
+    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
+    where (${input.reservationId ?? null}::uuid is not null and proof.reservation_id=${input.reservationId ?? null}::uuid)
+      or (${input.subscriptionId ?? null}::text is not null and proof.stripe_subscription_id=${input.subscriptionId ?? null})
+    for update of proof`;
+  return rows[0] ? prepayment(rows[0]) : null;
+}
+
+/** Call only after re-verifying the actual invoice, settlement, refund/dispute
+ * history and accepted schedule. Replay cannot clear any refund or review state. */
+export async function recordMembershipPrepayment(tx: BillingTransaction, input: {
+  reservationId: string; contractId: string; memberId: string; subscriptionId: string; invoiceId: string;
+  paymentIntentId: string; chargeId: string; serviceStartsAt: Date | string; prepaidThrough: Date | string;
+  duesAmount: number; amountPaid: number; currency: "usd"; livemode: boolean; verifiedAt: Date | string;
+}): Promise<MembershipPrepayment> {
+  await tx`select pg_advisory_xact_lock(hashtext('ruined-membership-commercial-eligibility'))`;
+  await tx`insert into stripe_membership_prepaid_proofs (reservation_id,contract_id,member_id,stripe_subscription_id,
+    stripe_invoice_id,stripe_payment_intent_id,stripe_charge_id,service_starts_at,prepaid_through,dues_amount,amount_paid,currency,livemode,verified_at)
+    values (${input.reservationId}::uuid,${input.contractId}::uuid,${input.memberId}::uuid,${input.subscriptionId},
+      ${input.invoiceId},${input.paymentIntentId},${input.chargeId},${input.serviceStartsAt}::timestamptz,${input.prepaidThrough}::timestamptz,
+      ${input.duesAmount},${input.amountPaid},${input.currency},${input.livemode},${input.verifiedAt}::timestamptz)
+    on conflict (reservation_id) do nothing`;
+  const proof = await getMembershipPrepayment(tx, { reservationId: input.reservationId });
+  if (!proof || proof.contractId !== input.contractId || proof.memberId !== input.memberId || proof.subscriptionId !== input.subscriptionId
+    || proof.invoiceId !== input.invoiceId || proof.paymentIntentId !== input.paymentIntentId || proof.chargeId !== input.chargeId
+    || proof.serviceStartsAt.getTime() !== prepaymentDate(input.serviceStartsAt).getTime()
+    || proof.prepaidThrough.getTime() !== prepaymentDate(input.prepaidThrough).getTime()
+    || proof.duesAmount !== input.duesAmount || proof.amountPaid !== input.amountPaid || proof.currency !== input.currency || proof.livemode !== input.livemode) {
+    throw new MembershipCheckoutConflictError("prepaid_payment_identity_mismatch");
+  }
+  if (prepaymentDate(input.verifiedAt) > proof.verifiedAt) await tx`update stripe_membership_prepaid_proofs
+    set verified_at=${input.verifiedAt}::timestamptz where reservation_id=${input.reservationId}::uuid`;
+  return (await getMembershipPrepayment(tx, { reservationId: input.reservationId }))!;
+}
+
+/** Due rows include missed first periods; the activation guard independently
+ * requires a paid current recurring invoice once the prepaid period has ended. */
+export async function listMembershipPrepaymentsDue(input: { limit?: number; now?: Date; livemode?: boolean } = {}): Promise<MembershipPrepayment[]> {
+  const sql = getBillingDatabase(), limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 50)));
+  const rows = await sql<PrepaymentRow[]>`select proof.*,reservation.billing_schedule
+    from stripe_membership_prepaid_proofs proof
+    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id and reservation.status='reserved'
+    where (${input.livemode ?? null}::boolean is null or proof.livemode=${input.livemode ?? null}::boolean)
+      and proof.activated_at is null and ((proof.refund_state='none' and proof.service_starts_at<=${input.now ?? new Date()})
+      or (proof.refund_state='review_required' and proof.review_reason='cohort_cutoff_missed') or proof.refund_state='refunded')
+    order by proof.service_starts_at,proof.reservation_id limit ${limit}`;
+  return rows.map(prepayment);
+}
+
+export async function markMembershipPrepaymentReview(tx: BillingTransaction, input: {
+  reservationId: string; reason: string; verifiedAt: Date | string;
+}): Promise<void> {
+  await tx`select pg_advisory_xact_lock(hashtext('ruined-membership-commercial-eligibility'))`;
+  if (!/^[a-z0-9_]{1,80}$/.test(input.reason)) throw new MembershipCheckoutConflictError("prepaid_review_reason_invalid");
+  await tx`update stripe_membership_prepaid_proofs set refund_state=case when refund_state='refunded' then refund_state else 'review_required' end,
+    review_reason=${input.reason},verified_at=greatest(verified_at,${input.verifiedAt}::timestamptz)
+    where reservation_id=${input.reservationId}::uuid`;
+}
+
+/** Persist only provider-readback refund state. A pending/failed refund never
+ * releases a commercial reservation or restores billing eligibility. */
+export async function recordPrepaidMembershipRefund(tx: BillingTransaction, input: {
+  reservationId: string; subscriptionId: string; cancellationId: string; invoiceId: string; paymentIntentId: string; chargeId: string;
+  refundId: string; status: "pending" | "succeeded" | "failed" | "canceled"; amount: number; currency: "usd"; livemode: boolean;
+  canceledAt: Date | string; verifiedAt: Date | string;
+}): Promise<MembershipPrepayment> {
+  await tx`select pg_advisory_xact_lock(hashtext('ruined-membership-commercial-eligibility'))`;
+  const proof = await getMembershipPrepayment(tx, { reservationId: input.reservationId });
+  if (!proof || proof.subscriptionId !== input.subscriptionId || proof.invoiceId !== input.invoiceId || proof.paymentIntentId !== input.paymentIntentId
+    || proof.chargeId !== input.chargeId || proof.currency !== input.currency || proof.livemode !== input.livemode
+    || !Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > proof.amountPaid
+    || proof.refundId && proof.refundId !== input.refundId || proof.cancellationId && proof.cancellationId !== input.cancellationId
+    || !/^re_[A-Za-z0-9_]+$/.test(input.refundId)) throw new MembershipCheckoutConflictError("prepaid_refund_identity_mismatch");
+  if (proof.refundState === "refunded") return proof;
+  if (proof.refundVerifiedAt && prepaymentDate(input.verifiedAt) < proof.refundVerifiedAt) return proof;
+  const state = input.status === "succeeded" ? input.amount === proof.amountPaid ? "refunded" : "partial"
+    : input.status === "pending" ? "pending" : "review_required";
+  await tx`update stripe_membership_prepaid_proofs set refund_state=${state},stripe_refund_id=${input.refundId},
+    cancellation_id=${input.cancellationId}::uuid,amount_refunded=greatest(amount_refunded,${input.status === "succeeded" ? input.amount : 0}),
+    refund_verified_at=${input.verifiedAt}::timestamptz,provider_canceled_at=${input.canceledAt}::timestamptz
+    where reservation_id=${input.reservationId}::uuid`;
+  return (await getMembershipPrepayment(tx, { reservationId: input.reservationId }))!;
 }

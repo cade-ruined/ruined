@@ -4,6 +4,8 @@ import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getMemberIdentity } from "@/lib/membership/repository";
 import { getCommercialMembershipReservation, releaseCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
 import { getPublishedMembershipAgreement } from "@/lib/membership/published-agreement";
+import { parseFoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
+import { prepaidBillingMetadata, prepaidScheduleFingerprint } from "@/lib/stripe/prepaid-policy";
 import { MEMBERSHIP_OFFERS, isMembershipBillingPlan, type MembershipBillingPlan } from "@/lib/membership/pricing";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
@@ -43,6 +45,7 @@ type CheckoutRequest = {
   recurringPaymentAccepted?: unknown;
   commercialReservationId?: unknown;
   firstChargeAt?: unknown;
+  billingSchedule?: unknown;
 };
 
 function invalidRequest(message: string) {
@@ -122,6 +125,15 @@ export async function POST(request: Request) {
       throw new MembershipCheckoutConflictError();
     }
     const firstChargeAt = commercial.firstChargeAt ?? null;
+    const billingSchedule = commercial.billingSchedule ?? null;
+    const consentedSchedule = body.billingSchedule == null ? null : parseFoundationsBillingSchedule(body.billingSchedule, plan);
+    if (billingSchedule ? !consentedSchedule || prepaidScheduleFingerprint(billingSchedule) !== prepaidScheduleFingerprint(consentedSchedule)
+      : body.billingSchedule != null) {
+      return NextResponse.json({ error: "Review your Foundations group, payment today and next charge date before continuing.", code: "billing_date_consent_required" }, { status: 409 });
+    }
+    if (billingSchedule && Date.now() >= Date.parse(billingSchedule.cutoffAt)) {
+      return NextResponse.json({ error: "Enrollment for this group has closed. Review the next Foundations group before paying.", code: "membership_offer_expired" }, { status: 409 });
+    }
     if ((firstChargeAt?.toISOString() ?? null) !== (body.firstChargeAt ?? null)) {
       return NextResponse.json({ error: "Review and confirm the first payment date shown in your membership offer.", code: "billing_date_consent_required" }, { status: 409 });
     }
@@ -129,7 +141,7 @@ export async function POST(request: Request) {
     const priceId = await validateStripeMembershipOfferPrice(commercial.offerId);
     if (commercial.stripePriceId !== priceId) throw new MembershipCheckoutConflictError();
     const paidAgreementVersion = getPaidMembershipAgreementVersion();
-    if (!/^ruined_membership-v([2-9]|[1-9]\d+)$/.test(paidAgreementVersion) || !await getPublishedMembershipAgreement(paidAgreementVersion)) {
+    if ((billingSchedule && !/^ruined_membership-v([3-9]|[1-9]\d+)$/.test(paidAgreementVersion)) || !/^ruined_membership-v([2-9]|[1-9]\d+)$/.test(paidAgreementVersion) || !await getPublishedMembershipAgreement(paidAgreementVersion)) {
       throw new Error("The paid membership agreement is not published.");
     }
     await validateMembershipPortalConfiguration("commitment");
@@ -180,6 +192,7 @@ export async function POST(request: Request) {
         existingSession.metadata?.ruined_price_id === reservation.stripePriceId &&
         existingSession.metadata?.agreement_acceptance_id === reservation.agreementAcceptanceId &&
         (existingSession.metadata?.ruined_first_charge_at ?? null) === (reservation.firstChargeAt?.toISOString() ?? null) &&
+        (existingSession.metadata?.ruined_billing_schedule_sha256 ?? null) === (billingSchedule ? prepaidScheduleFingerprint(billingSchedule) : null) &&
         existingSession.amount_subtotal === (reservation.firstChargeAt ? 0 : expected.amount) &&
         existingSession.currency === expected.currency &&
         existingSession.client_secret
@@ -213,6 +226,7 @@ export async function POST(request: Request) {
       billing_consent_at: reservation.recurringPaymentAcceptedAt.toISOString(),
       billing_terms_version: "membership-billing-v2",
       ...(reservation.firstChargeAt ? { ruined_first_charge_at: reservation.firstChargeAt.toISOString() } : {}),
+      ...(billingSchedule ? prepaidBillingMetadata(billingSchedule) : {}),
       ruined_offer_id: reservation.offerId,
       ruined_commercial_reservation_id: reservation.commercialReservationId,
       age_policy_minimum: String(configuration.minimumAge),
@@ -224,12 +238,20 @@ export async function POST(request: Request) {
     const savedMethod = await getSavedPaymentMethodForCheckout(reservation.memberId, reservation.attemptId);
     const selectedOffer = MEMBERSHIP_OFFERS[reservation.offerId];
     const initialTotal = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(selectedOffer.initialTermAmount / 100);
-    const scheduledDisclosure = reservation.firstChargeAt
+    const dateLabel = (date: string) => new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", dateStyle: "long" }).format(new Date(date));
+    const scheduledDisclosure = billingSchedule
+      ? `Pay your first ${plan === "annual" ? "year" : "month"} today. Foundations and your 12-month term start ${dateLabel(billingSchedule.serviceStartsAt)}. This payment covers your first ${plan === "annual" ? "year" : "month"}; your next charge is ${dateLabel(billingSchedule.nextChargeAt)}. Cancel before service starts for a full refund. `
+      : reservation.firstChargeAt
       ? `$0 today. Your first payment is on ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", month: "long", day: "numeric", year: "numeric" }).format(reservation.firstChargeAt)}. Your initial term starts on that date. Cancel before then without a fee or charge. `
       : "";
     const billingDisclosure = plan === "monthly"
       ? `Initial 12-month commitment: ${initialTotal} before tax, in 12 monthly payments. Early exit replaces unpaid first-year installments with the lower of $1,500 or that remaining balance. After year one, renews monthly.`
       : `Initial 12-month membership: ${initialTotal} before tax, paid upfront. Renews annually. Turning off the next renewal has no early-exit charge.`;
+    const recurringPrice = billingSchedule ? await stripe.prices.retrieve(priceId) : null;
+    const recurringProduct = recurringPrice ? typeof recurringPrice.product === "string" ? recurringPrice.product : recurringPrice.product.id : null;
+    const lineItems = [{ price: priceId, quantity: 1 }, ...(billingSchedule && recurringProduct ? [{ price_data: {
+      currency: selectedOffer.currency, unit_amount: selectedOffer.amount, tax_behavior: "exclusive" as const, product: recurringProduct,
+    }, quantity: 1 }] : [])];
     const session = await stripe.checkout.sessions.create(
       {
         automatic_tax: { enabled: isStripeTaxEnabled() },
@@ -242,20 +264,22 @@ export async function POST(request: Request) {
         consent_collection: { terms_of_service: "required" },
         custom_text: {
           terms_of_service_acceptance: { message: termsMessage },
-          submit: { message: `${scheduledDisclosure}${billingDisclosure} Applicable tax is added. US members only. Manage renewal or early exit in My Ruined > Membership billing. Refund requests are reviewed individually; contact connect@theruinedproject.com.` },
+          submit: { message: `${scheduledDisclosure}${billingDisclosure} Applicable tax is added. US members only. Manage renewal or early exit in My Ruined > Membership billing. ${billingSchedule ? "After service begins, refund requests are reviewed individually." : "Refund requests are reviewed individually; contact connect@theruinedproject.com."}` },
         },
         expires_at: Math.floor(reservation.expiresAt.getTime() / 1_000),
         integration_identifier: "ruined_my_qvksnctb",
-        line_items: [{ price: priceId, quantity: 1 }],
+        line_items: lineItems,
         metadata,
         mode: "subscription",
         origin_context: "web",
         payment_method_collection: "always",
         redirect_on_completion: "always",
-        return_url: reservation.firstChargeAt
+        return_url: reservation.firstChargeAt || billingSchedule
           ? `${applicationOrigin}/my/activate?checkout=returned`
           : `${applicationOrigin}/my/join/complete?session_id={CHECKOUT_SESSION_ID}`,
         subscription_data: { billing_mode: { type: "flexible" }, metadata,
+          ...(billingSchedule ? { trial_end: Date.parse(billingSchedule.prepaidThrough) / 1000,
+            trial_settings: { end_behavior: { missing_payment_method: "cancel" as const } } } : {}),
           ...(reservation.firstChargeAt ? { billing_cycle_anchor: Math.floor(reservation.firstChargeAt.getTime() / 1_000), proration_behavior: "none" as const } : {}),
         },
         ui_mode: "embedded_page",

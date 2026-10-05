@@ -17,7 +17,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
   assert.match(checkoutRoute, /const viewer = await getCurrentPlatformViewer\(\)/);
   assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
   assert.match(checkoutRoute, /validateStripeMembershipOfferPrice\(commercial\.offerId\)/);
-  assert.match(checkoutRoute, /line_items:\s*\[\{ price: priceId, quantity: 1 \}\]/);
+  assert.match(checkoutRoute, /line_items:\s*lineItems/);
   assert.doesNotMatch(requestType, /email|price|priceId|amount|quantity/i);
   assert.doesNotMatch(checkoutRoute, /body\.(email|price|priceId|amount|quantity)/);
   assert.match(checkoutRoute, /automatic_tax:\s*\{ enabled: isStripeTaxEnabled\(\) \}/);
@@ -27,7 +27,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
   assert.match(checkoutRoute, /redirect_on_completion:\s*"always"/);
   assert.match(
     checkoutRoute,
-    /return_url:\s*reservation\.firstChargeAt\s*\?\s*`\$\{applicationOrigin\}\/my\/activate\?checkout=returned`\s*:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
+    /return_url:\s*reservation\.firstChargeAt\s*\|\|\s*billingSchedule\s*\?\s*`\$\{applicationOrigin\}\/my\/activate\?checkout=returned`\s*:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
   );
   assert.doesNotMatch(checkoutRoute, /\b(?:success_url|cancel_url|payment_method_types)\s*:/);
   assert.doesNotMatch(checkoutRoute, /reservation\.stripeCustomerId/);
