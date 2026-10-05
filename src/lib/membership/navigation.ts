@@ -5,7 +5,7 @@ export const MEMBER_DESTINATIONS = [
   { href: "/my/artifacts", label: "Artifacts", group: "Your record", keywords: "awards earned coin collection fulfillment tracking" },
   { href: "/my/foundations/timeline", label: "Foundations timeline", group: "Your membership", keywords: "private exercise life story journey export carousel" },
   { href: "/my/circle", label: "Circle", group: "Your membership", keywords: "people shaper chat google meet group" },
-  { href: "/my/experiences", label: "Experiences", group: "Your membership", keywords: "events calendar meetings rsvp attend" },
+  { href: "/my/experiences", label: "Calendar", group: "Your membership", keywords: "events experiences calendar meetings calls rsvp attend" },
   { href: "/my/foundations", label: "Foundations", group: "Your membership", keywords: "start progress course reflection" },
   { href: "/my/learn", label: "Academy", group: "Your membership", keywords: "learn training videos library lessons courses" },
   { href: "/my/updates", label: "Updates", group: "Your membership", keywords: "notifications announcements unread messages inbox" },
@@ -29,7 +29,7 @@ export const MEMBER_PRIMARY_DESTINATIONS = [
   { href: "/my", label: "Profile", icon: "person" },
   { href: "/my/circle", label: "My Circle", icon: "circle" },
   { href: "/my/foundations", label: "Foundations", icon: "book" },
-  { href: "/my/experiences", label: "Events", icon: "calendar" },
+  { href: "/my/experiences", label: "Calendar", icon: "calendar" },
 ] as const;
 
 export function currentMemberPrimaryDestination(pathname: string): string | undefined {

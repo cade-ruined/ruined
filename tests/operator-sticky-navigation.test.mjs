@@ -106,7 +106,7 @@ test("open workspace panel fits the viewport and preserves 44px link targets", (
   assert.match(panel.props.className, /max-h-\[calc\(100dvh-var\(--ruined-header-height\)-1.5rem\)\]/);
   assert.match(panel.props.className, /overflow-y-auto.*overscroll-contain/);
   const links = descendants(panel).filter((node) => node.props?.href);
-  assert.equal(links.length, 13);
+  assert.equal(links.length, 14);
   for (const link of links) assert.match(link.props.className, /min-h-11/);
   assert.equal(links.filter((link) => link.props["aria-current"] === "page").length, 1);
 });

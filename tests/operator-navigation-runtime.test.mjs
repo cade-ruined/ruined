@@ -59,7 +59,7 @@ const render = (element) => parseFragment(renderToStaticMarkup(element));
 const renderNavigation = (path, role = "ops_admin", open = true) => render(React.createElement(open ? OpenOperationsNavigation : OperationsNavigation, {
   configuration: connected, operatorRole: role, pathname: path, viewerLabel: "operator@example.test",
 }));
-const sharedRoutes = ["/ops", "/ops/members", "/ops/circles", "/ops/foundations", "/ops/experiences", "/ops/work"];
+const sharedRoutes = ["/ops", "/ops/members", "/ops/circles", "/ops/foundations", "/ops/experiences", "/ops/work", "/ops/sops"];
 const adminRoutes = ["/ops/leadership", "/ops/operators", "/ops/academy", "/ops/artifacts", "/ops/support", "/ops/messages", "/ops/system"];
 
 test("workspace links preserve native link behavior and start the selected page below the fixed header", () => {
@@ -96,7 +96,7 @@ test("workspace links preserve native link behavior and start the selected page 
 
 test("workspace navigation preserves exactly the existing shared and Administrator-only destinations", () => {
   const admin = getOperationsNavigation("ops_admin");
-  assert.deepEqual(admin.map((group) => group.label), ["Overview", "People", "Circles", "Events", "Learning", "Artifacts", "Messages", "Settings"]);
+  assert.deepEqual(admin.map((group) => group.label), ["Overview", "People", "Circles", "Events", "Learning", "SOPs", "Artifacts", "Messages", "Settings"]);
   assert.deepEqual(admin.flatMap((group) => group.items.map((item) => item.href)).sort(), [...sharedRoutes, ...adminRoutes].sort());
   for (const role of ["circle_leader", "guide"]) {
     assert.deepEqual(getOperationsNavigation(role).flatMap((group) => group.items.map((item) => item.href)).sort(), sharedRoutes.toSorted());
@@ -118,6 +118,10 @@ test("exact and nested locations select one section/page without prefix collisio
   assert.equal(getOperationsLocation("/ops/registrations", groups).item.label, "Members");
   assert.equal(getOperationsLocation("/ops/experiences/event-id/attendance", groups).group.label, "Events");
   assert.equal(getOperationsLocation("/ops/operators?memberId=example#record", groups).item.label, "Operators");
+  assert.equal(getOperationsLocation("/ops/sops?category=membership", groups).group.label, "SOPs");
+  assert.equal(getOperationsLocation("/ops/sops/procedure-id", getOperationsNavigation("guide")).item.label, "SOPs");
+  assert.equal(getOperationsLocation("/ops/sops/procedure-id", getOperationsNavigation("circle_leader")).item.label, "SOPs");
+  assert.equal(isOperationsPathCurrent("/ops/sops-other", "/ops/sops"), false);
   assert.equal(isOperationsPathCurrent("/ops/memberships", "/ops/members"), false);
   assert.equal(isOperationsPathCurrent("/ops/work", "/ops"), false);
   assert.equal(getOperationsLocation("/ops/operators", getOperationsNavigation("guide")), null);

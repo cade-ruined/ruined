@@ -28,7 +28,7 @@ const expectedDestinations = {
   "/my/artifacts": "Artifacts",
   "/my/foundations/timeline": "Foundations timeline",
   "/my/circle": "Circle",
-  "/my/experiences": "Experiences",
+  "/my/experiences": "Calendar",
   "/my/foundations": "Foundations",
   "/my/learn": "Academy",
   "/my/updates": "Updates",
