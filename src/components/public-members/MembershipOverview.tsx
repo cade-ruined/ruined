@@ -82,7 +82,7 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
       </div>
     </section>
 
-    {!invitation && <MembershipOpportunityCalls />}
+    <MembershipOpportunityCalls />
 
     <section className={styles.meetRuined} id="inside-membership" aria-labelledby="inside-heading">
       <button className={styles.featureFilmTrigger} type="button" onClick={openFilm} aria-label="Play Meet Ruined, 2 minutes 15 seconds">

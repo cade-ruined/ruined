@@ -4,7 +4,7 @@ import test from "node:test";
 import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
-import { parseFragment } from "parse5";
+import { parseFragment, serializeOuter } from "parse5";
 import ts from "typescript";
 
 const base = "src/components/public-members/";
@@ -465,20 +465,41 @@ const issuedInvitation = {
   card: { name: "Cade <Sender>", memberTag: "cade", wearSeed: "inviter-wear", labels: [] },
 };
 
-test("public landing pairs each opportunity call with its own calendar controls and keeps invitations focused", async () => {
+test("all landing entry points share the public sections and both opportunity calls with calendar controls", async () => {
   const c = await components();
   const descendants = node => [node, ...(node.childNodes ?? []).flatMap(descendants)];
   const attr = (node, name) => node.attrs?.find(attribute => attribute.name === name)?.value;
   const content = node => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(content).join("");
+  const sharedSections = [
+    ...["membership-title", "inside-membership", "opportunity-calls", "how-it-works", "foundations", "monthly-work", "circles"].map(id => [id, node => attr(node, "id") === id]),
+    ...["heroDescription", "finalNote"].map(className => [className, node => attr(node, "class")?.split(" ").includes(className)]),
+    ["film player", node => node.nodeName === "dialog" && attr(node, "aria-label") === "Ruined membership film"],
+  ];
   const expected = [
     { date: "Tuesday, October 6", start: "2026-10-06T18:00:00-06:00", dates: "20261007T000000Z/20261007T010000Z", meet: "https://meet.google.com/ekx-qtsb-nqt", file: "/calendar/ruined-opportunity-call-2026-10-06.ics" },
     { date: "Tuesday, October 13", start: "2026-10-13T18:00:00-06:00", dates: "20261014T000000Z/20261014T010000Z", meet: "https://meet.google.com/top-uaii-ofh", file: "/calendar/ruined-opportunity-call-2026-10-13.ics" },
   ];
-  for (const props of [{}, { signupEnabled: true }, { signupEnabled: true, paymentSetupOnly: true, registrationOnly: true }]) {
+  const variants = [
+    ["public waitlist", {}],
+    ["public paid signup", { signupEnabled: true }],
+    ["public registration", { signupEnabled: true, paymentSetupOnly: true, registrationOnly: true }],
+    ["personal invitation", { invitation: issuedInvitation, paymentSetupOnly: true, registrationOnly: true }],
+    ["shared invitation", { invitation: { ...issuedInvitation, recipientName: undefined }, signupEnabled: true }],
+    ["complimentary invitation", { invitation: { ...issuedInvitation, membershipType: "complimentary" }, paymentSetupOnly: true, registrationOnly: true }],
+  ];
+  let publicSections;
+  for (const [variant, props] of variants) {
     const html = renderToStaticMarkup(React.createElement(c.Overview, props));
     const elements = descendants(parseFragment(html));
+    const currentSections = sharedSections.map(([name, matches]) => {
+      const matchesFound = elements.filter(matches);
+      assert.equal(matchesFound.length, 1, `${variant} includes one ${name} section`);
+      return [name, serializeOuter(matchesFound[0])];
+    });
+    publicSections ??= currentSections;
+    assert.deepEqual(currentSections, publicSections, `${variant} keeps the same public content, media, and controls`);
     const sections = elements.filter(node => attr(node, "id") === "opportunity-calls");
-    assert.equal(sections.length, 1, "public landing modes show one call section");
+    assert.equal(sections.length, 1, `${variant} shows one call section`);
     const articles = descendants(sections[0]).filter(node => node.nodeName === "article");
     assert.equal(articles.length, 2);
     assert.deepEqual(elements.filter(node => node.nodeName === "a" && attr(node, "href")?.startsWith("https://meet.google.com/")).map(node => attr(node, "href")), expected.map(call => call.meet));
@@ -506,10 +527,6 @@ test("public landing pairs each opportunity call with its own calendar controls 
       assert.ok(download, "each call has its matching Apple / Outlook calendar file");
       assert.equal(attr(download, "download"), "");
     }
-  }
-  for (const invitation of [issuedInvitation, { ...issuedInvitation, recipientName: undefined }]) {
-    const html = renderToStaticMarkup(React.createElement(c.Overview, { invitation, signupEnabled: true }));
-    assert.doesNotMatch(html, /id="opportunity-calls"|meet\.google\.com|calendar\.google\.com|Add to calendar/, "personal and shared invitations retain their existing acceptance destination");
   }
 });
 
