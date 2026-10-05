@@ -14,12 +14,21 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: Request, { params }: { params: Promise<{ taskId: string }> }) {
   const access = await requireOpsMutationRequest(request);
   if ("response" in access) return access.response;
-  const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
+  const body: unknown = await request.json().catch(() => null);
   const { taskId } = await params;
 
   try {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new OpsOperatingRepositoryError("invalid_request", "Provide a task action and current version.");
+    }
+    const input = body as Record<string, unknown>;
+    if (typeof input.action !== "string" || typeof input.expectedVersion !== "number"
+      || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
+      throw new OpsOperatingRepositoryError("invalid_request", "Provide a task action and current version.");
+    }
     const task = await transitionOpsTask({
-      action: typeof body?.action === "string" ? body.action : "",
+      action: input.action,
+      expectedVersion: input.expectedVersion,
       actorAuthUserId: access.viewer.authUserId,
       taskId,
     });

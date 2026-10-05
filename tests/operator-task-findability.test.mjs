@@ -379,7 +379,7 @@ test("all five Artifact preview forms return before form reads or requests", asy
 
 test("task, retry and production actions are no-request previews; Block tasks stay closed until requested", async () => {
   for (const [name, props] of [
-    ["OperatorTaskAction", { state: "open", taskId: "task-1" }],
+    ["OperatorTaskAction", { state: "open", taskId: "task-1", claimedByName: null, claimedByCurrentOperator: false, expectedVersion: 1 }],
     ["OperatorWorkflowRetryAction", { workflowActionId: "retry-1" }],
     ["OperatorArtifactAction", { artifactJobId: "job-1", state: "in_production" }],
   ]) {
@@ -397,9 +397,9 @@ test("task, retry and production actions are no-request previews; Block tasks st
 });
 
 test("connected task and retry actions retain their original requests", async () => {
-  const task = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { state: "open", taskId: "task-1", preview: false });
+  const task = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { state: "open", taskId: "task-1", claimedByName: null, claimedByCurrentOperator: false, expectedVersion: 3, preview: false });
   await nodes(task.draw()).find((node) => node.type === "button" && reactText(node) === "Claim").props.onClick();
-  assert.deepEqual(task.calls, [{ url: "/api/ops/tasks/task-1", method: "PATCH", body: { action: "claim" } }]);
+  assert.deepEqual(task.calls, [{ url: "/api/ops/tasks/task-1", method: "PATCH", body: { action: "claim", expectedVersion: 3 } }]);
   const retry = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorWorkflowRetryAction", { workflowActionId: "retry-1" });
   await nodes(retry.draw()).find((node) => node.type === "button").props.onClick();
   assert.deepEqual(retry.calls, [{ url: "/api/ops/workflow-actions/retry-1/retry", method: "POST", body: {} }]);
@@ -436,4 +436,118 @@ test("preview routes pass guards through every exposed action surface without lo
     }
   }
   assert.deepEqual(reads, []);
+});
+
+const taskProps = { state: "open", taskId: "task-one", claimedByName: null, claimedByCurrentOperator: false, expectedVersion: 4 };
+const taskButtons = fixture => nodes(fixture.draw()).filter(node => node.type === "button");
+const taskButton = (fixture, label) => taskButtons(fixture).find(node => reactText(node) === label);
+
+test("task actions require ownership: unclaimed only Claim, own Complete and Unclaim, other claimants no mutations", () => {
+  const cases = [
+    [{}, ["Claim"]],
+    [{ state: "in_progress" }, []],
+    [{ claimedByName: "Libby Zaritsky" }, []],
+    [{ claimedByName: "Libby Zaritsky", state: "in_progress" }, []],
+    [{ claimedByName: "Alex Morgan", claimedByCurrentOperator: true }, ["Complete", "Unclaim"]],
+    [{ claimedByName: "Alex Morgan", claimedByCurrentOperator: true, state: "in_progress" }, ["Complete", "Unclaim"]],
+    [{ claimedByName: "Alex Morgan", claimedByCurrentOperator: true, state: "blocked" }, ["Unclaim"]],
+    [{ claimedByName: "Libby Zaritsky", state: "blocked" }, []],
+    [{ state: "blocked" }, []],
+    [{ state: "completed", claimedByName: "Libby Zaritsky" }, ["Reopen"]],
+    [{ state: "cancelled", claimedByName: "Alex Morgan", claimedByCurrentOperator: true }, []],
+  ];
+  for (const [props, expected] of cases) {
+    const f = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { ...taskProps, ...props });
+    assert.deepEqual(taskButtons(f).map(reactText), expected, JSON.stringify(props));
+    for (const button of taskButtons(f)) assert.match(button.props.className, /min-h-11/, "actions retain mobile tap size");
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test("claim, complete, unclaim and reopen send the current version and wait for refreshed task props", async () => {
+  const cases = [
+    [{}, "Claim", "claim"],
+    [{ claimedByName: "Alex Morgan", claimedByCurrentOperator: true, state: "in_progress" }, "Complete", "complete"],
+    [{ claimedByName: "Alex Morgan", claimedByCurrentOperator: true, state: "blocked" }, "Unclaim", "unclaim"],
+    [{ state: "completed", claimedByName: "Libby Zaritsky" }, "Reopen", "reopen"],
+  ];
+  for (const [props, label, action] of cases) {
+    const f = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { ...taskProps, ...props });
+    const before = taskButton(f, label);
+    await before.props.onClick();
+    assert.deepEqual(f.calls, [{ url: "/api/ops/tasks/task-one", method: "PATCH", body: { action, expectedVersion: 4 } }]);
+    assert.equal(f.refreshes(), 1);
+    assert.equal(taskButton(f, label).props.disabled, true, "the old version remains disabled while server props refresh");
+    await before.props.onClick();
+    assert.equal(f.calls.length, 1, "a stale click handler cannot submit the same successful version twice");
+  }
+});
+
+test("task mutation blocks same-tick double clicks and different actions while in flight", async () => {
+  let resolve;
+  const f = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { ...taskProps, claimedByName: "Alex Morgan", claimedByCurrentOperator: true }, () => new Promise(done => { resolve = done; }));
+  const complete = taskButton(f, "Complete"), unclaim = taskButton(f, "Unclaim");
+  const first = complete.props.onClick();
+  await complete.props.onClick();
+  await unclaim.props.onClick();
+  assert.equal(f.calls.length, 1);
+  assert.ok(taskButtons(f).every(button => button.props.disabled));
+  resolve({ ok: true, json: async () => ({}) }); await first;
+  assert.equal(f.refreshes(), 1);
+});
+
+test("stale claim versions refresh with an actionable message and require the new owner and version", async () => {
+  const props = { ...taskProps };
+  const f = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", props, async () => ({ ok: false, status: 409, json: async () => ({ error: "Version changed" }) }));
+  await taskButton(f, "Claim").props.onClick();
+  assert.equal(f.refreshes(), 1);
+  assert.match(reactText(f.draw()), /review its latest owner and status before trying again/);
+  assert.equal(taskButton(f, "Claim").props.disabled, true);
+  taskButton(f, "Refresh queue").props.onClick();
+  assert.equal(f.refreshes(), 2);
+  props.expectedVersion = 5; props.claimedByName = "Libby Zaritsky"; props.state = "in_progress";
+  assert.deepEqual(taskButtons(f).map(reactText), [], "updated ownership removes all competing actions");
+  assert.doesNotMatch(reactText(f.draw()), /This task changed|Refreshing the queue/, "a fresh version clears the stale action message");
+  props.expectedVersion = 6; props.claimedByName = null; props.state = "open";
+  assert.equal(taskButton(f, "Claim").props.disabled, false);
+  await taskButton(f, "Claim").props.onClick();
+  assert.equal(f.calls[1].body.expectedVersion, 6);
+});
+
+test("task transport errors leave retry available and previews never claim, complete, unclaim or reopen", async () => {
+  const failed = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { ...taskProps }, async () => { throw new Error("Network unavailable. Try again."); });
+  await taskButton(failed, "Claim").props.onClick();
+  assert.match(reactText(failed.draw()), /Network unavailable/);
+  assert.equal(taskButton(failed, "Claim").props.disabled, false);
+  await taskButton(failed, "Claim").props.onClick();
+  assert.equal(failed.calls.length, 2);
+  for (const props of [{}, { claimedByName: "Alex Morgan", claimedByCurrentOperator: true }, { claimedByName: "Alex Morgan", claimedByCurrentOperator: true, state: "blocked" }, { state: "completed" }]) {
+    const f = harness("src/components/platform/OperatorWorkActions.tsx", "OperatorTaskAction", { ...taskProps, ...props, preview: true });
+    for (const button of taskButtons(f)) await button.props.onClick();
+    assert.deepEqual(f.calls, []);
+    assert.equal(f.refreshes(), 0);
+    assert.match(reactText(f.draw()), /Preview only/);
+  }
+});
+
+test("work queue shows full claimant names and passes exact ownership and version to task controls", () => {
+  const queue = preview.PREVIEW_OPS_WORK_QUEUE;
+  const f = harness("src/components/platform/OperatorWorkQueue.tsx", "default", { queue, preview: true });
+  assert.match(reactText(f.draw()), /Claimed by Libby Zaritsky/);
+  assert.match(reactText(f.draw()), /Claimed by Alex Morgan/);
+  assert.match(reactText(f.draw()), /Unclaimed/);
+  const controls = nodes(f.draw()).filter(node => node.type?.name === "OperatorTaskAction");
+  assert.equal(controls.length, 3);
+  for (const control of controls) {
+    const item = queue.items.find(item => item.workId === control.props.taskId);
+    assert.equal(control.props.claimedByName, item.claimedByName);
+    assert.equal(control.props.claimedByCurrentOperator, item.claimedByCurrentOperator);
+    assert.equal(control.props.expectedVersion, item.version);
+    assert.equal(control.props.preview, true);
+  }
+  const html = renderToStaticMarkup(React.createElement(component("OperatorWorkQueue"), { queue, preview: true }));
+  assert.match(html, /Claimed by Libby Zaritsky/);
+  assert.equal((html.match(/>Complete<\/button>/g) ?? []).length, 1);
+  assert.equal((html.match(/>Unclaim<\/button>/g) ?? []).length, 1);
+  assert.equal((html.match(/>Claim<\/button>/g) ?? []).length, 1);
 });

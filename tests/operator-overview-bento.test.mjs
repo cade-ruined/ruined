@@ -124,3 +124,14 @@ test("empty data is described honestly and every label target and search action 
   assert.equal(attr(search, "method"), "get");
   assert.ok(all.some((node) => node.tagName === "label" && attr(node, "for") === "overview-member-search"));
 });
+
+test("priority tasks show claimant full names and distinguish unclaimed work without leaking identifiers", () => {
+  const priorityWork = [
+    { kind: "task", workId: "task-one", memberId: "member-one", label: "Help member", state: "in_progress", claimedByName: "Libby Zaritsky", claimedByCurrentOperator: false, version: 2 },
+    { kind: "task", workId: "task-two", memberId: "member-two", label: "Review profile", state: "open", claimedByName: null, claimedByCurrentOperator: false, version: 1 },
+  ];
+  const tree = render({ ...data, priorityWork });
+  assert.match(text(region(tree, "priority-work-heading")), /Claimed by Libby Zaritsky/);
+  assert.match(text(region(tree, "priority-work-heading")), /Unclaimed/);
+  assert.doesNotMatch(text(region(tree, "priority-work-heading")), /task-one|task-two|version/);
+});

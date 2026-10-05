@@ -219,6 +219,9 @@ export type OpsWorkItem =
   | {
       dueAt: string | null;
       kind: "task";
+      claimedByName: string | null;
+      claimedByCurrentOperator: boolean;
+      version: number;
       taskType?: string;
       description?: string | null;
       label: string;

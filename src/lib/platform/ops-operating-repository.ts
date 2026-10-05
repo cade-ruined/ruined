@@ -843,10 +843,16 @@ export async function getOpsMemberOperatingRecord(
             task.status as state,
             task.due_at,
             task.completed_at,
-            coalesce(assignee_profile.preferred_name, assignee_profile.display_name) as assigned_to
+            case when task.assigned_to_auth_user_id is null then null else coalesce(
+              nullif(btrim(assignee_profile.display_name), ''),
+              nullif(btrim(assignee_legacy_profile.display_name), ''),
+              nullif(btrim(assignee_profile.preferred_name), ''),
+              'Operator'
+            ) end as assigned_to
           from operator_tasks task
           left join platform_users assignee on assignee.auth_user_id = task.assigned_to_auth_user_id
           left join person_profiles assignee_profile on assignee_profile.person_id = assignee.person_id
+          left join user_profiles assignee_legacy_profile on assignee_legacy_profile.auth_user_id = assignee.auth_user_id
           where task.member_id = ${memberId}::uuid
           order by
             case task.status when 'open' then 0 when 'in_progress' then 1 when 'blocked' then 2 else 3 end,
@@ -1222,6 +1228,9 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
     const access = await requireOperatorAccess(tx, actorAuthUserId);
     const isAdmin = access.roles.includes("ops_admin");
     const taskRows = isAdmin ? await tx<Array<{
+      assigned_to_auth_user_id: string | null;
+      claimed_by_name: string | null;
+      version: number | string;
       due_at: Date | string | null;
       member_id: string | null;
       member_name: string | null;
@@ -1234,6 +1243,14 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
     }>>`
       select
         task.id as task_id,
+        task.assigned_to_auth_user_id,
+        task.version,
+        case when task.assigned_to_auth_user_id is null then null else coalesce(
+          nullif(btrim(assignee_profile.display_name), ''),
+          nullif(btrim(assignee_legacy_profile.display_name), ''),
+          nullif(btrim(assignee_profile.preferred_name), ''),
+          'Operator'
+        ) end as claimed_by_name,
         task.task_type,
         task.description,
         task.title,
@@ -1245,6 +1262,9 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       from operator_tasks task
       left join ruined_members member on member.id = task.member_id
       left join person_profiles profile on profile.person_id = member.person_id
+      left join platform_users assignee on assignee.auth_user_id = task.assigned_to_auth_user_id
+      left join person_profiles assignee_profile on assignee_profile.person_id = assignee.person_id
+      left join user_profiles assignee_legacy_profile on assignee_legacy_profile.auth_user_id = assignee.auth_user_id
       where task.status in ('open', 'in_progress', 'blocked')
         and (
           ${isAdmin}
@@ -1343,6 +1363,9 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       ...taskRows.map((row): OpsWorkItem => ({
         dueAt: asIso(row.due_at),
         kind: "task",
+        claimedByName: row.claimed_by_name,
+        claimedByCurrentOperator: row.assigned_to_auth_user_id === access.authUserId,
+        version: Number(row.version),
         taskType: row.task_type,
         description: row.description,
         label: row.title,
@@ -1863,6 +1886,9 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
 
     const priorityWorkRows = isAdmin
       ? await tx<Array<{
+          assigned_to_auth_user_id: string | null;
+          claimed_by_name: string | null;
+          task_version: number | string | null;
           due_at: Date | string | null;
           error_code: string | null;
           kind: "artifact" | "task" | "workflow_failure";
@@ -1886,10 +1912,21 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               end as priority,
               task.status as state,
               task.due_at,
-              null::text as error_code
+              null::text as error_code,
+              task.assigned_to_auth_user_id,
+              case when task.assigned_to_auth_user_id is null then null else coalesce(
+                nullif(btrim(assignee_profile.display_name), ''),
+                nullif(btrim(assignee_legacy_profile.display_name), ''),
+                nullif(btrim(assignee_profile.preferred_name), ''),
+                'Operator'
+              ) end as claimed_by_name,
+              task.version as task_version
             from operator_tasks task
             left join ruined_members member on member.id = task.member_id
             left join person_profiles profile on profile.person_id = member.person_id
+            left join platform_users assignee on assignee.auth_user_id = task.assigned_to_auth_user_id
+            left join person_profiles assignee_profile on assignee_profile.person_id = assignee.person_id
+            left join user_profiles assignee_legacy_profile on assignee_legacy_profile.auth_user_id = assignee.auth_user_id
             where task.status in ('open', 'in_progress', 'blocked')
 
             union all
@@ -1903,7 +1940,10 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               job.priority,
               job.status,
               job.due_at,
-              null::text
+              null::text,
+              null::uuid,
+              null::text,
+              null::bigint
             from artifact_jobs job
             join ruined_members member on member.id = job.member_id
             left join person_profiles profile on profile.person_id = member.person_id
@@ -1923,7 +1963,10 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               case when action.status = 'dead_letter' then 100 else 80 end,
               action.status,
               action.updated_at,
-              latest_attempt.error_code
+              latest_attempt.error_code,
+              null::uuid,
+              null::text,
+              null::bigint
             from workflow_actions action
             join domain_events domain_event on domain_event.id = action.domain_event_id
             left join ruined_members member on member.id = domain_event.member_id
@@ -2062,6 +2105,9 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         return {
           dueAt: asIso(row.due_at),
           kind: "task",
+          claimedByName: row.claimed_by_name,
+          claimedByCurrentOperator: row.assigned_to_auth_user_id === access.authUserId,
+          version: Number(row.task_version),
           label: row.label,
           memberId: row.member_id,
           memberName: row.member_name,
@@ -3040,11 +3086,15 @@ export async function createOpsTask(input: {
 export async function transitionOpsTask(input: {
   action: string;
   actorAuthUserId: string;
+  expectedVersion: number;
   taskId: string;
 }) {
   const taskId = requireUuid(input.taskId, "Task");
-  if (!new Set(["claim", "complete", "reopen"]).has(input.action)) {
+  if (!new Set(["claim", "unclaim", "complete", "reopen"]).has(input.action)) {
     throw new OpsOperatingRepositoryError("invalid_request", "Choose a valid task action.");
+  }
+  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
+    throw new OpsOperatingRepositoryError("invalid_request", "Provide the current task version.");
   }
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
@@ -3053,45 +3103,56 @@ export async function transitionOpsTask(input: {
       requireAdmin: true,
     });
     const taskRows = await tx<Array<{
+      assigned_to_auth_user_id: string | null;
       circle_id: string | null;
       member_id: string | null;
       status: string;
       version: number | string;
     }>>`
-      select member_id, circle_id, status, version
+      select assigned_to_auth_user_id, member_id, circle_id, status, version
       from operator_tasks
       where id = ${taskId}::uuid
       for update
     `;
     const task = taskRows[0];
     if (!task) throw new OpsOperatingRepositoryError("not_found", "Task not found.");
-    const nextState = input.action === "claim" ? "in_progress" : input.action === "complete" ? "completed" : "open";
+    if (Number(task.version) !== input.expectedVersion) {
+      throw new OpsOperatingRepositoryError("conflict", "The task changed. Refresh and review its current owner before trying again.");
+    }
     const valid = input.action === "claim"
-      ? task.status === "open"
+      ? task.status === "open" && task.assigned_to_auth_user_id === null
       : input.action === "complete"
         ? new Set(["open", "in_progress"]).has(task.status)
-        : task.status === "completed";
+        : input.action === "unclaim"
+          ? new Set(["open", "in_progress", "blocked"]).has(task.status)
+          : task.status === "completed";
     if (!valid) {
-      throw new OpsOperatingRepositoryError("conflict", "That task action is not available from its current state.");
+      throw new OpsOperatingRepositoryError("conflict", "That task action is not available from its current state or ownership.");
     }
+    if (input.action === "complete" || input.action === "unclaim") {
+      if (task.assigned_to_auth_user_id === null) {
+        throw new OpsOperatingRepositoryError("conflict", "Claim this task before updating it.");
+      }
+      if (task.assigned_to_auth_user_id !== access.authUserId) {
+        throw new OpsOperatingRepositoryError("forbidden", "Only the person who claimed this task can complete or unclaim it.");
+      }
+    }
+    const nextState = input.action === "claim" ? "in_progress"
+      : input.action === "complete" ? "completed"
+        : input.action === "unclaim" && task.status === "blocked" ? "blocked" : "open";
+    const nextAssignee = input.action === "claim" ? access.authUserId
+      : input.action === "unclaim" || input.action === "reopen" ? null : task.assigned_to_auth_user_id;
 
     const updatedRows = await tx<Array<{ completed_at: Date | string | null; version: number | string }>>`
       update operator_tasks
       set
         status = ${nextState},
-        assigned_to_auth_user_id = case
-          when ${input.action} = 'claim' then ${access.authUserId}::uuid
-          else assigned_to_auth_user_id
-        end,
-        completed_at = case
-          when ${nextState} = 'completed' then statement_timestamp()
-          when ${nextState} = 'open' then null
-          else completed_at
-        end,
+        assigned_to_auth_user_id = ${nextAssignee}::uuid,
+        completed_at = case when ${nextState} = 'completed' then statement_timestamp() else null end,
         version = version + 1,
         updated_at = statement_timestamp()
       where id = ${taskId}::uuid
-        and version = ${Number(task.version)}
+        and version = ${input.expectedVersion}
       returning completed_at, version
     `;
     if (!updatedRows[0]) throw new OpsOperatingRepositoryError("conflict", "The task changed. Refresh and try again.");
@@ -3111,15 +3172,19 @@ export async function transitionOpsTask(input: {
         ${task.status},
         ${nextState},
         ${access.authUserId}::uuid,
-        ${tx.json({ action: input.action })},
+        ${tx.json({
+          action: input.action,
+          previousAssignedToAuthUserId: task.assigned_to_auth_user_id,
+          assignedToAuthUserId: nextAssignee,
+        })},
         ${randomUUID()}
       )
     `;
     await writeAudit(tx, {
       action: `task.${input.action}`,
       actorAuthUserId: access.authUserId,
-      after: { state: nextState, version: Number(updatedRows[0].version) },
-      before: { state: task.status, version: Number(task.version) },
+      after: { assignedToAuthUserId: nextAssignee, state: nextState, version: Number(updatedRows[0].version) },
+      before: { assignedToAuthUserId: task.assigned_to_auth_user_id, state: task.status, version: Number(task.version) },
       memberId: task.member_id,
       subjectId: taskId,
       subjectType: "operator_task",

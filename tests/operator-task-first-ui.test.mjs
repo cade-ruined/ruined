@@ -272,7 +272,11 @@ test("member record action anchors have visible authorized destinations and neve
     "@/components/platform/OperatorProgress": { __esModule: true, default: component },
     "@/components/platform/StateLabel": { __esModule: true, default: component },
   }).default;
+  record.operational.tasks[0].assignedTo = "Libby Zaritsky";
   const tree = Record({ record, preview: true, publicProfileHref: "/journal/consented-profile" });
+  assert.match(text(tree), /Claimed by Libby Zaritsky/);
+  const unclaimed = Record({ record: { ...record, operational: { ...record.operational, tasks: [{ ...record.operational.tasks[0], assignedTo: null }] } } });
+  assert.match(text(unclaimed), /Unclaimed/);
   const list = nodes(tree);
   const publicLink = list.find(node => text(node) === "View public profile ↗");
   assert.equal(publicLink.props.href, "/journal/consented-profile");

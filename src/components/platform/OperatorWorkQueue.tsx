@@ -69,6 +69,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
                   </Link>
                 ) : "System work"}
               </p>
+              {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-black/75">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</p> : null}
               {item.kind === "task" && item.taskType === "registration.billing_review" && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-black/60">{item.description}</p> : null}
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/55">
                 <span className="capitalize">{item.kind.replaceAll("_", " ")}</span>
@@ -78,7 +79,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
               </div>
             </div>
             {item.kind === "task" ? (
-              <OperatorTaskAction state={item.state} taskId={item.workId} preview={preview} />
+              <OperatorTaskAction state={item.state} taskId={item.workId} claimedByName={item.claimedByName} claimedByCurrentOperator={item.claimedByCurrentOperator} expectedVersion={item.version} preview={preview} />
             ) : item.kind === "workflow_failure" ? (
               item.state === "failed" ? (
                 <OperatorWorkflowRetryAction workflowActionId={item.workId} preview={preview} />

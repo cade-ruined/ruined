@@ -174,6 +174,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
                     <span>{item.memberName ?? (item.kind === "workflow_failure" ? "System" : "Operations")}</span>
                     <StateLabel state={item.state} />
                   </span>
+                  {item.kind === "task" ? <span className="break-words text-xs font-medium text-black/65">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</span> : null}
                 </Link>
               ))}
               {data.priorityWork.length === 0 ? <p className="py-2 text-sm text-black/55">{openWork > 0 ? "Open the work queue to review pending items." : "No open work."}</p> : null}

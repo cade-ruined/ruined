@@ -447,7 +447,7 @@ export default function OperatorMemberRecord({
                 <div className="grid gap-3 rounded-lg bg-black/[0.025] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center" key={task.taskId}>
                   <div>
                     <p className="font-medium">{task.title}</p>
-                    <p className="mt-2 text-sm text-black/45">Due {formatDate(task.dueAt)} · {task.assignedTo ?? "Unassigned"}</p>
+                    <p className="mt-2 text-sm text-black/45">Due {formatDate(task.dueAt)} · {task.assignedTo ? `Claimed by ${task.assignedTo}` : "Unclaimed"}</p>
                   </div>
                   <StateLabel state={task.state} />
                 </div>

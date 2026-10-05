@@ -11,7 +11,7 @@ export function GET(request: Request) {
   const url = new URL(request.url);
   const message = createWorkQueueDigestEmail({
     queue: {
-      items: [{ kind: "task", taskType: "registration.billing_review", label: "Card saved — billing opening pending", memberId: "preview-01", memberName: "Example member", priority: 50, state: "blocked", dueAt: null, workId: "sample-registration-review" }, ...PREVIEW_OPS_WORK_QUEUE.items],
+      items: [{ kind: "task", taskType: "registration.billing_review", label: "Card saved — billing opening pending", memberId: "preview-01", memberName: "Example member", priority: 50, state: "blocked", dueAt: null, workId: "sample-registration-review", claimedByName: null, claimedByCurrentOperator: false, version: 1 }, ...PREVIEW_OPS_WORK_QUEUE.items],
       totals: { ...PREVIEW_OPS_WORK_QUEUE.totals, tasks: PREVIEW_OPS_WORK_QUEUE.totals.tasks + 1 },
     },
     slot: { localDate: "2026-10-05", localHour: 10, timeZone: "America/Denver", scheduledFor: "2026-10-05T16:00:00.000Z" },

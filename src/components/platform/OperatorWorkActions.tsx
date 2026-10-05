@@ -11,6 +11,10 @@ import {
 } from "@/components/platform/operatorStyles";
 import type { OpsAnnouncementAudienceOptions, OpsAnnouncementSummary } from "@/lib/platform/ops-model";
 
+class OperatorActionError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 async function actionRequest(url: string, body: unknown, method = "POST") {
   const response = await fetch(url, {
     body: JSON.stringify(body),
@@ -19,42 +23,74 @@ async function actionRequest(url: string, body: unknown, method = "POST") {
   });
   const result = (await response.json().catch(() => null)) as { error?: unknown } | null;
   if (!response.ok) {
-    throw new Error(typeof result?.error === "string" ? result.error : "The action could not be completed.");
+    throw new OperatorActionError(typeof result?.error === "string" ? result.error : "The action could not be completed.", response.status);
   }
 }
 
-export function OperatorTaskAction({ state, taskId, preview = false }: { state: string; taskId: string; preview?: boolean }) {
+export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurrentOperator, expectedVersion, preview = false }: {
+  state: string;
+  taskId: string;
+  claimedByName: string | null;
+  claimedByCurrentOperator: boolean;
+  expectedVersion: number;
+  preview?: boolean;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [messageVersion, setMessageVersion] = useState(expectedVersion);
   const [submitting, setSubmitting] = useState(false);
+  const [settledVersion, setSettledVersion] = useState<number | null>(null);
+  const [conflictVersion, setConflictVersion] = useState<number | null>(null);
+  const pending = useRef(false);
+  const submittedVersion = useRef<number | null>(null);
+  const canClaim = state === "open" && claimedByName === null && !claimedByCurrentOperator;
+  const canComplete = claimedByCurrentOperator && (state === "open" || state === "in_progress");
+  const canUnclaim = claimedByCurrentOperator && (state === "open" || state === "in_progress" || state === "blocked");
+  const disabled = submitting || settledVersion === expectedVersion;
+  const conflicted = conflictVersion === expectedVersion;
 
-  async function act(action: "claim" | "complete" | "reopen") {
+  async function act(action: "claim" | "unclaim" | "complete" | "reopen") {
+    if (pending.current || submittedVersion.current === expectedVersion) return;
+    if ((action === "claim" && !canClaim) || (action === "complete" && !canComplete)
+      || (action === "unclaim" && !canUnclaim) || (action === "reopen" && state !== "completed")) return;
+    setMessageVersion(expectedVersion);
     if (preview) { setMessage("Preview only — the task was not changed."); return; }
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+      setMessage("Refresh the queue before updating this task."); router.refresh(); return;
+    }
+    pending.current = true;
     setSubmitting(true);
     setMessage("");
     try {
-      await actionRequest(`/api/ops/tasks/${taskId}`, { action }, "PATCH");
-      setMessage(action === "complete" ? "Task completed." : action === "claim" ? "Task claimed." : "Task reopened.");
+      await actionRequest(`/api/ops/tasks/${taskId}`, { action, expectedVersion }, "PATCH");
+      submittedVersion.current = expectedVersion;
+      setSettledVersion(expectedVersion);
+      setMessage(action === "complete" ? "Task completed." : action === "claim" ? "Task claimed." : action === "unclaim" ? "Task unclaimed. Another operator can take it." : "Task reopened and unclaimed.");
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "The task could not be updated.");
+      if (error instanceof OperatorActionError && error.status === 409) {
+        submittedVersion.current = expectedVersion;
+        setSettledVersion(expectedVersion);
+        setConflictVersion(expectedVersion);
+        setMessage("This task changed. Refreshing the queue—review its latest owner and status before trying again.");
+        router.refresh();
+      } else {
+        setMessage(error instanceof Error ? error.message : "The task could not be updated. Try again.");
+      }
     } finally {
+      pending.current = false;
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <span aria-live="polite" className="text-xs text-black/42">{message}</span>
-      {state === "open" ? (
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => act("claim")} type="button">Claim</button>
-      ) : null}
-      {state === "open" || state === "in_progress" ? (
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => act("complete")} type="button">Complete</button>
-      ) : null}
-      {state === "completed" ? (
-        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => act("reopen")} type="button">Reopen</button>
-      ) : null}
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" aria-busy={submitting}>
+      {message && messageVersion === expectedVersion ? <p role="status" className="w-full max-w-md text-sm leading-relaxed text-black/60 sm:text-right">{message}</p> : null}
+      {canClaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("claim")} type="button">Claim</button> : null}
+      {canComplete ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("complete")} type="button">Complete</button> : null}
+      {canUnclaim ? <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
+      {state === "completed" ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("reopen")} type="button">Reopen</button> : null}
+      {conflicted ? <button className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" onClick={() => router.refresh()} type="button">Refresh queue</button> : null}
     </div>
   );
 }
