@@ -7,7 +7,7 @@ import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_EXPERIENCES } from "@/lib/membership/preview";
 import { getMemberExperiences } from "@/lib/membership/repository";
 
-export const metadata: Metadata = { title: "Experiences | Ruined Membership" };
+export const metadata: Metadata = { title: "Calendar | Ruined Membership" };
 export const dynamic = "force-dynamic";
 
 export default async function MyExperiencesPage() {

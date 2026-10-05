@@ -33,6 +33,9 @@ const OPERATIONS_NAVIGATION: OperationsNavigationGroup[] = [
     { href: "/ops/foundations", label: "Foundations", task: "Review Foundations progress" },
     { href: "/ops/academy", label: "Academy", task: "Organize training videos", adminOnly: true },
   ] },
+  { id: "sops", label: "SOPs", items: [
+    { href: "/ops/sops", label: "SOPs", task: "Find a standard operating procedure" },
+  ] },
   { id: "artifacts", label: "Artifacts", items: [
     { href: "/ops/artifacts", label: "Artifacts", task: "Manage awards and fulfillment", adminOnly: true },
   ] },

@@ -252,7 +252,7 @@ export default function MemberExperiences({
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [view, setView] = useState<"list" | "calendar">("calendar");
   const [detailOpen, setDetailOpen] = useState(false);
 
   const allExperiences = useMemo(
@@ -411,16 +411,16 @@ export default function MemberExperiences({
     <main className={`member-journey-page member-events-page ${styles.page}`} data-member-experiences>
       <header className={styles.header}>
         <p className={`member-handwritten ${styles.kicker}`}>Come together</p>
-        <h1 className="member-page-title">Be there.</h1>
-        <p className={styles.intro}>A few reasons to get out of your head.</p>
+        <h1 className="member-page-title">Calendar</h1>
+        <p className={styles.intro}>Your calls, Circle meetings, and Ruined gatherings.</p>
       </header>
 
       <section aria-label="Browse events" className={styles.browse}>
         <div className={styles.sectionHeader}>
           <h2 className={`member-handwritten ${styles.sectionTitle}`}>{view === "list" ? "Upcoming" : "Your calendar"}</h2>
-          <div aria-label="Event view" className={styles.viewSwitch}>
-            <button aria-pressed={view === "list"} onClick={() => setView("list")} type="button">List</button>
+          <div aria-label="Calendar view" className={styles.viewSwitch}>
             <button aria-pressed={view === "calendar"} onClick={() => setView("calendar")} type="button">Calendar</button>
+            <button aria-pressed={view === "list"} onClick={() => setView("list")} type="button">List</button>
           </div>
         </div>
         {view === "list" ? (
