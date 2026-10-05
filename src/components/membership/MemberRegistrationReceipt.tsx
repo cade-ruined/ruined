@@ -11,10 +11,11 @@ type Props = {
   requiresPaymentMethod: boolean;
   foundingPricing?: RegistrationFoundingPricing | null;
   preview?: boolean;
+  activationAvailable?: boolean;
 };
 
 /** Registration is confirmed by the server before this receipt is rendered. */
-export default function MemberRegistrationReceipt({ email, registeredAt, requiresPaymentMethod, foundingPricing, preview = false }: Props) {
+export default function MemberRegistrationReceipt({ email, registeredAt, requiresPaymentMethod, foundingPricing, preview = false, activationAvailable = false }: Props) {
   const founding = requiresPaymentMethod ? registrationFoundingConfirmation(foundingPricing) : null;
   const timestamp = registeredAt ? new Date(registeredAt) : null;
   const date = timestamp && Number.isFinite(timestamp.getTime())
@@ -38,7 +39,7 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
         <p className="mt-2 text-sm">{founding.annual}</p>
         <p className="mt-2 text-xs leading-relaxed">{founding.scope}</p>
         <p className="mt-5 max-w-2xl text-sm leading-relaxed">{founding.retention}</p>
-        <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed">{founding.payment}</p>
+        <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed">Your founding offer is recorded. Billing requires a separate review of your price and terms and your confirmation.</p>
       </section> : null}
       <div className="grid min-w-0 gap-7 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] sm:gap-12">
         <div className="min-w-0">
@@ -48,10 +49,15 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
         </div>
         <div className="border-t border-[var(--member-rule)] pt-5 sm:border-l sm:border-t-0 sm:pl-7 sm:pt-0">
           <p className="text-xs font-semibold uppercase tracking-[0.12em]">Registration saved{date ? <span className="mt-2 block font-normal normal-case tracking-normal">{date}</span> : null}</p>
-          <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{requiresPaymentMethod ? "Your card is saved securely with Stripe. Nothing has been charged, and no subscription has started. You’ll confirm a future checkout before any payment." : "Your complimentary registration is confirmed. No payment card is required."}</p>
+          <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{requiresPaymentMethod ? "Your card is saved securely with Stripe. Saving a card does not authorize a charge. You must separately review your price and confirm membership billing." : "Your complimentary registration is confirmed. No payment card is required."}</p>
           {requiresPaymentMethod ? <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Manage saved card</Link> : null}
         </div>
       </div>
+      {requiresPaymentMethod && activationAvailable ? <div className="mt-8 border-t border-[var(--member-rule)] pt-6">
+        <h2 className="text-xl font-semibold">Membership billing</h2>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Review your membership offer and first payment date, or manage billing you have already confirmed.</p>
+        <Link className="mt-4 inline-flex min-h-12 items-center border border-current px-5 py-3 text-sm font-semibold" href="/my/activate">Review membership billing</Link>
+      </div> : null}
       <RegistrationCouplePreference preview={preview} />
       <div className="mt-8 border-t border-[var(--member-rule)] pt-6"><InstallRuined variant="profile" /></div>
       <a className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="mailto:connect@theruinedproject.com">Need a hand? Contact Ruined</a>

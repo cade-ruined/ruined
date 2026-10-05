@@ -29,13 +29,13 @@ Local database tests cover allocation boundaries, later checkout, continuity, hi
 This document describes the implemented release, not confirmation that it is deployed. Before accepting new registrations:
 
 1. Apply all pending platform migrations in the checked-in runner order, including `20260930140000_member_registration_access.sql`. It intentionally does not backfill existing members. The direct-signup and couples-placement migrations earlier in the runner are also required.
-2. Configure `MEMBERSHIP_REGISTRATION_ONLY_ENABLED=true`. This enrolls only newly created members in durable holds and closes paid Checkout while registration is open. Removing the flag later does not release existing holds.
+2. Configure `MEMBERSHIP_REGISTRATION_ONLY_ENABLED=true`. This enrolls only newly created members in durable holds and closes ordinary paid signup while registration is open. A separately enabled `/my/activate` flow can let completed registrants explicitly authorize the November 1 subscription; see the [activation runbook](membership-first-charge-launch.md). Removing the registration flag later does not release existing holds.
 3. Retain connected Auth/database configuration, the verified Stripe account, secret and webhook, and `STRIPE_MEMBERSHIP_PAYMENT_SETUP_ENABLED=true`. Set `STRIPE_MEMBERSHIP_PAYMENT_SETUP_SIGNUP_ENABLED=true` to allow public Ruined Direct admission. `STRIPE_PAYMENT_SETUP_ACCOUNT_ID` must match the configured Stripe account. Each hold captures the account and test/live mode; a card saved elsewhere cannot satisfy it.
 4. Enable `MEMBER_REGISTRATION_EMAILS_ENABLED=true` with the existing `RESEND_API_KEY`, verified `RESEND_FROM_EMAIL`, and HTTPS `NEXT_PUBLIC_SITE_URL`. The sender stays off by default. Deploy the exact public wordmark, couch image, and invitation artwork referenced by the emails.
 5. Retain `CRON_SECRET` and verify the hosting plan supports the five-minute recovery cron in `vercel.json`. The protected recovery endpoint is `/api/internal/membership/registration-messages`. Completion and activation also attempt delivery immediately after their database transaction commits.
 6. Verify the authentication confirmation and passwordless templates display `{{ .Token }}`. Complete a controlled production registration with an explicitly approved recipient, checking actual code delivery, Stripe saving, receipt, welcome delivery, and blocked profile routes. Separately verify an existing member retains access. Local previews and tests do not prove inbox delivery.
 
-Never enable the intake switch on an old deployment. Deploy the migration, access checks, UI, worker, and configuration together before opening registration publicly. Keep paid release gates closed while using this flow.
+Never enable the intake switch on an old deployment. Deploy the migration, access checks, UI, worker, and configuration together before opening registration publicly. Keep paid release gates closed until the separate activation release is verified. Saving a card remains distinct from that new payment authorization.
 
 ## Later profile release
 
@@ -60,7 +60,7 @@ Apply `20260930200000_registration_eligibility.sql` and then `20260930210000_reg
 - Email messages are queued durably and uniquely per member and event. Provider retries use the same saved payload and idempotency key. Uncertain sends outside the safe replay window become `manual_review`; they are not blindly resent.
 - Welcome delivery waits if a required card has been withdrawn. A delayed welcome is cancelled after profile activation so it cannot arrive after the profile-ready message and say the profile is still closed.
 - Removed, suspended, revoked, or changed-recipient accounts do not receive a stale queued message. Transactional registration emails are separate from newsletter consent.
-- Held members can complete their information and manage card storage. Member pages, APIs, public profile/card visibility, direct Data API access, and paid commercial participation enforce the hold on the server/database.
+- Held members can complete their information and manage card storage. With the separate paid-activation release enabled, completed registrants can accept paid terms and confirm future billing. Member pages, public profile/card visibility and direct Data API access continue to enforce the profile hold; billing authorization does not release it.
 - Roll back application behavior with care: leaving held records in place while deploying pre-hold code would remove application-level protections. Prefer a forward repair. Do not delete holds to reopen admission.
 
 ## Safe local previews

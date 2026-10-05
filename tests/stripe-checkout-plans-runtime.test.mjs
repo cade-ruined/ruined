@@ -65,7 +65,7 @@ function reservation(plan = "monthly", changes = {}) {
 function openSession(plan = "monthly", changes = {}) {
   return { id: "cs_existing", status: "open", mode: "subscription", livemode: false, ui_mode: "embedded_page", shipping_address_collection:{allowed_countries:["US"]}, consent_collection: { terms_of_service: "required" }, custom_text: { terms_of_service_acceptance: { message: "I agree to the [Ruined Membership Agreement](https://members.example.test/membership/agreement/ruined_membership-v2)." } }, metadata: { billing_terms_version: "membership-billing-v2", ruined_offer_id: `individual_${plan}`, ruined_commercial_reservation_id: uuid, ruined_member_id: memberId, ruined_billing_plan: plan, ruined_price_id: configuration[plan], agreement_acceptance_id: uuid }, amount_subtotal: pricing.MEMBERSHIP_PLANS[plan].amount, currency: "usd", client_secret: "safe_test_secret", ...changes };
 }
-async function routeHarness({ reserve, retrieve, validationError, agreementPublished = true, portalError, savedMethod = null, savedMethodError } = {}) {
+async function routeHarness({ reserve, retrieve, validationError, agreementPublished = true, portalError, savedMethod = null, savedMethodError, firstChargeAt = null, activationOnly = false } = {}) {
   const creations = [], expirations = [], opened = [], reserved = [], released = [];
   let requestedPlan = "monthly";
   const stripe = { checkout: { sessions: {
@@ -78,7 +78,7 @@ async function routeHarness({ reserve, retrieve, validationError, agreementPubli
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid, email: "Member@Example.test" }) },
     "@/lib/membership/repository": { getMemberIdentity: async () => ({ membershipFunding: "self" }) },
     "@/lib/membership/commercial-repository": {
-      getCommercialMembershipReservation: async () => ({...reservation(requestedPlan),id:uuid,status:"reserved"}),
+      getCommercialMembershipReservation: async () => ({...reservation(requestedPlan),firstChargeAt,id:uuid,status:"reserved"}),
       releaseCommercialMembershipReservation: async input => released.push(input),
     },
     "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: async () => agreementPublished ? { version: 2, body: "Test-only agreement" } : null },
@@ -91,11 +91,11 @@ async function routeHarness({ reserve, retrieve, validationError, agreementPubli
     } },
     "@/lib/stripe/portal": { validateMembershipPortalConfiguration: async () => { if (portalError) throw portalError; return "bpc_test"; } },
     "@/lib/membership/pricing": pricing,
-    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true, minimumAge: 18 }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: !activationOnly, stripeActivationReady: activationOnly, minimumAge: 18 }) },
     "@/lib/platform/repository": { PlatformAccessDeniedError: class extends Error {}, requireActivePlatformMemberLink: async () => ({ memberId }) },
     "@/lib/stripe/billing-repository": {
       MembershipCheckoutConflictError: CheckoutConflict, MembershipCheckoutPlanConflictError: PlanConflict,
-      reserveMembershipCheckout: async input => { reserved.push(input); return reserve ? reserve(input) : reservation(input.plan); },
+      reserveMembershipCheckout: async input => { reserved.push(input); return reserve ? reserve(input) : reservation(input.plan, {firstChargeAt}); },
       expireMembershipCheckoutAttempt: async id => expirations.push(id),
       openMembershipCheckoutAttempt: async value => opened.push(value),
     },
@@ -269,4 +269,38 @@ test("saved-method verification failure cannot silently create a different billi
   const f = await routeHarness({ savedMethodError: new Error("Wrong Stripe account") });
   assert.equal((await f.post({})).status, 502);
   assert.equal(f.creations.length, 0);
+});
+
+test("scheduled checkout requires the disclosed date and binds no-proration billing to durable consent",async()=>{
+  const firstChargeAt=new Date(Date.now()+7*86400000);
+  const h=await routeHarness({firstChargeAt,activationOnly:true});
+  assert.equal((await h.post({})).status,409);
+  assert.equal((await h.post({firstChargeAt:new Date(firstChargeAt.getTime()+1000).toISOString()})).status,409);
+  assert.equal(h.creations.length,0);
+  const response=await h.post({firstChargeAt:firstChargeAt.toISOString()});
+  assert.equal(response.status,200);
+  const request=h.creations[0];
+  assert.equal(request.params.subscription_data.billing_cycle_anchor,Math.floor(firstChargeAt.getTime()/1000));
+  assert.equal(request.params.subscription_data.proration_behavior,"none");
+  assert.equal(request.params.subscription_data.trial_end,undefined);
+  assert.equal(request.params.metadata.ruined_first_charge_at,firstChargeAt.toISOString());
+  assert.equal(request.params.return_url,"https://members.example.test/my/activate?checkout=returned");
+  assert.match(request.params.custom_text.submit.message,/\$0 today/);
+  assert.match(request.params.custom_text.submit.message,/Cancel before then without a fee or charge/);
+  const immediate=await routeHarness();await immediate.post({});
+  assert.equal(immediate.creations[0].params.subscription_data.billing_cycle_anchor,undefined);
+});
+
+test("resuming scheduled checkout accepts only the same zero-due offer and immutable billing date",async()=>{
+  const firstChargeAt=new Date(Date.now()+7*86400000);
+  const session=openSession();session.amount_subtotal=0;session.metadata.ruined_first_charge_at=firstChargeAt.toISOString();
+  const options={firstChargeAt,reserve:()=>reservation("monthly",{firstChargeAt,existingStripeSessionId:"cs_existing"})};
+  const same=await routeHarness({...options,retrieve:()=>session});
+  assert.equal((await same.post({firstChargeAt:firstChargeAt.toISOString()})).status,200);
+  assert.equal(same.creations.length,0);
+  for(const changes of [{amount_subtotal:49900},{metadata:{...session.metadata,ruined_first_charge_at:"2030-01-01T00:00:00.000Z"}}]){
+    const changed=await routeHarness({...options,retrieve:()=>({...session,...changes})});
+    assert.equal((await changed.post({firstChargeAt:firstChargeAt.toISOString()})).status,409);
+    assert.equal(changed.creations.length,0);
+  }
 });

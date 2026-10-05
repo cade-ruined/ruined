@@ -418,7 +418,7 @@ test("registration receipt preserves charge boundaries, email privacy and a visi
   })).default;
   const render = (requiresPaymentMethod, foundingPricing = null) => renderToStaticMarkup(React.createElement(Receipt, { email: "new@example.test", registeredAt: "2026-09-30T16:00:00Z", requiresPaymentMethod, foundingPricing }));
   const html = render(true);
-  assert.match(html, /You’re registered/); assert.match(html, /no subscription has started/); assert.match(html, /We’ll email/);
+  assert.match(html, /You’re registered/); assert.match(html, /Saving a card does not authorize a charge/); assert.doesNotMatch(html, /no subscription has started/); assert.match(html, /We’ll email/);
   assert.match(html, /Install Ruined/); assert.match(html, /data-variant="profile"/);
   assert.match(html, /data-circle-preference-editor="true"/); assert.match(html, /Registering with your partner/);
   const previewTree = Receipt({ email: "new@example.test", registeredAt: null, requiresPaymentMethod: true, preview: true });
@@ -430,7 +430,7 @@ test("registration receipt preserves charge boundaries, email privacy and a visi
   assert.match(confirmed,/Your Founding rate is locked in/);
   assert.match(confirmed,/\$349\/month/); assert.match(confirmed,/\$3,490\/year/);
   assert.match(confirmed,/Individual membership/); assert.match(confirmed,/applicable tax added at checkout/);
-  assert.match(confirmed,/continuously active/); assert.match(confirmed,/confirm checkout before billing begins/);
+  assert.match(confirmed,/continuously active/); assert.match(confirmed,/Billing requires a separate review of your price and terms and your confirmation/);
   assert.doesNotMatch(render(true),/Founding rate is locked|\$349/);
   assert.doesNotMatch(render(false,foundingPricing),/Founding rate is locked|\$349/);
   assert.doesNotMatch(render(true,{...foundingPricing,confirmed:false}),/Founding rate is locked|\$349/);

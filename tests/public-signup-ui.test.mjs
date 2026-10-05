@@ -105,7 +105,7 @@ test("payment reviews the actual founding offer and resets consent when cadence 
   assert.equal(f.consent(), undefined, "no consent before a durable server quote");
   assert.equal(f.pay(), undefined);
   await f.review().props.onClick();
-  assert.match(content(f.render()), /\$3,490 USD due at signup/);
+  assert.match(content(f.render()), /\$3,490 USD at signup/);
   assert.match(content(f.render()), /Renews annually at \$3,490/);
   assert.match(content(f.render()), /founding rate continues/);
   assert.match(content(f.render()), /Your quoted price is held until/);
@@ -169,5 +169,5 @@ test('a temporarily held founding place gives a retry action and never substitut
  f.responses.push({ok:false,json:async()=>({code:'founding_place_pending',retryable:true,error:'A founding place is temporarily reserved in another checkout. Please try again shortly.'})});
  await f.review().props.onClick();assert.match(content(f.render()),/Please try again shortly/);assert.equal(f.consent(),undefined);assert.equal(f.pay(),undefined);
  const retry=nodes(f.render()).find(node=>node.type==='button'&&/Check founding availability again/.test(content(node)));assert.ok(retry);
- await retry.props.onClick();assert.match(content(f.render()),/Founding individual membership/);assert.match(content(f.render()),/\$349 USD due at signup/);assert.equal(f.consent().props.checked,false);
+ await retry.props.onClick();assert.match(content(f.render()),/Founding individual membership/);assert.match(content(f.render()),/\$349 USD at signup/);assert.equal(f.consent().props.checked,false);
 });

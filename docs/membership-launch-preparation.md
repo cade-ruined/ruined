@@ -1,5 +1,7 @@
 # Membership launch preparation
 
+**Current October 5 plan:** members explicitly confirm paid membership ahead of time; the first charge is November 1, 2026 at midnight America/Denver. Use the [November 1 activation runbook](membership-first-charge-launch.md). It keeps registration-only intake and profile holds in place, opens a separate member-confirmed authorization route, and does not require Stripe Tax. The deployment observations and launch instructions below are historical, not current account or production evidence.
+
 **Historical September 25 snapshot.** The owner revised pricing and cancellation terms on September 28. Use `stripe-policy-setup-2026-09-28.md` and `membership-release-readiness-2026-09-28.md` for current work. The $5,040 annual price below is now archived; it is not the current offer. A separate commercial-readiness gate now blocks both live and test purchases until the revised model is implemented.
 
 Prepared September 25, 2026. **Keep the public waitlist until Cade authorizes the final launch.**

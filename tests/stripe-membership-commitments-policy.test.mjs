@@ -93,3 +93,22 @@ test("turning off renewal needs no invoice ledger or fee even when payment is ov
   assert.equal(earlier.effectiveAt, provider.currentPeriodEnd, "never extend a prior valid cancellation");
   assert.throws(() => policy.quoteMembershipRenewalCancellation(c, { ...provider, livemode: true }, now), /provider_snapshot_required/);
 });
+
+test("prestart cancellation is free for every offer and expires at the immutable start", () => {
+  for (const offer of Object.keys(pricing.MEMBERSHIP_OFFERS)) {
+    const c = contract(offer, { startsAt: "2026-11-01T06:00:00.000Z" });
+    const now = new Date("2026-11-01T05:59:00.000Z");
+    const provider = { subscriptionId: c.subscriptionId, customerId: c.customerId, livemode: false,
+      status: "active", firstChargeAt: c.startsAt, canceledAt: null, observedAt: now.toISOString(), hasInvoices: false, pendingInvoiceItems: false };
+    const quote = policy.quoteMembershipPrestartCancellation(c, provider, now);
+    assert.equal(quote.intent, "cancel_before_start"); assert.equal(quote.buyoutDues, 0); assert.equal(quote.remainingInitialDues, 0);
+    assert.equal(quote.accessThrough, null); assert.equal(quote.effectiveAt, now.toISOString()); assert.equal(quote.expiresAt, c.startsAt);
+    for (const change of [{ status: "canceled" }, { hasInvoices: true }, { pendingInvoiceItems: true }, { customerId: "cus_other" },
+      { livemode: true }, { firstChargeAt: "2026-11-02T06:00:00.000Z" }, { observedAt: "2026-11-01T05:50:00.000Z" }]) {
+      assert.throws(() => policy.quoteMembershipPrestartCancellation(c, { ...provider, ...change }, now), /prestart_cancellation_requires_review/);
+    }
+    assert.throws(() => policy.quoteMembershipPrestartCancellation(c, provider, new Date(c.startsAt)), /prestart_cancellation_requires_review/);
+    assert.throws(() => policy.quoteMembershipRenewalCancellation(c, { ...provider, currentPeriodEnd: c.startsAt }, now), /snapshot_required/);
+    assert.notEqual(policy.cancellationQuoteFingerprint({ ...quote, prestartProviderSnapshot: { ...provider, hasInvoices: true } }), quote.fingerprint);
+  }
+});

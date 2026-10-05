@@ -1,4 +1,4 @@
-import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction, installLegacyPaidActivationFunction } from "./helpers/registration-access-fixture.mjs";
 import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 import assert from "node:assert/strict";
@@ -253,6 +253,7 @@ for (const funding of ["self", "operator", "complimentary"]) test(`entry saves, 
     await db.exec(await readFile(new URL("../db/migrations/20260914181653_operator_complimentary_membership.sql", import.meta.url), "utf8"));
     await installComplimentaryFundingFunctions(db);
     await installRegistrationProfileReleaseFunction(db);
+    await installLegacyPaidActivationFunction(db);
     const complimentaryMigration = await readFile(new URL("../db/migrations/20260925000000_complimentary_member_invitations.sql", import.meta.url), "utf8");
     const completionStart = complimentaryMigration.indexOf("create or replace function private.ruined_validate_member_onboarding_completion(");
     const completionEnd = complimentaryMigration.indexOf("$$;", completionStart);

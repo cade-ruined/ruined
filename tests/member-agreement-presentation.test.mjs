@@ -130,3 +130,23 @@ test("live, missing, and non-test keys never claim that real checkout is a test;
   assert.match(join("pk_live_fixture"), /Review membership offer/);
   assert.doesNotMatch(join("pk_test_fixture", "profile"), /4242|no real charge|Test checkout/);
 });
+
+test("agreement price tables retain every amount in accessible native rows without executing markup", () => {
+  const body = "## Prices\n\n| Plan | First payment | Initial term | Renewal |\n| --- | --- | --- | --- |\n| Founding monthly | **$349** on November 1 | 12 payments: $4,188 | $349 monthly |\n| Annual | $3,490 | 12 months | $3,490 annually |\n\nFollowing paragraph.";
+  const before = createHash("sha256").update(body).digest("hex");
+  const html = renderAgreement(body);
+  assert.equal((html.match(/<table\b/g) ?? []).length, 1);
+  assert.equal((html.match(/<tr\b/g) ?? []).length, 3);
+  assert.equal((html.match(/scope="col"/g) ?? []).length, 4);
+  assert.equal((html.match(/scope="row"/g) ?? []).length, 2);
+  assert.match(html, /\$349<\/strong> on November 1/);
+  assert.match(html, /12 payments: \$4,188/);
+  assert.match(html, /\$3,490 annually/);
+  assert.match(html, /Following paragraph/);
+  assert.doesNotMatch(html, /\| ---|\*\*|## Prices/);
+  assert.equal(createHash("sha256").update(body).digest("hex"), before);
+  assert.match(renderAgreement("| Plan | Value |\n| --- | --- |\n| More | than | columns |"), /More \| than \| columns/);
+  const unsafe = renderAgreement("| Plan | Value |\n| --- | --- |\n| <script>bad()</script> | [click](javascript:bad()) |");
+  assert.doesNotMatch(unsafe, /<script|<a /);
+  assert.match(unsafe, /&lt;script&gt;/);
+});

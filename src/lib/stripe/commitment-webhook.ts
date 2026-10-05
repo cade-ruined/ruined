@@ -7,8 +7,9 @@ import {
   getCommercialBillingGroupBySubscription,
   getCommercialMembershipReservation,
   reconcileCommercialMemberships,
+  releaseScheduledCommercialMembership,
 } from "@/lib/membership/commercial-repository";
-import { updateMemberBillingState, type BillingTransaction } from "./billing-repository";
+import { hasMembershipCheckoutConsent, updateMemberBillingState, type BillingTransaction } from "./billing-repository";
 import type { MembershipState } from "./membership-state";
 import { buildMembershipCommitment, MEMBERSHIP_COMMITMENT_TERMS_VERSION, MembershipCommitmentError } from "./commitment-policy";
 import { createMembershipCommitment, getMembershipCommitment, invalidateMembershipCommitmentLedger } from "./commitment-repository";
@@ -62,6 +63,11 @@ export async function prepareCommitmentInvoiceProjection(tx: BillingTransaction,
     || reservation.stripeSubscriptionId && reservation.stripeSubscriptionId !== subscription.id) {
     throw new MembershipCommitmentError("commercial_consent_identity_mismatch");
   }
+  if ((reservation.firstChargeAt?.toISOString() ?? null) !== (subscription.metadata.ruined_first_charge_at ?? null) ||
+    reservation.firstChargeAt && (subscription.billing_cycle_anchor !== Math.floor(reservation.firstChargeAt.getTime() / 1000) ||
+      input.invoice.lines.data[0]?.period.start < reservation.firstChargeAt.getTime() / 1000)) {
+    throw new MembershipCommitmentError("scheduled_billing_date_mismatch");
+  }
   const memberIds = reservation.participants.map(person => person.memberId).sort();
   await tx`select id from ruined_members where id = any(${memberIds}::uuid[]) order by id for update`;
   await tx`select member_id from member_lifecycle where member_id = any(${memberIds}::uuid[]) order by member_id for update`;
@@ -83,7 +89,7 @@ export async function prepareCommitmentInvoiceProjection(tx: BillingTransaction,
         customerId: id(subscription.customer)!, livemode: subscription.livemode, offerId,
         priceId: subscription.items.data[0].price.id, agreementAcceptanceId: accepted[0].acceptanceId,
         agreementVersion: accepted[0].agreementVersion, agreementContentSha256: accepted[0].agreementContentSha256,
-        acceptedAt: new Date(accepted[0].acceptedAt).toISOString(), startsAt: new Date(subscription.start_date * 1000).toISOString(),
+        acceptedAt: new Date(accepted[0].acceptedAt).toISOString(), startsAt: reservation.firstChargeAt?.toISOString() ?? new Date(subscription.start_date * 1000).toISOString(),
         billingTermsVersion: MEMBERSHIP_COMMITMENT_TERMS_VERSION });
       await createMembershipCommitment(tx, contract, attemptId);
     }
@@ -121,7 +127,12 @@ export async function invalidateCommitmentFromInvoice(tx: BillingTransaction, in
 }
 
 export async function lockCommitmentSubscriptionProjection(tx: BillingTransaction, subscription: Stripe.Subscription): Promise<void> {
-  const group = await getCommercialBillingGroupBySubscription(subscription.id, tx);
+  let group = await getCommercialBillingGroupBySubscription(subscription.id, tx);
+  if (!group && subscription.metadata.ruined_first_charge_at) {
+    const pending = await getCommercialMembershipReservation(subscription.metadata.ruined_commercial_reservation_id, tx);
+    if (pending?.memberId === subscription.metadata.ruined_member_id &&
+      (!pending.stripeSubscriptionId || pending.stripeSubscriptionId === subscription.id)) group = pending;
+  }
   if (group) {
     const memberIds = group.participants.map(participant => participant.memberId).sort();
     await tx`select id from ruined_members where id = any(${memberIds}::uuid[]) order by id for update`;
@@ -145,4 +156,73 @@ export async function invalidateCommitmentFromPaymentAdjustment(tx: BillingTrans
     handled = await invalidateCommitmentFromInvoice(tx, invoice, event) || handled;
   }
   return handled;
+}
+
+/** A member-confirmed $0 Checkout establishes the future contract and permits
+ * cancellation. It never calls paid activation or advances member access. */
+export async function prepareScheduledMembershipProjection(tx: BillingTransaction, input: {
+  subscription: Stripe.Subscription; session: Stripe.Checkout.Session; memberId: string;
+}): Promise<void> {
+  const { subscription, session, memberId } = input;
+  const reservationId = subscription.metadata.ruined_commercial_reservation_id;
+  const reservation = await getCommercialMembershipReservation(reservationId, tx);
+  // An earlier canceled-subscription webhook may have already released this
+  // same scheduled reservation. A late Checkout completion must not reopen it.
+  if (reservation?.status === "released" && reservation.stripeSubscriptionId === subscription.id && subscription.status === "canceled") return;
+  if (!reservation?.firstChargeAt || reservation.memberId !== memberId ||
+    reservation.id !== subscription.metadata.ruined_checkout_attempt_id || reservation.offerId !== subscription.metadata.ruined_offer_id ||
+    reservation.stripePriceId !== subscription.items.data[0]?.price.id ||
+    reservation.stripeSubscriptionId && reservation.stripeSubscriptionId !== subscription.id ||
+    subscription.metadata.billing_terms_version !== MEMBERSHIP_COMMITMENT_TERMS_VERSION ||
+    subscription.metadata.ruined_first_charge_at !== reservation.firstChargeAt.toISOString() ||
+    subscription.billing_cycle_anchor !== Math.floor(reservation.firstChargeAt.getTime() / 1000) || subscription.trial_end ||
+    session.metadata?.ruined_first_charge_at !== reservation.firstChargeAt.toISOString() ||
+    session.metadata?.ruined_commercial_reservation_id !== reservation.id ||
+    session.metadata?.ruined_checkout_attempt_id !== reservation.id ||
+    session.metadata?.agreement_acceptance_id !== subscription.metadata.agreement_acceptance_id ||
+    session.metadata?.ruined_member_id !== memberId || session.metadata?.ruined_price_id !== reservation.stripePriceId ||
+    session.mode !== "subscription" || session.status !== "complete" || session.payment_status !== "no_payment_required" ||
+    session.amount_total !== 0 || session.livemode !== subscription.livemode ||
+    session.consent?.terms_of_service !== "accepted" || id(session.subscription) !== subscription.id ||
+    id(session.customer) !== id(subscription.customer) ||
+    !await hasMembershipCheckoutConsent(tx, { memberId, attemptId: reservation.id,
+      acceptanceId: subscription.metadata.agreement_acceptance_id, plan: reservation.plan, priceId: reservation.stripePriceId!,
+      subscriptionId: subscription.id, billingTermsVersion: MEMBERSHIP_COMMITMENT_TERMS_VERSION,
+      offerId: reservation.offerId, commercialReservationId: reservation.id, firstChargeAt: reservation.firstChargeAt.toISOString() })) {
+    throw new MembershipCommitmentError("scheduled_billing_consent_mismatch");
+  }
+  const memberIds = reservation.participants.map(person => person.memberId).sort();
+  await tx`select id from ruined_members where id=any(${memberIds}::uuid[]) order by id for update`;
+  await tx`select member_id from member_lifecycle where member_id=any(${memberIds}::uuid[]) order by member_id for update`;
+  const [accepted] = await tx<Array<{ acceptanceId: string; agreementVersion: string; agreementContentSha256: string; acceptedAt: Date }>>`
+    select acceptance.id as "acceptanceId",acceptance.agreement_key_snapshot || '-v' || acceptance.agreement_version_snapshot::text as "agreementVersion",
+      acceptance.agreement_content_sha256 as "agreementContentSha256",acceptance.accepted_at as "acceptedAt"
+    from stripe_checkout_attempts attempt join membership_agreement_acceptances acceptance on acceptance.id=attempt.agreement_acceptance_id
+    where attempt.id=${reservation.id}::uuid and attempt.member_id=${memberId}::uuid and attempt.first_charge_at=${reservation.firstChargeAt}
+      and attempt.status='completed' and attempt.stripe_subscription_id=${subscription.id}
+  `;
+  if (!accepted) throw new MembershipCommitmentError("scheduled_billing_consent_mismatch");
+  const contract = buildMembershipCommitment({ id: reservation.id,memberId,subscriptionId: subscription.id,
+    customerId: id(subscription.customer)!,livemode: subscription.livemode,offerId: reservation.offerId,
+    priceId: reservation.stripePriceId!,agreementAcceptanceId: accepted.acceptanceId,agreementVersion: accepted.agreementVersion,
+    agreementContentSha256: accepted.agreementContentSha256,acceptedAt: new Date(accepted.acceptedAt).toISOString(),
+    startsAt: reservation.firstChargeAt.toISOString(),billingTermsVersion: MEMBERSHIP_COMMITMENT_TERMS_VERSION });
+  await createMembershipCommitment(tx,contract,reservation.id);
+  await tx`update membership_commercial_reservations set stripe_subscription_id=${subscription.id}
+    where id=${reservation.id}::uuid and status='reserved' and (stripe_subscription_id is null or stripe_subscription_id=${subscription.id})`;
+}
+
+export async function releaseCanceledScheduledMembership(tx: BillingTransaction, subscription: Stripe.Subscription): Promise<boolean> {
+  if (subscription.status !== "canceled" || !subscription.metadata.ruined_first_charge_at) return false;
+  const reservation = await getCommercialMembershipReservation(subscription.metadata.ruined_commercial_reservation_id, tx);
+  if (!reservation?.firstChargeAt || reservation.status === "activated") return false;
+  if (subscription.metadata.ruined_first_charge_at !== reservation.firstChargeAt.toISOString() ||
+    subscription.metadata.ruined_member_id !== reservation.memberId || !subscription.canceled_at ||
+    subscription.canceled_at >= reservation.firstChargeAt.getTime() / 1000 || subscription.latest_invoice) {
+    throw new MembershipCommitmentError("scheduled_cancellation_requires_review");
+  }
+  if (!reservation.stripeSubscriptionId) await tx`update membership_commercial_reservations set stripe_subscription_id=${subscription.id}
+    where id=${reservation.id}::uuid and stripe_subscription_id is null`;
+  await releaseScheduledCommercialMembership({ reservationId: reservation.id,stripeSubscriptionId: subscription.id,canceledAt: new Date(subscription.canceled_at * 1000) },tx);
+  return true;
 }

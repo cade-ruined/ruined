@@ -347,7 +347,10 @@ test("commercial enrollment uses the real schema, current registered people, saf
     assert.equal((await db.query("select count(*)::int as n from stripe_invoices")).rows[0].n, invoicesBefore);
     assert.equal((await db.query("select count(*)::int as n from membership_enrollment_episodes where member_id=any($1::uuid[])", [[a.member,b.member]])).rows[0].n, 0);
     assert.equal((await db.query("select count(*)::int as n from member_registration_access where member_id=any($1::uuid[]) and profile_activated_at is not null", [[a.member,b.member]])).rows[0].n, 0);
-    await assert.rejects(reserve(registeredFounder, 5000), /not open for paid membership/);
+    const heldQuote = await reserve(registeredFounder, 5000);
+    assert.equal(heldQuote.offerId, "founding_individual_monthly", "A completed saved-card registration can confirm billing while profile access stays held");
+    assert.equal((await db.query("select profile_activated_at from member_registration_access where member_id=$1", [registeredFounder.member])).rows[0].profile_activated_at, null);
+    await repository.releaseCommercialMembershipReservation({ reservationId: heldQuote.id, reason: "before_checkout_abandoned" });
     await releaseProfile(registeredFounder); await releaseProfile(registeredStandard);
     const quote = await reserve(registeredFounder, 5001);
     assert.equal(quote.offerId, "founding_individual_monthly", "Checkout honors the earlier confirmed rate after capacity exceeds 50");

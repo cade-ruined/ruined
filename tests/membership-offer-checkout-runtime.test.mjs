@@ -17,10 +17,12 @@ const isUuid = value => typeof value === "string" && /^[0-9a-f-]{36}$/.test(valu
 class Denied extends Error {}
 class OfferError extends Error { constructor(status,message,code) { super(message); this.status=status; this.code=code; } }
 
-async function offerHarness({ signedIn = true, trusted = true, enabled = true, country = "US", funding = "self", readyPair = null, current = null, releaseError = false, pending = false } = {}) {
+async function offerHarness({ signedIn = true, trusted = true, enabled = true, country = "US", funding = "self", readyPair = null, current = null, releaseError = false, pending = false, firstChargeAt = null, activationEnabled = false, oldAttempt = null, oldSession = null } = {}) {
   const calls = { reserved:[], bound:[], released:[], prices:[] };
   const route = await load("app/api/stripe/membership-offer/route.ts", {
     "next/server": response,
+    "@/lib/stripe/billing-repository": { getMembershipCheckoutForReservation:async()=>oldAttempt,expireMembershipCheckoutAttempt:async()=>{} },
+    "@/lib/membership/paid-launch": { getMembershipFirstChargeAt: () => firstChargeAt },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => signedIn ? {authUserId:id(2)} : null },
     "@/lib/membership/repository": { getMemberOnboarding: async () => ({requiredFieldsComplete:true,membershipFunding:funding,profile:{fulfillmentAddress:{countryCode:country}}}) },
     "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: async () => ({version:2}) },
@@ -28,15 +30,15 @@ async function offerHarness({ signedIn = true, trusted = true, enabled = true, c
       CommercialMembershipError: OfferError,
       getReadyCoupleMembershipAuthorization: async () => readyPair,
       getCurrentCommercialMembershipReservation: async () => current,
-      reserveCommercialMembership: async input => { if(pending) throw new OfferError(409,"A founding place is temporarily reserved in another checkout. Please try again shortly.","founding_place_pending"); calls.reserved.push(input); return {id:input.requestId,offerId:`${input.kind === "couple" ? "couple" : "founding_individual"}_${input.plan}`,expiresAt:input.expiresAt,participants:[{memberId:id(1),name:"Member"}]}; },
+      reserveCommercialMembership: async input => { if(pending) throw new OfferError(409,"A founding place is temporarily reserved in another checkout. Please try again shortly.","founding_place_pending"); calls.reserved.push(input); return {id:input.requestId,offerId:`${input.kind === "couple" ? "couple" : "founding_individual"}_${input.plan}`,expiresAt:input.expiresAt,firstChargeAt:input.firstChargeAt,participants:[{memberId:id(1),name:"Member"}]}; },
       bindCommercialMembershipPrice: async input => calls.bound.push(input),
       releaseCommercialMembershipReservation: async input => { if(releaseError) throw Error("Checkout is unresolved"); calls.released.push(input); },
     },
     "@/lib/membership/pricing": pricing,
-    "@/lib/platform/config": {getPlatformConfiguration:()=>({stripeCheckoutReady:enabled})},
+    "@/lib/platform/config": {getPlatformConfiguration:()=>({stripeCheckoutReady:enabled,stripeActivationReady:activationEnabled})},
     "@/lib/platform/repository": {PlatformAccessDeniedError:Denied,requireActivePlatformMemberLink:async()=>({memberId:id(1)})},
     "@/lib/stripe/membership-state": {isUuid},
-    "@/lib/stripe/server": {isTrustedCheckoutOrigin:()=>trusted,getPaidMembershipAgreementVersion:()=>"ruined_membership-v2",validateStripeMembershipOfferPrice:async offerId=>{calls.prices.push(offerId);return `price_${offerId}`;}},
+    "@/lib/stripe/server": {getStripe:()=>({checkout:{sessions:{retrieve:async()=>oldSession}}}),getStripeLivemode:()=>false,isTrustedCheckoutOrigin:()=>trusted,getPaidMembershipAgreementVersion:()=>"ruined_membership-v2",validateStripeMembershipOfferPrice:async offerId=>{calls.prices.push(offerId);return `price_${offerId}`;}},
   });
   return {calls,post:body=>route.POST(new Request("https://members.example.test/api/stripe/membership-offer",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}))};
 }
@@ -132,4 +134,32 @@ test('temporary founding capacity returns a retryable decision without a standar
  const f=await offerHarness({pending:true});const result=await f.post(choice);const payload=await result.json();
  assert.equal(result.status,409);assert.equal(payload.code,'founding_place_pending');assert.equal(payload.retryable,true);
  assert.match(payload.error,/try again shortly/);assert.equal(payload.quote,undefined);assert.equal(f.calls.prices.length,0);assert.equal(f.calls.bound.length,0);
+});
+
+test("scheduled offers disclose and persist the server date while public paid signup remains closed", async () => {
+  const firstChargeAt = new Date(Date.now()+7*86400000);
+  const h = await offerHarness({enabled:false,activationEnabled:true,firstChargeAt});
+  const response = await h.post(choice);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).quote.firstChargeAt,firstChargeAt.toISOString());
+  assert.equal(h.calls.reserved[0].firstChargeAt,firstChargeAt);
+  for (const date of [new Date(Date.now()+30*60000),new Date(Date.now()+40*86400000)]) {
+    const invalid = await offerHarness({firstChargeAt:date});
+    assert.equal((await invalid.post(choice)).status,409);
+    assert.equal(invalid.calls.reserved.length,0);
+  }
+});
+
+test("after the scheduled date only confirmed terminated Checkout releases the old offer",async()=>{
+  const current={id:id(8),firstChargeAt:new Date(Date.now()-60000),kind:"individual",plan:"monthly"};
+  const oldAttempt={id:id(8),status:"open",stripeSessionId:"cs_old"};
+  const oldSession={status:"expired",livemode:false,metadata:{ruined_commercial_reservation_id:id(8),ruined_member_id:id(1)}};
+  const h=await offerHarness({current,oldAttempt,oldSession});
+  const response=await h.post(choice);
+  assert.equal(response.status,200);assert.equal((await response.json()).quote.firstChargeAt,null);
+  assert.deepEqual(h.calls.released,[{reservationId:id(8),reason:"checkout_expired"}]);
+  for(const status of ["open","complete"]){
+    const pending=await offerHarness({current,oldAttempt,oldSession:{...oldSession,status}});
+    assert.equal((await pending.post(choice)).status,409);assert.equal(pending.calls.released.length,0);assert.equal(pending.calls.reserved.length,0);
+  }
 });
