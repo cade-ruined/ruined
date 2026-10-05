@@ -2,16 +2,20 @@ import Image from "next/image";
 import Link from "next/link";
 import RegistrationCouplePreference from "@/components/membership/RegistrationCouplePreference";
 import InstallRuined from "@/components/membership/InstallRuined";
+import type { RegistrationFoundingPricing } from "@/lib/membership/registration-model";
+import { registrationFoundingConfirmation } from "@/lib/membership/registration-pricing-confirmation";
 
 type Props = {
   email: string;
   registeredAt: string | null;
   requiresPaymentMethod: boolean;
+  foundingPricing?: RegistrationFoundingPricing | null;
   preview?: boolean;
 };
 
 /** Registration is confirmed by the server before this receipt is rendered. */
-export default function MemberRegistrationReceipt({ email, registeredAt, requiresPaymentMethod, preview = false }: Props) {
+export default function MemberRegistrationReceipt({ email, registeredAt, requiresPaymentMethod, foundingPricing, preview = false }: Props) {
+  const founding = requiresPaymentMethod ? registrationFoundingConfirmation(foundingPricing) : null;
   const timestamp = registeredAt ? new Date(registeredAt) : null;
   const date = timestamp && Number.isFinite(timestamp.getTime())
     ? new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "America/Denver" }).format(timestamp)
@@ -28,6 +32,14 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
     </header>
     <section className="px-5 py-8 sm:px-10 sm:py-10" aria-label="What happens next">
       {preview ? <p className="mb-6 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">Preview only. No account, card, registration, or email has been created.</p> : null}
+      {founding ? <section className="mb-9 border border-[#23231f] bg-[#ffca2c] p-5 text-[#23231f] shadow-[5px_5px_0_#23231f] sm:p-7" aria-labelledby="founding-rate-confirmed">
+        <h2 id="founding-rate-confirmed" className="text-lg font-semibold sm:text-xl">{founding.heading}</h2>
+        <p className="mt-3 text-[clamp(2rem,8vw,3.25rem)] font-semibold leading-tight tracking-[-0.04em]">{founding.monthly}</p>
+        <p className="mt-2 text-sm">{founding.annual}</p>
+        <p className="mt-2 text-xs leading-relaxed">{founding.scope}</p>
+        <p className="mt-5 max-w-2xl text-sm leading-relaxed">{founding.retention}</p>
+        <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed">{founding.payment}</p>
+      </section> : null}
       <div className="grid min-w-0 gap-7 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] sm:gap-12">
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">Keep an eye on your email.</h2>

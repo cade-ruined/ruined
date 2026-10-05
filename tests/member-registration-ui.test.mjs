@@ -119,6 +119,9 @@ test("receipt requires registered server state and cannot grant access from a UR
   f.setRegistration(registration({ state: "registered", profileComplete: true }));
   const tree = await f.page();
   assert.equal(tree.type, f.Receipt); assert.equal(tree.props.email, "new@example.test"); assert.equal(tree.props.preview, false);
+  const foundingPricing = {confirmed:true,awardedAt:"2026-10-02T18:00:00Z",monthlyAmountCents:34900,annualAmountCents:349000,currency:"usd"};
+  f.setRegistration(registration({state:"registered",profileComplete:true,foundingPricing}));
+  assert.deepEqual((await f.page()).props.foundingPricing,foundingPricing,"Use the server's persisted rate on the receipt");
   f.setRegistration(registration({ state: "registered", profileComplete: true, ready: false }));
   await assert.rejects(f.page, error => error.href === "/my/payment-method");
   f.setRegistration(registration({ state: "activated", profileComplete: true }));
@@ -409,10 +412,11 @@ test("registration receipt preserves charge boundaries, email privacy and a visi
   const Editor = ({ preview }) => React.createElement("div", { "data-circle-preference-editor": true, "data-preview": preview }, "Registering with your partner?");
   const Receipt = (await load("src/components/membership/MemberRegistrationReceipt.tsx", {
     "next/image": Image, "next/link": Link,
+    "@/lib/membership/registration-pricing-confirmation": await load("src/lib/membership/registration-pricing-confirmation.ts"),
     "@/components/membership/RegistrationCouplePreference": Editor,
     "@/components/membership/InstallRuined": ({ variant }) => React.createElement("button", { "data-variant": variant }, "Install Ruined"),
   })).default;
-  const render = requiresPaymentMethod => renderToStaticMarkup(React.createElement(Receipt, { email: "new@example.test", registeredAt: "2026-09-30T16:00:00Z", requiresPaymentMethod }));
+  const render = (requiresPaymentMethod, foundingPricing = null) => renderToStaticMarkup(React.createElement(Receipt, { email: "new@example.test", registeredAt: "2026-09-30T16:00:00Z", requiresPaymentMethod, foundingPricing }));
   const html = render(true);
   assert.match(html, /You’re registered/); assert.match(html, /no subscription has started/); assert.match(html, /We’ll email/);
   assert.match(html, /Install Ruined/); assert.match(html, /data-variant="profile"/);
@@ -421,6 +425,15 @@ test("registration receipt preserves charge boundaries, email privacy and a visi
   assert.equal(nodes(previewTree).find(node => node.type === Editor).props.preview, true);
   assert.doesNotMatch(html, /email (sent|delivered)|href="\/my(?:\"|\/profile|\/circle|\/foundations)/i);
   assert.match(render(false), /No payment card is required/); assert.doesNotMatch(render(false), /Manage saved card|Your card is saved/);
+  const foundingPricing = {confirmed:true,awardedAt:"2026-10-02T18:00:00Z",monthlyAmountCents:34900,annualAmountCents:349000,currency:"usd"};
+  const confirmed = render(true,foundingPricing);
+  assert.match(confirmed,/Your Founding rate is locked in/);
+  assert.match(confirmed,/\$349\/month/); assert.match(confirmed,/\$3,490\/year/);
+  assert.match(confirmed,/Individual membership/); assert.match(confirmed,/applicable tax added at checkout/);
+  assert.match(confirmed,/continuously active/); assert.match(confirmed,/confirm checkout before billing begins/);
+  assert.doesNotMatch(render(true),/Founding rate is locked|\$349/);
+  assert.doesNotMatch(render(false,foundingPricing),/Founding rate is locked|\$349/);
+  assert.doesNotMatch(render(true,{...foundingPricing,confirmed:false}),/Founding rate is locked|\$349/);
 });
 
 test("layout withholds premature badge celebrations and fails navigation closed if registration lookup fails", async () => {

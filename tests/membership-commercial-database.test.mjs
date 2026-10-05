@@ -303,4 +303,133 @@ test("commercial enrollment uses the real schema, current registered people, saf
     await assert.rejects(db.query("update membership_enrollment_episodes set founding_eligible=false where member_id=$1 and ended_at is null", [members[1].member]), /history is immutable/);
     await assert.rejects(db.query("update membership_enrollment_episodes set ended_at=null where member_id=$1", [members[0].member]), /history is immutable/);
   });
+
+  async function savedCardRegistration(who, number) {
+    await db.query(`insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode)
+      values($1,'acct_FoundingFixture',false)`, [who.member]);
+    await db.query(`insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key,source,actor_auth_user_id,evidence)
+      values($1,'privacy','test-registration-documents',now(),$2,'member',$3,$4::jsonb)`, [who.member, `registration-documents-${number}`, who.auth,
+      JSON.stringify({ context: "registration_documents_v1", affirmativeAction: "checkbox_and_submit",
+        membershipTerms: { key: "ruined_registration", sha256: "a".repeat(64) },
+        registrationTermsAccepted: true, paidAgreementAccepted: false, chargeAuthorized: false })]);
+    await db.query(`insert into member_payment_method_accounts(member_id,stripe_account_id,livemode,stripe_customer_id)
+      values($1,'acct_FoundingFixture',false,$2)`, [who.member, `cus_founder${number}`]);
+    await db.query(`insert into member_payment_method_setup_attempts(id,member_id,stripe_account_id,livemode,consent_auth_user_id,
+      consent_version,consent_text,return_origin,expires_at,status,stripe_setup_intent_id)
+      values($1,$2,'acct_FoundingFixture',false,$3,'save-payment-method-v1','TEST ONLY consent','https://example.test',now()+interval '1 day','saved',$4)`,
+      [id(number + 7000), who.member, who.auth, `seti_founder${number}`]);
+    await db.query(`update member_payment_method_accounts set consent_attempt_id=$2,stripe_payment_method_id=$3,
+      payment_method_display='{"type":"card","last4":"4242"}',saved_at=now() where member_id=$1`,
+      [who.member, id(number + 7000), `pm_founder${number}`]);
+  }
+  const completeRegistration = who => db.query(`update member_registration_access set registered_at=clock_timestamp(),
+    completion_basis='saved_card',payment_setup_attempt_id=(select consent_attempt_id from member_payment_method_accounts where member_id=$1)
+    where member_id=$1`, [who.member]);
+  const releaseProfile = who => db.query(`update member_registration_access set profile_activated_at=now(),activated_by_auth_user_id=$2
+    where member_id=$1`, [who.member, id(1001)]);
+
+  let registeredFounder, registeredStandard;
+  await t.test("registration completion serializes the final founding place and its held person is never counted twice", async () => {
+    await db.query("update member_lifecycle set standing_state='inactive'");
+    assert.equal(await occupied(), 0);
+    for (let number = 101; number <= 149; number++) await member(number, { active: true });
+    const a = await member(160), b = await member(161);
+    await savedCardRegistration(a, 160); await savedCardRegistration(b, 161);
+    const invoicesBefore = (await db.query("select count(*)::int as n from stripe_invoices")).rows[0].n;
+    await Promise.all([completeRegistration(a), completeRegistration(b)]);
+    const decisions = (await db.query("select * from member_registration_pricing_decisions where member_id=any($1::uuid[]) order by decided_at", [[a.member,b.member]])).rows;
+    assert.deepEqual(decisions.map(row => row.founding_eligible), [true,false]);
+    assert.deepEqual(decisions.map(row => row.occupied_count_at_decision), [49,50]);
+    assert.deepEqual(decisions.map(row => row.monthly_amount_cents), [34900,null]);
+    assert.deepEqual(decisions.map(row => row.annual_amount_cents), [349000,null]);
+    [registeredFounder,registeredStandard] = decisions[0].member_id === a.member ? [a,b] : [b,a];
+    assert.equal(await occupied(), 51);
+    assert.equal((await db.query("select count(*)::int as n from stripe_invoices")).rows[0].n, invoicesBefore);
+    assert.equal((await db.query("select count(*)::int as n from membership_enrollment_episodes where member_id=any($1::uuid[])", [[a.member,b.member]])).rows[0].n, 0);
+    assert.equal((await db.query("select count(*)::int as n from member_registration_access where member_id=any($1::uuid[]) and profile_activated_at is not null", [[a.member,b.member]])).rows[0].n, 0);
+    await assert.rejects(reserve(registeredFounder, 5000), /not open for paid membership/);
+    await releaseProfile(registeredFounder); await releaseProfile(registeredStandard);
+    const quote = await reserve(registeredFounder, 5001);
+    assert.equal(quote.offerId, "founding_individual_monthly", "Checkout honors the earlier confirmed rate after capacity exceeds 50");
+    assert.equal(await occupied(), 51, "The saved-card registration and its later Checkout occupy one person");
+    await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+    const annual = await reserve(registeredFounder, 5002, { plan: "annual" });
+    assert.equal(annual.offerId, "founding_individual_annual");
+    await repository.releaseCommercialMembershipReservation({ reservationId: annual.id, reason: "before_checkout_abandoned" });
+    const standard = await reserve(registeredStandard, 5003);
+    assert.equal(standard.tier, "individual");
+    await repository.releaseCommercialMembershipReservation({ reservationId: standard.id, reason: "before_checkout_abandoned" });
+  });
+
+  await t.test("confirmed adults retain the couple offer and each occupies one registration place", async () => {
+    await repository.createCoupleMembershipAuthorization({ id: id(5010), memberId: registeredFounder.member, partnerMemberId: registeredStandard.member });
+    await repository.acceptCoupleMembershipAuthorization({ id: id(5010), authUserId: registeredStandard.auth });
+    const quote = await reserve(registeredFounder, 5011, { kind: "couple", partnerMemberId: registeredStandard.member, coupleAuthorizationId: id(5010) });
+    assert.equal(quote.offerId, "couple_monthly");
+    assert.deepEqual(quote.participants.map(person => person.foundingEligible), [true,false]);
+    assert.equal(await occupied(), 51);
+    await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+  });
+
+  await t.test("paid activation consumes the registration hold without a gap and billing attention retains the awarded rate", async () => {
+    const quote = await reserve(registeredFounder, 5015);
+    await repository.bindCommercialMembershipPrice({ reservationId: quote.id, stripePriceId: "price_registration_founder" });
+    await db.query(`insert into stripe_subscriptions(id,member_id,stripe_customer_id,stripe_status,latest_invoice_id,last_event_created,price_id)
+      values('sub_registration_founder',$1,'cus_registration_founder','active','in_registration_founder',1,'price_registration_founder')`, [registeredFounder.member]);
+    await db.query(`insert into stripe_invoices(id,member_id,stripe_subscription_id,purpose,stripe_status,amount_paid,currency,last_event_created)
+      values('in_registration_founder',$1,'sub_registration_founder','membership','paid',34900,'usd',1)`, [registeredFounder.member]);
+    await repository.activateCommercialMembership({ reservationId: quote.id, stripeSubscriptionId: "sub_registration_founder" });
+    assert.equal(await occupied(), 51, "Verified billing awaiting enrollment still occupies exactly one place");
+    await activate(registeredFounder);
+    assert.equal(await occupied(), 51, "Enrollment replaces the intake and Checkout holds without an extra place or gap");
+    await db.query("update member_lifecycle set billing_state='attention_required' where member_id=$1", [registeredFounder.member]);
+    assert.equal(await occupied(), 50, "After enrollment, existing funded-person occupancy rules apply");
+    assert.equal((await repository.getCommercialEnrollment(registeredFounder.member)).foundingEligible, true);
+    assert.equal((await db.query("select private.ruined_registration_founding_pricing_is_current($1) as current", [registeredFounder.member])).rows[0].current, true);
+    await db.query("update member_lifecycle set billing_state='active' where member_id=$1", [registeredFounder.member]);
+    assert.equal(await occupied(), 51);
+  });
+
+  await t.test("ending registered membership records an immutable end and rejoining cannot resurrect its rate", async () => {
+    await db.query("update member_lifecycle set billing_state='ended',standing_state='inactive' where member_id=$1", [registeredFounder.member]);
+    await db.query("update stripe_subscriptions set stripe_status='canceled' where id='sub_registration_founder'");
+    assert.equal(await occupied(), 50);
+    assert.equal((await db.query("select private.ruined_registration_founding_pricing_is_current($1) as current", [registeredFounder.member])).rows[0].current, false);
+    await db.query("update member_lifecycle set standing_state='pre_active' where member_id=$1", [registeredFounder.member]);
+    const quote = await reserve(registeredFounder, 5020);
+    assert.equal(quote.tier, "individual");
+    await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+    await assert.rejects(db.query("delete from member_registration_pricing_endings where member_id=$1", [registeredFounder.member]), /append-only|immutable|cannot|not permitted/i);
+  });
+
+  await t.test("an in-flight final place defers registration instead of recording a wrong permanent price", async () => {
+    await db.query("update member_lifecycle set standing_state='inactive' where member_id=$1", [registeredStandard.member]);
+    assert.equal(await occupied(), 49);
+    const payer = await member(170), registrant = await member(171);
+    const held = await reserve(payer, 5030);
+    await savedCardRegistration(registrant, 171);
+    await assert.rejects(completeRegistration(registrant), { code: "P4205" });
+    const registrationModule = { exports: {} };
+    new Function("require", "module", "exports", "process", ts.transpileModule(await source("src/lib/membership/registration-repository.ts"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText)(name => name === "@/lib/database/server" ? { getApplicationDatabase: () => wrap(db) }
+      : name === "@/lib/platform/config" ? { getPlatformConfiguration: () => ({ stripePaymentSetupReady: false }) }
+      : {}, registrationModule, registrationModule.exports, { env: {} });
+    await assert.rejects(registrationModule.exports.completeMemberRegistration(registrant.auth), { name: "MemberRegistrationError", status: 409 });
+    assert.equal((await db.query("select registered_at from member_registration_access where member_id=$1", [registrant.member])).rows[0].registered_at, null);
+    assert.equal((await db.query("select count(*)::int as n from member_registration_pricing_decisions where member_id=$1", [registrant.member])).rows[0].n, 0);
+    assert.equal((await db.query("select count(*)::int as n from member_registration_messages where member_id=$1", [registrant.member])).rows[0].n, 0);
+    assert.ok((await db.query("select saved_at from member_payment_method_accounts where member_id=$1", [registrant.member])).rows[0].saved_at,
+      "A previously verified saved card is retained for an explicit completion retry");
+    await repository.releaseCommercialMembershipReservation({ reservationId: held.id, reason: "before_checkout_abandoned" });
+    const completed = await registrationModule.exports.completeMemberRegistration(registrant.auth);
+    assert.equal(completed.foundingPricing.monthlyAmountCents, 34900);
+    assert.equal((await db.query("select count(*)::int as n from member_registration_messages where member_id=$1", [registrant.member])).rows[0].n, 1);
+    assert.equal((await db.query("select founding_eligible from member_registration_pricing_decisions where member_id=$1", [registrant.member])).rows[0].founding_eligible, true);
+    assert.equal(await occupied(), 50);
+    const privileges = (await db.query(`select has_table_privilege('authenticated','member_registration_pricing_decisions','select') as read,
+      has_function_privilege('anon','private.ruined_confirm_registration_pricing(uuid)','execute') as allocate,
+      has_function_privilege('authenticated','private.ruined_registration_founding_pricing_is_current(uuid)','execute') as reveal`)).rows[0];
+    assert.deepEqual(privileges, { read: false, allocate: false, reveal: false });
+  });
 });

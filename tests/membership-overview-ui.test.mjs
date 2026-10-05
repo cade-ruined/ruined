@@ -88,6 +88,7 @@ test("landing modes explain the correct next step without registering or chargin
   const waitlist = render({});
   assert.match(waitlist, /Join the waitlist/);
   assert.match(waitlist, /Free to join the waitlist/);
+  assert.doesNotMatch(waitlist, /registration receipt|lock in \$349\/month/);
   assert.match(waitlist, /Joining the waitlist does not start a paid membership or reserve a founding rate/);
   assert.match(waitlist, /aria-label="Membership waitlist"/);
   assert.doesNotMatch(waitlist, /aria-label="Start your Ruined registration"/);
@@ -106,6 +107,7 @@ test("landing modes explain the correct next step without registering or chargin
     assert.match(setup, /explicitly confirm payment/);
     assert.match(setup, /Foundations remains closed until launch/);
     assert.match(setup, /no price or place is reserved/);
+    assert.doesNotMatch(setup, /lock in \$349\/month|registration receipt/);
     assert.doesNotMatch(setup, /aria-label="Membership waitlist"/);
   }
 
@@ -116,7 +118,7 @@ test("landing modes explain the correct next step without registering or chargin
   assert.match(paid, /confirm payment to activate paid membership/);
   assert.match(paid, /12-month initial commitment/);
   assert.match(paid, /lower of \$1,500 or the remaining unpaid installments/);
-  assert.doesNotMatch(paid, /due at signup|No payment is due now|Foundations remains closed until launch/);
+  assert.doesNotMatch(paid, /due at signup|No payment is due now|Foundations remains closed until launch|registration receipt|lock in \$349\/month/);
   assert.deepEqual(requests, []);
 });
 
@@ -267,9 +269,17 @@ test("registration-only landing explains required card saving and a later profil
   assert.doesNotMatch(text(next), /Saving a card is optional|Make your profile/);
   const offer = h.render(c.Offers, { plan: "monthly", onPlanChange() {}, mode: "payment-setup", registrationOnly: true });
   assert.match(text(offer), /Save a card to complete registration/);
+  assert.match(text(offer), /Eligible individuals who complete registration with a verified saved card lock in \$349\/month/);
+  assert.match(text(offer), /Payment requires a separate checkout you choose to complete/);
+  assert.match(text(offer), /first 50 places count current active paid and complimentary members, held checkouts, and completed registrations awaiting membership activation/);
+  assert.match(text(offer), /saving a card alone does not reserve the rate/);
+  assert.match(text(offer), /reserved through your first paid membership activation/);
+  assert.match(text(offer), /couples plans keep their separate price/);
   assert.doesNotMatch(text(offer), /Saving a card is optional/);
   const questions = c.Questions({ mode: "payment-setup", registrationOnly: true });
   assert.match(text(questions), /required to complete standard registration/);
+  assert.match(text(questions), /When is the Founding rate reserved/);
+  assert.match(text(questions), /complete registration with a verified saved card lock in \$349\/month/);
   assert.match(text(questions), /Opening your profile also does not start billing/);
   assert.match(text(questions), /signing in before then shows your registration status/);
 });

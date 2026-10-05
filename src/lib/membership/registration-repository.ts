@@ -3,7 +3,7 @@ import "server-only";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import type { MemberRegistrationSnapshot, OpsMemberRegistration } from "./registration-model";
+import type { MemberRegistrationSnapshot, OpsMemberRegistration, RegistrationFoundingPricing } from "./registration-model";
 
 export class MemberRegistrationError extends Error {
   constructor(readonly status: number, message: string) {
@@ -14,11 +14,13 @@ export class MemberRegistrationError extends Error {
 
 type RegistrationRow = {
   member_id: string; registered_at: Date | string | null; profile_activated_at: Date | string | null;
+  founding_pricing: RegistrationFoundingPricing | null;
   complimentary: boolean; profile_complete: boolean; ready: boolean; version: number | string;
 };
 const iso = (date: Date | string | null) => date ? new Date(date).toISOString() : null;
 const snapshot = (row: RegistrationRow): MemberRegistrationSnapshot => ({
   memberId: row.member_id, state: row.profile_activated_at ? "activated" : row.registered_at ? "registered" : "collecting",
+  foundingPricing: row.founding_pricing ?? null,
   registeredAt: iso(row.registered_at), profileActivatedAt: iso(row.profile_activated_at),
   requiresPaymentMethod: !row.complimentary, profileComplete: row.profile_complete, ready: row.ready, version: Number(row.version),
 });
@@ -50,6 +52,9 @@ async function ownerMemberId(tx: TransactionSql, authUserId: string, allowRestri
 
 async function readRegistration(tx: TransactionSql, memberId: string): Promise<MemberRegistrationSnapshot | null> {
   const [row] = await tx<Array<RegistrationRow>>`select registration.*,
+    case when private.ruined_registration_founding_pricing_is_current(registration.member_id) then jsonb_build_object(
+      'confirmed',true,'awardedAt',pricing.decided_at,'monthlyAmountCents',pricing.monthly_amount_cents,
+      'annualAmountCents',pricing.annual_amount_cents,'currency',pricing.currency) end as founding_pricing,
     (private.ruined_member_has_complimentary_funding(registration.member_id) or private.ruined_member_has_operator_funding(registration.member_id)) as complimentary,
     (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(registration.member_id)
       and (registration.profile_activated_at is not null
@@ -58,6 +63,7 @@ async function readRegistration(tx: TransactionSql, memberId: string): Promise<M
     private.ruined_member_registration_ready(registration.member_id) as ready
     from member_registration_access registration
     join ruined_members member on member.id=registration.member_id
+    left join member_registration_pricing_decisions pricing on pricing.member_id=registration.member_id
     left join person_private_profiles profile on profile.person_id=member.person_id
     left join member_onboardings onboarding on onboarding.member_id=registration.member_id
     where registration.member_id=${memberId}::uuid`;
@@ -97,6 +103,9 @@ export async function reconcileMemberRegistration(tx: TransactionSql, memberId: 
       version=version+1,updated_at=clock_timestamp()
     where member_id=${memberId}::uuid and registered_at is null and private.ruined_member_registration_ready(member_id)
     returning member_id`;
+  // The database trigger pins new completions before this point. Reconcile an
+  // existing historical completion idempotently without queuing another welcome.
+  await tx`select private.ruined_confirm_registration_pricing(${memberId}::uuid)`;
   if (completed) await tx`insert into member_registration_messages(member_id,kind) values(${memberId}::uuid,'welcome')
     on conflict(member_id,kind) do nothing`;
 }
@@ -107,13 +116,20 @@ async function lockRegistrationMember(tx: TransactionSql, memberId: string) {
 }
 
 export async function completeMemberRegistration(authUserId: string): Promise<MemberRegistrationSnapshot | null> {
-  return getApplicationDatabase().begin(async tx => {
-    const memberId = await ownerMemberId(tx, authUserId);
-    await lockRegistrationMember(tx, memberId);
-    await ownerMemberId(tx, authUserId);
-    await reconcileMemberRegistration(tx, memberId);
-    return readRegistration(tx, memberId);
-  });
+  try {
+    return await getApplicationDatabase().begin(async tx => {
+      const memberId = await ownerMemberId(tx, authUserId);
+      await lockRegistrationMember(tx, memberId);
+      await ownerMemberId(tx, authUserId);
+      await reconcileMemberRegistration(tx, memberId);
+      return readRegistration(tx, memberId);
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P4205") {
+      throw new MemberRegistrationError(409, "A Founding place is being confirmed in another checkout. Please try again shortly.");
+    }
+    throw error;
+  }
 }
 
 async function requireAdministrator(tx: TransactionSql, actor: string) {
@@ -135,7 +151,10 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
     await requireAdministrator(tx, actor);
     const rows = await tx<Array<RegistrationRow & { display_name: string; email: string; welcome_status: string | null; profile_ready_status: string | null;
       couple_partner_email: string | null; couple_partner_member_id: string | null }>>`
-      select registration.*,coalesce(nullif(profile.legal_name,''),nullif(public_profile.display_name,''),member.email) as display_name,member.email,
+      select registration.*,case when private.ruined_registration_founding_pricing_is_current(registration.member_id) then jsonb_build_object(
+      'confirmed',true,'awardedAt',pricing.decided_at,'monthlyAmountCents',pricing.monthly_amount_cents,
+      'annualAmountCents',pricing.annual_amount_cents,'currency',pricing.currency) end as founding_pricing,
+        coalesce(nullif(profile.legal_name,''),nullif(public_profile.display_name,''),member.email) as display_name,member.email,
         (private.ruined_member_has_complimentary_funding(member.id) or private.ruined_member_has_operator_funding(member.id)) as complimentary,
         (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(registration.member_id)
       and (registration.profile_activated_at is not null
@@ -146,6 +165,7 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
         couple.partner_email_normalized as couple_partner_email,
         private.ruined_registration_circle_couple_partner(member.id) as couple_partner_member_id
       from member_registration_access registration join ruined_members member on member.id=registration.member_id and member.deleted_at is null
+      left join member_registration_pricing_decisions pricing on pricing.member_id=registration.member_id
       join member_lifecycle lifecycle on lifecycle.member_id=member.id and lifecycle.account_state not in ('closed','suspended')
       left join member_onboardings onboarding on onboarding.member_id=member.id
       left join person_private_profiles profile on profile.person_id=member.person_id

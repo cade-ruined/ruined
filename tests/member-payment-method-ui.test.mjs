@@ -67,7 +67,7 @@ test("saving requires new unchecked save-only consent and never posts checkout o
   assert.ok(nodes(f.render()).some(node => node.props.href === "/my/account" && text(node) === "Do this later"));
   await f.submit(); assert.equal(f.calls.length, 1);
   f.consent().props.onChange({ target: { checked: true } }); await f.submit();
-  assert.deepEqual(f.calls[1], { method: "POST", body: { attemptId: "11111111-1111-4111-8111-111111111111", consentAccepted: true, consentVersion: "save-payment-method-v1" } });
+  assert.deepEqual(f.calls[1], { method: "POST", body: { attemptId: "11111111-1111-4111-8111-111111111111", consentAccepted: true, consentVersion: "save-payment-method-v2" } });
   assert.deepEqual(f.redirects, ["https://checkout.stripe.com/c/pay/setup-fixture"]);
 });
 
@@ -240,6 +240,9 @@ test("new registration requires card setup without offering profile access or an
   assert.match(text(f.render()), /Registration does not open member access/);
   assert.equal(nodes(f.render()).some(node => node.props.href === "/my"), false);
   assert.ok(text(f.render()).includes(paymentModel.PAYMENT_SETUP_CONSENT_TEXT));
+  assert.match(text(f.render()), /Eligible individuals who complete registration with a verified saved card lock in \$349\/month/);
+  assert.match(text(f.render()), /Your receipt confirms any reserved rate\. Couples pricing is separate/);
+  assert.doesNotMatch(text(f.render()), /or reserve an offer/);
   assert.equal(f.consent().props.checked, false);
   assert.equal(nodes(f.render()).some(node => node.props.href === "/my/registered"), false);
   assert.equal(nodes(f.render()).some(node => node.props.href === "/my/account"), false);

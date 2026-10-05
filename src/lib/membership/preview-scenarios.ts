@@ -117,6 +117,10 @@ export function memberRegistrationPreview(scenario: MemberPreviewScenario) {
     requiresPaymentMethod: true,
     profileComplete: scenario !== "registration-info",
     ready: scenario === "registered",
+    foundingPricing: scenario === "registered" ? {
+      confirmed: true as const, awardedAt: "2026-09-30T16:00:00.000Z",
+      monthlyAmountCents: 34_900, annualAmountCents: 349_000, currency: "usd" as const,
+    } : null,
     version: 1,
   };
 }
