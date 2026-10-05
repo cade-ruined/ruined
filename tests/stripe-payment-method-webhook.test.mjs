@@ -1,9 +1,11 @@
+import { prepaidFixtureDependencies } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 
 async function load(path, dependencies = {}) {
+  dependencies = { ...prepaidFixtureDependencies, ...dependencies };
   const code = ts.transpileModule(await readFile(new URL(`../${path}`, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const m = {exports:{}};
   new Function('require','module','exports',code)(name => { assert.ok(name in dependencies, name); return dependencies[name]; }, m, m.exports);

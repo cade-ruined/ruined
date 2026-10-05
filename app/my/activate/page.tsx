@@ -8,6 +8,10 @@ import { getMemberOnboarding } from "@/lib/membership/repository";
 import { getMemberRegistration } from "@/lib/membership/registration-repository";
 import { getMemberSignupPlan } from "@/lib/membership/public-signup-admission";
 import { getMembershipFirstChargeAt } from "@/lib/membership/paid-launch";
+import { isMembershipCohortPrepaymentEnabled } from "@/lib/membership/cohort-prepayment";
+import { createFoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
+import { getCurrentCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
+import { requireActivePlatformMemberLink } from "@/lib/platform/repository";
 import { getStripePublishableKey } from "@/lib/platform/config";
 
 export const metadata: Metadata = { title: "Confirm membership billing | Ruined", robots: { index: false, follow: false } };
@@ -30,7 +34,13 @@ export default async function MembershipActivationPage({ searchParams }: {
   const enabled = !preview && !complimentary && registrationReady && context.data.requiredFieldsComplete && agreementReady &&
     (context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady);
   const initialPlan = context.viewer ? await getMemberSignupPlan(context.viewer.authUserId) ?? "monthly" : "monthly";
-  const firstChargeAt = preview ? "2026-11-01T06:00:00.000Z" : getMembershipFirstChargeAt()?.toISOString() ?? null;
+  const platformUser = context.viewer && !preview ? await requireActivePlatformMemberLink(context.viewer) : null;
+  const currentOffer = platformUser ? await getCurrentCommercialMembershipReservation(platformUser.memberId) : null;
+  const prepaid = isMembershipCohortPrepaymentEnabled();
+  const billingSchedule = currentOffer ? currentOffer.billingSchedule ?? null
+    : prepaid ? createFoundationsBillingSchedule(new Date(), initialPlan) : null;
+  const firstChargeAt = currentOffer ? currentOffer.firstChargeAt?.toISOString() ?? null
+    : billingSchedule ? null : preview ? "2026-11-01T06:00:00.000Z" : getMembershipFirstChargeAt()?.toISOString() ?? null;
   const disabledReason = preview ? "Preview only. No agreement is accepted and no billing is authorized."
     : complimentary ? "Your membership is complimentary. No payment is needed."
       : !registrationReady || !context.data.requiredFieldsComplete ? "Complete your registration before confirming membership billing."
@@ -44,6 +54,7 @@ export default async function MembershipActivationPage({ searchParams }: {
       disabledReason={disabledReason}
       initialPlan={initialPlan}
       firstChargeAt={firstChargeAt}
+      billingSchedule={billingSchedule}
       minimumAge={context.configuration.minimumAge}
       publishableKey={getStripePublishableKey()}
       returnedFromCheckout={parameters.checkout === "returned"}

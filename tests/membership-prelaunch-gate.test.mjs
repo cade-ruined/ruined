@@ -1,3 +1,4 @@
+import { prepaidFixtureDependencies } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -31,6 +32,7 @@ function liveEnvironment(enabled, { commercialReady = "true", mode = "live" } = 
 }
 
 async function load(path, dependencies = {}, env = {}, globals = {}) {
+  dependencies = { ...prepaidFixtureDependencies, ...dependencies };
   const code = ts.transpileModule(await readFile(new URL(`../${path}`, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText;

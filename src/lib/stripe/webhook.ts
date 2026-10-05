@@ -1,6 +1,8 @@
 import "server-only";
 
 import type Stripe from "stripe";
+import { randomUUID } from "node:crypto";
+import { prepaidScheduleFromSubscription } from "@/lib/stripe/prepaid-policy";
 import { reconcileMemberBadgesForStripeEvent } from "@/lib/membership/badge-repository";
 
 import {
@@ -120,6 +122,11 @@ async function handleCheckoutSession(
     throw new Error("Membership Checkout Session is missing its billing identity.");
   }
 
+  if (subscriptionId && session.metadata.ruined_billing_schedule_version) {
+    const current = await getStripe().subscriptions.retrieve(subscriptionId);
+    const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+    await lockCommitmentSubscriptionProjection(tx, current);
+  }
   const member = await ensureBillingMember(tx, {
     agreementAcceptedAt: parseMetadataDate(session.metadata.agreement_accepted_at),
     agreementVersion: session.metadata.agreement_version ?? null,
@@ -150,6 +157,11 @@ async function handleCheckoutSession(
   }
 
 
+  if (session.status === "complete" && subscriptionId && session.metadata.ruined_billing_schedule_version) {
+    const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+    const latestInvoiceId = expandableId(subscription.latest_invoice);
+    if (latestInvoiceId) await handleInvoice(tx, event, await getStripe().invoices.retrieve(latestInvoiceId));
+  }
   return true;
 }
 
@@ -227,6 +239,10 @@ async function handleInvoice(
     if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
       invoice = await getStripe().invoices.retrieve(invoice.id);
     }
+    if (subscription.metadata.ruined_billing_schedule_version) {
+      const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+      await lockCommitmentSubscriptionProjection(tx, subscription);
+    }
     member = await ensureMemberFromSubscription(tx, subscription, invoice.customer_email);
     membershipPriceMatches = matchesMembershipInvoice(invoice, subscription, getMembershipPriceConfiguration());
     const plan = subscription.metadata.ruined_billing_plan;
@@ -242,6 +258,7 @@ async function handleInvoice(
             offerId: subscription.metadata.ruined_offer_id,
             commercialReservationId: subscription.metadata.ruined_commercial_reservation_id,
             firstChargeAt: subscription.metadata.ruined_first_charge_at ?? null,
+            billingSchedule: prepaidScheduleFromSubscription(subscription),
           } : {}),
         });
     }
@@ -285,10 +302,18 @@ async function handleInvoice(
   await upsertSubscription(tx, snapshot);
 
   const v2 = subscription.metadata.billing_terms_version === "membership-billing-v2";
+  const latestInvoiceId = expandableId(subscription.latest_invoice);
+  if (subscription.metadata.ruined_billing_schedule_version && latestInvoiceId && latestInvoiceId !== invoice.id) {
+    return handleInvoice(tx, event, await getStripe().invoices.retrieve(latestInvoiceId));
+  }
   if (v2) {
     const { invalidateCommitmentFromInvoice } = await import("@/lib/stripe/commitment-webhook");
-    await invalidateCommitmentFromInvoice(tx, invoice, event);
-    if (expandableId(subscription.latest_invoice) !== invoice.id) return true; // Old invoices cannot overwrite the current paid projection.
+    if (subscription.metadata.ruined_billing_schedule_version) {
+      const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+      await lockCommitmentSubscriptionProjection(tx, subscription);
+      await tx`select pg_advisory_xact_lock(hashtext('ruined-membership-commercial-eligibility'))`;
+    } else await invalidateCommitmentFromInvoice(tx, invoice, event);
+    if (!subscription.metadata.ruined_billing_schedule_version && expandableId(subscription.latest_invoice) !== invoice.id) return true; // Old invoices cannot overwrite the current paid projection.
   }
   const scheduledFirstCharge = subscription.metadata.ruined_first_charge_at;
   const scheduledPaymentEligible = !scheduledFirstCharge || (Number.isFinite(Date.parse(scheduledFirstCharge)) &&
@@ -312,15 +337,25 @@ async function handleInvoice(
     previousState: member.membershipState,
     subscriptionState: subscription.status as StripeSubscriptionState,
   });
-  const state = applyBillingGuardrails({
+  let state = applyBillingGuardrails({
     hasOperationalProblem: !membershipPriceMatches || taxProblem || paymentProblem,
     state: currentState,
   });
 
-  if (v2 && membershipPriceMatches) {
+  if (v2 && membershipPriceMatches && subscription.metadata.ruined_billing_schedule_version) {
+    const { projectPrepaidMembershipInvoice } = await import("@/lib/stripe/prepaid-webhook");
+    const prepaidState = await projectPrepaidMembershipInvoice(tx, { subscription, invoice, memberId: member.id,
+      eventCreated: event.created, verifiedPayment: verifiedPayment && !taxProblem });
+    if (prepaidState === null) return true;
+    state = prepaidState;
+  } else if (v2 && membershipPriceMatches) {
     const { prepareCommitmentInvoiceProjection } = await import("@/lib/stripe/commitment-webhook");
     await prepareCommitmentInvoiceProjection(tx, { event, subscription, invoice, memberId: member.id,
       paidActivation: verifiedPayment && state === "active" });
+  }
+  if (v2 && subscription.metadata.ruined_billing_schedule_version) {
+    const { invalidateCommitmentFromInvoice } = await import("@/lib/stripe/commitment-webhook");
+    await invalidateCommitmentFromInvoice(tx, invoice, event);
   }
   await updateMemberBillingState(tx, {
     eventCreated: event.created,
@@ -344,6 +379,10 @@ async function handleSubscription(
   // Subscription webhooks can arrive out of order. Reconcile from Stripe's
   // current object instead of toggling access from the stale event snapshot.
   const subscription = await getStripe().subscriptions.retrieve(eventSubscription.id);
+  if (subscription.metadata.ruined_billing_schedule_version) {
+    const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+    await lockCommitmentSubscriptionProjection(tx, subscription);
+  }
   const existing = await findMemberBySubscription(tx, subscription.id);
   const belongsToMembership =
     subscription.metadata.ruined_context === MEMBERSHIP_CONTEXT || Boolean(existing);
@@ -360,6 +399,13 @@ async function handleSubscription(
     throw new Error("Membership subscription has no Stripe Customer.");
   }
   await upsertSubscription(tx, snapshot);
+  if (subscription.metadata.ruined_billing_schedule_version) {
+    const latestInvoiceId = expandableId(subscription.latest_invoice);
+    if (latestInvoiceId) return handleInvoice(tx, event, await getStripe().invoices.retrieve(latestInvoiceId));
+    // A provider status alone cannot confer prepaid membership.
+    await updateMemberBillingState(tx, { eventCreated: event.created, memberId: member.id, sourceEventId: event.id, state: "pending" });
+    return true;
+  }
 
   const taxProblem =
     isStripeTaxEnabled() &&
@@ -457,7 +503,7 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
   const sql = getBillingDatabase();
 
   try {
-    return await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx) => {
       const claim = await claimWebhookEvent(tx, event);
 
       if (claim === "duplicate") {
@@ -475,6 +521,22 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
           && (event.data.object as Stripe.Checkout.Session).mode === "setup");
       return { duplicate: false, handled, ...(setupOnly ? { runMembershipWork: false } : {}) };
     });
+    if (["charge.refunded", "refund.created", "refund.updated", "refund.failed", "charge.dispute.created", "charge.dispute.closed",
+      "credit_note.created", "credit_note.updated", "credit_note.voided"].includes(event.type)) {
+      const object = event.data.object as unknown as { id: string; charge?: string | { id: string }; invoice?: string | { id: string } };
+      const chargeId = event.type === "charge.refunded" ? object.id : expandableId(object.charge);
+      const invoiceId = expandableId(object.invoice);
+      const affected = await sql<Array<{ subscriptionId: string; livemode: boolean }>>`
+        select stripe_subscription_id as "subscriptionId",livemode from stripe_membership_prepaid_proofs
+        where livemode=${event.livemode} and (stripe_charge_id=${chargeId} or stripe_invoice_id=${invoiceId})
+      `;
+      for (const proof of affected) {
+        const { reconcilePrepaidMembershipCancellation } = await import("@/lib/stripe/cancellation-service");
+        await reconcilePrepaidMembershipCancellation(proof);
+        await reconcilePrepaidMembershipSubscription(proof.subscriptionId);
+      }
+    }
+    return result;
   } catch (error) {
     try {
       await recordWebhookFailure(event, error);
@@ -484,4 +546,15 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
     }
     throw error;
   }
+}
+
+/** Internal scheduled reconciliation uses its own source identity. It is not a
+ * Stripe webhook and is never inserted into the signed-provider event inbox. */
+export async function reconcilePrepaidMembershipSubscription(subscriptionId: string): Promise<void> {
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+  if (!subscription.metadata.ruined_billing_schedule_version) return;
+  const source = { id: `prepaid_reconcile:${randomUUID()}`, created: Math.floor(Date.now() / 1000),
+    livemode: subscription.livemode, type: "customer.subscription.updated", data: { object: subscription },
+    object: "event", api_version: "2026-08-26.dahlia", pending_webhooks: 0, request: null } as Stripe.Event;
+  await getBillingDatabase().begin(tx => handleSubscription(tx, source, subscription));
 }

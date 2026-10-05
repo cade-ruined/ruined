@@ -6,12 +6,13 @@ import type Stripe from "stripe";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { getMemberBillingCommitment } from "@/lib/stripe/commitment-account";
 import { getStripe, isStripeTaxEnabled } from "@/lib/stripe/server";
-import { readCommitmentProviderEvidence, readPrestartCancellationEvidence, stripeObjectId, verifyCommitmentSubscription } from "@/lib/stripe/cancellation-provider";
-import { MembershipCommitmentError, quoteMembershipCancellation, quoteMembershipRenewalCancellation, quoteMembershipPrestartCancellation,
+import { readCommitmentProviderEvidence, readPrestartCancellationEvidence, readPrepaidCancellationEvidence, stripeObjectId, verifyCommitmentSubscription } from "@/lib/stripe/cancellation-provider";
+import { MembershipCommitmentError, quoteMembershipCancellation, quoteMembershipRenewalCancellation, quoteMembershipPrestartCancellation, quoteMembershipPrepaidCancellation, quoteMembershipMissedCohortCancellation,
   type MembershipCancellationIntent, type MembershipCancellationQuote, type MembershipCommitment } from "@/lib/stripe/commitment-policy";
 import { completeMembershipCancellation, confirmMembershipBillingStopped, fenceMembershipReplacementInvoice,
   getMembershipCancellation, getMembershipCommitment, markMembershipCancellationNeedsReview,
-  recordCommitmentReconciliation, reserveMembershipCancellation } from "@/lib/stripe/commitment-repository";
+  recordCommitmentReconciliation, reserveMembershipCancellation, fenceMembershipPrepaidRefund, recordMembershipPrepaidRefundEvidence,
+  type MembershipCancellationRecord, type CommitmentPrepaidRefundEvidence } from "@/lib/stripe/commitment-repository";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as postgres.JSONValue;
 const requestOptions = { timeout: 8_000, maxNetworkRetries: 0 };
@@ -20,7 +21,7 @@ type StoredQuote = { id: string; quote: MembershipCancellationQuote; evidence: s
 
 export type PublicCancellationQuote = { id: string; intent: MembershipCancellationIntent; effectiveAt: string;
   accessThrough: string | null; feeDues: number; feeTax: number; feeTotal: number; remainingInitialDues: number | null;
-  initialTermEndsAt: string; expiresAt: string };
+  initialTermEndsAt: string; expiresAt: string; refundAmount?: number };
 
 function renewalSnapshot(subscription: Stripe.Subscription) {
   const item = subscription.items.data[0];
@@ -28,7 +29,7 @@ function renewalSnapshot(subscription: Stripe.Subscription) {
     currentPeriodEnd: new Date(item.current_period_end * 1000).toISOString(),
     cancelAt: subscription.cancel_at ? new Date(subscription.cancel_at * 1000).toISOString()
       : subscription.cancel_at_period_end ? new Date(item.current_period_end * 1000).toISOString() : null,
-    status: subscription.status as "active" | "past_due" | "unpaid" | "canceled", observedAt: new Date().toISOString() };
+    status: subscription.status as "active" | "past_due" | "unpaid" | "canceled" | "trialing", observedAt: new Date().toISOString() };
 }
 
 export async function createMemberCancellationQuote(memberId: string, intent: MembershipCancellationIntent): Promise<PublicCancellationQuote> {
@@ -37,8 +38,13 @@ export async function createMemberCancellationQuote(memberId: string, intent: Me
   const stripe = getStripe(), sql = getBillingDatabase();
   let quote: MembershipCancellationQuote, evidence: string | null = null;
   if (intent === "cancel_before_start") {
-    const provider = await readPrestartCancellationEvidence(contract);
-    quote = quoteMembershipPrestartCancellation(contract, provider.snapshot);
+    if (contract.billingSchedule) {
+      const provider = await readPrepaidCancellationEvidence(contract);
+      quote = quoteMembershipPrepaidCancellation(contract, provider.snapshot);
+    } else {
+      const provider = await readPrestartCancellationEvidence(contract);
+      quote = quoteMembershipPrestartCancellation(contract, provider.snapshot);
+    }
   } else if (intent === "disable_renewal") {
     const subscription = await stripe.subscriptions.retrieve(contract.subscriptionId);
     verifyCommitmentSubscription(subscription, contract);
@@ -80,7 +86,82 @@ export async function createMemberCancellationQuote(memberId: string, intent: Me
       ${evidence},${taxCode},${taxEnabled},${feeTotal},${quote.expiresAt}::timestamptz)`;
   return { id, intent, effectiveAt: quote.effectiveAt, accessThrough: quote.accessThrough, feeDues: quote.buyoutDues,
     feeTax: feeTotal - quote.buyoutDues, feeTotal, remainingInitialDues: quote.remainingInitialDues,
-    initialTermEndsAt: contract.initialTermEndsAt, expiresAt: quote.expiresAt };
+    initialTermEndsAt: contract.initialTermEndsAt, expiresAt: quote.expiresAt,
+    ...(quote.refundAmount !== undefined ? { refundAmount: quote.refundAmount } : {}) };
+}
+
+async function confirmPrepaidCancellation(contract: MembershipCommitment, cancellation: MembershipCancellationRecord) {
+  const sql = getBillingDatabase(), stripe = getStripe(), payment = cancellation.quote.prepaidProviderSnapshot;
+  if (!contract.billingSchedule || !payment || cancellation.quote.refundAmount !== payment.amount) {
+    throw new MembershipCommitmentError("prepaid_cancellation_requires_review");
+  }
+  const read = () => readPrepaidCancellationEvidence(contract, { allowRefund: true, cancellationId: cancellation.id,
+    ...(cancellation.quote.invalidEnrollmentReason ? { invalidEnrollmentReason: cancellation.quote.invalidEnrollmentReason } : {}) });
+  const matches = (current: Awaited<ReturnType<typeof read>>) => {
+    if (["invoiceId", "paymentIntentId", "chargeId", "amount", "currency"]
+      .some(key => current.snapshot[key as keyof typeof payment] !== payment[key as keyof typeof payment])) {
+      throw new MembershipCommitmentError("prepaid_refund_requires_review");
+    }
+  };
+  if (cancellation.status === "requested") {
+    const before = await read(); matches(before);
+    if (before.subscription.status !== "canceled") {
+      if (!cancellation.quote.invalidEnrollmentReason && Date.parse(contract.startsAt) - Date.now() <= requestOptions.timeout + 2_000) {
+        throw new MembershipCommitmentError("prepaid_cancellation_requires_review");
+      }
+      await stripe.subscriptions.cancel(contract.subscriptionId, { invoice_now: false, prorate: false },
+        { ...requestOptions, idempotencyKey: `${cancellation.providerIdempotencyKey}:cancel-before-start` });
+    }
+    const after = await read(); matches(after);
+    const stopped = await sql.begin(tx => confirmMembershipBillingStopped(tx, cancellation.id, {
+      subscriptionId: contract.subscriptionId, customerId: contract.customerId, livemode: contract.livemode,
+      subscriptionStatus: after.subscription.status as "canceled", observedAt: after.snapshot.observedAt,
+      canceledAt: after.snapshot.canceledAt, cancelAt: null, firstChargeAt: contract.startsAt,
+      prepaidInvoiceId: payment.invoiceId, openOrdinaryInvoiceIds: [], pendingProrationOrInvoiceItems: false,
+      ...(cancellation.quote.invalidEnrollmentReason ? { invalidEnrollmentReason: cancellation.quote.invalidEnrollmentReason } : {}),
+    }));
+    if (!stopped) throw new MembershipCommitmentError("cancellation_in_progress");
+  }
+  let current = await read(); matches(current);
+  if (current.subscription.status !== "canceled" || !current.snapshot.canceledAt) {
+    throw new MembershipCommitmentError("prepaid_cancellation_requires_review");
+  }
+  if (!current.refund) {
+    const fence = await sql.begin(tx => fenceMembershipPrepaidRefund(tx, cancellation.id));
+    if (!fence) throw new MembershipCommitmentError("prepaid_refund_requires_review");
+    await stripe.refunds.create({ payment_intent: payment.paymentIntentId, amount: payment.amount,
+      metadata: { ruined_context: "membership_prestart_refund", ruined_cancellation_id: cancellation.id,
+        ruined_commitment_id: contract.id, ruined_invoice_id: payment.invoiceId } },
+    { ...requestOptions, idempotencyKey: `${fence.providerIdempotencyKey}:prepaid-refund` });
+    // Even a successful create response is not proof that funds were returned.
+    current = await read(); matches(current);
+  }
+  const refund = current.refund;
+  if (!refund) throw new Error("Prepaid refund readback is still pending.");
+  const evidence: CommitmentPrepaidRefundEvidence = { id: refund.id,
+    status: refund.status as CommitmentPrepaidRefundEvidence["status"], cancellationId: cancellation.id,
+    invoiceId: payment.invoiceId, paymentIntentId: payment.paymentIntentId, chargeId: payment.chargeId,
+    amount: refund.amount, currency: payment.currency, livemode: payment.livemode, observedAt: new Date().toISOString() };
+  const { recordPrepaidMembershipRefund, getMembershipPrepayment } = await import("@/lib/stripe/billing-repository");
+  await sql.begin(async tx => {
+    // Match webhook writers: commercial eligibility, payment proof, commitment.
+    // Never retain a contract lock while waiting for a webhook's commercial lock.
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-membership-commercial-eligibility'))`;
+    await getMembershipPrepayment(tx, { reservationId: contract.id });
+    if (!await recordMembershipPrepaidRefundEvidence(tx, cancellation.id, evidence)) throw new MembershipCommitmentError("prepaid_refund_requires_review");
+    if (evidence.status !== "requires_action") await recordPrepaidMembershipRefund(tx, {
+      reservationId: contract.id, subscriptionId: contract.subscriptionId, cancellationId: cancellation.id,
+      invoiceId: payment.invoiceId, paymentIntentId: payment.paymentIntentId, chargeId: payment.chargeId,
+      refundId: refund.id, status: evidence.status, amount: refund.amount, currency: payment.currency,
+      livemode: contract.livemode, canceledAt: current.snapshot.canceledAt!, verifiedAt: evidence.observedAt,
+    });
+    if (evidence.status === "succeeded" && !await completeMembershipCancellation(tx, { cancellationId: cancellation.id, replacementInvoiceId: null })) {
+      throw new MembershipCommitmentError("cancellation_in_progress");
+    }
+  });
+  if (!["pending", "succeeded"].includes(evidence.status)) throw new MembershipCommitmentError("prepaid_refund_requires_review");
+  return { effectiveAt: cancellation.quote.effectiveAt, invoiceUrl: null,
+    refundStatus: evidence.status as "pending" | "succeeded", refundAmount: payment.amount };
 }
 
 async function replacementInvoice(contract: MembershipCommitment, stored: StoredQuote) {
@@ -144,7 +225,8 @@ export async function confirmMemberCancellation(memberId: string, quoteId: strin
     let cancellation = await sql.begin(tx => getMembershipCancellation(tx, stored.id));
     if (cancellation?.status === "completed") {
       const invoice = cancellation.replacementInvoiceId ? await stripe.invoices.retrieve(cancellation.replacementInvoiceId) : null;
-      return { effectiveAt: cancellation.quote.effectiveAt, invoiceUrl: invoice?.hosted_invoice_url ?? null };
+      return { effectiveAt: cancellation.quote.effectiveAt, invoiceUrl: invoice?.hosted_invoice_url ?? null,
+        ...(cancellation.quote.refundAmount !== undefined ? { refundStatus: "succeeded" as const, refundAmount: cancellation.quote.refundAmount } : {}) };
     }
     if (!cancellation) {
       if (Date.now() >= Date.parse(stored.quote.expiresAt)) throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
@@ -158,6 +240,7 @@ export async function confirmMemberCancellation(memberId: string, quoteId: strin
       throw new MembershipCommitmentError(stored.quote.intent === "cancel_before_start" ? "prestart_cancellation_requires_review" : "early_exit_requires_review");
     }
     if (stored.quote.intent === "cancel_before_start") {
+      if (stored.quote.prepaidProviderSnapshot) return await confirmPrepaidCancellation(contract, cancellation);
       if (cancellation.status === "requested") {
         const before = await readPrestartCancellationEvidence(contract);
         if (before.subscription.status !== "canceled") {
@@ -211,7 +294,7 @@ export async function confirmMemberCancellation(memberId: string, quoteId: strin
       if (evidence && evidence.fingerprint !== stored.evidence) throw new MembershipCommitmentError("early_exit_requires_review");
       const stopped = await sql.begin(tx => confirmMembershipBillingStopped(tx, stored.id, { subscriptionId: after.id,
         customerId: stripeObjectId(after.customer)!, livemode: after.livemode, observedAt: new Date().toISOString(),
-        subscriptionStatus: after.status as "active" | "past_due" | "unpaid" | "canceled",
+        subscriptionStatus: after.status as "active" | "past_due" | "unpaid" | "canceled" | "trialing",
         cancelAt: after.cancel_at ? new Date(after.cancel_at * 1000).toISOString() : null,
         openOrdinaryInvoiceIds: [], pendingProrationOrInvoiceItems: false }));
       if (!stopped) throw new MembershipCommitmentError("cancellation_in_progress");
@@ -230,5 +313,89 @@ export async function confirmMemberCancellation(memberId: string, quoteId: strin
   } finally {
     await sql`update stripe_membership_commitments set cancellation_lease_token = null, cancellation_lease_until = null
       where id = ${contract.id}::uuid and cancellation_lease_token = ${lease}::uuid`;
+  }
+}
+
+/** Run after the webhook transaction commits. Only a member-confirmed durable
+ * execution can be resumed; a quote alone or provider metadata creates no action. */
+export async function reconcilePrepaidMembershipCancellation(input: { subscriptionId: string; livemode: boolean }) {
+  const sql = getBillingDatabase();
+  const rows = await sql<Array<{ cancellationId: string; memberId: string; status: string }>>`
+    select cancellation.id as "cancellationId", contract.member_id as "memberId", cancellation.status
+    from stripe_membership_cancellations cancellation
+    join stripe_membership_commitments contract on contract.id = cancellation.contract_id
+    join stripe_membership_prepaid_proofs proof on proof.contract_id = contract.id
+      and proof.stripe_subscription_id = contract.stripe_subscription_id and proof.member_id = contract.member_id
+    where contract.stripe_subscription_id = ${input.subscriptionId} and contract.livemode = ${input.livemode}
+      and contract.terms_snapshot->'billingSchedule'->>'version' = 'foundations-prepaid-v1'
+      and cancellation.intent = 'cancel_before_start'
+      and cancellation.status in ('requested', 'billing_stopped', 'collection_in_flight', 'manual_review')
+      and (proof.cancellation_id is null or proof.cancellation_id = cancellation.id)
+    order by cancellation.created_at desc limit 1
+  `;
+  if (!rows[0]) return { handled: false as const };
+  if (rows[0].status === "manual_review") return { handled: true as const, reviewRequired: true as const };
+  try {
+    return { handled: true as const, cancellation: await confirmMemberCancellation(rows[0].memberId, rows[0].cancellationId) };
+  } catch (error) {
+    // Another confirmed execution holds the lease. Its provider result or the
+    // next webhook/status retry will finish the same refund without a second key.
+    if (error instanceof MembershipCommitmentError && error.code === "cancellation_in_progress") {
+      return { handled: true as const, pending: true as const };
+    }
+    throw error;
+  }
+}
+
+/** The worker resumes durable executions only. It cannot choose a customer,
+ * amount, or new cancellation policy through this bounded candidate list. */
+export async function listPendingPrepaidMembershipCancellations(limit = 25) {
+  const sql = getBillingDatabase();
+  const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  if (!Number.isFinite(boundedLimit)) throw new MembershipCommitmentError("invalid_cancellation_batch_limit");
+  return sql<Array<{ subscriptionId: string; livemode: boolean }>>`
+    select contract.stripe_subscription_id as "subscriptionId", contract.livemode
+    from stripe_membership_cancellations cancellation
+    join stripe_membership_commitments contract on contract.id = cancellation.contract_id
+    join stripe_membership_prepaid_proofs proof on proof.contract_id = contract.id
+      and proof.stripe_subscription_id = contract.stripe_subscription_id and proof.member_id = contract.member_id
+    where contract.terms_snapshot->'billingSchedule'->>'version' = 'foundations-prepaid-v1'
+      and cancellation.intent = 'cancel_before_start'
+      and cancellation.status in ('requested', 'billing_stopped', 'collection_in_flight')
+      and (proof.cancellation_id is null or proof.cancellation_id = cancellation.id)
+    order by cancellation.updated_at, cancellation.id limit ${boundedLimit}
+  `;
+}
+
+/** A missed payment cutoff invalidates this enrollment. Restitution remains
+ * available after an outage, but only for the verified never-started enrollment;
+ * this executor cannot create a general after-start refund authorization. */
+export async function refundMissedFoundationsEnrollment(input: { subscriptionId: string; livemode: boolean }) {
+  const resumed = await reconcilePrepaidMembershipCancellation(input);
+  if (resumed.handled) return resumed;
+  const sql = getBillingDatabase();
+  const rows = await sql<Array<{ contract: MembershipCommitment }>>`
+    select contract.terms_snapshot as contract from stripe_membership_commitments contract
+    join stripe_membership_prepaid_proofs proof on proof.contract_id=contract.id
+      and proof.stripe_subscription_id=contract.stripe_subscription_id and proof.member_id=contract.member_id
+    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
+    where contract.stripe_subscription_id=${input.subscriptionId} and contract.livemode=${input.livemode}
+      and contract.status='active' and proof.review_reason='cohort_cutoff_missed'
+      and proof.refund_state='review_required' and proof.activated_at is null and reservation.status='reserved'
+    limit 1
+  `;
+  const contract = rows[0]?.contract;
+  if (!contract) return { handled: false as const };
+  const provider = await readPrepaidCancellationEvidence(contract, { invalidEnrollmentReason: "cohort_cutoff_missed" });
+  const quote = quoteMembershipMissedCohortCancellation(contract, provider.snapshot, new Date()), id = randomUUID();
+  await sql`insert into stripe_membership_cancellation_quotes
+    (id,member_id,contract_id,quote,provider_evidence_sha256,fee_tax_code,fee_tax_enabled,fee_total,expires_at)
+    values (${id}::uuid,${contract.memberId}::uuid,${contract.id}::uuid,${sql.json(json(quote))}::jsonb,
+      ${null},${null},${false},${0},${quote.expiresAt}::timestamptz)`;
+  try {
+    return { handled: true as const, cancellation: await confirmMemberCancellation(contract.memberId, id) };
+  } catch (error) {
+    if (error instanceof MembershipCommitmentError && error.code === "cancellation_in_progress") return { handled: true as const, pending: true as const };
+    throw error;
   }
 }

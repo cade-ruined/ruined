@@ -17,7 +17,9 @@ async function load(path, dependencies = {}) {
 }
 const pricing = await load("src/lib/membership/pricing.ts");
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
-const prices = await load("src/lib/stripe/price-policy.ts", { "@/lib/membership/pricing": pricing });
+const schedule = await load("src/lib/membership/foundations-schedule.ts");
+const prepaid = await load("src/lib/stripe/prepaid-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing, "@/lib/membership/foundations-schedule": schedule });
+const prices = await load("src/lib/stripe/price-policy.ts", { "@/lib/membership/pricing": pricing, "./prepaid-policy": prepaid });
 
 async function fixture({ timeoutAfterCancel = false, raceInvoice = false, invoiceRows = [], pendingRows = [] } = {}) {
   const now = new Date(), startsAt = new Date(Math.ceil(now.getTime()/1000)*1000 + 86400000).toISOString();
@@ -62,7 +64,7 @@ async function fixture({ timeoutAfterCancel = false, raceInvoice = false, invoic
   const provider = await load("src/lib/stripe/cancellation-provider.ts", { "node:crypto": { createHash },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({ monthly: "price_member", annual: "price_annual", legacy: null,
       livemode: false, offers: { individual_monthly: "price_member" } }) },
-    "@/lib/stripe/price-policy": prices, "@/lib/stripe/commitment-policy": policy });
+    "@/lib/stripe/price-policy": prices, "@/lib/stripe/prepaid-policy": prepaid, "@/lib/stripe/commitment-policy": policy });
   const repository = {
     getMembershipCancellation: async () => cancellation,
     reserveMembershipCancellation: async (_tx, input) => {

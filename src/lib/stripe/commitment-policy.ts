@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { MEMBERSHIP_OFFERS, type MembershipOfferId } from "@/lib/membership/pricing";
+import type { FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
 
 /** A new acceptance is required. Pilot acceptances must never acquire these terms. */
 export const MEMBERSHIP_COMMITMENT_TERMS_VERSION = "membership-billing-v2";
@@ -27,6 +28,7 @@ export type MembershipCommitment = {
   totalInitialDues: number;
   buyoutCap: number;
   billingTermsVersion: typeof MEMBERSHIP_COMMITMENT_TERMS_VERSION;
+  billingSchedule?: FoundationsBillingSchedule;
 };
 
 export type CommitmentInvoice = {
@@ -70,6 +72,16 @@ export type MembershipCancellationQuote = {
   fingerprint: string;
   renewalProviderSnapshot?: CommitmentRenewalProviderSnapshot;
   prestartProviderSnapshot?: CommitmentPrestartProviderSnapshot;
+  prepaidProviderSnapshot?: CommitmentPrepaidProviderSnapshot;
+  refundAmount?: number;
+  invalidEnrollmentReason?: "cohort_cutoff_missed";
+};
+export type CommitmentPrepaidProviderSnapshot = {
+  subscriptionId: string; customerId: string; livemode: boolean; status: "trialing" | "active" | "canceled";
+  serviceStartsAt: string; prepaidThrough: string; canceledAt: string | null; observedAt: string;
+  invoiceId: string; paymentIntentId: string; chargeId: string; amount: number; currency: "usd";
+  pendingInvoiceItems: boolean;
+  invoicePaidAt?: string;
 };
 export type CommitmentPrestartProviderSnapshot = {
   subscriptionId: string;
@@ -88,7 +100,7 @@ export type CommitmentRenewalProviderSnapshot = {
   livemode: boolean;
   currentPeriodEnd: string;
   cancelAt?: string | null;
-  status: "active" | "past_due" | "unpaid" | "canceled";
+  status: "active" | "past_due" | "unpaid" | "canceled" | "trialing";
   observedAt: string;
 };
 
@@ -125,6 +137,19 @@ export function buildMembershipCommitment(input: Omit<MembershipCommitment,
     throw new MembershipCommitmentError("unaccepted_commitment_terms");
   }
   const offer = MEMBERSHIP_OFFERS[input.offerId];
+  const schedule = input.billingSchedule;
+  if (schedule && (schedule.version !== "foundations-prepaid-v1" || schedule.timeZone !== "America/Denver"
+    || !/^\d{4}-\d{2}$/.test(schedule.cohortMonth) || schedule.callStartsAt.length !== 4
+    || timestamp(schedule.serviceStartsAt) !== timestamp(input.startsAt)
+    || schedule.callStartsAt[0] !== schedule.serviceStartsAt
+    || schedule.callStartsAt.some((call, i) => i > 0 && timestamp(call) <= timestamp(schedule.callStartsAt[i - 1]))
+    || timestamp(schedule.cutoffAt) !== timestamp(schedule.serviceStartsAt) - 86_400_000
+    || timestamp(input.acceptedAt) > timestamp(schedule.cutoffAt)
+    || schedule.prepaidThrough !== membershipCommitmentAnniversary(input.startsAt, offer.plan === "monthly" ? 1 : 12)
+    || schedule.nextChargeAt !== schedule.prepaidThrough
+    || schedule.initialTermEndsAt !== membershipCommitmentAnniversary(input.startsAt, 12))) {
+    throw new MembershipCommitmentError("unaccepted_prepaid_schedule");
+  }
   return {
     ...input, acceptedAt: new Date(input.acceptedAt).toISOString(), startsAt: new Date(input.startsAt).toISOString(),
     initialTermEndsAt: membershipCommitmentAnniversary(input.startsAt, 12), billingPlan: offer.plan,
@@ -141,6 +166,10 @@ export function commitmentSnapshotFingerprint(contract: MembershipCommitment): s
     contract.agreementContentSha256, contract.acceptedAt, contract.startsAt, contract.initialTermEndsAt,
     contract.billingPlan, contract.currency, contract.installmentDues, contract.totalInitialDues,
     contract.buyoutCap, contract.billingTermsVersion,
+    ...(contract.billingSchedule ? [[contract.billingSchedule.version, contract.billingSchedule.cohortMonth,
+      contract.billingSchedule.timeZone, contract.billingSchedule.callStartsAt, contract.billingSchedule.cutoffAt,
+      contract.billingSchedule.serviceStartsAt, contract.billingSchedule.prepaidThrough, contract.billingSchedule.nextChargeAt,
+      contract.billingSchedule.initialTermEndsAt]] : []),
   ])).digest("hex");
 }
 
@@ -218,6 +247,13 @@ export function cancellationQuoteFingerprint(quote: Omit<MembershipCancellationQ
       quote.prestartProviderSnapshot.livemode, quote.prestartProviderSnapshot.status, quote.prestartProviderSnapshot.firstChargeAt,
       quote.prestartProviderSnapshot.canceledAt, quote.prestartProviderSnapshot.observedAt,
       quote.prestartProviderSnapshot.hasInvoices, quote.prestartProviderSnapshot.pendingInvoiceItems]] : []),
+    ...(quote.prepaidProviderSnapshot ? [[quote.prepaidProviderSnapshot.subscriptionId, quote.prepaidProviderSnapshot.customerId,
+      quote.prepaidProviderSnapshot.livemode, quote.prepaidProviderSnapshot.status, quote.prepaidProviderSnapshot.serviceStartsAt,
+      quote.prepaidProviderSnapshot.prepaidThrough, quote.prepaidProviderSnapshot.canceledAt, quote.prepaidProviderSnapshot.observedAt,
+      quote.prepaidProviderSnapshot.invoiceId, quote.prepaidProviderSnapshot.paymentIntentId, quote.prepaidProviderSnapshot.chargeId,
+      quote.prepaidProviderSnapshot.amount, quote.prepaidProviderSnapshot.currency, quote.prepaidProviderSnapshot.pendingInvoiceItems,
+      quote.refundAmount, quote.prepaidProviderSnapshot.invoicePaidAt ?? null]] : []),
+    ...(quote.invalidEnrollmentReason ? [quote.invalidEnrollmentReason] : []),
   ])).digest("hex");
 }
 
@@ -226,6 +262,7 @@ export function cancellationQuoteFingerprint(quote: Omit<MembershipCancellationQ
 export function quoteMembershipPrestartCancellation(contract: MembershipCommitment,
   provider: CommitmentPrestartProviderSnapshot, now = new Date()): MembershipCancellationQuote {
   if (contract.billingTermsVersion !== MEMBERSHIP_COMMITMENT_TERMS_VERSION
+    || contract.billingSchedule
     || now.getTime() >= timestamp(contract.startsAt)
     || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
     || provider.livemode !== contract.livemode || provider.status !== "active" || provider.canceledAt !== null
@@ -244,6 +281,55 @@ export function quoteMembershipPrestartCancellation(contract: MembershipCommitme
   return { ...quote, fingerprint: cancellationQuoteFingerprint(quote) };
 }
 
+/** Refund the entire verified first payment, including tax, before service starts.
+ * A quote authorizes a refund; only a later provider readback proves completion. */
+export function quoteMembershipPrepaidCancellation(contract: MembershipCommitment,
+  provider: CommitmentPrepaidProviderSnapshot, now = new Date()): MembershipCancellationQuote {
+  const schedule = contract.billingSchedule;
+  if (!schedule || contract.billingTermsVersion !== MEMBERSHIP_COMMITMENT_TERMS_VERSION
+    || now.getTime() >= timestamp(contract.startsAt)
+    || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
+    || provider.livemode !== contract.livemode || provider.status !== "trialing" || provider.canceledAt !== null
+    || provider.serviceStartsAt !== contract.startsAt || provider.prepaidThrough !== schedule.prepaidThrough
+    || !provider.invoiceId.startsWith("in_") || !provider.paymentIntentId.startsWith("pi_") || !provider.chargeId.startsWith("ch_")
+    || provider.currency !== contract.currency || !Number.isSafeInteger(provider.amount) || provider.amount < contract.installmentDues
+    || provider.pendingInvoiceItems || timestamp(provider.observedAt) > now.getTime()
+    || now.getTime() - timestamp(provider.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
+    throw new MembershipCommitmentError("prepaid_cancellation_requires_review");
+  }
+  const quote = { contractId: contract.id, memberId: contract.memberId, subscriptionId: contract.subscriptionId, livemode: contract.livemode,
+    intent: "cancel_before_start" as const, ledgerRevision: 0, quotedAt: now.toISOString(),
+    expiresAt: new Date(Math.min(now.getTime() + 5 * 60_000, timestamp(contract.startsAt))).toISOString(),
+    effectiveAt: now.toISOString(), accessThrough: null, remainingInitialDues: 0, buyoutDues: 0, currency: "usd" as const,
+    replacesRemainingInstallments: false, prepaidProviderSnapshot: provider, refundAmount: provider.amount };
+  return { ...quote, fingerprint: cancellationQuoteFingerprint(quote) };
+}
+
+/** An enrollment collected after its immutable cutoff never began service. This
+ * is a separate automatic restitution policy, not an extension of member exit rights. */
+export function quoteMembershipMissedCohortCancellation(contract: MembershipCommitment,
+  provider: CommitmentPrepaidProviderSnapshot, now = new Date()): MembershipCancellationQuote {
+  const schedule = contract.billingSchedule;
+  if (!schedule || contract.billingTermsVersion !== MEMBERSHIP_COMMITMENT_TERMS_VERSION
+    || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
+    || provider.livemode !== contract.livemode || !["trialing", "active", "canceled"].includes(provider.status)
+    || provider.serviceStartsAt !== contract.startsAt || provider.prepaidThrough !== schedule.prepaidThrough
+    || !provider.invoicePaidAt || timestamp(provider.invoicePaidAt) < timestamp(schedule.cutoffAt)
+    || timestamp(provider.invoicePaidAt) > now.getTime()
+    || !provider.invoiceId.startsWith("in_") || !provider.paymentIntentId.startsWith("pi_") || !provider.chargeId.startsWith("ch_")
+    || provider.currency !== contract.currency || !Number.isSafeInteger(provider.amount) || provider.amount < contract.installmentDues
+    || provider.pendingInvoiceItems || timestamp(provider.observedAt) > now.getTime()
+    || now.getTime() - timestamp(provider.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
+    throw new MembershipCommitmentError("missed_cohort_refund_requires_review");
+  }
+  const quote = { contractId: contract.id, memberId: contract.memberId, subscriptionId: contract.subscriptionId, livemode: contract.livemode,
+    intent: "cancel_before_start" as const, ledgerRevision: 0, quotedAt: now.toISOString(), expiresAt: new Date(now.getTime() + 5 * 60_000).toISOString(),
+    effectiveAt: now.toISOString(), accessThrough: null, remainingInitialDues: 0, buyoutDues: 0, currency: "usd" as const,
+    replacesRemainingInstallments: false, prepaidProviderSnapshot: provider, refundAmount: provider.amount,
+    invalidEnrollmentReason: "cohort_cutoff_missed" as const };
+  return { ...quote, fingerprint: cancellationQuoteFingerprint(quote) };
+}
+
 /** Stopping renewal never depends on settling disputed dues or producing a buyout.
  * The caller retrieves this subscription directly from Stripe and verifies its identity.
  * No new paid access is inferred from an unpaid Stripe billing period.
@@ -253,7 +339,8 @@ export function quoteMembershipRenewalCancellation(contract: MembershipCommitmen
   if (contract.billingTermsVersion !== MEMBERSHIP_COMMITMENT_TERMS_VERSION
     || now.getTime() < timestamp(contract.startsAt)
     || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
-    || provider.livemode !== contract.livemode || !["active", "past_due", "unpaid", "canceled"].includes(provider.status)
+    || provider.livemode !== contract.livemode || !(provider.status === "trialing" && contract.billingSchedule
+      || ["active", "past_due", "unpaid", "canceled"].includes(provider.status))
     || timestamp(provider.observedAt) > now.getTime()
     || now.getTime() - timestamp(provider.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
     throw new MembershipCommitmentError("renewal_provider_snapshot_required");
