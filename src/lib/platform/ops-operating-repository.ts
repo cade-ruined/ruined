@@ -1228,10 +1228,14 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       priority: string;
       state: string;
       task_id: string;
+      task_type: string;
+      description: string | null;
       title: string;
     }>>`
       select
         task.id as task_id,
+        task.task_type,
+        task.description,
         task.title,
         task.priority,
         task.status as state,
@@ -1339,6 +1343,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       ...taskRows.map((row): OpsWorkItem => ({
         dueAt: asIso(row.due_at),
         kind: "task",
+        taskType: row.task_type,
+        description: row.description,
         label: row.title,
         memberId: row.member_id,
         memberName: row.member_name,
