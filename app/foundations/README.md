@@ -1,11 +1,19 @@
 # Ruined Foundations
 
 `/my/foundations` shows the couch preview until the server-only
-`MEMBERSHIP_FOUNDATIONS_LAUNCHED=true` release flag is explicitly enabled.
+`MEMBERSHIP_FOUNDATIONS_LAUNCHED=true` release flag is explicitly enabled,
+except for members with current Administrator (`ops_admin`) access.
+The exception checks the active account and unrevoked role in the database;
+client roles, founder status, and local preview scenarios cannot grant access.
+It applies to the home, experience, private timeline, and saved-progress actions.
+Profile activation, member eligibility, ordered progress, and completion
+requirements still apply to administrators.
+
 The flag defaults to closed in all environments, independently of membership
-payments. Closed Foundations cannot start, record progress, or complete a Future
-Letter; `/my/foundations/experience` returns to the preview. The old `/foundations`
-URL redirects through the same member access and release gates.
+payments. Other members cannot start, record progress, or complete a Future
+Letter before launch; `/my/foundations/experience` returns to the preview.
+The old `/foundations` URL redirects through the same member access and release
+gates. Journal remains available independently of the Foundations release.
 
 When launched, eligible members can open the 22-moment, full-screen presentation.
 It uses native scroll/swipe snapping, presenter controls, chapter navigation,

@@ -6,7 +6,7 @@ import { PREVIEW_MEMBER_IDENTITY } from "@/lib/membership/preview";
 import { memberPreviewFoundations } from "@/lib/membership/preview-scenarios";
 import MemberAccessNotice from "@/components/membership/MemberAccessNotice";
 import { getMemberFoundationsState } from "@/lib/foundations/repository";
-import { isFoundationsLaunched } from "@/lib/foundations/availability";
+import { isFoundationsAvailableToMember } from "@/lib/foundations/availability";
 import { getMemberFoundationRequirements, getMemberIdentity } from "@/lib/membership/repository";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
@@ -18,7 +18,7 @@ export default async function MemberFoundationsExperiencePage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  if (!isFoundationsLaunched()) redirect("/my/foundations");
+  if (!await isFoundationsAvailableToMember(context.state === "authenticated" ? context.viewer?.authUserId : null)) redirect("/my/foundations");
   const access = deriveMemberAccessPolicy(context.data);
   if (!memberCan(access, "foundations.write")) return <MemberAccessNotice access={access} />;
 

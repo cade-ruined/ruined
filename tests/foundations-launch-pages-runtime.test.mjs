@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
+import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 
 const require = createRequire(import.meta.url);
 const Preview = () => null;
@@ -13,8 +14,9 @@ const AccessNotice = () => null;
 const Unavailable = () => null;
 const component = (value) => ({ __esModule: true, default: value });
 
-function fixture({ launched = false, state = "authenticated", eligible = false, revisit = false, identity = {} } = {}) {
+function fixture({ launched = false, state = "authenticated", eligible = false, revisit = false, identity = {}, role = null, viewer = { authUserId: "member", roles: ["ops_admin"] } } = {}) {
   const calls = [];
+  const roleReads = [];
   const dependencies = {
     "next/navigation": { redirect: (href) => { throw new Error(`redirect:${href}`); } },
     "@/components/foundations/MemberFoundationsPreview": component(Preview),
@@ -23,11 +25,13 @@ function fixture({ launched = false, state = "authenticated", eligible = false, 
     "@/components/membership/RuinedTimeline": component(Timeline),
     "@/components/membership/MemberAccessNotice": component(AccessNotice),
     "@/components/platform/PlatformUnavailable": component(Unavailable),
-    "@/lib/foundations/availability": { isFoundationsLaunched: () => launched },
+    "@/lib/foundations/availability": loadFoundationsAvailability({ MEMBERSHIP_FOUNDATIONS_LAUNCHED: String(launched) }, {
+      getOperatorRole: async id => { roleReads.push(id); return role; },
+    }),
     "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: {}, PREVIEW_MEMBER_TIMELINE: { entries: [], revision: "0" } },
     "@/lib/membership/preview-scenarios": { memberPreviewFoundations: () => ({ preview: true }) },
     "@/lib/membership/page-context": {
-      getMembershipPageContext: async () => ({ state, data: ["signed_out", "denied", "unavailable"].includes(state) ? null : identity, viewer: { authUserId: "member" } }),
+      getMembershipPageContext: async () => ({ state, data: ["signed_out", "denied", "unavailable"].includes(state) ? null : identity, viewer }),
     },
     "@/lib/membership/access-policy": {
       deriveMemberAccessPolicy: () => { calls.push("access"); return {}; },
@@ -55,14 +59,14 @@ function fixture({ launched = false, state = "authenticated", eligible = false, 
     }, mod, mod.exports);
     return mod.exports.default;
   }
-  return { calls, load };
+  return { calls, roleReads, load };
 }
 
 const homePath = "app/my/foundations/page.tsx";
 const experiencePath = "app/my/foundations/experience/page.tsx";
 const timelinePath = "app/my/foundations/timeline/page.tsx";
 
-test("before launch, pending, active, complimentary and operator members all get the couch preview without onboarding or progress reads", async () => {
+test("before launch, membership status and a stale admin viewer role cannot bypass the couch preview", async () => {
   for (const identity of [
     { billingState: "pending", administrativeOnboardingState: "in_progress" },
     { billingState: "active" },
@@ -75,15 +79,42 @@ test("before launch, pending, active, complimentary and operator members all get
     await assert.rejects(f.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
     await assert.rejects(f.load(timelinePath)(), /^Error: redirect:\/my\/foundations$/);
     assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.roleReads, ["member", "member", "member"]);
+  }
+});
+
+test("current Administrators enter Foundations, the experience, and their private Timeline before global launch", async () => {
+  for (const [path, expected] of [[homePath, Home], [experiencePath, Experience], [timelinePath, Timeline]]) {
+    const f = fixture({ role: "ops_admin", eligible: true, viewer: { authUserId: "member", roles: [] } });
+    const page = await f.load(path)();
+    assert.equal(page.type, expected);
+    assert.equal(page.props.writable, true);
+    assert.deepEqual(f.roleReads, ["member"]);
+    assert.deepEqual(f.calls, path === timelinePath ? ["access", "private-timeline:member"] : ["access", "progress", "requirements"]);
+  }
+});
+
+test("prelaunch Administrator access never bypasses existing member eligibility", async () => {
+  for (const path of [homePath, experiencePath, timelinePath]) {
+    const f = fixture({ role: "ops_admin" });
+    assert.equal((await f.load(path)()).type, AccessNotice);
+    assert.deepEqual(f.calls, ["access"]);
+    assert.deepEqual(f.roleReads, ["member"]);
+  }
+  for (const role of ["guide", "circle_leader"]) {
+    const f = fixture({ role, eligible: true });
+    assert.equal((await f.load(homePath)()).type, Preview);
+    assert.deepEqual(f.calls, []);
   }
 });
 
 test("a local preview also requires an explicit launch flag before it exposes the experience", async () => {
-  const closed = fixture({ state: "preview" });
+  const closed = fixture({ state: "preview", role: "ops_admin" });
   assert.equal((await closed.load(homePath)()).type, Preview);
   await assert.rejects(closed.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
   await assert.rejects(closed.load(timelinePath)(), /^Error: redirect:\/my\/foundations$/);
   assert.deepEqual(closed.calls, []);
+  assert.deepEqual(closed.roleReads, [], "preview data must never qualify for the Administrator exception");
   const open = fixture({ state: "preview", launched: true, eligible: true });
   for (const path of [homePath, experiencePath, timelinePath]) {
     assert.equal((await open.load(path)()).props.writable, false);
