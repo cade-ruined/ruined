@@ -384,6 +384,12 @@ async function selfTest() {
         status=await app.status();assert.equal(status.member.billing_state,"active");assert.equal(status.reservations[0].status,"activated");assert.equal(status.invoices[0].amount_paid,34900);
         assert.equal((await (await deliver("invoice.paid",invoice,"evt_paid")).json()).duplicate,true);
       }
+      const snapshots=await replayCurrentSnapshots(app);
+      assert.ok(snapshots.replayed.length>=2);
+      assert.ok(snapshots.replayed.every(event=>event.status===200),JSON.stringify(snapshots));
+      const snapshotsAgain=await replayCurrentSnapshots(app);
+      assert.ok(snapshotsAgain.replayed.every(event=>event.result.duplicate===true),"Stable current-snapshot IDs deduplicate replays");
+      assert.equal((await app.status()).member.billing_state,cancel?"pending":"active");
       const unsigned=new Request(`${app.origin}/api/stripe/webhook`,{method:"POST",body:"{}"});assert.equal((await app.webhook.POST(unsigned)).status,400);
       assert.equal((await dispatch(app,"token",new Request(`${app.origin}/status`,{headers:{host:"attacker.example"}}))).status,403);
       const page=html(app,"fixture-token");assert.ok(!page.includes(fake.STRIPE_SECRET_KEY)&&!page.includes(fake.STRIPE_WEBHOOK_SECRET));
