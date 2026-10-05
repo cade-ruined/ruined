@@ -39,7 +39,10 @@ async function fixture(t) {
     create table member_payment_method_setup_attempts(id uuid primary key, member_id uuid, stripe_account_id text, livemode boolean,
       status text default 'saved', consent_revoked_at timestamptz);
     create table member_payment_method_detachments(stripe_account_id text, livemode boolean, stripe_payment_method_id text);
-    create table stripe_checkout_attempts(member_id uuid, status text, stripe_subscription_id text);
+    create table stripe_checkout_attempts(id uuid primary key default gen_random_uuid(), member_id uuid, status text,
+      stripe_subscription_id text, recurring_payment_terms jsonb default '{}');
+    create table stripe_membership_commitments(checkout_attempt_id uuid, member_id uuid, stripe_subscription_id text,
+      terms_snapshot jsonb, status text default 'active');
     create table stripe_subscriptions(id text primary key, member_id uuid, stripe_status text, cancel_at timestamptz);
     create table membership_couple_authorizations(id uuid primary key, payer_member_id uuid, partner_member_id uuid,
       accepted_at timestamptz, accepted_by_auth_user_id uuid);
@@ -165,6 +168,51 @@ test("completed reviews stay completed for the same consent; a new saved method 
   assert.equal(tasks.filter(task=>task.status==='open').length,1);
 });
 
+test("held profiles become review-ready only under the explicit confirmed-registration activation gate",async t=>{
+  const f=await fixture(t),member=await f.member();
+  await f.reconcile();
+  assert.equal((await f.tasks(member.id))[0].status,'blocked','the absent new config property fails closed');
+  f.configuration.stripeActivationReady=false;
+  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
+  f.configuration.stripeActivationReady='true';
+  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0},'a truthy string is not a release gate');
+  f.configuration.stripeActivationReady=true;
+  assert.equal((await f.reconcile()).updated,1);
+  let [task]=await f.tasks(member.id);
+  assert.equal(task.status,'open'); assert.equal(task.blocked_reason,null); assert.equal(task.due_at,null);
+  assert.equal((await f.db.query("select profile_activated_at from member_registration_access where member_id=$1",[member.id])).rows[0].profile_activated_at,null);
+  assert.equal((await f.db.query("select billing_state from member_lifecycle where member_id=$1",[member.id])).rows[0].billing_state,'pending');
+  f.configuration.stripeActivationReady=false;
+  assert.equal((await f.reconcile()).updated,1); [task]=await f.tasks(member.id);
+  assert.equal(task.status,'blocked');
+});
+
+test("scheduled subscription confirmation closes the review only after accepted completed checkout without claiming a payment",async t=>{
+  const f=await fixture(t),member=await f.member(),attempt=crypto.randomUUID();
+  f.configuration.stripeActivationReady=true;
+  await f.reconcile();
+  const firstChargeAt='2099-11-01T06:00:00.000Z';
+  await f.db.query("insert into stripe_checkout_attempts(id,member_id,status,recurring_payment_terms) values($1,$2,'open',$3)",
+    [attempt,member.id,JSON.stringify({firstPayment:'scheduled',firstChargeAt})]);
+  await f.db.query("insert into stripe_subscriptions values('sub_scheduled',$1,'active',null)",[member.id]);
+  assert.deepEqual(await f.reconcile(),{created:0,updated:1,resolved:0},'subscription webhook can arrive before checkout completion');
+  let [task]=await f.tasks(member.id); assert.equal(task.status,'blocked'); assert.match(task.title,/checkout confirmation pending/);
+  await f.db.query("update stripe_checkout_attempts set status='completed',stripe_subscription_id='sub_scheduled' where id=$1",[attempt]);
+  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0},'unverified completion alone is insufficient');
+  await f.db.query("insert into stripe_membership_commitments values($1,$2,'sub_wrong',$3,'active')",[attempt,member.id,JSON.stringify({startsAt:firstChargeAt})]);
+  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0},'commitment must match the completed subscription');
+  await f.db.query("update stripe_membership_commitments set stripe_subscription_id='sub_scheduled' where checkout_attempt_id=$1",[attempt]);
+  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:1});
+  [task]=await f.tasks(member.id); assert.equal(task.status,'completed'); assert.equal(task.title,'Membership billing confirmed');
+  assert.match(task.description,/does not record payment received or activate profile access/);
+  const event=(await f.db.query("select evidence from operator_task_events where operator_task_id=$1 order by id desc limit 1",[task.id])).rows[0];
+  assert.equal(event.evidence.reason,'billing_confirmed');
+  assert.equal((await f.db.query("select resolution_reason from registration_operator_work where member_id=$1",[member.id])).rows[0].resolution_reason,'billing_active','deployed registry reason remains compatible');
+  assert.equal((await f.db.query("select profile_activated_at from member_registration_access where member_id=$1",[member.id])).rows[0].profile_activated_at,null);
+  assert.equal((await f.db.query("select billing_state from member_lifecycle where member_id=$1",[member.id])).rows[0].billing_state,'pending');
+  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
+});
+
 test("payment resolves the review; replaced cards retire stale work; withdrawal cancels it without erasing history",async t=>{
   const f=await fixture(t),paid=await f.member(),replaced=await f.member(),withdrawn=await f.member(); await f.reconcile();
   await f.db.query("insert into stripe_subscriptions values('sub_paid',$1,'active',null)",[paid.id]);
@@ -229,7 +277,7 @@ test("registration-only couples retain independent reviews; canonical shared bil
 test("pending checkout blocks review and clearing the hold restores only system-cancelled work",async t=>{
   const f=await fixture(t),member=await f.member(); f.configuration.stripeCheckoutReady=true;
   await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1",[member.id]);
-  await f.db.query("insert into stripe_checkout_attempts values($1,'creating',null)",[member.id]);
+  await f.db.query("insert into stripe_checkout_attempts(member_id,status,stripe_subscription_id) values($1,'creating',null)",[member.id]);
   await f.reconcile(); let [task]=await f.tasks(member.id);
   assert.equal(task.status,"blocked"); assert.match(task.blocked_reason,/checkout or subscription confirmation/);
   await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1",[member.id]);

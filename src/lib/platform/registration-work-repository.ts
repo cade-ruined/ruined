@@ -13,7 +13,7 @@ type WorkRow = {
   resolution_reason: string | null;
 };
 type RegistrationState = {
-  person_id: string; attempt_id: string | null; eligible: boolean; billing_active: boolean;
+  person_id: string; attempt_id: string | null; eligible: boolean; billing_confirmed: boolean;
   profile_released: boolean; checkout_pending: boolean; registration_partner_id: string | null;
   payer_ids: string[];
 };
@@ -42,23 +42,23 @@ async function readRegistrationState(tx: postgres.TransactionSql, memberId: stri
         and not private.ruined_member_has_couple_funding(member.id)
         and coalesce(private.ruined_member_shared_billing_state(member.id), 'pending') = 'pending'
         and not exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
-          and subscription.stripe_status in ('active', 'trialing', 'past_due', 'unpaid', 'paused'))
+          and subscription.stripe_status in ('past_due', 'unpaid', 'paused'))
       ) as eligible,
-      coalesce(private.ruined_member_shared_billing_state(member.id) = 'active',
+      (not scheduled_confirmation.pending and coalesce(private.ruined_member_shared_billing_state(member.id) = 'active',
         (exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
             and subscription.stripe_status in ('active', 'trialing')
             and (subscription.cancel_at is null or subscription.cancel_at > statement_timestamp()))
           and not exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
             and subscription.stripe_status in ('incomplete', 'past_due', 'unpaid', 'paused')))
         or (lifecycle.billing_state = 'active' and not exists (
-          select 1 from stripe_subscriptions subscription where subscription.member_id = member.id))) as billing_active,
+          select 1 from stripe_subscriptions subscription where subscription.member_id = member.id)))) as billing_confirmed,
       private.ruined_member_profile_released(member.id) as profile_released,
       (exists (select 1 from stripe_checkout_attempts checkout where checkout.member_id = member.id
           and (checkout.status in ('creating', 'open') or (checkout.status = 'completed'
             and (checkout.stripe_subscription_id is null or not exists (
               select 1 from stripe_subscriptions subscription where subscription.id = checkout.stripe_subscription_id)))))
         or exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
-          and subscription.stripe_status = 'incomplete')) as checkout_pending,
+          and subscription.stripe_status = 'incomplete') or scheduled_confirmation.pending) as checkout_pending,
       private.ruined_registration_circle_couple_partner(member.id) as registration_partner_id,
       array(select distinct reservation.payer_member_id from membership_commercial_participants participant
         join membership_commercial_reservations reservation on reservation.id = participant.reservation_id
@@ -74,6 +74,18 @@ async function readRegistrationState(tx: postgres.TransactionSql, memberId: stri
     left join member_payment_method_accounts method on method.member_id = member.id
       and method.stripe_account_id = registration.payment_setup_account_id
       and method.livemode = registration.payment_setup_livemode
+    cross join lateral (
+      select exists (select 1 from stripe_checkout_attempts checkout
+        where checkout.member_id = member.id and checkout.status in ('creating', 'open', 'completed')
+          and checkout.recurring_payment_terms->>'firstPayment' = 'scheduled'
+          and not (checkout.status = 'completed' and exists (
+            select 1 from stripe_membership_commitments commitment
+            where commitment.checkout_attempt_id = checkout.id and commitment.member_id = member.id
+              and commitment.stripe_subscription_id = checkout.stripe_subscription_id and commitment.status = 'active'
+              and commitment.terms_snapshot->>'startsAt' = checkout.recurring_payment_terms->>'firstChargeAt'
+          ))
+      ) as pending
+    ) scheduled_confirmation
     where member.id = ${memberId}::uuid
   `;
   return row;
@@ -81,12 +93,17 @@ async function readRegistrationState(tx: postgres.TransactionSql, memberId: stri
 
 /** Reconcile review tasks only. Call from an authenticated internal worker, never
  * a member read. Existing registrations are backfilled on the first run. Global
- * checkout readiness follows the existing commercial and payment release gates;
- * the optional automatic-tax switch does not control this review.
+ * checkout/activation readiness follows the existing commercial and payment
+ * release gates; the optional automatic-tax switch does not control this review.
  */
 export async function reconcileRegistrationOperatorWork(): Promise<RegistrationOperatorWorkResult> {
   const sql = getApplicationDatabase();
-  const checkoutReady = getPlatformConfiguration().stripeCheckoutReady;
+  const configuration = getPlatformConfiguration();
+  // The independent activation gate arrives with the confirmed-registration
+  // billing release. Recognize that runtime contract without requiring its new
+  // config type or database function before that release is merged.
+  const activationReady = "stripeActivationReady" in configuration && configuration.stripeActivationReady === true;
+  const billingReady = configuration.stripeCheckoutReady || activationReady;
   const result: RegistrationOperatorWorkResult = { created: 0, updated: 0, resolved: 0 };
   const members = await sql<Array<{ member_id: string }>>`
     select registration.member_id from member_registration_access registration
@@ -115,18 +132,24 @@ export async function reconcileRegistrationOperatorWork(): Promise<RegistrationO
         where work.member_id = ${memberId}::uuid order by task.id for update of task, work
       `;
       const otherPayer = state?.payer_ids.length === 1 && state.payer_ids[0] !== memberId;
-      const eligible = Boolean(state?.eligible && state.attempt_id && !otherPayer);
+      const eligible = Boolean(state?.eligible && state.attempt_id && !state.billing_confirmed && !otherPayer);
       for (const task of work) {
         if (["completed", "cancelled"].includes(task.status) || (eligible && task.payment_setup_attempt_id === state!.attempt_id)) continue;
-        const reason = state?.billing_active ? "billing_active" : otherPayer ? "billing_owner_changed"
+        // Keep the deployed registry's existing reason value. Completion means
+        // the billing arrangement is confirmed, including a future first charge;
+        // it is not evidence of money received or member access being released.
+        const reason = state?.billing_confirmed ? "billing_active" : otherPayer ? "billing_owner_changed"
           : eligible ? "saved_method_replaced" : "registration_no_longer_eligible";
         const status = reason === "billing_active" ? "completed" : "cancelled";
         const version = Number(task.version) + 1;
         await tx`update operator_tasks set status = ${status}, completed_at = case when ${status} = 'completed' then statement_timestamp() else null end,
+          title = case when ${status} = 'completed' then 'Membership billing confirmed' else title end,
+          description = case when ${status} = 'completed' then 'The membership billing arrangement is confirmed. This closes the registration billing review; it does not record payment received or activate profile access.' else description end,
           due_at = null, blocked_reason = null, version = ${version}, updated_at = statement_timestamp() where id = ${task.id}::uuid`;
         await tx`update registration_operator_work set resolution_reason = ${reason}, resolved_at = statement_timestamp(), updated_at = statement_timestamp()
           where operator_task_id = ${task.id}::uuid`;
-        await recordEvent(tx, { id: task.id, version }, task.status, status, reason, task.payment_setup_attempt_id);
+        await recordEvent(tx, { id: task.id, version }, task.status, status,
+          reason === "billing_active" ? "billing_confirmed" : reason, task.payment_setup_attempt_id);
         counts.resolved += 1;
       }
       if (!eligible || !state?.attempt_id) return counts;
@@ -134,13 +157,14 @@ export async function reconcileRegistrationOperatorWork(): Promise<RegistrationO
       // Operator completion is durable for this exact consent. A new saved-card
       // attempt creates a new task; refreshing the queue never reopens it.
       if (current?.status === "completed" || (current?.status === "cancelled" && !current.resolution_reason)) return counts;
-      const blockedReason = !checkoutReady ? "Paid membership is not open. Keep this review on hold until the existing commercial and payment release checks are approved."
-        : !state.profile_released ? "This member's registration profile has not been activated. The existing registration hold prevents paid checkout."
+      const profileCanConfirmBilling = state.profile_released || activationReady;
+      const blockedReason = !billingReady ? "Paid membership is not open. Keep this review on hold until the existing commercial and payment release checks are approved."
+        : !profileCanConfirmBilling ? "This member's registration profile has not been activated. The existing registration hold prevents paid checkout."
         : state.payer_ids.length > 1 ? "Shared billing responsibility is ambiguous. Confirm the canonical billing owner before proceeding."
         : state.checkout_pending ? "A membership checkout or subscription confirmation is already pending. Verify its outcome before starting another checkout."
         : null;
       const status: TaskStatus = blockedReason ? "blocked" : current?.status === "in_progress" ? "in_progress" : "open";
-      const title = blockedReason ? state.checkout_pending && checkoutReady && state.profile_released
+      const title = blockedReason ? state.checkout_pending && billingReady && profileCanConfirmBilling
         ? "Card saved — checkout confirmation pending" : "Card saved — billing opening pending" : "Review membership billing";
       const description = [
         "Registration is complete and a payment method is saved. Review the member's billing next step; the saved card does not authorize a charge.",
