@@ -211,6 +211,10 @@ test("scheduled subscription confirmation closes the review only after accepted 
   assert.equal((await f.db.query("select profile_activated_at from member_registration_access where member_id=$1",[member.id])).rows[0].profile_activated_at,null);
   assert.equal((await f.db.query("select billing_state from member_lifecycle where member_id=$1",[member.id])).rows[0].billing_state,'pending');
   assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
+  await f.db.exec("update stripe_subscriptions set stripe_status='canceled'; update stripe_membership_commitments set status='ended'");
+  await f.replaceCard(member);
+  assert.deepEqual(await f.reconcile(),{created:1,updated:0,resolved:0},'a confirmed cancellation does not block a later new review');
+  assert.equal((await f.tasks(member.id)).find(value=>value.id!==task.id).status,'open');
 });
 
 test("payment resolves the review; replaced cards retire stale work; withdrawal cancels it without erasing history",async t=>{

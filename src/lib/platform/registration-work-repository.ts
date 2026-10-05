@@ -78,6 +78,9 @@ async function readRegistrationState(tx: postgres.TransactionSql, memberId: stri
       select exists (select 1 from stripe_checkout_attempts checkout
         where checkout.member_id = member.id and checkout.status in ('creating', 'open', 'completed')
           and checkout.recurring_payment_terms->>'firstPayment' = 'scheduled'
+          and not exists (select 1 from stripe_subscriptions subscription
+            where subscription.id = checkout.stripe_subscription_id and subscription.member_id = member.id
+              and subscription.stripe_status in ('canceled', 'incomplete_expired'))
           and not (checkout.status = 'completed' and exists (
             select 1 from stripe_membership_commitments commitment
             where commitment.checkout_attempt_id = checkout.id and commitment.member_id = member.id
