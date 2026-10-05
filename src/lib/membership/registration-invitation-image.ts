@@ -12,7 +12,7 @@ export type RegistrationInvitationCard = {
   inviterTag: string | null;
   invitationSource: "member" | "ruined_direct";
   issuedAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
   wearSeed: string;
 };
 
@@ -59,10 +59,13 @@ function localImage(src: string): Promise<Image> {
 }
 
 function validate(input: RegistrationInvitationCard) {
+  const validDeadline = input.expiresAt === null
+    ? input.invitationSource === "member"
+    : typeof input.expiresAt === "string" && Number.isFinite(Date.parse(input.expiresAt));
   if (![input.recipientName, input.inviterName, input.wearSeed].every(value => typeof value === "string" && value.trim().length > 0 && value.length <= 256)
     || (input.inviterTag !== null && (typeof input.inviterTag !== "string" || input.inviterTag.length > 64))
     || !["member", "ruined_direct"].includes(input.invitationSource)
-    || !Number.isFinite(Date.parse(input.issuedAt)) || !Number.isFinite(Date.parse(input.expiresAt))) {
+    || !Number.isFinite(Date.parse(input.issuedAt)) || !validDeadline) {
     throw new Error("Invitation artwork requires a complete issued invitation.");
   }
 }

@@ -20,7 +20,7 @@ export async function load(path, dependencies = {}, globals = {}) {
 export const model = await load("src/lib/membership/invitation-model.ts");
 const waitlistModel = await load("src/lib/membership/waitlist-model.ts");
 const policy = await load("src/lib/membership/access-policy.ts");
-export async function fixture(t, { applyExpiry = true } = {}) {
+export async function fixture(t, { applyExpiry = true, persistentPersonalInvitations = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite();
   // This lazy client supplies only the real parameter helper and serializers.
   // All queries execute in PGlite; no connection or provider call is opened.
@@ -55,6 +55,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   if (applyExpiry) await db.exec(await source("db/migrations/20260929002000_ruined_direct_invitations.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260930130000_direct_signup_confirmation.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20261005210000_personal_invitation_phone.sql"));
+  if (applyExpiry && persistentPersonalInvitations) await db.exec(await source("db/migrations/20261005213000_personal_invitation_no_expiry.sql"));
   function wrap(client) {
     const sql = (strings, ...values) => {
       const parameters = values.map((value, index) => {

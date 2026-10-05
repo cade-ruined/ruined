@@ -70,7 +70,7 @@ export async function saveOwnMemberInvitation(authUserId: string, value: MemberI
 export async function getPublicMemberInvitation(token: string): Promise<PublicMemberInvitation | null> {
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
   return withFreshApplicationDatabaseRead("member-invitations", async () => {
-    const [row] = await getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string; recipient_name: string | null;
+    const [row] = await getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string | null; recipient_name: string | null;
       membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null; recipient_email_required: boolean }>>`
       select invitation.member_id, invitation.origin, invitation.expires_at, invitation.recipient_name,
         invitation.membership_type, invitation.complimentary_ends_at, invitation.recipient_email_required,
@@ -82,7 +82,7 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
         where public_token = ${token} and enabled and expires_at > clock_timestamp()
         union all
         select member_id, origin, expires_at, recipient_name, membership_type, complimentary_ends_at, recipient_email_normalized is not null as recipient_email_required from member_personal_invitations
-        where public_token = ${token} and revoked_at is null and expires_at > clock_timestamp()
+        where public_token = ${token} and revoked_at is null and (expires_at is null or expires_at > clock_timestamp())
           and private.ruined_personal_invitation_benefit_available(id)
           and (origin = 'member' or (${getPlatformConfiguration().membershipSignupReady === true}
             and private.ruined_direct_invitation_available(id)))
@@ -95,7 +95,7 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
     return row ? { card: invitationCard(row.name, wearSeed(row.member_id ?? "ruined-direct"), row.member_tag),
       ...(row.origin === "ruined_direct" ? { invitationSource: "ruined_direct" as const,
         ...(!getPlatformConfiguration().stripeCheckoutReady ? { paymentSetupOnly: true } : {}) } : {}),
-      expiresAt: expiresAt(row.expires_at),
+      expiresAt: row.expires_at === null ? null : expiresAt(row.expires_at),
       ...(row.recipient_name !== null ? { recipientName: row.recipient_name, membershipType: row.membership_type,
         recipientEmailRequired: row.recipient_email_required,
         complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) } : null;

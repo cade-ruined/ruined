@@ -19,7 +19,7 @@ const deny = () => { throw new PersonalInvitationAdmissionDeniedError(); };
 export type PersonalInvitationClaim = {
   id: string; member_id: string | null; origin: "member" | "ruined_direct"; billing_plan: MembershipBillingPlan | null; recipient_name: string; recipient_email_normalized: string | null;
   recipient_phone: string | null; membership_type: "standard" | "complimentary";
-  issued_at: Date; expires_at: Date; accepted_at: Date | null;
+  issued_at: Date; expires_at: Date | null; accepted_at: Date | null;
   accepted_by_auth_user_id: string | null; accepted_member_id: string | null;
 };
 
@@ -37,7 +37,7 @@ export async function getPersonalInvitationAdmissionEligibility(email: string, t
           invitation.recipient_email_normalized is null and invitation.recipient_phone is not null
           and invitation.origin = 'member' and invitation.membership_type = 'standard' and invitation.accepted_at is null
         ))
-        and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
+        and invitation.revoked_at is null and (invitation.expires_at is null or invitation.expires_at > clock_timestamp())
         and private.ruined_personal_invitation_benefit_available(invitation.id)
         and ((invitation.origin = 'ruined_direct' and ${getPlatformConfiguration().membershipSignupReady === true}
           and private.ruined_direct_invitation_available(invitation.id))
@@ -102,7 +102,7 @@ async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: 
   }
   const [row] = await tx<Array<{ eligible: boolean }>>`select exists (
     select 1 from member_personal_invitations invitation join ruined_members inviter on inviter.id = invitation.member_id
-    where invitation.id = ${invitation.id}::uuid and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
+    where invitation.id = ${invitation.id}::uuid and invitation.revoked_at is null and (invitation.expires_at is null or invitation.expires_at > clock_timestamp())
       and private.ruined_personal_invitation_benefit_available(invitation.id)
       and inviter.deleted_at is null and private.ruined_member_can_share_invitation(inviter.id)
       and (invitation.recipient_email_normalized = ${recipientEmail} or (
@@ -204,7 +204,7 @@ export async function completePersonalInvitationClaim(tx: TransactionSql, viewer
       accepted_member_id = ${memberId}::uuid, version = version + 1, updated_at = clock_timestamp(),
       delivery_status = case when delivery_status in ('queued','sending','failed') then 'cancelled' else delivery_status end,
       next_attempt_at = null, delivery_locked_at = null, delivery_lock_token = null
-    where id = ${invitation.id}::uuid and accepted_at is null and revoked_at is null and expires_at > clock_timestamp()
+    where id = ${invitation.id}::uuid and accepted_at is null and revoked_at is null and (expires_at is null or expires_at > clock_timestamp())
       and (recipient_email_normalized is null or recipient_email_normalized = ${email})
     returning id`;
   if (!accepted) deny();

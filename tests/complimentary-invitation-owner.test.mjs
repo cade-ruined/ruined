@@ -45,9 +45,10 @@ test("complimentary terms are fixed, private reasons never reach the recipient, 
   const firstResult = await f.create(value), invite = firstResult.invitations[0];
   assert.equal(invite.membershipType, "complimentary"); assert.equal(invite.complimentaryGrant, null);
   assert.equal(invite.complimentaryEndsAt, value.complimentaryEndsAt);
-  assert.equal(Date.parse(invite.expiresAt) - Date.parse(invite.issuedAt), 48 * 60 * 60 * 1000);
+  assert.equal(invite.expiresAt, null, "The invitation has no deadline; its complimentary benefit keeps its separate fixed end date");
   const publicView = await f.repository.getPublicMemberInvitation(invite.url.split("/").pop());
   assert.equal(publicView.membershipType, "complimentary"); assert.equal(publicView.complimentaryEndsAt, value.complimentaryEndsAt);
+  assert.equal(publicView.expiresAt, null);
   assert.doesNotMatch(JSON.stringify(publicView), /Private founding|example.test|authorized|grantedBy|complimentaryReason/);
   assert.deepEqual((await f.create(value)).invitations[0], invite);
   for (const change of [{ complimentaryReason: "Different" }, { complimentaryEndsAt: null },

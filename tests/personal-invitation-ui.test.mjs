@@ -60,19 +60,20 @@ async function harness(initialSnapshot = snapshot, options = {}) {
 
 test("an unaccepted complimentary invitation schedules its earlier benefit deadline and leaves Active at that exact boundary", async () => {
   const complimentaryEndsAt = "2099-09-19T05:59:59.999Z";
-  const invitation = { ...record, membershipType: "complimentary", complimentaryEndsAt, available: true, deliveryStatus: "not_requested" };
+  const invitation = { ...record, expiresAt: null, membershipType: "complimentary", complimentaryEndsAt, available: true, deliveryStatus: "not_requested" };
   const ui = await harness({ ...snapshot, canGrantComplimentary: true, invitations: [invitation], counts: { ...snapshot.counts, created: 1, active: 1 } }, { now: Date.parse(complimentaryEndsAt) - 1 });
   const before = ui.render();
-  assert.equal(ui.watchedDeadlines.at(-1), complimentaryEndsAt, "the owner must wake at the benefit deadline before the 48-hour invitation deadline");
-  assert.match(text(descendants(before).find(element => element.type === "dl")), /Created1Active1Expired0/);
+  assert.equal(ui.watchedDeadlines.at(-1), complimentaryEndsAt, "the owner must wake at the benefit deadline even without an invitation deadline");
+  assert.match(text(descendants(before).find(element => element.type === "dl")), /Created1Active1Cancelled0/);
   assert.ok(find(before, "button", "Copy link"));
   ui.advanceTo(complimentaryEndsAt);
   const atDeadline = ui.render(), row = descendants(atDeadline).find(element => element.type === "li");
   assert.match(text(row), /Unavailable/);
   assert.equal(find(row, "button", "Copy link"), undefined);
   assert.ok(find(row, "a", "Invite again ↗"));
-  assert.match(text(descendants(atDeadline).find(element => element.type === "dl")), /Created1Active0Expired0/);
-  assert.equal(ui.watchedDeadlines.at(-1), future, "the original invitation deadline remains unchanged");
+  assert.match(text(descendants(atDeadline).find(element => element.type === "dl")), /Created1Active0Cancelled0/);
+  assert.equal(ui.watchedDeadlines.at(-1), null, "there is no invitation deadline to invent");
+  assert.ok(find(row, "button", "Cancel invitation"), "an unavailable complimentary offer can still be cancelled");
   assert.equal(ui.calls.length, 0, "the local deadline updates the status even without a server refresh");
 });
 
@@ -101,7 +102,7 @@ test("only admin snapshots expose membership choice, after recipient contact det
   assert.equal(input(tree, "complimentaryReason"), undefined);
 });
 
-test("admin complimentary invitations default to ongoing and preserve the 48-hour acceptance deadline", async () => {
+test("admin complimentary invitations default to ongoing without an acceptance deadline", async () => {
   const ui = await harness({ ...snapshot, canGrantComplimentary: true });
   input(ui.render(), "recipientName").props.onChange({ target: { value: "Alex" } });
   input(ui.render(), "recipientEmail").props.onChange({ target: { value: "alex@example.test" } });
@@ -111,7 +112,8 @@ test("admin complimentary invitations default to ongoing and preserve the 48-hou
   assert.equal(input(tree, "complimentaryReason").props.required, true);
   assert.equal(select(tree, "complimentaryDuration").props.value, "ongoing");
   assert.equal(input(tree, "complimentaryEndDate"), undefined);
-  assert.match(text(tree), /The invitation still has 48 hours to be accepted/);
+  assert.match(text(tree), /Personal invitations don’t expire/);
+  assert.doesNotMatch(text(tree), /48 hours/);
   await form(tree).props.onSubmit({ preventDefault() {} });
   assert.deepEqual(ui.calls[0].body, { recipientName: "Alex", recipientEmail: "alex@example.test", requestId: "request-1", sendEmail: true, membershipType: "complimentary", complimentaryReason: "Founding member", complimentaryEndsAt: null });
 });
@@ -246,7 +248,7 @@ test("history preserves individual deadlines and accepted outcomes, with expired
   }
   descendants(rows[1]).find(element => element.type === "button" && element.props["aria-label"] === "Preview invitation for Expired person").props.onClick();
   assert.equal(ui.render().props.invitationRecipientName, "Expired person"); assert.equal(ui.render().props.invitationExpiresAt, past);
-  find(ui.render(), "button", "Expired").props.onClick();
+  find(ui.render(), "button", "Cancelled").props.onClick();
   assert.equal(descendants(ui.render()).filter(element => element.type === "li").length, 1);
   find(ui.render(), "button", "Accepted").props.onClick();
   assert.match(text(descendants(ui.render()).find(element => element.type === "li")), /Accepted person/);
@@ -263,13 +265,13 @@ test("copy does not write or renew, cancellation is explicit and affects only it
   assert.deepEqual(ui.calls.map(({ url, method, body }) => ({ url, method, body })), [{ url: "/api/my/invitations/personal-one", method: "PATCH", body: { action: "revoke", version: 3 } }]);
 });
 
-test("failed delivery can retry without extending the deadline or generating another invitation", async () => {
+test("failed delivery retries the same invitation link", async () => {
   const ui = await harness({ ...snapshot, invitations: [{ ...record, deliveryStatus: "failed" }] });
   assert.match(renderToStaticMarkup(ui.render()), /Email didn’t send/);
   await find(ui.render(), "button", "Retry email").props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(ui.calls[0].body, { action: "retry_email", version: 3 });
-  assert.match(renderToStaticMarkup(ui.render()), /original deadline stays the same/);
+  assert.match(renderToStaticMarkup(ui.render()), /same invitation link is used/);
 });
 
 test("earlier shared invitations keep their own links and do not invent a named recipient", async () => {
@@ -342,5 +344,55 @@ test("SMS payloads preserve text as data and reject invalid destinations", () =>
   }
   for (const recipientPhone of ["", "18015550123", "+18015550123,19005550123", "+18015550123?body=wrong"]) {
     assert.equal(textHelper.personalInvitationText({ ...input, recipientPhone }), null);
+  }
+});
+
+test("personal invitations without a deadline stay active and shareable until cancelled", async () => {
+  const invitation = { ...record, expiresAt: null, recipientPhone: "+18015550123", url: `/invitation/${"t".repeat(43)}` };
+  const ui = await harness({ ...snapshot, invitations: [invitation], counts: { ...snapshot.counts, created: 1, active: 1 } });
+  ui.advanceTo("2100-01-01T00:00:00Z");
+  const tree = ui.render(), row = descendants(tree).find(element => element.type === "li");
+  assert.equal(ui.watchedDeadlines.at(-1), null);
+  assert.match(text(row), /Active/);
+  assert.doesNotMatch(text(row), /Expires|Expired|Original deadline|1970/);
+  assert.ok(find(row, "button", "Cancel invitation"));
+  await find(row, "button", "Copy link").props.onClick();
+  find(ui.render(), "button", "Text invitation").props.onClick();
+  assert.deepEqual(ui.copied, [`https://members.example.test/invitation/${"t".repeat(43)}`]);
+  assert.equal(ui.opened.length, 1);
+  assert.equal(ui.calls.length, 0);
+});
+
+test("requested invitations remain cancellable and cancellation takes priority over their request history", async () => {
+  const requested = { ...record, expiresAt: null, submittedAt: past };
+  const cancelled = { ...requested, revokedAt: past, deliveryStatus: "cancelled", version: 4 };
+  const ui = await harness({ ...snapshot, invitations: [requested] }, { fetch: async () => ({ ok: true, json: async () => ({ snapshot: { ...snapshot, invitations: [cancelled] } }) }) });
+  assert.match(text(ui.render()), /Requested/);
+  find(ui.render(), "button", "Cancel invitation").props.onClick();
+  await find(ui.render(), "button", "Yes, cancel invitation").props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(ui.calls[0].body, { action: "revoke", version: 3 });
+  const row = descendants(ui.render()).find(element => element.type === "li");
+  const badge = descendants(row).find(element => element.type === "span" && element.props["data-status"]);
+  assert.equal(text(badge), "Cancelled");
+  assert.match(text(row), /Requested/, "keep the earlier request in the audit history");
+  assert.equal(find(row, "button", "Cancel invitation"), undefined);
+  assert.equal(find(row, "button", "Copy link"), undefined);
+  find(ui.render(), "button", "Cancelled").props.onClick();
+  assert.equal(descendants(ui.render()).filter(element => element.type === "li").length, 1);
+});
+
+test("nonexpiring cancellation preserves owner permissions and cannot cancel accepted or joined invitations", async () => {
+  for (const state of [{ acceptedAt: past }, { joinedAt: past }, { revokedAt: past }]) {
+    const ui = await harness({ ...snapshot, invitations: [{ ...record, expiresAt: null, ...state }] });
+    assert.equal(find(ui.render(), "button", "Cancel invitation"), undefined);
+  }
+  for (const [limits, options] of [[{ writable: false }, {}], [{ eligible: false }, {}], [{}, { preview: true }]]) {
+    const ui = await harness({ ...snapshot, ...limits, invitations: [{ ...record, expiresAt: null, submittedAt: past }] }, options);
+    const action = find(ui.render(), "button", "Cancel invitation");
+    assert.equal(action.props.disabled, true);
+    action.props.onClick();
+    await find(ui.render(), "button", "Yes, cancel invitation").props.onClick();
+    assert.equal(ui.calls.length, 0);
   }
 });

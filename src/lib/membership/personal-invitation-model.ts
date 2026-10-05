@@ -7,7 +7,7 @@ export type PersonalInvitationDeliveryStatus = "not_requested" | "queued" | "sen
 export type InvitationMembershipType = "standard" | "complimentary";
 export type PersonalMemberInvitation = {
   id: string; requestId?: string; recipientName: string; recipientEmail: string; recipientPhone: string | null; url: string | null;
-  issuedAt: string; expiresAt: string; revokedAt: string | null; submittedAt: string | null; acceptedAt: string | null;
+  issuedAt: string; expiresAt: string | null; revokedAt: string | null; submittedAt: string | null; acceptedAt: string | null;
   joinedAt: string | null; deliveryStatus: PersonalInvitationDeliveryStatus; sentAt: string | null; version: number;
   membershipType: InvitationMembershipType; complimentaryReason: string | null; complimentaryEndsAt: string | null;
   complimentaryGrant: { id: string; startsAt: string; endsAt: string | null; revokedAt: string | null } | null;

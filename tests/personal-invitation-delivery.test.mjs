@@ -36,6 +36,21 @@ test("personal invitation email escapes names, uses the fixed deadline and makes
   assert.doesNotMatch(email.createPersonalInvitationEmail({ ...input, inviterName: "@cade", inviterTag: "cade" }).text, /@cade @cade/);
 });
 
+
+test("non-expiring personal emails omit the deadline while direct invites still require one", () => {
+  const message = email.createPersonalInvitationEmail({ ...input, expiresAt: null });
+  for (const output of [message.text, message.html]) {
+    assert.doesNotMatch(output, /valid until|48 hours|1970|null|undefined/i);
+    assert.ok(output.includes(input.invitationUrl));
+  }
+  const complimentary = email.createPersonalInvitationEmail({ ...input, expiresAt: null, membershipType: "complimentary", complimentaryEndsAt: "2027-01-01T07:00:00.000Z" });
+  assert.match(complimentary.text, /complimentary through JAN\. 1/);
+  assert.doesNotMatch(complimentary.text, /invitation is valid until/);
+  for (const overrides of [{ invitationSource: "ruined_direct", expiresAt: null }, { expiresAt: undefined }, { expiresAt: "broken" }]) {
+    assert.throws(() => email.createPersonalInvitationEmail({ ...input, ...overrides }), /valid invitation deadline/);
+  }
+});
+
 async function fixture(t) {
   const PGlite = await loadPGliteForSchemaChecks(), pg = new PGlite();
   const member = crypto.randomUUID(), id = crypto.randomUUID();
@@ -52,7 +67,8 @@ async function fixture(t) {
     alter table member_personal_invitations add column accepted_at timestamptz,
       add column membership_type text default 'standard', add column complimentary_ends_at timestamptz,
       add column origin text default 'member';
-    alter table member_personal_invitations alter column member_id drop not null;
+    alter table member_personal_invitations alter column member_id drop not null,
+      alter column expires_at drop not null;
     create function private.ruined_direct_invitation_available(uuid) returns boolean language sql as 'select true';
     create function private.ruined_lock_member_complimentary_funding(uuid) returns boolean language sql as 'select false';
     create function private.ruined_personal_invitation_benefit_available(uuid) returns boolean language sql as
@@ -121,6 +137,19 @@ test("queued invitation sends once with canonical address; a repeated batch is h
   assert.equal(row.delivery_status, "sent");
   assert.equal(row.resend_email_id, "accepted-provider-id");
   assert.equal(row.version, 1, "delivery does not change owner version");
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).claimed, 0);
+  assert.equal(f.sends.length, 1);
+});
+
+test("a non-expiring personal invitation sends once without a fabricated deadline", async t => {
+  const f = await fixture(t);
+  await f.pg.query("update member_personal_invitations set issued_at=now()-interval '2 years',expires_at=null where id=$1", [f.id]);
+  assert.equal((await f.worker.processPersonalInvitationEmailBatch()).sent, 1);
+  assert.equal((await f.row()).expires_at, null);
+  for (const output of [f.sends[0].payload.text, f.sends[0].payload.html]) {
+    assert.doesNotMatch(output, /valid until|48 hours|1970|null|undefined/i);
+    assert.ok(output.includes(input.invitationUrl));
+  }
   assert.equal((await f.worker.processPersonalInvitationEmailBatch()).claimed, 0);
   assert.equal(f.sends.length, 1);
 });

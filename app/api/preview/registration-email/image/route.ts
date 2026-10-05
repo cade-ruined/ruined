@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     inviterTag: memberInvite ? "cade" : null,
     invitationSource: memberInvite ? "member" : "ruined_direct",
     issuedAt: "2026-09-30T18:00:00Z",
-    expiresAt: "2026-10-02T18:00:00Z",
+    expiresAt: memberInvite ? null : "2026-10-02T18:00:00Z",
     wearSeed: "registration-email-fictional-preview",
   });
   return new Response(new Uint8Array(image), { headers: {

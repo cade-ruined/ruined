@@ -311,10 +311,12 @@ test("direct card preview uses an explicit source and fictional recipient while 
   assert.equal(direct.props.invitation.invitationSource, "ruined_direct"); assert.equal(direct.props.invitation.recipientName, "Cherry Hill");
   assert.equal(direct.props.invitation.membershipType, "standard"); assert.equal(direct.props.preview, true);
   assert.equal(direct.props.invitation.token, undefined);
+  assert.equal(direct.props.invitation.expiresAt, "2099-01-01T00:00:00Z");
   assert.equal(direct.props.invitation.card.name, "The Ruined Project");
   const textInvite = await page.default({ searchParams: Promise.resolve({ delivery: "text" }) });
   assert.equal(textInvite.props.invitation.recipientEmailRequired, false);
   assert.equal(textInvite.props.invitation.token, undefined);
+  assert.equal(textInvite.props.invitation.expiresAt, null);
   assert.equal(textInvite.props.invitation.recipientName, "Alex Rivera");
   assert.equal(textInvite.props.preview, true);
   mode = "connected"; await assert.rejects(page.default(params), /not_found/);

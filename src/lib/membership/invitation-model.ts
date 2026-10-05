@@ -1,6 +1,6 @@
 import type { PublicMemberCard } from "./public-card-model";
 
-export type PublicMemberInvitation = { paymentSetupOnly?: boolean; invitationSource?: "member" | "ruined_direct"; card: PublicMemberCard; expiresAt: string; recipientName?: string | null;
+export type PublicMemberInvitation = { paymentSetupOnly?: boolean; invitationSource?: "member" | "ruined_direct"; card: PublicMemberCard; expiresAt: string | null; recipientName?: string | null;
   membershipType?: "standard" | "complimentary"; complimentaryEndsAt?: string | null; recipientEmailRequired?: boolean };
 export type MemberInvitationSnapshot = Omit<PublicMemberInvitation, "expiresAt"> & {
   expiresAt: string | null;

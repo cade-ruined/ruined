@@ -441,6 +441,7 @@ test("preview image is fictional, ignores supplied identity, and cannot render i
     assert.equal(response.headers.get("Cache-Control"),"private, no-store");
     assert.equal(rendered[0].recipientName,"Alex Rivera");assert.equal(rendered[0].inviterName,"Cade Mangelson");
     assert.equal(rendered[0].inviterTag,"cade");assert.equal(rendered[0].invitationSource,"member");
+    assert.equal(rendered[0].expiresAt,null);
     const direct=await preview.GET(new Request("http://localhost/api/preview/registration-email/image"));
     assert.equal(direct.status,200);assert.equal(rendered[1].inviterName,"The Ruined Project");
     assert.equal(rendered[1].inviterTag,null);assert.equal(rendered[1].invitationSource,"ruined_direct");
@@ -465,4 +466,17 @@ test("registration recovery endpoint requires its bearer secret and does not acc
     assert.equal((await route.POST(new Request("https://example.test/api/internal/membership/registration-messages?email=attacker@example.test",{headers:{Authorization:"Bearer private-test-secret"}}))).status,200);
     assert.equal(calls,1);
   }finally{if(old===undefined)delete process.env.CRON_SECRET;else process.env.CRON_SECRET=old;}
+});
+
+
+test("welcome preserves a non-expiring accepted member invitation without inventing a 1970 deadline", async t => {
+  const f = await fixture(t);
+  await f.invite({ expires: null });
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent, 1);
+  assert.equal(f.rendered.length, 1);
+  assert.equal(f.rendered[0].expiresAt, null);
+  assert.equal(f.rendered[0].invitationSource, "member");
+  assert.equal(f.rendered[0].recipientName, "Alex from invitation");
+  assert.equal(f.rendered[0].inviterName, "Original Inviter");
+  assert.doesNotMatch(JSON.stringify(f.rendered[0]), /1970/);
 });

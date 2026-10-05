@@ -33,14 +33,14 @@ export function InvitationLanding({ card, token, expiresAt, recipientName, membe
 }
 
 type InvitationStatus = "active" | "expired" | "accepted" | "requested" | "joined" | "revoked" | "unavailable";
-type HistoryFilter = "all" | "active" | "expired" | "accepted" | "joined";
+type HistoryFilter = "all" | "active" | "revoked" | "accepted" | "joined";
 const statusLabels: Record<InvitationStatus, string> = { active: "Active", expired: "Expired", accepted: "Accepted", requested: "Requested", joined: "Joined", revoked: "Cancelled", unavailable: "Unavailable" };
 function invitationStatus(invitation: PersonalMemberInvitation): InvitationStatus {
   if (invitation.joinedAt) return "joined";
   if (invitation.acceptedAt) return "accepted";
-  if (invitation.submittedAt) return "requested";
   if (invitation.revokedAt) return "revoked";
-  if (memberInvitationExpired(invitation.expiresAt)) return "expired";
+  if (invitation.submittedAt) return "requested";
+  if (invitation.expiresAt !== null && memberInvitationExpired(invitation.expiresAt)) return "expired";
   return invitation.available === false || (invitation.membershipType === "complimentary" && invitation.complimentaryEndsAt && memberInvitationExpired(invitation.complimentaryEndsAt)) ? "unavailable" : "active";
 }
 function invitationActive(invitation: PersonalMemberInvitation) {
@@ -90,7 +90,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
     ...(invitation.complimentaryEndsAt ? [invitation.complimentaryEndsAt] : []),
     ...(invitation.complimentaryGrant?.endsAt ? [invitation.complimentaryGrant.endsAt] : [])])
     .concat(snapshot.legacyInvitation?.expiresAt ? [snapshot.legacyInvitation.expiresAt] : [])
-    .filter(value => !memberInvitationExpired(value)).sort()[0] ?? null;
+    .filter((value): value is string => value !== null && !memberInvitationExpired(value)).sort()[0] ?? null;
   useInvitationExpired(nextExpiry);
 
   useEffect(() => {
@@ -164,16 +164,16 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
       const payload = await response.json();
       if (!response.ok || !payload.snapshot) throw new Error(payload.error || "Your invitation could not be updated.");
       setSnapshot(payload.snapshot); setConfirmCancel(null); setConfirmEndAccess(null);
-      setStatus(action === "end_complimentary" ? `Complimentary access for ${invitation.recipientName} ended. Their member record stays in place.` : action === "revoke" ? `Invitation for ${invitation.recipientName} cancelled. Its history stays here.` : `Email queued for ${invitation.recipientName}. The original deadline stays the same.`);
+      setStatus(action === "end_complimentary" ? `Complimentary access for ${invitation.recipientName} ended. Their member record stays in place.` : action === "revoke" ? `Invitation for ${invitation.recipientName} cancelled. Its history stays here.` : `Email queued for ${invitation.recipientName}. The same invitation link is used.`);
     } catch (error) { setError(error instanceof Error ? error.message : "Your invitation could not be updated."); }
     finally { writing.current = false; setPending(null); }
   }
 
-  async function copyLink(url: string, expiresAt: string) {
-    if (busy || memberInvitationExpired(expiresAt)) { setStatus("This invitation has expired. Create a new one to invite them again."); return; }
+  async function copyLink(url: string, expiresAt: string | null) {
+    if (busy || (expiresAt !== null && memberInvitationExpired(expiresAt))) { setStatus("This invitation has expired. Create a new one to invite them again."); return; }
     const absoluteUrl = new URL(url, window.location.origin).href;
     setError(""); setStatus(""); setFallbackUrl("");
-    try { await navigator.clipboard.writeText(absoluteUrl); setStatus("Invitation link copied. The deadline stays the same."); }
+    try { await navigator.clipboard.writeText(absoluteUrl); setStatus("Invitation link copied."); }
     catch { setFallbackUrl(absoluteUrl); setStatus("Select and copy your invitation link below."); }
   }
 
@@ -190,7 +190,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
 
   if (!snapshot?.card) return <main className={styles.empty}><Link href="/my">↖ My profile</Link><h1>My Invitations</h1>{error ? <><p role="alert">{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Try again</button></> : <p role="status">Preparing your invitations…</p>}</main>;
   const active = snapshot.invitations.filter(invitationActive).length;
-  const expired = snapshot.invitations.filter(invitation => invitationStatus(invitation) === "expired").length;
+  const cancelled = snapshot.invitations.filter(invitation => invitationStatus(invitation) === "revoked").length;
   const visibleInvitations = snapshot.invitations.filter(invitation => filter === "all" || (filter === "active" ? invitationActive(invitation) : invitationStatus(invitation) === filter));
   const legacy = snapshot.legacyInvitation;
   const emailEnabled = Boolean(snapshot.emailReady && sendEmail && recipientEmail.trim());
@@ -203,7 +203,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
       <p className={styles.previewCaption}>{selected ? <>Showing the invitation for <strong>{selected.recipientName}</strong><button type="button" onClick={() => setSelectedId(null)}>Back to new invitation</button></> : <>Your next invitation{recipientName.trim() ? <>, for <strong>{recipientName.trim()}</strong></> : " starts here."}</>}</p>
       <section id="create-invitation" className={styles.panel} aria-labelledby="my-invitation-title">
         <p className={styles.eyebrow}>A personal introduction</p><h2 id="my-invitation-title">Bring someone in.</h2>
-        <p>Put their name on a card. Each person gets their own invitation, with 48 hours to accept and verify their email.</p>
+        <p>Put their name on a card. Each person gets their own invitation and confirms their email before joining.</p>
         <form className={styles.form} onSubmit={createInvitation} aria-label="Create a personal invitation" aria-busy={pending === "create"}>
           <fieldset className={styles.fields} disabled={busy || (!preview && !writable)}>
             <legend className={styles.visuallyHidden}>Who are you inviting?</legend>
@@ -216,14 +216,14 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
                 <label className={styles.field} htmlFor="invite-complimentary-reason">Reason<input id="invite-complimentary-reason" name="complimentaryReason" value={complimentaryReason} required maxLength={500} aria-describedby="invite-reason-note" onChange={event => { setComplimentaryReason(event.target.value); editMembership(); }} /><span id="invite-reason-note" className={styles.note}>Private admin note. This does not assign a membership tier.</span></label>
                 <label className={styles.field} htmlFor="invite-complimentary-duration">Duration<select id="invite-complimentary-duration" name="complimentaryDuration" value={limitedDuration ? "limited" : "ongoing"} onChange={event => { setLimitedDuration(event.target.value === "limited"); editMembership(); }}><option value="ongoing">Ongoing</option><option value="limited">Set an end date</option></select></label>
                 {limitedDuration ? <label className={styles.field} htmlFor="invite-complimentary-end-date">Complimentary through<input id="invite-complimentary-end-date" name="complimentaryEndDate" type="date" required value={complimentaryEndDate} aria-describedby="invite-membership-duration-note" onChange={event => { setComplimentaryEndDate(event.target.value); editMembership(); }} /></label> : null}
-                <p id="invite-membership-duration-note" className={styles.note}>{limitedDuration ? <>Access lasts through 11:59 PM on the selected day in your local timezone.{draftEndsAt ? <> Saved deadline: {complimentaryMembershipDeadline(draftEndsAt)}.</> : null} No payment is needed during this period.</> : "No payment needed. Complimentary membership continues until an admin ends it."} The invitation still has 48 hours to be accepted.</p>
+                <p id="invite-membership-duration-note" className={styles.note}>{limitedDuration ? <>Access lasts through 11:59 PM on the selected day in your local timezone.{draftEndsAt ? <> Saved deadline: {complimentaryMembershipDeadline(draftEndsAt)}.</> : null} No payment is needed during this period.</> : "No payment needed. Complimentary membership continues until an admin ends it."}</p>
               </div> : null}
             </div> : null}
           </fieldset>
           {snapshot.emailReady ? <label className={styles.emailChoice}><input type="checkbox" checked={emailEnabled} disabled={busy || !writable || !recipientEmail.trim()} onChange={event => { setSendEmail(event.target.checked); requestId.current = null; }} />Email this invitation</label> : <p className={styles.note}>Email delivery isn’t available right now. You can create an invitation and send its link yourself.</p>}
           <div className={styles.formFooter}><p className={styles.note}>{emailEnabled ? "We’ll email their personal link from Ruined." : "Contact details stay private. Only their name appears on the card."}</p><button className={styles.enable} type="submit" disabled={busy || !writable || snapshot.remainingToday < 1}>{pending === "create" ? "Creating…" : emailEnabled ? "Create & email invitation" : "Create invitation"}<span aria-hidden="true">↗</span></button></div>
         </form>
-        <p className={styles.note}>Your invitation approves them to join. The 48 hours begin when you create it; after accepting, they complete their profile and membership.</p>
+        <p className={styles.note}>Personal invitations don’t expire. You can cancel an invitation here until it’s accepted. Any end date for complimentary membership still applies.</p>
         {preview ? <p className={styles.note}>This is a preview with example names and counts. You can try a name on the card; creating and sending are disabled.</p> : !snapshot.eligible ? <p className={styles.note}>Invitations become available once membership entry is complete and your membership is active.</p> : !snapshot.writable ? <p className={styles.note}>Invitations are temporarily read-only. Please try again later.</p> : snapshot.remainingToday < 1 ? <p className={styles.note}>You’ve reached today’s limit of {snapshot.dailyLimit} invitations. Please try again later.</p> : null}
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
       </section>
@@ -231,13 +231,13 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
       {fallbackUrl ? <label className={`${styles.field} ${styles.panel}`}>Invitation link<input readOnly value={fallbackUrl} onFocus={event => event.target.select()} /></label> : null}
       <section className={styles.panel} aria-labelledby="invitation-history-title" aria-busy={loading}>
         <div className={styles.historyHeading}><div><p className={styles.eyebrow}>Your invitations</p><h2 id="invitation-history-title">Keep track.</h2></div><button className={styles.quiet} type="button" disabled={busy || preview} onClick={() => setRetry(value => value + 1)}>{loading ? "Refreshing…" : "Refresh"}</button></div>
-        <dl className={styles.statistics}><div><dt>Created</dt><dd>{snapshot.counts.created}</dd></div><div><dt>Active</dt><dd>{active}</dd></div><div><dt>Expired</dt><dd>{expired}</dd></div><div><dt>Accepted</dt><dd>{snapshot.counts.accepted}</dd></div><div><dt>Joined</dt><dd>{snapshot.counts.joined}</dd></div></dl>
+        <dl className={styles.statistics}><div><dt>Created</dt><dd>{snapshot.counts.created}</dd></div><div><dt>Active</dt><dd>{active}</dd></div><div><dt>Cancelled</dt><dd>{cancelled}</dd></div><div><dt>Accepted</dt><dd>{snapshot.counts.accepted}</dd></div><div><dt>Joined</dt><dd>{snapshot.counts.joined}</dd></div></dl>
         <p className={styles.note}>Email and text invitations share the same tracking. Accepted means they verified their email. Joined means they completed membership. Earlier waitlist submissions still appear as Requested.</p>
         {snapshot.invitations.length > 0 ? <>
-          <div className={styles.historyFilters} role="group" aria-label="Filter invitations">{(["all", "active", "expired", "accepted", "joined"] as const).map(value => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : statusLabels[value]}</button>)}</div>
+          <div className={styles.historyFilters} role="group" aria-label="Filter invitations">{(["all", "active", "revoked", "accepted", "joined"] as const).map(value => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : statusLabels[value]}</button>)}</div>
           {visibleInvitations.length > 0 ? <ul className={styles.history}>{visibleInvitations.map(invitation => {
             const state = invitationStatus(invitation), shareable = canShare(invitation), updating = pending === invitation.id;
-            const canCancel = shareable;
+            const canCancel = !invitation.acceptedAt && !invitation.joinedAt && !invitation.revokedAt;
             const grant = invitation.complimentaryGrant;
             const grantEnded = Boolean(grant && (grant.revokedAt || (grant.endsAt && memberInvitationExpired(grant.endsAt))));
             const canEndAccess = Boolean(snapshot.canGrantComplimentary && invitation.membershipType === "complimentary" && invitation.acceptedAt && grant && !grantEnded);
@@ -245,7 +245,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
             return <li key={invitation.id} data-selected={selectedId === invitation.id}>
               <div className={styles.recordHeading}><div className={styles.recipient}><button type="button" aria-label={`Preview invitation for ${invitation.recipientName}`} aria-pressed={selectedId === invitation.id} onClick={() => setSelectedId(invitation.id)}>{invitation.recipientName}</button>{invitation.recipientEmail ? <span>{invitation.recipientEmail}</span> : null}{invitation.recipientPhone ? <span>{invitation.recipientPhone}</span> : null}</div><div className={styles.recordBadges}><span className={styles.badge} data-status={state}>{statusLabels[state]}</span>{invitation.membershipType === "complimentary" ? <span className={styles.badge}>Complimentary</span> : null}</div></div>
               {invitation.membershipType === "complimentary" ? <p className={styles.membershipMeta}>{grantEnded ? <>Complimentary access ended{grant?.revokedAt || grant?.endsAt ? <> · <time dateTime={(grant.revokedAt ?? grant.endsAt)!}>{complimentaryMembershipDeadline((grant.revokedAt ?? grant.endsAt)!)}</time></> : null}</> : membershipEndsAt ? <>Complimentary through <time dateTime={membershipEndsAt}>{complimentaryMembershipDeadline(membershipEndsAt)}</time></> : "Ongoing complimentary membership"}{snapshot.canGrantComplimentary && invitation.complimentaryReason ? <span>{invitation.complimentaryReason}</span> : null}</p> : null}
-              <div className={styles.recordMeta}><p>Created <time dateTime={invitation.issuedAt}>{shortDate(invitation.issuedAt)}</time></p><p>{invitation.acceptedAt || invitation.joinedAt || invitation.submittedAt ? "Original deadline" : memberInvitationExpired(invitation.expiresAt) ? "Expired" : "Expires"} <time dateTime={invitation.expiresAt}>{memberInvitationDeadline(invitation.expiresAt)}</time></p></div>
+              <div className={styles.recordMeta}><p>Created <time dateTime={invitation.issuedAt}>{shortDate(invitation.issuedAt)}</time></p>{invitation.expiresAt ? <p>{invitation.acceptedAt || invitation.joinedAt || invitation.submittedAt ? "Original deadline" : memberInvitationExpired(invitation.expiresAt) ? "Expired" : "Expires"} <time dateTime={invitation.expiresAt}>{memberInvitationDeadline(invitation.expiresAt)}</time></p> : null}</div>
               <div className={styles.recordMeta}><p className={invitation.deliveryStatus === "failed" ? styles.failed : undefined}>{deliveryLabel(invitation)}{invitation.sentAt ? <> · <time dateTime={invitation.sentAt}>{shortDate(invitation.sentAt)}</time></> : null}</p>{invitation.acceptedAt ? <p>Accepted <time dateTime={invitation.acceptedAt}>{shortDate(invitation.acceptedAt)}</time></p> : null}{invitation.submittedAt ? <p>Requested <time dateTime={invitation.submittedAt}>{shortDate(invitation.submittedAt)}</time></p> : null}{invitation.joinedAt ? <p>Joined <time dateTime={invitation.joinedAt}>{shortDate(invitation.joinedAt)}</time></p> : null}</div>
               <div className={styles.recordActions}>
                 {shareable ? <>{invitation.recipientPhone ? <button type="button" disabled={busy || !writable} onClick={() => textInvitation(invitation)}>Text invitation</button> : null}<button type="button" disabled={busy} onClick={() => void copyLink(invitation.url!, invitation.expiresAt)}>Copy link</button><a href={invitation.url!} target="_blank" rel="noreferrer">View invitation ↗</a></> : null}
@@ -257,8 +257,8 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
               {confirmCancel === invitation.id ? <div className={styles.cancelPrompt}><p>Cancel the invitation for {invitation.recipientName}? Their link will stop working. The record stays here.</p><div className={styles.recordActions}><button type="button" disabled={busy} onClick={() => void updateInvitation(invitation, "revoke")}>{updating ? "Cancelling…" : "Yes, cancel invitation"}</button><button type="button" disabled={busy} onClick={() => setConfirmCancel(null)}>Keep invitation</button></div></div> : null}
               {canEndAccess && confirmEndAccess === invitation.id ? <div className={styles.cancelPrompt}><p>End complimentary access for {invitation.recipientName} now? If no other membership covers them, their access will end. Their member record and history stay in place.</p><div className={styles.recordActions}><button type="button" disabled={busy || !canManageComplimentary} onClick={() => void updateInvitation(invitation, "end_complimentary")}>{updating ? "Ending access…" : "Yes, end complimentary access"}</button><button type="button" disabled={busy} onClick={() => setConfirmEndAccess(null)}>Keep complimentary access</button></div></div> : null}
             </li>;
-          })}</ul> : <p className={styles.historyEmpty}>No {filter} invitations.</p>}
-        </> : <p className={styles.historyEmpty}>Your first personal invitation will appear here. You’ll see who it’s for, when it expires, and whether they join.</p>}
+          })}</ul> : <p className={styles.historyEmpty}>No {filter === "all" ? "matching" : statusLabels[filter].toLowerCase()} invitations.</p>}
+        </> : <p className={styles.historyEmpty}>Your first personal invitation will appear here. You’ll see who it’s for, whether they accept, and when they join.</p>}
         {legacy ? <div className={styles.legacy}><div className={styles.recordHeading}><p>Earlier shared invitation</p><span className={styles.badge}>{!legacy.enabled ? "Sharing off" : memberInvitationExpired(legacy.expiresAt) ? "Expired" : "Active"}</span></div><p className={styles.note}>Your original shared link. New personal invitations have their own links.</p><p className={styles.note}>{memberInvitationExpired(legacy.expiresAt) ? "Expired" : "Expires"} <time dateTime={legacy.expiresAt}>{memberInvitationDeadline(legacy.expiresAt)}</time>.</p>{legacy.enabled && legacy.url && !memberInvitationExpired(legacy.expiresAt) ? <div className={styles.recordActions}><button type="button" disabled={busy} onClick={() => void copyLink(legacy.url!, legacy.expiresAt)}>Copy earlier link</button><a href={legacy.url} target="_blank" rel="noreferrer">View invitation ↗</a></div> : null}</div> : null}
       </section>
     </div>

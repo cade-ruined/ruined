@@ -525,3 +525,18 @@ test("legacy shared invitations retain their attributed waitlist and expiry chec
     assert.equal(elements.some(element => element.type === c.Signup || element.type === c.Acceptance), false);
   }
 });
+
+test("personal landing invitations accept nullable deadlines while legacy shared links still require one", async () => {
+  const invitation = { ...issuedInvitation, expiresAt: null };
+  const c = await components();
+  const html = renderToStaticMarkup(React.createElement(c.Overview, { invitation, registrationOnly: true, paymentSetupOnly: true }));
+  assert.match(html, /Accept my invitation/);
+  assert.doesNotMatch(html, /Accept by|This invitation has expired|Valid until|1970/);
+  assert.match(html, /<button[^>]*type="submit"(?![^>]*disabled)[^>]*>Accept invitation/);
+  const state = hooks(), wired = await components(state.react);
+  const tree = state.render(wired.Overview, { invitation, signupEnabled: false });
+  assert.equal(nodes(tree).find(element => element.type === EmptyCard).props.expiresAt, null);
+  assert.equal(nodes(tree).find(element => element.type === wired.Acceptance).props.expiresAt, null);
+  const legacy = state.render(wired.Overview, { invitation: { ...invitation, recipientName: null }, signupEnabled: true });
+  assert.equal(nodes(legacy).find(element => element.type === wired.WaitlistForm).props.disabled, true);
+});

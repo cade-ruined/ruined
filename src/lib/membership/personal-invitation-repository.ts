@@ -15,7 +15,7 @@ import {
 type InvitationRow = {
   id: string; request_id: string; recipient_name: string; recipient_email_normalized: string | null; recipient_phone: string | null;
   recipient_email_bound_at: Date | string | null; public_token: string;
-  issued_at: Date | string; expires_at: Date | string; revoked_at: Date | string | null;
+  issued_at: Date | string; expires_at: Date | string | null; revoked_at: Date | string | null;
   submitted_at: Date | string | null; accepted_at: Date | string | null; joined_at: Date | string | null; active: boolean;
   delivery_status: PersonalInvitationDeliveryStatus; sent_at: Date | string | null; version: number;
   email_requested: boolean; first_attempt_at: Date | string | null; delivery_attempts: number; retry_safe: boolean;
@@ -82,9 +82,9 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
       where member.id = ${identity.memberId}::uuid and member.deleted_at is null`;
     if (!names) throw new MemberInvitationError(403, "Member access is required.");
     const rows = await sql<InvitationRow[]>`select invitation.*, referral.joined_at,
-      private.ruined_personal_invitation_benefit_available(invitation.id) as benefit_available, invitation.expires_at <= clock_timestamp() as expired,
+      private.ruined_personal_invitation_benefit_available(invitation.id) as benefit_available, coalesce(invitation.expires_at <= clock_timestamp(), false) as expired,
       funding.id as grant_id, funding.starts_at as grant_starts_at, funding.ends_at as grant_ends_at, funding.revoked_at as grant_revoked_at,
-      invitation.revoked_at is null and invitation.accepted_at is null and invitation.expires_at > clock_timestamp()
+      invitation.revoked_at is null and invitation.accepted_at is null and (invitation.expires_at is null or invitation.expires_at > clock_timestamp())
         and private.ruined_personal_invitation_benefit_available(invitation.id) as active
       from member_personal_invitations invitation left join member_referrals referral on referral.personal_invitation_id = invitation.id
       left join member_complimentary_grants funding on funding.source_invitation_id = invitation.id
@@ -100,7 +100,7 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
       eligible: names.eligible, writable, canGrantComplimentary: names.can_grant_complimentary,
       invitations: rows.map(row => ({ id: row.id, requestId: row.request_id, recipientName: row.recipient_name, recipientEmail: row.recipient_email_normalized ?? "", recipientPhone: row.recipient_phone,
         url: row.active && names.eligible ? `/invitation/${row.public_token}` : null,
-        issuedAt: date(row.issued_at), expiresAt: date(row.expires_at), revokedAt: nullableDate(row.revoked_at),
+        issuedAt: date(row.issued_at), expiresAt: nullableDate(row.expires_at), revokedAt: nullableDate(row.revoked_at),
         submittedAt: nullableDate(row.submitted_at), acceptedAt: nullableDate(row.accepted_at), joinedAt: nullableDate(row.joined_at),
         deliveryStatus: row.delivery_status, sentAt: nullableDate(row.sent_at), version: row.version,
         membershipType: row.membership_type, complimentaryReason: row.complimentary_reason, complimentaryEndsAt: nullableDate(row.complimentary_ends_at),
@@ -159,7 +159,7 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
         and ((${input.recipientEmail} <> '' and recipient_email_normalized = ${input.recipientEmail})
           or (${input.recipientPhone}::text is not null and recipient_phone = ${input.recipientPhone}))
         and revoked_at is null and accepted_at is null
-        and expires_at > clock_timestamp() and private.ruined_personal_invitation_benefit_available(id)) as duplicate,
+        and (expires_at is null or expires_at > clock_timestamp()) and private.ruined_personal_invitation_benefit_available(id)) as duplicate,
       (exists(select 1 from person_email_addresses where person_id = ${identity.personId}::uuid
         and email_normalized = ${input.recipientEmail} and retired_at is null)
         or exists(select 1 from ruined_members where id = ${identity.memberId}::uuid and email_normalized = ${input.recipientEmail})) as self,
@@ -235,7 +235,7 @@ export async function retryOwnPersonalInvitationEmail(authUserId: string, id: st
   await getApplicationDatabase().begin(async tx => {
     await authorizeWrite(tx, authUserId, identity.memberId, identity.personId);
     await requireEligible(tx, identity.memberId);
-    const [row] = await tx<InvitationRow[]>`select *, (expires_at > clock_timestamp() and private.ruined_personal_invitation_benefit_available(id)) as active,
+    const [row] = await tx<InvitationRow[]>`select *, ((expires_at is null or expires_at > clock_timestamp()) and private.ruined_personal_invitation_benefit_available(id)) as active,
       ((first_attempt_at is null and delivery_attempts = 0) or first_attempt_at > clock_timestamp() - interval '23 hours') as retry_safe
       from member_personal_invitations where id = ${id}::uuid and member_id = ${identity.memberId}::uuid for update`;
     if (!row) throw new MemberInvitationError(404, "Invitation not found.");

@@ -14,7 +14,7 @@ export default async function InvitationPreviewPage({ searchParams }: { searchPa
   const direct = params?.source === "ruined_direct";
   return <MembershipOverview preview paymentSetupOnly registrationOnly invitation={{
     card: direct ? { ...card, name: "The Ruined Project", memberTag: null } : card,
-    expiresAt: expiresAt ?? new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    expiresAt: direct ? expiresAt ?? new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() : null,
     recipientName: direct ? "Cherry Hill" : "Alex Rivera",
     invitationSource: direct ? "ruined_direct" : "member",
     membershipType: !direct && params?.membership === "complimentary" ? "complimentary" : "standard",

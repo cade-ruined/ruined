@@ -18,7 +18,7 @@ export type RegistrationAcceptedInvitation = {
   inviter_name: string;
   inviter_tag: string | null;
   issued_at: string;
-  expires_at: string;
+  expires_at: string | null;
 };
 export type RegistrationMessageClaim = {
   id: string; member_id: string; kind: RegistrationMessageKind; attempts: number;

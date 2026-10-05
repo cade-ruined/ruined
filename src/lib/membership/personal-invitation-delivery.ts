@@ -20,7 +20,7 @@ type Delivery = {
   recipient_name: string; recipient_email_normalized: string;
   inviter_name: string; inviter_tag: string | null;
   email_requested: boolean;
-  expires_at: Date | string; revoked_at: Date | string | null; accepted_at: Date | string | null;
+  expires_at: Date | string | null; revoked_at: Date | string | null; accepted_at: Date | string | null;
   delivery_attempts: number; first_attempt_at: Date | string | null;
   delivery_payload: EmailPayload | null; active: boolean; eligible: boolean;
   membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null;
@@ -103,7 +103,7 @@ async function withLockedDelivery<T>(sql: Database, claim: Claimed, lease: strin
       await tx`select member_id from member_lifecycle where member_id = ${claim.member_id}::uuid for share`;
     }
     const [delivery] = await tx<Delivery[]>`
-      select invitation.*, expires_at > clock_timestamp() as active,
+      select invitation.*, (expires_at is null or expires_at > clock_timestamp()) as active,
              (case when origin = 'ruined_direct' then
                ${getPlatformConfiguration().membershipSignupReady === true} and private.ruined_direct_invitation_available(id)
                else private.ruined_member_can_share_invitation(member_id) end
@@ -172,7 +172,7 @@ export async function processPersonalInvitationEmailBatch(requestedLimit = 10,
                 invitationUrl: new URL(`/invitation/${delivery.public_token}`, site).toString(),
                 membershipType: delivery.membership_type,
                 complimentaryEndsAt: delivery.complimentary_ends_at ? new Date(delivery.complimentary_ends_at).toISOString() : null,
-                expiresAt: new Date(delivery.expires_at).toISOString(), siteUrl: site,
+                expiresAt: delivery.expires_at === null ? null : new Date(delivery.expires_at).toISOString(), siteUrl: site,
               }),
             };
             await tx`update member_personal_invitations set delivery_payload = ${sql.json(payload)}::jsonb

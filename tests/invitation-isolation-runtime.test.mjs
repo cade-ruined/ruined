@@ -120,7 +120,7 @@ async function fixture(t) {
   const fundingPredicateMarker = complimentary.indexOf("-- Replace only funding predicates.");
   assert.ok(fundingPredicateMarker > 0, "Missing migration prefix boundary");
   await db.exec(complimentary.slice(0, fundingPredicateMarker) + "\ncommit;");
-  for (const name of ['20260929000000_public_member_signup', '20260929002000_ruined_direct_invitations', '20261005210000_personal_invitation_phone']) {
+  for (const name of ['20260929000000_public_member_signup', '20260929002000_ruined_direct_invitations', '20261005210000_personal_invitation_phone', '20261005213000_personal_invitation_no_expiry']) {
     await db.exec(await source(`db/migrations/${name}.sql`));
   }
   await db.query("insert into platform_users (auth_user_id,email_normalized,status,user_type) values ($1,'admin@example.test','active','staff')", [admin]);
@@ -368,7 +368,7 @@ test("personal invitation preflight is read-only, email-bound and rejects legacy
   assert.deepEqual(after, before);
 });
 
-test("verified personal acceptance creates pending membership atomically, preserves the deadline and credits only completed joining", async (t) => {
+test("verified personal acceptance creates pending membership atomically, creates no pending allowance and credits only completed joining", async (t) => {
   const f = await fixture(t), invite = await f.personal();
   await f.db.query("update member_personal_invitations set delivery_status='queued',next_attempt_at=now() where id=$1", [invite.id]);
   const claimed = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
@@ -378,7 +378,10 @@ test("verified personal acceptance creates pending membership atomically, preser
   const allowance = (await f.db.query("select * from passwordless_account_invites where provider_reference=$1", [`personal-invitation:${invite.id}`])).rows[0];
   assert.equal(allowance.member_id, claimed.memberId);
   assert.equal(allowance.invited_at.toISOString(), invite.issued_at.toISOString());
-  assert.equal(allowance.expires_at.toISOString(), invite.expires_at.toISOString());
+  assert.equal(allowance.expires_at, null);
+  assert.equal(invite.expires_at, null);
+  assert.ok(allowance.accepted_at);
+  assert.equal((await f.db.query("select count(*)::int as n from passwordless_account_invites where accepted_at is null and revoked_at is null")).rows[0].n, 0);
   assert.equal(allowance.intended_user_type, 'member');
   const accepted = (await f.db.query('select * from member_personal_invitations where id=$1', [invite.id])).rows[0];
   assert.ok(accepted.accepted_at); assert.equal(accepted.accepted_by_auth_user_id, auth); assert.equal(accepted.accepted_member_id, claimed.memberId);
@@ -410,7 +413,8 @@ test("text invitation binds the verified email only at acceptance and tracks the
   assert.equal(accepted.accepted_by_auth_user_id, auth);
   assert.equal(accepted.accepted_member_id, claimed.memberId);
   assert.equal(accepted.delivery_status, "not_requested");
-  assert.equal(accepted.expires_at.toISOString(), before.expires_at.toISOString());
+  assert.equal(accepted.expires_at, null);
+  assert.equal(before.expires_at, null);
   assert.equal(accepted.recipient_phone, before.recipient_phone);
   const referral = (await f.db.query("select * from member_referrals where personal_invitation_id=$1", [invite.id])).rows[0];
   assert.equal(referral.inviter_member_id, invite.memberId);
@@ -445,6 +449,23 @@ test("competing verified recipients cannot consume one phone invitation twice", 
   assert.equal((await f.db.query("select count(*)::int as n from ruined_members where email_normalized=any($1)", [contenders.map(viewer => viewer.email)])).rows[0].n, 1);
 });
 
+test("personal invitations issued long ago can be accepted without reissue while their allowances are consumed immediately", async t => {
+  const f = await fixture(t);
+  const invite = await f.personal({ recipient: null, phone: "+18015550123", expiresIn: "-730 days" });
+  assert.equal(invite.expires_at, null);
+  assert.ok(Date.now() - invite.issued_at.getTime() > 730 * 86400000);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), true);
+  const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
+  const allowance = (await f.db.query("select expires_at,accepted_at from passwordless_account_invites where member_id=$1", [member.memberId])).rows[0];
+  assert.equal(allowance.expires_at, null);
+  assert.ok(allowance.accepted_at);
+  const accepted = (await f.db.query("select expires_at,recipient_email_normalized,recipient_email_bound_at from member_personal_invitations where id=$1", [invite.id])).rows[0];
+  assert.equal(accepted.expires_at, null);
+  assert.equal(accepted.recipient_email_normalized, email);
+  assert.ok(accepted.recipient_email_bound_at);
+  assert.equal((await f.db.query("select count(*)::int as n from passwordless_account_invites where accepted_at is null and revoked_at is null")).rows[0].n, 0);
+});
+
 test("text claims preserve an earlier inviter and cannot bypass an email-addressed or complimentary invitation", async t => {
   const f = await fixture(t), first = await f.personal(), text = await f.personal({ recipient: null, phone: "+18015550123" });
   const viewer = { authUserId: auth, email };
@@ -461,10 +482,10 @@ test("text claims preserve an earlier inviter and cannot bypass an email-address
   assert.equal((await f.db.query("select count(*)::int as n from member_complimentary_grants")).rows[0].n, 0);
 });
 
-test("expired, revoked, inactive-source and self text invitations create no membership or binding", async t => {
-  for (const scenario of ["expired", "revoked", "inactive_source", "self"]) {
+test("revoked, inactive-source and self text invitations create no membership or binding", async t => {
+  for (const scenario of ["revoked", "inactive_source", "self"]) {
     await t.test(scenario, async subtest => {
-      const f = await fixture(subtest), invitation = await f.personal({ recipient: null, phone: "+18015550123", expiresIn: scenario === "expired" ? "-1 second" : "48 hours" });
+      const f = await fixture(subtest), invitation = await f.personal({ recipient: null, phone: "+18015550123" });
       if (scenario === "revoked") await f.db.query("update member_personal_invitations set revoked_at=clock_timestamp() where id=$1", [invitation.id]);
       if (scenario === "inactive_source") await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [invitation.memberId]);
       const viewer = scenario === "self" ? { authUserId: invitation.inviterAuth, email: `${invitation.memberId}@example.test` } : { authUserId: auth, email };
@@ -478,9 +499,9 @@ test("expired, revoked, inactive-source and self text invitations create no memb
   }
 });
 
-test("a text invitation that expires during verified identity work rolls back the binding and registration", async t => {
+test("a text invitation canceled during verified identity work rolls back the binding and registration", async t => {
   const f = await fixture(t), invitation = await f.personal({ recipient: null, phone: "+18015550123" });
-  f.beforeCommit(async () => { f.clock(invitation.expires_at); });
+  f.beforeCommit(async tx => { await tx`update member_personal_invitations set revoked_at=clock_timestamp() where id=${invitation.id}::uuid`; });
   await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invitation.token), f.platform.PlatformAccessDeniedError);
   assert.deepEqual(await f.grants(), []);
   const row = (await f.db.query("select recipient_email_normalized,recipient_email_bound_at,accepted_at from member_personal_invitations where id=$1", [invitation.id])).rows[0];
@@ -491,10 +512,10 @@ test("a text invitation that expires during verified identity work rolls back th
   }
 });
 
-test("expired, revoked, mismatched and ineligible-inviter personal claims create no access", async (t) => {
-  for (const scenario of ['expired', 'revoked', 'wrong_email', 'inactive_inviter']) {
+test("revoked, mismatched and ineligible-inviter personal claims create no access", async (t) => {
+  for (const scenario of ['revoked', 'wrong_email', 'inactive_inviter']) {
     await t.test(scenario, async (subtest) => {
-      const f = await fixture(subtest), invite = await f.personal({ expiresIn: scenario === 'expired' ? '-1 second' : '48 hours' });
+      const f = await fixture(subtest), invite = await f.personal();
       if (scenario === 'revoked') await f.db.query('update member_personal_invitations set revoked_at=now() where id=$1', [invite.id]);
       if (scenario === 'inactive_inviter') await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [invite.memberId]);
       const claimedEmail = scenario === 'wrong_email' ? 'wrong@example.test' : email;
@@ -507,12 +528,12 @@ test("expired, revoked, mismatched and ineligible-inviter personal claims create
   }
 });
 
-test("the final wall-clock deadline rolls back a claim that expires during verification work", async (t) => {
+test("the final source check rolls back a claim canceled during verification work", async (t) => {
   const f = await fixture(t), invite = await f.personal();
   let reachedFinalization = false;
-  f.beforeCommit(async () => { reachedFinalization = true; f.clock(invite.expires_at); });
+  f.beforeCommit(async tx => { reachedFinalization = true; await tx`update member_personal_invitations set revoked_at=clock_timestamp() where id=${invite.id}::uuid`; });
   await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), f.platform.PlatformAccessDeniedError);
-  assert.equal(reachedFinalization, true, 'The expiry occurred after the identity and grant work');
+  assert.equal(reachedFinalization, true, 'The cancellation occurred after the identity and grant work');
   assert.deepEqual(await f.grants(), []);
   for (const table of ['passwordless_account_invites','membership_waitlist','member_referrals']) {
     assert.equal((await f.db.query(`select count(*)::int as count from ${table}`)).rows[0].count, 0, `${table} rolled back`);
@@ -556,13 +577,14 @@ test("acceptance uses the exact personal allowance and preserves the first invit
   await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: crypto.randomUUID(), email }, first.token), f.platform.PlatformAccessDeniedError);
 });
 
-test("accepted accounts sign in normally after invitation expiry without renewing the original card", async (t) => {
+test("accepted personal invitations remain single-use after years without extending or reissuing the card", async (t) => {
   const f = await fixture(t), invite = await f.personal();
   const member = await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token);
-  f.clock(invite.expires_at);
-  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), false);
+  f.clock(new Date(Date.now() + 3 * 365 * 86400000));
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), true);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invite.token), member);
   assert.deepEqual(await f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }), member);
-  assert.equal((await f.db.query('select expires_at from member_personal_invitations where id=$1', [invite.id])).rows[0].expires_at.toISOString(), invite.expires_at.toISOString());
+  assert.equal((await f.db.query('select expires_at from member_personal_invitations where id=$1', [invite.id])).rows[0].expires_at, null);
 });
 
 test("accepted invitation audit does not block account erasure and inviter erasure keeps historical referral credit", async (t) => {

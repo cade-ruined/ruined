@@ -92,7 +92,7 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
                 recipientName:invitation.recipient_name,
                 inviterName:invitation.origin==="ruined_direct" ? "The Ruined Project" : invitation.inviter_name,
                 inviterTag:invitation.inviter_tag,invitationSource:invitation.origin,
-                issuedAt:new Date(invitation.issued_at).toISOString(),expiresAt:new Date(invitation.expires_at).toISOString(),
+                issuedAt:new Date(invitation.issued_at).toISOString(),expiresAt:invitation.expires_at === null ? null : new Date(invitation.expires_at).toISOString(),
                 wearSeed:createHash("sha256").update(`ruined-invitation:${invitation.owner_member_id ?? "ruined-direct"}`).digest("hex").slice(0,24),
               })).toString("base64"),
             }] : undefined;

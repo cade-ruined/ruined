@@ -324,6 +324,7 @@ test("migration preserves original issue dates and uses 48 absolute hours across
   await f.db.exec(await source("db/migrations/20260929000000_public_member_signup.sql"));
   await f.db.exec(await source("db/migrations/20260929002000_ruined_direct_invitations.sql"));
   await f.db.exec(await source("db/migrations/20261005210000_personal_invitation_phone.sql"));
+  await f.db.exec(await source("db/migrations/20261005213000_personal_invitation_no_expiry.sql"));
   const rows = (await f.db.query("select issued_at=created_at as original,extract(epoch from expires_at-issued_at)::integer as duration from member_invitations")).rows;
   assert.deepEqual(rows, [{ original: true, duration: 172800 }, { original: true, duration: 172800 }]);
   assert.equal(await f.repository.getPublicMemberInvitation("A".repeat(43)), null, "an old invitation is not revived by the migration");

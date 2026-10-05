@@ -32,7 +32,7 @@ test("personal invitations create independently, normalize recipient details, an
   const invite = one.invitations[0];
   assert.equal(invite.recipientName, "Alex Recipient"); assert.equal(invite.recipientEmail, newcomer.email);
   assert.equal(invite.deliveryStatus, "queued"); assert.equal(invite.version, 1); assert.equal(invite.submittedAt, null);
-  assert.equal(Date.parse(invite.expiresAt) - Date.parse(invite.issuedAt), 172800000);
+  assert.equal(invite.expiresAt, null);
   const two = await create(f, input(2, { recipientName: "Taylor", recipientEmail: "taylor@example.test", sendEmail: false }));
   assert.equal(two.invitations.length, 2); assert.equal(two.counts.created, 2); assert.equal(two.counts.active, 2);
   assert.equal(two.remainingToday, 18); assert.equal(two.invitations[0].deliveryStatus, "not_requested");
@@ -57,7 +57,7 @@ test("phone-only invitations normalize contacts, keep a single token, and never 
   assert.equal(invitation.requestId, value.requestId);
   assert.equal(invitation.deliveryStatus, "not_requested");
   assert.deepEqual((await create(f, { ...value, recipientPhone: "+1 801 555 0123" })).invitations[0], invitation);
-  assert.equal(Date.parse(invitation.expiresAt) - Date.parse(invitation.issuedAt), 48 * 60 * 60 * 1000);
+  assert.equal(invitation.expiresAt, null);
   const pub = await f.repository.getPublicMemberInvitation(token(invitation));
   assert.equal(pub.recipientEmailRequired, false);
   assert.equal(pub.recipientName, value.recipientName);
@@ -117,7 +117,7 @@ test("retrying phone invitation creation remains idempotent after verified email
   await assert.rejects(create(f, { ...originallyEmail, recipientEmail: "" }), { status: 409 });
 });
 
-test("idempotent creation preserves one queue item and its original deadline while rejecting request collisions and active duplicate recipients", async t => {
+test("idempotent creation preserves one queue item and its non-expiring state while rejecting request collisions and active duplicate recipients", async t => {
   const f = await fixture(t), value = input();
   const original = (await create(f, value)).invitations[0];
   const retry = await create(f, value);
@@ -184,8 +184,8 @@ test("matching recipient submissions are tracked, unrelated email fails before w
   assert.equal((await f.personalRepository.getOwnPersonalInvitations(second.auth)).counts.joined, 0);
 });
 
-test("expired and revoked personal links reject both new and known email submissions and preserve historical referral credit", async t => {
-  const f = await fixture(t), old = await insertExpired(f);
+test("historical finite and revoked personal links fail closed before their no-expiry migration", async t => {
+  const f = await fixture(t, { persistentPersonalInvitations: false }), old = await insertExpired(f);
   assert.equal(await f.repository.getPublicMemberInvitation(old.token), null);
   await assert.rejects(f.submit(newcomer, old.token), { code: "P4100" });
   const summary = await f.personalRepository.getOwnPersonalInvitations(first.auth);
@@ -198,6 +198,40 @@ test("expired and revoked personal links reject both new and known email submiss
   await f.addMember(newcomer, false, true); await f.activate(newcomer);
   const result = await f.personalRepository.getOwnPersonalInvitations(first.auth);
   assert.equal(result.counts.joined, 1); assert.ok(result.invitations.find(row => row.id === invite.id).joinedAt);
+});
+
+test("no-expiry migration revives old personal invitations without reviving cancellations or changing direct and legacy deadlines", async t => {
+  const f = await fixture(t, { persistentPersonalInvitations: false });
+  const expired = await insertExpired(f);
+  const cancelled = await insertExpired(f, { id: uuid(802), request: uuid(803), token: "C".repeat(43), email: "cancelled@example.test" });
+  await f.db.query("update member_personal_invitations set revoked_at=clock_timestamp() where id=$1", [cancelled.id]);
+  const legacy = await f.enable();
+  const directToken = "D".repeat(43);
+  const direct = (await f.db.query(`insert into member_personal_invitations(origin,member_id,request_id,public_token,
+    recipient_name,recipient_email_normalized,inviter_name,email_requested,membership_type,billing_plan,issued_at,expires_at)
+    values('ruined_direct',null,$1,$2,'Direct Recipient','direct@example.test','Ruined',true,'standard','monthly',
+      statement_timestamp()-interval '49 hours',statement_timestamp()-interval '1 hour') returning expires_at`, [uuid(804),directToken])).rows[0];
+  const cancelledBefore = (await f.db.query("select revoked_at from member_personal_invitations where id=$1", [cancelled.id])).rows[0];
+  assert.equal(await f.repository.getPublicMemberInvitation(expired.token), null);
+  await f.db.exec(await readFile(new URL("../db/migrations/20261005213000_personal_invitation_no_expiry.sql", import.meta.url), "utf8"));
+  const history = await f.personalRepository.getOwnPersonalInvitations(first.auth);
+  const active = history.invitations.find(invitation => invitation.id === expired.id);
+  assert.equal(active.expiresAt, null);
+  assert.equal(active.url, `/invitation/${expired.token}`);
+  assert.equal(active.version, 2);
+  assert.equal(history.counts.expired, 0);
+  assert.equal(history.invitations.find(invitation => invitation.id === cancelled.id).url, null);
+  assert.deepEqual((await f.db.query("select revoked_at from member_personal_invitations where id=$1", [cancelled.id])).rows[0], cancelledBefore);
+  assert.equal((await f.repository.getPublicMemberInvitation(expired.token)).expiresAt, null);
+  assert.equal(await f.repository.getPublicMemberInvitation(cancelled.token), null);
+  assert.equal(await f.repository.getPublicMemberInvitation(directToken), null);
+  assert.equal((await f.db.query("select expires_at from member_personal_invitations where public_token=$1", [directToken])).rows[0].expires_at.toISOString(), direct.expires_at.toISOString());
+  assert.equal((await f.repository.getPublicMemberInvitation(token(legacy))).expiresAt, legacy.expiresAt);
+  await f.submit(newcomer, expired.token);
+  assert.equal((await f.db.query("select personal_invitation_id from member_referrals")).rows[0].personal_invitation_id, expired.id);
+  await assert.rejects(f.submit({ email: "cancelled@example.test" }, cancelled.token), { code: "P4100" });
+  await assert.rejects(f.db.query("update member_personal_invitations set expires_at=clock_timestamp()+interval '48 hours' where id=$1", [expired.id]));
+  await assert.rejects(f.db.query("update member_personal_invitations set expires_at=null where public_token=$1", [directToken]));
 });
 
 test("legacy invitation links, first-attribution credit and deadlines survive migration alongside personalized invitations", async t => {
@@ -240,7 +274,7 @@ test("deletion erases recipient history and email payloads while preserving the 
   await assert.rejects(create(f, input(2, { recipientEmail: "fresh@example.test" })), { status: 403 });
 });
 
-test("personal recipient, deadline, payload and attribution are immutable and not directly accessible to clients", async t => {
+test("personal recipient, non-expiring lifetime, payload and attribution are immutable and not directly accessible to clients", async t => {
   const f = await fixture(t), invite = (await create(f)).invitations[0];
   for (const field of ["recipient_name='Changed'", "recipient_email_normalized='other@example.test'", "expires_at=expires_at+interval '1 hour',issued_at=issued_at+interval '1 hour'", "public_token=repeat('Z',43)"]) {
     await assert.rejects(f.db.query(`update member_personal_invitations set ${field} where id=$1`, [invite.id]));
@@ -253,8 +287,8 @@ test("personal recipient, deadline, payload and attribution are immutable and no
   assert.deepEqual(acl, { anon: false, authenticated: false, execute: false });
 });
 
-test("a recipient submission crossing the deadline after insert rolls back tracking and attribution", async t => {
-  const f = await fixture(t), invite = (await create(f)).invitations[0];
+test("historical finite invitations still reject a submission crossing their deadline", async t => {
+  const f = await fixture(t, { persistentPersonalInvitations: false }), invite = (await create(f)).invitations[0];
   await f.db.exec(`create table personal_invitation_test_clock(ticks integer not null);
     insert into personal_invitation_test_clock values(0);
     create function private.personal_invitation_test_now() returns timestamptz language plpgsql as $$

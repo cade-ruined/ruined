@@ -188,3 +188,31 @@ test("issued landing cards preserve the inviter, recipient and original deadline
   assert.equal(card.props.invitationExpiresAt, props.expiresAt);
   assert.equal(card.props.embedded, true);
 });
+
+test("personal spinning cards preserve a null deadline instead of inventing a date", async () => {
+  const identity = { name: "Cade", memberTag: "cade", wearSeed: "inviter-wear", labels: [] };
+  const f = await fixture(false, null, { card: identity, recipientName: "Alex Recipient", invitationSource: "member", expiresAt: null });
+  const card = nodes(f.render()).find(node => node.type === Card);
+  assert.equal(card.props.invitationExpiresAt, null);
+  assert.equal(card.props.invitationRecipientName, "Alex Recipient");
+  assert.equal(card.props.card, identity);
+});
+
+test("member card accessible copy omits missing deadlines while unissued Ruined Direct cards keep their 48-hour description", async () => {
+  const model = await load("src/lib/membership/public-card-model.ts");
+  const expiry = await load("src/lib/membership/invitation-expiry.ts");
+  const component = (await load("src/components/membership/card/MemberCard.tsx", {
+    react: React, "next/dynamic": () => Card, "@/lib/membership/public-card-model": model,
+    "./card-artwork": {}, "@/lib/membership/invitation-expiry": expiry, "./AmbientParticles": Card,
+  })).default;
+  for (const embedded of [false, true]) {
+    const props = { embedded, variant: "invitation", invitationExpiresAt: null, invitationRecipientName: "Alex", card: { name: "Cade", labels: [], memberTag: "cade" } };
+    const personal = renderToStaticMarkup(React.createElement(component, { ...props, invitationSource: "member" }));
+    assert.doesNotMatch(personal, /Valid until|Valid for 48 hours|1970/);
+    const direct = renderToStaticMarkup(React.createElement(component, { ...props, invitationSource: "ruined_direct" }));
+    assert.match(direct, /Valid for 48 hours once created/);
+    const finite = renderToStaticMarkup(React.createElement(component, { ...props, invitationSource: "ruined_direct", invitationExpiresAt: "2099-01-01T12:00:00Z" }));
+    assert.match(finite, /Valid until/);
+    assert.doesNotMatch(finite, /Valid for 48 hours once created/);
+  }
+});

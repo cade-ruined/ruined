@@ -74,3 +74,18 @@ test("rendering rejects incomplete invitation snapshots before decoding assets",
     await assert.rejects(renderer.renderRegistrationInvitationHero(invalid), /complete issued invitation/);
   }
 });
+
+
+test("non-expiring member keepsakes render without a deadline or synthetic date", async () => {
+  printed.length = 0;
+  const image = await renderer.renderRegistrationInvitationHero({ ...member, expiresAt: null });
+  assert.equal((await sharp(image).metadata()).format, "jpeg");
+  assert.match(printed.join(" "), /This is for Alex Rivera\./);
+  assert.ok(printed.includes("Cade Mangelson @cade"));
+  assert.doesNotMatch(printed.join(" "), /VALID UNTIL|1970|INVALID DATE|NO EXPIRATION/i);
+  await assert.rejects(renderer.renderRegistrationInvitationHero({ ...member, invitationSource: "ruined_direct", expiresAt: null }), /complete issued invitation/);
+  if (process.env.REGISTRATION_EMAIL_PROOF_DIR) {
+    await mkdir(process.env.REGISTRATION_EMAIL_PROOF_DIR, { recursive: true });
+    await writeFile(resolve(process.env.REGISTRATION_EMAIL_PROOF_DIR, "invitation-member-no-expiry.jpg"), image);
+  }
+});

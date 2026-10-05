@@ -8,7 +8,7 @@ export function personalInvitationPreviewSnapshot({ canGrantComplimentary = fals
   const ago = (hours: number) => new Date(now - hours * 60 * 60 * 1000).toISOString();
   const example = (id: string, recipientName: string, hoursAgo: number): PersonalMemberInvitation => ({
     id, recipientName, recipientPhone: null, recipientEmail: `${recipientName.toLowerCase().replaceAll(" ", ".")}@example.test`,
-    url: null, issuedAt: ago(hoursAgo), expiresAt: ago(hoursAgo - 48), revokedAt: null,
+    url: null, issuedAt: ago(hoursAgo), expiresAt: null, revokedAt: null,
     submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "not_requested", sentAt: null, version: 0,
     membershipType: "standard", complimentaryReason: null, complimentaryEndsAt: null, complimentaryGrant: null,
   });
@@ -16,7 +16,7 @@ export function personalInvitationPreviewSnapshot({ canGrantComplimentary = fals
     card, eligible: false, writable: false, emailReady: false, canGrantComplimentary,
     invitations: [
       { ...example("preview-active", "Alex Rivera", 2), recipientEmail: "", recipientPhone: "+18015550123" },
-      example("preview-expired", "Sam Morgan", 72),
+      { ...example("preview-cancelled", "Sam Morgan", 72), revokedAt: ago(24) },
       { ...example("preview-accepted", "Taylor Brooks", 50), acceptedAt: ago(12) },
       { ...example("preview-joined", "Jordan Lee", 96), acceptedAt: ago(95), joinedAt: ago(80) },
       ...(canGrantComplimentary ? [
@@ -25,7 +25,7 @@ export function personalInvitationPreviewSnapshot({ canGrantComplimentary = fals
         { ...example("preview-complimentary-ended", "Riley West", 96), membershipType: "complimentary" as const, complimentaryReason: "Guest membership", acceptedAt: ago(90), joinedAt: ago(80), complimentaryGrant: { id: "preview-grant-ended", startsAt: ago(90), endsAt: null, revokedAt: ago(12) } },
       ] : []),
     ],
-    counts: { created: canGrantComplimentary ? 7 : 4, active: canGrantComplimentary ? 2 : 1, expired: 1, accepted: canGrantComplimentary ? 4 : 2, submitted: 0, joined: canGrantComplimentary ? 2 : 1 },
+    counts: { created: canGrantComplimentary ? 7 : 4, active: canGrantComplimentary ? 2 : 1, expired: 0, accepted: canGrantComplimentary ? 4 : 2, submitted: 0, joined: canGrantComplimentary ? 2 : 1 },
     dailyLimit: 20, remainingToday: 20, legacyInvitation: null,
   };
 }

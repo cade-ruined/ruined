@@ -203,3 +203,58 @@ test("phone-only acceptance binds the original invitation to a verified account 
   assert.deepEqual(ui.redirects, ["/my/join"]);
   assert.doesNotMatch(JSON.stringify(ui.calls), /recipientPhone|directSignup/);
 });
+
+test("member invitations without a deadline retain their token and can be accepted after 48 hours", async () => {
+  const ui = await harness({ props: { expiresAt: null, recipientEmailRequired: false } });
+  ui.advance(90 * 24 * 60 * 60 * 1000);
+  const initial = ui.render();
+  assert.equal(button(initial, "Accept invitation").props.disabled, false);
+  assert.doesNotMatch(text(initial), /Accept by|expired|48 hours|1970/);
+  assert.equal(descendants(initial).some(element => element.type === "time"), false);
+  input(initial, "email").props.onChange({ target: { value: "alex@example.test" } });
+  await form(ui.render()).props.onSubmit(event);
+  input(ui.render(), "token").props.onChange({ target: { value: "123456" } });
+  await form(ui.render()).props.onSubmit(event);
+  assert.deepEqual(ui.calls.map(call => call.body), [
+    { email: "alex@example.test", invitationToken: token },
+    { email: "alex@example.test", token: "123456", invitationToken: token },
+  ]);
+  assert.deepEqual(ui.redirects, ["/my/join"]);
+});
+
+test("a missing Ruined Direct deadline or a malformed personal deadline still fails closed", async () => {
+  for (const props of [
+    { invitationSource: "ruined_direct", expiresAt: null },
+    { invitationSource: "ruined_direct", expiresAt: "malformed" },
+    { expiresAt: "malformed" }, { expiresAt: undefined },
+  ]) {
+    const ui = await harness({ props });
+    input(ui.render(), "email").props.onChange({ target: { value: "alex@example.test" } });
+    const tree = ui.render();
+    assert.equal(button(tree, "Accept invitation").props.disabled, true);
+    await form(tree).props.onSubmit(event);
+    assert.equal(ui.calls.length, 0);
+    assert.match(text(ui.render()), /expired/);
+  }
+});
+
+test("complimentary membership deadlines still block nonexpiring invitations at the exact benefit boundary", async () => {
+  const complimentaryEndsAt = new Date(start + 60_000).toISOString();
+  for (const stage of ["request", "verify"]) {
+    const ui = await harness({ props: { expiresAt: null, membershipType: "complimentary", complimentaryEndsAt } });
+    input(ui.render(), "email").props.onChange({ target: { value: "alex@example.test" } });
+    if (stage === "verify") await form(ui.render()).props.onSubmit(event);
+    const stale = ui.render();
+    assert.doesNotMatch(text(stale), /Accept by/);
+    ui.advance(60_000);
+    await form(stale).props.onSubmit(event);
+    assert.equal(ui.calls.length, stage === "verify" ? 1 : 0, "submission rechecks the benefit even in a sleeping tab");
+    assert.match(text(ui.render()), /complimentary membership offer is no longer available/);
+    assert.equal(descendants(ui.render()).find(element => element.type === "button" && element.props.type === "submit").props.disabled, true);
+  }
+  const ongoing = await harness({ props: { expiresAt: null, membershipType: "complimentary", complimentaryEndsAt: null } });
+  ongoing.advance(90 * 24 * 60 * 60 * 1000);
+  assert.equal(button(ongoing.render(), "Accept invitation").props.disabled, false);
+  assert.match(text(ongoing.render()), /complimentary membership is ongoing/);
+  assert.doesNotMatch(text(ongoing.render()), /Accept by|expired|1970/);
+});

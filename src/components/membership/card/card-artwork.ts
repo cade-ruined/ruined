@@ -275,11 +275,13 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
   identityLayout.lines.forEach((line, index) => front.fillText(line, 62, identityTop + index * identityLayout.lineHeight));
   // Use the issued deadline from the service, never a rolling browser timer.
   const deadline = memberInvitationDeadline(expiresAt);
-  const footer = deadline ? `VALID UNTIL ${deadline}` : "VALID FOR 48 HOURS ONCE CREATED";
-  front.letterSpacing = "2px";
-  let footerSize = 28;
-  do { front.font = `400 ${footerSize}px "Courier New", monospace`; if (front.measureText(footer).width <= 674) break; footerSize -= 1; } while (footerSize > 18);
-  front.fillText(footer, 62, 1310); front.letterSpacing = "0px";
+  const footer = deadline ? `VALID UNTIL ${deadline}` : invitationSource === "ruined_direct" ? "VALID FOR 48 HOURS ONCE CREATED" : null;
+  if (footer) {
+    front.letterSpacing = "2px";
+    let footerSize = 28;
+    do { front.font = `400 ${footerSize}px "Courier New", monospace`; if (front.measureText(footer).width <= 674) break; footerSize -= 1; } while (footerSize > 18);
+    front.fillText(footer, 62, 1310); front.letterSpacing = "0px";
+  }
 
   back.textAlign = "center";
   printText(back, textLayout(back, "You’re allowed", 880, 70, 50, 50, true), CARD_WIDTH / 2, 235, cream, true);

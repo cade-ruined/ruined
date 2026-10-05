@@ -23,8 +23,13 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
   compact?: boolean;
   recipientEmailRequired?: boolean;
 }) {
-  const expired = useInvitationExpired(expiresAt);
+  const deadlineElapsed = useInvitationExpired(expiresAt);
+  const benefitElapsed = useInvitationExpired(complimentaryEndsAt);
   const direct = invitationSource === "ruined_direct";
+  // Only verified member-created personal invitations may have no deadline.
+  // Missing direct deadlines and malformed values still fail closed.
+  const expired = (direct || expiresAt !== null) && deadlineElapsed;
+  const benefitExpired = membershipType === "complimentary" && complimentaryEndsAt !== null && benefitElapsed;
   const sender = direct ? "The Ruined Project" : inviterName;
   const expiryMessage = direct ? "This invitation has expired. Request a new invitation to continue." : `This invitation has expired. Ask ${sender} for a new one.`;
   const [email, setEmail] = useState(""), [code, setCode] = useState("");
@@ -33,7 +38,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
   const [resendAt, setResendAt] = useState(0), [now, setNow] = useState(() => Date.now());
   const writing = useRef(false);
   const resendDelay = Math.max(0, Math.ceil((resendAt - now) / 1000));
-  const disabled = preview || expired || !invitationToken || pending;
+  const disabled = preview || expired || benefitExpired || !invitationToken || pending;
 
   useEffect(() => {
     if (resendDelay <= 0) return;
@@ -43,8 +48,12 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
 
   function unavailable() {
     if (preview || !invitationToken || writing.current) return true;
-    if (memberInvitationExpired(expiresAt)) {
+    if ((direct || expiresAt !== null) && memberInvitationExpired(expiresAt)) {
       setError(expiryMessage);
+      return true;
+    }
+    if (membershipType === "complimentary" && complimentaryEndsAt !== null && memberInvitationExpired(complimentaryEndsAt)) {
+      setError(`This complimentary membership offer is no longer available. Ask ${sender} for a new invitation.`);
       return true;
     }
     return false;
@@ -99,7 +108,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
     <h2 id="invitation-join-title">{requested ? "Verify your email." : "Accept your invitation."}</h2>
     <p>{registrationOnly ? <>Your invitation from {sender} starts here. Confirm your email, then fill out your information{membershipType === "complimentary" ? "." : " and save your card securely, with no charge today."} We’ll welcome you by email once you’re registered. Your profile opens later with a separate email.</> : direct && paymentSetupOnly ? "Your personal invitation from The Ruined Project begins here. Verify your email and complete your profile. You can optionally save a payment method; nothing is charged and your membership starts only after you choose and confirm payment later." : direct ? "Your personal invitation from The Ruined Project begins here. Verify your email, then complete your profile, membership agreement, and payment." : <>Your invitation from {sender} is your approval to join. Verify your email, then complete your profile and membership.</>}</p>
     {membershipType === "complimentary" ? <p className={styles.complimentaryNotice}><strong>Complimentary membership.</strong> {complimentaryEndsAt ? <>No payment is needed through <time dateTime={complimentaryEndsAt}>{complimentaryMembershipDeadline(complimentaryEndsAt)}</time>.</> : "No payment is needed. Your complimentary membership is ongoing."} {registrationOnly ? "No card is required to register. Your profile will stay closed until it is activated." : "You’ll still complete your profile and accept the membership agreement."}</p> : null}
-    {expired ? <p role="status">{expiryMessage}{direct ? <> <Link href="/signup">Request a new invitation ↗</Link></> : null}</p> : <p className={styles.note}>Accept by <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
+    {expired ? <p role="status">{expiryMessage}{direct ? <> <Link href="/signup">Request a new invitation ↗</Link></> : null}</p> : benefitExpired ? <p role="status">This complimentary membership offer is no longer available. Ask {sender} for a new invitation.</p> : expiresAt ? <p className={styles.note}>Accept by <time dateTime={expiresAt}>{memberInvitationDeadline(expiresAt)}</time>.</p> : null}
     <form className={styles.form} onSubmit={requested ? verifyCode : submitEmail} aria-label={requested ? "Verify invitation email" : "Accept personal invitation"} aria-busy={pending}>
       {requested ? <>
         <p className={styles.acceptanceStatus} role="status">Request received for <strong>{email.trim().toLowerCase()}</strong>. {recipientEmailRequired ? "If it matches this invitation, check your inbox and spam folder for the newest code." : "Check your inbox and spam folder for the newest code to connect this invitation to your email."} If the email contains a confirmation link instead, follow it, then return here to request a code.</p>

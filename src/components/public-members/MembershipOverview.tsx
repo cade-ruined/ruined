@@ -25,7 +25,8 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
 }) {
   const personalInvitation = Boolean(invitation?.recipientName);
   const complimentaryInvitation = personalInvitation && invitation?.membershipType === "complimentary";
-  const invitationExpired = useInvitationExpired(invitation?.expiresAt ?? null);
+  const invitationDeadlineElapsed = useInvitationExpired(invitation?.expiresAt ?? null);
+  const invitationExpired = (!personalInvitation || invitation?.invitationSource === "ruined_direct" || invitation?.expiresAt !== null) && invitationDeadlineElapsed;
   const invitationAvailable = invitation ? personalInvitation : signupEnabled || (preview && paymentSetupOnly);
   const mode: MembershipLandingMode = !invitationAvailable ? "waitlist" : paymentSetupOnly ? "payment-setup" : "paid";
   const ctaLabel = personalInvitation ? "Accept my invitation" : invitationAvailable ? "Create my invitation" : "Join the waitlist";
