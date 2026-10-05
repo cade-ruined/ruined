@@ -1,3 +1,4 @@
+import { prepaidFixtureDependencies } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -10,6 +11,7 @@ const cohortMigration = await read("db/migrations/20260929010000_early_cohort_ba
 const operatorMigration = await read("db/migrations/20260914181653_operator_complimentary_membership.sql");
 const complimentaryMigration = await read("db/migrations/20260925000000_complimentary_member_invitations.sql");
 async function load(path, deps = {}) {
+  deps = { ...prepaidFixtureDependencies, ...deps };
   const output = ts.transpileModule(await read(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const loaded = { exports: {} };
   new Function("require", "module", "exports", output)(name => {

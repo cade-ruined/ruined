@@ -103,7 +103,11 @@ export async function projectCommercialParticipantBillingState(tx: BillingTransa
   subscription: Stripe.Subscription; payerMemberId: string; state: MembershipState; event: Stripe.Event;
 }): Promise<void> {
   if (input.subscription.metadata.billing_terms_version !== MEMBERSHIP_COMMITMENT_TERMS_VERSION) return;
-  const group = await getCommercialBillingGroupBySubscription(input.subscription.id, tx);
+  let group = await getCommercialBillingGroupBySubscription(input.subscription.id, tx);
+  if (!group && input.subscription.metadata.ruined_billing_schedule_version) {
+    const pending = await getCommercialMembershipReservation(input.subscription.metadata.ruined_commercial_reservation_id, tx);
+    if (pending?.stripeSubscriptionId === input.subscription.id) group = pending;
+  }
   if (!group || group.memberId !== input.payerMemberId) return;
   for (const participant of [...group.participants].sort((a, b) => a.memberId.localeCompare(b.memberId))) {
     if (participant.memberId !== input.payerMemberId) await updateMemberBillingState(tx, {
@@ -123,12 +127,16 @@ export async function invalidateCommitmentFromInvoice(tx: BillingTransaction, in
     select member_id from stripe_membership_commitments where stripe_subscription_id = ${subscriptionId} and livemode = ${event.livemode}
   `;
   if (!rows[0]) return false;
+  if (event.type.startsWith("credit_note.") || event.type.startsWith("refund.") || event.type.startsWith("charge.")) {
+    const { holdPrepaidMembershipForAdjustment } = await import("@/lib/stripe/prepaid-webhook");
+    await holdPrepaidMembershipForAdjustment(tx, subscriptionId, event);
+  }
   return invalidateMembershipCommitmentLedger(tx, { memberId: rows[0].member_id, subscriptionId, livemode: event.livemode, providerEventId: event.id });
 }
 
 export async function lockCommitmentSubscriptionProjection(tx: BillingTransaction, subscription: Stripe.Subscription): Promise<void> {
   let group = await getCommercialBillingGroupBySubscription(subscription.id, tx);
-  if (!group && subscription.metadata.ruined_first_charge_at) {
+  if (!group && (subscription.metadata.ruined_first_charge_at || subscription.metadata.ruined_billing_schedule_version)) {
     const pending = await getCommercialMembershipReservation(subscription.metadata.ruined_commercial_reservation_id, tx);
     if (pending?.memberId === subscription.metadata.ruined_member_id &&
       (!pending.stripeSubscriptionId || pending.stripeSubscriptionId === subscription.id)) group = pending;

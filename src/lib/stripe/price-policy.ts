@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 
 import { MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS, type MembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
+import { matchesPrepaidMembershipInvoice, prepaidScheduleFromSubscription } from "./prepaid-policy";
 
 export type MembershipPriceConfiguration = {
   monthly: string | null;
@@ -60,6 +61,7 @@ export function recognizesMembershipSubscription(
   configuration: MembershipPriceConfiguration,
 ): boolean {
   if (subscription.livemode !== configuration.livemode || subscription.items.has_more) return false;
+  if (subscription.metadata.ruined_billing_schedule_version && !prepaidScheduleFromSubscription(subscription)) return false;
   if (subscription.items.data.length !== 1) return false;
   const item = subscription.items.data[0];
   if (item.quantity !== 1 || item.price.livemode !== configuration.livemode) return false;
@@ -91,6 +93,9 @@ export function matchesMembershipInvoice(
   configuration: MembershipPriceConfiguration,
 ): boolean {
   if (!recognizesMembershipSubscription(subscription, configuration) || invoice.livemode !== configuration.livemode) return false;
+  if (subscription.metadata.ruined_billing_schedule_version && invoice.billing_reason === "subscription_create") {
+    return matchesPrepaidMembershipInvoice(invoice, subscription);
+  }
   // This offer has one flat recurring line. Adjustments or plan migrations need
   // explicit reconciliation; they must not accidentally activate a first sale.
   if (invoice.lines.has_more || invoice.lines.data.length !== 1) return false;

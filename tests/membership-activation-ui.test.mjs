@@ -32,7 +32,7 @@ const onboarding = { requiredFieldsComplete: true, state: "in_progress", billing
   agreement: { id: "agreement", acceptanceId: "accepted", body: "Published agreement", title: "Membership agreement", version: "2" }, profile: {} };
 const offer = { id: "quote-id", expiresAt: "2026-10-31T20:00:00Z", offer: pricing.MEMBERSHIP_OFFERS.founding_individual_monthly, billingTermsVersion: "membership-billing-v2", buyoutCap: 150000,
   participants: [{ memberId: "member", name: "A member" }], firstChargeAt: "2026-11-01T06:00:00.000Z" };
-async function joinFixture(extra = {}) {
+async function joinFixture(extra = {}, now = "2026-10-05T18:00:00Z") {
   const h = hooks(), calls = [];
   const Form = (await load("src/components/membership/JoinForm.tsx", {
     react: h.react, "next/link": Link, "@stripe/stripe-js": { loadStripe: () => assert.fail("Rendering cannot start Stripe") },
@@ -43,7 +43,7 @@ async function joinFixture(extra = {}) {
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": pricing, "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
     "@/lib/membership/member-communication-preferences-model": await load("src/lib/membership/member-communication-preferences-model.ts"),
-  }, { fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => ({ clientSecret: "secret", plan: "monthly", commercialReservationId: "quote-id" }) }; } })).default;
+  }, { Date: class extends Date { static now() { return Date.parse(now); } }, fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => ({ clientSecret: "secret", plan: "monthly", commercialReservationId: "quote-id" }) }; } })).default;
   const props = { enabled: true, checkoutEnabled: true, initialOnboarding: onboarding, initialQuote: offer, activationOnly: true, publishableKey: "pk_live_example", minimumAge: 18, ...extra };
   return { calls, render: () => h.render(Form, props) };
 }
@@ -152,4 +152,111 @@ test("scheduled summary displays the commitment end and keeps profile opening se
     minimumAge: 18, publishableKey: null, preview: true, previewView: "scheduled" });
   assert.match(visible(tree), /Initial commitment ends at the start of November 1, 2027, Mountain Time/);
   assert.match(visible(tree), /Your profile opens separately when Ruined releases it/);
+});
+
+const scheduleModule = await load("src/lib/membership/foundations-schedule.ts");
+const prepaidSchedule = scheduleModule.createFoundationsBillingSchedule(new Date("2026-10-05T18:00:00Z"), "monthly");
+test("prepaid monthly offer discloses four calls, payment now, eleven later installments and exact term before fresh consent", async () => {
+  const prepaidOffer = { ...offer, firstChargeAt: null, billingSchedule: prepaidSchedule };
+  const f = await joinFixture({ initialQuote: prepaidOffer });
+  let tree = f.render(); const html = renderToStaticMarkup(tree);
+  assert.match(html, /\$349 due today, plus applicable tax/);
+  for (const day of [5, 12, 19, 30]) assert.match(html, new RegExp(`November ${day}, 2026 at 3:00 PM`));
+  assert.match(html, /November 4, 2026 at 3:00 PM/);
+  assert.match(html, /December 5, 2026 at 3:00 PM/);
+  assert.match(html, /November 5, 2027 at 4:00 PM/);
+  assert.match(html, /11 further monthly installments/);
+  assert.match(html, /full refund of your initial payment, including tax/);
+  assert.doesNotMatch(html, /Nothing is charged today|\$0 today/);
+  const consent = nodes(tree).find(node => node.props.name === "recurring-payment-accepted");
+  assert.equal(consent.props.checked, false);
+  let pay = nodes(tree).find(node => node.type === "button" && /Pay first period with Stripe/.test(visible(node)));
+  assert.equal(pay.props.disabled, true); await pay.props.onClick(); assert.equal(f.calls.length, 0);
+  consent.props.onChange({ target: { checked: true } }); tree = f.render();
+  pay = nodes(tree).find(node => node.type === "button" && /Pay first period with Stripe/.test(visible(node)));
+  await pay.props.onClick();
+  assert.deepEqual(f.calls[0].body.billingSchedule, prepaidSchedule);
+  assert.equal(f.calls[0].body.firstChargeAt, null);
+});
+
+test("expired cohort quote cannot begin payment at the exact cutoff even if an enabled handler is invoked", async () => {
+  const f = await joinFixture({ initialQuote: { ...offer, expiresAt: prepaidSchedule.cutoffAt, firstChargeAt: null, billingSchedule: prepaidSchedule } }, prepaidSchedule.cutoffAt);
+  let tree = f.render(); nodes(tree).find(node => node.props.name === "recurring-payment-accepted").props.onChange({ target: { checked: true } }); tree = f.render();
+  await nodes(tree).find(node => node.type === "button" && /Pay first period/.test(visible(node))).props.onClick();
+  assert.equal(f.calls.length, 0);
+  assert.match(visible(f.render()), /offer has expired.*Review a new offer/);
+});
+
+test("prepaid cancellation retains the same quote while refund is pending and reports refunded only after success", async () => {
+  const h = hooks(), calls = []; let confirmations = 0, parentRefreshes = 0;
+  const Component = (await load("src/components/membership/MembershipCancellation.tsx", {
+    react: h.react, "next/link": Link, "@/components/support/supportStyles": { SUPPORT_ACTION_CLASS: "", SUPPORT_LINK_CLASS: "" },
+  }, { fetch: async (_url, init) => { const body = JSON.parse(init.body); calls.push(body); return { ok: true, json: async () => body.action === "quote"
+    ? { quote: { id: "refund-quote", intent: "cancel_before_start", feeTotal: 0, feeDues: 0, feeTax: 0, refundAmount: 37692, effectiveAt: "2026-10-06T06:00:00Z", initialTermEndsAt: prepaidSchedule.initialTermEndsAt } }
+    : { cancellation: { effectiveAt: "2026-10-06T06:00:00Z", invoiceUrl: null, refundAmount: 37692, refundStatus: ++confirmations === 1 ? "pending" : "succeeded" } } }; } })).default;
+  const props = { initialCommitment: { startsAt: prepaidSchedule.serviceStartsAt, initialTermEndsAt: prepaidSchedule.initialTermEndsAt, plan: "monthly", installmentDues: 34900, status: "scheduled", canCancelBeforeStart: true, billingSchedule: prepaidSchedule }, onCanceled() { parentRefreshes++; } };
+  let tree = h.render(Component, props);
+  assert.doesNotMatch(visible(tree), /no charge|Turn off renewal/);
+  await nodes(tree).find(node => node.type === "button" && /Review cancellation and refund/.test(visible(node))).props.onClick();
+  tree = h.render(Component, props); assert.match(visible(tree), /Refund: \$376.92, including tax/);
+  await nodes(tree).find(node => node.type === "button" && /Confirm cancellation and refund/.test(visible(node))).props.onClick();
+  tree = h.render(Component, props); assert.match(visible(tree), /Refund confirmation pending/); assert.doesNotMatch(visible(tree), /has been refunded|canceled\. No membership/); assert.equal(parentRefreshes, 0);
+  await nodes(tree).find(node => node.type === "button" && /Check refund status/.test(visible(node))).props.onClick();
+  assert.deepEqual(calls.slice(1), [{ action: "confirm", quoteId: "refund-quote", confirmed: true }, { action: "confirm", quoteId: "refund-quote", confirmed: true }]);
+  assert.match(visible(h.render(Component, props)), /\$376.92 has been refunded/); assert.equal(parentRefreshes, 1);
+});
+
+test("prepaid status is never paid from return query alone and refunded rejoin requires succeeded refund", async () => {
+  for (const refundStatus of ["pending", "succeeded"]) {
+    const h = hooks(); const Form = Stub;
+    const Component = (await load("src/components/membership/MemberActivation.tsx", { react: h.react, "next/link": Link, "@/components/membership/JoinForm": Form, "@/components/membership/MembershipCancellation": Stub, "@/lib/membership/pricing": pricing },
+      { fetch: async () => ({ ok: true, json: async () => ({ commitment: { startsAt: prepaidSchedule.serviceStartsAt, initialTermEndsAt: prepaidSchedule.initialTermEndsAt, plan: "monthly", installmentDues: 34900, billingSchedule: prepaidSchedule, status: refundStatus === "pending" ? "refund_pending" : "canceled", canceledBeforeStart: refundStatus === "succeeded", refundStatus } }) }) })).default;
+    const props = { onboarding, enabled: true, disabledReason: null, initialPlan: "monthly", firstChargeAt: null, billingSchedule: prepaidSchedule, minimumAge: 18, publishableKey: "pk_live_example", returnedFromCheckout: true };
+    h.render(Component, props); await h.effects(); const tree = h.render(Component, props);
+    const review = nodes(tree).find(node => node.type === "button" && /Review membership again/.test(visible(node)));
+    if (refundStatus === "pending") { assert.equal(review, undefined); assert.doesNotMatch(visible(tree), /has been refunded|first period is paid/); }
+    else { assert.ok(review); assert.match(visible(tree), /initial payment has been refunded/); }
+  }
+});
+
+test("annual prepaid offer charges the complete year now and renews on its accepted service anniversary", async () => {
+  const annual = scheduleModule.createFoundationsBillingSchedule(new Date("2026-10-05T18:00:00Z"), "annual");
+  const f = await joinFixture({ initialPlan: "annual", initialQuote: { ...offer, firstChargeAt: null, billingSchedule: annual, offer: pricing.MEMBERSHIP_OFFERS.founding_individual_annual } });
+  const html = renderToStaticMarkup(f.render());
+  assert.match(html, /\$3,490 due today/);
+  assert.match(html, /full initial year upfront/);
+  assert.match(html, /November 5, 2027 at 4:00 PM/);
+  assert.match(html, /annual renewals of \$3,490/);
+  assert.doesNotMatch(html, /11 further monthly|Eleven further|\$0 today|Nothing is charged today/);
+});
+
+test("persisted prepaid receipt shows paid coverage with future service and keeps the held profile separate", async () => {
+  const h = hooks();
+  const Component = (await load("src/components/membership/MemberActivation.tsx", { react: h.react, "next/link": Link, "@/components/membership/JoinForm": Stub, "@/components/membership/MembershipCancellation": Stub, "@/lib/membership/pricing": pricing },
+    { fetch: async () => ({ ok: true, json: async () => ({ commitment: { startsAt: prepaidSchedule.serviceStartsAt, initialTermEndsAt: prepaidSchedule.initialTermEndsAt, plan: "monthly", installmentDues: 34900, billingSchedule: prepaidSchedule, status: "scheduled", canCancelBeforeStart: true } }) }) })).default;
+  const props = { onboarding, enabled: true, disabledReason: null, initialPlan: "monthly", firstChargeAt: null, billingSchedule: prepaidSchedule, minimumAge: 18, publishableKey: "pk_live_example" };
+  h.render(Component, props); await h.effects(); const tree = h.render(Component, props);
+  assert.match(visible(tree), /first period is paid/);
+  assert.match(visible(tree), /Service begins November 5, 2026 at 3:00 PM Mountain Time/);
+  assert.match(visible(tree), /December 5, 2026 at 3:00 PM/);
+  assert.match(visible(tree), /profile opens separately when Ruined releases it/);
+  assert.doesNotMatch(visible(tree), /Nothing is charged before|first payment is scheduled/);
+});
+
+test("prepaid cancellation does not substitute zero or claim success when exact refund evidence is missing", async () => {
+  for (const missingAt of ["quote", "confirm"]) {
+    const h = hooks();
+    const Component = (await load("src/components/membership/MembershipCancellation.tsx", {
+      react: h.react, "next/link": Link, "@/components/support/supportStyles": { SUPPORT_ACTION_CLASS: "", SUPPORT_LINK_CLASS: "" },
+    }, { fetch: async (_url, init) => { const { action } = JSON.parse(init.body); return { ok: true, json: async () => action === "quote"
+      ? { quote: { id: "refund-quote", intent: "cancel_before_start", feeTotal: 0, ...(missingAt === "quote" ? {} : { refundAmount: 37692 }) } }
+      : { cancellation: { effectiveAt: "2026-10-06T06:00:00Z", invoiceUrl: null } } }; } })).default;
+    const props = { initialCommitment: { startsAt: prepaidSchedule.serviceStartsAt, initialTermEndsAt: prepaidSchedule.initialTermEndsAt, plan: "monthly", installmentDues: 34900, status: "scheduled", canCancelBeforeStart: true, billingSchedule: prepaidSchedule } };
+    let tree = h.render(Component, props);
+    await nodes(tree).find(node => node.type === "button" && /Review cancellation and refund/.test(visible(node))).props.onClick();
+    tree = h.render(Component, props);
+    if (missingAt === "confirm") { await nodes(tree).find(node => node.type === "button" && /Confirm cancellation and refund/.test(visible(node))).props.onClick(); tree = h.render(Component, props); }
+    assert.match(visible(tree), /full refund could not be confirmed/);
+    assert.doesNotMatch(visible(tree), /Refund: \$0|has been refunded|Scheduled membership canceled/);
+  }
 });

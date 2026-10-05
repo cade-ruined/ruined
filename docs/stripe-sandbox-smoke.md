@@ -34,6 +34,22 @@ fee-free cancellation before the first payment, release of the reservation and a
 Checkout completion that cannot reopen it. Provider responses are synthetic in this
 offline test; no external payment is made.
 
+Use the new prepaid scenario separately:
+
+```sh
+node scripts/stripe-sandbox-smoke.mjs --self-test --prepaid
+```
+
+It creates a synthetic v3 acceptance and tests both monthly and annual cohort
+quotes. Missing or altered schedule consent cannot create a session. The exact
+Checkout input has one recurring price plus a one-time charge for the first period;
+recurring collection starts at the accepted prepaid-through date. The test resumes
+the same session, then replays signed synthetic subscription, Checkout and paid
+invoice events through the real application projection. It checks the durable
+payment proof and confirms that service remains pending before the cohort starts.
+Unmocked provider requests are blocked locally. This is not evidence of actual
+Stripe collection, future service activation or a real refund.
+
 The fixture provides a named Person profile before setting profile completion, and
 sets the agreement checkpoint from the saved acceptance timestamp in PostgreSQL.
 These prerequisites matter: setting a checkpoint before acceptance or leaving the
@@ -93,7 +109,7 @@ The forwarded events must use API version **`2026-08-26.dahlia`**, matching the 
 webhook's schema guard. Capture the listener's `whsec_…` into the private sandbox
 environment without printing it into a shared transcript. Keep the listener running.
 
-After supplying the variables, start:
+After supplying the variables, start the historical deferred scenario:
 
 ```sh
 node scripts/stripe-sandbox-smoke.mjs --deferred --port 3233
@@ -104,6 +120,21 @@ If using the prepared private sandbox-only file, the equivalent is:
 ```sh
 node --env-file=.sandbox-state/test.env scripts/stripe-sandbox-smoke.mjs --deferred --port 3233
 ```
+
+For a new prepaid cohort scenario, use `--prepaid` instead of `--deferred`:
+
+```sh
+node scripts/stripe-sandbox-smoke.mjs --prepaid --port 3233
+```
+
+These modes are mutually exclusive. Prepaid mode forces the cohort flag on, selects
+the synthetic v3 agreement and clears a deferred first-charge date. The browser
+shows and echoes the complete server-issued schedule. Its cancellation confirmation
+shows the exact refund amount when the quote includes one. The harness publishes
+no agreement and enables no production flag. To exercise provider-backed prepaid
+verification and refunds, the sandbox key also needs Invoice Payments, Payment
+Intents, Charges, Credit Notes and Refunds read access, plus Refunds write for an
+explicit cancellation action.
 
 Open `http://127.0.0.1:3233`. The server binds only `127.0.0.1`; it has no public host
 option. Startup installs the local fixture and makes **no Stripe API calls**. Reviewing the offer verifies the account and calls the actual offer route. Confirming
@@ -120,7 +151,7 @@ Only use Stripe's documented sandbox payment details in the embedded Checkout.
    monthly or $3,490 annually. In deferred mode Checkout shows $0 today and the exact
    first full-payment date. The production route validates amount, currency, interval
    and test mode against the server-issued offer. Without a future configured date,
-   normal immediate billing applies.
+   normal immediate billing applies. In prepaid mode, Checkout instead collects the first monthly installment or full annual amount now, while service begins on the displayed first Foundations call.
 2. Two tabs on the same plan reuse an open attempt. A different plan cannot replace an
    in-flight payment. If a 409 locks the other plan, the selector shows that plan for
    an explicit retry. Changing plans or receiving a plan conflict clears recurring
@@ -136,7 +167,7 @@ Only use Stripe's documented sandbox payment details in the embedded Checkout.
 6. Use the prestart cancellation button to exercise the real quote/confirm routes.
    Verify no fee, no invoice, a canceled sandbox subscription and—after the signed
    canceled subscription event—a released reservation with billing still pending.
-   No real member should be touched.
+   No real member should be touched. For prepaid membership, verify the full initial-payment refund and its confirmed status; a canceled subscription alone does not prove refund completion.
 
 The **Verify signed Stripe events** button replays original matching sandbox Events
 using a local signature and preserves their API version. If the sandbox account's
