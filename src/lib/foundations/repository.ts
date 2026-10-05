@@ -11,7 +11,7 @@ import type {
 } from "@/lib/foundations/model";
 import type { PlatformViewer } from "@/lib/platform/model";
 import { getApplicationDatabase } from "@/lib/database/server";
-import { requireFoundationsLaunched } from "@/lib/foundations/availability";
+import { FoundationsNotLaunchedError, isFoundationsLaunched, requireFoundationsAvailableToMember } from "@/lib/foundations/availability";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
@@ -19,6 +19,7 @@ import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-a
 type FoundationTransaction = postgres.TransactionSql;
 
 type LockedMember = {
+  registrationHeld: boolean;
   membershipFunding: "self" | "operator" | "complimentary" | "couple";
   accountState: "active" | "closed" | "invited" | "provisional" | "suspended";
   administrativeOnboardingState: "completed" | "in_progress" | "not_started";
@@ -140,6 +141,8 @@ async function lockMemberForFoundations(
       billing_state: LockedMember["billingState"];
       cancellation_effective_at: Date | null;
       foundations_state: LockedMember["foundationsState"];
+      operator_funded: boolean;
+      registration_held: boolean;
       program_state: LockedMember["programState"];
       standing_state: LockedMember["standingState"];
     }>
@@ -150,6 +153,8 @@ async function lockMemberForFoundations(
       coalesce(private.ruined_member_shared_billing_state(member_id), billing_state) as billing_state,
       cancellation_effective_at,
       foundations_state,
+      private.ruined_member_has_operator_funding(member_id) as operator_funded,
+      not private.ruined_member_profile_released(member_id) as registration_held,
       program_state,
       standing_state
     from member_lifecycle
@@ -158,8 +163,12 @@ async function lockMemberForFoundations(
   `;
   const lifecycle = lifecycleRows[0];
   if (!lifecycle) throw new FoundationAccessError();
+  // The earlier request check can predate a role revocation. Funding locks
+  // above hold current Administrator grants while this write is authorized.
+  if (!isFoundationsLaunched() && !lifecycle.operator_funded) throw new FoundationsNotLaunchedError();
 
   const member: LockedMember = {
+    registrationHeld: lifecycle.registration_held,
     membershipFunding: funding[0]?.complimentary_funded ? "complimentary" : "self",
     accountState: lifecycle.account_state,
     administrativeOnboardingState: lifecycle.administrative_onboarding_state,
@@ -274,7 +283,7 @@ async function unitRows(
 export async function getMemberFoundationsState(
   authUserId: string,
 ): Promise<MemberFoundationsState | null> {
-  requireFoundationsLaunched();
+  await requireFoundationsAvailableToMember(authUserId);
   const identity = await getMemberIdentity(authUserId);
   if (!identity || !memberCan(deriveMemberAccessPolicy(identity), "foundations.write")) {
     throw new FoundationAccessError();
@@ -426,7 +435,7 @@ export async function getMemberFoundationsState(
 export async function startMemberFoundations(
   viewer: PlatformViewer,
 ): Promise<MemberFoundationsState> {
-  requireFoundationsLaunched();
+  await requireFoundationsAvailableToMember(viewer.authUserId);
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     const member = await lockMemberForFoundations(tx, viewer);
@@ -521,7 +530,7 @@ export async function recordMemberFoundationProgress(
   viewer: PlatformViewer,
   momentId: string,
 ): Promise<MemberFoundationsState> {
-  requireFoundationsLaunched();
+  await requireFoundationsAvailableToMember(viewer.authUserId);
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     const member = await lockMemberForFoundations(tx, viewer);
@@ -634,7 +643,7 @@ export function isCircleCompletionConstraint(error: unknown): boolean {
 export async function completeMemberFoundations(
   viewer: PlatformViewer,
 ): Promise<MemberFoundationsState> {
-  requireFoundationsLaunched();
+  await requireFoundationsAvailableToMember(viewer.authUserId);
   const sql = getApplicationDatabase();
   try {
     await sql.begin(async (tx) => {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
-import { FoundationsNotLaunchedError, isFoundationsLaunched } from "@/lib/foundations/availability";
+import { FoundationsNotLaunchedError, requireFoundationsAvailableToMember } from "@/lib/foundations/availability";
 import {
   CircleRequiredForFoundationCompletionError,
   completeMemberFoundations,
@@ -115,13 +115,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isFoundationsLaunched()) {
-    return NextResponse.json(
-      { code: "foundations_not_launched", error: "Foundations is not open yet." },
-      { status: 423 },
-    );
-  }
-
   if (getPlatformConfiguration().mode !== "connected") {
     return NextResponse.json(
       { code: "platform_unavailable", error: "Member progress is not connected." },
@@ -169,6 +162,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await requireFoundationsAvailableToMember(viewer.authUserId);
     if (body.action === "complete_requirement") {
       const requirements = await completeMemberFoundationRequirement(
         viewer.authUserId,

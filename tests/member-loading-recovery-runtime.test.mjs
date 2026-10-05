@@ -215,7 +215,7 @@ function foundationsTimelineFixture({ state = "authenticated", launched = true, 
     "@/components/membership/MemberAccessNotice": component("member-access-notice"),
     "@/components/membership/RuinedTimeline": component("private-timeline"),
     "@/components/platform/PlatformUnavailable": component("platform-unavailable"),
-    "@/lib/foundations/availability": { isFoundationsLaunched: () => launched },
+    "@/lib/foundations/availability": { isFoundationsAvailableToMember: async () => launched },
     "@/lib/membership/access-policy": {
       deriveMemberAccessPolicy: value => { assert.equal(value, identity); return access; },
       memberCan: (policy, capability) => policy.capabilities.includes(capability),

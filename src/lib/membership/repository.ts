@@ -11,7 +11,7 @@ import parsePhoneNumber from "libphonenumber-js/min";
 import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
-import { requireFoundationsLaunched } from "@/lib/foundations/availability";
+import { FoundationsNotLaunchedError, isFoundationsLaunched, requireFoundationsAvailableToMember } from "@/lib/foundations/availability";
 import {
   mergeUpcomingPublicMemberExperiences,
   publicEventDetailHref,
@@ -3324,6 +3324,7 @@ export async function requireLockedMemberWriteAccess(tx: postgres.TransactionSql
   if (!row || !memberCan(deriveMemberAccessPolicy(identityFromRow(row)), capability)) {
     throw new MembershipAccessDeniedError();
   }
+  return identityFromRow(row);
 }
 
 type LegacyJournalRow = { id:string; kind:string; title:string|null; body:string|null; event_year:number; event_month:number|null; event_day:number|null; timeline_position:number };
@@ -3396,14 +3397,17 @@ export async function completeMemberFoundationRequirement(
   authUserId: string,
   requirement: "future_letter" | "timeline",
 ): Promise<MemberFoundationRequirements> {
-  if (requirement === "future_letter") requireFoundationsLaunched();
+  if (requirement === "future_letter") await requireFoundationsAvailableToMember(authUserId);
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   if (!memberCan(access, "foundations.write")) throw new MembershipAccessDeniedError();
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 46)`;
-    await requireLockedMemberWriteAccess(tx, identity);
+    const lockedIdentity = await requireLockedMemberWriteAccess(tx, identity);
+    if (requirement === "future_letter" && !isFoundationsLaunched() && lockedIdentity.membershipFunding !== "operator") {
+      throw new FoundationsNotLaunchedError();
+    }
     const enrollmentRows = await tx<Array<{ id: string }>>`
       select id
       from foundation_enrollments

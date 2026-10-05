@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import MemberAccessNotice from "@/components/membership/MemberAccessNotice";
 import RuinedTimeline from "@/components/membership/RuinedTimeline";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { isFoundationsLaunched } from "@/lib/foundations/availability";
+import { isFoundationsAvailableToMember } from "@/lib/foundations/availability";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_IDENTITY, PREVIEW_MEMBER_TIMELINE } from "@/lib/membership/preview";
@@ -18,7 +18,7 @@ export default async function MyTimelinePage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  if (!isFoundationsLaunched()) redirect("/my/foundations");
+  if (!await isFoundationsAvailableToMember(context.state === "authenticated" ? context.viewer?.authUserId : null)) redirect("/my/foundations");
   const access = deriveMemberAccessPolicy(context.data);
   const writable = memberCan(access, "foundations.write");
   if (!writable && !memberCan(access, "foundations.revisit")) return <MemberAccessNotice access={access} />;
