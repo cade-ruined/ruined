@@ -1,18 +1,21 @@
 "use client";
 
-import { Children, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 const views = [
   { id: "overview", label: "Overview" },
   { id: "membership", label: "Membership" },
   { id: "journey", label: "Journey" },
   { id: "community", label: "Community" },
+  { id: "operator-notes", label: "Operator notes" },
   { id: "record", label: "Record" },
 ] as const;
 type View = typeof views[number]["id"];
 type Destination = { view: View; hash: string; scroll: boolean };
 
 export default function OperatorMemberWorkspace({ children }: { children: ReactNode }) {
+  const panels = Children.toArray(children).filter((panel) => isValidElement<{ id?: string }>(panel));
+  const availableViews = views.filter((view) => panels.some((panel) => panel.props.id === view.id));
   const [active, setActive] = useState<View>("overview");
   const [review, setReview] = useState<Destination | null>(null);
   const [notice, setNotice] = useState("");
@@ -81,7 +84,7 @@ export default function OperatorMemberWorkspace({ children }: { children: ReactN
     if (event.target instanceof HTMLFormElement) dirtyForms.current.delete(event.target);
   }}>
     <nav aria-label="Member record sections" className="no-scrollbar mt-3 flex max-w-full gap-1 overflow-x-auto rounded-[8px] bg-black/[0.045] p-1">
-      {views.map((view) => <button aria-pressed={active === view.id} aria-controls={`member-view-${view.id}`} key={view.id} className={`min-h-11 shrink-0 rounded-[4px] px-4 text-sm font-semibold transition ${active === view.id ? "bg-[var(--color-bone)] text-black shadow-sm" : "text-black/55 hover:text-black"}`} onClick={() => requestDestination({ view: view.id, hash: `#${view.id}`, scroll: false })} type="button">{view.label}</button>)}
+      {availableViews.map((view) => <button aria-pressed={active === view.id} aria-controls={`member-view-${view.id}`} key={view.id} className={`min-h-11 shrink-0 rounded-[4px] px-4 text-sm font-semibold transition ${active === view.id ? "bg-[var(--color-bone)] text-black shadow-sm" : "text-black/55 hover:text-black"}`} onClick={() => requestDestination({ view: view.id, hash: `#${view.id}`, scroll: false })} type="button">{view.label}</button>)}
     </nav>
     {notice ? <p className="mt-3 text-sm text-[var(--color-poster)]" role="status">{notice}</p> : null}
     {review ? <div className="mt-3 rounded-[4px] bg-[var(--color-highlight)]/30 p-3 text-sm" role="group" aria-live="polite" aria-label="Keep unsaved edits?">
@@ -94,6 +97,9 @@ export default function OperatorMemberWorkspace({ children }: { children: ReactN
         }}>Switch view — keep edits</button>
       </div>
     </div> : null}
-    {Children.toArray(children).map((panel, index) => <div data-member-view={views[index]?.id} hidden={active !== views[index]?.id} id={`member-view-${views[index]?.id}`} key={views[index]?.id ?? index} className="pt-3">{panel}</div>)}
+    {panels.map((panel) => {
+      const view = views.find((item) => item.id === panel.props.id);
+      return view ? <div data-member-view={view.id} hidden={active !== view.id} id={`member-view-${view.id}`} key={view.id} className="pt-3">{panel}</div> : null;
+    })}
   </div>;
 }

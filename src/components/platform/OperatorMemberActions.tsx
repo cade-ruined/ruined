@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import {
   OPERATOR_BUTTON_CLASS,
@@ -42,10 +42,14 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
   const router = useRouter();
   const [notice, setNotice] = useState<Notice>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const pendingRef = useRef(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingRef.current) return;
     if (preview) { setNotice({ kind: "error", text: "Preview — notes are not saved." }); return; }
+    pendingRef.current = true;
     setSubmitting(true);
     setNotice(null);
     const form = event.currentTarget;
@@ -57,7 +61,8 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
         category: String(data.get("category") ?? "general"),
       });
       form.reset();
-      setNotice({ kind: "success", text: "The note was added to the operating record." });
+      setDirty(false);
+      setNotice({ kind: "success", text: "The operator note was saved." });
       router.refresh();
     } catch (error) {
       setNotice({
@@ -65,16 +70,19 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
         text: error instanceof Error ? error.message : "The note could not be added.",
       });
     } finally {
+      pendingRef.current = false;
       setSubmitting(false);
     }
   }
 
   return (
-    <form className="grid gap-4" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
+    <form aria-label="Add operator note" className="grid gap-4" data-operator-dirty={dirty ? "true" : "false"} data-operator-pending={submitting ? "true" : "false"} onChange={() => setDirty(true)} onSubmit={submit}>
+      <fieldset className="grid min-w-0 gap-4" disabled={submitting}>
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="ui-heading text-base font-semibold">Add internal note</h3>
-        <span className="text-xs text-black/38">Internal only</span>
+        <h3 className="ui-heading text-base font-semibold">Add note</h3>
+        <span className="text-xs text-black/45">Private</span>
       </div>
+      <p className="text-xs leading-relaxed text-black/55">Never shown on the member profile.</p>
       {preview ? <p className="text-sm text-black/60">Preview — notes are not saved.</p> : null}
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Category</span>
@@ -88,12 +96,13 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
         </select>
       </label>
       <label className={OPERATOR_LABEL_CLASS}>
-        <span className={OPERATOR_LABEL_TEXT_CLASS}>Internal note</span>
+        <span className={OPERATOR_LABEL_TEXT_CLASS}>Operator note</span>
         <textarea
           className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`}
           maxLength={2000}
           minLength={3}
           name="body"
+          placeholder="Add useful context or a follow-up detail."
           required
         />
       </label>
@@ -103,6 +112,7 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
           {submitting ? "Adding note" : "Add note"}
         </button>
       </div>
+      </fieldset>
     </form>
   );
 }

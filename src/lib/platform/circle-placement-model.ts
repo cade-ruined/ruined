@@ -8,7 +8,36 @@ export const CIRCLE_PERIODS = [
 ] as const;
 export type CirclePreferences = { timezone: string; availability: string[]; preferredConnectionId: string | null };
 export type CirclePreferencesView = { preferences: CirclePreferences; connections: Array<{ memberId: string; name: string }> };
-export type CircleRecommendation = { circleId: string; name: string; activeMembers: number; score: number; reasons: string[]; exceptionRequired: boolean };
+export type CircleRecommendation = { circleId: string; name: string; activeMembers: number; score: number; reasons: string[]; exceptionRequired: boolean; inviterPresent: boolean; preferredConnectionPresent: boolean };
+export type CirclePlacementCircle = { circleId: string; name: string };
+export type CirclePlacementConnection = {
+  memberId: string;
+  name: string;
+  status: "available" | "multiple_circles" | "no_circle" | "inactive" | "circle_unavailable";
+  // Singular fields are populated only when one current Circle is known.
+  circleId: string | null;
+  circleName: string | null;
+  circles: Array<CirclePlacementCircle & { relationship: "member" | "supporter" }>;
+};
+export type CirclePlacementInviter = CirclePlacementConnection & { boundAt: string; joinedAt: string | null };
+export type CircleRecommendationContext = {
+  memberId: string;
+  inviter: CirclePlacementInviter | null;
+  preferredConnection: CirclePlacementConnection | null;
+  requiredPartnerCircle: CirclePlacementCircle | null;
+};
+export type CircleRecommendationSnapshot = { recommendations: CircleRecommendation[]; context: CircleRecommendationContext };
+export type CirclePlacementCandidate = {
+  circleId: string;
+  name: string;
+  activeMembers: number;
+  participantPreferences: CirclePreferences[];
+  incomingSeats?: number;
+  // Kept for callers that supply a generic preview connection.
+  connectionPresent?: boolean;
+  inviter?: { memberId: string; name: string; relationship: "member" | "supporter" };
+  preferredConnection?: { memberId: string; name: string; relationship: "member" | "supporter" };
+};
 
 export function validateCirclePreferences(input: unknown): CirclePreferences {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Choose your Circle preferences.");
@@ -38,7 +67,7 @@ function weeklyUtcSlots(preferences: CirclePreferences, now: Date): Set<number> 
   return result;
 }
 
-export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{ circleId: string; name: string; activeMembers: number; connectionPresent: boolean; participantPreferences: CirclePreferences[]; incomingSeats?: number }>, now = new Date(), couple?: { memberCircleId: string | null; partnerCircleId: string | null }): CircleRecommendation[] {
+export function scoreCirclePlacement(member: CirclePreferences, circles: CirclePlacementCandidate[], now = new Date(), couple?: { memberCircleId: string | null; partnerCircleId: string | null }): CircleRecommendation[] {
   const wanted = weeklyUtcSlots(member, now);
   // An unplaced partner joins the existing Circle. Established pairs may move
   // together; the write path checks both members and capacity atomically.
@@ -52,7 +81,17 @@ export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{
     else if (circle.activeMembers < CIRCLE_TARGET) { score += 30; reasons.push("Below the target of 10 people"); }
     else if (circle.activeMembers < CIRCLE_NORMAL_MAXIMUM) { score += 10; reasons.push("Within the normal 8–12 range"); }
 
-    if (circle.connectionPresent) { score += 25; reasons.push("A preferred connection or inviter is here; placement is not guaranteed"); }
+    if (circle.inviter) {
+      score += 25;
+      reasons.push(`${circle.inviter.name} invited this member and ${circle.inviter.relationship === "supporter" ? "serves as a Circle Supporter here" : "is in this Circle"}; placement is not guaranteed`);
+    }
+    if (circle.preferredConnection) {
+      // Selecting the inviter is still explicit preference evidence, but should
+      // not count the same person's presence twice in the ranking.
+      if (circle.preferredConnection.memberId !== circle.inviter?.memberId) score += 25;
+      reasons.push(`${circle.preferredConnection.name} is this member's preferred connection and ${circle.preferredConnection.relationship === "supporter" ? "serves as a Circle Supporter here" : "is in this Circle"}; placement is not guaranteed`);
+    }
+    if (circle.connectionPresent && !circle.inviter && !circle.preferredConnection) { score += 25; reasons.push("A known connection is here; placement is not guaranteed"); }
     let overlapCount = 0; let knownAvailability = 0;
     for (const person of circle.participantPreferences) {
       const slots = weeklyUtcSlots(person, now);
@@ -63,6 +102,6 @@ export function scoreCirclePlacement(member: CirclePreferences, circles: Array<{
     else if (!knownAvailability) reasons.push("Circle availability is not yet recorded");
     else { const proportion = overlapCount / knownAvailability; score += Math.round(proportion * 30); reasons.push(`Availability overlaps with ${overlapCount} of ${knownAvailability} people who shared it (current time-zone offsets)`); }
     if (member.timezone && circle.participantPreferences.some(person => person.timezone === member.timezone)) { score += 5; reasons.push("Shared time zone"); }
-    return { circleId: circle.circleId, name: circle.name, activeMembers: circle.activeMembers, score, reasons, exceptionRequired };
+    return { circleId: circle.circleId, name: circle.name, activeMembers: circle.activeMembers, score, reasons, exceptionRequired, inviterPresent: Boolean(circle.inviter), preferredConnectionPresent: Boolean(circle.preferredConnection) };
   }).sort((a, b) => b.score - a.score || a.activeMembers - b.activeMembers || a.name.localeCompare(b.name));
 }

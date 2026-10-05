@@ -3,7 +3,10 @@ import type postgres from "postgres";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { OpsRepositoryError, requireOpsAdmin } from "@/lib/platform/ops-repository";
 import { requireLeadershipResponsibility } from "@/lib/platform/leadership-repository";
-import { scoreCirclePlacement, validateCirclePreferences, type CirclePreferences, type CirclePreferencesView } from "@/lib/platform/circle-placement-model";
+import {
+  scoreCirclePlacement, validateCirclePreferences, type CirclePreferences, type CirclePreferencesView,
+  type CirclePlacementConnection, type CircleRecommendationSnapshot,
+} from "@/lib/platform/circle-placement-model";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type Tx = postgres.TransactionSql;
@@ -52,24 +55,96 @@ export async function saveCirclePreferences(actor: string, input: unknown) {
     return { preferences: value, connections: known };
   });
 }
-export async function getCircleRecommendations(actor: string, memberId: string) {
+async function placementConnection(tx: Tx, memberId: string | null): Promise<CirclePlacementConnection | null> {
+  if (!memberId) return null;
+  const [member] = await tx<Array<{ id: string; name: string; active: boolean }>>`
+    select member.id,
+      case when member.deleted_at is not null then 'Former member'
+        else coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') end as name,
+      member.deleted_at is null and person.status = 'active'
+        and private.ruined_member_can_share_invitation(member.id)
+        and exists (select 1 from platform_users viewer
+          join platform_role_grants access on access.auth_user_id = viewer.auth_user_id
+            and access.role_slug = 'member' and access.revoked_at is null
+          where viewer.member_id = member.id and viewer.person_id = member.person_id and viewer.status = 'active') as active
+    from ruined_members member
+    join people person on person.id = member.person_id
+    left join person_profiles profile on profile.person_id = member.person_id
+    where member.id = ${memberId}::uuid`;
+  if (!member) return null;
+  const base = { memberId: member.id, name: member.name, circleId: null, circleName: null, circles: [] };
+  if (!member.active) return { ...base, status: "inactive" };
+  const rows = await tx<Array<{ circle_id: string; name: string; status: string; relationship: "member" | "supporter" }>>`
+    select circle.id as circle_id, circle.name, circle.status,
+      case when bool_or(current_placement.relationship = 'member') then 'member' else 'supporter' end as relationship
+    from (
+      select assignment.circle_id, 'member'::text as relationship
+      from circle_member_assignments assignment
+      where assignment.member_id = ${memberId}::uuid and assignment.ended_at is null and assignment.assigned_at <= statement_timestamp()
+      union all
+      select staff.circle_id, 'supporter'::text
+      from circle_staff_assignments staff
+      join platform_users viewer on viewer.auth_user_id = staff.auth_user_id
+      join ruined_members member on member.id = viewer.member_id and member.person_id = viewer.person_id
+      where member.id = ${memberId}::uuid and viewer.status = 'active'
+        and staff.role_slug = 'circle_leader' and staff.ended_at is null and staff.assigned_at <= statement_timestamp()
+        and exists (select 1 from platform_role_grants access where access.auth_user_id = viewer.auth_user_id
+          and access.role_slug in ('circle_leader', 'ops_admin') and access.revoked_at is null)
+    ) current_placement
+    join circles circle on circle.id = current_placement.circle_id
+    group by circle.id, circle.name, circle.status order by circle.name, circle.id`;
+  const circles = rows.filter(row => row.status === "active" || row.status === "forming")
+    .map(row => ({ circleId: row.circle_id, name: row.name, relationship: row.relationship }));
+  if (!circles.length) return { ...base, status: rows.length ? "circle_unavailable" : "no_circle" };
+  return {
+    ...base, circles, status: circles.length > 1 ? "multiple_circles" : "available",
+    circleId: circles.length === 1 ? circles[0].circleId : null,
+    circleName: circles.length === 1 ? circles[0].name : null,
+  };
+}
+
+export async function getCircleRecommendationSnapshot(actor: string, memberId: string): Promise<CircleRecommendationSnapshot> {
   validId(memberId);
   return getBillingDatabase().begin(async tx => {
+    await tx`set transaction isolation level repeatable read`;
     await requireOpsAdmin(tx, actor);
-    const [member] = await tx<Array<{ timezone: string | null; availability: string[] | null; connection_id: string | null }>>`
+    const [member] = await tx<Array<{
+      timezone: string | null; availability: string[] | null; preferred_connection_id: string | null;
+      inviter_member_id: string | null; bound_at: Date | string | null; joined_at: Date | string | null;
+    }>>`
       select coalesce(preference.timezone, profile.timezone) as timezone, preference.availability,
-        case when preference.member_id is null then referral.inviter_member_id else preference.preferred_connection_id end as connection_id
+        case when exists (
+          select 1 from member_referrals known
+          join ruined_members referred on referred.id = known.referred_member_id and referred.person_id = known.referred_person_id
+          where known.bound_at is not null and (
+            (known.referred_member_id = member.id and known.inviter_member_id = preference.preferred_connection_id)
+            or (known.inviter_member_id = member.id and known.referred_member_id = preference.preferred_connection_id)
+          )
+        ) then preference.preferred_connection_id else null end as preferred_connection_id,
+        referral.inviter_member_id, referral.bound_at, referral.joined_at
       from ruined_members member left join person_profiles profile on profile.person_id = member.person_id
       left join member_circle_preferences preference on preference.member_id = member.id
+      -- Attribution is the first verified, bound referral. Acceptance can precede
+      -- completed joining; neither email guesses nor joined_at gate this signal.
       left join member_referrals referral on referral.referred_member_id = member.id
-      where member.id = ${memberId}::uuid`;
+        and referral.referred_person_id = member.person_id and referral.bound_at is not null
+      where member.id = ${memberId}::uuid and member.deleted_at is null`;
     if (!member) throw new OpsRepositoryError("not_found", "Member not found.");
-    const [couple] = await tx<Array<{ partner_id: string | null; member_circle_id: string | null; partner_circle_id: string | null }>>`
+    const inviterConnection = await placementConnection(tx, member.inviter_member_id);
+    const preferredConnection = member.preferred_connection_id === member.inviter_member_id
+      ? inviterConnection : await placementConnection(tx, member.preferred_connection_id);
+    const inviter = inviterConnection && member.bound_at ? {
+      ...inviterConnection, boundAt: new Date(member.bound_at).toISOString(),
+      joinedAt: member.joined_at ? new Date(member.joined_at).toISOString() : null,
+    } : null;
+    const [couple] = await tx<Array<{ partner_id: string | null; member_circle_id: string | null; partner_circle_id: string | null; partner_circle_name: string | null }>>`
       select pair.partner_id,
         (select circle_id from circle_member_assignments where member_id = ${memberId}::uuid and ended_at is null) as member_circle_id,
-        (select circle_id from circle_member_assignments where member_id = pair.partner_id and ended_at is null) as partner_circle_id
-      from (select private.ruined_circle_couple_partner(${memberId}::uuid) as partner_id) pair`;
-    const circles = await tx<Array<{ id: string; name: string; active_members: number; connection_present: boolean; incoming_seats: number }>>`
+        partner_assignment.circle_id as partner_circle_id, partner_circle.name as partner_circle_name
+      from (select private.ruined_circle_couple_partner(${memberId}::uuid) as partner_id) pair
+      left join circle_member_assignments partner_assignment on partner_assignment.member_id = pair.partner_id and partner_assignment.ended_at is null
+      left join circles partner_circle on partner_circle.id = partner_assignment.circle_id`;
+    const circles = await tx<Array<{ id: string; name: string; active_members: number; incoming_seats: number }>>`
       select circle.id, circle.name, private.ruined_circle_participant_count(circle.id) as active_members,
         (select count(*)::integer from unnest(array_remove(array[${memberId}::uuid, ${couple?.partner_id ?? null}::uuid], null)) incoming(member_id)
           where not exists (select 1 from circle_member_assignments placement
@@ -78,9 +153,7 @@ export async function getCircleRecommendations(actor: string, memberId: string) 
             join platform_users viewer on viewer.auth_user_id = staff.auth_user_id
             join ruined_members supporter on supporter.person_id = viewer.person_id
             where staff.circle_id = circle.id and staff.role_slug = 'circle_leader' and staff.ended_at is null
-              and supporter.id = incoming.member_id)) as incoming_seats,
-        exists (select 1 from circle_member_assignments assignment where assignment.circle_id = circle.id
-          and assignment.ended_at is null and assignment.member_id = ${member.connection_id}::uuid) as connection_present
+              and supporter.id = incoming.member_id)) as incoming_seats
       from circles circle where circle.status in ('forming', 'active') order by circle.name`;
     const people = await tx<Array<{ circle_id: string; timezone: string | null; availability: string[] | null }>>`
       select assignment.circle_id, coalesce(preference.timezone, profile.timezone) as timezone, preference.availability
@@ -88,8 +161,30 @@ export async function getCircleRecommendations(actor: string, memberId: string) 
       left join member_circle_preferences preference on preference.member_id = member.id
       left join person_profiles profile on profile.person_id = member.person_id
       where assignment.ended_at is null and member.id <> ${memberId}::uuid`;
-    return scoreCirclePlacement({ timezone: member.timezone ?? "", availability: member.availability ?? [], preferredConnectionId: member.connection_id }, circles.map(circle => ({ circleId: circle.id, name: circle.name, activeMembers: Number(circle.active_members), incomingSeats: Number(circle.incoming_seats), connectionPresent: circle.connection_present, participantPreferences: people.filter(person => person.circle_id === circle.id).map(person => ({ timezone: person.timezone ?? "", availability: person.availability ?? [], preferredConnectionId: null })) })), new Date(), couple?.partner_id ? { memberCircleId: couple.member_circle_id, partnerCircleId: couple.partner_circle_id } : undefined);
+    const recommendations = scoreCirclePlacement({ timezone: member.timezone ?? "", availability: member.availability ?? [], preferredConnectionId: member.preferred_connection_id }, circles.map(circle => {
+      const inviterPlacement = inviter?.circles.find(placement => placement.circleId === circle.id);
+      const preferredPlacement = preferredConnection?.circles.find(placement => placement.circleId === circle.id);
+      return {
+        circleId: circle.id, name: circle.name, activeMembers: Number(circle.active_members), incomingSeats: Number(circle.incoming_seats),
+        inviter: inviter && inviterPlacement ? { memberId: inviter.memberId, name: inviter.name, relationship: inviterPlacement.relationship } : undefined,
+        preferredConnection: preferredConnection && preferredPlacement ? { memberId: preferredConnection.memberId, name: preferredConnection.name, relationship: preferredPlacement.relationship } : undefined,
+        participantPreferences: people.filter(person => person.circle_id === circle.id).map(person => ({ timezone: person.timezone ?? "", availability: person.availability ?? [], preferredConnectionId: null })),
+      };
+    }), new Date(), couple?.partner_id ? { memberCircleId: couple.member_circle_id, partnerCircleId: couple.partner_circle_id } : undefined);
+    return {
+      recommendations,
+      context: {
+        memberId, inviter, preferredConnection,
+        requiredPartnerCircle: couple?.partner_id && !couple.member_circle_id && couple.partner_circle_id
+          ? { circleId: couple.partner_circle_id, name: couple.partner_circle_name ?? "Partner's Circle" } : null,
+      },
+    };
   });
+}
+
+// Preserve callers that only need the original ranked array.
+export async function getCircleRecommendations(actor: string, memberId: string) {
+  return (await getCircleRecommendationSnapshot(actor, memberId)).recommendations;
 }
 
 export async function requestCirclePlacementReview(actor: string, input: { memberId: string; circleId: string; reason: string }) {

@@ -259,6 +259,7 @@ test("member record action anchors have visible authorized destinations and neve
   const component = () => null;
   const Referrals = () => null;
   const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
+    "@/components/platform/CirclePlacementRecommendations": { __esModule: true, default: () => null },
     "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
