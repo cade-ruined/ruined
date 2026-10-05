@@ -14,6 +14,16 @@ Complimentary and operator-funded registrations skip card saving. A profile and 
 
 Saving a card, completing registration, sending either email, and opening a profile do not charge a card, start a subscription, or authorize a future charge. Paid membership still requires its separate reviewed agreement and explicit payment confirmation. Program gates such as Foundations remain independent.
 
+## Founding confirmation at completed registration
+
+Eligible standard registrations now secure the individual Founding rate when registration is complete with a verified saved card. The receipt and newly prepared welcome email confirm $349/month, or $3,490/year with annual billing, in USD before applicable tax. The rate is reserved for the first paid activation and retained during continuous membership. After that membership ends, rejoining requires a fresh eligibility check. Complimentary registrations count toward the existing 50-person eligibility limit but do not receive a paid-price confirmation.
+
+`20261002140000_registration_founding_pricing.sql` stores immutable completion decisions under the existing commercial allocation lock. It deduplicates people across current membership, completed registrations and pending Checkout reservations. Later individual Checkout uses the recorded decision; couples retain their separate price. Existing completed registrations are considered in chronological order after preserving existing membership decisions, without resending or rewriting earlier welcome emails. Temporarily withdrawing a saved card blocks readiness and delivery, but does not erase an already earned rate.
+
+Apply the pricing migration and the following consent-version migration before deploying this application. If an unresolved Checkout holds the last available Founding place, the pricing migration fails with `P4205` and rolls back. Resolve or allow that Checkout to settle, then rerun the migration; do not skip the historical allocation. The same boundary during new registration is retryable. An explicit completion retry returns 409; Stripe event processing rolls back and retries the verified setup event. No subscription or charge is created by this process.
+
+Local database tests cover allocation boundaries, later checkout, continuity, historical ordering and email retries. They do not establish production PostgreSQL concurrency or actual inbox delivery.
+
 ## Release configuration and order
 
 This document describes the implemented release, not confirmation that it is deployed. Before accepting new registrations:
@@ -59,5 +69,6 @@ Apply `20260930200000_registration_eligibility.sql` and then `20260930210000_reg
 - Member **Demo account** selector: Registration · details, Registration · card, Registration · receipt.
 - `/ops/registrations`: fictional recipients and disabled release actions in preview mode.
 - `/api/preview/registration-email`: welcome email; add `?kind=profile_ready` for activation or `?funding=complimentary` for the no-card welcome.
+- `/api/preview/registration-email?pricing=founding`: fictional Founding-rate confirmation in the welcome email.
 
 Previews create no accounts, save no payment methods, send no emails, and grant no access. Email preview routes are disabled in production.

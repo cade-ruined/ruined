@@ -25,6 +25,7 @@ export default async function MemberRegisteredPage() {
     email={context.viewer?.email ?? "you@example.com"}
     registeredAt={registration.registeredAt}
     requiresPaymentMethod={registration.requiresPaymentMethod}
+    foundingPricing={registration.foundingPricing}
     preview={context.state === "preview"}
   />;
 }

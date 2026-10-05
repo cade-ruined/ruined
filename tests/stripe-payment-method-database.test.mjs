@@ -18,7 +18,8 @@ test("storage-only Checkout binds consent, mode and method without activating me
   const PGlite=await loadPGliteForSchemaChecks();const db=new PGlite();t.after(()=>db.close());
   await db.exec("create role anon;create role authenticated;create role service_role;");
   const paths=[...new Set(Array.from((await source("scripts/migrate-platform.mjs")).matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g),m=>m[1]).concat("db/migrations/20260930110000_member_payment_methods.sql"))];
-  for(const path of paths)await db.exec(await source(path));
+  const consentMigration="db/migrations/20261002150000_payment_setup_consent_v2.sql";
+  for(const path of paths.filter(path=>path!==consentMigration))await db.exec(await source(path));
   await db.query("insert into ruined_members(id,email,email_normalized) values($1,'save@example.test','save@example.test')",[id(1)]);
   const person=(await db.query("select person_id from ruined_members where id=$1",[id(1)])).rows[0].person_id;
   await db.query("insert into member_lifecycle(member_id,account_state) values($1,'active')",[id(1)]);
@@ -28,6 +29,15 @@ test("storage-only Checkout binds consent, mode and method without activating me
   await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1",[id(1)]);
   await db.query("update person_email_addresses set verification_state='verified',verified_at=now() where person_id=$1",[person]);
   const sql=wrap(db), model=await load("src/lib/stripe/payment-method-model.ts");
+  assert.equal(model.PAYMENT_SETUP_CONSENTS["save-payment-method-v1"],"Save my payment method securely with Stripe for a future checkout I choose to complete. This does not start a membership or subscription, authorize a charge, or reserve an offer. I can remove it before starting checkout.","historical signed wording must remain exact");
+  // A real pre-release v1 attempt must survive the additive migration byte for
+  // byte, including retries after Stripe created a session but lost the reply.
+  await db.query("insert into member_payment_method_accounts(member_id,stripe_account_id,livemode) values($1,'acct_test',false)",[id(1)]);
+  await db.query("insert into member_payment_method_setup_attempts(id,member_id,stripe_account_id,livemode,consent_auth_user_id,consent_version,consent_text,return_origin,expires_at) values($1,$2,'acct_test',false,$3,'save-payment-method-v1',$4,'https://members.example.test',now()+interval '2 hours')",[id(10),id(1),id(2),model.PAYMENT_SETUP_CONSENTS["save-payment-method-v1"]]);
+  await db.query("update member_payment_method_accounts set consent_attempt_id=$1 where member_id=$2",[id(10),id(1)]);
+  const originalConsent=(await db.query("select to_jsonb(attempt) evidence from member_payment_method_setup_attempts attempt")).rows;
+  await db.exec(await source(consentMigration));
+  assert.deepEqual((await db.query("select to_jsonb(attempt) evidence from member_payment_method_setup_attempts attempt")).rows,originalConsent);
   const repository=await load("src/lib/stripe/payment-method-repository.ts",{"@/lib/stripe/payment-method-model":model});
   const sessions=new Map(),intents=new Map(),methods=new Map(),idempotency=new Map(),requests=[];
   let mode=false,setupEnabled=true,failCreateAfterRemote=false,failDetach=false,customerDefault=null;
@@ -82,14 +92,17 @@ test("storage-only Checkout binds consent, mode and method without activating me
     await db.query("update person_private_profiles set birth_date='1990-01-01' where person_id=$1",[person]);
     await assert.rejects(service.startMemberPaymentMethodSetup({...input(id(10)),consentAccepted:false}),/Confirm/);
   });
-  await t.test("timeout after remote success retries stable durable attempt and tabs reuse it",async()=>{
+  await t.test("v1 timeout retries preserve original provider arguments and current tabs reuse the unchanged consent",async()=>{
     failCreateAfterRemote=true;
-    await assert.rejects(service.startMemberPaymentMethodSetup(input(id(10))),/timeout/);
+    await assert.rejects(service.startMemberPaymentMethodSetup({...input(id(10)),consentVersion:"save-payment-method-v1"}),/timeout/);
     const pending=(await db.query("select * from member_payment_method_setup_attempts")).rows;
     assert.equal(pending.length,1);assert.equal(pending[0].status,"creating");
     await Promise.all([service.startMemberPaymentMethodSetup(input(id(10))),service.startMemberPaymentMethodSetup(input(id(11)))]);
     assert.equal(sessions.size,1);assert.equal((await service.getMemberPaymentMethodStatus(id(2))).state,"pending");
     const params=requests.at(-1);assert.equal(params.mode,"setup");assert.equal(params.currency,"usd");
+    assert.equal(params.metadata.ruined_storage_consent,"save-payment-method-v1");
+    assert.equal(params.setup_intent_data.description,model.PAYMENT_SETUP_CONSENTS["save-payment-method-v1"]);
+    assert.equal((await db.query("select consent_version from member_payment_method_setup_attempts where id=$1",[id(10)])).rows[0].consent_version,"save-payment-method-v1");
     for(const field of ["line_items","automatic_tax","subscription_data","payment_intent_data","payment_method_types"])assert.equal(params[field],undefined);
     assert.equal(params.billing_address_collection,"required");assert.equal(params.customer_update.address,"auto");assert.equal(params.payment_method_data.allow_redisplay,"always");
     assert.match(params.success_url,/\/my\/payment-method\?setup=returned$/);
@@ -122,7 +135,12 @@ test("storage-only Checkout binds consent, mode and method without activating me
     await event(complete("cs_1"));assert.equal((await service.getMemberPaymentMethodStatus(id(2))).state,"not_saved");
   });
   await t.test("detach before delayed success cannot resurrect a method",async()=>{
+    await assert.rejects(service.startMemberPaymentMethodSetup({...input(id(20)),consentVersion:"save-payment-method-v1"}),/Reload this page/);
     await service.startMemberPaymentMethodSetup(input(id(20)));const completed=complete("cs_2");
+    assert.equal(requests.at(-1).metadata.ruined_storage_consent,"save-payment-method-v2");
+    assert.equal(requests.at(-1).setup_intent_data.description,model.PAYMENT_SETUP_CONSENT_TEXT);
+    const evidence=(await db.query("select consent_version,consent_text from member_payment_method_setup_attempts where id=$1",[id(20)])).rows[0];
+    assert.deepEqual(evidence,{consent_version:"save-payment-method-v2",consent_text:model.PAYMENT_SETUP_CONSENT_TEXT});
     await event({id:"evt_detach",type:"payment_method.detached",livemode:false,data:{object:{id:"pm_cs2",livemode:false,customer:null}}});
     await event(completed);assert.equal((await service.getMemberPaymentMethodStatus(id(2))).state,"not_saved");
     assert.equal((await db.query("select stripe_payment_method_id from member_payment_method_accounts")).rows[0].stripe_payment_method_id,null);

@@ -1,3 +1,6 @@
+import type { RegistrationFoundingPricing } from "./registration-model";
+import { registrationFoundingConfirmation } from "./registration-pricing-confirmation";
+
 export type RegistrationMessageKind = "welcome" | "profile_ready";
 export type RegistrationCompletionBasis = "saved_card" | "complimentary";
 
@@ -8,6 +11,7 @@ export type RegistrationEmailInput = {
   siteUrl: URL;
   /** Inline image frozen with the message; never a recipient-specific public URL. */
   invitationImageSrc?: string;
+  foundingPricing?: RegistrationFoundingPricing | null;
 };
 
 function escapeHtml(value: string): string {
@@ -47,6 +51,8 @@ function welcomeBodyHtml(thankYouImage: string) {
 /** Pure rendering: the worker stores this exact HTML/text before any provider call. */
 export function createRegistrationEmail(input: RegistrationEmailInput) {
   const welcome = input.kind === "welcome";
+  const founding = welcome && input.completionBasis === "saved_card"
+    ? registrationFoundingConfirmation(input.foundingPricing) : null;
   const name = input.memberName.trim() || "Friend";
   const title = welcome ? "Welcome to RU/NED" : "Your profile is ready.";
   const subject = welcome ? "Welcome to RU/NED" : "Your Ruined profile is ready";
@@ -83,13 +89,14 @@ export function createRegistrationEmail(input: RegistrationEmailInput) {
     : { outer: "#d6d1c7", paper: "#e9e5da", ink: "#23231f", muted: "#666259", rule: "#cbc6b9" };
   const footer = "This is an update about your Ruined registration, not a newsletter subscription.";
   const text = (welcome
-    ? [greeting, "", ...welcomeParagraphs.flatMap(paragraph => [paragraph.text, ""]),
+    ? [greeting, "", ...(founding ? [founding.heading, founding.monthly, founding.annual, founding.scope, "", founding.retention, "", founding.payment, ""] : []), ...welcomeParagraphs.flatMap(paragraph => [paragraph.text, ""]),
       "Tyler, Libby, Cade & Mitch", "RU/NED", "After the fear", "", "Need a hand? connect@theruinedproject.com", footer]
     : [title, "", greeting, "", next, "", charge, "", `${action}: ${actionUrl}`, "", "After the fear.", "", "Need a hand? connect@theruinedproject.com", footer]
   ).join("\n");
 
+  const foundingHtml = founding ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffca2c" style="margin:8px 0 32px;background:#ffca2c;color:#23231f"><tr><td style="padding:24px;color:#23231f"><h3 style="margin:0 0 14px;font-size:20px;line-height:1.3">${escapeHtml(founding.heading)}</h3><p style="margin:0 0 10px;font-size:36px;font-weight:700;line-height:1.2;letter-spacing:-1px">${escapeHtml(founding.monthly)}</p><p style="margin:0 0 8px;font-size:14px;line-height:1.5">${escapeHtml(founding.annual)}</p><p style="margin:0;font-size:12px;line-height:1.5">${escapeHtml(founding.scope)}</p><p style="margin:20px 0 12px;font-size:14px;line-height:1.6">${escapeHtml(founding.retention)}</p><p style="margin:0;font-size:14px;line-height:1.6;font-weight:700">${escapeHtml(founding.payment)}</p></td></tr></table>` : "";
   const body = welcome
-    ? `${welcomeBodyHtml(thankYouImage)}<p style="margin:32px 0 20px;font-size:16px;line-height:1.75"><strong>Tyler, Libby, Cade &amp; Mitch</strong></p><img src="${escapeHtml(logo)}" width="130" height="39" alt="RU/NED" style="display:block;width:130px;height:39px;border:0"><p style="margin:14px 0 0;color:#ffca2c"><img src="${escapeHtml(signoffImage)}" width="220" alt="After the fear" style="display:block;width:220px;max-width:100%;height:auto;border:0;color:#ffca2c;font-size:24px"></p>`
+    ? `${foundingHtml}${welcomeBodyHtml(thankYouImage)}<p style="margin:32px 0 20px;font-size:16px;line-height:1.75"><strong>Tyler, Libby, Cade &amp; Mitch</strong></p><img src="${escapeHtml(logo)}" width="130" height="39" alt="RU/NED" style="display:block;width:130px;height:39px;border:0"><p style="margin:14px 0 0;color:#ffca2c"><img src="${escapeHtml(signoffImage)}" width="220" alt="After the fear" style="display:block;width:220px;max-width:100%;height:auto;border:0;color:#ffca2c;font-size:24px"></p>`
     : `<p style="margin:0 0 26px;font-size:16px;line-height:1.65">${next}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#a83329"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:17px 24px;border:1px solid #a83329;color:#fff9ec;font-size:15px;line-height:1.25;font-weight:700;text-decoration:none">${action} &rarr;</a></td></tr></table>
 <p style="margin:28px 0 0;font-size:13px;line-height:1.65;color:#56544d">${charge}</p>

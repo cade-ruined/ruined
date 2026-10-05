@@ -14,7 +14,35 @@ async function load(path,dependencies={}) {
   },loaded,loaded.exports);
   return loaded.exports;
 }
-const email=await load("src/lib/membership/registration-email.ts");
+const pricingConfirmation=await load("src/lib/membership/registration-pricing-confirmation.ts");
+const email=await load("src/lib/membership/registration-email.ts", {"./registration-pricing-confirmation":pricingConfirmation});
+const confirmedFoundingPricing = {confirmed:true,awardedAt:"2026-10-02T18:00:00.000Z",
+  monthlyAmountCents:34900,annualAmountCents:349000,currency:"usd"};
+
+test("welcome confirms only a persisted paid-path founding rate with explicit no-charge terms",()=>{
+  const input={kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
+  const founding=email.createRegistrationEmail({...input,foundingPricing:confirmedFoundingPricing});
+  for (const output of [founding.html,founding.text]) {
+    assert.match(output,/Your Founding rate is locked in/);
+    assert.match(output,/\$349\/month/);
+    assert.match(output,/\$3,490\/year with annual billing/);
+    assert.match(output,/Individual membership/);
+    assert.match(output,/applicable tax added at checkout/);
+    assert.match(output,/Nothing has been charged/);
+    assert.match(output,/confirm checkout before billing begins/);
+    assert.match(output,/continuously active/);
+    assert.match(output,/rejoining requires a new eligibility check/);
+  }
+  for (const override of [
+    {foundingPricing:null}, {foundingPricing:{...confirmedFoundingPricing,confirmed:false}},
+    {foundingPricing:{...confirmedFoundingPricing,monthlyAmountCents:NaN}},
+    {foundingPricing:confirmedFoundingPricing,completionBasis:"complimentary"},
+    {foundingPricing:confirmedFoundingPricing,kind:"profile_ready"},
+  ]) {
+    const result=email.createRegistrationEmail({...input,...override});
+    assert.doesNotMatch(result.html+result.text,/Founding rate is locked|\$349/);
+  }
+});
 
 test("visual emails use the supplied welcome letter, escape identity, and preserve the separate profile-ready message",async()=>{
   const input={kind:"welcome",memberName:'Alex <script> & "Friend"',completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
@@ -68,6 +96,9 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     const table=migration.match(new RegExp(`create table public\\.${name} \\([\\s\\S]+?\\n\\);`));
     assert.ok(table,`Missing actual ${name} table`);return table[0];
   }).join("\n");
+  const pricingMigration=await readFile(new URL("../db/migrations/20261002140000_registration_founding_pricing.sql",import.meta.url),"utf8");
+  const pricingTable=pricingMigration.match(/create table public\.member_registration_pricing_decisions \([\s\S]+?\n\);/);
+  assert.ok(pricingTable,"Missing actual registration pricing decision table");
   const payloadGuards=migration.slice(migration.indexOf("create function private.ruined_guard_registration_message_payload()"),
     migration.indexOf("create function private.ruined_member_profile_released("));
   assert.match(payloadGuards,/create trigger registration_message_payload_erasure/);
@@ -88,6 +119,10 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     create function private.ruined_member_registration_ready(uuid) returns boolean language sql as
       'select ready from test_registration_readiness where member_id=$1';
     ${tables}
+    ${pricingTable[0]}
+    create table test_registration_pricing_current(member_id uuid primary key,current boolean);
+    create function private.ruined_registration_founding_pricing_is_current(uuid) returns boolean language sql as
+      'select coalesce((select current from test_registration_pricing_current where member_id=$1),true)';
     ${payloadGuards}`);
   await pg.query("insert into people values($1,'active')",[ids.person]);
   await pg.query("insert into ruined_members values($1,$2,'alex@example.test',null)",[ids.member,ids.person]);
@@ -164,6 +199,31 @@ test("welcome uses canonical verified identity and sends once; duplicate enqueue
   assert.equal((await f.row()).provider_message_id,"provider-accepted");
   assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
   await assert.rejects(f.pg.query("insert into member_registration_messages(member_id,kind) values($1,'welcome')",[f.ids.member]),/unique/);
+});
+
+test("welcome reads the recorded founding decision and preserves its confirmation on an uncertain retry",async t=>{
+  const f=await fixture(t);
+  await f.pg.query(`insert into member_registration_pricing_decisions(member_id,person_id,registered_at,
+    completion_basis,founding_eligible,occupied_count_at_decision,monthly_amount_cents,annual_amount_cents)
+    values($1,$2,now(),'saved_card',true,49,34900,349000)`,[f.ids.member,f.ids.person]);
+  f.responses.push(new Error("transport lost"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  assert.match(f.sends[0].payload.html,/Your Founding rate is locked in/);
+  assert.match(f.sends[0].payload.text,/\$349\/month/);
+  await f.pg.query("insert into test_registration_pricing_current values($1,false)",[f.ids.member]);
+  await f.due();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.deepEqual(f.sends[0],f.sends[1],"an uncertain send retries the exact confirmed payload and idempotency key");
+});
+
+test("a lapsed pricing decision is not newly confirmed in a welcome message",async t=>{
+  const f=await fixture(t);
+  await f.pg.query(`insert into member_registration_pricing_decisions(member_id,person_id,registered_at,
+    completion_basis,founding_eligible,occupied_count_at_decision,monthly_amount_cents,annual_amount_cents)
+    values($1,$2,now(),'saved_card',true,10,34900,349000)`,[f.ids.member,f.ids.person]);
+  await f.pg.query("insert into test_registration_pricing_current values($1,false)",[f.ids.member]);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.doesNotMatch(f.sends[0].payload.html+f.sends[0].payload.text,/Founding rate is locked|\$349/);
 });
 
 test("welcome card uses the original accepted invitation, not a current profile or newer invitation",async t=>{

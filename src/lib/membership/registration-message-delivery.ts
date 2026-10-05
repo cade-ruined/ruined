@@ -100,6 +100,7 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
               from:value("RESEND_FROM_EMAIL"),to:message.email,replyTo:SUPPORT_EMAIL,
               ...createRegistrationEmail({kind:message.kind,memberName:message.member_name,
                 completionBasis:message.completion_basis,siteUrl:site,
+                foundingPricing:message.founding_pricing,
                 ...(attachments ? {invitationImageSrc:"cid:ruined-invitation"} : {})}),
               ...(attachments ? {attachments} : {}),
             };

@@ -13,6 +13,7 @@ export type SetupAttempt = {
   id: string; member_id: string; stripe_account_id: string; livemode: boolean;
   status: "creating" | "open" | "saved" | "expired" | "revoked";
   stripe_session_id: string | null; stripe_setup_intent_id: string | null;
+  consent_version: string; consent_text: string;
   consent_revoked_at: Date | null; expires_at: Date; return_origin: string;
 };
 

@@ -7,7 +7,7 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getStripe, getStripeLivemode } from "@/lib/stripe/server";
 import { isUuid } from "@/lib/stripe/membership-state";
 import {
-  PAYMENT_SETUP_CONTEXT, PAYMENT_SETUP_CONSENT_VERSION, PAYMENT_SETUP_CONSENT_TEXT,
+  PAYMENT_SETUP_CONTEXT, PAYMENT_SETUP_CONSENT_VERSION, PAYMENT_SETUP_CONSENT_TEXT, PAYMENT_SETUP_CONSENTS,
   PaymentMethodSetupError, type MemberPaymentMethodStatus, type SavedPaymentMethodDisplay,
 } from "@/lib/stripe/payment-method-model";
 import {
@@ -36,13 +36,13 @@ function objectId(value: string | { id: string } | null | undefined) { return ty
 function metadata(attempt: SetupAttempt) {
   return { ruined_context: PAYMENT_SETUP_CONTEXT, ruined_member_id: attempt.member_id,
     ruined_setup_attempt_id: attempt.id, ruined_stripe_account_id: attempt.stripe_account_id,
-    ruined_storage_consent: PAYMENT_SETUP_CONSENT_VERSION };
+    ruined_storage_consent: attempt.consent_version };
 }
 function setupSessionParameters(attempt: SetupAttempt, account: SetupAccount): Stripe.Checkout.SessionCreateParams {
   return { mode: "setup", currency: "usd", customer: account.stripe_customer_id!,
         billing_address_collection: "required", customer_update: { address: "auto", name: "auto" },
         payment_method_data: { allow_redisplay: "always" },
-        client_reference_id: attempt.id, metadata: metadata(attempt), setup_intent_data: { metadata: metadata(attempt), description: PAYMENT_SETUP_CONSENT_TEXT },
+        client_reference_id: attempt.id, metadata: metadata(attempt), setup_intent_data: { metadata: metadata(attempt), description: attempt.consent_text },
         custom_text: { submit: { message: "Save only. No charge or membership starts today. Any future checkout requires your confirmation." } },
         success_url: `${attempt.return_origin}/my/payment-method?setup=returned`, cancel_url: `${attempt.return_origin}/my/payment-method?setup=cancelled`,
         expires_at: Math.floor(new Date(attempt.expires_at).getTime() / 1000), integration_identifier: "ruined_save_payment_rpkmzvqt" };
@@ -115,7 +115,7 @@ export async function getMemberPaymentMethodStatus(authUserId: string): Promise<
 export async function startMemberPaymentMethodSetup(input: {
   authUserId: string; attemptId: string; consentAccepted: unknown; consentVersion: unknown; applicationOrigin: string;
 }): Promise<{ url: string }> {
-  if (!isUuid(input.attemptId) || input.consentAccepted !== true || input.consentVersion !== PAYMENT_SETUP_CONSENT_VERSION) {
+  if (!isUuid(input.attemptId) || input.consentAccepted !== true || typeof input.consentVersion !== "string" || !Object.hasOwn(PAYMENT_SETUP_CONSENTS, input.consentVersion)) {
     throw new PaymentMethodSetupError("Confirm that you want to save a payment method before continuing.", 400);
   }
   const config = getPlatformConfiguration();
@@ -139,6 +139,12 @@ export async function startMemberPaymentMethodSetup(input: {
     const [pending] = await tx<Array<SetupAttempt>>`select * from member_payment_method_setup_attempts
       where member_id=${member.id}::uuid and stripe_account_id=${context.accountId} and livemode=${context.livemode} and status in ('creating','open')`;
     let attempt = pending ?? ownAttempt;
+    // Old clients may resume their durable v1 consent, but cannot create new
+    // evidence for obsolete wording. A current client may resume that same
+    // attempt without changing its provider idempotency parameters or consent.
+    if (input.consentVersion !== PAYMENT_SETUP_CONSENT_VERSION && attempt?.consent_version !== input.consentVersion) {
+      throw new PaymentMethodSetupError("Reload this page to review the current card-storage permission.", 400);
+    }
     if (!attempt) {
       [attempt] = await tx<Array<SetupAttempt>>`insert into member_payment_method_setup_attempts
         (id,member_id,stripe_account_id,livemode,consent_auth_user_id,consent_version,consent_text,return_origin,expires_at)

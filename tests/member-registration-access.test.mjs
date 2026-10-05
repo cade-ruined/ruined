@@ -86,7 +86,8 @@ test("registration holds survive launch changes and release profiles only after 
   const migrations = [...read("scripts/migrate-platform.mjs").matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g)];
   assert.ok(migrations.some(match => match[1].endsWith("20260930140000_member_registration_access.sql")));
   const legalMigration = "db/migrations/20260930220000_registration_legal_acknowledgment.sql";
-  for (const migration of migrations) if (migration[1] !== legalMigration) await db.exec(read(migration[1]));
+  const pricingMigration = "db/migrations/20261002140000_registration_founding_pricing.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -140,6 +141,7 @@ test("registration holds survive launch changes and release profiles only after 
   }
   await db.query("update member_registration_access set profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1", [priorActivated.member_id, priorActivated.authUserId]);
   await db.exec(read(legalMigration));
+  await db.exec(read(pricingMigration));
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
   const admin = await member("admin@example.test");
@@ -286,6 +288,7 @@ test("registration holds survive launch changes and release profiles only after 
   await t.test("wrong Stripe mode cannot satisfy registration and reads never reconcile state",async()=>{
     await savedCard(fresh,{livemode:true});
     assert.equal((await registration.completeMemberRegistration(fresh.authUserId)).state,"collecting");
+    assert.equal((await row("select count(*)::int as count from member_registration_pricing_decisions where member_id=$1", [fresh.member_id])).count, 0);
     await savedCard(fresh);
     assert.equal((await registration.getMemberRegistration(fresh.authUserId)).state,"collecting");
     assert.equal((await row("select count(*)::int as count from member_registration_messages")).count,0);
@@ -293,6 +296,15 @@ test("registration holds survive launch changes and release profiles only after 
   await t.test("confirmed saved card completes only registration and atomically queues one welcome",async()=>{
     const result = await registration.completeMemberRegistration(fresh.authUserId);
     assert.equal(result.state,"registered");assert.ok(result.registeredAt);assert.equal(result.profileActivatedAt,null);
+    assert.deepEqual({ ...result.foundingPricing, awardedAt: undefined }, {
+      confirmed: true, awardedAt: undefined, monthlyAmountCents: 34900, annualAmountCents: 349000, currency: "usd",
+    });
+    assert.ok(result.foundingPricing.awardedAt);
+    const decision = await row("select * from member_registration_pricing_decisions where member_id=$1", [fresh.member_id]);
+    assert.equal(decision.founding_eligible, true);
+    assert.equal(decision.completion_basis, "saved_card");
+    await assert.rejects(() => db.query("update member_registration_pricing_decisions set founding_eligible=false where member_id=$1", [fresh.member_id]), /append-only|immutable|cannot|not permitted/i);
+    await assert.rejects(() => db.query("update member_registration_access set registered_at=null,completion_basis=null where member_id=$1", [fresh.member_id]), /immutable/);
     await registration.completeMemberRegistration(fresh.authUserId);
     assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='welcome'",[fresh.member_id])).count,1);
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/registered");
@@ -304,6 +316,7 @@ test("registration holds survive launch changes and release profiles only after 
     await db.query("update member_payment_method_accounts set consent_revoked_at=now() where member_id=$1 and livemode=false",[fresh.member_id]);
     const snapshot=await registration.getMemberRegistration(fresh.authUserId);
     assert.equal(snapshot.state,"registered");assert.equal(snapshot.ready,false);
+    assert.equal(snapshot.foundingPricing.confirmed, true, "Withdrawing card storage does not cancel the earned rate");
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/payment-method");
     await assert.rejects(()=>registration.activateMemberRegistration(admin.authUserId,fresh.member_id,snapshot.version),{status:409});
     await db.query("update member_payment_method_accounts set consent_revoked_at=null where member_id=$1 and livemode=false",[fresh.member_id]);
@@ -401,6 +414,8 @@ test("registration holds survive launch changes and release profiles only after 
     await profile(complimentary);
     const result=await registration.getMemberRegistration(complimentary.authUserId);
     assert.equal(result.requiresPaymentMethod,false);assert.equal(result.ready,true);assert.equal(result.state,"registered");
+    assert.equal(result.foundingPricing, null, "Complimentary registrants receive no paid-price confirmation");
+    assert.equal((await row("select count(*)::int as count from private.ruined_commercial_registered_people() where person_id=$1", [complimentary.person_id])).count, 1);
     assert.equal((await row("select completion_basis from member_registration_access where member_id=$1",[complimentary.member_id])).completion_basis,"complimentary");
     assert.equal((await row("select count(*)::int as count from member_payment_method_accounts where member_id=$1",[complimentary.member_id])).count,0);
   });

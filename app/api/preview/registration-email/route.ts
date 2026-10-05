@@ -11,8 +11,13 @@ export function GET(request: Request) {
   }
   const url=new URL(request.url);
   const kind=url.searchParams.get("kind")==="profile_ready" ? "profile_ready" : "welcome";
+  const foundingPricing = url.searchParams.get("pricing") === "founding" ? {
+    confirmed: true as const, awardedAt: "2026-10-02T18:00:00.000Z",
+    monthlyAmountCents: 34_900, annualAmountCents: 349_000, currency: "usd" as const,
+  } : null;
   const message=createRegistrationEmail({kind,memberName:"Alex Rivera",
     completionBasis:url.searchParams.get("funding")==="complimentary" ? "complimentary" : "saved_card",
+    foundingPricing,
     invitationImageSrc:kind==="welcome" ? `/api/preview/registration-email/image?source=${url.searchParams.get("source")==="member" ? "member" : "direct"}` : undefined,
     siteUrl:new URL(url.origin)});
   // Next can normalize the request host to localhost while the browser uses

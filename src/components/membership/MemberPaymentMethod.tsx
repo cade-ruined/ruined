@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { PAYMENT_SETUP_CONSENT_TEXT, type MemberPaymentMethodStatus } from "@/lib/stripe/payment-method-model";
+import { PAYMENT_SETUP_CONSENT_TEXT, PAYMENT_SETUP_CONSENT_VERSION, type MemberPaymentMethodStatus } from "@/lib/stripe/payment-method-model";
 
 type SetupState = "not_saved" | "pending" | "saved";
 type PaymentMethodSnapshot = MemberPaymentMethodStatus;
@@ -92,7 +92,7 @@ export default function MemberPaymentMethod({ preview = false, initialPreviewSta
       attemptRef.current ??= crypto.randomUUID();
       const response = await fetch("/api/stripe/payment-method", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attemptId: attemptRef.current, consentAccepted: true, consentVersion: "save-payment-method-v1" }),
+        body: JSON.stringify({ attemptId: attemptRef.current, consentAccepted: true, consentVersion: PAYMENT_SETUP_CONSENT_VERSION }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Secure payment-method setup is unavailable. Please try again.");
@@ -141,6 +141,7 @@ export default function MemberPaymentMethod({ preview = false, initialPreviewSta
     <h2 id={titleId} className="mt-3 font-[var(--font-display)] text-[clamp(1.9rem,7vw,2.8rem)] leading-tight tracking-[-0.025em]">Get ready for Ruined.</h2>
     <p className="mt-4 text-base leading-relaxed">Securely save your payment method.</p>
     <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">You won’t be charged today. We’ll ask you to confirm before membership begins.</p>
+    {registrationOnly ? <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Eligible individuals who complete registration with a verified saved card lock in $349/month. Your receipt confirms any reserved rate. Couples pricing is separate.</p> : null}
 
     {loading ? <p className="mt-6 text-sm" role="status">Checking your payment method…</p> : null}
     {!loading && saved ? <div className="mt-6" role="status">

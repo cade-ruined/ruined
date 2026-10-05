@@ -1,3 +1,11 @@
+export type RegistrationFoundingPricing = {
+  confirmed: true;
+  awardedAt: string;
+  monthlyAmountCents: number;
+  annualAmountCents: number;
+  currency: "usd";
+};
+
 export type MemberRegistrationSnapshot = {
   memberId: string;
   state: "collecting" | "registered" | "activated";
@@ -7,6 +15,7 @@ export type MemberRegistrationSnapshot = {
   profileComplete: boolean;
   ready: boolean;
   version: number;
+  foundingPricing?: RegistrationFoundingPricing | null;
 };
 
 export type OpsMemberRegistration = MemberRegistrationSnapshot & {

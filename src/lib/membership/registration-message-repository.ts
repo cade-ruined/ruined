@@ -3,6 +3,7 @@ import "server-only";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import type { RegistrationCompletionBasis, RegistrationMessageKind } from "./registration-email";
+import type { RegistrationFoundingPricing } from "./registration-model";
 
 export type RegistrationEmailPayload = {
   from: string; to: string; replyTo: string; subject: string; html: string; text: string;
@@ -27,6 +28,7 @@ export type RegistrationMessageDelivery = RegistrationMessageClaim & {
   email: string; member_name: string; completion_basis: RegistrationCompletionBasis;
   delivery_payload: RegistrationEmailPayload | null; eligible: boolean; registration_ready: boolean;
   accepted_invitation: RegistrationAcceptedInvitation | null;
+  founding_pricing: RegistrationFoundingPricing | null;
 };
 
 export class RegistrationDeliveryError extends Error {
@@ -69,6 +71,11 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
       select message.*, member.email_normalized as email,
         coalesce(nullif(btrim(private_profile.legal_name),''),nullif(btrim(profile.display_name),''),'Friend') as member_name,
         registration.completion_basis,
+        case when pricing.founding_eligible and pricing.completion_basis='saved_card'
+          and private.ruined_registration_founding_pricing_is_current(member.id)
+          then jsonb_build_object('confirmed',true,'awardedAt',pricing.decided_at,
+            'monthlyAmountCents',pricing.monthly_amount_cents,'annualAmountCents',pricing.annual_amount_cents,'currency',pricing.currency)
+          else null end as founding_pricing,
         case when invitation.id is null then null else jsonb_build_object(
           'owner_member_id',invitation.member_id,'origin',invitation.origin,
           'recipient_name',invitation.recipient_name,'inviter_name',invitation.inviter_name,
@@ -89,6 +96,7 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
       left join person_profiles profile on profile.person_id=member.person_id
       left join person_private_profiles private_profile on private_profile.person_id=member.person_id
       left join member_registration_access registration on registration.member_id=member.id
+      left join member_registration_pricing_decisions pricing on pricing.member_id=member.id
       -- Acceptance belongs to this member, not merely to an email address or
       -- the most recently created invitation. An expired accepted card remains
       -- a keepsake; this lookup never renews its deadline or grants access.
