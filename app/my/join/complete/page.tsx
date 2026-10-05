@@ -42,16 +42,16 @@ export default async function MembershipCheckoutCompletePage() {
           Confirmation in progress
         </p>
         <h1 className="mt-12 font-[var(--font-display)] text-[clamp(3.7rem,10vw,8rem)] leading-[0.84] tracking-[-0.055em]">
-          The door is opening.
+          Confirmation in progress.
         </h1>
         <p className="mt-8 max-w-xl text-base leading-relaxed text-[var(--member-muted)]">
-          Stripe is confirming your payment now. Ruined Membership opens as soon as that secure confirmation reaches us.
+          Stripe is confirming your checkout. Check Membership billing for the confirmed payment status. Your profile opens separately when Ruined releases it.
         </p>
-        <Link className="mt-10 inline-flex border-b border-[var(--member-rule)] pb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-muted)]" href="/my">
-          Enter Ruined Membership
+        <Link className="mt-10 inline-flex border-b border-[var(--member-rule)] pb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-muted)]" href="/my/activate">
+          Check membership billing
         </Link>
         <p className="mt-6 max-w-lg text-xs leading-relaxed text-[var(--member-muted)]">
-          If the membership home is not ready yet, wait a moment and open it again. The return screen never activates access by itself.
+          If billing confirmation is still pending, wait a moment and check again. Returning from Checkout does not itself confirm payment or open profile access.
         </p>
       </div>
     </main>

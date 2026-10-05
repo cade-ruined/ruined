@@ -19,15 +19,15 @@ function subscription() { return { id: "sub_member", start_date: Date.parse("202
 function invoice(extra = {}) { return { id: "in_paid", livemode: false, customer: "cus_member", customer_email: "member@example.test", currency: "usd", status: "paid", status_transitions: { paid_at: 100 }, total: 53000,
   amount_due: 53000, amount_paid: 53000, amount_remaining: 0, pre_payment_credit_notes_amount: 0, post_payment_credit_notes_amount: 0, starting_balance: 0, ending_balance: 0,
   customer_address: { country: "US" }, metadata: {}, parent: { subscription_details: { subscription: "sub_member", metadata: { ruined_context: "membership" } } }, ...extra }; }
-async function helperHarness({ chargeChanges = {}, invoicePayments, refunds = [], existing = null } = {}) {
+async function helperHarness({ chargeChanges = {}, invoicePayments, refunds = [], existing = null, firstChargeAt = null } = {}) {
   const created = [], activated = [], invalidated = [], projections = [];
   const helper = await load("src/lib/stripe/commitment-webhook.ts", {
     "server-only": {}, "./price-policy": { isMembershipOfferId: id => Object.hasOwn(pricing.MEMBERSHIP_OFFERS, id) },
     "@/lib/membership/commercial-repository": {
-      getCommercialMembershipReservation: async () => ({ id: attemptId, memberId, offerId: "individual_monthly", stripePriceId: "price_member", stripeSubscriptionId: "sub_member", participants: [{ memberId }] }),
+      getCommercialMembershipReservation: async () => ({ id: attemptId, memberId, plan: "monthly", firstChargeAt, status: "reserved", offerId: "individual_monthly", stripePriceId: "price_member", stripeSubscriptionId: "sub_member", participants: [{ memberId }] }),
       activateCommercialMembership: async value => activated.push(value), getCommercialBillingGroupBySubscription: async () => null, reconcileCommercialMemberships: async () => {},
     },
-    "./billing-repository": { updateMemberBillingState: async (_, value) => projections.push(value) },
+    "./billing-repository": { hasMembershipCheckoutConsent: async () => true, updateMemberBillingState: async (_, value) => projections.push(value) },
     "./commitment-policy": policy,
     "./commitment-repository": { createMembershipCommitment: async (_, value) => created.push(value), getMembershipCommitment: async () => existing,
       invalidateMembershipCommitmentLedger: async (_, value) => invalidated.push(value) },
@@ -68,8 +68,9 @@ test("first paid v2 invoice creates one immutable contract from stored acceptanc
   assert.equal(h.created.length, 1, "legacy membership never acquires a new commitment");
 });
 
-async function webhookHarness({ verified = true, fee = false, latestInvoice = "in_paid" } = {}) {
-  const states = [], consents = [], prepared = [], invalidated = [], partners = [], locks = [], sub = subscription(); sub.latest_invoice = latestInvoice;
+async function webhookHarness({ verified = true, fee = false, latestInvoice = "in_paid", scheduled = false } = {}) {
+  const states = [], consents = [], prepared = [], scheduledPrepared = [], invalidated = [], partners = [], locks = [], sub = subscription(); sub.latest_invoice = latestInvoice;
+  if (scheduled) sub.metadata.ruined_first_charge_at="2026-11-01T06:00:00.000Z";
   const currentInvoice = invoice(fee ? { metadata: { ruined_cancellation_id: "cancel_id", ruined_context: "membership_cancellation" } } : {});
   const stripe = { subscriptions: { retrieve: async () => sub }, invoices: { retrieve: async () => currentInvoice } };
   const loaded = await load("src/lib/stripe/webhook.ts", {
@@ -84,9 +85,11 @@ async function webhookHarness({ verified = true, fee = false, latestInvoice = "i
       upsertInvoice: async () => {}, upsertSubscription: async () => {}, reconcileCheckoutAttempt: async () => {}, upsertCheckoutSession: async () => {} },
     "@/lib/stripe/commitment-webhook": { hasVerifiedCommitmentInvoicePayment: async () => verified, prepareCommitmentInvoiceProjection: async (_, input) => prepared.push(input),
       invalidateCommitmentFromInvoice: async (_, input) => { invalidated.push(input); return true; }, projectCommercialParticipantBillingState: async (_, input) => partners.push(input),
-      lockCommitmentSubscriptionProjection: async (_, input) => locks.push(input) },
+      lockCommitmentSubscriptionProjection: async (_, input) => locks.push(input), releaseCanceledScheduledMembership:async()=>{},
+      prepareScheduledMembershipProjection:async(_,input)=>scheduledPrepared.push(input) },
   });
-  return { states, consents, prepared, invalidated, partners, locks,
+  return { states, consents, prepared, scheduledPrepared, invalidated, partners, locks,
+    completed:()=>loaded.processStripeWebhookEvent({id:"evt_completed",created:99,livemode:false,type:"checkout.session.completed",data:{object:{id:"cs_member",mode:"subscription",status:"complete",expires_at:9999999999,subscription:sub.id,customer:sub.customer,customer_details:{email:"member@example.test"},metadata:sub.metadata}}}),
     paid: () => loaded.processStripeWebhookEvent({ id: "evt_paid", created: 100, livemode: false, type: "invoice.paid", data: { object: currentInvoice } }),
     changed: () => loaded.processStripeWebhookEvent({ id: "evt_changed", created: 101, livemode: false, type: "customer.subscription.updated", data: { object: sub } }) };
 }
@@ -103,4 +106,38 @@ test("webhook checks v2 consent and activates only verified current membership p
 test("replacement fees cannot grant membership and scheduling cancellation does not invalidate fee accounting", async () => {
   const fee = await webhookHarness({ fee: true }); await fee.paid(); assert.equal(fee.states.length, 0); assert.equal(fee.prepared.length, 0);
   const h = await webhookHarness(); await h.changed(); assert.equal(h.invalidated.length, 0); assert.equal(h.locks.length, 1); assert.equal(h.partners.length, 1);
+});
+
+test("verified scheduled Checkout creates a future commitment without activating membership", async()=>{
+  const firstChargeAt=new Date("2026-11-01T06:00:00Z"),h=await helperHarness({firstChargeAt}),sub=subscription();
+  sub.metadata.ruined_first_charge_at=firstChargeAt.toISOString();sub.metadata.ruined_price_id="price_member";
+  sub.billing_cycle_anchor=firstChargeAt.getTime()/1000;sub.latest_invoice=null;
+  const session={status:"complete",mode:"subscription",payment_status:"no_payment_required",amount_total:0,livemode:false,
+    consent:{terms_of_service:"accepted"},customer:sub.customer,subscription:sub.id,metadata:{...sub.metadata}};
+  await h.helper.prepareScheduledMembershipProjection(h.tx,{subscription:sub,session,memberId});
+  assert.equal(h.created[0].startsAt,firstChargeAt.toISOString());
+  assert.equal(h.created[0].initialTermEndsAt,"2027-11-01T06:00:00.000Z");
+  assert.equal(h.activated.length,0);assert.equal(h.projections.length,0);
+  for(const patch of [{amount_total:1},{payment_status:"paid"},{consent:{terms_of_service:null}},{metadata:{...session.metadata,ruined_first_charge_at:"2030-01-01T00:00:00.000Z"}}]){
+    await assert.rejects(h.helper.prepareScheduledMembershipProjection(h.tx,{subscription:sub,session:{...session,...patch},memberId}),/scheduled_billing_consent_mismatch/);
+  }
+});
+
+test("scheduled completion and an active provider subscription keep member access pending",async()=>{
+  const h=await webhookHarness({scheduled:true,latestInvoice:null});
+  await h.completed();
+  assert.equal(h.scheduledPrepared.length,1);assert.equal(h.states.length,0);assert.equal(h.prepared.length,0);
+  await h.changed();
+  assert.equal(h.states.at(-1).state,"pending");assert.equal(h.prepared.length,0);
+});
+
+test("the first paid scheduled invoice anchors the commitment to the disclosed date, not Checkout creation",async()=>{
+  const firstChargeAt=new Date("2026-11-01T06:00:00Z"),h=await helperHarness({firstChargeAt}),sub=subscription();
+  sub.metadata.ruined_first_charge_at=firstChargeAt.toISOString();sub.billing_cycle_anchor=firstChargeAt.getTime()/1000;
+  await h.helper.prepareCommitmentInvoiceProjection(h.tx,{event:{id:"evt_paid_scheduled"},subscription:sub,
+    invoice:invoice({lines:{data:[{period:{start:firstChargeAt.getTime()/1000}}]}}),memberId,paidActivation:true});
+  assert.equal(h.created[0].startsAt,firstChargeAt.toISOString());
+  assert.equal(h.activated.length,1);
+  await assert.rejects(h.helper.prepareCommitmentInvoiceProjection(h.tx,{event:{id:"evt_early"},subscription:sub,
+    invoice:invoice({lines:{data:[{period:{start:firstChargeAt.getTime()/1000-1}}]}}),memberId,paidActivation:true}),/scheduled_billing_date_mismatch/);
 });

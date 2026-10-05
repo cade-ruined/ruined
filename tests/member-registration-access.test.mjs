@@ -308,6 +308,8 @@ test("registration holds survive launch changes and release profiles only after 
     await registration.completeMemberRegistration(fresh.authUserId);
     assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='welcome'",[fresh.member_id])).count,1);
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/registered");
+    assert.equal((await row("select private.ruined_member_paid_activation_ready($1) as ready,private.ruined_member_profile_released($1) as released",[fresh.member_id])).ready,true,"completed current registration may separately authorize billing");
+    assert.equal((await row("select private.ruined_member_profile_released($1) as released",[fresh.member_id])).released,false,"billing eligibility never opens the held profile");
     const lifecycle=await row("select * from member_lifecycle where member_id=$1",[fresh.member_id]);
     assert.equal(lifecycle.billing_state,"pending");assert.notEqual(lifecycle.administrative_onboarding_state,"completed");
     for(const table of ["stripe_checkout_attempts","stripe_subscriptions","membership_agreement_acceptances"]) assert.equal((await row(`select count(*)::int as count from ${table}`)).count,0,table);
@@ -316,6 +318,7 @@ test("registration holds survive launch changes and release profiles only after 
     await db.query("update member_payment_method_accounts set consent_revoked_at=now() where member_id=$1 and livemode=false",[fresh.member_id]);
     const snapshot=await registration.getMemberRegistration(fresh.authUserId);
     assert.equal(snapshot.state,"registered");assert.equal(snapshot.ready,false);
+    assert.equal((await row("select private.ruined_member_paid_activation_ready($1) as ready",[fresh.member_id])).ready,false,"withdrawn storage consent closes held billing eligibility");
     assert.equal(snapshot.foundingPricing.confirmed, true, "Withdrawing card storage does not cancel the earned rate");
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/payment-method");
     await assert.rejects(()=>registration.activateMemberRegistration(admin.authUserId,fresh.member_id,snapshot.version),{status:409});
@@ -419,4 +422,39 @@ test("registration holds survive launch changes and release profiles only after 
     assert.equal((await row("select completion_basis from member_registration_access where member_id=$1",[complimentary.member_id])).completion_basis,"complimentary");
     assert.equal((await row("select count(*)::int as count from member_payment_method_accounts where member_id=$1",[complimentary.member_id])).count,0);
   });
+  await t.test("paid agreement acceptance requires the activation gate and complete registration without opening held profiles", async () => {
+    const target = await member("paid-agreement-held@example.test");
+    await profile(target); await savedCard(target); await registration.completeMemberRegistration(target.authUserId);
+    const agreementId = randomUUID(), agreementBody = "Offline paid membership agreement fixture.";
+    await db.query("update membership_agreement_versions set status='retired' where agreement_key='ruined_membership' and status='published'");
+    await db.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',3,'Test paid agreement',$2,$3,'published',now())",
+      [agreementId, agreementBody, createHash("sha256").update(agreementBody).digest("hex")]);
+    const input = () => ({ affirmativeAction: "checkbox_and_submit", ageConfirmed: true, agreementVersionId: agreementId,
+      evidence: { origin, userAgent: "offline-test" }, minimumAge: 18, signerName: "Registration Test", attemptId: randomUUID() });
+    try {
+      environment.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v3";
+      await assert.rejects(() => memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input()), { name: "MembershipAccessDeniedError" });
+      environment.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED = "true";
+      environment.STRIPE_MEMBERSHIP_BUYOUT_READY = "true";
+      await db.query("update member_payment_method_accounts set consent_revoked_at=now() where member_id=$1", [target.member_id]);
+      await assert.rejects(() => memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input()), /Complete your registration/);
+      await db.query("update member_payment_method_accounts set consent_revoked_at=null where member_id=$1", [target.member_id]);
+      environment.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v4";
+      await assert.rejects(() => memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input()), /no longer current/);
+      environment.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v3";
+      const accepted = await memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input());
+      assert.ok(accepted.acceptance.id);
+      assert.equal((await registration.getMemberRegistration(target.authUserId)).state, "registered");
+      const access = policy.deriveMemberAccessPolicy(await memberRepository.getMemberIdentity(target.authUserId));
+      assert.equal(policy.memberCan(access, "profile.write"), false);
+      assert.equal(policy.memberCan(access, "profile.read"), false);
+      assert.equal((await row("select billing_state from member_lifecycle where member_id=$1", [target.member_id])).billing_state, "pending");
+      for (const table of ["stripe_checkout_attempts", "stripe_subscriptions"]) assert.equal((await row(`select count(*)::int as count from ${table} where member_id=$1`, [target.member_id])).count, 0);
+    } finally {
+      delete environment.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED;
+      delete environment.STRIPE_MEMBERSHIP_BUYOUT_READY;
+      environment.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v2";
+    }
+  });
+
 });

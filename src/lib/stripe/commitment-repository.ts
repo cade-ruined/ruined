@@ -11,6 +11,7 @@ import {
   MembershipCommitmentError,
   quoteMembershipCancellation,
   quoteMembershipRenewalCancellation,
+  quoteMembershipPrestartCancellation,
   type CommitmentInvoice,
   type CommitmentLedger,
   type MembershipCancellationQuote,
@@ -51,6 +52,8 @@ export async function createMembershipCommitment(tx: CommitmentTransaction, cont
       and acceptance.agreement_key_snapshot || '-v' || acceptance.agreement_version_snapshot::text = ${contract.agreementVersion}
       and acceptance.accepted_at = ${contract.acceptedAt}::timestamptz
       and attempt.billing_plan = ${contract.billingPlan} and attempt.stripe_price_id = ${contract.priceId}
+      and (attempt.first_charge_at is null or (attempt.first_charge_at = ${contract.startsAt}::timestamptz
+        and (attempt.recurring_payment_terms->>'firstChargeAt')::timestamptz = attempt.first_charge_at))
       and attempt.recurring_payment_accepted_at is not null and attempt.billing_consent_auth_user_id is not null
       and attempt.recurring_payment_terms->>'version' = ${contract.billingTermsVersion}
       and attempt.recurring_payment_terms->>'offerId' = ${contract.offerId}
@@ -217,12 +220,16 @@ export async function reserveMembershipCancellation(tx: CommitmentTransaction, i
     }
     return existing;
   }
-  if (quote.intent === "early_exit" && record.status !== "active" || now.getTime() > Date.parse(quote.expiresAt) || Date.parse(quote.quotedAt) > now.getTime()
+  if (quote.intent !== "disable_renewal" && record.status !== "active" || now.getTime() >= Date.parse(quote.expiresAt) || Date.parse(quote.quotedAt) > now.getTime()
+    || quote.intent === "cancel_before_start" && now.getTime() >= Date.parse(record.contract.startsAt)
     || quote.fingerprint !== cancellationQuoteFingerprint(quote)) throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
-  const fresh = quote.intent === "disable_renewal" && quote.renewalProviderSnapshot
+  const fresh = quote.intent === "cancel_before_start" && quote.prestartProviderSnapshot
+    ? quoteMembershipPrestartCancellation(record.contract, quote.prestartProviderSnapshot, new Date(quote.quotedAt))
+    : quote.intent === "disable_renewal" && quote.renewalProviderSnapshot
     ? quoteMembershipRenewalCancellation(record.contract, quote.renewalProviderSnapshot, new Date(quote.quotedAt))
     : quoteMembershipCancellation(record.contract, record.ledger, quote.intent, new Date(quote.quotedAt));
-  const observedAt = quote.intent === "disable_renewal" ? quote.renewalProviderSnapshot?.observedAt : record.ledger.reconciledAt;
+  const observedAt = quote.intent === "cancel_before_start" ? quote.prestartProviderSnapshot?.observedAt
+    : quote.intent === "disable_renewal" ? quote.renewalProviderSnapshot?.observedAt : record.ledger.reconciledAt;
   if (fresh.fingerprint !== quote.fingerprint || !observedAt
     || now.getTime() - Date.parse(observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
     throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
@@ -246,7 +253,7 @@ export async function reserveMembershipCancellation(tx: CommitmentTransaction, i
       ${tx.json(json(quote))}::jsonb, ${quote.fingerprint}, ${quote.ledgerRevision}, ${quote.buyoutDues}, ${quote.effectiveAt}::timestamptz,
       ${`ruined:membership-cancellation:${input.requestId}`})
   `;
-  if (quote.intent === "early_exit") await tx`update stripe_membership_commitments set status = 'exit_pending', updated_at = statement_timestamp() where id = ${quote.contractId}::uuid`;
+  if (quote.intent !== "disable_renewal") await tx`update stripe_membership_commitments set status = 'exit_pending', updated_at = statement_timestamp() where id = ${quote.contractId}::uuid`;
   return (await getMembershipCancellation(tx, input.requestId))!;
 }
 
@@ -257,6 +264,9 @@ export type CommitmentBillingStopEvidence = {
   observedAt: string;
   subscriptionStatus: "active" | "past_due" | "unpaid" | "canceled";
   cancelAt: string | null;
+  canceledAt?: string | null;
+  firstChargeAt?: string;
+  noInvoices?: boolean;
   /** For an early exit, ordinary unpaid invoices must be voided/replaced first. */
   openOrdinaryInvoiceIds: string[];
   pendingProrationOrInvoiceItems: boolean;
@@ -278,7 +288,12 @@ export async function confirmMembershipBillingStopped(tx: CommitmentTransaction,
     || evidence.livemode !== quote.livemode || !Number.isFinite(Date.parse(evidence.observedAt))
     || now.getTime() < Date.parse(evidence.observedAt) || now.getTime() - Date.parse(evidence.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS
     || evidence.subscriptionStatus !== "canceled" && (!evidence.cancelAt || Date.parse(evidence.cancelAt) !== Date.parse(quote.effectiveAt))
-    || quote.intent === "early_exit" && (contract.ledger_revision !== quote.ledgerRevision || evidence.openOrdinaryInvoiceIds.length > 0 || evidence.pendingProrationOrInvoiceItems)) {
+    || quote.intent === "early_exit" && (contract.ledger_revision !== quote.ledgerRevision || evidence.openOrdinaryInvoiceIds.length > 0 || evidence.pendingProrationOrInvoiceItems)
+    || quote.intent === "cancel_before_start" && (evidence.subscriptionStatus !== "canceled" || !evidence.canceledAt
+      || !Number.isFinite(Date.parse(evidence.canceledAt)) || Date.parse(evidence.canceledAt) >= Date.parse(contract.terms_snapshot.startsAt)
+      || Date.parse(evidence.canceledAt) > Date.parse(evidence.observedAt)
+      || evidence.firstChargeAt !== contract.terms_snapshot.startsAt || evidence.noInvoices !== true
+      || evidence.openOrdinaryInvoiceIds.length > 0 || evidence.pendingProrationOrInvoiceItems)) {
     throw new MembershipCommitmentError("ordinary_billing_not_safely_stopped");
   }
   const rows = await tx`
@@ -337,7 +352,7 @@ export async function completeMembershipCancellation(tx: CommitmentTransaction, 
       completed_at = ${now}::timestamptz, updated_at = ${now}::timestamptz
     where id = ${input.cancellationId}::uuid and status in ('billing_stopped', 'collection_in_flight') returning id
   `;
-  if (rows.length && cancellation.quote.intent === "early_exit") await tx`
+  if (rows.length && cancellation.quote.intent !== "disable_renewal") await tx`
     update stripe_membership_commitments set status = 'ended', updated_at = ${now}::timestamptz where id = ${cancellation.contractId}::uuid
   `;
   return rows.length === 1;

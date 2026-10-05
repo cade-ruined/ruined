@@ -584,7 +584,15 @@ export async function acceptPublishedMembershipAgreement(
   }
   const signerName = cleanRequired(input.signerName, "Full name", 180);
   const identity = await requireMemberIdentity(authUserId);
-  requireMemberCapability(identity, "profile.write");
+  // Paid agreement acceptance is a narrow onboarding action. It does not
+  // release a registration hold or grant profile/community capabilities.
+  requireMemberCapability(identity, identity.registrationHeld ? "onboarding.write" : "profile.write");
+  if (identity.registrationHeld) {
+    const { getPlatformConfiguration } = await import("@/lib/platform/config");
+    if (!getPlatformConfiguration().stripeActivationReady) {
+      throw new MembershipAccessDeniedError("Membership activation is not available yet.");
+    }
+  }
   const sql = getApplicationDatabase();
 
   const result = await sql.begin(async (tx) => {
@@ -592,6 +600,11 @@ export async function acceptPublishedMembershipAgreement(
     // Renewed agreement acceptance can touch an already-completed lifecycle.
     // Keep member before private profile/lifecycle, like other profile writers.
     await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
+    if (identity.registrationHeld) {
+      const [registration] = await tx<Array<{ ready: boolean }>>`
+        select private.ruined_member_registration_ready(${identity.memberId}::uuid) as ready`;
+      if (!registration?.ready) throw new MembershipConflictError("Complete your registration before reviewing paid membership.");
+    }
     const profileRows = await tx<Array<{ birth_date: Date | string | null; legal_name: string | null }>>`
       select private_profile.birth_date, private_profile.legal_name
       from person_private_profiles private_profile
@@ -641,7 +654,8 @@ export async function acceptPublishedMembershipAgreement(
       for share
     `;
     const agreement = agreementRows[0];
-    if (!agreement) {
+    if (!agreement || (identity.registrationHeld &&
+      `ruined_membership-v${agreement.version}` !== process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION?.trim())) {
       throw new MembershipConflictError(
         "This agreement is no longer current. Reload the page before continuing.",
       );

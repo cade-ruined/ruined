@@ -42,6 +42,7 @@ type CheckoutRequest = {
   plan?: unknown;
   recurringPaymentAccepted?: unknown;
   commercialReservationId?: unknown;
+  firstChargeAt?: unknown;
 };
 
 function invalidRequest(message: string) {
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Your membership is complimentary. Return to membership entry to activate it." }, { status: 409 });
     }
     const configuration = getPlatformConfiguration();
-    if (!configuration.stripeCheckoutReady) {
+    if (!configuration.stripeCheckoutReady && !configuration.stripeActivationReady) {
       return NextResponse.json(
         { error: "Membership checkout is not configured yet." },
         { status: 503 },
@@ -119,6 +120,10 @@ export async function POST(request: Request) {
     const commercial = await getCommercialMembershipReservation(commercialReservationId);
     if (!commercial || commercial.memberId !== platformUser.memberId || commercial.plan !== plan || commercial.status !== "reserved") {
       throw new MembershipCheckoutConflictError();
+    }
+    const firstChargeAt = commercial.firstChargeAt ?? null;
+    if ((firstChargeAt?.toISOString() ?? null) !== (body.firstChargeAt ?? null)) {
+      return NextResponse.json({ error: "Review and confirm the first payment date shown in your membership offer.", code: "billing_date_consent_required" }, { status: 409 });
     }
     const stripe = getStripe();
     const priceId = await validateStripeMembershipOfferPrice(commercial.offerId);
@@ -152,6 +157,9 @@ export async function POST(request: Request) {
         await releaseCommercialMembershipReservation({ reservationId: commercialReservationId, reason: "checkout_expired" });
         return NextResponse.json({ error: "This payment session expired. Review a new offer before continuing.", code: "membership_offer_expired" }, { status: 409 });
       }
+    if (firstChargeAt && firstChargeAt.getTime() <= Date.now()) {
+      return NextResponse.json({ error: "This scheduled offer has expired. Review a new offer before confirming payment.", code: "membership_offer_expired" }, { status: 409 });
+    }
       if (reservation.plan !== plan) throw new MembershipCheckoutPlanConflictError(reservation.plan);
       const expected = MEMBERSHIP_OFFERS[reservation.offerId];
       if (
@@ -171,7 +179,8 @@ export async function POST(request: Request) {
         existingSession.metadata?.ruined_commercial_reservation_id === reservation.commercialReservationId &&
         existingSession.metadata?.ruined_price_id === reservation.stripePriceId &&
         existingSession.metadata?.agreement_acceptance_id === reservation.agreementAcceptanceId &&
-        existingSession.amount_subtotal === expected.amount &&
+        (existingSession.metadata?.ruined_first_charge_at ?? null) === (reservation.firstChargeAt?.toISOString() ?? null) &&
+        existingSession.amount_subtotal === (reservation.firstChargeAt ? 0 : expected.amount) &&
         existingSession.currency === expected.currency &&
         existingSession.client_secret
       ) {
@@ -181,6 +190,9 @@ export async function POST(request: Request) {
       throw new MembershipCheckoutConflictError();
     }
 
+    if (firstChargeAt && firstChargeAt.getTime() <= Date.now()) {
+      return NextResponse.json({ error: "This scheduled offer has expired. Review a new offer before confirming payment.", code: "membership_offer_expired" }, { status: 409 });
+    }
     if (reservation.memberId !== platformUser.memberId || reservation.plan !== plan || reservation.stripePriceId !== priceId) {
       throw new MembershipCheckoutConflictError();
     }
@@ -200,6 +212,7 @@ export async function POST(request: Request) {
       age_attested_at: reservation.ageAttestedAt.toISOString(),
       billing_consent_at: reservation.recurringPaymentAcceptedAt.toISOString(),
       billing_terms_version: "membership-billing-v2",
+      ...(reservation.firstChargeAt ? { ruined_first_charge_at: reservation.firstChargeAt.toISOString() } : {}),
       ruined_offer_id: reservation.offerId,
       ruined_commercial_reservation_id: reservation.commercialReservationId,
       age_policy_minimum: String(configuration.minimumAge),
@@ -211,6 +224,9 @@ export async function POST(request: Request) {
     const savedMethod = await getSavedPaymentMethodForCheckout(reservation.memberId, reservation.attemptId);
     const selectedOffer = MEMBERSHIP_OFFERS[reservation.offerId];
     const initialTotal = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(selectedOffer.initialTermAmount / 100);
+    const scheduledDisclosure = reservation.firstChargeAt
+      ? `$0 today. Your first payment is on ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", month: "long", day: "numeric", year: "numeric" }).format(reservation.firstChargeAt)}. Your initial term starts on that date. Cancel before then without a fee or charge. `
+      : "";
     const billingDisclosure = plan === "monthly"
       ? `Initial 12-month commitment: ${initialTotal} before tax, in 12 monthly payments. Early exit replaces unpaid first-year installments with the lower of $1,500 or that remaining balance. After year one, renews monthly.`
       : `Initial 12-month membership: ${initialTotal} before tax, paid upfront. Renews annually. Turning off the next renewal has no early-exit charge.`;
@@ -226,7 +242,7 @@ export async function POST(request: Request) {
         consent_collection: { terms_of_service: "required" },
         custom_text: {
           terms_of_service_acceptance: { message: termsMessage },
-          submit: { message: `${billingDisclosure} Applicable tax is added. US members only. Manage renewal or early exit in My Ruined > Account. Refund requests are reviewed individually; contact connect@theruinedproject.com.` },
+          submit: { message: `${scheduledDisclosure}${billingDisclosure} Applicable tax is added. US members only. Manage renewal or early exit in My Ruined > Membership billing. Refund requests are reviewed individually; contact connect@theruinedproject.com.` },
         },
         expires_at: Math.floor(reservation.expiresAt.getTime() / 1_000),
         integration_identifier: "ruined_my_qvksnctb",
@@ -236,8 +252,12 @@ export async function POST(request: Request) {
         origin_context: "web",
         payment_method_collection: "always",
         redirect_on_completion: "always",
-        return_url: `${applicationOrigin}/my/join/complete?session_id={CHECKOUT_SESSION_ID}`,
-        subscription_data: { billing_mode: { type: "flexible" }, metadata },
+        return_url: reservation.firstChargeAt
+          ? `${applicationOrigin}/my/activate?checkout=returned`
+          : `${applicationOrigin}/my/join/complete?session_id={CHECKOUT_SESSION_ID}`,
+        subscription_data: { billing_mode: { type: "flexible" }, metadata,
+          ...(reservation.firstChargeAt ? { billing_cycle_anchor: Math.floor(reservation.firstChargeAt.getTime() / 1_000), proration_behavior: "none" as const } : {}),
+        },
         ui_mode: "embedded_page",
       },
       {

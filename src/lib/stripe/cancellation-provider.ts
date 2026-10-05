@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import type Stripe from "stripe";
 import { getMembershipPriceConfiguration, getStripe } from "@/lib/stripe/server";
 import { matchesMembershipInvoice, recognizesMembershipSubscription } from "@/lib/stripe/price-policy";
-import { MembershipCommitmentError, type CommitmentInvoice, type MembershipCommitment } from "@/lib/stripe/commitment-policy";
+import { MembershipCommitmentError, type CommitmentInvoice, type CommitmentPrestartProviderSnapshot,
+  type MembershipCommitment } from "@/lib/stripe/commitment-policy";
 
 export const stripeObjectId = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id ?? null;
 
@@ -17,6 +18,33 @@ export function verifyCommitmentSubscription(subscription: Stripe.Subscription, 
     throw new MembershipCommitmentError("subscription_requires_review");
   }
   return subscription.items.data[0];
+}
+
+/** The scheduled start is consented and immutable. A no-fee cancellation may
+ * never absorb an invoice, pending item, changed anchor, or an in-flight payment. */
+export async function readPrestartCancellationEvidence(contract: MembershipCommitment, now = new Date()) {
+  const stripe = getStripe(), subscription = await stripe.subscriptions.retrieve(contract.subscriptionId);
+  verifyCommitmentSubscription(subscription, contract);
+  const startsAt = Date.parse(contract.startsAt);
+  const canceledAt = subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null;
+  if (subscription.billing_cycle_anchor * 1000 !== startsAt
+    || subscription.metadata.ruined_first_charge_at !== contract.startsAt
+    || subscription.latest_invoice || subscription.cancel_at || subscription.cancel_at_period_end
+    || subscription.status !== "active" && subscription.status !== "canceled"
+    || subscription.status === "active" && (now.getTime() >= startsAt || canceledAt !== null)
+    || subscription.status === "canceled" && (!canceledAt || Date.parse(canceledAt) >= startsAt)) {
+    throw new MembershipCommitmentError("prestart_cancellation_requires_review");
+  }
+  const invoices = await stripe.invoices.list({ subscription: contract.subscriptionId, limit: 1 });
+  const pending = await stripe.invoiceItems.list({ customer: contract.customerId, pending: true, limit: 1 });
+  if (invoices.data.length || invoices.has_more || pending.data.length || pending.has_more) {
+    throw new MembershipCommitmentError("prestart_invoice_requires_review");
+  }
+  const snapshot: CommitmentPrestartProviderSnapshot = { subscriptionId: subscription.id,
+    customerId: stripeObjectId(subscription.customer)!, livemode: subscription.livemode,
+    status: subscription.status as "active" | "canceled", firstChargeAt: contract.startsAt, canceledAt,
+    observedAt: new Date().toISOString(), hasInvoices: false, pendingInvoiceItems: false };
+  return { subscription, snapshot };
 }
 
 /** Automatic early exit handles fully settled, unadjusted invoices. Credits,

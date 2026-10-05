@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getMemberOnboarding } from "@/lib/membership/repository";
+import { getMembershipFirstChargeAt } from "@/lib/membership/paid-launch";
 import { getPublishedMembershipAgreement } from "@/lib/membership/published-agreement";
 import {
   bindCommercialMembershipPrice,
@@ -14,8 +15,9 @@ import {
 import { isMembershipBillingPlan, MEMBERSHIP_OFFERS } from "@/lib/membership/pricing";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { PlatformAccessDeniedError, requireActivePlatformMemberLink } from "@/lib/platform/repository";
+import { getMembershipCheckoutForReservation, expireMembershipCheckoutAttempt } from "@/lib/stripe/billing-repository";
 import { isUuid } from "@/lib/stripe/membership-state";
-import { getPaidMembershipAgreementVersion, isTrustedCheckoutOrigin, validateStripeMembershipOfferPrice } from "@/lib/stripe/server";
+import { getPaidMembershipAgreementVersion, getStripe, getStripeLivemode, isTrustedCheckoutOrigin, validateStripeMembershipOfferPrice } from "@/lib/stripe/server";
 
 export const runtime = "nodejs";
 const response = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -25,7 +27,8 @@ export async function POST(request: Request) {
   try {
     const viewer = await getCurrentPlatformViewer();
     if (!viewer) return response({ error: "Sign in to review your membership offer." }, 401);
-    if (!getPlatformConfiguration().stripeCheckoutReady) return response({ error: "Membership payment is not available yet." }, 503);
+    const configuration = getPlatformConfiguration();
+    if (!configuration.stripeCheckoutReady && !configuration.stripeActivationReady) return response({ error: "Membership payment is not available yet." }, 503);
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) return response({ error: "Choose your membership and payment plan." }, 400);
     const platformUser = await requireActivePlatformMemberLink(viewer);
@@ -47,19 +50,55 @@ export async function POST(request: Request) {
     if (onboarding.membershipFunding === "operator" || onboarding.membershipFunding === "complimentary") return response({ error: "Your complimentary membership does not require payment." }, 409);
     const agreementVersion = getPaidMembershipAgreementVersion();
     if (!/^ruined_membership-v([2-9]|[1-9]\d+)$/.test(agreementVersion) || !await getPublishedMembershipAgreement(agreementVersion)) return response({ error: "The paid membership agreement is not available yet." }, 503);
-    const current = await getCurrentCommercialMembershipReservation(platformUser.memberId);
+    let current = await getCurrentCommercialMembershipReservation(platformUser.memberId);
+    if (current?.firstChargeAt && current.firstChargeAt.getTime() <= Date.now() + 31 * 60_000) {
+      const attempt = await getMembershipCheckoutForReservation(current.id, platformUser.memberId);
+      let terminated = !attempt || ["expired", "failed"].includes(attempt.status);
+      if (!terminated && attempt?.stripeSessionId) {
+        const session = await getStripe().checkout.sessions.retrieve(attempt.stripeSessionId);
+        if (session.status === "expired" && session.livemode === getStripeLivemode() &&
+          session.metadata?.ruined_commercial_reservation_id === current.id &&
+          session.metadata?.ruined_member_id === platformUser.memberId) {
+          await expireMembershipCheckoutAttempt(attempt.id);
+          terminated = true;
+        }
+      }
+      if (terminated) {
+        await releaseCommercialMembershipReservation({ reservationId: current.id, reason: attempt ? "checkout_expired" : "before_checkout_abandoned" });
+        if (current.id === body.requestId) return response({ error: "The old offer is closed. Review a new membership offer.", code: "membership_offer_expired" }, 409);
+        current = null;
+      } else {
+        return response({ error: "Your earlier Checkout is still being confirmed. Refresh its status before starting another membership.", code: "checkout_plan_locked" }, 409);
+      }
+    }
     if (current && (current.kind !== body.kind || current.plan !== body.plan)) {
       try { await releaseCommercialMembershipReservation({ reservationId: current.id, reason: "before_checkout_abandoned" }); }
       catch { return response({ error: "A payment is already in progress. Resume that membership and payment plan before making a different choice.", code: "checkout_plan_locked", plan: current.plan, kind: current.kind }, 409); }
     }
     const pair = body.kind === "couple" ? await getReadyCoupleMembershipAuthorization(platformUser.memberId) : null;
     if (body.kind === "couple" && !pair) return response({ error: "Both adults must register and approve the couples membership before payment.", code: "couple_pairing_required" }, 409);
+    const now = new Date();
+    const firstChargeAt = getMembershipFirstChargeAt(now);
+    if (firstChargeAt) {
+      const months = body.plan === "annual" ? 12 : 1;
+      const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + months + 1, 0)).getUTCDate();
+      const intervalEnd = new Date(now);
+      intervalEnd.setUTCDate(1);
+      intervalEnd.setUTCMonth(intervalEnd.getUTCMonth() + months);
+      intervalEnd.setUTCDate(Math.min(now.getUTCDate(), lastDay));
+      if (firstChargeAt >= intervalEnd || firstChargeAt.getTime() <= now.getTime() + 32 * 60_000) {
+        return response({ error: "The scheduled billing window is unavailable. Please return after membership billing begins.", code: "membership_billing_window_unavailable" }, 409);
+      }
+    }
     const reservation = await reserveCommercialMembership({ requestId: body.requestId, memberId: platformUser.memberId,
       kind: body.kind, plan: body.plan, ...(pair ? { partnerMemberId: pair.partnerMemberId, coupleAuthorizationId: pair.id } : {}),
-      expiresAt: new Date(Date.now() + 60 * 60_000) });
+      firstChargeAt, expiresAt: new Date(Math.min(now.getTime() + 60 * 60_000, firstChargeAt ? firstChargeAt.getTime() - 60_000 : Infinity)) });
+    if (reservation.firstChargeAt && reservation.firstChargeAt.getTime() <= Date.now() + 31 * 60_000) {
+      return response({ error: "This scheduled offer has expired. Review a new offer after billing begins.", code: "membership_offer_expired" }, 409);
+    }
     const stripePriceId = await validateStripeMembershipOfferPrice(reservation.offerId);
     await bindCommercialMembershipPrice({ reservationId: reservation.id, stripePriceId });
-    return response({ quote: { id: reservation.id, expiresAt: reservation.expiresAt.toISOString(),
+    return response({ quote: { id: reservation.id, expiresAt: reservation.expiresAt.toISOString(), firstChargeAt: reservation.firstChargeAt?.toISOString() ?? null,
       offer: MEMBERSHIP_OFFERS[reservation.offerId], billingTermsVersion: "membership-billing-v2", buyoutCap: 150_000,
       participants: reservation.participants.map(participant => ({ memberId: participant.memberId, name: participant.name })),
     } });

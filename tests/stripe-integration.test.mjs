@@ -27,7 +27,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
   assert.match(checkoutRoute, /redirect_on_completion:\s*"always"/);
   assert.match(
     checkoutRoute,
-    /return_url:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
+    /return_url:\s*reservation\.firstChargeAt\s*\?\s*`\$\{applicationOrigin\}\/my\/activate\?checkout=returned`\s*:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
   );
   assert.doesNotMatch(checkoutRoute, /\b(?:success_url|cancel_url|payment_method_types)\s*:/);
   assert.doesNotMatch(checkoutRoute, /reservation\.stripeCustomerId/);
@@ -88,7 +88,7 @@ test("embedded return page never activates membership and a paid invoice remains
     /updateMemberBillingState|processStripeWebhookEvent|membership_state\s*=|checkout\.sessions\.retrieve/,
   );
   assert.match(checkoutCompletionPage, /context\.member\?\.billingState === "active"/);
-  assert.match(checkoutCompletionPage, /The return screen never activates access by itself\./);
+  assert.match(checkoutCompletionPage, /Returning from Checkout does not itself confirm payment or open profile access\./);
 
   const checkoutHandler = webhookProcessor.slice(
     webhookProcessor.indexOf("async function handleCheckoutSession"),

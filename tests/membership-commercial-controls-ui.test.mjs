@@ -34,7 +34,7 @@ test('initial monthly cancellation separates fee-free renewal stop from reviewed
  const f=await cancellation();assert.match(text(f.render()),/remaining agreed installments continue/);assert.ok(f.button('Turn off renewal'));assert.ok(f.button('Review early exit'));
  await f.button('Review early exit').props.onClick();assert.deepEqual(f.calls.at(-1),{action:'quote',intent:'early_exit'});
  assert.match(text(f.render()),/\$1,398\.00 replaces the remaining \$1,398\.00/);assert.match(text(f.render()),/Tax: \$90\.87\. Total: \$1,488\.87/);
- assert.match(text(f.render()),/No additional remaining installments will be collected/);assert.match(text(f.render()),/payment does not extend access/);
+ assert.match(text(f.render()),/No additional remaining installments will be collected/);assert.match(text(f.render()),/payment does not extend the term or open profile access/);
  await f.button('Confirm exit — $1,488.87').props.onClick();assert.deepEqual(f.calls.at(-1),{action:'confirm',quoteId:'reviewed-quote',confirmed:true});assert.match(text(f.render()),/Cancellation confirmed/);
 });
 test('annual plans have no buyout action and a member may dismiss any quote without confirmation',async()=>{
@@ -65,7 +65,7 @@ test('failure to load cancellation controls remains visible with retry and suppo
  const view=await component('MembershipCancellation',state,async()=>({ok:!fail,json:async()=>fail?{error:'Billing is temporarily unavailable.'}:{commitment:{plan:'annual',initialTermEndsAt:'2099-01-01T00:00:00Z'}}}));
  const render=()=>state.render(view);assert.match(text(render()),/Loading cancellation options/);state.effects[0]();await flush();
  assert.match(text(render()),/Billing is temporarily unavailable/);assert.match(text(render()),/request cancellation/);
- assert.ok(nodes(render()).some(node=>node.props.href==='/my/support'));
+ assert.ok(nodes(render()).some(node=>node.props.href==='mailto:connect@theruinedproject.com'));
  const retry=nodes(render()).find(node=>node.type==='button'&&text(node)==='Retry cancellation options');assert.ok(retry);
  retry.props.onClick();assert.match(text(render()),/Loading cancellation options/);
  fail=false;state.effects[0]();await flush();assert.match(text(render()),/Turn off renewal/);assert.doesNotMatch(text(render()),/Billing is temporarily unavailable/);

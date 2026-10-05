@@ -19,10 +19,11 @@ const names = ["STRIPE_SECRET_KEY", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "STRIP
 const read = path => readFileSync(resolve(root, path), "utf8");
 
 export function optionsFrom(args) {
-  const options = { port: 3233, selfTest: false, help: false };
+  const options = { port: 3233, selfTest: false, help: false, deferred: false };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === "--self-test") options.selfTest = true;
+    else if (arg === "--deferred") options.deferred = true;
     else if (arg === "--help") options.help = true;
     else if (arg === "--port" && /^\d+$/.test(args[index + 1] ?? "")) {
       options.port = Number(args[++index]);
@@ -44,7 +45,7 @@ export function validateEnvironment(env) {
   if (missing.length) throw new Error(`Missing environment variables: ${missing.join(", ")}. See docs/stripe-sandbox-smoke.md.`);
   if (!/^(?:rk|sk)_test_[A-Za-z0-9_]+$/.test(env.STRIPE_SECRET_KEY)) throw new Error("STRIPE_SECRET_KEY must be a sandbox rk_test_ or sk_test_ key.");
   if (!/^pk_test_[A-Za-z0-9_]+$/.test(env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)) throw new Error("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must be a sandbox pk_test_ key.");
-  if (!/^whsec_[A-Za-z0-9_]+$/.test(env.STRIPE_WEBHOOK_SECRET)) throw new Error("STRIPE_WEBHOOK_SECRET must be the sandbox CLI forwarding signing secret.");
+  if (!/^whsec_[A-Za-z0-9_]+$/.test(env.STRIPE_WEBHOOK_SECRET)) throw new Error("STRIPE_WEBHOOK_SECRET must be the sandbox-only webhook signing secret.");
   for (const name of names.slice(3)) if (!/^price_[A-Za-z0-9]+$/.test(env[name])) throw new Error(`${name} must contain one Stripe Price ID.`);
   if (env.STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID === env.STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID) throw new Error("Monthly and annual Price IDs must differ.");
   return Object.fromEntries(names.map(name => [name, env[name]]));
@@ -61,6 +62,10 @@ function sqlFor(engine) {
 }
 
 function sourceLoader(overrides) {
+  // Presence gates see only this isolated adapter marker. The real process never
+  // receives a database URL, and postgres imports remain forbidden below.
+  const scopedProcess=Object.create(process);
+  scopedProcess.env={...process.env,DATABASE_URL:"postgresql://in-memory-harness.invalid/never-connected"};
   const cache = new Map();
   function load(path) {
     const absolute = resolve(root, path);
@@ -87,7 +92,7 @@ function sourceLoader(overrides) {
       if (name === "postgres") throw new Error("Network database access is forbidden in this harness.");
       return requirePackage(name);
     };
-    new Function("require", "module", "exports", code)(requireSource, loaded, loaded.exports);
+    new Function("require", "module", "exports", "process", code)(requireSource, loaded, loaded.exports, scopedProcess);
     return loaded.exports;
   }
   return load;
@@ -112,6 +117,9 @@ async function createFixture(origin) {
     await engine.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,$4,'active')", [fixture.authUserId, fixture.memberId, fixture.personId, fixture.email]);
     await engine.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [fixture.authUserId]);
     await engine.query("insert into person_profiles(person_id,display_name) values($1,'Sandbox Test Member') on conflict(person_id) do update set display_name=excluded.display_name", [fixture.personId]);
+    await engine.query("insert into person_private_profiles(person_id,birth_date,default_fulfillment_address) values($1,'1990-01-01','{\"countryCode\":\"US\"}'::jsonb) on conflict(person_id) do update set birth_date=excluded.birth_date,default_fulfillment_address=excluded.default_fulfillment_address",[fixture.personId]);
+    await engine.query("update person_profiles set preferred_name='Sandbox Test Member' where person_id=$1",[fixture.personId]);
+    await engine.query("update person_private_profiles set legal_name='Sandbox Test Member',mobile_e164='+12025550123',default_fulfillment_address=$2::jsonb,apparel_sizing='{\"top\":\"M\"}'::jsonb where person_id=$1",[fixture.personId,JSON.stringify({addressLine1:"123 Test Street",city:"Denver",region:"CO",postalCode:"80202",countryCode:"US"})]);
     await engine.query("update member_onboardings set billing_plan='monthly',profile_completed_at=now() where member_id=$1", [fixture.memberId]);
     await engine.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',2,'Sandbox paid terms',$2,$3,'published',now())", [termsId, terms, hash]);
     const ageId = (await engine.query("insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key) values($1,'age_attestation','sandbox-age18',now(),$2) returning id", [fixture.memberId, `smoke-age:${fixture.memberId}`])).rows[0].id;
@@ -133,11 +141,14 @@ async function createFixture(origin) {
       "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: fixture.authUserId, email: fixture.email }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true, minimumAge: 18, mode: "connected" }),
         getStripePublishableKey: () => process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY },
+      "@/lib/membership/registration-message-delivery": { getRegistrationMessageConfiguration:()=>({ready:false}),processRegistrationMessageBatch:async()=>{throw new Error("Communications disabled");} },
       "@/lib/workflows/worker": { processWorkflowBatch: async () => { workerCalls++; } },
       "@/lib/google/calendar": noCommunication,
       "@/lib/support/delivery": noCommunication,
     });
     const checkout = load("app/api/stripe/checkout/route.ts");
+    const offer = load("app/api/stripe/membership-offer/route.ts");
+    const cancellation = load("app/api/stripe/cancellation/route.ts");
     const webhook = load("app/api/stripe/webhook/route.ts");
     const server = load("src/lib/stripe/server.ts");
     const identity = load("src/lib/membership/repository.ts");
@@ -146,7 +157,7 @@ async function createFixture(origin) {
     assert.equal((await identity.getMemberIdentity(fixture.authUserId)).billingState, "pending");
     assert.equal((await platform.requireActivePlatformMemberLink(fixture)).memberId, fixture.memberId);
     let accountVerified = false;
-    return { engine, fixture, checkout, webhook, server, load, origin, workerCalls: () => workerCalls,
+    return { engine, fixture, checkout, offer, cancellation, webhook, server, load, origin, workerCalls: () => workerCalls,
       async verifyAccount() {
         if (accountVerified) return;
         const account = await server.getStripe().accounts.retrieve();
@@ -159,8 +170,10 @@ async function createFixture(origin) {
           join member_onboardings o on o.member_id=m.id where m.id=$1`, [fixture.memberId])).rows[0];
         const attempts = (await engine.query("select id,status,billing_plan,stripe_price_id,stripe_session_id,stripe_subscription_id,recurring_payment_accepted_at from stripe_checkout_attempts where member_id=$1 order by created_at", [fixture.memberId])).rows;
         const invoices = (await engine.query("select id,purpose,stripe_status,amount_due,amount_paid,currency from stripe_invoices where member_id=$1 order by created_at", [fixture.memberId])).rows;
+        const commitments=(await engine.query("select terms_snapshot->>'startsAt' as starts_at,terms_snapshot->>'initialTermEndsAt' as ends_at,status from stripe_membership_commitments where member_id=$1",[fixture.memberId])).rows;
+        const reservations=(await engine.query("select id,status,first_charge_at,stripe_subscription_id from membership_commercial_reservations where payer_member_id=$1",[fixture.memberId])).rows;
         const events = (await engine.query("select event_id,event_type,status,attempts from stripe_webhook_events order by received_at desc limit 20")).rows;
-        return { sandboxAccount: expectedAccount, accountVerified, fixtureMemberId: fixture.memberId, member, attempts, invoices, events,
+        return { sandboxAccount: expectedAccount, accountVerified, fixtureMemberId: fixture.memberId, member, attempts, reservations, commitments, invoices, events,
           communicationWorkerDisabled: true, acknowledgedWorkerCalls: workerCalls };
       },
     };
@@ -173,28 +186,33 @@ async function createFixture(origin) {
 function html(app, token) {
   // Only public configuration and synthetic fixture identifiers enter the browser.
   const config = JSON.stringify({ publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-    acceptanceId: app.fixture.acceptanceId, attemptId: app.fixture.attemptId, token }).replaceAll("<", "\\u003c");
+    acceptanceId: app.fixture.acceptanceId, attemptId: app.fixture.attemptId, firstChargeAt:process.env.STRIPE_MEMBERSHIP_FIRST_CHARGE_AT??null, token }).replaceAll("<", "\\u003c");
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ruined Stripe sandbox test</title><style>body{font:16px system-ui;margin:24px auto;padding:0 16px;max-width:960px;color:#202020;background:#f3f1eb}h1{font-size:26px}p{line-height:1.5}label{display:block;margin:16px 0}button,select{font:inherit;padding:10px}button{cursor:pointer}pre{font-size:12px;padding:16px;background:white;overflow:auto}#error{color:#a01515;white-space:pre-wrap}#checkout{margin:24px 0;min-height:20px}.note{background:#f7df97;padding:16px}</style>
 <h1>Ruined · Stripe sandbox test</h1><p class="note">Development harness for ${expectedAccount}. Synthetic member, test payments, in-memory database. Email verification and the app signup screens are not part of this test. Closing this process erases its local records; Stripe sandbox objects remain.</p>
-<form id="form"><label>Plan <select id="plan"><option value="monthly">Monthly · $499 USD / month</option><option value="annual">Annual · $4,990 USD / year upfront</option></select></label>
-<label><input type="checkbox" id="consent" required> I authorize the selected recurring sandbox payment. This is a test-only agreement.</label>
-<button type="submit" id="start">Open sandbox Checkout</button></form><p id="error" role="alert"></p><div id="checkout"></div>
+<form id="form"><label>Plan <select id="plan"><option value="monthly">Monthly</option><option value="annual">Annual</option></select></label>
+<p id="offer">Review the server-issued offer before confirming.</p><label><input type="checkbox" id="consent"> I authorize the selected recurring sandbox payment. This is a test-only agreement.</label>
+<button type="submit" id="start">Review sandbox offer</button></form><button id="replay" type="button">Verify signed Stripe events</button><button id="snapshots" type="button">Verify current Stripe snapshots</button><button id="cancel" type="button">Cancel scheduled membership before start</button><p id="error" role="alert"></p><div id="checkout"></div>
 <h2>Verified local billing state</h2><p>Only the signed webhook can update these records. A return from Checkout is not proof of payment.</p><pre id="state" aria-live="polite">Loading fixture…</pre>
 <script src="https://js.stripe.com/dahlia/stripe.js"></script><script>
-const config=${config}; let checkout; let busy=false;
+const config=${config}; let checkout; let quote; let busy=false;
 const error=document.getElementById('error'); const button=document.getElementById('start');
 const plan=document.getElementById('plan'); const consent=document.getElementById('consent');
 const headers={'Content-Type':'application/json','X-Ruined-Smoke':config.token};
 document.addEventListener('securitypolicyviolation',event=>{let source='inline content';try{source=new URL(event.blockedURI).origin;}catch{}error.textContent='Browser policy blocked '+event.effectiveDirective+' from '+source;});
-plan.addEventListener('change',()=>{consent.checked=false;error.textContent='';if(checkout){checkout.destroy();checkout=null;}button.textContent='Open sandbox Checkout';});
+plan.addEventListener('change',()=>{quote=null;consent.checked=false;error.textContent='';if(checkout){checkout.destroy();checkout=null;}button.textContent='Review sandbox offer';});
 async function refresh(){try{const response=await fetch('/status',{cache:'no-store'});if(!response.ok)throw Error('Status unavailable');document.getElementById('state').textContent=JSON.stringify(await response.json(),null,2);}catch{document.getElementById('state').textContent='Harness stopped or unavailable.';}}
 document.getElementById('form').addEventListener('submit',async event=>{event.preventDefault();if(busy)return;busy=true;button.disabled=true;plan.disabled=true;consent.disabled=true;error.textContent='';try{
- const response=await fetch('/api/stripe/checkout',{method:'POST',headers,body:JSON.stringify({plan:plan.value,recurringPaymentAccepted:consent.checked,acceptanceId:config.acceptanceId,attemptId:config.attemptId})});
+ if(!quote){const offerResponse=await fetch('/api/stripe/membership-offer',{method:'POST',headers,body:JSON.stringify({requestId:crypto.randomUUID(),kind:'individual',plan:plan.value})});const offerResult=await offerResponse.json();if(!offerResponse.ok)throw Error(offerResult.error||'Offer unavailable');quote=offerResult.quote;document.getElementById('offer').textContent=JSON.stringify({amount:quote.offer.amount/100,currency:quote.offer.currency,plan:quote.offer.plan,firstChargeAt:quote.firstChargeAt,dueToday:quote.firstChargeAt?0:quote.offer.amount/100});consent.checked=false;button.textContent='Confirm and open sandbox Checkout';return;}
+ if(!consent.checked)throw Error('Confirm the displayed payment terms first.');
+ const response=await fetch('/api/stripe/checkout',{method:'POST',headers,body:JSON.stringify({plan:plan.value,recurringPaymentAccepted:consent.checked,acceptanceId:config.acceptanceId,attemptId:quote.id,commercialReservationId:quote.id,firstChargeAt:quote.firstChargeAt})});
  const result=await response.json();if(!response.ok){if(result.plan){plan.value=result.plan;consent.checked=false;}throw Error(result.error||'Checkout could not open');}
  plan.value=result.plan;
  if(checkout)checkout.destroy();checkout=await Stripe(config.publishableKey).createEmbeddedCheckoutPage({clientSecret:result.clientSecret});checkout.mount('#checkout');button.textContent='Resume sandbox Checkout';
  }catch(problem){error.textContent=problem.message||'Checkout could not open';}finally{busy=false;button.disabled=false;plan.disabled=false;consent.disabled=false;refresh();}});
+document.getElementById('replay').addEventListener('click',async()=>{try{const r=await fetch('/replay-events',{method:'POST',headers,body:'{}'});error.textContent=JSON.stringify(await r.json());refresh();}catch{error.textContent='Signed event replay failed';}});
+document.getElementById('snapshots').addEventListener('click',async()=>{try{const r=await fetch('/replay-snapshots',{method:'POST',headers,body:'{}'});error.textContent=JSON.stringify(await r.json());refresh();}catch{error.textContent='Signed snapshot replay failed';}});
+document.getElementById('cancel').addEventListener('click',async()=>{try{const q=await fetch('/api/stripe/cancellation',{method:'POST',headers,body:JSON.stringify({action:'quote',intent:'cancel_before_start'})});const b=await q.json();if(!q.ok)throw Error(b.error);if(b.quote.feeTotal!==0)throw Error('Expected no fee');if(!confirm('Cancel this test membership before its first payment? $0 fee.'))return;const r=await fetch('/api/stripe/cancellation',{method:'POST',headers,body:JSON.stringify({action:'confirm',quoteId:b.quote.id,confirmed:true})});error.textContent=JSON.stringify(await r.json());refresh();}catch(e){error.textContent=e.message;}});
 refresh();setInterval(refresh,2500);
 </script></html>`;
 }
@@ -218,137 +236,166 @@ async function dispatch(app, token, request) {
   if (url.origin !== app.origin || request.headers.get("host") !== new URL(app.origin).host) return response({ error: "Loopback host required." }, 403);
   // Stripe redirects the browser cross-site after payment. This GET only renders
   // the fixture; it cannot activate membership or create another Checkout.
-  const safeReturn = request.method === "GET" && url.pathname === "/my/join/complete";
+  const safeReturn = request.method === "GET" && ["/my/join/complete","/my/activate"].includes(url.pathname);
   if (request.headers.get("sec-fetch-site") === "cross-site" && !safeReturn) return response({ error: "Cross-site access is forbidden." }, 403);
   if (request.method === "POST" && url.pathname === "/api/stripe/webhook") return app.webhook.POST(request);
-  if (request.method === "POST" && url.pathname === "/api/stripe/checkout") {
+  if (request.method === "POST" && ["/api/stripe/checkout","/api/stripe/membership-offer","/api/stripe/cancellation","/replay-events","/replay-snapshots"].includes(url.pathname)) {
     if (request.headers.get("origin") !== app.origin || request.headers.get("x-ruined-smoke") !== token) return response({ error: "Open the local harness before starting Checkout." }, 403);
     try { await app.verifyAccount(); }
     catch { return response({ error: "Sandbox account verification failed. Check the key account and Account read permission." }, 502); }
+    if(url.pathname==="/api/stripe/membership-offer") return app.offer.POST(request);
+    if(url.pathname==="/api/stripe/cancellation") return app.cancellation.POST(request);
+    if(url.pathname==="/replay-snapshots") return response(await replayCurrentSnapshots(app));
+    if(url.pathname==="/replay-events") {
+      const result=[];
+      const known=(await app.engine.query("select stripe_session_id,stripe_subscription_id from stripe_checkout_attempts where member_id=$1",[app.fixture.memberId])).rows;
+      const events=await app.server.getStripe().events.list({limit:100});
+      for(const event of [...events.data].sort((a,b)=>a.created-b.created)){
+        const object=event.data.object;
+        if(event.livemode || !(object.metadata?.ruined_member_id===app.fixture.memberId || known.some(row=>[row.stripe_session_id,row.stripe_subscription_id].includes(object.id)))) continue;
+        const payload=JSON.stringify(event),signature=app.server.getStripe().webhooks.generateTestHeaderString({payload,secret:process.env.STRIPE_WEBHOOK_SECRET});
+        const replay=await app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`,{method:"POST",headers:{"stripe-signature":signature},body:payload}));
+        result.push({id:event.id,type:event.type,apiVersion:event.api_version,status:replay.status,result:await replay.json()});
+      }
+      return response({replayed:result});
+    }
     return app.checkout.POST(request);
   }
   if (request.method === "GET" && url.pathname === "/status") return response(await app.status());
-  if (request.method === "GET" && ["/", "/my/join/complete"].includes(url.pathname)) return response(html(app, token), 200, "text/html; charset=utf-8");
+  if (request.method === "GET" && url.pathname === "/api/stripe/cancellation") return app.cancellation.GET();
+  if (request.method === "GET" && ["/", "/my/join/complete", "/my/activate"].includes(url.pathname)) return response(html(app, token), 200, "text/html; charset=utf-8");
   return response({ error: "Not found." }, 404);
 }
 
+// Explicit diagnostic replay for sandbox accounts whose original event schema is
+// older than the app's pinned version. Never change an original Event's version:
+// retrieve fresh provider objects and name the locally signed snapshots separately.
+async function replayCurrentSnapshots(app) {
+  const stripe=app.server.getStripe(),result=[];
+  const attempts=(await app.engine.query("select stripe_session_id from stripe_checkout_attempts where member_id=$1 and stripe_session_id is not null",[app.fixture.memberId])).rows;
+  const deliver=async(type,object)=>{
+    if(object.livemode) throw new Error("Live snapshot forbidden");
+    const id="evt_local_snapshot_"+createHash("sha256").update(type+JSON.stringify(object)).digest("hex").slice(0,40);
+    const payload=JSON.stringify({id,object:"event",api_version:app.server.STRIPE_API_VERSION,created:Math.floor(Date.now()/1000),livemode:false,type,data:{object}});
+    const signature=stripe.webhooks.generateTestHeaderString({payload,secret:process.env.STRIPE_WEBHOOK_SECRET});
+    const replay=await app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`,{method:"POST",headers:{"stripe-signature":signature},body:payload}));
+    result.push({id,type,status:replay.status,result:await replay.json()});
+  };
+  for(const attempt of attempts){
+    const session=await stripe.checkout.sessions.retrieve(attempt.stripe_session_id);
+    if(session.livemode || session.metadata?.ruined_member_id!==app.fixture.memberId) throw new Error("Wrong synthetic member snapshot");
+    if(session.status!=="complete" || !session.subscription) continue;
+    const subscription=await stripe.subscriptions.retrieve(typeof session.subscription==="string"?session.subscription:session.subscription.id);
+    if(subscription.livemode || subscription.metadata?.ruined_member_id!==app.fixture.memberId) throw new Error("Wrong synthetic subscription snapshot");
+    await deliver(subscription.status==="canceled"?"customer.subscription.deleted":"customer.subscription.updated",subscription);
+    await deliver("checkout.session.completed",session);
+    if(subscription.latest_invoice){
+      const invoice=await stripe.invoices.retrieve(typeof subscription.latest_invoice==="string"?subscription.latest_invoice:subscription.latest_invoice.id);
+      if(invoice.status==="paid") await deliver("invoice.paid",invoice);
+    }
+  }
+  return {scope:"Fresh provider objects retrieved using the pinned API and replayed as locally signed snapshots; not original Stripe-delivered Events.",replayed:result};
+}
+
 async function selfTest() {
-  const fake = { STRIPE_SECRET_KEY: "sk_test_local_fixture", NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_local_fixture",
-    STRIPE_WEBHOOK_SECRET: "whsec_local_fixture", STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID: "price_monthly", STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual" };
-  assert.throws(() => validateEnvironment({ ...fake, STRIPE_SECRET_KEY: "sk_live_forbidden" }), /Live Stripe/);
-  assert.throws(() => validateEnvironment({ ...fake, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_live_forbidden" }), /Live Stripe/);
-  assert.throws(() => validateEnvironment({ ...fake, DATABASE_URL: "forbidden" }), /DATABASE_URL/);
-  assert.throws(() => validateEnvironment({ ...fake, NEXT_PUBLIC_SUPABASE_URL: "forbidden" }), /Supabase/);
-  assert.throws(() => validateEnvironment({}), /Missing environment variables/);
-  assert.throws(() => optionsFrom(["--host", "0.0.0.0"]), /Unknown/);
-  assert.throws(() => optionsFrom(["--port", "0"]), /Port/);
-  Object.assign(process.env, fake);
-  const app = await createFixture("http://127.0.0.1:3233");
-  try {
-    const post = body => app.checkout.POST(new Request(`${app.origin}/api/stripe/checkout`, { method: "POST", headers: { origin: app.origin }, body: JSON.stringify(body) }));
-    assert.equal((await post({ ...app.fixture, plan: "monthly", recurringPaymentAccepted: false })).status, 400);
-    assert.equal((await post({ ...app.fixture, plan: "cheap", recurringPaymentAccepted: true })).status, 400);
-    const input = { ...app.fixture, plan: "monthly", stripePriceId: "price_monthly", paidAgreementVersion: agreementVersion };
-    const billing = app.load("src/lib/stripe/billing-repository.ts");
-    const first = await billing.reserveMembershipCheckout(input);
-    const second = await billing.reserveMembershipCheckout({ ...input, attemptId: randomUUID() });
-    assert.equal(first.attemptId, second.attemptId);
-    assert.equal(first.plan, "monthly");
-    const unsigned = new Request(`${app.origin}/api/stripe/webhook`, { method: "POST", body: "{}" });
-    assert.equal((await app.webhook.POST(unsigned)).status, 400);
-    const event = { id: `evt_smoke_${randomUUID().replaceAll("-", "")}`, object: "event", api_version: app.server.STRIPE_API_VERSION,
-      created: Math.floor(Date.now() / 1000), livemode: false, type: "charge.succeeded", data: { object: { id: "ch_smoke_ignored" } } };
-    const payload = JSON.stringify(event);
-    const signature = app.server.getStripe().webhooks.generateTestHeaderString({ payload, secret: fake.STRIPE_WEBHOOK_SECRET });
-    const signed = () => new Request(`${app.origin}/api/stripe/webhook`, { method: "POST", headers: { "stripe-signature": signature }, body: payload });
-    assert.equal((await app.webhook.POST(signed())).status, 200);
-    assert.equal((await (await app.webhook.POST(signed())).json()).duplicate, true);
-    const status = await app.status();
-    assert.equal(status.member.billing_state, "pending");
-    assert.equal(status.events.length, 1);
-    assert.equal(app.workerCalls(), 0);
-    assert.equal((await dispatch(app, "token", new Request(`${app.origin}/status`, { headers: { host: "attacker.example" } }))).status, 403);
-    assert.equal((await dispatch(app, "token", new Request(`${app.origin}/api/stripe/checkout`, { method: "POST", headers: { host: "127.0.0.1:3233", origin: "https://attacker.example" } }))).status, 403);
-    assert.equal((await dispatch(app, "token", new Request(`${app.origin}/my/join/complete?session_id=cs_test_return`, { headers: { host: "127.0.0.1:3233", "sec-fetch-site": "cross-site" } }))).status, 200);
-    assert.equal((await dispatch(app, "token", new Request(`${app.origin}/my/join/complete`, { method: "POST", headers: { host: "127.0.0.1:3233", "sec-fetch-site": "cross-site" } }))).status, 403);
-    // Exercise actual paid-invoice SQL and all completion triggers, not just
-    // signature verification or a mocked state updater. Only provider retrieval
-    // is replaced; this offline mode must never make Stripe network requests.
-    const stripe = app.server.getStripe();
-    const originalRetrieve = stripe.subscriptions.retrieve;
-    const metadata = {
-      ruined_context: "membership", ruined_member_id: app.fixture.memberId,
-      ruined_billing_plan: "monthly", ruined_checkout_attempt_id: first.attemptId,
-      agreement_acceptance_id: first.agreementAcceptanceId,
-      agreement_accepted_at: first.agreementAcceptedAt.toISOString(),
-      agreement_version: first.agreementVersion, age_attested_at: first.ageAttestedAt.toISOString(),
+  const fake={STRIPE_SECRET_KEY:"sk_test_local_fixture",NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:"pk_test_local_fixture",
+    STRIPE_WEBHOOK_SECRET:"whsec_local_fixture",STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID:"price_monthly",STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID:"price_annual"};
+  assert.throws(()=>validateEnvironment({...fake,STRIPE_SECRET_KEY:"sk_live_forbidden"}),/Live Stripe/);
+  assert.throws(()=>validateEnvironment({...fake,DATABASE_URL:"forbidden"}),/DATABASE_URL/);
+  assert.throws(()=>validateEnvironment({...fake,NEXT_PUBLIC_SUPABASE_URL:"forbidden"}),/Supabase/);
+  assert.throws(()=>optionsFrom(["--host","0.0.0.0"]),/Unknown/);
+  Object.assign(process.env,fake,{STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID:"bpc_fixture",
+    STRIPE_MEMBERSHIP_FIRST_CHARGE_AT:new Date(Math.floor(Date.now()/1000)*1000+7*86400000).toISOString(),
+    STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_MONTHLY_PRICE_ID:"price_foundingmonthly"});
+  for(const cancel of [false,true]){
+    const app=await createFixture("http://127.0.0.1:3233");
+    const stripe=app.server.getStripe(),firstAt=Date.parse(process.env.STRIPE_MEMBERSHIP_FIRST_CHARGE_AT)/1000;
+    const now=Math.floor(Date.now()/1000),realNow=Date.now;
+    let session,subscription,invoice;
+    const post=(handler,path,body)=>handler.POST(new Request(`${app.origin}${path}`,{method:"POST",headers:{origin:app.origin},body:JSON.stringify(body)}));
+    const price={id:"price_foundingmonthly",active:true,livemode:false,type:"recurring",billing_scheme:"per_unit",transform_quantity:null,
+      tax_behavior:"exclusive",currency:"usd",unit_amount:34900,recurring:{interval:"month",interval_count:1,usage_type:"licensed"}};
+    stripe.prices.retrieve=async id=>{assert.equal(id,price.id);return price;};
+    stripe.billingPortal.configurations.retrieve=async()=>({id:"bpc_fixture",active:true,livemode:false,
+      features:{invoice_history:{enabled:true},payment_method_update:{enabled:true},subscription_cancel:{enabled:false},subscription_update:{enabled:false}}});
+    stripe.checkout.sessions.create=async(params)=>{
+      assert.equal(params.subscription_data.billing_cycle_anchor,firstAt);assert.equal(params.subscription_data.proration_behavior,"none");
+      subscription={id:`sub_${app.fixture.memberId.replaceAll("-","")}`,status:"active",customer:"cus_fixture",livemode:false,
+        start_date:now,billing_cycle_anchor:firstAt,trial_end:null,cancel_at_period_end:false,cancel_at:null,canceled_at:null,
+        automatic_tax:{enabled:false,disabled_reason:null},latest_invoice:null,metadata:params.subscription_data.metadata,
+        items:{has_more:false,data:[{id:"si_fixture",quantity:1,price,current_period_start:now,current_period_end:firstAt}]}};
+      session={id:"cs_fixture",...params,client_secret:"sandbox_local_secret",status:"open",amount_subtotal:0,amount_total:0,currency:"usd",livemode:false,
+        payment_status:"unpaid",customer:"cus_fixture",subscription:subscription.id,customer_details:{email:app.fixture.email}};
+      return session;
     };
-    const subscription = {
-      id: "sub_smoke_offline", status: "active", customer: "cus_smoke_offline", livemode: false,
-      metadata, cancel_at_period_end: false, automatic_tax: { enabled: false, disabled_reason: null },
-      latest_invoice: "in_smoke_offline", items: { has_more: false, data: [{
-        id: "si_smoke_offline", quantity: 1,
-        current_period_start: event.created, current_period_end: event.created + 30 * 86400,
-        price: { id: "price_monthly", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit",
-          transform_quantity: null, currency: "usd", unit_amount: 49900,
-          recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } },
-      }] },
+    stripe.checkout.sessions.retrieve=async()=>session;
+    stripe.subscriptions.retrieve=async()=>subscription;
+    stripe.customers.retrieve=async()=>({id:"cus_fixture",email:app.fixture.email,livemode:false,balance:0,invoice_credit_balance:{usd:0},cash_balance:{available:{usd:0}}});
+    stripe.invoices.list=()=>({data:invoice?[invoice]:[],has_more:false,async *[Symbol.asyncIterator](){if(invoice)yield invoice;}});
+    stripe.invoices.retrieve=async()=>invoice;
+    stripe.invoiceItems.list=async()=>({data:[],has_more:false});
+    stripe.invoicePayments.list=async()=>({has_more:false,data:[{invoice:invoice.id,livemode:false,currency:"usd",status:"paid",amount_paid:34900,payment:{type:"payment_intent",payment_intent:"pi_fixture"}}]});
+    stripe.paymentIntents.retrieve=async()=>({status:"succeeded",livemode:false,customer:"cus_fixture",latest_charge:"ch_fixture"});
+    stripe.charges.retrieve=async()=>({id:"ch_fixture",status:"succeeded",paid:true,captured:true,refunded:false,amount_refunded:0,disputed:false,amount:34900,currency:"usd",livemode:false,customer:"cus_fixture"});
+    stripe.refunds.list=async()=>({data:[],has_more:false});
+    stripe.subscriptions.cancel=async()=>{subscription.status="canceled";subscription.canceled_at=now;return subscription;};
+    const deliver=async(type,object,eventId)=>{
+      const payload=JSON.stringify({id:eventId,object:"event",api_version:app.server.STRIPE_API_VERSION,created:Math.floor(Date.now()/1000),livemode:false,type,data:{object}});
+      const signature=stripe.webhooks.generateTestHeaderString({payload,secret:fake.STRIPE_WEBHOOK_SECRET});
+      return app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`,{method:"POST",headers:{"stripe-signature":signature},body:payload}));
     };
-    stripe.subscriptions.retrieve = async id => {
-      assert.equal(id, subscription.id, "Offline retrieval must use only the test subscription");
-      return subscription;
-    };
-    const deliver = (type, object, id) => {
-      const payload = JSON.stringify({ id, object: "event", api_version: app.server.STRIPE_API_VERSION,
-        created: event.created + 1, livemode: false, type, data: { object } });
-      const signature = stripe.webhooks.generateTestHeaderString({ payload, secret: fake.STRIPE_WEBHOOK_SECRET });
-      return app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`, {
-        method: "POST", headers: { "stripe-signature": signature }, body: payload,
-      }));
-    };
-    try {
-      const checkout = { id: "cs_smoke_offline", livemode: false, status: "complete", payment_status: "paid",
-        customer: subscription.customer, customer_email: app.fixture.email, subscription: subscription.id,
-        client_reference_id: app.fixture.memberId, metadata, expires_at: event.created + 86400 };
-      assert.equal((await deliver("checkout.session.completed", checkout, "evt_smoke_checkout")).status, 200);
-      assert.equal((await app.status()).member.billing_state, "pending", "Completed Checkout alone must not activate access");
-      const invoice = { id: "in_smoke_offline", livemode: false, status: "paid", billing_reason: "subscription_create",
-        customer: subscription.customer, customer_email: app.fixture.email, currency: "usd",
-        amount_due: 49900, amount_paid: 49900, amount_remaining: 0,
-        parent: { subscription_details: { subscription: subscription.id, metadata } },
-        lines: { has_more: false, data: [{ id: "il_smoke_offline", livemode: false, currency: "usd", quantity: 1, subtotal: 49900,
-          pricing: { price_details: { price: "price_monthly" } },
-          parent: { type: "subscription_item_details", subscription_item_details: {
-            subscription: subscription.id, subscription_item: "si_smoke_offline", proration: false,
-          } },
-        }] },
-      };
-      assert.equal((await deliver("invoice.paid", invoice, "evt_smoke_paid")).status, 200);
-      const paid = await app.status();
-      assert.equal(paid.member.billing_state, "active");
-      assert.equal(paid.member.membership_state, "active");
-      assert.equal(paid.member.administrative_onboarding_state, "completed");
-      assert.equal(paid.member.program_state, "onboarding");
-      assert.equal(paid.member.standing_state, "active");
-      assert.ok(paid.member.billing_confirmed_at);
-      assert.equal(paid.invoices.length, 1);
-      assert.equal(paid.invoices[0].purpose, "membership");
-      const history = (await app.engine.query("select count(*)::int count from member_state_history where source_event_id='evt_smoke_paid'")).rows[0].count;
-      assert.ok(history > 0);
-      assert.equal((await (await deliver("invoice.paid", invoice, "evt_smoke_paid")).json()).duplicate, true);
-      assert.equal((await app.engine.query("select count(*)::int count from member_state_history where source_event_id='evt_smoke_paid'")).rows[0].count, history);
-      assert.equal((await app.status()).invoices.length, 1);
-    } finally { stripe.subscriptions.retrieve = originalRetrieve; }
-    const page = html(app, "fixture-token");
-    assert.ok(!page.includes(fake.STRIPE_SECRET_KEY) && !page.includes(fake.STRIPE_WEBHOOK_SECRET));
-    console.log("Offline self-test passed: full schema, identity/consent guards, reservation reuse, signed Checkout stays pending, signed paid invoice activates billing and completes onboarding through real SQL triggers, duplicate invoices do not repeat activation, loopback/CSRF guards, and no rendered secrets. No Stripe network requests made.");
-  } finally { await app.engine.close(); }
+    try{
+      const quoteResponse=await post(app.offer,"/api/stripe/membership-offer",{requestId:app.fixture.attemptId,kind:"individual",plan:"monthly"});
+      assert.equal(quoteResponse.status,200,JSON.stringify(await quoteResponse.clone().json()));
+      const quote=(await quoteResponse.json()).quote;
+      const input={attemptId:quote.id,commercialReservationId:quote.id,acceptanceId:app.fixture.acceptanceId,plan:"monthly",firstChargeAt:quote.firstChargeAt,recurringPaymentAccepted:true};
+      assert.equal((await post(app.checkout,"/api/stripe/checkout",{...input,recurringPaymentAccepted:false})).status,400);
+      assert.equal((await post(app.checkout,"/api/stripe/checkout",input)).status,200);
+      assert.equal((await post(app.checkout,"/api/stripe/checkout",input)).status,200,"resume uses the stored zero-due session");
+      assert.equal((await deliver("customer.subscription.updated",subscription,"evt_before_checkout")).status,200);
+      assert.equal((await app.status()).member.billing_state,"pending");
+      session={...session,status:"complete",payment_status:"no_payment_required",consent:{terms_of_service:"accepted"}};
+      assert.equal((await deliver("checkout.session.completed",session,"evt_checkout")).status,200);
+      assert.equal((await (await deliver("checkout.session.completed",session,"evt_checkout")).json()).duplicate,true);
+      let status=await app.status();
+      assert.equal(status.member.billing_state,"pending");assert.equal(status.invoices.length,0);
+      assert.equal(status.commitments.length,1);assert.equal(new Date(status.commitments[0].starts_at).getTime(),firstAt*1000);
+      assert.equal(status.reservations[0].status,"reserved");
+      if(cancel){
+        const quoted=await post(app.cancellation,"/api/stripe/cancellation",{action:"quote",intent:"cancel_before_start"});
+        assert.equal(quoted.status,200,JSON.stringify(await quoted.clone().json()));
+        const cancellationQuote=(await quoted.json()).quote;assert.equal(cancellationQuote.feeTotal,0);
+        const confirmed=await post(app.cancellation,"/api/stripe/cancellation",{action:"confirm",quoteId:cancellationQuote.id,confirmed:true});
+        assert.equal(confirmed.status,200,JSON.stringify(await confirmed.clone().json()));
+        assert.equal((await deliver("customer.subscription.deleted",subscription,"evt_cancel")).status,200);
+        assert.equal((await deliver("checkout.session.completed",session,"evt_late_checkout")).status,200,"late completion must not recreate the canceled reservation");
+        status=await app.status();assert.equal(status.member.billing_state,"pending");assert.equal(status.reservations[0].status,"released");assert.equal(status.invoices.length,0);
+      }else{
+        Date.now=()=>firstAt*1000+1000;
+        const periodEnd=firstAt+30*86400;subscription.latest_invoice="in_fixture";
+        subscription.items.data[0].current_period_start=firstAt;subscription.items.data[0].current_period_end=periodEnd;
+        invoice={id:"in_fixture",livemode:false,status:"paid",billing_reason:"subscription_cycle",customer:"cus_fixture",customer_email:app.fixture.email,currency:"usd",
+          total:34900,amount_due:34900,amount_paid:34900,amount_remaining:0,pre_payment_credit_notes_amount:0,post_payment_credit_notes_amount:0,
+          starting_balance:0,ending_balance:0,customer_address:{country:"US"},status_transitions:{paid_at:firstAt},metadata:{},
+          parent:{subscription_details:{subscription:subscription.id,metadata:subscription.metadata}},
+          lines:{has_more:false,data:[{id:"il_fixture",livemode:false,currency:"usd",quantity:1,subtotal:34900,period:{start:firstAt,end:periodEnd},
+            pricing:{price_details:{price:price.id}},parent:{type:"subscription_item_details",subscription_item_details:{subscription:subscription.id,subscription_item:"si_fixture",proration:false}}}]}};
+        assert.equal((await deliver("invoice.paid",invoice,"evt_paid")).status,200);
+        status=await app.status();assert.equal(status.member.billing_state,"active");assert.equal(status.reservations[0].status,"activated");assert.equal(status.invoices[0].amount_paid,34900);
+        assert.equal((await (await deliver("invoice.paid",invoice,"evt_paid")).json()).duplicate,true);
+      }
+      const unsigned=new Request(`${app.origin}/api/stripe/webhook`,{method:"POST",body:"{}"});assert.equal((await app.webhook.POST(unsigned)).status,400);
+      assert.equal((await dispatch(app,"token",new Request(`${app.origin}/status`,{headers:{host:"attacker.example"}}))).status,403);
+      const page=html(app,"fixture-token");assert.ok(!page.includes(fake.STRIPE_SECRET_KEY)&&!page.includes(fake.STRIPE_WEBHOOK_SECRET));
+    }finally{Date.now=realNow;await app.engine.close();}
+  }
+  console.log("Offline self-test passed: full migration schema, real commercial offer and Checkout routes, immutable first-charge consent, signed out-of-order webhooks, pending future commitment, full paid invoice activation, free prestart cancellation, late completion and replay idempotency. In-memory database only; no external communication or provider network calls.");
 }
 
 async function main() {
   const options = optionsFrom(process.argv.slice(2));
   if (options.help) {
-    console.log("Usage: node scripts/stripe-sandbox-smoke.mjs [--port 3233]\n       node scripts/stripe-sandbox-smoke.mjs --self-test\n\nOnly 127.0.0.1; Ruined sandbox only. Read docs/stripe-sandbox-smoke.md. Never load an app .env file.");
+    console.log("Usage: node scripts/stripe-sandbox-smoke.mjs [--deferred] [--port 3233]\n       node scripts/stripe-sandbox-smoke.mjs --self-test\n\nOnly 127.0.0.1; Ruined sandbox only. Read docs/stripe-sandbox-smoke.md. Never load an app .env file.");
     return;
   }
   // Make origin and paid agreement independent of any deployed environment.
@@ -356,6 +403,8 @@ async function main() {
   process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = agreementVersion;
   process.env.STRIPE_MEMBERSHIP_LIVE_ENABLED = "false";
   process.env.STRIPE_TAX_ENABLED = "false";
+  process.env.MEMBER_REGISTRATION_EMAILS_ENABLED="false";
+  if(options.deferred) process.env.STRIPE_MEMBERSHIP_FIRST_CHARGE_AT ||= "2026-11-01T06:00:00Z";
   delete globalThis.ruinedStripeClient;
   if (options.selfTest) {
     if (process.env.DATABASE_URL || Object.keys(process.env).some(name => /SUPABASE/.test(name) && process.env[name])) throw new Error("Remove database and Supabase environment variables before running this test.");
@@ -392,7 +441,7 @@ async function main() {
   try {
     await new Promise((done, fail) => { http.once("error", fail); http.listen(options.port, "127.0.0.1", done); });
   } catch (error) { await app.engine.close(); throw error; }
-  console.log(`Sandbox harness ready: ${origin}\nAccount: ${expectedAccount}\nWebhook: ${origin}/api/stripe/webhook\nNo Stripe requests have been made. Only explicit Checkout submission contacts the sandbox.`);
+  console.log(`Sandbox harness ready: ${origin}\nAccount: ${expectedAccount}\nWebhook: ${origin}/api/stripe/webhook\nNo Stripe requests have been made. Explicit offer, Checkout, cancellation or replay actions contact the sandbox.`);
   for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
     http.close(async () => { await app.engine.close(); process.exit(0); });
     http.closeAllConnections();

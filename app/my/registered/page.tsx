@@ -27,5 +27,6 @@ export default async function MemberRegisteredPage() {
     requiresPaymentMethod={registration.requiresPaymentMethod}
     foundingPricing={registration.foundingPricing}
     preview={context.state === "preview"}
+    activationAvailable={context.configuration.stripeActivationReady || context.state === "preview"}
   />;
 }

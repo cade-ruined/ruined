@@ -87,6 +87,7 @@ const migrations = [
   "../db/migrations/20261002140000_registration_founding_pricing.sql",
   "../db/migrations/20261002150000_payment_setup_consent_v2.sql",
   "../db/migrations/20261005170000_operator_sops.sql",
+  "../db/migrations/20261005190000_membership_first_charge.sql",
 ];
 
 function migrationBody(migration, migrationName) {

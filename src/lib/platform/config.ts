@@ -9,6 +9,7 @@ export type PlatformConfiguration = {
   mode: PlatformMode;
   stripe: PlatformConnection;
   stripeCheckoutReady: boolean;
+  stripeActivationReady: boolean;
   stripePaymentSetupReady: boolean;
   membershipSignupReady: boolean;
   membershipRegistrationOnly: boolean;
@@ -70,6 +71,13 @@ export function getPlatformConfiguration(): PlatformConfiguration {
       stripeConfigured &&
       paidCheckoutConfigured &&
       stripePublishableKeyConfigured;
+  // Paid authorization is a separate release from registration and profile
+  // access. A held registrant may confirm billing without opening their profile.
+  const stripeActivationReady = mode === "connected" && stripeConfigured &&
+      paidCheckoutConfigured && stripePublishableKeyConfigured &&
+      hasEnvironmentValue("STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID") &&
+      process.env.STRIPE_MEMBERSHIP_BUYOUT_READY?.trim().toLowerCase() === "true" &&
+      process.env.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED?.trim().toLowerCase() === "true";
 
   return {
     database: databaseConfigured ? "connected" : "disconnected",
@@ -85,6 +93,7 @@ export function getPlatformConfiguration(): PlatformConfiguration {
     stripePaymentSetupReady,
     membershipRegistrationOnly,
     stripeCheckoutReady,
+    stripeActivationReady,
     // Saving a card for an invited account does not itself open public signup.
     membershipSignupReady: stripeCheckoutReady || (stripePaymentSetupReady &&
       process.env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_SIGNUP_ENABLED?.trim().toLowerCase() === "true"),
