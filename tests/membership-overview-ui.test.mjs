@@ -4,6 +4,7 @@ import test from "node:test";
 import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
+import { parseFragment } from "parse5";
 import ts from "typescript";
 
 const base = "src/components/public-members/";
@@ -56,6 +57,7 @@ function hooks() {
 }
 
 const pricing = await load("src/lib/membership/pricing.ts");
+const opportunityCalls = await load("src/data/opportunity-calls.ts");
 
 async function components(react = React, globals = {}) {
   const shared = { react, "next/image": Image, "next/link": Link, "@/lib/membership/pricing": pricing };
@@ -67,6 +69,7 @@ async function components(react = React, globals = {}) {
   const Community = (await load(`${base}MembershipCommunitySection.tsx`, shared, globals)).default;
   const Offers = (await load(`${base}MembershipOfferSection.tsx`, shared, globals)).default;
   const Questions = (await load(`${base}MembershipQuestions.tsx`, shared, globals)).default;
+  const OpportunityCalls = (await load(`${base}MembershipOpportunityCalls.tsx`, { ...shared, "@/data/opportunity-calls": opportunityCalls }, globals)).default;
   const expiration = await load("src/lib/membership/invitation-expiry.ts");
   const invitationExpiry = { useInvitationExpired: value => expiration.memberInvitationExpired(value) };
   const Acceptance = (await load("src/components/membership/PersonalInvitationAcceptance.tsx", {
@@ -87,8 +90,9 @@ async function components(react = React, globals = {}) {
     "./MembershipCommunitySection": Community,
     "./MembershipOfferSection": Offers,
     "./MembershipQuestions": Questions,
+    "./MembershipOpportunityCalls": OpportunityCalls,
   }, globals)).default;
-  return { Overview, Signup, DirectForm, WaitlistForm, Acceptance, Foundations, Monthly, Community, Offers, Questions };
+  return { Overview, Signup, DirectForm, WaitlistForm, Acceptance, Foundations, Monthly, Community, Offers, Questions, OpportunityCalls };
 }
 
 test("landing modes explain the correct next step without registering or charging on render", async () => {
@@ -460,6 +464,54 @@ const issuedInvitation = {
   expiresAt: "2099-01-01T12:00:00.000Z", membershipType: "standard",
   card: { name: "Cade <Sender>", memberTag: "cade", wearSeed: "inviter-wear", labels: [] },
 };
+
+test("public landing pairs each opportunity call with its own calendar controls and keeps invitations focused", async () => {
+  const c = await components();
+  const descendants = node => [node, ...(node.childNodes ?? []).flatMap(descendants)];
+  const attr = (node, name) => node.attrs?.find(attribute => attribute.name === name)?.value;
+  const content = node => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(content).join("");
+  const expected = [
+    { date: "Tuesday, October 6", start: "2026-10-06T18:00:00-06:00", dates: "20261007T000000Z/20261007T010000Z", meet: "https://meet.google.com/ekx-qtsb-nqt", file: "/calendar/ruined-opportunity-call-2026-10-06.ics" },
+    { date: "Tuesday, October 13", start: "2026-10-13T18:00:00-06:00", dates: "20261014T000000Z/20261014T010000Z", meet: "https://meet.google.com/top-uaii-ofh", file: "/calendar/ruined-opportunity-call-2026-10-13.ics" },
+  ];
+  for (const props of [{}, { signupEnabled: true }, { signupEnabled: true, paymentSetupOnly: true, registrationOnly: true }]) {
+    const html = renderToStaticMarkup(React.createElement(c.Overview, props));
+    const elements = descendants(parseFragment(html));
+    const sections = elements.filter(node => attr(node, "id") === "opportunity-calls");
+    assert.equal(sections.length, 1, "public landing modes show one call section");
+    const articles = descendants(sections[0]).filter(node => node.nodeName === "article");
+    assert.equal(articles.length, 2);
+    assert.deepEqual(elements.filter(node => node.nodeName === "a" && attr(node, "href")?.startsWith("https://meet.google.com/")).map(node => attr(node, "href")), expected.map(call => call.meet));
+    for (const [index, article] of articles.entries()) {
+      const call = expected[index], children = descendants(article);
+      const time = children.find(node => node.nodeName === "time");
+      assert.equal(content(time), call.date);
+      assert.equal(attr(time, "datetime"), call.start);
+      assert.match(content(article), /6–7 PM · Denver time/);
+      const summary = children.find(node => node.nodeName === "summary");
+      assert.match(content(summary), /Add to calendar/);
+      assert.ok(attr(summary, "aria-label").includes(call.date), "calendar controls identify their call date");
+      const links = children.filter(node => node.nodeName === "a");
+      const join = links.find(node => attr(node, "href") === call.meet);
+      assert.ok(join, "each call keeps its own meeting link");
+      assert.ok(attr(join, "aria-label").includes(call.date));
+      const google = links.find(node => attr(node, "href")?.startsWith("https://calendar.google.com/"));
+      assert.ok(google, "each call has a Google Calendar action");
+      const calendar = new URL(attr(google, "href"));
+      assert.equal(calendar.searchParams.get("dates"), call.dates, "calendar actions preserve the 60-minute Denver event");
+      assert.equal(calendar.searchParams.get("stz"), "America/Denver");
+      assert.equal(calendar.searchParams.get("etz"), "America/Denver");
+      assert.equal(calendar.searchParams.get("location"), call.meet);
+      const download = links.find(node => attr(node, "href") === call.file);
+      assert.ok(download, "each call has its matching Apple / Outlook calendar file");
+      assert.equal(attr(download, "download"), "");
+    }
+  }
+  for (const invitation of [issuedInvitation, { ...issuedInvitation, recipientName: undefined }]) {
+    const html = renderToStaticMarkup(React.createElement(c.Overview, { invitation, signupEnabled: true }));
+    assert.doesNotMatch(html, /id="opportunity-calls"|meet\.google\.com|calendar\.google\.com|Add to calendar/, "personal and shared invitations retain their existing acceptance destination");
+  }
+});
 
 test("personal invites show the complete landing with the original card and token-bound acceptance", async () => {
   const state = hooks(), c = await components(state.react);

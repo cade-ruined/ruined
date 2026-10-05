@@ -2,3 +2,5 @@
 *.mov binary
 *.tif binary
 *.tiff binary
+# iCalendar files require CRLF line endings on every platform.
+public/calendar/*.ics -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

@@ -1,0 +1,16 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Ruined//Opportunity Calls//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:ruined-opportunity-call-2026-10-13@theruinedproject.com
+DTSTAMP:20261005T215902Z
+DTSTART:20261014T000000Z
+DTEND:20261014T010000Z
+SUMMARY:Ruined Opportunity Call
+DESCRIPTION:Join the Ruined Opportunity Call on Google Meet: https://meet.g
+ oogle.com/top-uaii-ofh
+LOCATION:https://meet.google.com/top-uaii-ofh
+URL:https://meet.google.com/top-uaii-ofh
+END:VEVENT
+END:VCALENDAR

@@ -344,7 +344,7 @@ test("overview payment FAQ matches optional setup without changing paid signup t
     "./MembershipWaitlistForm": () => null,
     "@/lib/membership/pricing": pricing, "./MembershipSignup": Stub, "./MembershipInvitationCard": { __esModule: true, default: Stub, MembershipInvitationRoom: ({ children }) => children },
     "./MembershipFoundationsSection": Stub, "./MembershipMonthlySection": Stub, "./MembershipCommunitySection": Stub,
-    "./MembershipOfferSection": Stub, "./MembershipQuestions": Questions,
+    "./MembershipOfferSection": Stub, "./MembershipQuestions": Questions, "./MembershipOpportunityCalls": Stub,
   })).default;
   const faq = (paymentSetupOnly, question) => {
     const html = renderToStaticMarkup(React.createElement(component, { signupEnabled: true, paymentSetupOnly }));
@@ -372,7 +372,7 @@ test("landing signup stays inline beside the Ruined card, preserving launch mode
     "./MembershipWaitlistForm": () => null,
     "@/lib/membership/pricing": pricing,
     "./MembershipFoundationsSection": Stub, "./MembershipMonthlySection": Stub, "./MembershipCommunitySection": Stub,
-    "./MembershipOfferSection": Stub, "./MembershipQuestions": Stub,
+    "./MembershipOfferSection": Stub, "./MembershipQuestions": Stub, "./MembershipOpportunityCalls": Stub,
     "./MembershipSignup": props => { signups.push(props); return React.createElement("div", { "data-signup-inline": true }); },
     "./MembershipInvitationCard": { __esModule: true, default: props => { cards.push(props); return React.createElement("div", { "data-direct-invitation-card": true }); }, MembershipInvitationRoom: ({ children }) => children },
   })).default;
