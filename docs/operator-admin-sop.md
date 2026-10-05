@@ -29,7 +29,7 @@ Across the workspaces, browse or search first. Select a record to manage it; use
 ### Where to click first
 
 - **Members:** search first, then **Open member record**. **Add member** is a separate, two-step action for someone new; it does not send an invitation email or create their sign-in account. Allow their email, then copy and share the joining instructions.
-- **Inside a member record:** the photo, identity, and next-step card come first. Open **Why this step?** for context. Use **Create task**, **Add internal note**, or **Correct profile detail** near the top. Tasks and notes open their forms in the record. Profile support shows saved details first; select **Edit profile detail** to make a correction.
+- **Inside a member record:** the photo, identity, and next-step card come first. Open **Why this step?** for context. Use **Add note**, **Create task**, or **Correct profile detail** near the top. Notes open the Administrator-only **Operator notes** view; tasks open **Record**. Profile support shows saved details first; select **Edit profile detail** to make a correction.
 - **Operators:** **Choose existing member** opens a search on the same page. Find the person and select **Review access** to open their prefilled access review immediately. **View operator record** appears instead if they already have an operator record or invitation. **Add operator** opens an invitation by email; a saved invitation stays pending until the person accepts through `/access`.
 - **Messages → Board posts:** select **Write announcement**, save a draft, then use **Review & publish** beside that draft and verify the audience before publishing. Edit or discard a draft; retract a published post if it should no longer appear. Retraction preserves history and cannot undo something a member already read.
 - **Messages → Alerts:** check **Recent delivery**, then **Write notification → Review notification → Send notification**. Writing and review happen in one focused window. Choose the audience explicitly. Notifications are in-app, not email or text. The old Announcements and Notifications links still work.
@@ -206,7 +206,7 @@ The support queue remains private to Administrators. Circle Supporter or legacy 
 
 ## 6. The member record
 
-Open a member from **Members**. A compact profile header identifies the person; the next-step card shows who should act and links to the action. Expand **Why this step?** when you need the explanation. Choose one of five views; only the selected view is shown:
+Open a member from **Members**. A compact profile header identifies the person; the next-step card shows who should act and links to the action. Expand **Why this step?** when you need the explanation. Choose a view; only the selected view is shown. Administrators also have the private Operator notes view:
 
 | Part | What it tells you |
 | --- | --- |
@@ -214,9 +214,12 @@ Open a member from **Members**. A compact profile header identifies the person; 
 | **Membership** | Administrative onboarding, contact details, agreement evidence, Stripe billing state, cancellation state, and Profile support controls |
 | **Journey** | Foundations progress, earned Artifacts, and Experience participation |
 | **Community** | Current Circle, Circle Supporter, meetings, shared resources, and any historical Block relationship |
-| **Record** | Internal tasks, notes, visible task/note forms, audited state corrections, and operating history |
+| **Operator notes** | Administrator-only notes with author, category, timestamp, and an Add note form; never shown on member profiles |
+| **Record** | Internal tasks, task forms, audited state corrections, and operating history |
 
-The views keep their forms mounted, so switching does not reset an unfinished note, task, or correction. A pending save must finish before switching. If you have unsaved edits, choose **Keep editing** or **Switch view — keep edits**; switching is not a save. Shortcuts such as **Create task**, **Add internal note**, and **Correct profile detail** open the appropriate view and move to that control.
+The views keep their forms mounted, so switching does not reset an unfinished note, task, or correction. A pending save must finish before switching. If you have unsaved edits, choose **Keep editing** or **Switch view — keep edits**; switching is not a save. Shortcuts such as **Create task**, **Add note**, and **Correct profile detail** open the appropriate view and move to that control.
+
+Administrators also see **Circle placement** in Overview. It names the original inviter and their current Circle, keeps any preferred connection separate, and explains availability and capacity. An inviter who serves in more than one Circle is shown with each current Circle. Inactive inviters or unavailable Circles remain context, without a recommendation boost. **Review [Circle name]** opens placement for that member; it does not assign them. Couples stay together, and capacity exceptions still require review.
 
 Membership groups joining, contact, agreement, and billing into separate cards. Open **Detailed account states** only when you need the full state breakdown. This is the same evidence and access policy, not a new shortcut around joining requirements.
 
@@ -239,7 +242,7 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 
 - Use **Profile support** to correct one verified detail at a time. Record why the correction is needed.
 - Use a **task** when someone must follow up. Add a clear owner through Claim, a priority, and a due date when useful.
-- Use an **internal note** only for factual information needed to serve the member. Choose the correct category.
+- Use **Operator notes** only for factual information needed to serve the member. Choose the correct category. Only Administrators can read or add these notes; members and Circle staff cannot access them.
 - Use a **state correction** only when there is reliable evidence that the record is wrong. Every correction requires a reason and retains the prior state.
 - Payment, agreement acceptance, and Foundations completion cannot be corrected with an operator override.
 - Treat private profile, accessibility, billing, address, and contact information as confidential. Do not copy it into broad notes or communications.
@@ -247,6 +250,16 @@ The directory and member record show **Member**, **Operator**, or **Support** be
 ---
 
 ## 7. Core operating workflows
+
+### Registration follow-up and scheduled work summaries
+
+Completed saved-card registrations create a **Review membership billing** task. While paid checkout is held, it appears as **Card saved — billing opening pending**, with a blocked status and no overdue date. A held profile can confirm billing only when the separate member-activation flow is explicitly ready. Opening the member from this task goes directly to Membership. Review the applicable offer and guide the member through the published agreement and checkout; saving a card does not authorize a charge. Complimentary and operator-funded memberships do not need this billing task. Where shared billing has an established payer, the review belongs to that payer. A registration-only couple link is Circle placement intent and does not establish who pays.
+
+The server reconciles these reviews every five minutes, including registrations that were already complete when this feature was enabled. Confirmed billing resolves the review. A future first charge requires verified completed checkout and the matching accepted commitment; it does not mean payment has been received. An operator's completed review stays completed for that saved-card consent; a new consent may create a new review. A hold is pending work, not a failed payment.
+
+Libby receives a private work-queue summary at **10:00 AM and 3:00 PM America/Denver**, every day, adjusting for daylight saving. It includes task, Artifact, and failed-action counts plus the first 12 prioritized items and links into Operations. Empty queues still get a summary. Notes, contact details, task descriptions, and card data are excluded. Libby's address must remain verified and her Administrator access active. The production scheduler owns delivery; it does not depend on an open chat or computer.
+
+Registration itself queues the welcome email. Explicit profile activation queues the profile-ready email. After administrative onboarding completes, the existing general follow-up asks an operator to check member access and the next step. Foundations completion begins later Circle/Artifact work. Profile release, Foundations placement, and billing must still follow their existing approval gates; the digest does not perform them.
 
 ### A. Place a member into a Circle
 
@@ -412,7 +425,7 @@ Before publishing or sending, read the audience out loud and verify it a second 
 
 1. **5 minutes — Access:** sign in through `/access`, switch from the member profile to **Operations**, and explain numeric codes, environment labels, and sign out.
 2. **5 minutes — Navigation:** show Overview search and its cards, then use the workspace dropdown to open Members, Circles, Events, Academy, Artifacts, Messages, Support, and Settings. Each selection opens its workspace directly; there is no second navigation row. Demonstrate the same paths on mobile and opening/closing one focused task window without saving.
-3. **10 minutes — Member record:** find a member, switch among the five views, show a task or note form, and demonstrate keeping unsaved edits when switching. Explain private notes and corrections; only save a test task in an approved training environment.
+3. **10 minutes — Member record:** find a member, review their Circle suggestions, switch among the record views, show a task or Operator note form, and demonstrate keeping unsaved edits when switching. Explain Administrator-only notes and corrections; only save a test task in an approved training environment.
 4. **10 minutes — Circle:** choose a card and open **Manage Circle**, show the roster and add/remove/activation confirmations, then the Circle Supporter, resource, and Chat setup controls. Open **Supporters** to show included Administrator permissions, readiness, optional coverage, and the reimbursement review flow. Show the top **+ Create a Circle** form and cancel it. Explain the Foundations gate; do not confirm changes to real members during a demonstration.
 5. **10 minutes — Experience:** open **Events → Member events → + New experience**, save a draft only, then show the Overview cards, People, and Activity. Open **Manage meeting** and **••• Event actions**, then close them without acting. Open **Review & publish** and explain the recipient count, link replacement, and queued-versus-sent distinction; close the review without publishing. Do not publish during training unless using approved test recipients and explicit approval.
 6. **5 minutes — Communications and Settings:** compare Board posts, Alerts, Calendar, and Chat; show where delivery and failed work appear. Opening **Write announcement** or **Write notification** is safe; saving or sending is a separate decision.

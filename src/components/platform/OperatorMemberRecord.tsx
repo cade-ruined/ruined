@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import CirclePlacementRecommendations from "@/components/platform/CirclePlacementRecommendations";
 import {
   OperatorNoteAction,
   OperatorOverrideAction,
@@ -38,6 +39,14 @@ function formatMoney(amount: number | null, currency: string | null): string {
   }).format(amount / 100);
 }
 
+function formatNoteTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Time not recorded";
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short",
+  }).format(date);
+}
+
 function SectionHeading({ title }: { title: string }) {
   return (
     <header>
@@ -55,18 +64,21 @@ export default function OperatorMemberRecord({
   publicProfileHref = null,
   record,
   preview = false,
+  previewCircles,
   returnTo,
 }: {
   profileSupport?: OpsMemberProfileSupport | null;
   publicProfileHref?: string | null;
   record: OpsMemberRecord;
   preview?: boolean;
+  previewCircles?: Array<{ id: string; name: string; activeMembers: number; status: string }>;
   returnTo?: string;
 }) {
   const { access, community, header, journey, membership, operational } = record;
   const canManageTasks = access.capabilities.includes("task.manage");
   const canOverride = access.capabilities.includes("member.override.write");
-  const canWriteNote = access.capabilities.includes("member.note.write");
+  const canReadNotes = access.roles.includes("ops_admin");
+  const canWriteNote = canReadNotes && access.capabilities.includes("member.note.write");
   const canManageSetup = access.roles.includes("ops_admin");
   const next = guidanceForMemberRecord(record);
   const nextAction = memberGuidanceAction(next, header.memberId, canManageSetup);
@@ -120,8 +132,8 @@ export default function OperatorMemberRecord({
 
       {canManageTasks || canWriteNote || profileSupport ? (
         <nav aria-label="Member actions" className="flex flex-wrap gap-x-4 gap-y-1 py-1 text-sm">
+          {canWriteNote ? <a className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href="#new-member-note">Add note</a> : null}
           {canManageTasks ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#new-member-task">Create task</a> : null}
-          {canWriteNote ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#new-member-note">Add internal note</a> : null}
           {profileSupport ? <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#profile-support">Correct profile detail</a> : null}
         </nav>
       ) : null}
@@ -131,6 +143,7 @@ export default function OperatorMemberRecord({
       <section className="scroll-mt-36" id="overview">
         <SectionHeading title="Overview" />
         <OperatorMemberSetup record={record} />
+        {canManageSetup ? <CirclePlacementRecommendations key={header.memberId} display="member" memberId={header.memberId} preview={preview} previewCircles={previewCircles} /> : null}
         {canManageSetup ? <OperatorMemberReferrals memberId={header.memberId} preview={preview} /> : null}
         {!canManageSetup ? <p className="mt-4 text-sm text-black/60">Review this member’s joining, progress, and Circle below. An Administrator manages Circle placement and operator access.</p> : null}
       </section>
@@ -400,9 +413,33 @@ export default function OperatorMemberRecord({
         </div>
       </section>
 
+      {canReadNotes ? <section className="scroll-mt-36" id="operator-notes">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <SectionHeading title="Operator notes" />
+          <span className="text-xs text-black/45">{operational.notes.length} note{operational.notes.length === 1 ? "" : "s"}</span>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-black/60">Private context for administrators. Never shown on the member profile.</p>
+        <div className={`mt-4 grid gap-4 ${canWriteNote ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]" : ""}`}>
+          <div aria-label="Saved operator notes" className="min-w-0 space-y-3">
+            {operational.notes.map((note) => (
+              <article className="operator-bento-card" key={note.noteId}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-black/50">
+                  <span className="rounded-[4px] bg-black/[0.055] px-2 py-1 font-medium capitalize">{note.category.replaceAll("_", " ")}</span>
+                  <time dateTime={note.createdAt}>{formatNoteTimestamp(note.createdAt)}</time>
+                </div>
+                <p className="mt-3 break-words whitespace-pre-wrap text-sm leading-relaxed text-black/75">{note.body}</p>
+                <p className="mt-4 break-words text-xs text-black/50">By {note.createdBy || "Operator"}</p>
+              </article>
+            ))}
+            {operational.notes.length === 0 ? <div className="operator-bento-card !py-6"><h3 className="text-sm font-medium">No operator notes yet</h3><p className="mt-2 text-sm leading-relaxed text-black/55">Keep useful context, support history, and follow-up details together here.</p></div> : null}
+          </div>
+          {canWriteNote ? <div className="operator-bento-card scroll-mt-36 self-start" id="new-member-note"><OperatorNoteAction memberId={header.memberId} preview={preview} /></div> : null}
+        </div>
+      </section> : null}
+
       <section className="scroll-mt-36" id="record">
         <SectionHeading title="Record" />
-        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="mt-3">
           <div>
             <h3 className="ui-heading text-base font-semibold">Tasks</h3>
             <div className="mt-3 grid gap-2">
@@ -418,27 +455,11 @@ export default function OperatorMemberRecord({
               {operational.tasks.length === 0 ? <EmptyRow>No open tasks.</EmptyRow> : null}
             </div>
           </div>
-          <div>
-            <h3 className="ui-heading text-base font-semibold">Notes</h3>
-            <div className="mt-3 grid gap-2">
-              {operational.notes.map((note) => (
-                <article className="rounded-lg bg-black/[0.025] px-3 py-3" key={note.noteId}>
-                  <div className="flex flex-wrap justify-between gap-3 text-xs text-black/38">
-                    <span>{note.category.replaceAll("_", " ")}</span>
-                    <span>{formatDate(note.createdAt)} · {note.createdBy}</span>
-                  </div>
-                  <p className="mt-3 break-words whitespace-pre-wrap text-sm leading-relaxed text-black/68">{note.body}</p>
-                </article>
-              ))}
-              {operational.notes.length === 0 ? <EmptyRow>No operator notes.</EmptyRow> : null}
-            </div>
-          </div>
         </div>
 
-        {canManageTasks || canWriteNote || canOverride ? (
+        {canManageTasks || canOverride ? (
           <section aria-label="Member record actions" className="mt-3 grid gap-3 lg:grid-cols-2">
             {canManageTasks ? <div className="scroll-mt-36 operator-bento-card" id="new-member-task"><OperatorTaskCreateAction memberId={header.memberId} preview={preview} /></div> : null}
-            {canWriteNote ? <div className="scroll-mt-36 operator-bento-card" id="new-member-note"><OperatorNoteAction memberId={header.memberId} preview={preview} /></div> : null}
             {canOverride ? <div className="operator-bento-card lg:col-span-2"><OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} preview={preview} /></div> : null}
             {canOverride ? <div className="operator-bento-card lg:col-span-2"><OperatorMemberDeleteAction key={header.memberId} memberId={header.memberId} preview={preview} /></div> : null}
           </section>

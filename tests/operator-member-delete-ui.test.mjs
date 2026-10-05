@@ -129,7 +129,7 @@ test("record exposes deletion only to member override administrators and carries
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: () => null, OperatorTaskCreateAction: () => null, OperatorOverrideAction: () => null },
   };
-  for (const name of ["OperatorPageFrame", "OperatorMemberSetup", "OperatorProfileSupport", "OperatorProgress", "OperatorMemberAvatar", "OperatorMemberReferrals", "OperatorMemberWorkspace", "StateLabel"]) {
+  for (const name of ["CirclePlacementRecommendations", "OperatorPageFrame", "OperatorMemberSetup", "OperatorProfileSupport", "OperatorProgress", "OperatorMemberAvatar", "OperatorMemberReferrals", "OperatorMemberWorkspace", "StateLabel"]) {
     dependencies[`@/components/platform/${name}`] = empty;
   }
   const DeleteAction = () => null;

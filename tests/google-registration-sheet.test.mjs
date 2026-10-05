@@ -267,6 +267,7 @@ test("the Sheet worker route stays private without a second membership cron owne
   assert.deepEqual(
     JSON.parse(vercel).crons,
     [
+      { path: "/api/internal/ops/work-summary", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/member-segments", schedule: "*/15 * * * *" },
       { path: "/api/internal/membership/registration-messages", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/process", schedule: "0 12 * * *" },
@@ -274,7 +275,7 @@ test("the Sheet worker route stays private without a second membership cron owne
       { path: "/api/internal/integrations/google-calendar/process", schedule: "45 12 * * *" },
       { path: "/api/internal/stripe/renewals/process", schedule: "0 13 * * *" },
     ],
-    "the public main project owns Sheets; membership owns member segment sync, registration messages, support, membership, Calendar recovery and billing notices",
+    "the public main project owns Sheets; membership owns operator summaries, member segment sync, registration messages, support, membership, Calendar recovery and billing notices",
   );
 });
 

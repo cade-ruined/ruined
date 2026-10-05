@@ -304,6 +304,18 @@ test("Work category filters never mutate records and keep empty categories recov
   assert.deepEqual(fixture.calls, []);
 });
 
+test("saved-card review explains the hold and opens Membership without exposing general task descriptions", () => {
+  const item = { kind: "task", taskType: "registration.billing_review", label: "Card saved — billing opening pending", description: "Saved card does not authorize a charge. Billing release is pending.", memberId: "member-one", memberName: "Example member", state: "blocked", priority: 50, dueAt: null, workId: "review-one" };
+  const queue = { items: [item, { ...item, taskType: "manual", workId: "manual-one", description: "PRIVATE TASK DETAIL" }], totals: { tasks: 2, artifacts: 0, failures: 0 } };
+  const fixture = harness("src/components/platform/OperatorWorkQueue.tsx", "default", { queue, preview: true });
+  assert.match(reactText(fixture.draw()), /Saved card does not authorize a charge/);
+  assert.doesNotMatch(reactText(fixture.draw()), /PRIVATE TASK DETAIL|Overdue/);
+  const links = nodes(fixture.draw()).filter(node => node.props?.href);
+  assert.ok(links.some(node => node.props.href === "/ops/members/member-one#membership"));
+  assert.ok(links.some(node => node.props.href === "/ops/members/member-one#record"));
+  assert.deepEqual(fixture.calls, []);
+});
+
 test("System puts failed services first while preserving modes, evidence and retry permissions", () => {
   const services = [...preview.PREVIEW_OPS_SYSTEM.services].reverse();
   services[0] = { ...services[0], label: "Healthy service", state: "verified" };

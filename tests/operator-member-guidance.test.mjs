@@ -37,6 +37,7 @@ const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
   "@/components/platform/operatorStyles": {},
 }).default;
 const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
+  "@/components/platform/CirclePlacementRecommendations": empty,
   "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
   ...guidanceDeps,
   "@/components/platform/OperatorMemberReferrals": empty,

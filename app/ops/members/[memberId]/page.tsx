@@ -12,6 +12,7 @@ import { getOperatorPageContext } from "@/lib/platform/page-data";
 import {
   getPreviewOpsMemberProfileSupport,
   getPreviewOpsMemberRecord,
+  PREVIEW_OPS_CIRCLES,
 } from "@/lib/platform/ops-preview";
 
 export const metadata: Metadata = { title: "Member record" };
@@ -41,6 +42,7 @@ export default async function OperationsMemberRecordPage({
         record={getPreviewOpsMemberRecord(memberId)}
         returnTo={returnTo}
         preview
+        previewCircles={PREVIEW_OPS_CIRCLES}
       />
     );
   }
