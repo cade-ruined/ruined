@@ -130,7 +130,7 @@ test("existing saved-card registrations get one durable blocked task; release ga
   assert.deepEqual(await f.reconcile(),{created:1,updated:0,resolved:0});
   let [task]=await f.tasks(member.id);
   assert.equal(task.status,"blocked"); assert.equal(task.due_at,null);
-  assert.match(task.title,/billing opening pending/); assert.match(task.blocked_reason,/commercial, payment and tax/);
+  assert.match(task.title,/billing opening pending/); assert.match(task.blocked_reason,/commercial and payment/);
   assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
   await Promise.all([f.reconcile(),f.reconcile()]);
   assert.equal((await f.tasks(member.id)).length,1);

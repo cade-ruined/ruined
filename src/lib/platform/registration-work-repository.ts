@@ -81,8 +81,8 @@ async function readRegistrationState(tx: postgres.TransactionSql, memberId: stri
 
 /** Reconcile review tasks only. Call from an authenticated internal worker, never
  * a member read. Existing registrations are backfilled on the first run. Global
- * checkout readiness already includes the commercial/tax release approval; the
- * optional automatic-tax switch is not evidence that billing has been approved.
+ * checkout readiness follows the existing commercial and payment release gates;
+ * the optional automatic-tax switch does not control this review.
  */
 export async function reconcileRegistrationOperatorWork(): Promise<RegistrationOperatorWorkResult> {
   const sql = getApplicationDatabase();
@@ -134,7 +134,7 @@ export async function reconcileRegistrationOperatorWork(): Promise<RegistrationO
       // Operator completion is durable for this exact consent. A new saved-card
       // attempt creates a new task; refreshing the queue never reopens it.
       if (current?.status === "completed" || (current?.status === "cancelled" && !current.resolution_reason)) return counts;
-      const blockedReason = !checkoutReady ? "Paid membership is not open. Keep this review on hold until the existing commercial, payment and tax release checks are approved."
+      const blockedReason = !checkoutReady ? "Paid membership is not open. Keep this review on hold until the existing commercial and payment release checks are approved."
         : !state.profile_released ? "This member's registration profile has not been activated. The existing registration hold prevents paid checkout."
         : state.payer_ids.length > 1 ? "Shared billing responsibility is ambiguous. Confirm the canonical billing owner before proceeding."
         : state.checkout_pending ? "A membership checkout or subscription confirmation is already pending. Verify its outcome before starting another checkout."
