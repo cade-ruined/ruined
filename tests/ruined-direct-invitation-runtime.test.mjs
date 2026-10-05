@@ -42,7 +42,7 @@ test("direct signup creates one recipient-bound standard invitation with no memb
   assert.equal((await f.personalRepository.getOwnPersonalInvitations(first.auth)).counts.created, 0);
   const publicInvite = await f.repository.getPublicMemberInvitation(row.public_token);
   assert.equal(publicInvite.card.name, "The Ruined Project"); assert.equal(publicInvite.invitationSource, "ruined_direct");
-  assert.doesNotMatch(JSON.stringify(publicInvite), /recipientEmail|example\.test|requestId|billing_plan/);
+  assert.doesNotMatch(JSON.stringify(publicInvite), /recipientEmail"|recipientPhone|example\.test|requestId|billing_plan/);
 });
 
 test("direct creation rejects privilege injection and malformed recipient, plan or request identities", async t => {

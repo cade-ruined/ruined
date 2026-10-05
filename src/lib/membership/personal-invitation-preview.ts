@@ -7,7 +7,7 @@ export function personalInvitationPreviewSnapshot({ canGrantComplimentary = fals
   const now = Date.now();
   const ago = (hours: number) => new Date(now - hours * 60 * 60 * 1000).toISOString();
   const example = (id: string, recipientName: string, hoursAgo: number): PersonalMemberInvitation => ({
-    id, recipientName, recipientEmail: `${recipientName.toLowerCase().replaceAll(" ", ".")}@example.test`,
+    id, recipientName, recipientPhone: null, recipientEmail: `${recipientName.toLowerCase().replaceAll(" ", ".")}@example.test`,
     url: null, issuedAt: ago(hoursAgo), expiresAt: ago(hoursAgo - 48), revokedAt: null,
     submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "not_requested", sentAt: null, version: 0,
     membershipType: "standard", complimentaryReason: null, complimentaryEndsAt: null, complimentaryGrant: null,
@@ -15,7 +15,7 @@ export function personalInvitationPreviewSnapshot({ canGrantComplimentary = fals
   return {
     card, eligible: false, writable: false, emailReady: false, canGrantComplimentary,
     invitations: [
-      example("preview-active", "Alex Rivera", 2),
+      { ...example("preview-active", "Alex Rivera", 2), recipientEmail: "", recipientPhone: "+18015550123" },
       example("preview-expired", "Sam Morgan", 72),
       { ...example("preview-accepted", "Taylor Brooks", 50), acceptedAt: ago(12) },
       { ...example("preview-joined", "Jordan Lee", 96), acceptedAt: ago(95), joinedAt: ago(80) },

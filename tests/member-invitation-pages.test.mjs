@@ -31,6 +31,7 @@ const snapshot = { card, expiresAt: null, enabled: false, eligible: false, writa
 const notFound = () => { throw Object.assign(new Error("Not found"), { status: 404 }); };
 const redirect = href => { throw Object.assign(new Error("Redirect"), { href }); };
 const renderInvitation = ({ card: value, children }) => React.createElement("article", null, value.name, children);
+const renderOverview = ({ invitation }) => React.createElement("article", null, invitation.card.name);
 const renderAcceptance = props => React.createElement("form", { "data-personal-invitation": props.invitationToken });
 const renderWaitlist = props => React.createElement("form", { "data-invitation-token": props.invitationToken });
 const link = ({ children, ...props }) => React.createElement("a", props, children);
@@ -44,7 +45,7 @@ async function publicRoute(read) {
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
     react: { ...React, cache: fn => fn },
     "next/navigation": { notFound },
-    "@/components/membership/MemberInvitation": { InvitationLanding: renderInvitation },
+    "@/components/public-members/MembershipOverview": renderOverview,
     "@/lib/membership/invitation-repository": { getPublicMemberInvitation: read },
     "@/lib/membership/invitation-model": model,
     "@/lib/membership/public-card-model": cardModel,
@@ -71,15 +72,17 @@ test("invalid and revoked invitations reveal no member details or sample content
 });
 
 test("public invitation routes pass the card and token without the owner's private count or identity", async () => {
-  let current = { card, expiresAt, membershipType: "complimentary", complimentaryEndsAt: "2099-12-31T06:59:59.999Z", complimentaryReason: "PRIVATE REASON", complimentaryAuthorizedByAuthUserId: "PRIVATE ACTOR", joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL" };
+  let current = { card, expiresAt, membershipType: "complimentary", complimentaryEndsAt: "2099-12-31T06:59:59.999Z", complimentaryReason: "PRIVATE REASON", complimentaryAuthorizedByAuthUserId: "PRIVATE ACTOR", joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL", recipientEmail: "PRIVATE RECIPIENT EMAIL", recipientPhone: "PRIVATE PHONE" };
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
   const rendered = await page.default(params(token));
-  assert.deepEqual(Object.keys(rendered.props).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "registrationOnly", "token"]);
+  assert.equal(rendered.type, renderOverview, "issued links open the complete membership landing page");
+  assert.deepEqual(Object.keys(rendered.props).sort(), ["invitation", "paymentSetupOnly", "registrationOnly", "signupEnabled"]);
   assert.equal(rendered.props.registrationOnly, false);
-  assert.equal(rendered.props.membershipType, "complimentary"); assert.equal(rendered.props.complimentaryEndsAt, current.complimentaryEndsAt);
-  assert.equal(rendered.props.expiresAt, expiresAt); assert.deepEqual(rendered.props.card, card); assert.equal(rendered.props.token, token);
+  assert.equal(rendered.props.invitation.membershipType, "complimentary"); assert.equal(rendered.props.invitation.complimentaryEndsAt, current.complimentaryEndsAt);
+  assert.equal(rendered.props.invitation.expiresAt, expiresAt); assert.deepEqual(rendered.props.invitation.card, card); assert.equal(rendered.props.invitation.token, token);
+  assert.equal(rendered.props.invitation.recipientEmailRequired, true);
   assert.match(renderToStaticMarkup(rendered), /Chosen &lt;name&gt;/);
-  assert.doesNotMatch(JSON.stringify(rendered.props), /7391|PRIVATE|joinedCount|personId|email/);
+  assert.doesNotMatch(JSON.stringify(rendered.props), /7391|PRIVATE|joinedCount|personId|recipientEmail[":]|recipientPhone/);
   const metadata = await page.generateMetadata(params(token));
   assert.match(metadata.title, /Chosen <name>/);
   assert.doesNotMatch(JSON.stringify(metadata), /7391|PRIVATE|joinedCount|personId|email|public-invitation-wear/);
@@ -150,7 +153,7 @@ test("invitation preview routes stay unavailable in production even with preview
     const page = await load("app/invitation/preview/page.tsx", {
       "next/navigation": { notFound }, "@/lib/platform/config": configuration,
       "@/lib/membership/invitation-preview": { memberInvitationPreviewSnapshot: () => { samples++; return snapshot; } },
-      "@/components/membership/MemberInvitation": { InvitationLanding: renderInvitation },
+      "@/components/public-members/MembershipOverview": renderOverview,
     });
     process.env.NODE_ENV = "production"; process.env.PLATFORM_MODE = "preview";
     for (const key of keys.slice(2)) delete process.env[key];
@@ -161,7 +164,7 @@ test("invitation preview routes stay unavailable in production even with preview
     process.env.NODE_ENV = "development";
     assert.equal((await page.default({})).props.preview, true); assert.equal(samples, 1);
     const complimentary = await page.default({ searchParams: Promise.resolve({ membership: "complimentary" }) });
-    assert.equal(complimentary.props.membershipType, "complimentary"); assert.equal(complimentary.props.preview, true);
+    assert.equal(complimentary.props.invitation.membershipType, "complimentary"); assert.equal(complimentary.props.preview, true);
   } finally {
     for (const key of keys) { if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key]; }
   }
@@ -175,6 +178,7 @@ test("public landing offers the attributed waitlist without owner controls or jo
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
     "@/lib/membership/personal-invitation-presentation": presentation,
+    "@/lib/membership/personal-invitation-text": {},
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   const landing = invitation.InvitationLanding({ card, token, expiresAt });
@@ -197,6 +201,7 @@ test("expired public views stop new use while retaining the original deadline", 
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
     "@/lib/membership/personal-invitation-presentation": presentation,
+    "@/lib/membership/personal-invitation-text": {},
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   const elapsed = "2000-01-01T00:00:00.000Z";
@@ -214,6 +219,7 @@ test("personal landings route directly to email acceptance while legacy invitati
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
     "@/lib/membership/personal-invitation-presentation": presentation,
+    "@/lib/membership/personal-invitation-text": {},
     "./use-invitation-expiry": { useInvitationExpired: value => expiry.memberInvitationExpired(value) },
   });
   for (const preview of [false, true]) {

@@ -120,7 +120,7 @@ async function fixture(t) {
   const fundingPredicateMarker = complimentary.indexOf("-- Replace only funding predicates.");
   assert.ok(fundingPredicateMarker > 0, "Missing migration prefix boundary");
   await db.exec(complimentary.slice(0, fundingPredicateMarker) + "\ncommit;");
-  for (const name of ['20260929000000_public_member_signup', '20260929002000_ruined_direct_invitations']) {
+  for (const name of ['20260929000000_public_member_signup', '20260929002000_ruined_direct_invitations', '20261005210000_personal_invitation_phone']) {
     await db.exec(await source(`db/migrations/${name}.sql`));
   }
   await db.query("insert into platform_users (auth_user_id,email_normalized,status,user_type) values ($1,'admin@example.test','active','staff')", [admin]);
@@ -184,7 +184,7 @@ async function fixture(t) {
   const allowMember = (overrides = {}) => members.createOrReissueMemberInvitation({ actorAuthUserId: admin, email, ...overrides });
   const allowAdministrator = () => operators.createOrReissueOperatorInvitation({ actorAuthUserId: admin, email, displayName: "Test Administrator", role: "ops_admin", circleIds: [] });
   const grants = async () => (await db.query("select role_slug from platform_role_grants where auth_user_id=$1 and revoked_at is null order by role_slug", [auth])).rows.map((row) => row.role_slug);
-  async function personal({ recipient = email, expiresIn = '48 hours', owner = null, complimentary = false, complimentaryEndsIn = null } = {}) {
+  async function personal({ recipient = email, phone = null, expiresIn = '48 hours', owner = null, complimentary = false, complimentaryEndsIn = null } = {}) {
     const memberId = owner ?? crypto.randomUUID(), personId = crypto.randomUUID(), inviterAuth = crypto.randomUUID();
     if (!owner) {
       await db.query('insert into people(id) values($1)', [personId]);
@@ -195,8 +195,8 @@ async function fixture(t) {
     }
     if (complimentary) await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [inviterAuth]);
     const token = crypto.randomBytes(32).toString('base64url');
-    const result = await db.query(`insert into member_personal_invitations(member_id,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,issued_at,expires_at,membership_type,complimentary_reason,complimentary_ends_at,complimentary_authorized_by_auth_user_id)
-      values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval,$6,$7,case when $8::text is null then null else statement_timestamp()+$8::interval end,$9::uuid) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn,complimentary ? 'complimentary' : 'standard',complimentary ? 'Founding member' : null,complimentaryEndsIn,complimentary ? inviterAuth : null]);
+    const result = await db.query(`insert into member_personal_invitations(member_id,request_id,public_token,recipient_name,recipient_email_normalized,inviter_name,email_requested,issued_at,expires_at,membership_type,complimentary_reason,complimentary_ends_at,complimentary_authorized_by_auth_user_id,recipient_phone)
+      values($1,$2,$3,'Invited Person',$4,'Inviter',false,statement_timestamp()+$5::interval-interval '48 hours',statement_timestamp()+$5::interval,$6,$7,case when $8::text is null then null else statement_timestamp()+$8::interval end,$9::uuid,$10) returning id,issued_at,expires_at`, [memberId,crypto.randomUUID(),token,recipient,expiresIn,complimentary ? 'complimentary' : 'standard',complimentary ? 'Founding member' : null,complimentaryEndsIn,complimentary ? inviterAuth : null,phone]);
     return { token, memberId, inviterAuth, ...result.rows[0] };
   }
   async function direct() {
@@ -391,6 +391,104 @@ test("verified personal acceptance creates pending membership atomically, preser
   await f.db.query("update member_onboardings set state='completed',profile_completed_at=now(),agreement_completed_at=now() where member_id=$1", [claimed.memberId]);
   await f.db.query("update member_lifecycle set billing_state='active',program_state='onboarding',standing_state='active',administrative_onboarding_state='completed',access_started_at=clock_timestamp() where member_id=$1", [claimed.memberId]);
   assert.ok((await f.db.query('select joined_at from member_referrals where personal_invitation_id=$1', [invite.id])).rows[0].joined_at);
+});
+
+test("text invitation binds the verified email only at acceptance and tracks the same referral through joining", async t => {
+  const f = await fixture(t), invite = await f.personal({ recipient: null, phone: "+18015550123" });
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invite.token), true);
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility("other@example.test", invite.token), true);
+  const read = async () => (await f.db.query("select * from member_personal_invitations where id=$1", [invite.id])).rows[0];
+  const before = await read();
+  assert.equal(before.recipient_email_normalized, null);
+  assert.equal(before.recipient_email_bound_at, null);
+  await assert.rejects(f.db.query("update member_personal_invitations set recipient_email_normalized=$2,recipient_email_bound_at=clock_timestamp(),accepted_at=clock_timestamp(),accepted_by_auth_user_id=$3,accepted_member_id=$4 where id=$1", [invite.id, email, auth, invite.memberId]), { code: "P4100" });
+  const viewer = { authUserId: auth, email };
+  const claimed = await f.platform.claimPlatformMemberForViewer(viewer, invite.token);
+  const accepted = await read();
+  assert.equal(accepted.recipient_email_normalized, email);
+  assert.ok(accepted.recipient_email_bound_at);
+  assert.equal(accepted.accepted_by_auth_user_id, auth);
+  assert.equal(accepted.accepted_member_id, claimed.memberId);
+  assert.equal(accepted.delivery_status, "not_requested");
+  assert.equal(accepted.expires_at.toISOString(), before.expires_at.toISOString());
+  assert.equal(accepted.recipient_phone, before.recipient_phone);
+  const referral = (await f.db.query("select * from member_referrals where personal_invitation_id=$1", [invite.id])).rows[0];
+  assert.equal(referral.inviter_member_id, invite.memberId);
+  assert.equal(referral.referred_member_id, claimed.memberId);
+  assert.equal(referral.joined_at, null);
+  assert.equal((await f.db.query("select count(*)::int as n from integration_outbox")).rows[0].n, 0);
+  assert.deepEqual(await f.platform.claimPlatformMemberForViewer(viewer, invite.token), claimed);
+  assert.deepEqual(await read(), accepted);
+  for (const nextViewer of [{ authUserId: crypto.randomUUID(), email }, { authUserId: crypto.randomUUID(), email: "other@example.test" }]) {
+    await assert.rejects(f.platform.claimPlatformMemberForViewer(nextViewer, invite.token), f.platform.PlatformAccessDeniedError);
+  }
+  assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility("other@example.test", invite.token), false);
+  for (const assignment of ["recipient_email_normalized='other@example.test'", "recipient_email_bound_at=null", "recipient_phone='+18015550999'"]) {
+    await assert.rejects(f.db.query(`update member_personal_invitations set ${assignment} where id=$1`, [invite.id]));
+  }
+  await f.db.query("update member_onboardings set state='completed',profile_completed_at=now(),agreement_completed_at=now() where member_id=$1", [claimed.memberId]);
+  await f.db.query("update member_lifecycle set billing_state='active',program_state='onboarding',standing_state='active',administrative_onboarding_state='completed',access_started_at=clock_timestamp() where member_id=$1", [claimed.memberId]);
+  assert.ok((await f.db.query("select joined_at from member_referrals where personal_invitation_id=$1", [invite.id])).rows[0].joined_at);
+});
+
+test("competing verified recipients cannot consume one phone invitation twice", async t => {
+  const f = await fixture(t), invite = await f.personal({ recipient: null, phone: "+18015550123" });
+  const contenders = [{ authUserId: auth, email }, { authUserId: crypto.randomUUID(), email: "other@example.test" }];
+  const results = await Promise.allSettled(contenders.map(viewer => f.platform.claimPlatformMemberForViewer(viewer, invite.token)));
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  const rejected = results.find(result => result.status === "rejected");
+  assert.ok(rejected.reason instanceof f.platform.PlatformAccessDeniedError);
+  const winner = contenders[results.findIndex(result => result.status === "fulfilled")];
+  const accepted = (await f.db.query("select recipient_email_normalized,accepted_by_auth_user_id from member_personal_invitations where id=$1", [invite.id])).rows[0];
+  assert.deepEqual(accepted, { recipient_email_normalized: winner.email, accepted_by_auth_user_id: winner.authUserId });
+  assert.equal((await f.db.query("select count(*)::int as n from member_referrals where personal_invitation_id=$1", [invite.id])).rows[0].n, 1);
+  assert.equal((await f.db.query("select count(*)::int as n from ruined_members where email_normalized=any($1)", [contenders.map(viewer => viewer.email)])).rows[0].n, 1);
+});
+
+test("text claims preserve an earlier inviter and cannot bypass an email-addressed or complimentary invitation", async t => {
+  const f = await fixture(t), first = await f.personal(), text = await f.personal({ recipient: null, phone: "+18015550123" });
+  const viewer = { authUserId: auth, email };
+  const member = await f.platform.claimPlatformMemberForViewer(viewer, first.token);
+  await f.platform.claimPlatformMemberForViewer(viewer, text.token);
+  const references = (await f.db.query("select personal_invitation_id,referred_member_id from member_referrals")).rows;
+  assert.deepEqual(references, [{ personal_invitation_id: first.id, referred_member_id: member.memberId }]);
+  for (const complimentary of [false, true]) {
+    const invitation = await f.personal({ recipient: "bound@example.test", phone: "+18015550999", complimentary });
+    assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(email, invitation.token), false);
+    await assert.rejects(f.platform.claimPlatformMemberForViewer(viewer, invitation.token), f.platform.PlatformAccessDeniedError);
+  }
+  await assert.rejects(f.personal({ recipient: null, phone: "+18015550999", complimentary: true }));
+  assert.equal((await f.db.query("select count(*)::int as n from member_complimentary_grants")).rows[0].n, 0);
+});
+
+test("expired, revoked, inactive-source and self text invitations create no membership or binding", async t => {
+  for (const scenario of ["expired", "revoked", "inactive_source", "self"]) {
+    await t.test(scenario, async subtest => {
+      const f = await fixture(subtest), invitation = await f.personal({ recipient: null, phone: "+18015550123", expiresIn: scenario === "expired" ? "-1 second" : "48 hours" });
+      if (scenario === "revoked") await f.db.query("update member_personal_invitations set revoked_at=clock_timestamp() where id=$1", [invitation.id]);
+      if (scenario === "inactive_source") await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [invitation.memberId]);
+      const viewer = scenario === "self" ? { authUserId: invitation.inviterAuth, email: `${invitation.memberId}@example.test` } : { authUserId: auth, email };
+      assert.equal(await f.admission.getPersonalInvitationAdmissionEligibility(viewer.email, invitation.token), false);
+      await assert.rejects(f.platform.claimPlatformMemberForViewer(viewer, invitation.token), f.platform.PlatformAccessDeniedError);
+      const current = (await f.db.query("select recipient_email_normalized,recipient_email_bound_at,accepted_at from member_personal_invitations where id=$1", [invitation.id])).rows[0];
+      assert.deepEqual(current, { recipient_email_normalized: null, recipient_email_bound_at: null, accepted_at: null });
+      assert.equal((await f.db.query("select count(*)::int as n from membership_waitlist")).rows[0].n, 0);
+      assert.deepEqual(await f.grants(), []);
+    });
+  }
+});
+
+test("a text invitation that expires during verified identity work rolls back the binding and registration", async t => {
+  const f = await fixture(t), invitation = await f.personal({ recipient: null, phone: "+18015550123" });
+  f.beforeCommit(async () => { f.clock(invitation.expires_at); });
+  await assert.rejects(f.platform.claimPlatformMemberForViewer({ authUserId: auth, email }, invitation.token), f.platform.PlatformAccessDeniedError);
+  assert.deepEqual(await f.grants(), []);
+  const row = (await f.db.query("select recipient_email_normalized,recipient_email_bound_at,accepted_at from member_personal_invitations where id=$1", [invitation.id])).rows[0];
+  assert.deepEqual(row, { recipient_email_normalized: null, recipient_email_bound_at: null, accepted_at: null });
+  assert.equal((await f.db.query("select count(*)::int as n from ruined_members where email_normalized=$1", [email])).rows[0].n, 0);
+  for (const table of ["member_referrals", "membership_waitlist", "passwordless_account_invites"]) {
+    assert.equal((await f.db.query(`select count(*)::int as n from ${table}`)).rows[0].n, 0);
+  }
 });
 
 test("expired, revoked, mismatched and ineligible-inviter personal claims create no access", async (t) => {

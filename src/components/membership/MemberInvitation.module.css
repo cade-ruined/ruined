@@ -61,3 +61,18 @@
 .complimentaryNotice{border-left:1px solid #e5e0d55c;padding-left:14px}.complimentaryNotice strong{font-weight:500}
 @media(max-width:480px){.complimentaryFields{grid-template-columns:1fr;padding-left:12px}.recordBadges{max-width:47%}}
 @media(forced-colors:active){.field select{background:Canvas;color:CanvasText;border-color:CanvasText}.complimentaryFields,.complimentaryNotice{border-color:CanvasText}.membershipMeta,.membershipMeta span{color:CanvasText}}
+
+/* The landing page already supplies the paper registration panel. */
+.panel.compactPanel{padding:0;border:0;background:none;backdrop-filter:none;color:#171715}
+.panel.compactPanel h2{margin:8px 0 16px;font-family:var(--font-header);font-size:clamp(25px,2.4vw,34px);font-weight:600;letter-spacing:-.04em}
+.panel.compactPanel>p{margin-top:12px;max-width:none}
+.compactPanel :is(.eyebrow,.note,.field,.acceptanceStatus,.recordActions button){color:#585b51}
+.compactPanel .acceptanceStatus strong{color:#171715}
+.compactPanel .field input{background:#fff9ed99;border-color:#17171555;color:#171715}
+.compactPanel .enable{background:#171715;border-color:#171715;color:#fff9ed}
+.compactPanel .error{color:#9f261f}
+.compactPanel .complimentaryNotice{border-color:#3b5d4f}
+.compactPanel :is(input,button,a):focus-visible{outline-color:#b83229}
+@media(forced-colors:active){.panel.compactPanel,.compactPanel :is(.eyebrow,.note,.field,.acceptanceStatus,.recordActions button,.acceptanceStatus strong,.error){color:CanvasText}.compactPanel .field input,.compactPanel .enable{background:Canvas;color:CanvasText;border-color:CanvasText}}
+
+.recipientNameField{grid-column:1/-1}

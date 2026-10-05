@@ -2,7 +2,7 @@ import { publicMemberCardIdentity } from "@/lib/membership/public-card-model";
 import type { Metadata } from "next";
 import { cache } from "react";
 import { notFound } from "next/navigation";
-import { InvitationLanding } from "@/components/membership/MemberInvitation";
+import MembershipOverview from "@/components/public-members/MembershipOverview";
 import { getPublicMemberInvitation } from "@/lib/membership/invitation-repository";
 import { MEMBER_INVITATION_TOKEN } from "@/lib/membership/invitation-model";
 import { getPlatformConfiguration } from "@/lib/platform/config";
@@ -49,7 +49,12 @@ export default async function InvitationPage({ params }: Props) {
   if (!MEMBER_INVITATION_TOKEN.test(token)) notFound();
   const invitation = await readInvitation(token);
   if (!invitation) notFound();
-  return <InvitationLanding registrationOnly={getPlatformConfiguration().membershipRegistrationOnly} {...(invitation.invitationSource ? { invitationSource: invitation.invitationSource } : {})} card={invitation.card} expiresAt={invitation.expiresAt} token={token}
-    {...(invitation.paymentSetupOnly ? { paymentSetupOnly: true } : {})} membershipType={invitation.membershipType} complimentaryEndsAt={invitation.complimentaryEndsAt}
-    {...(invitation.recipientName ? { recipientName: invitation.recipientName } : {})} />;
+  const configuration = getPlatformConfiguration();
+  return <MembershipOverview registrationOnly={configuration.membershipRegistrationOnly}
+    signupEnabled={configuration.mode === "connected" && configuration.membershipSignupReady === true}
+    paymentSetupOnly={invitation.paymentSetupOnly === true || configuration.membershipRegistrationOnly || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)}
+    invitation={{ token, card: invitation.card, expiresAt: invitation.expiresAt,
+      recipientName: invitation.recipientName, invitationSource: invitation.invitationSource ?? "member",
+      membershipType: invitation.membershipType, complimentaryEndsAt: invitation.complimentaryEndsAt,
+      recipientEmailRequired: invitation.recipientEmailRequired ?? true }} />;
 }

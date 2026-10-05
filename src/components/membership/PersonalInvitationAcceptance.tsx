@@ -9,7 +9,7 @@ import styles from "./MemberInvitation.module.css";
 
 type AuthResponse = { error?: string; redirectTo?: string; requestId?: string };
 
-export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", paymentSetupOnly = false, registrationOnly = false, preview = false }: {
+export default function PersonalInvitationAcceptance({ invitationToken, recipientName, inviterName, expiresAt, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", paymentSetupOnly = false, registrationOnly = false, preview = false, compact = false, recipientEmailRequired = true }: {
   invitationToken?: string;
   recipientName: string;
   inviterName: string;
@@ -20,6 +20,8 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
   preview?: boolean;
   paymentSetupOnly?: boolean;
   registrationOnly?: boolean;
+  compact?: boolean;
+  recipientEmailRequired?: boolean;
 }) {
   const expired = useInvitationExpired(expiresAt);
   const direct = invitationSource === "ruined_direct";
@@ -91,7 +93,7 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
     }
   }
 
-  return <section id="accept-invitation" className={styles.panel} aria-labelledby="invitation-join-title">
+  return <section id="accept-invitation" className={`${styles.panel}${compact ? ` ${styles.compactPanel}` : ""}`} aria-labelledby="invitation-join-title">
     <span id="join-ruined" aria-hidden="true" />
     <p className={styles.eyebrow}>{direct ? "Ruined Direct / " : ""}For {recipientName}</p>
     <h2 id="invitation-join-title">{requested ? "Verify your email." : "Accept your invitation."}</h2>
@@ -100,9 +102,9 @@ export default function PersonalInvitationAcceptance({ invitationToken, recipien
     {expired ? <p role="status">{expiryMessage}{direct ? <> <Link href="/signup">Request a new invitation ↗</Link></> : null}</p> : <p className={styles.note}>Accept by <time dateTime={expiresAt!}>{memberInvitationDeadline(expiresAt)}</time>.</p>}
     <form className={styles.form} onSubmit={requested ? verifyCode : submitEmail} aria-label={requested ? "Verify invitation email" : "Accept personal invitation"} aria-busy={pending}>
       {requested ? <>
-        <p className={styles.acceptanceStatus} role="status">Request received for <strong>{email.trim().toLowerCase()}</strong>. If it matches this invitation, check your inbox and spam folder for the newest code. If the email contains a confirmation link instead, follow it, then return here to request a code.</p>
+        <p className={styles.acceptanceStatus} role="status">Request received for <strong>{email.trim().toLowerCase()}</strong>. {recipientEmailRequired ? "If it matches this invitation, check your inbox and spam folder for the newest code." : "Check your inbox and spam folder for the newest code to connect this invitation to your email."} If the email contains a confirmation link instead, follow it, then return here to request a code.</p>
         <label className={`${styles.field} ${styles.codeField}`} htmlFor="invitation-access-code">Email verification code<input id="invitation-access-code" name="token" autoComplete="one-time-code" autoFocus inputMode="numeric" pattern="[0-9]{6,10}" minLength={6} maxLength={10} required disabled={disabled} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ""))} /></label>
-      </> : <label className={styles.field} htmlFor="invitation-email">Your email<input id="invitation-email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={254} required value={email} placeholder="you@example.com" disabled={disabled} aria-describedby="invitation-email-note" onChange={event => { setEmail(event.target.value); setError(""); }} /><span id="invitation-email-note" className={styles.note}>Use the email address this invitation was sent to.</span></label>}
+      </> : <label className={styles.field} htmlFor="invitation-email">Your email<input id="invitation-email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={254} required value={email} placeholder="you@example.com" disabled={disabled} aria-describedby="invitation-email-note" onChange={event => { setEmail(event.target.value); setError(""); }} /><span id="invitation-email-note" className={styles.note}>{recipientEmailRequired ? "Use the email address this invitation was sent to." : "Enter the email you want to use for your Ruined account. We’ll verify it before accepting your invitation."}</span></label>}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       <button className={`${styles.enable} ${styles.acceptanceButton}`} type="submit" disabled={disabled || (!requested && resendDelay > 0)}>{pending ? requested ? "Verifying…" : "Sending code…" : requested ? "Verify & continue" : resendDelay > 0 ? `Try again in ${resendDelay}s` : "Accept invitation"}<span aria-hidden="true">↗</span></button>
       {requested ? <div className={styles.recordActions}>

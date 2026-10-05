@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as phone from "libphonenumber-js/min";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
@@ -14,7 +15,7 @@ async function load(path, dependencies = {}, globals = {}) {
   return loaded.exports;
 }
 const invitation = await load("src/lib/membership/invitation-model.ts");
-const model = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitation });
+const model = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitation, "libphonenumber-js/min": phone });
 const id = "11111111-1111-4111-8111-111111111111";
 const input = { recipientName: "Alex", recipientEmail: "alex@example.test", requestId: id, sendEmail: true };
 async function fixture() {
@@ -82,6 +83,17 @@ test("email requests queue delivery only after valid persisted creation; copy-on
   assert.equal(f.calls.filter(call => call.name === "send").length, 0, "after response job has not sent yet");
   await f.jobs[0]();
   assert.deepEqual(f.calls.at(-1), { name: "send", args: [4, { invitationId: undefined }] });
+});
+
+test("phone-only creation stores a normalized text destination without scheduling an email", async () => {
+  const f = await fixture();
+  const response = await f.handlePersonalInvitationRequest(f.request("POST", { ...input, recipientEmail: "", recipientPhone: "(801) 555-0123", sendEmail: false }));
+  assert.equal(response.status, 201);
+  assert.equal(f.calls[0].args[1].recipientPhone, "+18015550123");
+  assert.equal(f.calls[0].args[1].recipientEmail, "");
+  assert.equal(f.jobs.length, 0);
+  assert.equal((await f.handlePersonalInvitationRequest(f.request("POST", { ...input, recipientEmail: "", recipientPhone: "(801) 555-0123", sendEmail: true }))).status, 400);
+  assert.equal(f.jobs.length, 0);
 });
 
 test("bad input and unavailable provider do not create or send an invitation", async () => {

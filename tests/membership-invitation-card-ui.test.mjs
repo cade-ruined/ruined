@@ -21,7 +21,7 @@ const Card = () => null;
 const nodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : [];
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : typeof node === "string" ? node : "";
 
-async function fixture(withObserver = true, archiveShadow = null) {
+async function fixture(withObserver = true, archiveShadow = null, props = {}) {
   let cursor = 0;
   const state = [], observers = [], effects = [];
   const react = { ...React, useContext: () => archiveShadow,
@@ -35,7 +35,7 @@ async function fixture(withObserver = true, archiveShadow = null) {
     disconnect() { this.disconnects++; }
   }
   const component = (await load("src/components/public-members/MembershipInvitationCard.tsx", { react, "next/dynamic": () => Card }, { IntersectionObserver: withObserver ? Observer : undefined })).default;
-  const render = () => { cursor = 0; return component({}); };
+  const render = () => { cursor = 0; return component(props); };
   const initial = render(); const element = {}; initial.props.ref.current = element;
   const cleanups = effects.splice(0).map(effect => effect());
   const cleanup = () => cleanups.forEach(fn => fn?.());
@@ -174,4 +174,17 @@ for (const frameToCard of [false, true]) test(frameToCard
   assert.equal(properties.get("--membership-room-height"), frameToCard ? "932px" : "2400px", "the framed desktop surface follows card geometry changes");
   cleanup.forEach(fn => fn?.());
   assert.equal(callback, null); assert.equal(observed.size, 0);
+});
+
+
+test("issued landing cards preserve the inviter, recipient and original deadline in the spinning renderer", async () => {
+  const identity = { name: "Cade <Sender>", memberTag: "cade", wearSeed: "inviter-wear", labels: [] };
+  const props = { card: identity, recipientName: "Alex Recipient", invitationSource: "member", expiresAt: "2099-01-01T12:00:00Z" };
+  const f = await fixture(false, null, props);
+  const card = nodes(f.render()).find(node => node.type === Card);
+  assert.equal(card.props.card, identity);
+  assert.equal(card.props.invitationRecipientName, props.recipientName);
+  assert.equal(card.props.invitationSource, "member");
+  assert.equal(card.props.invitationExpiresAt, props.expiresAt);
+  assert.equal(card.props.embedded, true);
 });

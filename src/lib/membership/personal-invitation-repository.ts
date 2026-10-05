@@ -13,7 +13,8 @@ import {
 } from "./personal-invitation-model";
 
 type InvitationRow = {
-  id: string; recipient_name: string; recipient_email_normalized: string; public_token: string;
+  id: string; request_id: string; recipient_name: string; recipient_email_normalized: string | null; recipient_phone: string | null;
+  recipient_email_bound_at: Date | string | null; public_token: string;
   issued_at: Date | string; expires_at: Date | string; revoked_at: Date | string | null;
   submitted_at: Date | string | null; accepted_at: Date | string | null; joined_at: Date | string | null; active: boolean;
   delivery_status: PersonalInvitationDeliveryStatus; sent_at: Date | string | null; version: number;
@@ -97,7 +98,7 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
     return {
       card: invitationCard(names.name, createHash("sha256").update(`ruined-invitation:${identity.memberId}`).digest("hex").slice(0, 24), names.member_tag),
       eligible: names.eligible, writable, canGrantComplimentary: names.can_grant_complimentary,
-      invitations: rows.map(row => ({ id: row.id, recipientName: row.recipient_name, recipientEmail: row.recipient_email_normalized,
+      invitations: rows.map(row => ({ id: row.id, requestId: row.request_id, recipientName: row.recipient_name, recipientEmail: row.recipient_email_normalized ?? "", recipientPhone: row.recipient_phone,
         url: row.active && names.eligible ? `/invitation/${row.public_token}` : null,
         issuedAt: date(row.issued_at), expiresAt: date(row.expires_at), revokedAt: nullableDate(row.revoked_at),
         submittedAt: nullableDate(row.submitted_at), acceptedAt: nullableDate(row.accepted_at), joinedAt: nullableDate(row.joined_at),
@@ -127,7 +128,8 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
     const [existing] = await tx<InvitationRow[]>`select * from member_personal_invitations
       where member_id = ${identity.memberId}::uuid and request_id = ${input.requestId}::uuid`;
     if (existing) {
-      if (existing.recipient_name !== input.recipientName || existing.recipient_email_normalized !== input.recipientEmail || existing.email_requested !== input.sendEmail
+      const originallySuppliedEmail = existing.recipient_email_bound_at ? "" : existing.recipient_email_normalized ?? "";
+      if (existing.recipient_name !== input.recipientName || originallySuppliedEmail !== input.recipientEmail || existing.recipient_phone !== input.recipientPhone || existing.email_requested !== input.sendEmail
           || existing.membership_type !== input.membershipType || existing.complimentary_reason !== input.complimentaryReason
           || nullableDate(existing.complimentary_ends_at) !== input.complimentaryEndsAt) {
         throw new MemberInvitationError(409, "This request already created a different invitation. Start a new invitation.");
@@ -154,7 +156,9 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
     await requireEligible(tx, identity.memberId);
     const [check] = await tx<Array<{ duplicate: boolean; self: boolean; recent: number }>>`select
       exists(select 1 from member_personal_invitations where member_id = ${identity.memberId}::uuid
-        and recipient_email_normalized = ${input.recipientEmail} and revoked_at is null and accepted_at is null
+        and ((${input.recipientEmail} <> '' and recipient_email_normalized = ${input.recipientEmail})
+          or (${input.recipientPhone}::text is not null and recipient_phone = ${input.recipientPhone}))
+        and revoked_at is null and accepted_at is null
         and expires_at > clock_timestamp() and private.ruined_personal_invitation_benefit_available(id)) as duplicate,
       (exists(select 1 from person_email_addresses where person_id = ${identity.personId}::uuid
         and email_normalized = ${input.recipientEmail} and retired_at is null)
@@ -162,16 +166,16 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
       (select count(*)::integer from member_personal_invitations where member_id = ${identity.memberId}::uuid
         and issued_at > clock_timestamp() - interval '24 hours') as recent`;
     if (check?.self) throw new MemberInvitationError(400, "Choose someone else's email for this invitation.");
-    if (check?.duplicate) throw new MemberInvitationError(409, "You already have an active invitation for this email. Use it or revoke it first.");
+    if (check?.duplicate) throw new MemberInvitationError(409, "You already have an active invitation for this email or phone number. Use it or revoke it first.");
     if ((check?.recent ?? 0) >= PERSONAL_INVITATION_DAILY_LIMIT) throw new MemberInvitationError(429, "You've reached 20 invitations in 24 hours. Please try again later.");
     const [profile] = await tx<Array<{ name: string; member_tag: string | null }>>`select
       coalesce(nullif(btrim(display_name), ''), nullif(btrim(preferred_name), ''), 'Member') as name, member_tag
       from person_profiles where person_id = ${identity.personId}::uuid`;
-    const [created] = await tx<Array<{ id: string }>>`insert into member_personal_invitations(member_id, request_id, public_token, recipient_name, recipient_email_normalized,
+    const [created] = await tx<Array<{ id: string }>>`insert into member_personal_invitations(member_id, request_id, public_token, recipient_name, recipient_email_normalized, recipient_phone,
       inviter_name, inviter_tag, email_requested, delivery_status, next_attempt_at,
       membership_type,complimentary_reason,complimentary_ends_at,complimentary_authorized_by_auth_user_id)
       values(${identity.memberId}::uuid, ${input.requestId}::uuid, ${randomBytes(32).toString("base64url")}, ${input.recipientName},
-        ${input.recipientEmail}, ${profile?.name ?? "Member"}, ${profile?.member_tag ?? null}, ${input.sendEmail},
+        ${input.recipientEmail || null}, ${input.recipientPhone}, ${profile?.name ?? "Member"}, ${profile?.member_tag ?? null}, ${input.sendEmail},
         ${input.sendEmail ? "queued" : "not_requested"}, case when ${input.sendEmail} then statement_timestamp() else null end,
         ${input.membershipType},${input.complimentaryReason},${input.complimentaryEndsAt}::timestamptz,
         ${input.membershipType === "complimentary" ? authUserId : null}::uuid) returning id`;

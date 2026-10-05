@@ -11,7 +11,7 @@ async function loadPage(read) {
   const dependencies = {
     react: { cache: fn => fn }, "react/jsx-runtime": jsxRuntime,
     "next/navigation": { notFound: () => { throw new Error("Unavailable"); } },
-    "@/components/membership/MemberInvitation": { InvitationLanding: () => null },
+    "@/components/public-members/MembershipOverview": { default: () => null },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
     "@/lib/membership/invitation-repository": { getPublicMemberInvitation: read },
     "@/lib/membership/invitation-model": { MEMBER_INVITATION_TOKEN: /^[A-Za-z0-9_-]{43}$/ },
@@ -25,11 +25,12 @@ async function loadPage(read) {
 
 test("personal invitation page shares the greeting but never recipient email, delivery details or owner counts", async () => {
   const token = "P".repeat(43), card = { name: "Inviter", memberTag: "inviter" };
-  const route = await loadPage(async () => ({ card, recipientName: "Taylor <Test>", recipientEmail: "PRIVATE@example.test", complimentaryReason: "PRIVATE NOTE", membershipType: "complimentary", complimentaryEndsAt: null, expiresAt: "2099-01-01T00:00:00Z", deliveryStatus: "PRIVATE DELIVERY", joinedCount: 91023 }));
+  const route = await loadPage(async () => ({ card, recipientName: "Taylor <Test>", recipientEmail: "PRIVATE@example.test", recipientPhone: "PRIVATE PHONE", complimentaryReason: "PRIVATE NOTE", membershipType: "complimentary", complimentaryEndsAt: null, expiresAt: "2099-01-01T00:00:00Z", deliveryStatus: "PRIVATE DELIVERY", joinedCount: 91023 }));
   const props = { params: Promise.resolve({ token }) };
   const page = await route.default(props);
-  assert.deepEqual(page.props, { registrationOnly: false, card, recipientName: "Taylor <Test>", token, expiresAt: "2099-01-01T00:00:00Z", membershipType: "complimentary", complimentaryEndsAt: null });
-  assert.doesNotMatch(JSON.stringify(page.props), /PRIVATE|recipientEmail|91023/);
+  assert.deepEqual(page.props, { registrationOnly: false, signupEnabled: false, paymentSetupOnly: false,
+    invitation: { card, recipientName: "Taylor <Test>", token, expiresAt: "2099-01-01T00:00:00Z", membershipType: "complimentary", complimentaryEndsAt: null, invitationSource: "member", recipientEmailRequired: true } });
+  assert.doesNotMatch(JSON.stringify(page.props), /PRIVATE|"recipientEmail":|recipientPhone|91023/);
   const metadata = await route.generateMetadata(props);
   assert.doesNotMatch(JSON.stringify(metadata), /Taylor|PRIVATE|recipientEmail|deliveryStatus|91023/,
     "recipient identity must not be retained by messaging-app metadata caches");

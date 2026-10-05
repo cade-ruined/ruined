@@ -187,3 +187,19 @@ test("Ruined Direct keeps the same acceptance flow with brand identity and signu
   assert.ok(descendants(expired).some(node => node.type === "a" && node.props.href === "/signup"));
   assert.doesNotMatch(text(expired), /Ask The Ruined Project|Ask Unrelated/);
 });
+
+
+test("phone-only acceptance binds the original invitation to a verified account email without exposing a phone", async () => {
+  const ui = await harness({ props: { recipientEmailRequired: false, compact: true } });
+  assert.match(text(ui.render()), /Enter the email you want to use for your Ruined account/);
+  assert.doesNotMatch(text(ui.render()), /email address this invitation was sent to/);
+  input(ui.render(), "email").props.onChange({ target: { value: "phone-recipient@example.test" } });
+  await form(ui.render()).props.onSubmit(event);
+  assert.deepEqual(ui.calls[0].body, { email: "phone-recipient@example.test", invitationToken: token });
+  assert.match(text(ui.render()), /connect this invitation to your email/);
+  input(ui.render(), "token").props.onChange({ target: { value: "123456" } });
+  await form(ui.render()).props.onSubmit(event);
+  assert.deepEqual(ui.calls[1].body, { email: "phone-recipient@example.test", token: "123456", invitationToken: token });
+  assert.deepEqual(ui.redirects, ["/my/join"]);
+  assert.doesNotMatch(JSON.stringify(ui.calls), /recipientPhone|directSignup/);
+});

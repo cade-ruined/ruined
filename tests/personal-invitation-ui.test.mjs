@@ -19,6 +19,7 @@ async function load(path, dependencies = {}, globals = {}) {
   return loaded.exports;
 }
 const expiry = await load("src/lib/membership/invitation-expiry.ts");
+const textHelper = await load("src/lib/membership/personal-invitation-text.ts");
 const presentation = await load("src/lib/membership/personal-invitation-presentation.ts");
 const future = "2099-09-20T02:45:00.000Z", past = "2000-01-01T00:00:00.000Z";
 const record = { id: "personal-one", recipientName: "Alex <Rivera>", recipientEmail: "alex@example.test", url: "/invitation/personal-one", issuedAt: "2099-09-18T02:45:00.000Z", expiresAt: future, revokedAt: null, submittedAt: null, acceptedAt: null, joinedAt: null, deliveryStatus: "queued", sentAt: null, version: 3, membershipType: "standard", complimentaryReason: null, complimentaryEndsAt: null, complimentaryGrant: null };
@@ -31,7 +32,7 @@ const select = (tree, name) => descendants(tree).find(element => element.type ==
 const form = tree => descendants(tree).find(element => element.type === "form");
 async function harness(initialSnapshot = snapshot, options = {}) {
   const hooks = []; let cursor = 0, uuids = 0, clock = options.now ?? Date.now();
-  const calls = [], copied = [], watchedDeadlines = [];
+  const calls = [], copied = [], opened = [], watchedDeadlines = [];
   const timedExpiry = { ...expiry, memberInvitationExpired: (value, now = clock) => expiry.memberInvitationExpired(value, now) };
   const fakeReact = { ...React,
     useState: initial => { const slot = cursor++; if (!(slot in hooks)) hooks[slot] = initial; return [hooks[slot], next => { hooks[slot] = typeof next === "function" ? next(hooks[slot]) : next; }]; },
@@ -45,15 +46,16 @@ async function harness(initialSnapshot = snapshot, options = {}) {
     "./card/PublicMemberCardPage": ({ children }) => React.createElement("main", null, children),
     "@/lib/membership/invitation-expiry": timedExpiry,
     "@/lib/membership/personal-invitation-presentation": presentation,
+    "@/lib/membership/personal-invitation-text": textHelper,
     "./use-invitation-expiry": { useInvitationExpired: value => { watchedDeadlines.push(value); return timedExpiry.memberInvitationExpired(value); } },
   }, {
     crypto: { randomUUID: () => `request-${++uuids}` },
-    window: { location: { origin: "https://members.example.test" } },
-    navigator: { clipboard: { writeText: async value => { copied.push(value); } } },
+    window: { location: { origin: "https://members.example.test", assign: value => opened.push(value) } },
+    navigator: { userAgent: options.userAgent ?? "iPhone", clipboard: { writeText: async value => { copied.push(value); } } },
     fetch: async (url, init) => { const call = { url, ...init, body: init.body ? JSON.parse(init.body) : undefined }; calls.push(call); return options.fetch ? options.fetch(call) : { ok: true, json: async () => ({ snapshot: { ...snapshot, invitations: [record], counts: { ...snapshot.counts, created: 1 } } }) }; },
   });
   const render = () => { cursor = 0; return component.default({ initialSnapshot, preview: options.preview }); };
-  return { render, calls, copied, watchedDeadlines, advanceTo: value => { clock = Date.parse(value); } };
+  return { render, calls, copied, opened, watchedDeadlines, advanceTo: value => { clock = Date.parse(value); } };
 }
 
 test("an unaccepted complimentary invitation schedules its earlier benefit deadline and leaves Active at that exact boundary", async () => {
@@ -88,13 +90,13 @@ test("creating a named invitation uses only recipient, delivery choice and retry
   assert.equal(input(created, "recipientName").props.value, "");
 });
 
-test("only admin snapshots expose membership choice, directly after recipient email", async () => {
+test("only admin snapshots expose membership choice, after recipient contact details", async () => {
   const member = await harness();
   assert.equal(select(member.render(), "membershipType"), undefined);
   assert.equal(input(member.render(), "complimentaryReason"), undefined);
   const admin = await harness({ ...snapshot, canGrantComplimentary: true });
   const tree = admin.render(), controls = descendants(tree).filter(element => element.type === "input" || element.type === "select");
-  assert.deepEqual(controls.slice(0, 3).map(element => element.props.name), ["recipientName", "recipientEmail", "membershipType"]);
+  assert.deepEqual(controls.slice(0, 4).map(element => element.props.name), ["recipientName", "recipientEmail", "recipientPhone", "membershipType"]);
   assert.equal(select(tree, "membershipType").props.value, "standard");
   assert.equal(input(tree, "complimentaryReason"), undefined);
 });
@@ -277,4 +279,68 @@ test("earlier shared invitations keep their own links and do not invent a named 
   await find(ui.render(), "button", "Copy earlier link").props.onClick();
   assert.deepEqual(ui.copied, ["https://members.example.test/invitation/legacy"]);
   assert.equal(ui.calls.length, 0);
+});
+
+
+test("phone-only invitations keep email optional and never queue an email", async () => {
+  const ui = await harness();
+  input(ui.render(), "recipientName").props.onChange({ target: { value: "Alex" } });
+  input(ui.render(), "recipientPhone").props.onChange({ target: { value: " (801) 555-0123 " } });
+  assert.equal(input(ui.render(), "recipientEmail").props.required, false);
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(ui.calls[0].body, { recipientName: "Alex", recipientEmail: "", recipientPhone: "(801) 555-0123", requestId: "request-1", sendEmail: false });
+});
+
+test("complimentary text invites still require the recipient email", async () => {
+  const ui = await harness({ ...snapshot, canGrantComplimentary: true });
+  input(ui.render(), "recipientName").props.onChange({ target: { value: "Alex" } });
+  input(ui.render(), "recipientPhone").props.onChange({ target: { value: "+18015550123" } });
+  select(ui.render(), "membershipType").props.onChange({ target: { value: "complimentary" } });
+  assert.equal(input(ui.render(), "recipientEmail").props.required, true);
+  await form(ui.render()).props.onSubmit({ preventDefault() {} });
+  assert.equal(ui.calls.length, 0);
+  assert.match(text(ui.render()), /keep complimentary access tied to the right person/);
+});
+
+test("Text invitation opens a composer for the saved phone and original token without claiming delivery", async () => {
+  const phoneRecord = { ...record, recipientPhone: "+18015550123", recipientEmail: "", deliveryStatus: "not_requested", url: `/invitation/${"t".repeat(43)}` };
+  const ui = await harness({ ...snapshot, invitations: [phoneRecord] });
+  find(ui.render(), "button", "Text invitation").props.onClick();
+  assert.equal(ui.opened.length, 1);
+  assert.ok(ui.opened[0].startsWith("sms:+18015550123&body="));
+  const body = decodeURIComponent(ui.opened[0].split("body=")[1]);
+  assert.match(body, /from Inviter/);
+  assert.ok(body.includes(`https://members.example.test/invitation/${"t".repeat(43)}`));
+  assert.equal(ui.calls.length, 0, "opening Messages neither changes delivery status nor renews the invitation");
+  assert.doesNotMatch(text(ui.render()), /Text sent|Text delivered/);
+  assert.match(text(ui.render()), /Finish sending in Messages/);
+  assert.match(text(ui.render()), /Accepted means they verified their email/);
+});
+
+test("unshareable and preview invitations cannot open Messages", async () => {
+  const phoneRecord = { ...record, recipientPhone: "+18015550123", url: `/invitation/${"t".repeat(43)}` };
+  for (const changed of [{ expiresAt: past }, { revokedAt: past }, { acceptedAt: past }, { joinedAt: past }, { available: false }]) {
+    const ui = await harness({ ...snapshot, invitations: [{ ...phoneRecord, ...changed }] });
+    assert.equal(find(ui.render(), "button", "Text invitation"), undefined);
+  }
+  for (const options of [{ preview: true }, {}]) {
+    const ui = await harness({ ...snapshot, writable: false, invitations: [phoneRecord] }, options);
+    const action = find(ui.render(), "button", "Text invitation");
+    assert.equal(action.props.disabled, true);
+    action.props.onClick();
+    assert.deepEqual(ui.opened, []);
+  }
+});
+
+test("SMS payloads preserve text as data and reject invalid destinations", () => {
+  const input = { recipientName: "Alex & Sam?", recipientPhone: "+18015550123", inviterName: "Cade", invitationUrl: `/invitation/${"a".repeat(43)}`, origin: "https://members.example.test" };
+  const android = textHelper.personalInvitationText({ ...input, userAgent: "Android" });
+  assert.ok(android.href.startsWith("sms:+18015550123?body="));
+  assert.equal(decodeURIComponent(android.href.split("body=")[1]), android.body);
+  for (const invitationUrl of ["https://untrusted.example/invitation/" + "a".repeat(43), "javascript:alert(1)", "/signup", input.invitationUrl + "?email=private@example.test"]) {
+    assert.equal(textHelper.personalInvitationText({ ...input, invitationUrl }), null);
+  }
+  for (const recipientPhone of ["", "18015550123", "+18015550123,19005550123", "+18015550123?body=wrong"]) {
+    assert.equal(textHelper.personalInvitationText({ ...input, recipientPhone }), null);
+  }
 });

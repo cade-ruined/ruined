@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as phone from "libphonenumber-js/min";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -24,7 +25,7 @@ async function load(path, dependencies = {}, globals = {}) {
   return loaded.exports;
 }
 const invitationModel = await load("src/lib/membership/invitation-model.ts");
-const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel });
+const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel, "libphonenumber-js/min": phone });
 const pricing = await load("src/lib/membership/pricing.ts");
 const request = (path, body, cookie, overrides = {}) => new NextRequest(origin + path, {
   method: "POST", headers: { origin, "content-type": "application/json", ...(cookie ? { cookie: `${contextCookie}=${cookie}` } : {}), ...overrides.headers },

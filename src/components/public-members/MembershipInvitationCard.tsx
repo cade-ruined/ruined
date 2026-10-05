@@ -90,7 +90,12 @@ function InvitationPlaceholder() {
 }
 
 /** Heavy card artwork and WebGL load only when the invitation reaches the reader. */
-export default function MembershipInvitationCard({ recipientName = null }: { recipientName?: string | null }) {
+export default function MembershipInvitationCard({ recipientName = null, card = ruined, invitationSource = "ruined_direct", expiresAt }: {
+  recipientName?: string | null;
+  card?: PublicMemberCard;
+  invitationSource?: "member" | "ruined_direct";
+  expiresAt?: string | null;
+}) {
   const updateShadow = useContext(ArchiveRoomContext);
   const root = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
@@ -116,7 +121,7 @@ export default function MembershipInvitationCard({ recipientName = null }: { rec
 
   return <div ref={root} className={styles.root} data-membership-invitation-preview>
     {inView
-      ? <Invitation card={ruined} variant="invitation" invitationSource="ruined_direct" invitationRecipientName={printedName} embedded archive={Boolean(updateShadow)} onArchiveShadow={updateShadow ?? undefined} />
+      ? <Invitation card={card} variant="invitation" invitationSource={invitationSource} invitationExpiresAt={expiresAt} invitationRecipientName={printedName} embedded archive={Boolean(updateShadow)} onArchiveShadow={updateShadow ?? undefined} />
       : <InvitationPlaceholder />}
   </div>;
 }

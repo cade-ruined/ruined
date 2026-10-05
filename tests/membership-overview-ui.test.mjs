@@ -67,9 +67,19 @@ async function components(react = React, globals = {}) {
   const Community = (await load(`${base}MembershipCommunitySection.tsx`, shared, globals)).default;
   const Offers = (await load(`${base}MembershipOfferSection.tsx`, shared, globals)).default;
   const Questions = (await load(`${base}MembershipQuestions.tsx`, shared, globals)).default;
+  const expiration = await load("src/lib/membership/invitation-expiry.ts");
+  const invitationExpiry = { useInvitationExpired: value => expiration.memberInvitationExpired(value) };
+  const Acceptance = (await load("src/components/membership/PersonalInvitationAcceptance.tsx", {
+    ...shared, "@/lib/membership/invitation-expiry": expiration,
+    "@/lib/membership/personal-invitation-presentation": await load("src/lib/membership/personal-invitation-presentation.ts"),
+    "./use-invitation-expiry": invitationExpiry,
+  }, globals)).default;
   const Overview = (await load(`${base}MembershipOverview.tsx`, {
     ...shared,
     "@/data/public-membership": { MEMBERSHIP_LINKS: { signIn: "/access" } },
+    "@/components/membership/PersonalInvitationAcceptance": Acceptance,
+    "@/components/membership/use-invitation-expiry": invitationExpiry,
+    "./MembershipWaitlistForm": WaitlistForm,
     "./MembershipInvitationCard": { __esModule: true, default: EmptyCard, MembershipInvitationRoom: Room },
     "./MembershipSignup": Signup,
     "./MembershipFoundationsSection": Foundations,
@@ -78,7 +88,7 @@ async function components(react = React, globals = {}) {
     "./MembershipOfferSection": Offers,
     "./MembershipQuestions": Questions,
   }, globals)).default;
-  return { Overview, Signup, DirectForm, WaitlistForm, Foundations, Monthly, Community, Offers, Questions };
+  return { Overview, Signup, DirectForm, WaitlistForm, Acceptance, Foundations, Monthly, Community, Offers, Questions };
 }
 
 test("landing modes explain the correct next step without registering or charging on render", async () => {
@@ -441,5 +451,77 @@ test("closing, escaping, or dismissing the film pauses it and restores page scro
     assert.equal(f.counts().closes, 1);
     assert.equal(f.document.body.style.overflow, "auto");
     f.cleanup();
+  }
+});
+
+
+const issuedInvitation = {
+  token: "P".repeat(43), recipientName: "Alex <Recipient>", invitationSource: "member",
+  expiresAt: "2099-01-01T12:00:00.000Z", membershipType: "standard",
+  card: { name: "Cade <Sender>", memberTag: "cade", wearSeed: "inviter-wear", labels: [] },
+};
+
+test("personal invites show the complete landing with the original card and token-bound acceptance", async () => {
+  const state = hooks(), c = await components(state.react);
+  const tree = state.render(c.Overview, { invitation: issuedInvitation, signupEnabled: false, registrationOnly: true, paymentSetupOnly: true });
+  const elements = nodes(tree);
+  const card = elements.find(element => element.type === EmptyCard);
+  assert.equal(card.props.card, issuedInvitation.card);
+  assert.equal(card.props.invitationSource, "member");
+  assert.equal(card.props.expiresAt, issuedInvitation.expiresAt);
+  assert.equal(card.props.recipientName, issuedInvitation.recipientName);
+  assert.equal(elements.some(element => element.type === c.Signup), false, "never mint a Ruined Direct replacement");
+  assert.equal(elements.some(element => element.type === c.WaitlistForm), false);
+  const acceptance = elements.find(element => element.type === c.Acceptance);
+  assert.equal(acceptance.props.invitationToken, issuedInvitation.token);
+  assert.equal(acceptance.props.inviterName, issuedInvitation.card.name);
+  assert.equal(acceptance.props.recipientName, issuedInvitation.recipientName);
+  assert.equal(acceptance.props.expiresAt, issuedInvitation.expiresAt);
+  assert.equal(acceptance.props.compact, true);
+  assert.equal(elements.find(element => element.type === c.Offers).props.comparisonOnly, true);
+  assert.equal(acceptance.props.recipientEmailRequired, true);
+  assert.ok(elements.some(element => element.type === c.Foundations));
+  assert.ok(elements.some(element => element.type === c.Monthly));
+  assert.ok(elements.some(element => element.type === c.Community));
+  const real = await components();
+  const html = renderToStaticMarkup(React.createElement(real.Overview, { invitation: issuedInvitation, registrationOnly: true, paymentSetupOnly: true }));
+  assert.match(html, /Accept my invitation/);
+  assert.match(html, /Compare payment options. You’ll choose your plan before activating membership/);
+  assert.match(html, /Cade &lt;Sender&gt;/);
+  assert.match(html, /Alex &lt;Recipient&gt;/);
+  assert.match(html, /id="accept-invitation"/);
+  assert.doesNotMatch(html, /Make it yours|Create my invitation|Join the waitlist/);
+});
+
+test("complimentary invitation landing keeps the curriculum but removes paid offers and card requirements", async () => {
+  const c = await components();
+  const html = renderToStaticMarkup(React.createElement(c.Overview, {
+    invitation: { ...issuedInvitation, membershipType: "complimentary" }, registrationOnly: true, paymentSetupOnly: true,
+  }));
+  assert.match(html, /Your starting point/);
+  assert.match(html, /Complimentary membership/);
+  assert.match(html, /No card or payment is required/);
+  assert.doesNotMatch(html, /id="membership-pricing"|Save a card to complete|save your card securely|When is the Founding rate reserved/);
+});
+
+test("phone-only invitation landing asks recipients to verify their chosen account email", async () => {
+  const c = await components();
+  const html = renderToStaticMarkup(React.createElement(c.Overview, {
+    invitation: { ...issuedInvitation, recipientEmailRequired: false }, registrationOnly: true, paymentSetupOnly: true,
+  }));
+  assert.match(html, /Enter the email you want to use for your Ruined account/);
+  assert.doesNotMatch(html, /Use the email address this invitation was sent to|use the email address it was sent to/);
+});
+
+test("legacy shared invitations retain their attributed waitlist and expiry checks on the full landing", async () => {
+  const state = hooks(), c = await components(state.react);
+  const legacy = { ...issuedInvitation, recipientName: undefined };
+  for (const expiresAt of [legacy.expiresAt, "2000-01-01T00:00:00Z"]) {
+    const tree = state.render(c.Overview, { invitation: { ...legacy, expiresAt }, signupEnabled: true });
+    const elements = nodes(tree);
+    const waitlist = elements.find(element => element.type === c.WaitlistForm);
+    assert.equal(waitlist.props.invitationToken, issuedInvitation.token);
+    assert.equal(waitlist.props.disabled, expiresAt.startsWith("2000"));
+    assert.equal(elements.some(element => element.type === c.Signup || element.type === c.Acceptance), false);
   }
 });

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as phone from "libphonenumber-js/min";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -25,7 +26,7 @@ async function load(path, dependencies = {}, globals = {}) {
 }
 
 const invitationModel = await load("src/lib/membership/invitation-model.ts");
-const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel });
+const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel, "libphonenumber-js/min": phone });
 const pricing = await load("src/lib/membership/pricing.ts");
 
 async function fixture(options = {}) {

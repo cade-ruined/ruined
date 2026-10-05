@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as phone from "libphonenumber-js/min";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -94,7 +95,7 @@ async function fixture(enabled, options) {
   const directInvitation = await load("app/api/membership/signup/invitation/route.ts", {
     "next/server": { NextResponse }, "@/lib/auth/request": authRequest, "@/lib/platform/config": config,
     "@/lib/membership/pricing": pricing, "@/lib/membership/invitation-model": invitationModel,
-    "@/lib/membership/personal-invitation-model": await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel }),
+    "@/lib/membership/personal-invitation-model": await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": invitationModel, "libphonenumber-js/min": phone }),
     "@/lib/membership/public-signup-admission": admission,
     "@/lib/membership/direct-invitation-repository": { issueRuinedDirectInvitation: async input => {
       calls.directIssues.push(input); return { invitationId: invitee.authUserId, created: true };

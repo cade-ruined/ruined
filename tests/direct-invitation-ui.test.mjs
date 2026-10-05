@@ -304,12 +304,19 @@ test("direct card preview uses an explicit source and fictional recipient while 
     "next/navigation": { notFound() { throw new Error("not_found"); } },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
     "@/lib/membership/invitation-preview": { memberInvitationPreviewSnapshot: () => ({ card: privateCard, expiresAt: "2099-01-01T00:00:00Z" }) },
-    "@/components/membership/MemberInvitation": { InvitationLanding: Stub },
+    "@/components/public-members/MembershipOverview": Stub,
   });
   const params = { searchParams: Promise.resolve({ source: "ruined_direct", membership: "complimentary" }) };
   const direct = await page.default(params);
-  assert.equal(direct.props.invitationSource, "ruined_direct"); assert.equal(direct.props.recipientName, "Cherry Hill");
-  assert.equal(direct.props.membershipType, "standard"); assert.equal(direct.props.preview, true);
+  assert.equal(direct.props.invitation.invitationSource, "ruined_direct"); assert.equal(direct.props.invitation.recipientName, "Cherry Hill");
+  assert.equal(direct.props.invitation.membershipType, "standard"); assert.equal(direct.props.preview, true);
+  assert.equal(direct.props.invitation.token, undefined);
+  assert.equal(direct.props.invitation.card.name, "The Ruined Project");
+  const textInvite = await page.default({ searchParams: Promise.resolve({ delivery: "text" }) });
+  assert.equal(textInvite.props.invitation.recipientEmailRequired, false);
+  assert.equal(textInvite.props.invitation.token, undefined);
+  assert.equal(textInvite.props.invitation.recipientName, "Alex Rivera");
+  assert.equal(textInvite.props.preview, true);
   mode = "connected"; await assert.rejects(page.default(params), /not_found/);
 });
 
@@ -330,6 +337,9 @@ test("overview payment FAQ matches optional setup without changing paid signup t
   const component = (await load("src/components/public-members/MembershipOverview.tsx", {
     react: React, "next/image": Stub, "next/link": "a",
     "@/data/public-membership": { MEMBERSHIP_LINKS: { signIn: "/access" } },
+    "@/components/membership/PersonalInvitationAcceptance": () => null,
+    "@/components/membership/use-invitation-expiry": { useInvitationExpired: value => value ? Date.parse(value) <= Date.now() : false },
+    "./MembershipWaitlistForm": () => null,
     "@/lib/membership/pricing": pricing, "./MembershipSignup": Stub, "./MembershipInvitationCard": { __esModule: true, default: Stub, MembershipInvitationRoom: ({ children }) => children },
     "./MembershipFoundationsSection": Stub, "./MembershipMonthlySection": Stub, "./MembershipCommunitySection": Stub,
     "./MembershipOfferSection": Stub, "./MembershipQuestions": Questions,
@@ -355,6 +365,9 @@ test("landing signup stays inline beside the Ruined card, preserving launch mode
   const component = (await load("src/components/public-members/MembershipOverview.tsx", {
     react: React, "next/image": Stub, "next/link": "a",
     "@/data/public-membership": { MEMBERSHIP_LINKS: { signIn: "/access" } },
+    "@/components/membership/PersonalInvitationAcceptance": () => null,
+    "@/components/membership/use-invitation-expiry": { useInvitationExpired: value => value ? Date.parse(value) <= Date.now() : false },
+    "./MembershipWaitlistForm": () => null,
     "@/lib/membership/pricing": pricing,
     "./MembershipFoundationsSection": Stub, "./MembershipMonthlySection": Stub, "./MembershipCommunitySection": Stub,
     "./MembershipOfferSection": Stub, "./MembershipQuestions": Stub,

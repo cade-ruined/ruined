@@ -1,11 +1,12 @@
 import type { PublicMemberCard } from "./public-card-model";
 import { MemberInvitationError } from "./invitation-model";
+import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 
 export const PERSONAL_INVITATION_DAILY_LIMIT = 20;
 export type PersonalInvitationDeliveryStatus = "not_requested" | "queued" | "sending" | "sent" | "failed" | "cancelled";
 export type InvitationMembershipType = "standard" | "complimentary";
 export type PersonalMemberInvitation = {
-  id: string; recipientName: string; recipientEmail: string; url: string | null;
+  id: string; requestId?: string; recipientName: string; recipientEmail: string; recipientPhone: string | null; url: string | null;
   issuedAt: string; expiresAt: string; revokedAt: string | null; submittedAt: string | null; acceptedAt: string | null;
   joinedAt: string | null; deliveryStatus: PersonalInvitationDeliveryStatus; sentAt: string | null; version: number;
   membershipType: InvitationMembershipType; complimentaryReason: string | null; complimentaryEndsAt: string | null;
@@ -21,28 +22,41 @@ export type PersonalMemberInvitationsSnapshot = {
 };
 export type PersonalInvitationSnapshot = PersonalMemberInvitationsSnapshot;
 export type CreatePersonalMemberInvitationInput = { recipientName: string; recipientEmail: string; requestId: string; sendEmail: boolean;
+  recipientPhone?: string | null;
   membershipType?: InvitationMembershipType; complimentaryReason?: string | null; complimentaryEndsAt?: string | null };
 export type PersonalMemberInvitationVersionInput = { version: number };
 export const PERSONAL_INVITATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export function normalizePersonalInvitationPhone(value: string): string | null {
+  const phone = parsePhoneNumberFromString(value.trim(), { defaultCountry: "US", extract: false });
+  return phone?.isPossible() && !phone.ext ? String(phone.number) : null;
+}
+
 export function validateCreatePersonalMemberInvitationInput(value: unknown): Required<CreatePersonalMemberInvitationInput> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new MemberInvitationError(400, "Add their name and email to create an invitation.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new MemberInvitationError(400, "Add their name and an email or phone number to create an invitation.");
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !["recipientName", "recipientEmail", "requestId", "sendEmail", "membershipType", "complimentaryReason", "complimentaryEndsAt"].includes(key)) ||
+  if (Object.keys(input).some(key => !["recipientName", "recipientEmail", "recipientPhone", "requestId", "sendEmail", "membershipType", "complimentaryReason", "complimentaryEndsAt"].includes(key)) ||
       typeof input.recipientName !== "string" || typeof input.recipientEmail !== "string" ||
+      (input.recipientPhone != null && typeof input.recipientPhone !== "string") ||
       typeof input.requestId !== "string" || !PERSONAL_INVITATION_UUID.test(input.requestId) || typeof input.sendEmail !== "boolean" ||
-      /[\u0000-\u001f\u007f]/u.test(input.recipientName + input.recipientEmail)) {
-    throw new MemberInvitationError(400, "Check the recipient's name and email and try again.");
+      /[\u0000-\u001f\u007f]/u.test(input.recipientName + input.recipientEmail + (input.recipientPhone ?? ""))) {
+    throw new MemberInvitationError(400, "Check the recipient's name and contact details and try again.");
   }
   const recipientName = input.recipientName.trim().replace(/\s+/gu, " ");
   const recipientEmail = input.recipientEmail.trim().toLowerCase();
-  if (!recipientName || Array.from(recipientName).length > 100 || recipientEmail.length > 254 || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(recipientEmail)) {
-    throw new MemberInvitationError(400, "Check the recipient's name and email and try again.");
+  const rawPhone = typeof input.recipientPhone === "string" ? input.recipientPhone.trim() : "";
+  const recipientPhone = rawPhone && rawPhone.length <= 64 ? normalizePersonalInvitationPhone(rawPhone) : null;
+  if (!recipientName || Array.from(recipientName).length > 100 || recipientEmail.length > 254 ||
+      (recipientEmail && !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(recipientEmail)) ||
+      (rawPhone && !recipientPhone) || (!recipientEmail && !recipientPhone)) {
+    throw new MemberInvitationError(400, "Add their name and a valid email or phone number.");
   }
+  if (input.sendEmail && !recipientEmail) throw new MemberInvitationError(400, "Add an email address to send this invitation by email.");
   const membershipType = input.membershipType === undefined ? "standard" : input.membershipType;
   if (membershipType !== "standard" && membershipType !== "complimentary") throw new MemberInvitationError(400, "Choose standard or complimentary membership.");
   let complimentaryReason: string | null = null, complimentaryEndsAt: string | null = null;
   if (membershipType === "complimentary") {
+    if (!recipientEmail) throw new MemberInvitationError(400, "Complimentary invitations need an email address so only the intended person can accept. You can still share the invitation by text.");
     if (typeof input.complimentaryReason !== "string" || /[\u0000-\u001f\u007f]/u.test(input.complimentaryReason)) {
       throw new MemberInvitationError(400, "Add a reason for complimentary membership.");
     }
@@ -57,7 +71,7 @@ export function validateCreatePersonalMemberInvitationInput(value: unknown): Req
   } else if (input.complimentaryReason != null || input.complimentaryEndsAt != null) {
     throw new MemberInvitationError(400, "Complimentary details require complimentary membership.");
   }
-  return { recipientName, recipientEmail, requestId: input.requestId.toLowerCase(), sendEmail: input.sendEmail,
+  return { recipientName, recipientEmail, recipientPhone, requestId: input.requestId.toLowerCase(), sendEmail: input.sendEmail,
     membershipType, complimentaryReason, complimentaryEndsAt };
 }
 

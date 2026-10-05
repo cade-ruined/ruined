@@ -38,13 +38,83 @@ test("personal invitations create independently, normalize recipient details, an
   assert.equal(two.remainingToday, 18); assert.equal(two.invitations[0].deliveryStatus, "not_requested");
   assert.notEqual(two.invitations[0].url, invite.url);
   const pub = await f.repository.getPublicMemberInvitation(token(invite));
-  assert.deepEqual(Object.keys(pub).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "recipientName"]);
+  assert.deepEqual(Object.keys(pub).sort(), ["card", "complimentaryEndsAt", "expiresAt", "membershipType", "recipientEmailRequired", "recipientName"]);
+  assert.equal(pub.recipientEmailRequired, true);
   assert.equal(pub.recipientName, "Alex Recipient"); assert.equal(pub.expiresAt, invite.expiresAt);
-  assert.doesNotMatch(JSON.stringify(pub), /member-3|example.test|recipientEmail|PRIVATE|requestId|member_id/);
+  assert.doesNotMatch(JSON.stringify(pub), /member-3|example.test|recipientEmail"|PRIVATE|requestId|member_id/);
   assert.equal((await f.personalRepository.getOwnPersonalInvitations(second.auth)).invitations.length, 0);
   await f.db.query("update person_profiles set display_name='Updated Member',member_tag='updated' where person_id=$1", [first.person]);
   assert.equal((await f.repository.getPublicMemberInvitation(token(invite))).card.name, "Updated Member");
   assert.equal((await f.repository.getPublicMemberInvitation(token(invite))).expiresAt, invite.expiresAt);
+});
+
+test("phone-only invitations normalize contacts, keep a single token, and never expose recipient contact publicly", async t => {
+  const f = await fixture(t);
+  const value = input(1, { recipientEmail: "", recipientPhone: "(801) 555-0123", sendEmail: false });
+  const invitation = (await create(f, value)).invitations[0];
+  assert.equal(invitation.recipientEmail, "");
+  assert.equal(invitation.recipientPhone, "+18015550123");
+  assert.equal(invitation.requestId, value.requestId);
+  assert.equal(invitation.deliveryStatus, "not_requested");
+  assert.deepEqual((await create(f, { ...value, recipientPhone: "+1 801 555 0123" })).invitations[0], invitation);
+  assert.equal(Date.parse(invitation.expiresAt) - Date.parse(invitation.issuedAt), 48 * 60 * 60 * 1000);
+  const pub = await f.repository.getPublicMemberInvitation(token(invitation));
+  assert.equal(pub.recipientEmailRequired, false);
+  assert.equal(pub.recipientName, value.recipientName);
+  assert.doesNotMatch(JSON.stringify(pub), /801|555|recipientPhone|recipientEmail"|bound_at|requestId/);
+  await assert.rejects(create(f, input(2, { recipientPhone: "+18015550123" })), { status: 409 });
+  await assert.rejects(create(f, { ...value, recipientPhone: "+18015550999" }), { status: 409 });
+  assert.equal((await f.db.query("select count(*)::int as count from member_personal_invitations")).rows[0].count, 1);
+});
+
+test("phone input requires a possible unambiguous number and complimentary or email delivery still needs an email", async t => {
+  const f = await fixture(t);
+  const valid = input(1, { recipientEmail: "", recipientPhone: "+44 20 7946 0018", sendEmail: false });
+  assert.equal(f.personalModel.validateCreatePersonalMemberInvitationInput(valid).recipientPhone, "+442079460018");
+  for (const recipientPhone of ["", "123", "+0 8015550123", "Call 801-555-0123", "8015550123 ext 42", "8015550123\n", "1".repeat(65), {}]) {
+    assert.throws(() => f.personalModel.validateCreatePersonalMemberInvitationInput({ ...valid, recipientPhone }), { status: 400 });
+  }
+  assert.throws(() => f.personalModel.validateCreatePersonalMemberInvitationInput({ ...valid, sendEmail: true }), { status: 400 });
+  assert.throws(() => f.personalModel.validateCreatePersonalMemberInvitationInput({ ...valid, membershipType: "complimentary", complimentaryReason: "Founding member" }), { status: 400 });
+  const emailAndPhone = f.personalModel.validateCreatePersonalMemberInvitationInput(input(2, { recipientPhone: "+18015550123", membershipType: "complimentary", complimentaryReason: "Founding member" }));
+  assert.equal(emailAndPhone.recipientEmail, newcomer.email);
+  assert.equal(emailAndPhone.recipientPhone, "+18015550123");
+});
+
+test("unbound text links cannot bind an email through a waitlist submission or direct recipient edit", async t => {
+  const f = await fixture(t);
+  const invitation = (await create(f, input(1, { recipientEmail: "", recipientPhone: "+18015550123", sendEmail: false }))).invitations[0];
+  await assert.rejects(f.submit(newcomer, token(invitation)), { code: "P4100" });
+  for (const assignment of ["recipient_email_normalized='other@example.test'", "recipient_phone='+18015550999'", "recipient_email_bound_at=clock_timestamp()", "email_requested=true"]) {
+    await assert.rejects(f.db.query(`update member_personal_invitations set ${assignment} where id=$1`, [invitation.id]));
+  }
+  assert.equal((await f.db.query("select * from membership_waitlist")).rows.length, 0);
+  assert.equal((await f.db.query("select * from member_referrals")).rows.length, 0);
+  assert.equal((await f.db.query("select * from integration_outbox")).rows.length, 0);
+  assert.equal((await f.db.query("select recipient_email_normalized from member_personal_invitations where id=$1", [invitation.id])).rows[0].recipient_email_normalized, null);
+  const { rows: [waitlist] } = await f.db.query("insert into membership_waitlist(name,email_normalized) values('Existing interest',$1) returning id", [newcomer.email]);
+  await assert.rejects(f.db.query("select private.ruined_capture_member_referral($1,$2)", [waitlist.id, token(invitation)]), { code: "P4100" });
+  await assert.rejects(f.db.query("select private.ruined_mark_personal_invitation_submission($1,$2)", [token(invitation), newcomer.email]), { code: "P4100" });
+  assert.equal((await f.db.query("select * from member_referrals")).rows.length, 0);
+  assert.equal((await f.db.query("select submitted_at from member_personal_invitations where id=$1", [invitation.id])).rows[0].submitted_at, null);
+  await f.db.query("update ruined_members set deleted_at=clock_timestamp() where id=$1", [first.member]);
+  assert.equal((await f.db.query("select * from member_personal_invitations")).rows.length, 0, "Member erasure also removes private phone destinations");
+});
+
+test("retrying phone invitation creation remains idempotent after verified email binding", async t => {
+  const f = await fixture(t), value = input(1, { recipientEmail: "", recipientPhone: "+18015550123", sendEmail: false });
+  const invitation = (await create(f, value)).invitations[0];
+  await f.addMember(newcomer, false, true);
+  await f.db.query("update member_personal_invitations set recipient_email_normalized=$2,recipient_email_bound_at=clock_timestamp(),accepted_at=clock_timestamp(),accepted_by_auth_user_id=$3,accepted_member_id=$4 where id=$1", [invitation.id, newcomer.email, newcomer.auth, newcomer.member]);
+  const accepted = await f.personalRepository.getOwnPersonalInvitations(first.auth);
+  const retry = await create(f, value);
+  assert.deepEqual(retry, accepted);
+  assert.equal(retry.invitations[0].recipientEmail, newcomer.email);
+  assert.equal(retry.invitations[0].requestId, value.requestId);
+  await assert.rejects(create(f, { ...value, recipientEmail: newcomer.email }), { status: 409 });
+  const originallyEmail = input(2, { recipientEmail: "original@example.test", recipientPhone: "+18015550999", sendEmail: false });
+  await create(f, originallyEmail);
+  await assert.rejects(create(f, { ...originallyEmail, recipientEmail: "" }), { status: 409 });
 });
 
 test("idempotent creation preserves one queue item and its original deadline while rejecting request collisions and active duplicate recipients", async t => {
@@ -73,6 +143,7 @@ test("daily creation limit includes link-only and revoked history but idempotent
   const firstInvite = snapshot.invitations[0];
   await f.personalRepository.revokeOwnPersonalInvitation(first.auth, firstInvite.id, { version: 1 });
   await assert.rejects(create(f, input(21, { recipientEmail: "next@example.test" })), { status: 429 });
+  await assert.rejects(create(f, input(22, { recipientEmail: "", recipientPhone: "+18015550123", sendEmail: false })), { status: 429 });
   assert.equal((await create(f, input(1, { recipientEmail: "recipient1@example.test", sendEmail: false }))).invitations.length, 20);
   assert.equal((await create(f, input(21, { recipientEmail: "another@example.test" }), second)).invitations.length, 1);
 });

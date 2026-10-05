@@ -11,17 +11,18 @@ const tiers: { key: MembershipOfferTier; name: string; detail: string }[] = [
   { key: "couple", name: "Couples", detail: "Two adults · one bill" },
 ];
 
-export default function MembershipOfferSection({ plan, onPlanChange, mode, disabled = false, registrationOnly = false }: {
+export default function MembershipOfferSection({ plan, onPlanChange, mode, disabled = false, registrationOnly = false, comparisonOnly = false }: {
   plan: MembershipBillingPlan;
   onPlanChange: (plan: MembershipBillingPlan) => void;
   mode: MembershipLandingMode;
   disabled?: boolean;
   registrationOnly?: boolean;
+  comparisonOnly?: boolean;
 }) {
   const id = useId();
   const registrationOpen = registrationOnly && mode !== "waitlist";
   return <section className={styles.offer} id="membership-pricing" aria-labelledby="offer-heading">
-    <div className={styles.heading}><h2 id="offer-heading">Membership.</h2><p>One community. Everything you need to begin.</p></div>
+    <div className={styles.heading}><h2 id="offer-heading">Membership.</h2><p>{comparisonOnly ? "Compare payment options. You’ll choose your plan before activating membership." : "One community. Everything you need to begin."}</p></div>
 
     <fieldset className={styles.planSwitch} disabled={disabled}>
       <legend className={styles.srOnly}>Compare membership payment options</legend>

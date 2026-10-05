@@ -71,17 +71,17 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
   return withFreshApplicationDatabaseRead("member-invitations", async () => {
     const [row] = await getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string; recipient_name: string | null;
-      membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null }>>`
+      membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null; recipient_email_required: boolean }>>`
       select invitation.member_id, invitation.origin, invitation.expires_at, invitation.recipient_name,
-        invitation.membership_type, invitation.complimentary_ends_at,
+        invitation.membership_type, invitation.complimentary_ends_at, invitation.recipient_email_required,
         case when invitation.origin = 'ruined_direct' then 'The Ruined Project'
           else coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') end as name,
         case when invitation.origin = 'ruined_direct' then null else profile.member_tag end as member_tag
       from (
-        select member_id, 'member'::text as origin, expires_at, null::text as recipient_name, 'standard'::text as membership_type, null::timestamptz as complimentary_ends_at from member_invitations
+        select member_id, 'member'::text as origin, expires_at, null::text as recipient_name, 'standard'::text as membership_type, null::timestamptz as complimentary_ends_at, true as recipient_email_required from member_invitations
         where public_token = ${token} and enabled and expires_at > clock_timestamp()
         union all
-        select member_id, origin, expires_at, recipient_name, membership_type, complimentary_ends_at from member_personal_invitations
+        select member_id, origin, expires_at, recipient_name, membership_type, complimentary_ends_at, recipient_email_normalized is not null as recipient_email_required from member_personal_invitations
         where public_token = ${token} and revoked_at is null and expires_at > clock_timestamp()
           and private.ruined_personal_invitation_benefit_available(id)
           and (origin = 'member' or (${getPlatformConfiguration().membershipSignupReady === true}
@@ -97,6 +97,7 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
         ...(!getPlatformConfiguration().stripeCheckoutReady ? { paymentSetupOnly: true } : {}) } : {}),
       expiresAt: expiresAt(row.expires_at),
       ...(row.recipient_name !== null ? { recipientName: row.recipient_name, membershipType: row.membership_type,
+        recipientEmailRequired: row.recipient_email_required,
         complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) } : null;
   });
 }

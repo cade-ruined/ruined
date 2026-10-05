@@ -17,7 +17,8 @@ export class PersonalInvitationAdmissionDeniedError extends Error {
 const deny = () => { throw new PersonalInvitationAdmissionDeniedError(); };
 
 export type PersonalInvitationClaim = {
-  id: string; member_id: string | null; origin: "member" | "ruined_direct"; billing_plan: MembershipBillingPlan | null; recipient_name: string; recipient_email_normalized: string;
+  id: string; member_id: string | null; origin: "member" | "ruined_direct"; billing_plan: MembershipBillingPlan | null; recipient_name: string; recipient_email_normalized: string | null;
+  recipient_phone: string | null; membership_type: "standard" | "complimentary";
   issued_at: Date; expires_at: Date; accepted_at: Date | null;
   accepted_by_auth_user_id: string | null; accepted_member_id: string | null;
 };
@@ -31,7 +32,11 @@ export async function getPersonalInvitationAdmissionEligibility(email: string, t
     const [row] = await sql<Array<{ eligible: boolean }>>`select exists (
       select 1 from member_personal_invitations invitation
       left join ruined_members inviter on inviter.id = invitation.member_id and inviter.deleted_at is null
-      where invitation.public_token = ${token} and invitation.recipient_email_normalized = ${normalized}
+      where invitation.public_token = ${token}
+        and (invitation.recipient_email_normalized = ${normalized} or (
+          invitation.recipient_email_normalized is null and invitation.recipient_phone is not null
+          and invitation.origin = 'member' and invitation.membership_type = 'standard' and invitation.accepted_at is null
+        ))
         and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
         and private.ruined_personal_invitation_benefit_available(invitation.id)
         and ((invitation.origin = 'ruined_direct' and ${getPlatformConfiguration().membershipSignupReady === true}
@@ -76,13 +81,15 @@ export async function lockPersonalInvitationClaim(tx: TransactionSql, viewer: Pl
       where member.id = ${source.member_id}::uuid for share of viewer, grant_row`;
   }
   const [invitation] = await tx<PersonalInvitationClaim[]>`select * from member_personal_invitations where public_token = ${token} for update`;
-  if (!invitation || invitation.recipient_email_normalized !== viewer.email.trim().toLowerCase()
+  const phoneOnly = invitation?.recipient_email_normalized === null && invitation.recipient_phone !== null
+    && invitation.origin === "member" && invitation.membership_type === "standard" && invitation.accepted_at === null;
+  if (!invitation || (!phoneOnly && invitation.recipient_email_normalized !== viewer.email.trim().toLowerCase())
       || (invitation.accepted_by_auth_user_id && invitation.accepted_by_auth_user_id !== viewer.authUserId)) return deny();
-  await requireCurrentPersonalInvitation(tx, invitation);
+  await requireCurrentPersonalInvitation(tx, invitation, viewer.email.trim().toLowerCase());
   return invitation;
 }
 
-async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: PersonalInvitationClaim) {
+async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: PersonalInvitationClaim, recipientEmail: string) {
   if (invitation.origin === "ruined_direct") {
     if (!getPlatformConfiguration().membershipSignupReady) return deny();
     const [direct] = await tx<Array<{ eligible: boolean }>>`select exists (
@@ -98,9 +105,13 @@ async function requireCurrentPersonalInvitation(tx: TransactionSql, invitation: 
     where invitation.id = ${invitation.id}::uuid and invitation.revoked_at is null and invitation.expires_at > clock_timestamp()
       and private.ruined_personal_invitation_benefit_available(invitation.id)
       and inviter.deleted_at is null and private.ruined_member_can_share_invitation(inviter.id)
-      and inviter.email_normalized <> invitation.recipient_email_normalized
+      and (invitation.recipient_email_normalized = ${recipientEmail} or (
+        invitation.recipient_email_normalized is null and invitation.recipient_phone is not null
+        and invitation.membership_type = 'standard' and invitation.accepted_at is null
+      ))
+      and inviter.email_normalized <> ${recipientEmail}
       and not exists (select 1 from person_email_addresses address where address.person_id = inviter.person_id
-        and address.email_normalized = invitation.recipient_email_normalized and address.retired_at is null)
+        and address.email_normalized = ${recipientEmail} and address.retired_at is null)
   ) as eligible`;
   if (!row?.eligible) deny();
 }
@@ -159,17 +170,9 @@ export async function preparePersonalInvitationClaim(tx: TransactionSql, viewer:
     await enrollNewMemberRegistration(tx, member.id);
   }
 
-  // Referral attribution still uses its canonical first-interest row, but
-  // accepting an invitation does not join a waitlist or queue marketing/sheet work.
-  const [newEntry] = await tx<Array<{ id: string }>>`insert into membership_waitlist(name,email_normalized)
-    values(${invitation.recipient_name},${email}) on conflict(email_normalized) do nothing returning id`;
-  const [entry] = newEntry ? [newEntry] : await tx<Array<{ id: string }>>`select id from membership_waitlist where email_normalized = ${email}`;
-  if (entry) {
-    // Existing attribution is immutable; only an un-attributed verified joining
-    // can establish its first inviter here.
-    await tx`select private.ruined_capture_member_referral(${entry.id}::uuid,
-      (select public_token from member_personal_invitations where id = ${invitation.id}::uuid))`;
-  }
+  // Email-addressed invitations retain their existing attribution order. Text
+  // invitations cannot capture an arbitrary email before verified acceptance.
+  if (invitation.recipient_email_normalized !== null) await capturePersonalInvitationReferral(tx, invitation, email);
   if (identity?.status === 'active' && identity.member_id === member.id && grants.some(row => !row.revoked_at)) return null;
   const [allowance] = await tx<Array<{ id: string }>>`insert into passwordless_account_invites(
     member_id,email_normalized,intended_user_type,invited_at,expires_at,provider_reference)
@@ -178,19 +181,39 @@ export async function preparePersonalInvitationClaim(tx: TransactionSql, viewer:
   return allowance?.id ?? deny();
 }
 
+async function capturePersonalInvitationReferral(tx: TransactionSql, invitation: PersonalInvitationClaim, email: string) {
+  // This is attribution, not a new waitlist opt-in or marketing queue item.
+  const [newEntry] = await tx<Array<{ id: string }>>`insert into membership_waitlist(name,email_normalized)
+    values(${invitation.recipient_name},${email}) on conflict(email_normalized) do nothing returning id`;
+  const [entry] = newEntry ? [newEntry] : await tx<Array<{ id: string }>>`select id from membership_waitlist where email_normalized = ${email}`;
+  if (entry) await tx`select private.ruined_capture_member_referral(${entry.id}::uuid,
+    (select public_token from member_personal_invitations where id = ${invitation.id}::uuid))`;
+}
+
 export async function completePersonalInvitationClaim(tx: TransactionSql, viewer: PlatformViewer, invitation: PersonalInvitationClaim, memberId: string): Promise<void> {
-  await requireCurrentPersonalInvitation(tx, invitation);
+  const email = viewer.email.trim().toLowerCase();
+  await requireCurrentPersonalInvitation(tx, invitation, email);
   if (invitation.accepted_at) {
     if (invitation.accepted_by_auth_user_id !== viewer.authUserId || invitation.accepted_member_id !== memberId) deny();
     return;
   }
   const [accepted] = await tx<Array<{ id: string }>>`update member_personal_invitations
     set accepted_at = clock_timestamp(), accepted_by_auth_user_id = ${viewer.authUserId}::uuid,
+      recipient_email_bound_at = case when recipient_email_normalized is null then clock_timestamp() else recipient_email_bound_at end,
+      recipient_email_normalized = coalesce(recipient_email_normalized, ${email}),
       accepted_member_id = ${memberId}::uuid, version = version + 1, updated_at = clock_timestamp(),
       delivery_status = case when delivery_status in ('queued','sending','failed') then 'cancelled' else delivery_status end,
       next_attempt_at = null, delivery_locked_at = null, delivery_lock_token = null
     where id = ${invitation.id}::uuid and accepted_at is null and revoked_at is null and expires_at > clock_timestamp()
+      and (recipient_email_normalized is null or recipient_email_normalized = ${email})
     returning id`;
   if (!accepted) deny();
+  if (invitation.recipient_email_normalized === null) {
+    await capturePersonalInvitationReferral(tx, invitation, email);
+    // The email-verification trigger ran before this phone-only referral could
+    // exist. Bind now using the same verified-identity checks as every referral.
+    await tx`select private.ruined_bind_member_referral(
+      (select person_id from ruined_members where id = ${memberId}::uuid), ${email})`;
+  }
   if (invitation.origin !== "ruined_direct") await tx`select private.ruined_redeem_complimentary_invitation(${invitation.id}::uuid, ${memberId}::uuid, ${viewer.authUserId}::uuid)`;
 }

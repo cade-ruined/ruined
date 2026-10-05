@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as crypto from "node:crypto";
 import postgres from "postgres";
 import ts from "typescript";
+import * as phone from "libphonenumber-js/min";
 import { loadPGliteForSchemaChecks } from "../../scripts/check-support-schema.mjs";
 import { Parameter, types as postgresTypes } from "../../node_modules/postgres/src/types.js";
 
@@ -53,6 +54,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
   if (applyExpiry) await db.exec(await source("db/migrations/20260929000000_public_member_signup.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260929002000_ruined_direct_invitations.sql"));
   if (applyExpiry) await db.exec(await source("db/migrations/20260930130000_direct_signup_confirmation.sql"));
+  if (applyExpiry) await db.exec(await source("db/migrations/20261005210000_personal_invitation_phone.sql"));
   function wrap(client) {
     const sql = (strings, ...values) => {
       const parameters = values.map((value, index) => {
@@ -83,7 +85,7 @@ export async function fixture(t, { applyExpiry = true } = {}) {
     "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity }, "./invitation-model": model,
     "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
   });
-  const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": model });
+  const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": model, "libphonenumber-js/min": phone });
   const personalRepository = await load("src/lib/membership/personal-invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto,
     "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, read) => read() },
