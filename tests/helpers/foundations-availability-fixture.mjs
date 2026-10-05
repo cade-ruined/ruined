@@ -9,11 +9,12 @@ const compiled = ts.transpileModule(source, {
 
 // Each fixture gets the real launch guard with isolated configuration, never
 // a process-wide flag that could change another test's launch state.
-export function loadFoundationsAvailability(environment = {}) {
+export function loadFoundationsAvailability(environment = {}, { getOperatorRole = async () => null, logger = { error() {} } } = {}) {
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)((name) => {
+  new Function("require", "module", "exports", "process", "console", compiled)((name) => {
+    if (name === "@/lib/platform/repository") return { getOperatorRole };
     assert.equal(name, "server-only");
     return {};
-  }, loaded, loaded.exports, { env: environment });
+  }, loaded, loaded.exports, { env: environment }, logger);
   return loaded.exports;
 }
