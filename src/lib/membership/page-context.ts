@@ -69,7 +69,7 @@ export async function getMembershipPageContext<T>(
     return { configuration, data: null, state: "unavailable", viewer };
   }
   let destination: string | null = null;
-  if (!["entry", "payment-method", "registration"].includes(area)) {
+  if (!["entry", "payment-method", "registration", "activation"].includes(area)) {
     try { destination = await getMemberRegistrationDestination(viewer.authUserId); }
     catch (error) {
       console.error(`Ruined Membership ${area} registration could not be loaded`, safeErrorDetails(error));

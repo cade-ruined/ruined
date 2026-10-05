@@ -6,8 +6,8 @@ import type Stripe from "stripe";
 import { getBillingDatabase } from "@/lib/stripe/database";
 import { getMemberBillingCommitment } from "@/lib/stripe/commitment-account";
 import { getStripe, isStripeTaxEnabled } from "@/lib/stripe/server";
-import { readCommitmentProviderEvidence, stripeObjectId, verifyCommitmentSubscription } from "@/lib/stripe/cancellation-provider";
-import { MembershipCommitmentError, quoteMembershipCancellation, quoteMembershipRenewalCancellation,
+import { readCommitmentProviderEvidence, readPrestartCancellationEvidence, stripeObjectId, verifyCommitmentSubscription } from "@/lib/stripe/cancellation-provider";
+import { MembershipCommitmentError, quoteMembershipCancellation, quoteMembershipRenewalCancellation, quoteMembershipPrestartCancellation,
   type MembershipCancellationIntent, type MembershipCancellationQuote, type MembershipCommitment } from "@/lib/stripe/commitment-policy";
 import { completeMembershipCancellation, confirmMembershipBillingStopped, fenceMembershipReplacementInvoice,
   getMembershipCancellation, getMembershipCommitment, markMembershipCancellationNeedsReview,
@@ -36,7 +36,10 @@ export async function createMemberCancellationQuote(memberId: string, intent: Me
   if (!contract) throw new MembershipCommitmentError("no_paid_commitment");
   const stripe = getStripe(), sql = getBillingDatabase();
   let quote: MembershipCancellationQuote, evidence: string | null = null;
-  if (intent === "disable_renewal") {
+  if (intent === "cancel_before_start") {
+    const provider = await readPrestartCancellationEvidence(contract);
+    quote = quoteMembershipPrestartCancellation(contract, provider.snapshot);
+  } else if (intent === "disable_renewal") {
     const subscription = await stripe.subscriptions.retrieve(contract.subscriptionId);
     verifyCommitmentSubscription(subscription, contract);
     quote = quoteMembershipRenewalCancellation(contract, renewalSnapshot(subscription));
@@ -144,14 +147,44 @@ export async function confirmMemberCancellation(memberId: string, quoteId: strin
       return { effectiveAt: cancellation.quote.effectiveAt, invoiceUrl: invoice?.hosted_invoice_url ?? null };
     }
     if (!cancellation) {
-      if (Date.now() > Date.parse(stored.quote.expiresAt)) throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
+      if (Date.now() >= Date.parse(stored.quote.expiresAt)) throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
       if (stored.quote.intent === "early_exit") {
         const current = await readCommitmentProviderEvidence(contract);
         if (current.fingerprint !== stored.evidence) throw new MembershipCommitmentError("cancellation_quote_expired_or_changed");
       }
       cancellation = await sql.begin(tx => reserveMembershipCancellation(tx, { requestId: stored.id, memberId, quote: stored.quote }));
     }
-    if (cancellation.status === "manual_review" || cancellation.status === "abandoned") throw new MembershipCommitmentError("early_exit_requires_review");
+    if (cancellation.status === "manual_review" || cancellation.status === "abandoned") {
+      throw new MembershipCommitmentError(stored.quote.intent === "cancel_before_start" ? "prestart_cancellation_requires_review" : "early_exit_requires_review");
+    }
+    if (stored.quote.intent === "cancel_before_start") {
+      if (cancellation.status === "requested") {
+        const before = await readPrestartCancellationEvidence(contract);
+        if (before.subscription.status !== "canceled") {
+          // Recheck after the network reads. Leave enough time for the bounded
+          // cancellation request to complete before the immutable billing start.
+          if (Date.parse(contract.startsAt) - Date.now() <= requestOptions.timeout + 2_000) {
+            throw new MembershipCommitmentError("prestart_cancellation_requires_review");
+          }
+          await stripe.subscriptions.cancel(contract.subscriptionId, { invoice_now: false, prorate: false },
+            { ...requestOptions, idempotencyKey: `${cancellation.providerIdempotencyKey}:cancel-before-start` });
+        }
+        // On a timeout retry, a previously canceled object is read and verified
+        // here. Never restore it or issue a second subscription/invoice.
+        const after = await readPrestartCancellationEvidence(contract);
+        if (after.subscription.status !== "canceled") throw new MembershipCommitmentError("prestart_cancellation_requires_review");
+        const stopped = await sql.begin(tx => confirmMembershipBillingStopped(tx, stored.id, {
+          subscriptionId: after.snapshot.subscriptionId, customerId: after.snapshot.customerId,
+          livemode: after.snapshot.livemode, observedAt: after.snapshot.observedAt, subscriptionStatus: "canceled",
+          cancelAt: null, canceledAt: after.snapshot.canceledAt, firstChargeAt: after.snapshot.firstChargeAt,
+          openOrdinaryInvoiceIds: [], pendingProrationOrInvoiceItems: false, noInvoices: true,
+        }));
+        if (!stopped) throw new MembershipCommitmentError("cancellation_in_progress");
+      }
+      const completed = await sql.begin(tx => completeMembershipCancellation(tx, { cancellationId: stored.id, replacementInvoiceId: null }));
+      if (!completed) throw new MembershipCommitmentError("cancellation_in_progress");
+      return { effectiveAt: stored.quote.effectiveAt, invoiceUrl: null };
+    }
     if (cancellation.status === "requested") {
       const before = await stripe.subscriptions.retrieve(contract.subscriptionId);
       const item = verifyCommitmentSubscription(before, contract);
@@ -190,7 +223,7 @@ export async function confirmMemberCancellation(memberId: string, quoteId: strin
     if (!completed) throw new MembershipCommitmentError("cancellation_in_progress");
     return { effectiveAt: stored.quote.effectiveAt, invoiceUrl: null };
   } catch (error) {
-    if (error instanceof MembershipCommitmentError && stored.quote.intent === "early_exit") {
+    if (error instanceof MembershipCommitmentError && stored.quote.intent !== "disable_renewal") {
       await sql.begin(tx => markMembershipCancellationNeedsReview(tx, stored.id, error.code));
     }
     throw error;

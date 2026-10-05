@@ -51,7 +51,7 @@ export type CommitmentLedger = {
   state: "unknown" | "complete" | "review_required";
   invoices: CommitmentInvoice[];
 };
-export type MembershipCancellationIntent = "disable_renewal" | "early_exit";
+export type MembershipCancellationIntent = "disable_renewal" | "early_exit" | "cancel_before_start";
 export type MembershipCancellationQuote = {
   contractId: string;
   memberId: string;
@@ -69,6 +69,18 @@ export type MembershipCancellationQuote = {
   replacesRemainingInstallments: boolean;
   fingerprint: string;
   renewalProviderSnapshot?: CommitmentRenewalProviderSnapshot;
+  prestartProviderSnapshot?: CommitmentPrestartProviderSnapshot;
+};
+export type CommitmentPrestartProviderSnapshot = {
+  subscriptionId: string;
+  customerId: string;
+  livemode: boolean;
+  status: "active" | "canceled";
+  firstChargeAt: string;
+  canceledAt: string | null;
+  observedAt: string;
+  hasInvoices: boolean;
+  pendingInvoiceItems: boolean;
 };
 export type CommitmentRenewalProviderSnapshot = {
   subscriptionId: string;
@@ -202,7 +214,34 @@ export function cancellationQuoteFingerprint(quote: Omit<MembershipCancellationQ
     quote.renewalProviderSnapshot ? [quote.renewalProviderSnapshot.subscriptionId, quote.renewalProviderSnapshot.customerId,
       quote.renewalProviderSnapshot.livemode, quote.renewalProviderSnapshot.currentPeriodEnd,
       quote.renewalProviderSnapshot.status, quote.renewalProviderSnapshot.observedAt, quote.renewalProviderSnapshot.cancelAt ?? null] : null,
+    ...(quote.prestartProviderSnapshot ? [[quote.prestartProviderSnapshot.subscriptionId, quote.prestartProviderSnapshot.customerId,
+      quote.prestartProviderSnapshot.livemode, quote.prestartProviderSnapshot.status, quote.prestartProviderSnapshot.firstChargeAt,
+      quote.prestartProviderSnapshot.canceledAt, quote.prestartProviderSnapshot.observedAt,
+      quote.prestartProviderSnapshot.hasInvoices, quote.prestartProviderSnapshot.pendingInvoiceItems]] : []),
   ])).digest("hex");
+}
+
+/** Before the immutable service start, cancellation ends the authorization with
+ * no fee or paid access. An existing invoice is never silently waived here. */
+export function quoteMembershipPrestartCancellation(contract: MembershipCommitment,
+  provider: CommitmentPrestartProviderSnapshot, now = new Date()): MembershipCancellationQuote {
+  if (contract.billingTermsVersion !== MEMBERSHIP_COMMITMENT_TERMS_VERSION
+    || now.getTime() >= timestamp(contract.startsAt)
+    || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
+    || provider.livemode !== contract.livemode || provider.status !== "active" || provider.canceledAt !== null
+    || timestamp(provider.firstChargeAt) !== timestamp(contract.startsAt) || provider.hasInvoices || provider.pendingInvoiceItems
+    || timestamp(provider.observedAt) > now.getTime()
+    || now.getTime() - timestamp(provider.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
+    throw new MembershipCommitmentError("prestart_cancellation_requires_review");
+  }
+  const quote = {
+    contractId: contract.id, memberId: contract.memberId, subscriptionId: contract.subscriptionId, livemode: contract.livemode,
+    intent: "cancel_before_start" as const, ledgerRevision: 0, quotedAt: now.toISOString(),
+    expiresAt: new Date(Math.min(now.getTime() + 5 * 60_000, timestamp(contract.startsAt))).toISOString(),
+    effectiveAt: now.toISOString(), accessThrough: null, remainingInitialDues: 0, buyoutDues: 0, currency: "usd" as const,
+    replacesRemainingInstallments: false, prestartProviderSnapshot: provider,
+  };
+  return { ...quote, fingerprint: cancellationQuoteFingerprint(quote) };
 }
 
 /** Stopping renewal never depends on settling disputed dues or producing a buyout.
@@ -212,6 +251,7 @@ export function cancellationQuoteFingerprint(quote: Omit<MembershipCancellationQ
 export function quoteMembershipRenewalCancellation(contract: MembershipCommitment,
   provider: CommitmentRenewalProviderSnapshot, now = new Date()): MembershipCancellationQuote {
   if (contract.billingTermsVersion !== MEMBERSHIP_COMMITMENT_TERMS_VERSION
+    || now.getTime() < timestamp(contract.startsAt)
     || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
     || provider.livemode !== contract.livemode || !["active", "past_due", "unpaid", "canceled"].includes(provider.status)
     || timestamp(provider.observedAt) > now.getTime()

@@ -2,11 +2,11 @@
 
 Stripe handles membership billing and consulting invoices. Shopify remains the retail checkout system. This guide describes the current local implementation; it does not establish that code, migrations, terms or settings are deployed.
 
-**Release hold:** keep `STRIPE_MEMBERSHIP_COMMERCIAL_READY=false` in deployed environments until the provider and release checks below pass. This blocks new paid membership in both sandbox and live mode. Six-offer Checkout, founding eligibility, couples access, commitments, online cancellation and expanded renewal notices are implemented locally. See [release readiness](membership-release-readiness-2026-09-28.md) for deployment evidence and [policy setup](stripe-policy-setup-2026-09-28.md) for terms, catalog readbacks and unresolved tax requirements.
+**Release hold:** keep `STRIPE_MEMBERSHIP_COMMERCIAL_READY=false` in deployed environments until the provider and release checks below pass. This blocks new paid membership in both sandbox and live mode. Six-offer Checkout, founding eligibility, couples access, commitments, online cancellation and expanded renewal notices are implemented locally. The [November 1 activation runbook](membership-first-charge-launch.md) describes the current deferred-payment release; the September readiness and policy documents are historical evidence. Stripe Tax is optional and is not a prerequisite for accepting payment.
 
 ## Offers and Price configuration
 
-All six offers use USD, tax-exclusive, licensed, per-unit recurring Prices, quantity one and interval count one. Payment starts at signup without a trial. Annual membership is prepaid; monthly membership has 12 initial installments and continues monthly afterward.
+All six offers use USD, tax-exclusive, licensed, per-unit recurring Prices, quantity one and interval count one. Before the configured November 1 launch, members confirm a subscription with $0 due today and its first charge on the disclosed date. This uses a future billing anchor with no proration, not a trial. Later new purchases pay at Checkout. Annual membership is prepaid; monthly membership has 12 initial installments and continues monthly afterward.
 
 | Offer ID | Recurring price | Initial term before tax | Optional Price override |
 | --- | --- | --- | --- |
@@ -31,7 +31,9 @@ Quotes last 60 minutes and show their exact deadline. Starting Checkout during t
 
 The member reviews the actual price, initial total, renewals, tax and capped replacement-fee rule, then checks fresh payment consent. Checkout binds the quote/reservation ID, matching attempt ID, current agreement acceptance and server-selected Price. Immutable `membership-billing-v2` consent records the offer, amount, initial 12-month total, $1,500 cap and participants. Metadata carries the same version, offer and reservation. One open attempt per member and stable Stripe idempotency keys protect retries; an earlier Checkout cannot silently adopt v2 terms.
 
-Embedded Checkout uses Dashboard-managed dynamic payment methods, requires a billing address and restricts shipping-address collection to the US. Saved profiles must also be US-based. V2 invoice verification independently requires a US billing address; shipping restrictions alone do not restrict billing country. Verify both address paths in sandbox. Only a matching, fully paid, provider-verified invoice activates membership and creates the accepted commitment; the success redirect cannot grant access. Couples billing state reaches both approved participants. Complimentary/pilot access never automatically authorizes payment.
+Embedded Checkout uses Dashboard-managed dynamic payment methods, requires a billing address and restricts shipping-address collection to the US. Saved profiles must also be US-based. V2 invoice verification independently requires a US billing address; shipping restrictions alone do not restrict billing country. Verify both address paths in sandbox. Verified completion of scheduled $0 Checkout creates the future commitment so the member can cancel it. Only a matching, fully paid, provider-verified invoice at or after the accepted start can activate paid billing; the success redirect cannot grant access. Couples billing state reaches both approved participants. The existing administrator-controlled profile-release hold remains separate. Complimentary/pilot access never automatically authorizes payment.
+
+Authenticated `/my/activate` is the separate paid-confirmation route for completed registrations. With `MEMBERSHIP_REGISTRATION_ONLY_ENABLED=true`, ordinary paid signup stays closed while `STRIPE_MEMBERSHIP_ACTIVATION_ENABLED=true` permits this narrow authorization flow. `STRIPE_MEMBERSHIP_FIRST_CHARGE_AT=2026-11-01T06:00:00Z` is November 1 at midnight America/Denver. The offer, payment consent and Checkout attempt preserve that exact date; changing configuration does not rewrite existing consent. Registration completion and a previously saved card alone authorize no subscription or future charge.
 
 ## Portal and cancellation
 
@@ -46,7 +48,9 @@ The authenticated portal route derives the customer from the member and checks p
 
 `/api/stripe/cancellation` quotes the exact access/end date and fee before explicit confirmation. Turning off renewal is free: initial monthly obligations continue through their term; annual and later monthly access lasts through the paid period. Initial-term early exit replaces unpaid remaining installments with the lower of that balance or $1,500, plus applicable tax, preserving already-paid access.
 
-Fee handling requires `STRIPE_MEMBERSHIP_BUYOUT_READY=true`; automatic tax additionally requires the reviewed `STRIPE_MEMBERSHIP_BUYOUT_TAX_CODE`. Keep the fee gate false until classification and provider tests pass. Separate no-fee renewal cancellation remains available.
+Before a scheduled commitment starts, `cancel_before_start` instead offers a $0 cancellation. Explicit confirmation immediately cancels the provider subscription without invoicing or proration. Fresh readback must prove it was canceled before the immutable start with no invoice or pending item. A timeout retry verifies the existing canceled subscription; it does not create another charge. Changed invoice evidence or a request too close to the billing boundary requires review. Completed consent and billing history remain stored; the verified webhook releases the unpaid commercial reservation.
+
+Fee handling requires `STRIPE_MEMBERSHIP_BUYOUT_READY=true` after cancellation/provider tests pass. If automatic tax is enabled, also configure the reviewed `STRIPE_MEMBERSHIP_BUYOUT_TAX_CODE`. Tax classification is not an application requirement while Stripe Tax is disabled. Separate no-fee renewal cancellation remains available.
 
 Early-exit quoting reads subscriptions, customer/cash balances, invoices, invoice payments, PaymentIntents, charges, refunds, credit notes and pending invoice items. Unpaid/partial or adjusted invoices, refunds, disputes, balances, pending items, schedules, pauses or changed evidence require billing review. Confirmation rechecks evidence and stops ordinary future installments before creating one exact replacement invoice. It excludes unrelated items and discounts, uses `auto_advance=false`, and verifies final fee/tax totals. Payment is a separate action on Stripe's Hosted Invoice Page. Failed fee payment does not restore replaced installments; a fee invoice cannot activate membership.
 
@@ -61,7 +65,7 @@ These capabilities follow the current SDK calls. Grant the applicable restricted
 | Checkout Sessions | Create and retrieve. |
 | Prices | Retrieve all six configured Prices. |
 | Customers / cash balance | Retrieve, including cash-balance expansion; allow customer creation through Checkout. |
-| Subscriptions | Retrieve/list and update cancellation timing. |
+| Subscriptions | Retrieve/list, update cancellation timing, and cancel before the first charge. |
 | Customer Portal | Retrieve/list configurations and create sessions. |
 | Invoices | Retrieve/list/preview; create, finalize and void replacement-fee invoices. |
 | Invoice Items | List pending items and create the replacement-fee line. |
@@ -81,14 +85,14 @@ Apply reviewed migrations with `npm run db:migrate:platform` against the intende
 With secrets supplied securely, run:
 
 ```sh
-node --env-file=.env.local scripts/check-stripe-membership.mjs
+node --experimental-strip-types --env-file=.env.local scripts/check-stripe-membership.mjs --activation
 ```
 
-This read-only check inspects all six Prices, the webhook destination, both portals, hosted-login bypasses and applicable tax registrations, plus commercial/fee flags. A closed release gate intentionally reports not ready. It does not prove migration/publication status, every restricted permission, email delivery or deployment success.
+For ordinary paid signup instead, use `--checkout` (the default). The activation target requires registration-only intake, the separate activation gate, the November 1 date and an open confirmation window. Both targets check all six Prices, webhook destination, both portals, hosted-login bypasses, paid agreement version, commercial/fee flags and the live flag when using live keys. Stripe Tax and active registrations are checked only when `STRIPE_TAX_ENABLED=true`. A closed release gate intentionally reports not ready. This result does not prove migration/publication status, signed webhook delivery, subscription write permissions, successful payment, email delivery or deployment success.
 
 ## Tax and published terms
 
-Applicable tax is added to the advertised price. Before enabling `STRIPE_TAX_ENABLED`, verify the business origin, actual state registrations, membership Product classification and separate early-exit fee classification. An EIN, Utah LLC or Shopify tax collection does not verify a state sales-tax permit or transfer registrations into Stripe. Test collecting and non-collecting US addresses; zero tax alone does not establish exemption. Webhooks record `automatic_tax.disabled_reason` for follow-up.
+Stripe Tax is optional. With `STRIPE_TAX_ENABLED=false`, no Stripe Tax registration or fee tax code is required by this integration. Any business tax obligations are separate from enabling Stripe's tax automation. Before enabling `STRIPE_TAX_ENABLED`, verify the business origin, actual state registrations, membership Product classification and separate early-exit fee classification. An EIN, Utah LLC or Shopify tax collection does not verify a state sales-tax permit or transfer registrations into Stripe. Test collecting and non-collecting US addresses; zero tax alone does not establish exemption. Webhooks record `automatic_tax.disabled_reason` for follow-up.
 
 Publish and verify `/membership/agreement/ruined_membership-vN`, then set that exact URL in the environment's Stripe public terms setting and applicable portal profiles. Checkout requires Stripe's terms checkbox in addition to app payment consent. `/terms` remains the store policy; `/api/my/agreement/receipt` is private. A no-charge pilot or unpublished URL cannot substitute for paid authorization.
 

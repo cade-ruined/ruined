@@ -21,7 +21,7 @@ export default async function MembershipAgreementPage({ params }: { params: Prom
       <nav aria-label="Agreement help" className="mt-12 flex flex-wrap gap-x-6 gap-y-4 text-sm underline underline-offset-4">
         <a href="mailto:connect@theruinedproject.com">Contact Ruined</a>
         <Link href="/privacy">Privacy policy</Link>
-        <Link href="/my/account">Manage membership</Link>
+        <Link href="/my/activate">Manage membership</Link>
       </nav>
     </article>
   </main>;

@@ -3,7 +3,7 @@ import { isTrustedPlatformOrigin } from "@/lib/auth/request";
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { PlatformAccessDeniedError, requireActivePlatformMemberLink } from "@/lib/platform/repository";
-import { getMemberBillingCommitment } from "@/lib/stripe/commitment-account";
+import { getMemberBillingCommitmentSummary } from "@/lib/stripe/commitment-account";
 import { MembershipCommitmentError } from "@/lib/stripe/commitment-policy";
 import { confirmMemberCancellation, createMemberCancellationQuote } from "@/lib/stripe/cancellation-service";
 
@@ -24,7 +24,9 @@ function failure(error: unknown) {
     if (error.code === "sign_in_required") return reply({ error: "Sign in to manage your membership." }, 401);
     const review = /review|invoice|reconciliation/.test(error.code);
     return reply({ code: error.code, error: review
-      ? "Your early-exit balance needs a billing review. Contact support; you can still turn off renewal here without a fee."
+      ? error.code.startsWith("prestart_")
+        ? "Your scheduled membership needs a billing review before cancellation can be confirmed. Contact support."
+        : "Your early-exit balance needs a billing review. Contact support; you can still turn off renewal here without a fee."
       : error.code === "cancellation_in_progress" || error.code === "cancellation_already_pending"
         ? "A cancellation request is already being processed. Please try again shortly."
         : "Your billing details changed or this confirmation expired. Review a fresh cancellation quote." }, 409);
@@ -35,8 +37,8 @@ function failure(error: unknown) {
 
 export async function GET() {
   try {
-    const identity = await member(), contract = await getMemberBillingCommitment(identity.memberId);
-    return reply({ commitment: contract ? { initialTermEndsAt: contract.initialTermEndsAt, plan: contract.billingPlan } : null });
+    const identity = await member();
+    return reply({ commitment: await getMemberBillingCommitmentSummary(identity.memberId) });
   } catch (error) { return failure(error); }
 }
 
@@ -47,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (!body || !["quote", "confirm"].includes(body.action)) return reply({ error: "Choose a cancellation action." }, 400);
     const identity = await member();
     if (body.action === "quote") {
-      if (!["disable_renewal", "early_exit"].includes(body.intent)) return reply({ error: "Choose a cancellation option." }, 400);
+      if (!["disable_renewal", "early_exit", "cancel_before_start"].includes(body.intent)) return reply({ error: "Choose a cancellation option." }, 400);
       return reply({ quote: await createMemberCancellationQuote(identity.memberId, body.intent) });
     }
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(body.quoteId ?? "")

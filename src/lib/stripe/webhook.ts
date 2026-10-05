@@ -140,6 +140,15 @@ async function handleCheckoutSession(
     subscriptionId,
   });
 
+  if (session.status === "complete" && subscriptionId && session.metadata.ruined_first_charge_at) {
+    const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+    if (!isExpectedMembershipPrice(subscription)) throw new Error("Scheduled membership price does not match the accepted offer.");
+    await upsertSubscription(tx, subscriptionSnapshot(subscription, member.id, event.created));
+    const { prepareScheduledMembershipProjection, releaseCanceledScheduledMembership } = await import("@/lib/stripe/commitment-webhook");
+    await prepareScheduledMembershipProjection(tx, { subscription, session, memberId: member.id });
+    await releaseCanceledScheduledMembership(tx, subscription);
+  }
+
 
   return true;
 }
@@ -232,6 +241,7 @@ async function handleInvoice(
             billingTermsVersion: subscription.metadata.billing_terms_version,
             offerId: subscription.metadata.ruined_offer_id,
             commercialReservationId: subscription.metadata.ruined_commercial_reservation_id,
+            firstChargeAt: subscription.metadata.ruined_first_charge_at ?? null,
           } : {}),
         });
     }
@@ -280,7 +290,10 @@ async function handleInvoice(
     await invalidateCommitmentFromInvoice(tx, invoice, event);
     if (expandableId(subscription.latest_invoice) !== invoice.id) return true; // Old invoices cannot overwrite the current paid projection.
   }
-  let verifiedPayment = hasFullMembershipPayment(invoice, subscription) && membershipPriceMatches;
+  const scheduledFirstCharge = subscription.metadata.ruined_first_charge_at;
+  const scheduledPaymentEligible = !scheduledFirstCharge || (Number.isFinite(Date.parse(scheduledFirstCharge)) &&
+    Date.parse(scheduledFirstCharge) <= Date.now() && invoice.lines.data[0]?.period.start >= Date.parse(scheduledFirstCharge) / 1000);
+  let verifiedPayment = hasFullMembershipPayment(invoice, subscription) && membershipPriceMatches && scheduledPaymentEligible;
   if (v2 && verifiedPayment) {
     const { hasVerifiedCommitmentInvoicePayment } = await import("@/lib/stripe/commitment-webhook");
     verifiedPayment = await hasVerifiedCommitmentInvoicePayment(getStripe(), invoice, subscription);
@@ -356,14 +369,19 @@ async function handleSubscription(
     previousState: member.membershipState,
     subscriptionState: subscription.status as StripeSubscriptionState,
   });
-  const state = applyBillingGuardrails({
+  let state = applyBillingGuardrails({
     hasOperationalProblem: !isExpectedMembershipPrice(subscription) || taxProblem,
     state: currentState,
   });
 
   if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
-    const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+    const { lockCommitmentSubscriptionProjection, releaseCanceledScheduledMembership } = await import("@/lib/stripe/commitment-webhook");
     await lockCommitmentSubscriptionProjection(tx, subscription);
+    if (subscription.metadata.ruined_first_charge_at && await releaseCanceledScheduledMembership(tx, subscription)) {
+      // Canceling before any membership payment withdraws billing authorization;
+      // it does not end an enrollment or erase the completed registration rate.
+      state = "pending";
+    }
   }
   await updateMemberBillingState(tx, {
     eventCreated: event.created,

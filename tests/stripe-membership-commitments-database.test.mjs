@@ -24,7 +24,7 @@ async function fixture(t) {
     create table ruined_members (id uuid primary key);
     create table membership_agreement_acceptances (id uuid primary key, member_id uuid, agreement_content_sha256 text, agreement_key_snapshot text, agreement_version_snapshot integer, accepted_at timestamptz);
     create table stripe_checkout_attempts (id uuid primary key, member_id uuid, agreement_acceptance_id uuid, billing_plan text, stripe_price_id text,
-      recurring_payment_accepted_at timestamptz, billing_consent_auth_user_id uuid, recurring_payment_terms jsonb, status text, stripe_subscription_id text);`);
+      recurring_payment_accepted_at timestamptz, billing_consent_auth_user_id uuid, recurring_payment_terms jsonb, status text, stripe_subscription_id text, first_charge_at timestamptz);`);
   await db.exec(await read("db/migrations/20260929005000_membership_commitments.sql"));
   const c = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member", livemode: false,
     offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v2",
@@ -32,7 +32,7 @@ async function fixture(t) {
   const attempt = c.id, now = new Date("2026-09-16T12:00:00.000Z");
   await db.query("insert into ruined_members values($1)", [c.memberId]);
   await db.query("insert into membership_agreement_acceptances values($1,$2,$3,'ruined_membership',2,$4)", [c.agreementAcceptanceId, c.memberId, c.agreementContentSha256, c.acceptedAt]);
-  await db.query("insert into stripe_checkout_attempts values($1,$2,$3,'monthly','price_member',$4,$5,$6,'completed','sub_member')", [attempt, c.memberId, c.agreementAcceptanceId, c.acceptedAt, randomUUID(), JSON.stringify({ version: c.billingTermsVersion, offerId: c.offerId, amount: c.installmentDues, initialTermAmount: c.totalInitialDues, initialTermMonths: 12, buyoutCap: c.buyoutCap })]);
+  await db.query("insert into stripe_checkout_attempts values($1,$2,$3,'monthly','price_member',$4,$5,$6,'completed','sub_member',null)", [attempt, c.memberId, c.agreementAcceptanceId, c.acceptedAt, randomUUID(), JSON.stringify({ version: c.billingTermsVersion, offerId: c.offerId, amount: c.installmentDues, initialTermAmount: c.totalInitialDues, initialTermMonths: 12, buyoutCap: c.buyoutCap })]);
   const tx = callback => db.transaction(database => callback(sqlFor(database)));
   const invoice = { invoiceId: "in_paid", periodStart: c.startsAt, periodEnd: "2026-10-15T12:00:00.000Z", currency: "usd", priceId: c.priceId,
     duesBilled: 49900, duesPaid: 49900, duesRefunded: 0, duesCredited: 0, state: "paid", adjustmentState: "none" };
@@ -130,4 +130,42 @@ test("a stale no-fee renewal request can be superseded without rewriting its evi
   const old = await tx(sql => repo.getMembershipCancellation(sql, firstId));
   assert.equal(old.status, "abandoned"); assert.equal(old.quote.fingerprint, firstQuote.fingerprint);
   assert.equal((await tx(sql => repo.getMembershipCancellation(sql, secondId))).status, "requested");
+});
+
+test("scheduled cancellation preserves accepted terms, prevents a second execution, and requires canceled prestart evidence", async t => {
+  const { db, c, attempt, tx } = await fixture(t);
+  const migration = await read("db/migrations/20261005190000_membership_first_charge.sql");
+  await db.exec(migration.slice(migration.indexOf("alter table public.stripe_membership_cancellations drop constraint"), migration.indexOf("revoke all on function")));
+  await db.query("update stripe_checkout_attempts set first_charge_at=$1::text::timestamptz,recurring_payment_terms=jsonb_set(recurring_payment_terms,'{firstChargeAt}',to_jsonb($1::text))", [c.startsAt]);
+  await tx(sql => repo.createMembershipCommitment(sql, c, attempt));
+  const now = new Date(Date.parse(c.startsAt)-60000), requestId = randomUUID();
+  const provider = { subscriptionId: c.subscriptionId, customerId: c.customerId, livemode: false, status: "active", firstChargeAt: c.startsAt,
+    canceledAt: null, observedAt: now.toISOString(), hasInvoices: false, pendingInvoiceItems: false };
+  const quote = policy.quoteMembershipPrestartCancellation(c, provider, now);
+  const record = await tx(sql => repo.reserveMembershipCancellation(sql, { requestId, memberId: c.memberId, quote, now }));
+  assert.deepEqual(await tx(sql => repo.reserveMembershipCancellation(sql, { requestId, memberId: c.memberId, quote, now })), record);
+  await assert.rejects(tx(sql => repo.reserveMembershipCancellation(sql, { requestId: randomUUID(), memberId: c.memberId, quote, now })), /expired_or_changed|already_pending/);
+  assert.equal(await tx(sql => repo.fenceMembershipReplacementInvoice(sql, requestId, now)), null);
+  const evidence = { subscriptionId: c.subscriptionId, customerId: c.customerId, livemode: false, observedAt: now.toISOString(),
+    subscriptionStatus: "canceled", cancelAt: null, canceledAt: now.toISOString(), firstChargeAt: c.startsAt, noInvoices: true,
+    openOrdinaryInvoiceIds: [], pendingProrationOrInvoiceItems: false };
+  for (const changes of [{ subscriptionStatus: "active" }, { canceledAt: c.startsAt }, { canceledAt: "invalid" },
+    { firstChargeAt: now.toISOString() }, { noInvoices: false }, { openOrdinaryInvoiceIds: ["in_unpaid"] }, { pendingProrationOrInvoiceItems: true }]) {
+    await assert.rejects(tx(sql => repo.confirmMembershipBillingStopped(sql, requestId, { ...evidence, ...changes }, now)), /not_safely_stopped/);
+  }
+  assert.equal(await tx(sql => repo.confirmMembershipBillingStopped(sql, requestId, evidence, now)), true);
+  assert.equal(await tx(sql => repo.completeMembershipCancellation(sql, { cancellationId: requestId, replacementInvoiceId: null, now })), true);
+  assert.equal(await tx(sql => repo.completeMembershipCancellation(sql, { cancellationId: requestId, replacementInvoiceId: null, now })), true);
+  const final = await tx(sql => repo.getMembershipCommitment(sql, c));
+  assert.equal(final.status, "ended"); assert.deepEqual(final.contract, c); assert.equal(final.ledger.revision, 0);
+  assert.equal((await db.query("select count(*) from stripe_membership_cancellations")).rows[0].count, 1);
+});
+
+test("a prestart quote cannot be first confirmed at its billing start", async t => {
+  const { c, attempt, tx } = await fixture(t);
+  await tx(sql => repo.createMembershipCommitment(sql, c, attempt));
+  const now = new Date(Date.parse(c.startsAt)-60000);
+  const quote = policy.quoteMembershipPrestartCancellation(c, { subscriptionId: c.subscriptionId, customerId: c.customerId, livemode: false,
+    status: "active", firstChargeAt: c.startsAt, canceledAt: null, observedAt: now.toISOString(), hasInvoices: false, pendingInvoiceItems: false }, now);
+  await assert.rejects(tx(sql => repo.reserveMembershipCancellation(sql, { requestId: randomUUID(), memberId: c.memberId, quote, now: new Date(c.startsAt) })), /expired_or_changed/);
 });

@@ -14,7 +14,7 @@ export type CommercialMembershipReservation = {
   id: string; memberId: string; kind: CommercialMembershipKind; tier: MembershipOfferTier;
   plan: MembershipBillingPlan; offerId: MembershipOfferId; status: "reserved" | "activated" | "released";
   occupiedCountAtDecision: number; expiresAt: Date; stripeSubscriptionId: string | null;
-  stripePriceId: string | null; coupleAuthorizationId: string | null;
+  stripePriceId: string | null; coupleAuthorizationId: string | null; firstChargeAt: Date | null;
   participants: CommercialMembershipParticipant[];
 };
 export type CoupleMembershipAuthorization = {
@@ -55,7 +55,7 @@ export async function getCommercialMembershipReservation(id: string, tx?: Commer
     id: string; payer_member_id: string; kind: CommercialMembershipKind; tier: MembershipOfferTier;
     billing_plan: MembershipBillingPlan; status: CommercialMembershipReservation["status"];
     occupied_count_at_decision: number; expires_at: Date; stripe_subscription_id: string | null;
-    stripe_price_id: string | null; couple_authorization_id: string | null;
+    stripe_price_id: string | null; couple_authorization_id: string | null; first_charge_at: Date | null;
   }>>`select * from membership_commercial_reservations where id = ${id}::uuid`;
   if (!row) return null;
   const participants = await sql<Array<{ member_id: string; person_id: string; ordinal: number; founding_eligible: boolean; name_snapshot: string }>>`
@@ -66,7 +66,7 @@ export async function getCommercialMembershipReservation(id: string, tx?: Commer
     offerId: `${row.tier}_${row.billing_plan}`, status: row.status,
     occupiedCountAtDecision: row.occupied_count_at_decision, expiresAt: date(row.expires_at),
     stripeSubscriptionId: row.stripe_subscription_id, stripePriceId: row.stripe_price_id,
-    coupleAuthorizationId: row.couple_authorization_id,
+    coupleAuthorizationId: row.couple_authorization_id, firstChargeAt: nullableDate(row.first_charge_at ?? null),
     participants: participants.map(person => ({ memberId: person.member_id, personId: person.person_id,
       ordinal: person.ordinal, foundingEligible: person.founding_eligible, name: person.name_snapshot })),
   };
@@ -91,13 +91,16 @@ export async function lockCommercialMembershipReservation(id: string, tx: Commer
 
 export async function reserveCommercialMembership(input: {
   requestId: string; memberId: string; kind: CommercialMembershipKind; plan: MembershipBillingPlan;
-  partnerMemberId?: string; coupleAuthorizationId?: string; expiresAt: Date;
+  partnerMemberId?: string; coupleAuthorizationId?: string; expiresAt: Date; firstChargeAt?: Date | null;
 }, tx?: CommercialTransaction): Promise<CommercialMembershipReservation> {
   return translate(() => transaction(tx, async sql => {
     const [row] = await sql<Array<{ id: string }>>`select private.ruined_reserve_commercial_membership(
       ${input.requestId}::uuid, ${input.memberId}::uuid, ${input.kind}, ${input.plan},
       ${input.partnerMemberId ?? null}::uuid, ${input.coupleAuthorizationId ?? null}::uuid,
       ${input.expiresAt}::timestamptz) as id`;
+    if (row) await sql`update membership_commercial_reservations
+      set first_charge_at=${input.firstChargeAt ?? null},billing_schedule_bound_at=clock_timestamp()
+      where id=${row.id}::uuid and billing_schedule_bound_at is null`;
     const reservation = row ? await getCommercialMembershipReservation(row.id, sql) : null;
     if (!reservation) throw new CommercialMembershipError(409, "Membership offer could not be reserved.");
     return reservation;
@@ -130,6 +133,16 @@ export async function releaseCommercialMembershipReservation(input: {
 }, tx?: CommercialTransaction): Promise<void> {
   return translate(() => transaction(tx, async sql => {
     await sql`select private.ruined_release_commercial_membership(${input.reservationId}::uuid, ${input.reason})`;
+  }));
+}
+
+/** Called only after the verified subscription projection records a canceled,
+ * unpaid scheduled subscription. Does not release an active paid enrollment. */
+export async function releaseScheduledCommercialMembership(input: {
+  reservationId: string; stripeSubscriptionId: string; canceledAt: Date;
+}, tx?: CommercialTransaction): Promise<void> {
+  return translate(() => transaction(tx, async sql => {
+    await sql`select private.ruined_release_scheduled_membership(${input.reservationId}::uuid, ${input.stripeSubscriptionId}, ${input.canceledAt})`;
   }));
 }
 

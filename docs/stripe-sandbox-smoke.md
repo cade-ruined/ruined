@@ -6,7 +6,9 @@ SQL against an in-memory PGlite database. It never imports an application enviro
 file or connects to Supabase/Postgres. It adds no authentication bypass to the app.
 
 The only injected boundaries are a synthetic signed-in viewer, connected-mode
-readiness, the local database adapter, and disabled communications. The entire shipped
+readiness, the local database adapter, and disabled communications. A loader-scoped
+invalid database marker satisfies presence checks, but the actual process rejects a
+database URL and importing the PostgreSQL driver is forbidden. The entire shipped
 migration list is installed unchanged in PGlite. The synthetic member starts with
 pending billing, a verified test email, profile completion, age consent and acceptance
 of a clearly marked test-only paid agreement. No paid legal copy is published anywhere.
@@ -22,13 +24,15 @@ Run from this checkout with no database/Supabase or live Stripe credentials load
 node scripts/stripe-sandbox-smoke.mjs --self-test
 ```
 
-This exercises the real identity/consent guards, durable reservation reuse, signed
-webhook deduplication and the host/CSRF boundaries without any Stripe API requests.
-It also verifies that unhandled or unsigned events leave billing pending, completed
-Checkout alone does not activate access, and a signed paid invoice runs the real
-billing/onboarding transactions and database triggers. The offline subscription
-lookup uses a synthetic response; no external payment is made. Replaying that signed
-invoice must not repeat activation or state history.
+This exercises the real commercial-offer and Checkout routes, immutable first-charge
+consent, durable reservation reuse, signed webhook deduplication and host/CSRF boundaries
+without Stripe API requests. A subscription event before Checkout completion leaves
+billing pending. Completion creates the future-start commitment and reserves the
+commercial offer without an invoice or access. A later full paid invoice runs the real
+billing/onboarding transactions and database triggers. A separate scenario verifies
+fee-free cancellation before the first payment, release of the reservation and a late
+Checkout completion that cannot reopen it. Provider responses are synthetic in this
+offline test; no external payment is made.
 
 The fixture provides a named Person profile before setting profile completion, and
 sets the agreement checkpoint from the saved acceptance timestamp in PostgreSQL.
@@ -40,7 +44,7 @@ transaction. The harness does not weaken those production guards.
 
 Use **Ruined sandbox `acct_1U6AS79rQIwIEzKe`**, not the live Ruined account. The harness
 rejects live server/browser key prefixes and confirms the server key's account before
-creating any Checkout Session. The browser key must be from that same sandbox.
+creating any Checkout Session or replaying a provider snapshot. The browser key must be from that same sandbox.
 
 Supply these variables through a private, git-ignored sandbox-only environment file
 or your terminal's environment. Never paste secret values into chat, source, command
@@ -50,12 +54,15 @@ arguments or logs; do not use the app's `.env.local`.
 | --- | --- |
 | `STRIPE_SECRET_KEY` | Sandbox `rk_test_…` or `sk_test_…` server key |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Matching sandbox `pk_test_…` browser key |
-| `STRIPE_WEBHOOK_SECRET` | Signing secret issued by the sandbox CLI listener |
+| `STRIPE_WEBHOOK_SECRET` | Sandbox-only signing secret (matching the listener when forwarding real events) |
+| `STRIPE_MEMBERSHIP_FIRST_CHARGE_AT` | Optional future UTC date; `--deferred` defaults to `2026-11-01T06:00:00Z` |
 | `STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID` | `price_1UJKWj9rQIwIEzKeJ9okUjcw` |
 | `STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID` | `price_1UJKWo9rQIwIEzKelqeyzSWj` |
 
 A restricted server key needs Account read for the sandbox identity check, Prices
-read, Checkout Sessions write/read, Subscriptions read, and Customers read. The CLI
+read, Checkout Sessions write/read, Subscriptions read/write for test cancellation,
+Customers read, Invoices read, pending Invoice Items read and Events read for original
+event replay. The CLI
 listener has its own sandbox authorization. Do not reuse live credentials for either.
 
 The harness forces `STRIPE_TAX_ENABLED=false`, disables live purchases, fixes the local
@@ -89,19 +96,18 @@ environment without printing it into a shared transcript. Keep the listener runn
 After supplying the variables, start:
 
 ```sh
-node scripts/stripe-sandbox-smoke.mjs --port 3233
+node scripts/stripe-sandbox-smoke.mjs --deferred --port 3233
 ```
 
 If using the prepared private sandbox-only file, the equivalent is:
 
 ```sh
-node --env-file=.sandbox-state/test.env scripts/stripe-sandbox-smoke.mjs --port 3233
+node --env-file=.sandbox-state/test.env scripts/stripe-sandbox-smoke.mjs --deferred --port 3233
 ```
 
 Open `http://127.0.0.1:3233`. The server binds only `127.0.0.1`; it has no public host
-option. Startup installs the local fixture and makes **no Stripe API calls**. Submitting
-the sandbox Checkout form verifies the account and configured price, then calls the
-actual application's Checkout route. The server key and webhook secret never enter
+option. Startup installs the local fixture and makes **no Stripe API calls**. Reviewing the offer verifies the account and calls the actual offer route. Confirming
+the displayed amount and first-charge date then calls the actual Checkout route. The server key and webhook secret never enter
 the page; the publishable key is intentionally browser-safe.
 
 The single synthetic identity is shared by tabs so real reservation/plan-conflict
@@ -110,20 +116,36 @@ Only use Stripe's documented sandbox payment details in the embedded Checkout.
 
 ## What to verify
 
-1. Monthly shows $499 USD; annual shows $5,040 USD upfront. The production route must
-   validate the Price amount, currency, interval and test mode.
+1. The empty isolated database gives the synthetic member the founding offer: $349
+   monthly or $3,490 annually. In deferred mode Checkout shows $0 today and the exact
+   first full-payment date. The production route validates amount, currency, interval
+   and test mode against the server-issued offer. Without a future configured date,
+   normal immediate billing applies.
 2. Two tabs on the same plan reuse an open attempt. A different plan cannot replace an
    in-flight payment. If a 409 locks the other plan, the selector shows that plan for
    an explicit retry. Changing plans or receiving a plan conflict clears recurring
    consent so the displayed amount must be accepted again.
-3. A declined sandbox payment leaves membership pending.
-4. A successful sandbox payment returns to the harness. Billing becomes active only
-   after the correctly signed `invoice.paid` event confirms the matching full payment.
-   The status panel shows the local attempt, invoice, membership and event records.
+3. Deferred Checkout completion returns to the harness with billing pending, no
+   invoices, a reserved commercial offer and a commitment beginning on the first-charge
+   date. A declined immediate payment also leaves membership pending.
+4. Billing becomes active only after the correctly signed `invoice.paid` event confirms
+   the matching full payment. The status panel shows attempts, reservations, commitments,
+   invoices and event records.
 5. Replay the same real event through the authorized sandbox CLI. The local event is
    deduplicated and membership is not activated twice.
-6. Update/cancel only the created **sandbox** subscription and verify signed lifecycle
-   events update the local billing state. No real member should be touched.
+6. Use the prestart cancellation button to exercise the real quote/confirm routes.
+   Verify no fee, no invoice, a canceled sandbox subscription and—after the signed
+   canceled subscription event—a released reservation with billing still pending.
+   No real member should be touched.
+
+The **Verify signed Stripe events** button replays original matching sandbox Events
+using a local signature and preserves their API version. If the sandbox account's
+Event default is older than the app's pinned version, the unchanged app rejects it.
+The separate **Verify current Stripe snapshots** button retrieves current provider
+objects through the pinned API and sends explicitly named `evt_local_snapshot_*`
+local events. Its result identifies this provenance; it proves application projection
+of real provider objects, not delivery of an original provider webhook. Use a correctly
+versioned real endpoint/listener to verify provider delivery separately.
 
 The communications worker is disabled. SQL-triggered jobs can exist in PGlite but
 cannot send emails, create calendar events or access production services. Status output
