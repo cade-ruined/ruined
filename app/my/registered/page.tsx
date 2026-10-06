@@ -20,12 +20,13 @@ export default async function MemberRegisteredPage() {
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   const registration = context.data.registration;
   if (!registration || registration.state === "activated") redirect("/my");
-  if (!registration.ready || registration.state !== "registered") redirect(registration.profileComplete ? "/my/payment-method" : "/my/join");
+  if (!registration.ready || registration.state !== "registered") redirect(!registration.profileComplete ? "/my/join" : registration.requiresInitialPayment ? "/my/activate" : "/my/payment-method");
   return <MemberRegistrationReceipt
     email={context.viewer?.email ?? "you@example.com"}
     registeredAt={registration.registeredAt}
     requiresPaymentMethod={registration.requiresPaymentMethod}
     foundingPricing={registration.foundingPricing}
+    initialPayment={registration.initialPayment}
     preview={context.state === "preview"}
     activationAvailable={context.configuration.stripeActivationReady || context.state === "preview"}
   />;

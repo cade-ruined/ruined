@@ -20,11 +20,11 @@ function memberDestination(value: unknown): string | null {
   } catch { return null; }
 }
 
-export default function DirectInvitationRequestForm({ billingPlan, onRequestStateChange, onRecipientNameChange, preview = false, paymentSetupOnly = false, registrationOnly = false, compact = false }: {
+export default function DirectInvitationRequestForm({ billingPlan, onRequestStateChange, onRecipientNameChange, preview = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, compact = false }: {
   billingPlan: MembershipBillingPlan;
   preview?: boolean;
   paymentSetupOnly?: boolean;
-  registrationOnly?: boolean;
+  registrationOnly?: boolean; prepaymentRequired?: boolean;
   compact?: boolean;
   onRequestStateChange: (locked: boolean) => void;
   onRecipientNameChange?: (name: string) => void;
@@ -167,6 +167,6 @@ export default function DirectInvitationRequestForm({ billingPlan, onRequestStat
     </fieldset>
     {preview ? <p className={styles.signupPreviewNotice}>Preview only. No email, account, or payment will be created.</p> : null}
     {error ? <p className={styles.invitationError} role="alert">{error}</p> : null}
-    <p className={styles.signupTerms}>{registrationOnly ? "$0 today. Saving a card completes registration and does not authorize a charge. Profile access follows by email." : compact ? paymentSetupOnly ? "No payment now. Optional card saving does not authorize a charge." : "Review your offer and agreement before paying." : paymentSetupOnly ? "Saving a payment method is optional. It does not start membership or authorize a charge." : "Payment follows email verification, your profile, and the membership agreement."}</p>
+    <p className={styles.signupTerms}>{prepaymentRequired ? "Payment follows email verification, your information, and your agreement. Review your exact price and dates before paying. Payment completes registration; your profile opens later by email." : registrationOnly ? "$0 today. Saving a card completes registration and does not authorize a charge. Profile access follows by email." : compact ? paymentSetupOnly ? "No payment now. Optional card saving does not authorize a charge." : "Review your offer and agreement before paying." : paymentSetupOnly ? "Saving a payment method is optional. It does not start membership or authorize a charge." : "Payment follows email verification, your profile, and the membership agreement."}</p>
   </form>;
 }

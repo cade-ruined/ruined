@@ -50,7 +50,7 @@ export default async function InvitationPage({ params }: Props) {
   const invitation = await readInvitation(token);
   if (!invitation) notFound();
   const configuration = getPlatformConfiguration();
-  return <MembershipOverview registrationOnly={configuration.membershipRegistrationOnly}
+  return <MembershipOverview prepaymentRequired={configuration.membershipPrepaymentRequired} registrationOnly={configuration.membershipRegistrationOnly}
     signupEnabled={configuration.mode === "connected" && configuration.membershipSignupReady === true}
     paymentSetupOnly={invitation.paymentSetupOnly === true || configuration.membershipRegistrationOnly || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)}
     invitation={{ token, card: invitation.card, expiresAt: invitation.expiresAt,

@@ -233,6 +233,20 @@ export async function acceptCoupleMembershipAuthorization(input: { id: string; a
               where acceptance.member_id=member.id and acceptance.person_id=member.person_id))
       returning id`;
     if (!updated) throw new CommercialMembershipError(403, "This shared membership request requires the second adult's verified account.");
-    return getCoupleMembershipAuthorization(updated.id, sql);
+    const authorization = await getCoupleMembershipAuthorization(updated.id, sql);
+    if (!authorization) throw new CommercialMembershipError(409, "This shared membership request is unavailable.");
+    // Explicitly accepting a shared membership replaces a quote the partner only
+    // looked at. Never terminate a provider checkout or alter a paid contract.
+    const [ownOffer] = await sql<Array<{ id: string; has_attempt: boolean; stripe_subscription_id: string | null }>>`
+      select reservation.id,reservation.stripe_subscription_id,
+        exists(select 1 from stripe_checkout_attempts attempt where attempt.id=reservation.id or attempt.commercial_reservation_id=reservation.id) as has_attempt
+      from membership_commercial_reservations reservation
+      where reservation.payer_member_id=${authorization.partnerMemberId}::uuid and reservation.kind='individual' and reservation.status='reserved'
+      order by reservation.created_at limit 1`;
+    if (ownOffer?.has_attempt || ownOffer?.stripe_subscription_id) {
+      throw new CommercialMembershipError(409, "Finish or cancel your current payment before joining this shared membership.");
+    }
+    if (ownOffer) await releaseCommercialMembershipReservation({ reservationId: ownOffer.id, reason: "before_checkout_abandoned" }, sql);
+    return authorization;
   });
 }

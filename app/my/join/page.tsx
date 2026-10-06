@@ -47,6 +47,7 @@ export default async function JoinMyRuinedPage() {
     : context.data;
   if (context.state === "authenticated" && registrationOnly && registration && !registrationLegalNotice) {
     if (registration.state === "registered" && registration.ready) redirect("/my/registered");
+    if (registration.profileComplete && registration.requiresInitialPayment && !registration.ready) redirect("/my/activate");
     if (registration.profileComplete) redirect(registration.requiresPaymentMethod && !registration.ready ? "/my/payment-method" : "/my/registered");
   }
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
@@ -100,12 +101,13 @@ export default async function JoinMyRuinedPage() {
         </header>
 
         <section className="member-entry-fields" aria-label="Membership entry">
-          {!prelaunch ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">{registrationOnly ? "Registration / Your details" : "Your profile / Before launch"}</p>}
+          {!prelaunch || registration?.requiresInitialPayment ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">{registrationOnly ? "Registration / Your details" : "Your profile / Before launch"}</p>}
           <JoinForm
             checkoutDisabledReason={checkoutDisabledReason}
             checkoutEnabled={checkoutEnabled}
             registrationOnly={registrationOnly}
             registrationRequiresPaymentMethod={registration?.requiresPaymentMethod ?? true}
+            registrationRequiresInitialPayment={registration?.requiresInitialPayment ?? false}
             registrationLegalNotice={registrationLegalNotice}
             disabledReason={disabledReason}
             enabled={writable}

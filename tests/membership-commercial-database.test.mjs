@@ -237,12 +237,27 @@ test("commercial enrollment uses the real schema, current registered people, saf
     for (const event of ["enrolled", "cancellation_scheduled", "billing_attention", "billing_recovered", "cancellation_withdrawn", "ended"]) assert.ok(events.includes(event), event);
   });
 
+  await t.test("couple approval never abandons a partner checkout attempt", async () => {
+    const payer = await member(84), partner = await member(85);
+    const authorization = await repository.createCoupleMembershipAuthorization({id:id(4080),memberId:payer.member,partnerMemberId:partner.member});
+    const quote = await reserve(partner,4081);
+    await db.query(`insert into stripe_checkout_attempts(id,member_id,email_normalized,status,agreement_version,agreement_accepted_at,age_attested_at,expires_at)
+      values($1,$2,$3,'creating','ruined_membership-v2',now(),now(),now()+interval '1 hour')`,[quote.id,partner.member,partner.email]);
+    await assert.rejects(repository.acceptCoupleMembershipAuthorization({id:authorization.id,authUserId:partner.auth}), /Finish or cancel your current payment/);
+    assert.equal((await repository.getCommercialMembershipReservation(quote.id)).status,"reserved");
+    assert.equal((await repository.getCoupleMembershipAuthorization(authorization.id)).acceptedAt,null,"failed approval rolls back atomically");
+    await db.query("update stripe_checkout_attempts set status='expired' where id=$1",[quote.id]);
+    await repository.releaseCommercialMembershipReservation({reservationId:quote.id,reason:"checkout_expired"});
+  });
+
   await t.test("couples need the second adult's approval and reserve two distinct people under one bill", async () => {
     const payer = await member(80), partner = await member(81), stranger = await member(82);
     const authorization = await repository.createCoupleMembershipAuthorization({ id: id(4000), memberId: payer.member, partnerMemberId: partner.member });
     await assert.rejects(reserve(payer, 4001, { kind: "couple", partnerMemberId: partner.member }), /second adult must accept/);
     await assert.rejects(repository.acceptCoupleMembershipAuthorization({ id: authorization.id, authUserId: stranger.auth }), /second adult's verified account/);
+    const viewedQuote = await reserve(partner, 4090);
     await repository.acceptCoupleMembershipAuthorization({ id: authorization.id, authUserId: partner.auth });
+    assert.equal((await repository.getCommercialMembershipReservation(viewedQuote.id)).status,"released", "explicit shared approval releases only the partner's unattempted individual quote");
     assert.equal((await repository.getReadyCoupleMembershipAuthorization(payer.member)).partnerMemberId, partner.member);
     const before = await occupied();
     const quote = await reserve(payer, 4001, { kind: "couple", plan: "annual", partnerMemberId: partner.member, coupleAuthorizationId: authorization.id });

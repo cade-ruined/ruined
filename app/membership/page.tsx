@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 export default async function MembershipOverviewPage({ searchParams }: { searchParams: Promise<{ preview?: string | string[] }> }) {
   const params = await searchParams;
   const configuration = getPlatformConfiguration();
-  return <MembershipOverview registrationOnly={configuration.membershipRegistrationOnly || (configuration.mode === "preview" && params?.preview === "payment-setup")} preview={configuration.mode === "preview"} signupEnabled={configuration.mode === "connected" && configuration.membershipSignupReady === true} paymentSetupOnly={(configuration.mode === "preview" && params?.preview === "payment-setup") || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)} />;
+  return <MembershipOverview prepaymentRequired={configuration.membershipPrepaymentRequired} registrationOnly={configuration.membershipRegistrationOnly || (configuration.mode === "preview" && params?.preview === "payment-setup")} preview={configuration.mode === "preview"} signupEnabled={configuration.mode === "connected" && configuration.membershipSignupReady === true} paymentSetupOnly={(configuration.mode === "preview" && params?.preview === "payment-setup") || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)} />;
 }

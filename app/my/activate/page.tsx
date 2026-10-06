@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import MemberActivation from "@/components/membership/MemberActivation";
+import { MembershipEntryProgress, MembershipEntryProgressProvider } from "@/components/membership/MembershipEntryProgress";
+import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
@@ -28,7 +30,11 @@ export default async function MembershipActivationPage({ searchParams }: {
   const preview = context.state === "preview";
   const registration = context.viewer ? await getMemberRegistration(context.viewer.authUserId) : null;
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
-  const registrationReady = !registration || registration.state === "activated" || registration.ready;
+  const completingRegistration = preview ? context.configuration.membershipPrepaymentRequired :
+    Boolean(registration?.requiresInitialPayment && registration.state !== "activated" &&
+      (!registration.registeredAt || parameters.checkout === "returned"));
+  if (!preview && completingRegistration && !registration?.profileComplete) redirect("/my/join");
+  const registrationReady = !registration || registration.state === "activated" || registration.ready || (registration.requiresInitialPayment && registration.profileComplete);
   const expectedAgreement = process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION?.trim();
   const agreementReady = preview || Boolean(expectedAgreement && `ruined_membership-v${context.data.agreement.version}` === expectedAgreement);
   const enabled = !preview && !complimentary && registrationReady && context.data.requiredFieldsComplete && agreementReady &&
@@ -45,9 +51,10 @@ export default async function MembershipActivationPage({ searchParams }: {
     : complimentary ? "Your membership is complimentary. No payment is needed."
       : !registrationReady || !context.data.requiredFieldsComplete ? "Complete your registration before confirming membership billing."
         : !enabled ? "Membership activation is not available yet. Existing billing can still be managed below." : null;
-  return <main className="mx-auto min-h-[72vh] max-w-3xl px-5 pb-16 pt-10 sm:px-8 sm:pt-16">
-    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Ruined / Membership billing</p>
-    <h1 className="mt-5 font-[var(--font-display)] text-[clamp(2.8rem,8vw,4.7rem)] leading-[0.98] tracking-[-0.04em]">Your membership.<br />Your confirmation.</h1>
+  return <MembershipEntryProgressProvider initialStage={membershipEntryStage(context.data.requiredFieldsComplete, Boolean(context.data.agreement.acceptanceId))}><main className="mx-auto min-h-[72vh] max-w-3xl px-5 pb-16 pt-10 sm:px-8 sm:pt-16">
+    {completingRegistration ? <MembershipEntryProgress /> : null}
+    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Ruined / {completingRegistration ? "Complete your registration" : "Membership billing"}</p>
+    <h1 className="mt-5 font-[var(--font-display)] text-[clamp(2.8rem,8vw,4.7rem)] leading-[0.98] tracking-[-0.04em]">Your membership.{completingRegistration ? null : <><br />Your confirmation.</>}</h1>
     <MemberActivation
       onboarding={context.data}
       enabled={enabled}
@@ -57,9 +64,10 @@ export default async function MembershipActivationPage({ searchParams }: {
       billingSchedule={billingSchedule}
       minimumAge={context.configuration.minimumAge}
       publishableKey={getStripePublishableKey()}
+      completingRegistration={completingRegistration}
       returnedFromCheckout={parameters.checkout === "returned"}
       preview={preview}
       previewView={preview && ["agreement", "scheduled", "canceled"].includes(parameters.view ?? "") ? parameters.view as "agreement" | "scheduled" | "canceled" : "offer"}
     />
-  </main>;
+  </main></MembershipEntryProgressProvider>;
 }

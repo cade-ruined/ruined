@@ -331,7 +331,8 @@ test("registration work migration applies after the existing complete platform s
   const PGlite=await loadPGliteForSchemaChecks(),db=new PGlite(); t.after(()=>db.close());
   await db.exec("create role anon; create role authenticated; create role service_role;");
   const paths=[...((await source("scripts/migrate-platform.mjs")).matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g))].map(match=>match[1]);
-  for(const path of paths) if(path!==migrationPath && !/20261005(?:1[89]|2[1-9])/.test(path)) await db.exec(await source(path));
+  assert.ok(paths.includes(migrationPath));
+  for(const path of paths.slice(0,paths.indexOf(migrationPath))) await db.exec(await source(path));
   await db.exec(await source(migrationPath)); await db.exec(await source(migrationPath));
   assert.equal((await db.query("select count(*)::int n from registration_operator_work")).rows[0].n,0);
   assert.equal((await db.query("select count(*)::int n from operator_tasks where task_type='registration.billing_review'")).rows[0].n,0);

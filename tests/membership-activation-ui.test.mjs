@@ -24,7 +24,7 @@ function hooks() {
     useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], next => { slots[i] = typeof next === "function" ? next(slots[i]) : next; }]; },
     useRef(initial) { return slots[cursor++] ??= { current: initial }; },
     useCallback(fn) { cursor++; return fn; },
-    useEffect(fn, deps) { const i = cursor++, key = JSON.stringify(deps); if (slots[i] !== key) { slots[i] = key; effects.push(fn); } },
+    useEffect(fn, deps) { const i = cursor++, key = JSON.stringify(deps); if (deps === undefined || slots[i] !== key) { slots[i] = key; effects.push(fn); } },
   }, render(Component, props) { cursor = 0; return Component(props); }, async effects() { const queued = effects.splice(0); queued.forEach(effect => effect()); await new Promise(resolve => setTimeout(resolve, 0)); } };
 }
 const pricing = await load("src/lib/membership/pricing.ts");
@@ -43,9 +43,9 @@ async function joinFixture(extra = {}, now = "2026-10-05T18:00:00Z") {
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": pricing, "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
     "@/lib/membership/member-communication-preferences-model": await load("src/lib/membership/member-communication-preferences-model.ts"),
-  }, { Date: class extends Date { static now() { return Date.parse(now); } }, fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => ({ clientSecret: "secret", plan: "monthly", commercialReservationId: "quote-id" }) }; } })).default;
+  }, { Date: class extends Date { static now() { return Date.parse(now); } }, fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => url === "/api/stripe/membership-offer" ? { quote: offer } : ({ clientSecret: "secret", plan: "monthly", commercialReservationId: "quote-id" }) }; } })).default;
   const props = { enabled: true, checkoutEnabled: true, initialOnboarding: onboarding, initialQuote: offer, activationOnly: true, publishableKey: "pk_live_example", minimumAge: 18, ...extra };
-  return { calls, render: () => h.render(Form, props) };
+  return { calls, render: () => h.render(Form, props), effects: h.effects };
 }
 
 test("future offer shows exact price/date and 12-month term; only fresh checked consent starts Checkout", async () => {
@@ -258,5 +258,61 @@ test("prepaid cancellation does not substitute zero or claim success when exact 
     if (missingAt === "confirm") { await nodes(tree).find(node => node.type === "button" && /Confirm cancellation and refund/.test(visible(node))).props.onClick(); tree = h.render(Component, props); }
     assert.match(visible(tree), /full refund could not be confirmed/);
     assert.doesNotMatch(visible(tree), /Refund: \$0|has been refunded|Scheduled membership canceled/);
+  }
+});
+
+
+test("streamlined checkout opens from fresh payment consent without a separate continue button", async () => {
+  const schedule = (await load("src/lib/membership/foundations-schedule.ts")).foundationsBillingScheduleForMonth("2026-11", "monthly");
+  const f = await joinFixture({ streamlinedPayment:true,initialQuote:{...offer,firstChargeAt:null,billingSchedule:schedule} });
+  let tree=f.render();
+  assert.equal(f.calls.length,0);
+  assert.equal(nodes(tree).some(node=>node.type==="button" && /Pay first period with Stripe|Open secure payment|Review membership offer/.test(visible(node))),false);
+  const consent=nodes(tree).find(node=>node.props.name==="recurring-payment-accepted");
+  assert.equal(consent.props.checked,false);
+  await consent.props.onChange({target:{checked:true}});
+  assert.equal(f.calls.length,1); assert.equal(f.calls[0].url,"/api/stripe/checkout");
+  assert.equal(f.calls[0].body.recurringPaymentAccepted,true);
+  tree=f.render(); assert.match(renderToStaticMarkup(tree),/Secure Stripe payment/);
+});
+
+test("paid onboarding opens confirmation only after a fresh registration readiness check", async () => {
+  const h=hooks(), redirects=[], timers=[];
+  let ready=false;
+  const schedule=(await load("src/lib/membership/foundations-schedule.ts")).foundationsBillingScheduleForMonth("2026-11","monthly");
+  const Component=(await load("src/components/membership/MemberActivation.tsx",{
+    react:h.react,"next/link":Link,"@/components/membership/JoinForm":Stub,"@/components/membership/MembershipCancellation":Stub,"@/lib/membership/pricing":pricing,
+  },{window:{location:{replace:href=>redirects.push(href)}},setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){},fetch:async url=>({ok:true,json:async()=>url.endsWith("/status")?{paymentConfirmed:ready}:{commitment:{status:"scheduled",billingSchedule:schedule,startsAt:schedule.serviceStartsAt,initialTermEndsAt:schedule.initialTermEndsAt,plan:"monthly",installmentDues:34900}}})})).default;
+  const props={onboarding,enabled:true,minimumAge:18,initialPlan:"monthly",completingRegistration:true,returnedFromCheckout:true};
+  h.render(Component,props);await h.effects();
+  assert.deepEqual(redirects,[]);
+  ready=true; await timers.shift()();
+  assert.deepEqual(redirects,["/my/registered"]);
+  const tree=h.render(Component,props);
+  assert.equal(nodes(tree).some(node=>node.props.href==="/my/registered"||node.props.href==="/my/payment-method"),false);
+});
+
+
+test("streamlined registration prepares the offer automatically but never accepts or starts payment", async () => {
+  const f = await joinFixture({ streamlinedPayment: true, initialQuote: null });
+  let tree = f.render();
+  assert.match(visible(tree), /Loading your price and payment dates/);
+  assert.equal(nodes(tree).some(node => node.type === "button" && /Review membership offer/.test(visible(node))), false);
+  await f.effects();
+  tree = f.render();
+  await f.effects();
+  assert.deepEqual(f.calls.map(call => call.url), ["/api/stripe/membership-offer"]);
+  const consent = nodes(tree).find(node => node.props.name === "recurring-payment-accepted");
+  assert.equal(consent.props.checked, false);
+  assert.equal(f.calls[0].body.recurringPaymentAccepted, undefined);
+  f.render(); await f.effects();
+  assert.equal(f.calls.length, 1, "Rerendering does not repeatedly reserve offers or open checkout");
+});
+
+test("automatic offer preparation respects preview, disabled checkout, and unsigned agreements", async () => {
+  for (const extra of [{ preview: true }, { enabled: false }, { checkoutEnabled: false }, { initialOnboarding: { ...onboarding, agreement: { ...onboarding.agreement, acceptanceId: null } } }]) {
+    const f = await joinFixture({ streamlinedPayment: true, initialQuote: null, ...extra });
+    f.render(); await f.effects();
+    assert.equal(f.calls.length, 0);
   }
 });

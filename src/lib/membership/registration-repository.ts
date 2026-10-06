@@ -3,7 +3,7 @@ import "server-only";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import type { MemberRegistrationSnapshot, OpsMemberRegistration, RegistrationFoundingPricing } from "./registration-model";
+import type { MemberRegistrationSnapshot, OpsMemberRegistration, RegistrationFoundingPricing, RegistrationInitialPayment } from "./registration-model";
 
 export class MemberRegistrationError extends Error {
   constructor(readonly status: number, message: string) {
@@ -15,6 +15,9 @@ export class MemberRegistrationError extends Error {
 type RegistrationRow = {
   member_id: string; registered_at: Date | string | null; profile_activated_at: Date | string | null;
   founding_pricing: RegistrationFoundingPricing | null;
+  requires_initial_payment: boolean;
+  completion_basis: MemberRegistrationSnapshot["completionBasis"];
+  initial_payment?: RegistrationInitialPayment | null;
   complimentary: boolean; profile_complete: boolean; ready: boolean; version: number | string;
 };
 const iso = (date: Date | string | null) => date ? new Date(date).toISOString() : null;
@@ -22,19 +25,23 @@ const snapshot = (row: RegistrationRow): MemberRegistrationSnapshot => ({
   memberId: row.member_id, state: row.profile_activated_at ? "activated" : row.registered_at ? "registered" : "collecting",
   foundingPricing: row.founding_pricing ?? null,
   registeredAt: iso(row.registered_at), profileActivatedAt: iso(row.profile_activated_at),
-  requiresPaymentMethod: !row.complimentary, profileComplete: row.profile_complete, ready: row.ready, version: Number(row.version),
+  requiresPaymentMethod: !row.complimentary && !row.requires_initial_payment,
+  requiresInitialPayment: !row.complimentary && row.requires_initial_payment,
+  completionBasis: row.completion_basis, initialPayment: row.initial_payment ?? null,
+  profileComplete: row.profile_complete, ready: row.ready, version: Number(row.version),
 });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function validId(id: string) { if (!UUID.test(id)) throw new MemberRegistrationError(400, "Choose a valid member."); }
 
 /** Call only in the branch that INSERTs a new member. Never backfill returning accounts. */
 export async function enrollNewMemberRegistration(tx: TransactionSql, memberId: string): Promise<void> {
-  if (!getPlatformConfiguration().membershipRegistrationOnly) return;
+  const configuration = getPlatformConfiguration();
+  if (!configuration.membershipRegistrationOnly) return;
   const configuredAccount = process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() || "";
   const keyMode = process.env.STRIPE_SECRET_KEY?.trim().match(/^(?:sk|rk)_(test|live)_/)?.[1];
   const accountId = keyMode && /^acct_[A-Za-z0-9]+$/.test(configuredAccount) ? configuredAccount : null;
-  await tx`insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode)
-    values(${memberId}::uuid,${accountId},${accountId ? keyMode === "live" : null}) on conflict(member_id) do nothing`;
+  await tx`insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode,requires_initial_payment)
+    values(${memberId}::uuid,${accountId},${accountId ? keyMode === "live" : null},${configuration.membershipPrepaymentRequired}) on conflict(member_id) do nothing`;
 }
 
 async function ownerMemberId(tx: TransactionSql, authUserId: string, allowRestricted = false): Promise<string> {
@@ -52,6 +59,13 @@ async function ownerMemberId(tx: TransactionSql, authUserId: string, allowRestri
 
 async function readRegistration(tx: TransactionSql, memberId: string): Promise<MemberRegistrationSnapshot | null> {
   const [row] = await tx<Array<RegistrationRow>>`select registration.*,
+    (select jsonb_build_object('amountPaid',proof.amount_paid,'installmentDues',proof.dues_amount,
+      'currency',proof.currency,'plan',reservation.billing_plan,'offerId',reservation.tier || '_' || reservation.billing_plan,
+      'billingSchedule',reservation.billing_schedule,'paidAt',invoice.paid_at,'isPayer',proof.member_id=registration.member_id)
+      from stripe_membership_prepaid_proofs proof
+      join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
+      join stripe_invoices invoice on invoice.id=proof.stripe_invoice_id
+      where proof.reservation_id=private.ruined_registration_paid_reservation(registration.member_id)) as initial_payment,
     case when private.ruined_registration_founding_pricing_is_current(registration.member_id) then jsonb_build_object(
       'confirmed',true,'awardedAt',pricing.decided_at,'monthlyAmountCents',pricing.monthly_amount_cents,
       'annualAmountCents',pricing.annual_amount_cents,'currency',pricing.currency) end as founding_pricing,
@@ -79,6 +93,7 @@ export async function getMemberRegistrationDestination(authUserId: string): Prom
   const registration = await getMemberRegistration(authUserId);
   if (!registration || registration.state === "activated") return null;
   if (!registration.profileComplete) return "/my/join";
+  if (!registration.ready && registration.requiresInitialPayment) return "/my/activate";
   if (!registration.ready && registration.requiresPaymentMethod) return "/my/payment-method";
   return "/my/registered";
 }
@@ -89,19 +104,24 @@ export async function reconcileMemberRegistration(tx: TransactionSql, memberId: 
   // Bind a previously unset context once, never replace an established mode/account.
   const accountId = process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() || null;
   const keyMode = process.env.STRIPE_SECRET_KEY?.trim().match(/^(?:sk|rk)_(test|live)_/)?.[1];
-  if (accountId && keyMode && getPlatformConfiguration().stripePaymentSetupReady) {
+  if (accountId && keyMode && (getPlatformConfiguration().stripePaymentSetupReady || getPlatformConfiguration().stripeActivationReady)) {
     await tx`update member_registration_access set payment_setup_account_id=${accountId},payment_setup_livemode=${keyMode === "live"}
       where member_id=${memberId}::uuid and registered_at is null and payment_setup_account_id is null and payment_setup_livemode is null`;
   }
   const [completed] = await tx<Array<{ member_id: string }>>`update member_registration_access registration
     set registered_at=clock_timestamp(),
       completion_basis=case when private.ruined_member_has_complimentary_funding(registration.member_id)
-        or private.ruined_member_has_operator_funding(registration.member_id) then 'complimentary' else 'saved_card' end,
+        or private.ruined_member_has_operator_funding(registration.member_id) then 'complimentary' when registration.requires_initial_payment then 'paid_membership' else 'saved_card' end,
+      payment_reservation_id=case when registration.requires_initial_payment and not (private.ruined_member_has_complimentary_funding(registration.member_id)
+        or private.ruined_member_has_operator_funding(registration.member_id)) then private.ruined_registration_paid_reservation(registration.member_id) end,
       payment_setup_attempt_id=(select consent_attempt_id from member_payment_method_accounts account
         where account.member_id=registration.member_id and account.stripe_account_id=registration.payment_setup_account_id
           and account.livemode=registration.payment_setup_livemode),
       version=version+1,updated_at=clock_timestamp()
     where member_id=${memberId}::uuid and registered_at is null and private.ruined_member_registration_ready(member_id)
+      and (not registration.requires_initial_payment or private.ruined_member_has_complimentary_funding(member_id)
+        or private.ruined_member_has_operator_funding(member_id)
+        or (registration.payment_setup_account_id=${accountId} and registration.payment_setup_livemode=${keyMode === "live"}))
     returning member_id`;
   // The database trigger pins new completions before this point. Reconcile an
   // existing historical completion idempotently without queuing another welcome.
@@ -191,7 +211,7 @@ export async function activateMemberRegistration(actor: string, memberId: string
     if (!before) throw new MemberRegistrationError(404, "This member has no registration hold.");
     if (before.state === "activated") return before;
     if (before.version !== expectedVersion) throw new MemberRegistrationError(409, "This registration changed. Reload it before activating.");
-    if (!before.registeredAt || !before.ready) throw new MemberRegistrationError(409, "Complete the personal information and required card setup before activation.");
+    if (!before.registeredAt || !before.ready) throw new MemberRegistrationError(409, "Complete the personal information and required membership payment before activation.");
     await tx`update member_registration_access set profile_activated_at=clock_timestamp(),activated_by_auth_user_id=${actor}::uuid,
       version=version+1,updated_at=clock_timestamp() where member_id=${memberId}::uuid`;
     await tx`insert into member_registration_messages(member_id,kind) values(${memberId}::uuid,'profile_ready') on conflict(member_id,kind) do nothing`;
@@ -199,5 +219,24 @@ export async function activateMemberRegistration(actor: string, memberId: string
       values(${actor}::uuid,'member.profile_activated','member',${memberId},${tx.json(before)},
         '{"profileActivated":true,"billingChanged":false}'::jsonb,'{}'::jsonb,${`registration-activation:${memberId}`})`;
     return (await readRegistration(tx, memberId))!;
+  });
+}
+
+/** Runs after provider projection commits, including replays. Acquiring funding
+ * locks before member locks avoids inverting the commercial projection order.
+ * This records completion and queues one welcome; it never grants profile access.
+ */
+export async function reconcilePaidMemberRegistrations(subscriptionId: string): Promise<void> {
+  if (!/^sub_[A-Za-z0-9_]+$/.test(subscriptionId)) return;
+  await getApplicationDatabase().begin(async tx => {
+    const participants = await tx<Array<{ member_id: string }>>`select participant.member_id
+      from membership_commercial_participants participant
+      join membership_commercial_reservations reservation on reservation.id=participant.reservation_id
+      join member_registration_access registration on registration.member_id=participant.member_id
+      where reservation.stripe_subscription_id=${subscriptionId} and registration.requires_initial_payment
+      order by participant.member_id`;
+    for (const participant of participants) await tx`select private.ruined_lock_member_complimentary_funding(${participant.member_id}::uuid)`;
+    for (const participant of participants) await tx`select id from ruined_members where id=${participant.member_id}::uuid for update`;
+    for (const participant of participants) await reconcileMemberRegistration(tx, participant.member_id);
   });
 }

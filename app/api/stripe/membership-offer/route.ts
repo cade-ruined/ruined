@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { getMemberRegistration } from "@/lib/membership/registration-repository";
 import { getMemberOnboarding } from "@/lib/membership/repository";
 import { getMembershipFirstChargeAt } from "@/lib/membership/paid-launch";
 import { isMembershipCohortPrepaymentEnabled } from "@/lib/membership/cohort-prepayment";
@@ -45,6 +46,8 @@ export async function POST(request: Request) {
       !isUuid(body.requestId) || !isMembershipBillingPlan(body.plan) || !["individual", "couple"].includes(body.kind)) {
       return response({ error: "Choose your membership and payment plan." }, 400);
     }
+    const registration = await getMemberRegistration(viewer.authUserId);
+    if (registration?.requiresInitialPayment && !isMembershipCohortPrepaymentEnabled()) return response({ error: "Membership payment is temporarily unavailable. Your registration is saved; please try again shortly." }, 503);
     const onboarding = await getMemberOnboarding(viewer.authUserId);
     if (!onboarding?.requiredFieldsComplete || onboarding.profile.fulfillmentAddress?.countryCode !== "US") {
       return response({ error: "Paid membership is available to United States members. Complete your US address in your profile before continuing.", code: "membership_us_required" }, 409);

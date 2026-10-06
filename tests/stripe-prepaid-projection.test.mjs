@@ -96,7 +96,8 @@ async function fixture({ existing = true } = {}) {
     "./billing-repository": billing, "./commitment-policy": policy, "./commitment-repository": commitments,
   });
   const webhook = await load("src/lib/stripe/webhook.ts", {
-    "node:crypto": { randomUUID }, "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
+    "node:crypto": { randomUUID }, "@/lib/membership/registration-repository": { reconcilePaidMemberRegistrations: async () => {} },
+    "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
     "@/lib/membership/pricing": pricing, "@/lib/stripe/membership-state": membershipState, "@/lib/stripe/prepaid-policy": prepaid,
     "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true, matchesMembershipInvoice: () => true, hasFullMembershipPayment: () => true },
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: callback => callback(tx) }) },
@@ -117,6 +118,7 @@ async function at(instant, action) { const original = Date.now;Date.now = () => 
 test("settled prepayment creates cohort terms now but activates only on service start with current verified billing", async () => {
   const f = await fixture({ existing: false });
   await at("2026-10-05T13:00:00Z", async () => assert.equal(await f.project(), "pending"));
+  await at("2026-10-05T13:00:00Z", async () => assert.equal(await f.project(false), "attention_required", "payment/tax guardrails apply before service too"));
   assert.equal(f.state.created.length, 1);assert.equal(f.state.created[0].startsAt, f.schedule.serviceStartsAt);
   assert.equal(f.state.recorded[0].serviceStartsAt, f.schedule.serviceStartsAt);assert.equal(f.state.activated, 0);
   await at(f.schedule.serviceStartsAt, async () => {

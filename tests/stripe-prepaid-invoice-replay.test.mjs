@@ -43,6 +43,7 @@ async function fixture(currentPaid) {
   const stripe = { subscriptions: { retrieve: async () => subscription }, invoices: { retrieve: async id => { retrieved.push(id); assert.ok([initial.id, current.id].includes(id)); return id === initial.id ? initial : current; } } };
   const processor = await load("src/lib/stripe/webhook.ts", {
     "server-only": {}, "@/lib/membership/pricing": pricing, "@/lib/stripe/membership-state": state, "@/lib/stripe/price-policy": prices,
+    "@/lib/membership/registration-repository": { reconcilePaidMemberRegistrations: async () => {} },
     "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn(async () => []) }) },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({ livemode: false, offers: { founding_individual_monthly: price.id } }), isStripeTaxEnabled: () => false },

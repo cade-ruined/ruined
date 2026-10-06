@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import JoinForm from "@/components/membership/JoinForm";
 import MembershipCancellation, { type CancellationCommitment } from "@/components/membership/MembershipCancellation";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
@@ -23,13 +23,14 @@ type Props = {
   minimumAge: number;
   publishableKey: string | null;
   returnedFromCheckout?: boolean;
+  completingRegistration?: boolean;
   preview?: boolean;
   previewView?: "offer" | "agreement" | "scheduled" | "canceled";
 };
 
 /** A return URL is only a cue to refresh. Billing status comes from the server. */
 export default function MemberActivation({ onboarding, enabled, disabledReason, initialPlan, firstChargeAt, billingSchedule, minimumAge,
-  publishableKey, returnedFromCheckout = false, preview = false, previewView = "offer" }: Props) {
+  publishableKey, completingRegistration = false, returnedFromCheckout = false, preview = false, previewView = "offer" }: Props) {
   const previewCommitment: CancellationCommitment | null = preview && ["scheduled", "canceled"].includes(previewView)
     ? { startsAt: billingSchedule?.serviceStartsAt ?? firstChargeAt ?? "2026-11-01T06:00:00.000Z", initialTermEndsAt: billingSchedule?.initialTermEndsAt ?? "2027-11-01T06:00:00.000Z", plan: initialPlan, billingSchedule, refundStatus: billingSchedule && previewView === "canceled" ? "succeeded" : null,
       installmentDues: initialPlan === "annual" ? 349000 : 34900, status: previewView === "canceled" ? "canceled" : "scheduled", canCancelBeforeStart: true, canceledBeforeStart: previewView === "canceled" } : null;
@@ -38,6 +39,8 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [reviewAgain, setReviewAgain] = useState(false);
+  const [confirmationSlow, setConfirmationSlow] = useState(false);
+  const confirmationNavigation = useRef(false);
   const refreshStatus = useCallback(() => { setLoading(true); setLoadError(null); setRefresh(value => value + 1); }, []);
 
   useEffect(() => {
@@ -64,6 +67,32 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
   const status = commitment?.status;
   const reviewingCanceledOffer = reviewAgain && enabled && status === "canceled" && commitment?.canceledBeforeStart === true && (!commitment.billingSchedule || commitment.refundStatus === "succeeded");
   const commitmentEnd = commitment ? longDate(commitment.initialTermEndsAt) : null;
+
+  useEffect(() => {
+    if (!completingRegistration || preview || reviewAgain || confirmationNavigation.current ||
+      (!returnedFromCheckout && status !== "scheduled" && status !== "active")) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    setConfirmationSlow(false);
+    async function checkRegistration() {
+      attempts++;
+      try {
+        const response = await fetch("/api/my/registration/status", { cache: "no-store", signal: controller.signal });
+        const result = await response.json();
+        if (response.ok && result.paymentConfirmed === true && !controller.signal.aborted) {
+          confirmationNavigation.current = true;
+          window.location.replace("/my/registered");
+          return;
+        }
+      } catch { /* A delayed webhook or read failure must never claim success. */ }
+      if (controller.signal.aborted) return;
+      if (attempts < 20) timer = setTimeout(checkRegistration, 1500);
+      else setConfirmationSlow(true);
+    }
+    void checkRegistration();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [completingRegistration, preview, reviewAgain, returnedFromCheckout, status, refresh]);
 
   return <div className="mt-7">
     {preview ? <p className="mb-6 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">Preview only. No agreement is accepted and no billing is authorized.</p> : null}
@@ -92,12 +121,13 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
         : status === "review_required" ? <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Contact Ruined to resolve your billing before confirming another membership.</p>
           : status === "pending_payment" ? <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{commitment.billingSchedule ? "We are confirming payment and the start of service. Your receipt will update when both are confirmed. Contact Ruined if you need help." : "A paid first invoice has not yet been confirmed. Contact Ruined if your payment needs attention."}</p><button className={linkClass + " mt-3"} type="button" onClick={refreshStatus}>Check payment status</button></>
           : <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Manage renewal or review cancellation below. Profile access remains separate from billing.</p>{!preview ? <MembershipCancellation initialCommitment={commitment} onCanceled={refreshStatus} /> : null}</>}
+      {completingRegistration && commitment.billingSchedule && ["scheduled", "active"].includes(status ?? "") ? <p className="mt-6 text-sm" role="status">Opening your registration confirmation…</p> : null}
     </section> : returnedFromCheckout && !preview && !reviewingCanceledOffer ? <section className="border-t border-[var(--member-rule)] py-6" aria-live="polite">
       <h2 className="text-2xl font-semibold">Waiting for Stripe confirmation.</h2>
       <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Your confirmation has not reached this account yet. Check again in a moment before starting another checkout.</p>
       <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation</button>
     </section> : <>
-      <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Pay your first period when you confirm. Service and your initial 12-month commitment begin with your cohort’s first Foundations call. Your offer shows the exact dates before you authorize payment." : future ? `Confirm ahead of time. Your first charge is ${future}, and nothing is charged today.` : "Review your exact membership offer and payment terms before confirming checkout."} Your registration and saved card alone do not authorize billing.</p>
+      <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Pay your first period when you confirm. Service and your initial 12-month commitment begin with your cohort’s first Foundations call. Your offer shows the exact dates before you authorize payment." : future ? `Confirm ahead of time. Your first charge is ${future}, and nothing is charged today.` : "Review your exact membership offer and payment terms before confirming checkout."}{completingRegistration ? null : " Your registration and saved card alone do not authorize billing."}</p>
       {disabledReason && !preview ? <p className="mt-5 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">{disabledReason}</p> : null}
       {enabled || preview ? <JoinForm
         activationOnly
@@ -111,13 +141,15 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
         photoStorageReady={false}
         publishableKey={publishableKey}
         preview={preview}
+        streamlinedPayment={completingRegistration}
         initialQuote={preview && previewView !== "agreement" ? { id: "preview-offer", expiresAt: "2026-10-31T23:00:00Z", offer: MEMBERSHIP_OFFERS[initialPlan === "annual" ? "founding_individual_annual" : "founding_individual_monthly"],
           billingTermsVersion: "membership-billing-v2", buyoutCap: 150000, participants: [{ memberId: "preview-member", name: "Preview Member" }], firstChargeAt: billingSchedule ? null : firstChargeAt, ...(billingSchedule ? { billingSchedule, expiresAt: billingSchedule.cutoffAt } : {}) } : null}
       /> : null}
     </>}
+    {confirmationSlow ? <p className="mt-5 text-sm" role="status">Confirmation is taking a little longer. Your payment will not be repeated. <button type="button" className={linkClass} onClick={refreshStatus}>Check confirmation again</button></p> : null}
     <nav className="mt-10 flex flex-wrap gap-x-7 border-t border-[var(--member-rule)] pt-5" aria-label="Registration and support">
-      <Link className={linkClass} href="/my/registered">Your registration</Link>
-      <Link className={linkClass} href="/my/payment-method">Manage saved card</Link>
+      {!completingRegistration ? <><Link className={linkClass} href="/my/registered">Your registration</Link>
+      <Link className={linkClass} href="/my/payment-method">Manage saved card</Link></> : null}
       <a className={linkClass} href="mailto:connect@theruinedproject.com">Contact Ruined</a>
     </nav>
   </div>;

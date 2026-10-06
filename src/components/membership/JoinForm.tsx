@@ -167,9 +167,11 @@ export default function JoinForm({
   paymentSetupEnabled = false,
   registrationOnly = false,
   registrationRequiresPaymentMethod = true,
+  registrationRequiresInitialPayment = false,
   registrationLegalNotice = null,
   preview = false,
   activationOnly = false,
+  streamlinedPayment = false,
   initialQuote = null,
 }: {
   disabledReason: string | null;
@@ -184,12 +186,16 @@ export default function JoinForm({
   paymentSetupEnabled?: boolean;
   registrationOnly?: boolean;
   registrationRequiresPaymentMethod?: boolean;
+  registrationRequiresInitialPayment?: boolean;
   registrationLegalNotice?: RegistrationLegalNotice | null;
   preview?: boolean;
   activationOnly?: boolean;
+  streamlinedPayment?: boolean;
   initialQuote?: MembershipQuote | null;
 }) {
   const checkoutAttempt = useRef<string | null>(null);
+  const automaticOfferAttempt = useRef<string | null>(null);
+  const prepareOfferRef = useRef<() => Promise<void>>(async () => {});
   const registrationCouple = useRegistrationCouple({ enabled: registrationOnly, preview });
   const legalAcknowledgmentRef = useRef<HTMLInputElement>(null);
   const legalNotice = registrationOnly ? registrationLegalNotice : null;
@@ -434,7 +440,7 @@ export default function JoinForm({
       if (registrationOnly) await registrationCouple.save();
       setOnboarding(payload.onboarding);
       if (registrationOnly && payload.onboarding.requiredFieldsComplete) {
-        window.location.assign(registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered");
+        window.location.assign(registrationRequiresInitialPayment ? "/my/activate" : registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered");
       }
     } catch (requestError) {
       setError(
@@ -494,6 +500,7 @@ export default function JoinForm({
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Resolve your existing payment before changing the offer.");
       }
+      automaticOfferAttempt.current = null;
       setPlan(nextPlan);
       setMembershipKind(nextKind);
       setQuote(null);
@@ -533,8 +540,8 @@ export default function JoinForm({
     } finally { setSubmitting(false); }
   }
 
-  async function openCheckout() {
-    if (preview || !enabled || noSeparatePayment || !checkoutEnabled || !publishableKey || !acceptanceId || !quote || !recurringPaymentAccepted || submitting || clientSecret) return;
+  async function openCheckout(authorizationAccepted = recurringPaymentAccepted) {
+    if (preview || !enabled || noSeparatePayment || !checkoutEnabled || !publishableKey || !acceptanceId || !quote || !authorizationAccepted || submitting || clientSecret) return;
     if (quote.billingSchedule && Date.now() >= Math.min(Date.parse(quote.expiresAt), Date.parse(quote.billingSchedule.cutoffAt))) {
       setQuote(null); setRecurringPaymentAccepted(false); checkoutAttempt.current = null;
       setError("This offer has expired. Review a new offer and its Foundations dates before authorizing payment.");
@@ -548,7 +555,7 @@ export default function JoinForm({
           acceptanceId,
           attemptId: attemptId(),
           plan,
-          recurringPaymentAccepted,
+          recurringPaymentAccepted: authorizationAccepted,
           commercialReservationId: quote.id,
           firstChargeAt: quote.firstChargeAt ?? null,
           ...(quote.billingSchedule ? { billingSchedule: quote.billingSchedule } : {}),
@@ -582,6 +589,17 @@ export default function JoinForm({
       setSubmitting(false);
     }
   }
+
+  // Preparing an offer does not accept terms or authorize payment. Run once for
+  // each selection, with an explicit retry only if preparation fails.
+  useEffect(() => { prepareOfferRef.current = prepareOffer; });
+  useEffect(() => {
+    if (!streamlinedPayment || preview || !enabled || !checkoutEnabled || noSeparatePayment || stage !== "payment" || submitting || quote || clientSecret) return;
+    const selection = `${membershipKind}:${plan}:${acceptanceId}`;
+    if (automaticOfferAttempt.current === selection) return;
+    automaticOfferAttempt.current = selection;
+    void prepareOfferRef.current();
+  }, [streamlinedPayment, preview, enabled, checkoutEnabled, noSeparatePayment, stage, submitting, quote, clientSecret, membershipKind, plan, acceptanceId]);
 
   async function activateComplimentaryMembership() {
     if (registrationOnly || !enabled || !noSeparatePayment || !profileComplete || !agreementComplete || submitting) return;
@@ -866,7 +884,7 @@ export default function JoinForm({
           {legalRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload & review updated documents ↻</button> : null}
           {communicationRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload current update preferences ↻</button> : null}
           {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || communicationRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || communicationRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresInitialPayment ? "Continue to agreement & payment" : registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
       {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Preview card step · no details saved</Link> : null}
@@ -879,8 +897,8 @@ export default function JoinForm({
 
       {profileComplete && registrationOnly ? <div className="mt-9">
         <h3 className="font-[var(--font-display)] text-4xl" tabIndex={-1}>Your details are saved.</h3>
-        <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{registrationRequiresPaymentMethod ? "Save a card securely with Stripe to finish registration. No charge is made today." : "Your complimentary registration does not require a payment card."}</p>
-        <Link className="mt-6 inline-flex min-h-12 items-center bg-white px-6 py-3 text-sm font-semibold text-black" href={registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered"}>{preview ? "Preview next step" : "Continue registration"}</Link>
+        <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{registrationRequiresInitialPayment ? "Next, review your membership agreement, exact price and Foundations dates. Your first monthly installment or full annual payment completes registration. Your profile opens later." : registrationRequiresPaymentMethod ? "Save a card securely with Stripe to finish registration. No charge is made today." : "Your complimentary registration does not require a payment card."}</p>
+        <Link className="mt-6 inline-flex min-h-12 items-center bg-white px-6 py-3 text-sm font-semibold text-black" href={registrationRequiresInitialPayment ? "/my/activate" : registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered"}>{preview ? "Preview next step" : "Continue registration"}</Link>
       </div> : null}
 
       {stage === "agreement" && !prelaunch ? (
@@ -950,13 +968,13 @@ export default function JoinForm({
           {membershipKind === "couple" && !quote ? <CoupleMembershipApproval enabled={checkoutEnabled} /> : null}
           {!quote ? <>
             <p className="mt-5 text-sm leading-relaxed text-[var(--member-muted)]">Review your offer to see your price, founding eligibility, and initial commitment before authorizing payment.{membershipKind === "couple" ? " Both adults must register and approve their shared membership first." : ""}</p>
-            <button className="mt-5 min-h-12 border border-white px-6 py-3 text-sm disabled:opacity-50" type="button" disabled={!enabled || !checkoutEnabled || submitting} onClick={prepareOffer}>{submitting ? "Preparing your offer" : offerRetryable ? "Check founding availability again" : "Review membership offer"}</button>
+            {!streamlinedPayment || error ? <button className="mt-5 min-h-12 border border-white px-6 py-3 text-sm disabled:opacity-50" type="button" disabled={!enabled || !checkoutEnabled || submitting} onClick={prepareOffer}>{submitting ? "Preparing your offer" : offerRetryable ? "Check founding availability again" : streamlinedPayment ? "Try loading payment again" : "Review membership offer"}</button> : <p className="mt-5 text-sm" role="status">Loading your price and payment dates…</p>}
           </> : selectedPrice ? <div className="mt-6 border-t border-[var(--member-rule)] pt-5" aria-live="polite">
             <h4 className="font-semibold">{selectedPrice.tier === "founding_individual" ? "Founding individual membership" : selectedPrice.tier === "couple" ? "Couples membership" : "Individual membership"}</h4>
             <p className="mt-2 text-sm text-[var(--member-muted)]">Your quoted price is held until <time dateTime={quote.expiresAt}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "long" }).format(new Date(quote.expiresAt))}</time>. Review a new offer if you return after that time.</p>
             {selectedPrice.tier === "couple" ? <p className="mt-2 text-sm text-[var(--member-muted)]">For {quote.participants.map(person => person.name).join(" and ")}. Each adult uses their own account.</p> : null}
             {billingSchedule ? <p className="mt-5 text-2xl font-semibold">{selectedAmount} due today, plus applicable tax.</p> : firstChargeDate ? <p className="mt-5 text-2xl font-semibold">$0 today. First charge {firstChargeDate}.</p> : null}
-            <p className="mt-4 text-sm leading-relaxed">{selectedAmount} USD {paymentTiming}, plus applicable tax. {plan === "monthly" ? `Initial 12-month commitment: 12 payments of ${selectedAmount}, totaling ${formatMembershipPrice(selectedPrice.initialTermAmount)} before tax. After the first year, renews monthly at ${selectedAmount}.` : `${selectedAmount} pays for the full initial year upfront. Renews annually at ${selectedAmount}, plus applicable tax.`}</p>
+            <p className="mt-4 text-sm leading-relaxed">{billingSchedule ? null : `${selectedAmount} USD ${paymentTiming}, plus applicable tax. `}{plan === "monthly" ? `Initial 12-month commitment: 12 payments of ${selectedAmount}, totaling ${formatMembershipPrice(selectedPrice.initialTermAmount)} before tax. After the first year, renews monthly at ${selectedAmount}.` : `${selectedAmount} pays for the full initial year upfront. Renews annually at ${selectedAmount}, plus applicable tax.`}</p>
             {billingSchedule ? <section className="mt-5 border-y border-[var(--member-rule)] py-5" aria-label="Your Foundations schedule">
               <h3 className="font-semibold">Your first four Foundations calls</h3>
               <ol className="mt-3 grid gap-2 text-sm sm:grid-cols-2">{billingSchedule.callStartsAt.map((call, index) => <li key={call}><span className="text-[var(--member-muted)]">{index + 1}. </span><time dateTime={call}>{new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "America/Denver" }).format(new Date(call))}, {scheduleDate(call)}</time></li>)}</ol>
@@ -970,8 +988,8 @@ export default function JoinForm({
               <p className="mt-3 text-sm leading-relaxed">Cancel before service begins in <Link className="underline underline-offset-4" href="/my/activate">Membership billing</Link> for a full refund of your initial payment, including tax, with no early-exit fee. Your registration and any reserved founding eligibility remain saved.</p>
             </section> : firstChargeDate ? <p className="mt-3 text-sm leading-relaxed text-[var(--member-muted)]">Your initial 12-month term begins {firstChargeDate}. Cancel before the first charge at 12:00 a.m. Mountain Time that day with no fee in <Link className="underline underline-offset-4" href="/my/activate">Membership billing</Link>. After billing begins, the terms below apply.</p> : null}
             <p className="mt-3 text-sm leading-relaxed text-[var(--member-muted)]">{plan === "monthly" ? "Early exit costs the lower of $1,500 or your unpaid remaining first-year installments. This charge replaces those installments. Your paid term remains covered through the period already paid for; profile and program access still follow their opening dates. Turning off renewal alone leaves the initial commitment in place." : "Turning off the next annual renewal has no early-exit charge. Your paid term remains covered through the year already paid for; profile and program access still follow their opening dates."} Manage renewal or early exit in <Link className="underline underline-offset-4" href="/my/activate">Membership billing</Link>. {billingSchedule ? "After service begins, refund requests are reviewed individually; applicable rights remain in place." : "Refund requests are reviewed individually; applicable rights remain in place."}</p>
-            {selectedPrice.tier === "founding_individual" ? <p className="mt-3 text-sm text-[var(--member-muted)]">Your founding rate continues while your membership stays active. If you cancel and later rejoin, eligibility is checked again against the current active membership.</p> : null}
-            {!clientSecret ? <label className="mt-5 grid grid-cols-[1rem_1fr] items-start gap-3 text-sm leading-relaxed text-[var(--member-muted)]"><input className="mt-1 size-4 accent-[var(--member-red)]" type="checkbox" name="recurring-payment-accepted" checked={recurringPaymentAccepted} disabled={!enabled || submitting || Boolean(lockedPlan)} onChange={event => setRecurringPaymentAccepted(event.target.checked)} /><span>I authorize {selectedAmount} USD {paymentTiming}, {plan === "monthly" ? `${billingSchedule ? "11 further monthly installments" : "the remaining monthly installments"} of my ${formatMembershipPrice(selectedPrice.initialTermAmount)} initial 12-month commitment, and monthly renewals afterward` : `annual renewals of ${selectedAmount}`}, plus applicable tax, under the membership agreement and early-exit terms shown above.{billingSchedule ? ` My service begins ${scheduleDate(billingSchedule.serviceStartsAt)}; my next charge is ${scheduleDate(billingSchedule.nextChargeAt)}. I can cancel before service begins for a full refund in Membership billing.` : firstChargeDate ? " Nothing is charged today. I can cancel before the first charge in Membership billing." : ""}</span></label> : null}
+            {selectedPrice.tier === "founding_individual" ? <p className="mt-3 text-sm text-[var(--member-muted)]">Your founding rate continues while your membership stays active. If you leave after service begins and later rejoin, eligibility is checked again against the current active membership.</p> : null}
+            {!clientSecret ? <label className="mt-5 grid grid-cols-[1rem_1fr] items-start gap-3 text-sm leading-relaxed text-[var(--member-muted)]"><input className="mt-1 size-4 accent-[var(--member-red)]" type="checkbox" name="recurring-payment-accepted" checked={recurringPaymentAccepted} disabled={!enabled || submitting || Boolean(lockedPlan)} onChange={async event => { const accepted = event.target.checked; setRecurringPaymentAccepted(accepted); if (streamlinedPayment && accepted) await openCheckout(true); }} /><span>I authorize {selectedAmount} USD {paymentTiming}, {plan === "monthly" ? `${billingSchedule ? "11 further monthly installments" : "the remaining monthly installments"} of my ${formatMembershipPrice(selectedPrice.initialTermAmount)} initial 12-month commitment, and monthly renewals afterward` : `annual renewals of ${selectedAmount}`}, plus applicable tax, under the membership agreement and early-exit terms shown above.{billingSchedule ? ` My service begins ${scheduleDate(billingSchedule.serviceStartsAt)}; my next charge is ${scheduleDate(billingSchedule.nextChargeAt)}. I can cancel before service begins for a full refund in Membership billing.` : firstChargeDate ? " Nothing is charged today. I can cancel before the first charge in Membership billing." : ""}</span></label> : null}
           </div> : null}
           {testCheckout ? (
             <dl className="mt-4 grid gap-2 text-sm leading-relaxed text-[var(--member-muted)]">
@@ -982,9 +1000,10 @@ export default function JoinForm({
           ) : null}
           {error || checkoutDisabledReason ? <p aria-live="polite" className="mt-6 border-l-2 border-[var(--color-poster)] pl-4 text-sm leading-relaxed text-[var(--member-muted)]">{error ?? checkoutDisabledReason}</p> : null}
           {lockedPlan ? <div className="mt-5 border border-[var(--member-rule)] p-4 text-sm" role="status"><p>A {MEMBERSHIP_PLANS[lockedPlan].label.toLowerCase()} checkout is already open. Review that plan before resuming payment.</p><button type="button" className="mt-3 min-h-11 underline underline-offset-4" onClick={() => changeOffer(lockedPlan)}>Use {MEMBERSHIP_PLANS[lockedPlan].label.toLowerCase()} plan</button></div> : null}
-          {!clientSecret && quote ? (
-            <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || !checkoutEnabled || !publishableKey || !quote || !recurringPaymentAccepted || Boolean(lockedPlan) || submitting} onClick={openCheckout} type="button">{submitting ? testCheckout ? "Preparing test checkout" : "Preparing payment" : checkoutEnabled && publishableKey ? testCheckout ? "Open test checkout" : billingSchedule ? "Pay first period with Stripe" : firstChargeDate ? "Confirm future billing with Stripe" : "Open secure payment" : "Payment not connected"}</button>
+          {!clientSecret && quote && (!streamlinedPayment || Boolean(error)) ? (
+            <button className="mt-7 min-h-12 w-full border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || !checkoutEnabled || !publishableKey || !quote || !recurringPaymentAccepted || Boolean(lockedPlan) || submitting} onClick={() => openCheckout()} type="button">{submitting ? testCheckout ? "Preparing test checkout" : "Preparing payment" : checkoutEnabled && publishableKey ? testCheckout ? "Open test checkout" : billingSchedule ? "Pay first period with Stripe" : firstChargeDate ? "Confirm future billing with Stripe" : "Open secure payment" : "Payment not connected"}</button>
           ) : null}
+          {streamlinedPayment && !clientSecret && quote ? <p className="mt-4 text-sm" role="status">{submitting ? "Loading secure payment…" : "Accept the payment terms above to enter your card securely. Stripe will show the final total before you pay."}</p> : null}
           {clientSecret && publishableKey ? <EmbeddedCheckout clientSecret={clientSecret} publishableKey={publishableKey} setError={setError} /> : null}
           <p className="mt-4 text-xs leading-relaxed text-[var(--member-muted)]">{testCheckout ? "Test checkout is provided by Stripe. Store purchases remain separate." : "Payment is handled securely by Stripe. Store purchases remain separate."}</p>
         </section>

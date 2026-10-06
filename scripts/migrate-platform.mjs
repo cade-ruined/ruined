@@ -93,6 +93,8 @@ const migrations = [
   "../db/migrations/20261005191000_operator_work_queue_digest.sql",
   "../db/migrations/20261005210000_personal_invitation_phone.sql",
   "../db/migrations/20261005213000_personal_invitation_no_expiry.sql",
+  "../db/migrations/20261006220000_registration_initial_payment.sql",
+  "../db/migrations/20261006223000_registration_paid_capacity.sql",
 ];
 
 function migrationBody(migration, migrationName) {

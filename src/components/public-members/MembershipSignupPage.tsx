@@ -7,13 +7,13 @@ import MembershipInvitationCard, { MembershipInvitationRoom } from "./Membership
 import MembershipSignup from "./MembershipSignup";
 import styles from "./MembershipOverview.module.css";
 
-export default function MembershipSignupPage({ initialPlan, enabled, preview, previewInvitation = false, paymentSetupOnly = false, registrationOnly = false }: {
+export default function MembershipSignupPage({ initialPlan, enabled, preview, previewInvitation = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false }: {
   initialPlan: MembershipBillingPlan;
   enabled: boolean;
   preview: boolean;
   previewInvitation?: boolean;
   paymentSetupOnly?: boolean;
-  registrationOnly?: boolean;
+  registrationOnly?: boolean; prepaymentRequired?: boolean;
 }) {
   const [plan, setPlan] = useState(initialPlan);
   const [recipientName, setRecipientName] = useState("");
@@ -35,7 +35,7 @@ export default function MembershipSignupPage({ initialPlan, enabled, preview, pr
         </div>
         <div className={`${styles.registration} ${styles.signupPageContent}`}>
           <h2>Make it yours.</h2>
-          <MembershipSignup registrationOnly={registrationOnly} paymentSetupOnly={paymentSetupOnly} enabled={enabled} preview={preview} previewInvitation={previewInvitation} plan={plan} onPlanChange={changePlan} onRecipientNameChange={setRecipientName} />
+          <MembershipSignup registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} paymentSetupOnly={paymentSetupOnly} enabled={enabled} preview={preview} previewInvitation={previewInvitation} plan={plan} onPlanChange={changePlan} onRecipientNameChange={setRecipientName} />
           <p className={styles.alreadyMember}>Already a member? <Link href="/access">Sign in ↗</Link></p>
         </div>
       </div>

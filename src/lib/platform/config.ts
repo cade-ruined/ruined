@@ -13,6 +13,7 @@ export type PlatformConfiguration = {
   stripePaymentSetupReady: boolean;
   membershipSignupReady: boolean;
   membershipRegistrationOnly: boolean;
+  membershipPrepaymentRequired: boolean;
   stripePortalReady: boolean;
   supabase: PlatformConnection;
 };
@@ -79,6 +80,14 @@ export function getPlatformConfiguration(): PlatformConfiguration {
       process.env.STRIPE_MEMBERSHIP_BUYOUT_READY?.trim().toLowerCase() === "true" &&
       process.env.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED?.trim().toLowerCase() === "true";
 
+  // This requirement is pinned onto new registrations. A temporarily missing
+  // payment prerequisite must close enrollment, never downgrade it to save-card.
+  const membershipPrepaymentRequired = membershipRegistrationOnly &&
+    process.env.MEMBERSHIP_REGISTRATION_PREPAYMENT_REQUIRED?.trim().toLowerCase() === "true";
+  const prepaidSignupReady = stripeActivationReady &&
+    process.env.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED?.trim().toLowerCase() === "true" &&
+    /^acct_[A-Za-z0-9]+$/.test(process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ?? "");
+
   return {
     database: databaseConfigured ? "connected" : "disconnected",
     minimumAge:
@@ -92,10 +101,11 @@ export function getPlatformConfiguration(): PlatformConfiguration {
     // charge. It has its own explicit release gate while paid checkout is held.
     stripePaymentSetupReady,
     membershipRegistrationOnly,
+    membershipPrepaymentRequired,
     stripeCheckoutReady,
     stripeActivationReady,
     // Saving a card for an invited account does not itself open public signup.
-    membershipSignupReady: stripeCheckoutReady || (stripePaymentSetupReady &&
+    membershipSignupReady: membershipPrepaymentRequired ? prepaidSignupReady : stripeCheckoutReady || (stripePaymentSetupReady &&
       process.env.STRIPE_MEMBERSHIP_PAYMENT_SETUP_SIGNUP_ENABLED?.trim().toLowerCase() === "true"),
     supabase: supabaseConfigured ? "connected" : "disconnected",
   };

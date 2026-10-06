@@ -115,6 +115,9 @@ export function memberRegistrationPreview(scenario: MemberPreviewScenario) {
     registeredAt: scenario === "registered" ? "2026-09-30T16:00:00.000Z" : null,
     profileActivatedAt: null,
     requiresPaymentMethod: true,
+    requiresInitialPayment: false,
+    completionBasis: scenario === "registered" ? "saved_card" as const : null,
+    initialPayment: null,
     profileComplete: scenario !== "registration-info",
     ready: scenario === "registered",
     foundingPricing: scenario === "registered" ? {

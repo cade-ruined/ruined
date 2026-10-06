@@ -3,6 +3,7 @@ import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
+import { parse } from "parse5";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 
 async function load(path,dependencies={}) {
@@ -15,9 +16,69 @@ async function load(path,dependencies={}) {
   return loaded.exports;
 }
 const pricingConfirmation=await load("src/lib/membership/registration-pricing-confirmation.ts");
-const email=await load("src/lib/membership/registration-email.ts", {"./registration-pricing-confirmation":pricingConfirmation});
+const schedules=await load("src/lib/membership/foundations-schedule.ts");
+const paidConfirmation=await load("src/lib/membership/registration-paid-confirmation.ts", {"./foundations-schedule":schedules});
+const email=await load("src/lib/membership/registration-email.ts", {
+  "./registration-pricing-confirmation":pricingConfirmation,"./registration-paid-confirmation":paidConfirmation,
+});
 const confirmedFoundingPricing = {confirmed:true,awardedAt:"2026-10-02T18:00:00.000Z",
   monthlyAmountCents:34900,annualAmountCents:349000,currency:"usd"};
+const confirmedPaidMembership = {
+  offerId:"founding_individual_monthly",billingPlan:"monthly",amountPaidCents:37518,duesAmountCents:34900,currency:"usd",
+  paidAt:"2026-10-06T18:00:00.000Z",billingSchedule:schedules.foundationsBillingScheduleForMonth("2026-11","monthly"),
+  agreementVersion:"ruined_membership-v3",initialTermAmountCents:418800,buyoutCapCents:150000,isPayer:true,
+};
+
+test("paid welcome discloses verified payment, exact accepted dates, tax and the full monthly commitment",()=>{
+  const result=email.createRegistrationEmail({kind:"welcome",memberName:"Alex",completionBasis:"paid_membership",
+    siteUrl:new URL("https://members.example.test"),paidMembership:confirmedPaidMembership,
+    foundingPricing:confirmedFoundingPricing});
+  for(const output of [result.html,result.text]) {
+    for(const pattern of [/\$375\.18 USD paid/,/\$349 membership dues \+ \$26\.18 tax/,
+      /November 5, 2026 at 3:00 PM MT/,/November 12, 2026 at 3:00 PM MT/,/November 19, 2026 at 3:00 PM MT/,
+      /Monday, November 30, 2026 at 3:00 PM MT/,/Next charge: \$349 USD plus applicable tax on December 5, 2026 at 3:00 PM MT/,
+      /11 further monthly installments/,/totaling \$4,188 USD before tax/,/November 5, 2027 at 4:00 PM MT/,
+      /full refund of this payment, including tax/,/lower of \$1,500 USD or its remaining unpaid installments/,
+      /does not waive its remaining installments/,/renew[s]? monthly at \$349 USD/,/continuously active/,
+      /Profile access opens separately/,/\/membership\/agreement\/ruined_membership-v3/,/\/my\/activate/]) assert.match(output,pattern);
+    assert.doesNotMatch(output,/Nothing has been charged|confirm checkout before billing begins|\$0 today|card was saved/);
+  }
+  assert.equal(result.subject,"Welcome to RU/NED");
+  assert.match(result.text,/First, thank you/);
+});
+
+test("annual couples receipt and later cohort preserve their accepted amounts, holiday calls and payer responsibility",()=>{
+  const paid={...confirmedPaidMembership,offerId:"couple_annual",billingPlan:"annual",duesAmountCents:699000,
+    amountPaidCents:699000,initialTermAmountCents:699000,isPayer:false,
+    billingSchedule:schedules.foundationsBillingScheduleForMonth("2026-12","annual")};
+  const result=email.createRegistrationEmail({kind:"welcome",memberName:"Alex",completionBasis:"paid_membership",
+    siteUrl:new URL("https://members.example.test"),paidMembership:paid});
+  assert.match(result.text,/\$6,990 USD paid/);
+  assert.match(result.text,/both named adults/);
+  assert.match(result.text,/Your partner authorized and manages the couples payment/);
+  assert.match(result.text,/does not create a separate charge for you/);
+  assert.match(result.text,/Wednesday, December 30, 2026 at 3:00 PM MT/);
+  assert.match(result.text,/See you December 3/);
+  assert.match(result.text,/initial 12-month commitment is paid in full/);
+  assert.match(result.text,/Next charge: \$6,990 USD plus applicable tax on December 3, 2027/);
+  assert.match(result.text,/Renews annually/);
+  assert.doesNotMatch(result.text,/November 5|11 further|\$1,500|Founding rate/);
+  const ready=email.createRegistrationEmail({kind:"profile_ready",memberName:"Alex",completionBasis:"paid_membership",
+    siteUrl:new URL("https://members.example.test")});
+  assert.match(ready.text,/does not authorize a new charge/);
+  assert.doesNotMatch(ready.text,/Paid membership begins only|future paid membership requires/);
+});
+
+test("paid welcome fails closed without immutable complete payment evidence",()=>{
+  for(const payment of [null,{...confirmedPaidMembership,amountPaidCents:0},
+    {...confirmedPaidMembership,currency:"eur"},{...confirmedPaidMembership,duesAmountCents:NaN},
+    {...confirmedPaidMembership,initialTermAmountCents:49900},
+    {...confirmedPaidMembership,billingSchedule:{...confirmedPaidMembership.billingSchedule,nextChargeAt:"2026-11-01T00:00:00.000Z"}},
+    {...confirmedPaidMembership,paidAt:confirmedPaidMembership.billingSchedule.cutoffAt},
+    {...confirmedPaidMembership,agreementVersion:'evil"><script>'},
+  ]) assert.throws(()=>email.createRegistrationEmail({kind:"welcome",memberName:"Alex",completionBasis:"paid_membership",
+    siteUrl:new URL("https://members.example.test"),paidMembership:payment}),/paid_registration_receipt_unavailable/);
+});
 
 test("welcome confirms only a persisted paid-path founding rate with explicit no-charge terms",()=>{
   const input={kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
@@ -60,7 +121,7 @@ test("visual emails use the supplied welcome letter, escape identity, and preser
   assert.ok(result.text.startsWith('Alex <script> & "Friend", you’re in.'));
   assert.match(result.html,/first-thank-you-cadehandy2.png" width="250" alt="First, thank you\."/);
   assert.match(result.html,/after-the-fear-cadehandy2.png" width="220" alt="After the fear"/);
-  assert.match(result.html,/<strong>Tyler, Libby, Cade &amp; Mitch<\/strong><\/p><img src="https:\/\/members.example.test\/ruined-wordmark-email-bone.png"/);
+  assert.match(result.html,/<strong>Tyler, Libby, Cade &amp; Mitch<\/strong><\/p><\/div><\/div><img src="https:\/\/members.example.test\/ruined-wordmark-email-bone.png"/);
   const newEmphasis="We know where we’re going. And some of what we build along the way will exist because of the people who walk through the door and help shape it.";
   assert.ok(result.html.includes(`We have a lot we want to build with RU/NED. <strong>${newEmphasis}</strong>`));
   assert.ok(result.text.includes(newEmphasis));
@@ -88,6 +149,67 @@ test("visual emails use the supplied welcome letter, escape identity, and preser
   assert.doesNotMatch(ready.html,/printers-ink/);
 });
 
+test("welcome protects all live ink-background text without blending artwork or the dark-on-yellow price panel",()=>{
+  const input={kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test"),foundingPricing:confirmedFoundingPricing};
+  const {html}=email.createRegistrationEmail(input);
+  const attr=(node,name)=>node.attrs?.find(a=>a.name===name)?.value;
+  const hasClass=(node,name)=>attr(node,"class")?.split(/\s+/).includes(name);
+  let protectedText=0,images=0,pricingText=0;
+  function visit(node,ancestors=[]) {
+    const chain=[...ancestors,node];
+    const protectedBy=chain.find(n=>hasClass(n,"gmail-blend-difference"));
+    const pricing=chain.some(n=>attr(n,"bgcolor")==="#ffca2c");
+    if(node.tagName==="img") {
+      images++;
+      assert.equal(protectedBy,undefined,"preserve the exact invitation, wordmark, and handwriting image colors");
+    }
+    if(node.nodeName==="#text" && node.value.trim() && chain.some(n=>n.tagName==="td")) {
+      if(pricing) {
+        pricingText++;
+        assert.equal(protectedBy,undefined,"dark pricing text must not be forced white");
+      } else {
+        protectedText++;
+        assert.ok(protectedBy,`Unprotected ink-background text: ${node.value}`);
+        assert.ok(chain.some(n=>hasClass(n,"gmail-blend-screen")));
+      }
+    }
+    if(hasClass(node,"gmail-blend-screen") || hasClass(node,"gmail-blend-difference")) {
+      assert.doesNotMatch(attr(node,"style")??"",/background/,"black layers must never leak into clients that strip the Gmail CSS");
+    }
+    for(const child of node.childNodes??[])visit(child,chain);
+  }
+  visit(parse(html));
+  assert.ok(protectedText>15);
+  assert.equal(images,5);
+  assert.ok(pricingText>=6);
+  assert.match(html,/u \+ \.ruined-email \.gmail-blend-screen\{background:#000;mix-blend-mode:screen\}/);
+  assert.match(html,/u \+ \.ruined-email \.gmail-blend-difference\{background:#000;mix-blend-mode:difference\}/);
+  assert.match(html,/linear-gradient\(#10100f,#10100f\)/,"retain dark fallback when remote texture is blocked");
+  assert.match(html,/linear-gradient\(#a83329,#a83329\)/,"preserve the red callout behind protected light text");
+  assert.doesNotMatch(email.createRegistrationEmail({...input,kind:"profile_ready"}).html,/gmail-blend|ruined-email|linear-gradient/);
+});
+
+test("paid receipt also protects its live dates and terms while preserving dark text on the yellow payment panel",()=>{
+  const {html}=email.createRegistrationEmail({kind:"welcome",memberName:"Alex",completionBasis:"paid_membership",
+    siteUrl:new URL("https://members.example.test"),paidMembership:confirmedPaidMembership});
+  const attr=(node,name)=>node.attrs?.find(a=>a.name===name)?.value;
+  let protectedText=0,paymentText=0;
+  function visit(node,ancestors=[]) {
+    const chain=[...ancestors,node];
+    const protectedBy=chain.some(n=>attr(n,"class")?.split(/\s+/).includes("gmail-blend-difference"));
+    const panel=chain.some(n=>attr(n,"bgcolor")==="#ffca2c");
+    if(node.tagName==="img")assert.equal(protectedBy,false);
+    if(node.nodeName==="#text"&&node.value.trim()&&chain.some(n=>n.tagName==="td")) {
+      if(panel){paymentText++;assert.equal(protectedBy,false);}
+      else{protectedText++;assert.equal(protectedBy,true,node.value);}
+    }
+    for(const child of node.childNodes??[])visit(child,chain);
+  }
+  visit(parse(html));
+  assert.ok(protectedText>30);
+  assert.ok(paymentText>=7);
+});
+
 async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={}) {
   const PGlite=await loadPGliteForSchemaChecks(),pg=new PGlite();
   const ids=Object.fromEntries(["member","person","auth","message"].map(key=>[key,crypto.randomUUID()]));
@@ -102,6 +224,10 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
   const payloadGuards=migration.slice(migration.indexOf("create function private.ruined_guard_registration_message_payload()"),
     migration.indexOf("create function private.ruined_member_profile_released("));
   assert.match(payloadGuards,/create trigger registration_message_payload_erasure/);
+  const paidMigration=await readFile(new URL("../db/migrations/20261006220000_registration_initial_payment.sql",import.meta.url),"utf8");
+  const paidPayloadGuard=paidMigration.slice(paidMigration.indexOf("create function private.ruined_guard_registration_message_payment()"),
+    paidMigration.indexOf("-- The purchased offer itself"));
+  assert.match(paidPayloadGuard,/create trigger registration_message_payment_guard/);
   await pg.exec(`create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key,status text);
     create table ruined_members(id uuid primary key,person_id uuid,email_normalized text,deleted_at timestamptz);
@@ -119,11 +245,24 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     create function private.ruined_member_registration_ready(uuid) returns boolean language sql as
       'select ready from test_registration_readiness where member_id=$1';
     ${tables}
+    alter table member_registration_access drop constraint member_registration_access_completion_basis_check;
+    alter table member_registration_access add check(completion_basis in ('saved_card','complimentary','paid_membership'));
+    alter table member_registration_access add column payment_reservation_id uuid;
+    alter table member_registration_messages add column delivery_payment_reservation_id uuid;
+    create table membership_commercial_reservations(id uuid primary key,billing_schedule jsonb);
+    create table stripe_membership_prepaid_proofs(reservation_id uuid primary key,contract_id uuid,member_id uuid,
+      stripe_invoice_id text,amount_paid bigint,dues_amount bigint,currency text);
+    create table stripe_membership_commitments(id uuid primary key,terms_snapshot jsonb);
+    create table stripe_invoices(id text primary key,paid_at timestamptz);
+    create table test_paid_registration_current(member_id uuid primary key,reservation_id uuid,current boolean);
+    create function private.ruined_registration_paid_reservation(uuid) returns uuid language sql as
+      'select reservation_id from test_paid_registration_current where member_id=$1 and current';
     ${pricingTable[0]}
     create table test_registration_pricing_current(member_id uuid primary key,current boolean);
     create function private.ruined_registration_founding_pricing_is_current(uuid) returns boolean language sql as
       'select coalesce((select current from test_registration_pricing_current where member_id=$1),true)';
-    ${payloadGuards}`);
+    ${payloadGuards}
+    ${paidPayloadGuard}`);
   await pg.query("insert into people values($1,'active')",[ids.person]);
   await pg.query("insert into ruined_members values($1,$2,'alex@example.test',null)",[ids.member,ids.person]);
   await pg.query("insert into member_lifecycle values($1,'provisional')",[ids.member]);
@@ -189,6 +328,101 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     activate:()=>pg.query("update member_registration_access set profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1",[ids.member,ids.auth]),
   };
 }
+
+async function paidFixture(t,{payment=confirmedPaidMembership,...options}={}) {
+  const f=await fixture(t,{...options,basis:"paid_membership"});
+  const addPayment=async payment=>{
+  const reservation=crypto.randomUUID(),contract=crypto.randomUUID(),invoice=`in_${crypto.randomUUID()}`;
+  await f.pg.query("insert into membership_commercial_reservations values($1,$2::jsonb)",[reservation,JSON.stringify(payment.billingSchedule)]);
+  await f.pg.query("insert into stripe_membership_commitments values($1,$2::jsonb)",[contract,JSON.stringify({
+    offerId:payment.offerId,billingPlan:payment.billingPlan,agreementVersion:payment.agreementVersion,
+    totalInitialDues:payment.initialTermAmountCents,buyoutCap:payment.buyoutCapCents,
+  })]);
+  await f.pg.query("insert into stripe_invoices values($1,$2)",[invoice,payment.paidAt]);
+  await f.pg.query("insert into stripe_membership_prepaid_proofs values($1,$2,$3,$4,$5,$6,$7)",
+    [reservation,contract,payment.isPayer ? f.ids.member : crypto.randomUUID(),invoice,payment.amountPaidCents,payment.duesAmountCents,payment.currency]);
+  await f.pg.query("insert into test_paid_registration_current values($1,$2,true) on conflict(member_id) do update set reservation_id=excluded.reservation_id,current=true",[f.ids.member,reservation]);
+  return {reservation,contract};
+  };
+  const {reservation,contract}=await addPayment(payment);
+  await f.pg.query("update member_registration_access set payment_reservation_id=$1 where member_id=$2",[reservation,f.ids.member]);
+  return {...f,reservation,contract,addPayment};
+}
+
+test("paid welcome uses the bound proof once, never today's catalog or saved-card founding copy",async t=>{
+  const f=await paidFixture(t);
+  await f.invite();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.match(f.sends[0].payload.text,/\$375\.18 USD paid/);
+  assert.match(f.sends[0].payload.text,/November 30/);
+  assert.doesNotMatch(f.sends[0].payload.text,/Nothing has been charged/);
+  assert.equal(f.rendered.length,1);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("paid welcome waits for exact current proof and checks it again immediately before sending",async t=>{
+  const f=await paidFixture(t);
+  await f.pg.query("update test_paid_registration_current set current=false");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1);
+  assert.equal((await f.row()).attempts,0);
+  assert.equal(f.sends.length,0);
+  await f.pg.query("update test_paid_registration_current set current=true");
+  await f.due();
+  f.hooks.push(()=>f.pg.query("update test_paid_registration_current set current=false"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).manualReview,1);
+  assert.equal(f.sends.length,0,"a refund/cancellation between preparation and delivery must not announce payment");
+  assert.equal((await f.row()).last_error,"paid_receipt_changed_requires_review");
+});
+
+test("an unprepared paid welcome follows a new verified cohort after refund and rejoin",async t=>{
+  const f=await paidFixture(t);
+  await f.pg.query("update test_paid_registration_current set current=false");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1);
+  const later={...confirmedPaidMembership,billingSchedule:schedules.foundationsBillingScheduleForMonth("2026-12","monthly")};
+  const replacement=await f.addPayment(later);
+  await f.due();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.match(f.sends[0].payload.text,/Your first Foundations call is December 3/);
+  assert.doesNotMatch(f.sends[0].payload.text,/Your first Foundations call is November 5/);
+  assert.equal((await f.row()).delivery_payment_reservation_id,replacement.reservation);
+  assert.equal((await f.pg.query("select payment_reservation_id from member_registration_access")).rows[0].payment_reservation_id,f.reservation,"Keep original completion history");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("an uncertain paid welcome is never rewritten or resent for a replacement payment",async t=>{
+  const f=await paidFixture(t);
+  f.responses.push(new Error("provider outcome unknown"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  const frozen=await f.row();
+  await f.addPayment({...confirmedPaidMembership,billingSchedule:schedules.foundationsBillingScheduleForMonth("2026-12","monthly")});
+  await f.due();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).manualReview,1);
+  assert.equal(f.sends.length,1);
+  assert.deepEqual((await f.row()).delivery_payload,frozen.delivery_payload);
+  assert.equal((await f.row()).delivery_payment_reservation_id,f.reservation);
+  assert.equal((await f.row()).last_error,"paid_receipt_changed_requires_review");
+  await assert.rejects(f.pg.query("update member_registration_messages set delivery_payment_reservation_id=$1 where id=$2",
+    [crypto.randomUUID(),f.ids.message]),/payment identity is immutable/);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("fresh paid email bytes cannot be frozen without their verified payment identity",async t=>{
+  const f=await paidFixture(t);
+  await assert.rejects(f.pg.query("update member_registration_messages set delivery_payload='{}'::jsonb where id=$1",[f.ids.message]),
+    /requires its current verified payment identity/);
+  assert.equal((await f.row()).delivery_payload,null);
+});
+
+test("uncertain paid-welcome retries the same frozen receipt and key without changing payment facts",async t=>{
+  const f=await paidFixture(t);
+  f.responses.push(new Error("transport lost"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  await f.pg.query("update person_private_profiles set legal_name='Later edited name'");
+  await f.due();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.deepEqual(f.sends[0],f.sends[1]);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
 
 test("welcome uses canonical verified identity and sends once; duplicate enqueue is rejected",async t=>{
   const f=await fixture(t);
@@ -391,12 +625,17 @@ test("email preview is fictional, inert, and not available in production",async(
   let mode="preview";
   const preview=await load("app/api/preview/registration-email/route.ts",{
     "@/lib/platform/config":{getPlatformConfiguration:()=>({mode})},"@/lib/membership/registration-email":email,
+    "@/lib/membership/foundations-schedule":schedules,
   });
   const old=process.env.NODE_ENV;process.env.NODE_ENV="test";
   try{
     const response=preview.GET(new Request("http://localhost/api/preview/registration-email?kind=profile_ready&funding=complimentary"));
     assert.equal(response.status,200);assert.match(await response.text(),/Alex Rivera/);
     assert.match(response.headers.get("Content-Security-Policy"),/default-src 'none'/);
+    const paid=await preview.GET(new Request("http://localhost/api/preview/registration-email?funding=paid&pricing=founding&cohort=december&format=text")).text();
+    assert.match(paid,/\$349 USD paid/);
+    assert.match(paid,/December 30, 2026/);
+    assert.doesNotMatch(paid,/November 5|Nothing has been charged/);
     mode="connected";assert.equal(preview.GET(new Request("http://localhost/api/preview/registration-email")).status,404);
     mode="preview";process.env.NODE_ENV="production";assert.equal(preview.GET(new Request("http://localhost/api/preview/registration-email")).status,404);
   }finally{if(old===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=old;}
@@ -405,6 +644,7 @@ test("email preview is fictional, inert, and not available in production",async(
 test("local email preview assets stay same-origin across localhost and 127.0.0.1 aliases",async()=>{
   const preview=await load("app/api/preview/registration-email/route.ts",{
     "@/lib/platform/config":{getPlatformConfiguration:()=>({mode:"preview"})},"@/lib/membership/registration-email":email,
+    "@/lib/membership/foundations-schedule":schedules,
   });
   const old=process.env.NODE_ENV;process.env.NODE_ENV="test";
   try{

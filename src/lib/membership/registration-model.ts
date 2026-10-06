@@ -1,3 +1,17 @@
+import type { FoundationsBillingSchedule } from "./foundations-schedule";
+import type { MembershipOfferId } from "./pricing";
+
+export type RegistrationInitialPayment = {
+  amountPaid: number;
+  installmentDues: number;
+  currency: "usd";
+  plan: "monthly" | "annual";
+  offerId: MembershipOfferId;
+  billingSchedule: FoundationsBillingSchedule;
+  paidAt: string;
+  isPayer: boolean;
+};
+
 export type RegistrationFoundingPricing = {
   confirmed: true;
   awardedAt: string;
@@ -12,6 +26,9 @@ export type MemberRegistrationSnapshot = {
   registeredAt: string | null;
   profileActivatedAt: string | null;
   requiresPaymentMethod: boolean;
+  requiresInitialPayment: boolean;
+  completionBasis: "saved_card" | "complimentary" | "paid_membership" | null;
+  initialPayment: RegistrationInitialPayment | null;
   profileComplete: boolean;
   ready: boolean;
   version: number;
