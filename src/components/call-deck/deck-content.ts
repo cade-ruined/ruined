@@ -47,8 +47,8 @@ export const DECK_SLIDES: Slide[] = [
   },
   {
     "id": "vitl",
-    "title": "WE LEARNED SOMETHING AT VITL",
-    "headline": "We learned\nsomething at VITL.",
+    "title": "WE'VE LEARNED SOMETHING",
+    "headline": "We’ve learned\nsomething.",
     "kind": "statement",
     "room": 0,
     "notes": "VITL was built to win, but something deeper emerged. People knew each other's stories. Vulnerability became culturally safe while ambition and performance remained high."
