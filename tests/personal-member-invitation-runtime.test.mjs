@@ -139,13 +139,78 @@ test("daily creation limit includes link-only and revoked history but idempotent
   const f = await fixture(t);
   let snapshot;
   for (let i = 1; i <= 20; i++) snapshot = await create(f, input(i, { recipientEmail: `recipient${i}@example.test`, sendEmail: false }));
-  assert.equal(snapshot.remainingToday, 0); assert.equal(snapshot.counts.created, 20);
+  assert.equal(snapshot.dailyLimit, 20); assert.equal(snapshot.remainingToday, 0); assert.equal(snapshot.counts.created, 20);
   const firstInvite = snapshot.invitations[0];
   await f.personalRepository.revokeOwnPersonalInvitation(first.auth, firstInvite.id, { version: 1 });
   await assert.rejects(create(f, input(21, { recipientEmail: "next@example.test" })), { status: 429 });
   await assert.rejects(create(f, input(22, { recipientEmail: "", recipientPhone: "+18015550123", sendEmail: false })), { status: 429 });
   assert.equal((await create(f, input(1, { recipientEmail: "recipient1@example.test", sendEmail: false }))).invitations.length, 20);
   assert.equal((await create(f, input(21, { recipientEmail: "another@example.test" }), second)).invitations.length, 1);
+});
+
+test("current administrators can create 100 invitations across delivery methods, but the 101st is rejected", async t => {
+  const f = await fixture(t);
+  await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [first.auth]);
+  const initial = await f.personalRepository.getOwnPersonalInvitations(first.auth);
+  assert.equal(initial.dailyLimit, 100); assert.equal(initial.remainingToday, 100);
+  assert.equal(initial.canGrantComplimentary, true);
+  let snapshot;
+  for (let i = 1; i <= 99; i++) {
+    snapshot = await create(f, input(i, { recipientEmail: `admin-recipient${i}@example.test`, sendEmail: i % 2 === 0 }));
+  }
+  assert.equal(snapshot.dailyLimit, 100); assert.equal(snapshot.remainingToday, 1);
+  const finalInput = input(100, { recipientEmail: "", recipientPhone: "+18015550123", sendEmail: false });
+  const full = await create(f, finalInput);
+  assert.equal(full.dailyLimit, 100); assert.equal(full.remainingToday, 0); assert.equal(full.counts.created, 100);
+  assert.equal(full.invitations.find(invitation => invitation.requestId === finalInput.requestId).recipientPhone, "+18015550123");
+  await assert.rejects(create(f, input(101, { recipientEmail: "admin-overflow@example.test", sendEmail: true })), error => {
+    assert.equal(error.status, 429); assert.match(error.message, /100 invitations in 24 hours/); return true;
+  });
+  assert.equal((await f.db.query("select count(*)::int as count from member_personal_invitations where member_id=$1", [first.member])).rows[0].count, 100);
+  const replay = await create(f, finalInput);
+  assert.equal(replay.counts.created, 100); assert.equal(replay.remainingToday, 0);
+  const otherMember = await f.personalRepository.getOwnPersonalInvitations(second.auth);
+  assert.equal(otherMember.dailyLimit, 20); assert.equal(otherMember.remainingToday, 20);
+});
+
+test("revoking administrator access restores the 20-invitation limit without invalidating idempotent creation retries", async t => {
+  const f = await fixture(t);
+  await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [first.auth]);
+  const originalInput = input(1, { recipientEmail: "before-revocation1@example.test", sendEmail: false });
+  const original = (await create(f, originalInput)).invitations[0];
+  let snapshot;
+  for (let i = 2; i <= 21; i++) {
+    snapshot = await create(f, input(i, { recipientEmail: `before-revocation${i}@example.test`, sendEmail: false }));
+  }
+  assert.equal(snapshot.dailyLimit, 100); assert.equal(snapshot.remainingToday, 79);
+  await f.db.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'", [first.auth]);
+  const demoted = await f.personalRepository.getOwnPersonalInvitations(first.auth);
+  assert.equal(demoted.canGrantComplimentary, false); assert.equal(demoted.dailyLimit, 20);
+  assert.equal(demoted.remainingToday, 0, "Existing administrator usage must clamp remaining quota to zero, not a negative number");
+  await assert.rejects(create(f, input(22, { recipientEmail: "after-revocation@example.test", sendEmail: false })), error => {
+    assert.equal(error.status, 429); assert.match(error.message, /20 invitations in 24 hours/); return true;
+  });
+  const replay = await create(f, originalInput);
+  assert.equal(replay.dailyLimit, 20); assert.equal(replay.remainingToday, 0); assert.equal(replay.counts.created, 21);
+  assert.deepEqual(replay.invitations.find(invitation => invitation.id === original.id), original);
+  assert.equal((await f.db.query("select count(*)::int as count from member_personal_invitations where member_id=$1", [first.member])).rows[0].count, 21);
+});
+
+test("non-administrator operator roles retain the regular member invitation limit", async t => {
+  const f = await fixture(t);
+  await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'guide'),($2,'circle_leader')", [first.auth, second.auth]);
+  await f.db.query("insert into operator_funding(member_id) values($1),($2)", [first.member, second.member]);
+  for (const who of [first, second]) {
+    const snapshot = await f.personalRepository.getOwnPersonalInvitations(who.auth);
+    assert.equal(snapshot.canGrantComplimentary, false); assert.equal(snapshot.dailyLimit, 20); assert.equal(snapshot.remainingToday, 20);
+  }
+  let snapshot;
+  for (let i = 1; i <= 20; i++) {
+    snapshot = await create(f, input(i, { recipientEmail: `guide-recipient${i}@example.test`, sendEmail: false }));
+  }
+  assert.equal(snapshot.dailyLimit, 20); assert.equal(snapshot.remainingToday, 0);
+  await assert.rejects(create(f, input(21, { recipientEmail: "guide-overflow@example.test", sendEmail: false })), { status: 429 });
+  assert.equal((await f.db.query("select count(*)::int as count from member_personal_invitations where member_id=$1", [first.member])).rows[0].count, 20);
 });
 
 test("owner scope and optimistic versions protect revocation and email retry, including stale or suspended owners", async t => {
