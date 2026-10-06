@@ -101,6 +101,7 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
               ...createRegistrationEmail({kind:message.kind,memberName:message.member_name,
                 completionBasis:message.completion_basis,siteUrl:site,
                 foundingPricing:message.founding_pricing,
+                paidMembership:message.paid_membership,
                 ...(attachments ? {invitationImageSrc:"cid:ruined-invitation"} : {})}),
               ...(attachments ? {attachments} : {}),
             };
@@ -108,7 +109,8 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
           if (payload.to!==message.email) throw new RegistrationDeliveryError("recipient_changed_requires_review",true);
           // Both immutable bytes and the uncertainty fence commit BEFORE the
           // provider call. A crash cannot create a new send after key expiry.
-          await preserveRegistrationMessage(tx,message.id,payload);
+          await preserveRegistrationMessage(tx,message.id,payload,
+            message.kind==="welcome" && message.completion_basis==="paid_membership" ? message.paid_reservation_id : null);
         });
         if (prepared.kind!=="ok") { result[prepared.kind]++;continue; }
         const sent=await withRegistrationMessage(claim,lease,async (tx,message) => {

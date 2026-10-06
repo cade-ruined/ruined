@@ -11,16 +11,17 @@ const tiers: { key: MembershipOfferTier; name: string; detail: string }[] = [
   { key: "couple", name: "Couples", detail: "Two adults · one bill" },
 ];
 
-export default function MembershipOfferSection({ plan, onPlanChange, mode, disabled = false, registrationOnly = false, comparisonOnly = false }: {
+export default function MembershipOfferSection({ plan, onPlanChange, mode, disabled = false, registrationOnly = false, prepaymentRequired = false, comparisonOnly = false }: {
   plan: MembershipBillingPlan;
   onPlanChange: (plan: MembershipBillingPlan) => void;
   mode: MembershipLandingMode;
   disabled?: boolean;
-  registrationOnly?: boolean;
+  registrationOnly?: boolean; prepaymentRequired?: boolean;
   comparisonOnly?: boolean;
 }) {
   const id = useId();
   const registrationOpen = registrationOnly && mode !== "waitlist";
+  const prepaidRegistration = prepaymentRequired && mode !== "waitlist";
   return <section className={styles.offer} id="membership-pricing" aria-labelledby="offer-heading">
     <div className={styles.heading}><h2 id="offer-heading">Membership.</h2><p>{comparisonOnly ? "Compare payment options. You’ll choose your plan before activating membership." : "One community. Everything you need to begin."}</p></div>
 
@@ -53,22 +54,23 @@ export default function MembershipOfferSection({ plan, onPlanChange, mode, disab
     </ul>
 
     <div className={styles.essentialTerms}>
-      <p className={styles.modeNote}>{mode === "paid"
+      <p className={styles.modeNote}>{prepaidRegistration ? <><strong>Pay your first {plan === "annual" ? "year" : "month"} at Checkout.</strong> Service and your initial 12-month term begin with your cohort’s first Foundations call. Your next {plan === "annual" ? "annual" : "monthly"} charge is one calendar {plan === "annual" ? "year" : "month"} later.</> : mode === "paid"
         ? <><strong>Pay when you activate.</strong> Your first monthly or full annual payment starts billing.</>
         : mode === "payment-setup"
           ? registrationOnly ? <><strong>$0 today.</strong> Save a card to complete registration. Profiles open later by email. You’ll review and confirm payment separately before paid membership begins.</> : <><strong>$0 today.</strong> Saving a card is optional. No charge or active membership until you review your offer and explicitly confirm payment.</>
           : <><strong>Free to join the waitlist.</strong> Paid membership begins only if you choose to join when it opens.</>}
       </p>
+      {prepaidRegistration ? <p>Cancel before service begins for a full refund, including tax. Your profile opens separately by email.</p> : null}
       <p><strong>12-month initial commitment.</strong> Monthly early exit costs the lower of $1,500 or the remaining unpaid installments, replacing those installments.</p>
     </div>
 
-    <p className={styles.preferenceNote}>{registrationOpen ? "Eligible individuals who complete registration with a verified saved card lock in $349/month. Your registration receipt confirms the rate. Payment requires a separate checkout you choose to complete." : "Compare payment options here. Your final offer is confirmed before payment; no price or place is reserved."}</p>
+    <p className={styles.preferenceNote}>{prepaidRegistration ? "Review your exact price, any eligible Founding rate, all four Foundations dates, and your payment authorization before paying. A saved card alone does not complete paid registration." : registrationOpen ? "Eligible individuals who complete registration with a verified saved card lock in $349/month. Your registration receipt confirms the rate. Payment requires a separate checkout you choose to complete." : "Compare payment options here. Your final offer is confirmed before payment; no price or place is reserved."}</p>
 
     <details className={styles.paymentTerms}>
       <summary>Payment terms &amp; founding eligibility<span aria-hidden="true">+</span></summary>
       <div className={styles.terms}>
         <div><h3>Payment &amp; renewal</h3><p>Monthly payments are installments during the initial year. Annual payment is the full year paid upfront; the saving shown compares it with 12 monthly payments. After the initial year, monthly plans continue month to month and annual plans renew annually until canceled. Turning off renewal does not itself end the initial commitment.</p></div>
-        {registrationOpen ? <div><h3>The founding rate</h3><p>Eligibility is checked when registration is complete. The first 50 places count current active paid and complimentary members, held checkouts, and completed registrations awaiting membership activation. Each person in a couples membership counts separately; couples plans keep their separate price.</p><p>Your confirmed individual Founding rate is reserved through your first paid membership activation, then stays with you while that membership remains continuously active. When membership ends, founding benefits end. Rejoining requires a new eligibility check.</p><p>Requesting an invitation, joining the waitlist, or saving a card alone does not reserve the rate. Complete registration with a verified saved card. No charge, subscription, or profile activation happens during registration; paid membership requires a later checkout you explicitly confirm.</p></div> : <div><h3>The founding rate</h3><p>Available when fewer than 50 other registered members are active at joining, including paid and complimentary members. Each person in a couples membership counts separately; the founding price applies to individual plans.</p><p>Your awarded founding rate stays with you while that membership remains continuously active. If you leave, founding benefits end. Rejoining requires a new eligibility check.</p><p>Requesting an invitation, joining the waitlist, or saving a card does not reserve a price or place. Eligibility and your final offer are confirmed during membership signup.</p></div>}
+        {prepaidRegistration ? <div><h3>The founding rate</h3><p>Your exact offer confirms whether you qualify for individual Founding pricing before you pay. A previously reserved individual rate remains available for your first paid membership. Couples plans have their own price.</p><p>Your awarded rate stays with you while that membership remains continuously active. Canceling before service begins preserves registration and any founding eligibility reserved at registration. If you leave after service begins, rejoining requires a new eligibility check.</p><p>An invitation, waitlist entry, or saved card alone does not enroll you or authorize payment. You must review and accept the terms and separately confirm Checkout.</p></div> : registrationOpen ? <div><h3>The founding rate</h3><p>Eligibility is checked when registration is complete. The first 50 places count current active paid and complimentary members, held checkouts, and completed registrations awaiting membership activation. Each person in a couples membership counts separately; couples plans keep their separate price.</p><p>Your confirmed individual Founding rate is reserved through your first paid membership activation, then stays with you while that membership remains continuously active. When membership ends, founding benefits end. Rejoining requires a new eligibility check.</p><p>Requesting an invitation, joining the waitlist, or saving a card alone does not reserve the rate. Complete registration with a verified saved card. No charge, subscription, or profile activation happens during registration; paid membership requires a later checkout you explicitly confirm.</p></div> : <div><h3>The founding rate</h3><p>Available when fewer than 50 other registered members are active at joining, including paid and complimentary members. Each person in a couples membership counts separately; the founding price applies to individual plans.</p><p>Your awarded founding rate stays with you while that membership remains continuously active. If you leave, founding benefits end. Rejoining requires a new eligibility check.</p><p>Requesting an invitation, joining the waitlist, or saving a card does not reserve a price or place. Eligibility and your final offer are confirmed during membership signup.</p></div>}
       </div>
     </details>
     <p className={styles.offerFooter}>USD. Applicable tax added at checkout. US adults 18+. Events and physical items may cost extra.</p>

@@ -45,7 +45,8 @@ export async function POST(request: Request) {
   try {
     const viewer = await getCurrentPlatformViewer();
     if (!viewer) return response({ error: "Sign in to manage your couples membership request." }, 401);
-    if (!getPlatformConfiguration().stripeCheckoutReady) return response({ error: "Paid membership is not available yet." }, 503);
+    const configuration = getPlatformConfiguration();
+    if (!configuration.stripeCheckoutReady && !configuration.stripeActivationReady) return response({ error: "Paid membership is not available yet." }, 503);
     const platformUser = await requireActivePlatformMemberLink(viewer);
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) return response({ error: "A valid couples request is required." }, 400);

@@ -536,6 +536,20 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
         await reconcilePrepaidMembershipSubscription(proof.subscriptionId);
       }
     }
+    // Registration fulfillment is independently retryable after provider state
+    // commits. A duplicate webhook can finish it after a prior post-commit error.
+    const prepaidObject = event.data.object as unknown as {
+      id: string; metadata?: Record<string, string>; subscription?: string | { id: string } | null;
+      parent?: { subscription_details?: { subscription?: string | { id: string } | null; metadata?: Record<string, string> | null } | null } | null;
+    };
+    const prepaidMetadata = prepaidObject.metadata?.ruined_billing_schedule_version
+      || prepaidObject.parent?.subscription_details?.metadata?.ruined_billing_schedule_version;
+    const prepaidSubscriptionId = prepaidMetadata ? event.type.startsWith("customer.subscription.")
+      ? prepaidObject.id : expandableId(prepaidObject.subscription ?? prepaidObject.parent?.subscription_details?.subscription) : null;
+    if (prepaidSubscriptionId) {
+      const { reconcilePaidMemberRegistrations } = await import("@/lib/membership/registration-repository");
+      await reconcilePaidMemberRegistrations(prepaidSubscriptionId);
+    }
     return result;
   } catch (error) {
     try {
@@ -557,4 +571,6 @@ export async function reconcilePrepaidMembershipSubscription(subscriptionId: str
     livemode: subscription.livemode, type: "customer.subscription.updated", data: { object: subscription },
     object: "event", api_version: "2026-08-26.dahlia", pending_webhooks: 0, request: null } as Stripe.Event;
   await getBillingDatabase().begin(tx => handleSubscription(tx, source, subscription));
+  const { reconcilePaidMemberRegistrations } = await import("@/lib/membership/registration-repository");
+  await reconcilePaidMemberRegistrations(subscription.id);
 }

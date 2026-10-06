@@ -413,6 +413,7 @@ test("registration receipt preserves charge boundaries, email privacy and a visi
   const Receipt = (await load("src/components/membership/MemberRegistrationReceipt.tsx", {
     "next/image": Image, "next/link": Link,
     "@/lib/membership/registration-pricing-confirmation": await load("src/lib/membership/registration-pricing-confirmation.ts"),
+    "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
     "@/components/membership/RegistrationCouplePreference": Editor,
     "@/components/membership/InstallRuined": ({ variant }) => React.createElement("button", { "data-variant": variant }, "Install Ruined"),
   })).default;
@@ -456,4 +457,38 @@ test("layout withholds premature badge celebrations and fails navigation closed 
     assert.equal(nodes(tree).find(node => node.type === Shell).props.registrationOnly, held);
     assert.equal(tree.props.celebration === null, held);
   }
+});
+
+
+test("new paid registration skips card setup and cannot see a receipt before verified payment", async () => {
+  const pending = registration({ profileComplete: true, requiresInitialPayment: true, requiresPaymentMethod: false });
+  for (const path of ["app/my/join/page.tsx", "app/my/payment-method/page.tsx", "app/my/registered/page.tsx"]) {
+    const f = await pageFixture(path, pending);
+    await assert.rejects(f.page, error => error.href === "/my/activate");
+  }
+  const f = await detailsFixture(false, { registrationRequiresInitialPayment: true });
+  assert.match(renderToStaticMarkup(f.render()), /Continue to agreement &amp; payment/);
+  await f.submit();
+  assert.deepEqual(f.redirects, ["/my/activate"]);
+});
+
+test("paid registration receipt uses confirmed amount and cohort without claiming a saved-card-only registration", async () => {
+  const Receipt = (await load("src/components/membership/MemberRegistrationReceipt.tsx", {
+    "next/image": Image, "next/link": Link,
+    "@/lib/membership/registration-pricing-confirmation": await load("src/lib/membership/registration-pricing-confirmation.ts"),
+    "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
+    "@/components/membership/RegistrationCouplePreference": Stub,
+    "@/components/membership/InstallRuined": Stub,
+  })).default;
+  const schedule = (await load("src/lib/membership/foundations-schedule.ts")).foundationsBillingScheduleForMonth("2026-11", "monthly");
+  const props = { email:"paid@example.test", registeredAt:"2026-10-06T18:00:00Z", requiresPaymentMethod:false,
+    initialPayment:{amountPaid:37000,installmentDues:34900,plan:"monthly",currency:"usd",offerId:"founding_individual_monthly",billingSchedule:schedule,paidAt:"2026-10-06T18:00:00Z",isPayer:true} };
+  const html = renderToStaticMarkup(React.createElement(Receipt, props));
+  for (const phrase of ["$370 paid", "$349 plus applicable tax", "November 5, 2026", "December 5, 2026", "November 5, 2027", "Eleven further monthly installments", "full refund", "$1,500", "Founding rate stays protected", "profile stays closed"]) assert.ok(html.includes(phrase), phrase);
+  assert.doesNotMatch(html, /Nothing has been charged|Your card is saved|complimentary registration|Registering with your partner/);
+  const withTax = renderToStaticMarkup(React.createElement(Receipt, {...props,initialPayment:{...props.initialPayment,amountPaid:37518}}));
+  assert.match(withTax, /\$375\.18 paid/);
+  assert.doesNotMatch(withTax, /\$375 paid/, "Never round a confirmed tax-inclusive payment");
+  const partner = renderToStaticMarkup(React.createElement(Receipt, {...props,initialPayment:{...props.initialPayment,offerId:"couple_monthly",isPayer:false}}));
+  assert.match(partner,/Your shared membership is paid/); assert.doesNotMatch(partner, /\$370 paid/);
 });

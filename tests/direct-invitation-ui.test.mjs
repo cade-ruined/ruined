@@ -456,3 +456,25 @@ test("payment-setup preview shows inert copy only outside production admission",
     assert.equal((await overview.default(props)).props.signupEnabled, false);
   }
 });
+
+
+test("signup and landing receive the server prepayment requirement without disabling registration holds", async () => {
+  let configuration = { mode: "connected", membershipSignupReady: true, membershipRegistrationOnly: true, stripeCheckoutReady: false, membershipPrepaymentRequired: true };
+  const dependencies = {
+    "@/components/public-members/MembershipSignupPage": Stub,
+    "@/components/public-members/MembershipOverview": Stub,
+    "@/lib/membership/pricing": pricing,
+    "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
+  };
+  for (const path of ["app/signup/page.tsx", "app/membership/page.tsx"]) {
+    const page = await load(path, dependencies);
+    const result = await page.default({ searchParams: Promise.resolve({ plan: "monthly" }) });
+    assert.equal(result.props.prepaymentRequired, true);
+    assert.equal(result.props.registrationOnly, true, "paid onboarding must preserve registration/profile holds");
+    configuration = { ...configuration, membershipPrepaymentRequired: false };
+    const legacy = await page.default({ searchParams: Promise.resolve({}) });
+    assert.equal(legacy.props.prepaymentRequired, false);
+    assert.equal(legacy.props.registrationOnly, true);
+    configuration = { ...configuration, membershipPrepaymentRequired: true };
+  }
+});

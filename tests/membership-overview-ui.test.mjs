@@ -298,6 +298,39 @@ test("registration-only landing explains required card saving and a later profil
   assert.match(text(questions), /signing in before then shows your registration status/);
 });
 
+test("prepaid registration replaces saved-card completion with payment while keeping profiles held", async () => {
+  const requests = [];
+  const c = await components(React, { fetch: (...args) => { requests.push(args); throw Error("Rendering cannot register or charge"); } });
+  const props = { signupEnabled: true, paymentSetupOnly: true, registrationOnly: true, prepaymentRequired: true };
+  const html = renderToStaticMarkup(React.createElement(c.Overview, props));
+  assert.match(html, /Pay your first month at Checkout/);
+  assert.match(html, /Service and your initial 12-month term begin with your cohort’s first Foundations call/);
+  assert.match(html, /next monthly charge is one calendar month later/);
+  assert.match(html, /11 further installments/);
+  assert.match(html, /Cancel before service begins for a full refund, including tax/);
+  assert.match(html, /lower of \$1,500 or the remaining unpaid installments/);
+  assert.match(html, /welcome email follows confirmed payment/);
+  assert.match(html, /profile opens later by a separate email/);
+  assert.match(html, /signup cutoff is 24 hours before.*Payment must complete before the cutoff; at or after it/);
+  assert.doesNotMatch(html, /\$0 today|No payment is taken|Nothing is charged during registration|Save a card to complete registration|No payment is due now/);
+  const unavailable = renderToStaticMarkup(React.createElement(c.Overview, { ...props, signupEnabled: false }));
+  assert.match(unavailable, /Join the waitlist/);
+  assert.doesNotMatch(unavailable, /Pay your first month at Checkout/);
+  assert.deepEqual(requests, []);
+});
+
+test("prepaid direct signup discloses the selected cadence and passes the payment requirement to its form", async () => {
+  const c = await components();
+  for (const plan of ["monthly", "annual"]) {
+    const html = renderToStaticMarkup(React.createElement(c.Signup, { enabled: true, registrationOnly: true, paymentSetupOnly: true, prepaymentRequired: true, plan, onPlanChange() {} }));
+    assert.match(html, /Payment completes registration; your profile opens later by email/);
+    assert.match(html, /Review your exact price, dates, agreement, and payment authorization before paying/);
+    assert.match(html, plan === "monthly" ? /first month is paid at Checkout.*11 further monthly installments/ : /full year is paid at Checkout.*next annual charge is one calendar year later/);
+    assert.match(html, /Cancel before service begins for a full refund, including tax/);
+    assert.doesNotMatch(html, /Future membership|No payment is due now|Saving a card completes registration/);
+  }
+});
+
 test("the TIME example is optional while the method, confirmed roadmap, and monthly challenge remain visible", async () => {
   const h = hooks(), requests = [];
   const Monthly = (await load(`${base}MembershipMonthlySection.tsx`, { react: h.react }, { fetch: (...args) => requests.push(args) })).default;
@@ -608,4 +641,19 @@ test("personal landing invitations accept nullable deadlines while legacy shared
   assert.equal(nodes(tree).find(element => element.type === wired.Acceptance).props.expiresAt, null);
   const legacy = state.render(wired.Overview, { invitation: { ...invitation, recipientName: null }, signupEnabled: true });
   assert.equal(nodes(legacy).find(element => element.type === wired.WaitlistForm).props.disabled, true);
+});
+
+
+test("prepaid personal invitations preserve attribution and complimentary invitations never require payment", async () => {
+  const c = await components();
+  const props = { invitation: issuedInvitation, registrationOnly: true, paymentSetupOnly: true, prepaymentRequired: true };
+  const paid = renderToStaticMarkup(React.createElement(c.Overview, props));
+  assert.match(paid, /Your invitation from Cade &lt;Sender&gt; starts here/);
+  assert.match(paid, /before paying your first month or full year/);
+  assert.match(paid, /welcome email follows confirmed payment/);
+  assert.doesNotMatch(paid, /with no charge today|Nothing is charged during registration/);
+  const comp = renderToStaticMarkup(React.createElement(c.Overview, { ...props, invitation: { ...issuedInvitation, membershipType: "complimentary" } }));
+  assert.match(comp, /No card or payment is required/);
+  assert.match(comp, /profile opens later/);
+  assert.doesNotMatch(comp, /before paying your first month|Pay your first month at Checkout|welcome email follows confirmed payment|Compare membership payment options/);
 });

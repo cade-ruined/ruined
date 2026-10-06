@@ -25,6 +25,7 @@ export default async function MemberPaymentMethodPage({ searchParams }: { search
   const registrationOnly = Boolean(registration && registration.state !== "activated");
   if (context.state === "authenticated" && registrationOnly && registration) {
     if (!registration.profileComplete) redirect("/my/join");
+    if (registration.requiresInitialPayment) redirect("/my/activate");
     if (!registration.requiresPaymentMethod) redirect("/my/registered");
   }
   const query = await searchParams;

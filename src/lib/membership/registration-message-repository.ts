@@ -4,6 +4,7 @@ import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import type { RegistrationCompletionBasis, RegistrationMessageKind } from "./registration-email";
 import type { RegistrationFoundingPricing } from "./registration-model";
+import type { RegistrationPaidMembership } from "./registration-paid-confirmation";
 
 export type RegistrationEmailPayload = {
   from: string; to: string; replyTo: string; subject: string; html: string; text: string;
@@ -29,6 +30,9 @@ export type RegistrationMessageDelivery = RegistrationMessageClaim & {
   delivery_payload: RegistrationEmailPayload | null; eligible: boolean; registration_ready: boolean;
   accepted_invitation: RegistrationAcceptedInvitation | null;
   founding_pricing: RegistrationFoundingPricing | null;
+  paid_membership: RegistrationPaidMembership | null;
+  paid_reservation_id: string | null;
+  delivery_payment_reservation_id: string | null;
 };
 
 export class RegistrationDeliveryError extends Error {
@@ -71,6 +75,16 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
       select message.*, member.email_normalized as email,
         coalesce(nullif(btrim(private_profile.legal_name),''),nullif(btrim(profile.display_name),''),'Friend') as member_name,
         registration.completion_basis,
+        proof.reservation_id as paid_reservation_id,
+        case when registration.completion_basis='paid_membership' and proof.reservation_id is not null
+          and private.ruined_registration_paid_reservation(member.id)=proof.reservation_id
+          then jsonb_build_object('offerId',contract.terms_snapshot->>'offerId',
+            'billingPlan',contract.terms_snapshot->>'billingPlan','amountPaidCents',proof.amount_paid,
+            'duesAmountCents',proof.dues_amount,'currency',proof.currency,'paidAt',invoice.paid_at,
+            'billingSchedule',reservation.billing_schedule,'agreementVersion',contract.terms_snapshot->>'agreementVersion',
+            'initialTermAmountCents',contract.terms_snapshot->'totalInitialDues',
+            'buyoutCapCents',contract.terms_snapshot->'buyoutCap','isPayer',proof.member_id=member.id)
+          else null end as paid_membership,
         case when pricing.founding_eligible and pricing.completion_basis='saved_card'
           and private.ruined_registration_founding_pricing_is_current(member.id)
           then jsonb_build_object('confirmed',true,'awardedAt',pricing.decided_at,
@@ -84,7 +98,7 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
         private.ruined_member_registration_ready(message.member_id) as registration_ready,
         coalesce(member.deleted_at is null and person.status='active' and lifecycle.account_state not in ('closed','suspended')
           and registration.registered_at is not null
-          and registration.completion_basis in ('saved_card','complimentary')
+          and registration.completion_basis in ('saved_card','complimentary','paid_membership')
           and exists(select 1 from person_email_addresses email where email.person_id=member.person_id
             and email.email_normalized=member.email_normalized and email.verification_state='verified' and email.retired_at is null)
           and case when message.kind='welcome' then registration.profile_activated_at is null
@@ -97,6 +111,12 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
       left join person_private_profiles private_profile on private_profile.person_id=member.person_id
       left join member_registration_access registration on registration.member_id=member.id
       left join member_registration_pricing_decisions pricing on pricing.member_id=member.id
+      -- Registration keeps its historical first-payment reference. An unprepared
+      -- welcome follows the currently verified payment after a refund/rejoin.
+      left join membership_commercial_reservations reservation on reservation.id=private.ruined_registration_paid_reservation(member.id)
+      left join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id
+      left join stripe_membership_commitments contract on contract.id=proof.contract_id
+      left join stripe_invoices invoice on invoice.id=proof.stripe_invoice_id
       -- Acceptance belongs to this member, not merely to an email address or
       -- the most recently created invitation. An expired accepted card remains
       -- a keepsake; this lookup never renews its deadline or grants access.
@@ -115,9 +135,21 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
         locked_at=null,lock_token=null,updated_at=clock_timestamp() where id=${claim.id}::uuid`;
       return { kind: "cancelled" as const };
     }
-    if (delivery.kind==="welcome" && !delivery.registration_ready) {
+    if (delivery.kind==="welcome" && delivery.completion_basis==="paid_membership"
+      && (delivery.delivery_payload || delivery.first_send_attempt_at)
+      && (!delivery.delivery_payment_reservation_id || !delivery.paid_membership
+        || delivery.delivery_payment_reservation_id!==delivery.paid_reservation_id)) {
+      // Frozen bytes may already have reached the provider. Never replace their
+      // receipt or retry an obsolete paid confirmation under that same key.
+      await tx`update member_registration_messages set status='manual_review',last_error='paid_receipt_changed_requires_review',
+        locked_at=null,lock_token=null,updated_at=clock_timestamp() where id=${claim.id}::uuid`;
+      return { kind: "manualReview" as const };
+    }
+    if (delivery.kind==="welcome" && (!delivery.registration_ready
+      || delivery.completion_basis==="paid_membership" && !delivery.paid_membership)) {
       // Withdrawing saved-card consent may temporarily make the registration
-      // incomplete. Wait for restoration rather than announce a saved card or
+      // incomplete. Refunded or unverified upfront payment cannot produce a
+      // paid welcome either. Wait rather than announce a saved card or payment or
       // consume a delivery attempt; deleted/closed accounts are cancelled above.
       await tx`update member_registration_messages set status='pending',last_error='registration_incomplete',
         attempts=greatest(0,attempts-1),available_at=clock_timestamp()+interval '15 minutes',
@@ -128,8 +160,10 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
   });
 }
 
-export async function preserveRegistrationMessage(tx: TransactionSql, id: string, payload: RegistrationEmailPayload) {
+export async function preserveRegistrationMessage(tx: TransactionSql, id: string, payload: RegistrationEmailPayload,
+  paymentReservationId: string | null = null) {
   await tx`update member_registration_messages set delivery_payload=${tx.json(payload)}::jsonb,
+    delivery_payment_reservation_id=${paymentReservationId}::uuid,
     first_send_attempt_at=coalesce(first_send_attempt_at,clock_timestamp()),updated_at=clock_timestamp()
     where id=${id}::uuid`;
 }

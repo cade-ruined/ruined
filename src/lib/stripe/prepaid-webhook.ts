@@ -97,7 +97,7 @@ export async function projectPrepaidMembershipInvoice(tx: BillingTransaction, in
     await markMembershipPrepaymentReview(tx, { reservationId: reservation.id, reason: "prepaid_payment_requires_review", verifiedAt: new Date() });
     return "attention_required";
   }
-  if (proof.refundState !== "none") return "attention_required";
+  if (proof.refundState !== "none" || !input.verifiedPayment) return "attention_required";
   if (Date.now() < Date.parse(schedule.serviceStartsAt)) return "pending";
   if (!input.verifiedPayment || id(subscription.latest_invoice) !== invoice.id) return "attention_required";
   await activateCommercialMembership({ reservationId: reservation.id, stripeSubscriptionId: subscription.id }, tx);

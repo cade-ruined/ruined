@@ -21,15 +21,15 @@ import styles from "./MembershipOverview.module.css";
 
 export type MembershipLandingInvitation = PublicMemberInvitation & { token?: string };
 
-export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false, invitation }: {
-  preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean; invitation?: MembershipLandingInvitation;
+export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, invitation }: {
+  preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean; prepaymentRequired?: boolean; invitation?: MembershipLandingInvitation;
 }) {
   const personalInvitation = Boolean(invitation?.recipientName);
   const complimentaryInvitation = personalInvitation && invitation?.membershipType === "complimentary";
   const invitationDeadlineElapsed = useInvitationExpired(invitation?.expiresAt ?? null);
   const invitationExpired = (!personalInvitation || invitation?.invitationSource === "ruined_direct" || invitation?.expiresAt !== null) && invitationDeadlineElapsed;
   const invitationAvailable = invitation ? personalInvitation : signupEnabled || (preview && paymentSetupOnly);
-  const mode: MembershipLandingMode = !invitationAvailable ? "waitlist" : paymentSetupOnly ? "payment-setup" : "paid";
+  const mode: MembershipLandingMode = !invitationAvailable ? "waitlist" : prepaymentRequired ? "paid" : paymentSetupOnly ? "payment-setup" : "paid";
   const ctaLabel = personalInvitation ? "Accept my invitation" : invitationAvailable ? "Create my invitation" : "Join the waitlist";
   const [plan, setPlan] = useState<MembershipBillingPlan>("monthly");
   const [recipientName, setRecipientName] = useState("");
@@ -115,7 +115,7 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
         </div>
         <div className={styles.registration}>
           <div className={styles.invitationSignup} id="membership-details">
-            {personalInvitation && invitation ? <PersonalInvitationAcceptance compact registrationOnly={registrationOnly}
+            {personalInvitation && invitation ? <PersonalInvitationAcceptance compact registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired}
               paymentSetupOnly={mode === "payment-setup"} preview={preview} invitationToken={invitation.token}
               recipientName={invitation.recipientName!} inviterName={invitation.card.name}
               invitationSource={invitation.invitationSource ?? "member"} expiresAt={invitation.expiresAt}
@@ -127,11 +127,11 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
               <MembershipWaitlistForm tone="paper" invitationToken={invitation.token} disabled={preview || invitationExpired} />
             </> : <>
               <h3>{invitationAvailable ? "Make it yours." : "Be here for the beginning."}</h3>
-              <MembershipSignup compact showPricing={false} registrationOnly={registrationOnly} previewInvitation={preview && mode === "payment-setup"} paymentSetupOnly={mode === "payment-setup"} enabled={signupEnabled} preview={preview} plan={plan} onPlanChange={setPlan} onRecipientNameChange={setRecipientName} onRequestStateChange={setRegistrationLocked} />
+              <MembershipSignup compact showPricing={false} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} previewInvitation={preview && (mode === "payment-setup" || prepaymentRequired)} paymentSetupOnly={mode === "payment-setup"} enabled={signupEnabled} preview={preview} plan={plan} onPlanChange={setPlan} onRecipientNameChange={setRecipientName} onRequestStateChange={setRegistrationLocked} />
             </>}
           </div>
           {!complimentaryInvitation && <div className={styles.registrationPricing}>
-            <MembershipOfferSection plan={plan} onPlanChange={setPlan} mode={mode} registrationOnly={registrationOnly} comparisonOnly={personalInvitation} disabled={registrationLocked} />
+            <MembershipOfferSection plan={plan} onPlanChange={setPlan} mode={mode} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} comparisonOnly={personalInvitation} disabled={registrationLocked} />
           </div>}
           <p className={styles.alreadyMember}>Already a member? <Link href={preview ? "/access" : MEMBERSHIP_LINKS.signIn}>Sign in ↗</Link></p>
         </div>
@@ -144,12 +144,12 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
       <ol>
         <li><span>01</span><h3>{personalInvitation ? "Accept your invitation." : mode === "waitlist" ? "Join the list." : "Make your invitation."}</h3><p>{personalInvitation ? `Your personalized invitation is already here, from ${invitation!.card.name}. Enter your email to get your confirmation code.` : mode === "waitlist" ? "Leave your details. We’ll email you when it’s time to begin." : "Add your name and watch your card become yours. Create your invitation right here."}</p></li>
         <li><span>02</span><h3>{mode === "waitlist" ? "Hear from Ruined." : "Verify your email."}</h3><p>{mode === "waitlist" ? "You’ll receive the next steps and the membership offer before deciding to join." : registrationOnly ? "Enter your email code, then fill out your information." : "Enter the confirmation code we send to your email to continue to your profile."}</p></li>
-        <li><span>03</span><h3>{mode === "waitlist" ? "Get ready to begin." : registrationOnly ? "You’re registered." : "Make your profile."}</h3><p>{complimentaryInvitation ? registrationOnly ? "Complete your information and agreement. No card or payment is required. Your welcome email confirms registration; we’ll send another email when your profile is ready." : "Complete your profile and membership agreement. Your invitation includes complimentary membership; no card or payment is required." : registrationOnly && mode !== "waitlist" ? "Save your card securely, with no charge today. Your welcome email confirms registration. We’ll send another email when your profile is ready." : mode === "paid" ? "Choose your member tag, complete your profile, and review your agreement. Confirm payment to activate membership." : mode === "payment-setup" ? "Create your profile and review your agreement. Saving a card is optional; no charge or paid membership starts until you explicitly confirm payment." : "When membership opens, review your agreement and confirm payment before starting Foundations."}</p></li>
+        <li><span>03</span><h3>{mode === "waitlist" ? "Get ready to begin." : prepaymentRequired && !complimentaryInvitation ? "Confirm your membership." : registrationOnly ? "You’re registered." : "Make your profile."}</h3><p>{complimentaryInvitation ? registrationOnly ? "Complete your information and agreement. No card or payment is required. Your welcome email confirms registration; we’ll send another email when your profile is ready." : "Complete your profile and membership agreement. Your invitation includes complimentary membership; no card or payment is required." : prepaymentRequired && mode !== "waitlist" ? "Review your agreement, exact price, and Foundations dates. Pay your first month or full year to complete registration. Your welcome email follows confirmed payment; your profile opens later by a separate email." : registrationOnly && mode !== "waitlist" ? "Save your card securely, with no charge today. Your welcome email confirms registration. We’ll send another email when your profile is ready." : mode === "paid" ? "Choose your member tag, complete your profile, and review your agreement. Confirm payment to activate membership." : mode === "payment-setup" ? "Create your profile and review your agreement. Saving a card is optional; no charge or paid membership starts until you explicitly confirm payment." : "When membership opens, review your agreement and confirm payment before starting Foundations."}</p></li>
       </ol>
     </section>
 
 
-    <MembershipQuestions mode={mode} registrationOnly={registrationOnly} invited={personalInvitation} complimentaryInvitation={complimentaryInvitation} recipientEmailRequired={invitation?.recipientEmailRequired ?? true} />
+    <MembershipQuestions mode={mode} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} invited={personalInvitation} complimentaryInvitation={complimentaryInvitation} recipientEmailRequired={invitation?.recipientEmailRequired ?? true} />
 
     <div className={styles.finalNote}><p>What happens next is still yours.</p><span>After the fear.</span></div>
 

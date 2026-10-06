@@ -10,9 +10,9 @@ export const metadata: Metadata = { title: "Registrations | Ruined Operations", 
 export const dynamic = "force-dynamic";
 
 const previewRows: OperatorRegistrationRow[] = [
-  { memberId: "00000000-0000-4000-8000-000000000101", name: "Cherry Hill", email: "cherry@example.test", state: "registered", registeredAt: "2026-09-30T12:00:00Z", profileActivatedAt: null, requiresPaymentMethod: true, profileComplete: true, ready: true, version: 2, welcomeStatus: "sent", activationEmailStatus: null },
-  { memberId: "00000000-0000-4000-8000-000000000102", name: "Alex Rivera", email: "alex@example.test", state: "registered", registeredAt: "2026-09-30T13:00:00Z", profileActivatedAt: null, requiresPaymentMethod: false, profileComplete: true, ready: true, version: 2, welcomeStatus: "pending", activationEmailStatus: null },
-  { memberId: "00000000-0000-4000-8000-000000000103", name: "Jordan Ellis", email: "jordan@example.test", state: "collecting", registeredAt: null, profileActivatedAt: null, requiresPaymentMethod: true, profileComplete: true, ready: false, version: 1, welcomeStatus: null, activationEmailStatus: null },
+  { memberId: "00000000-0000-4000-8000-000000000101", name: "Cherry Hill", email: "cherry@example.test", state: "registered", registeredAt: "2026-09-30T12:00:00Z", profileActivatedAt: null, requiresPaymentMethod: true, requiresInitialPayment: false, completionBasis: "saved_card", initialPayment: null, profileComplete: true, ready: true, version: 2, welcomeStatus: "sent", activationEmailStatus: null },
+  { memberId: "00000000-0000-4000-8000-000000000102", name: "Alex Rivera", email: "alex@example.test", state: "registered", registeredAt: "2026-09-30T13:00:00Z", profileActivatedAt: null, requiresPaymentMethod: false, requiresInitialPayment: false, completionBasis: "complimentary", initialPayment: null, profileComplete: true, ready: true, version: 2, welcomeStatus: "pending", activationEmailStatus: null },
+  { memberId: "00000000-0000-4000-8000-000000000103", name: "Jordan Ellis", email: "jordan@example.test", state: "collecting", registeredAt: null, profileActivatedAt: null, requiresPaymentMethod: true, requiresInitialPayment: false, completionBasis: null, initialPayment: null, profileComplete: true, ready: false, version: 1, welcomeStatus: null, activationEmailStatus: null },
 ];
 
 export default async function OperationsRegistrationsPage() {

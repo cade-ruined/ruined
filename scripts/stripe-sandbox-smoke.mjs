@@ -99,7 +99,7 @@ function sourceLoader(overrides) {
   return load;
 }
 
-async function createFixture(origin) {
+async function createFixture(origin, { paidRegistration = false } = {}) {
   const engine = new PGlite();
   try {
     await engine.exec("create role anon; create role authenticated; create role service_role;");
@@ -141,13 +141,22 @@ async function createFixture(origin) {
       "@/lib/database/server": { getApplicationDatabase: () => sql,
         withFreshApplicationDatabaseRead: (_stage, callback) => callback() },
       "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: fixture.authUserId, email: fixture.email }) },
-      "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true, minimumAge: 18, mode: "connected" }),
+      "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeCheckoutReady: true, stripeActivationReady: true, membershipRegistrationOnly: paidRegistration, membershipPrepaymentRequired: paidRegistration, minimumAge: 18, mode: "connected" }),
         getStripePublishableKey: () => process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY },
       "@/lib/membership/registration-message-delivery": { getRegistrationMessageConfiguration:()=>({ready:false}),processRegistrationMessageBatch:async()=>{throw new Error("Communications disabled");} },
       "@/lib/workflows/worker": { processWorkflowBatch: async () => { workerCalls++; } },
       "@/lib/google/calendar": noCommunication,
       "@/lib/support/delivery": noCommunication,
     });
+    const registration = load("src/lib/membership/registration-repository.ts");
+    async function enrollPaidRegistration(person) {
+      await sql.begin(tx => registration.enrollNewMemberRegistration(tx, person.memberId));
+      await engine.query(`insert into member_consents(member_id,consent_type,policy_version,accepted_at,source,actor_auth_user_id,evidence,dedupe_key)
+        values($1,'privacy','offline-registration',now(),'member',$2,$3::jsonb,$4)`, [person.memberId,person.authUserId,
+        JSON.stringify({context:"registration_documents_v1",affirmativeAction:"checkbox_and_submit",membershipTerms:{key:"ruined_registration",sha256:"a".repeat(64)},registrationTermsAccepted:true,paidAgreementAccepted:false,chargeAuthorized:false}),
+        `offline-registration:${person.memberId}`]);
+    }
+    if (paidRegistration) await enrollPaidRegistration(fixture);
     const checkout = load("app/api/stripe/checkout/route.ts");
     const offer = load("app/api/stripe/membership-offer/route.ts");
     const cancellation = load("app/api/stripe/cancellation/route.ts");
@@ -159,7 +168,7 @@ async function createFixture(origin) {
     assert.equal((await identity.getMemberIdentity(fixture.authUserId)).billingState, "pending");
     assert.equal((await platform.requireActivePlatformMemberLink(fixture)).memberId, fixture.memberId);
     let accountVerified = false;
-    return { engine, fixture, checkout, offer, cancellation, webhook, server, load, origin, workerCalls: () => workerCalls,
+    return { engine, fixture, checkout, offer, cancellation, webhook, server, load, origin, registration, enrollPaidRegistration, workerCalls: () => workerCalls,
       async verifyAccount() {
         if (accountVerified) return;
         const account = await server.getStripe().accounts.retrieve();
@@ -405,21 +414,45 @@ async function selfTestPrepaid() {
   const fake = { STRIPE_SECRET_KEY: "sk_test_local_prepaid", NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_local_prepaid",
     STRIPE_WEBHOOK_SECRET: "whsec_local_prepaid", STRIPE_MEMBERSHIP_MONTHLY_PRICE_ID: "price_monthly", STRIPE_MEMBERSHIP_ANNUAL_PRICE_ID: "price_annual",
     STRIPE_MEMBERSHIP_COMMITMENT_PORTAL_CONFIGURATION_ID: "bpc_fixture",
-    STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_MONTHLY_PRICE_ID: "price_foundingmonthly", STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_ANNUAL_PRICE_ID: "price_foundingannual" };
+    STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_MONTHLY_PRICE_ID: "price_foundingmonthly", STRIPE_MEMBERSHIP_FOUNDING_INDIVIDUAL_ANNUAL_PRICE_ID: "price_foundingannual",
+    STRIPE_MEMBERSHIP_COUPLE_MONTHLY_PRICE_ID: "price_couplemonthly", STRIPE_MEMBERSHIP_COUPLE_ANNUAL_PRICE_ID: "price_coupleannual",
+    STRIPE_PAYMENT_SETUP_ACCOUNT_ID: "acct_PrepaidRegistrationTest" };
   assert.throws(() => optionsFrom(["--prepaid", "--deferred"]), /mutually exclusive/);
   assert.equal(optionsFrom(["--self-test", "--prepaid"]).prepaid, true);
   assert.throws(() => validateEnvironment({ ...fake, STRIPE_SECRET_KEY: "sk_live_forbidden" }), /Live Stripe/);
   Object.assign(process.env, fake);
-  for (const plan of ["monthly", "annual"]) {
-    const app = await createFixture("http://127.0.0.1:3233");
+  for (const [plan, kind] of [["monthly", "individual"], ["annual", "individual"], ["monthly", "couple"]]) {
+    const app = await createFixture("http://127.0.0.1:3233", { paidRegistration: true });
+    let partner = null;
+    if (kind === "couple") {
+      partner = {memberId:randomUUID(),authUserId:randomUUID(),email:`partner-${randomUUID()}@example.test`};
+      await app.engine.query("insert into ruined_members(id,email,email_normalized) values($1,$2,$2)",[partner.memberId,partner.email]);
+      partner.personId=(await app.engine.query("select person_id from ruined_members where id=$1",[partner.memberId])).rows[0].person_id;
+      await app.engine.query("update person_email_addresses set verification_state='verified',verified_at=now() where person_id=$1",[partner.personId]);
+      await app.engine.query("insert into member_lifecycle(member_id,account_state) values($1,'active')",[partner.memberId]);
+      await app.engine.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,$4,'active')",[partner.authUserId,partner.memberId,partner.personId,partner.email]);
+      await app.engine.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')",[partner.authUserId]);
+      await app.engine.query("insert into person_profiles(person_id,preferred_name,display_name) values($1,'Second Adult','Second Adult')",[partner.personId]);
+      await app.engine.query("insert into person_private_profiles(person_id,birth_date,default_fulfillment_address,legal_name,mobile_e164,apparel_sizing) select $1,birth_date,default_fulfillment_address,'Second Adult',mobile_e164,apparel_sizing from person_private_profiles where person_id=$2",[partner.personId,app.fixture.personId]);
+      await app.engine.query("update member_onboardings set billing_plan='monthly',profile_completed_at=now() where member_id=$1",[partner.memberId]);
+      const ageId=(await app.engine.query("insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key) values($1,'age_attestation','sandbox-age18',now(),$2) returning id",[partner.memberId,`age:${partner.memberId}`])).rows[0].id;
+      const acceptanceId=randomUUID();
+      await app.engine.query(`insert into membership_agreement_acceptances(id,agreement_version_id,person_id,member_id,accepted_by_auth_user_id,age_attestation_id,signer_name_snapshot,signer_email_snapshot,affirmative_action,accepted_at,agreement_key_snapshot,agreement_version_snapshot,agreement_title_snapshot,agreement_content_sha256,agreement_body_snapshot,dedupe_key)
+        select $1,agreement_version_id,$2,$3,$4,$5,'Second Adult',$6,'checkbox_and_submit',now(),agreement_key_snapshot,agreement_version_snapshot,agreement_title_snapshot,agreement_content_sha256,agreement_body_snapshot,$7 from membership_agreement_acceptances where id=$8`,
+        [acceptanceId,partner.personId,partner.memberId,partner.authUserId,ageId,partner.email,`agreement:${partner.memberId}`,app.fixture.acceptanceId]);
+      await app.engine.query("update member_onboardings set agreement_completed_at=(select accepted_at from membership_agreement_acceptances where id=$1) where member_id=$2",[acceptanceId,partner.memberId]);
+      await app.enrollPaidRegistration(partner);
+      await app.engine.query("insert into membership_couple_authorizations(id,payer_member_id,partner_member_id,accepted_by_auth_user_id,accepted_at) values($1,$2,$3,$4,now())",[randomUUID(),app.fixture.memberId,partner.memberId,partner.authUserId]);
+    }
     const stripe = app.server.getStripe();
     // Any accidentally unmocked provider operation must fail locally, never reach Stripe.
     stripe._requestSender._request = () => { throw new Error("Provider network forbidden in offline prepaid test."); };
-    const amount = plan === "monthly" ? 34900 : 349000;
-    const price = { id: `price_founding${plan}`, product: "prod_fixture", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", transform_quantity: null,
+    const amount = kind === "couple" ? 69900 : plan === "monthly" ? 34900 : 349000;
+    const price = { id: `price_${kind === "couple" ? "couple" : "founding"}${plan}`, product: "prod_fixture", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", transform_quantity: null,
       tax_behavior: "exclusive", currency: "usd", unit_amount: amount, recurring: { interval: plan === "monthly" ? "month" : "year", interval_count: 1, usage_type: "licensed" } };
     let session, expectedSchedule, creations = 0;
     const post = (handler, path, body) => handler.POST(new Request(`${app.origin}${path}`, { method: "POST", headers: { origin: app.origin }, body: JSON.stringify(body) }));
+    stripe.accounts.retrieve = async () => ({id:fake.STRIPE_PAYMENT_SETUP_ACCOUNT_ID});
     stripe.prices.retrieve = async id => { assert.equal(id, price.id); return price; };
     stripe.billingPortal.configurations.retrieve = async () => ({ id: "bpc_fixture", active: true, livemode: false,
       features: { invoice_history: { enabled: true }, payment_method_update: { enabled: true }, subscription_cancel: { enabled: false }, subscription_update: { enabled: false } } });
@@ -447,7 +480,7 @@ async function selfTestPrepaid() {
     try {
       const agreement = (await app.engine.query("select agreement_version_snapshot from membership_agreement_acceptances where id=$1", [app.fixture.acceptanceId])).rows[0];
       assert.equal(agreement.agreement_version_snapshot, 3);
-      const quoted = await post(app.offer, "/api/stripe/membership-offer", { requestId: app.fixture.attemptId, kind: "individual", plan });
+      const quoted = await post(app.offer, "/api/stripe/membership-offer", { requestId: app.fixture.attemptId, kind, plan });
       assert.equal(quoted.status, 200, JSON.stringify(await quoted.clone().json()));
       const quote = (await quoted.json()).quote;
       expectedSchedule = quote.billingSchedule;
@@ -506,6 +539,11 @@ async function selfTestPrepaid() {
       };
       await deliver("customer.subscription.updated", subscription, "evt_prepaid_before_checkout");
       assert.equal((await app.status()).member.billing_state, "pending");
+      for (const person of [app.fixture,partner].filter(Boolean)) {
+        const before = await app.registration.completeMemberRegistration(person.authUserId);
+        assert.equal(before.state,"collecting","paid proof without completed Checkout cannot finish registration");
+        assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1",[person.memberId])).rows[0].n,0);
+      }
       session = { ...session, status: "complete", payment_status: "paid", customer: subscription.customer, subscription: subscription.id,
         customer_details: { email: app.fixture.email }, consent: { terms_of_service: "accepted" } };
       await deliver("checkout.session.completed", session, "evt_prepaid_checkout");
@@ -524,12 +562,40 @@ async function selfTestPrepaid() {
       assert.equal(new Date(proofs[0].prepaid_through).toISOString(), expectedSchedule.prepaidThrough);
       assert.equal(proofs[0].refund_state, "none");
       assert.equal(proofs[0].activated_at, null);
+      const messageRepository = app.load("src/lib/membership/registration-message-repository.ts"), claims = [];
+      for (const person of [app.fixture,partner].filter(Boolean)) {
+        const registered = await app.registration.getMemberRegistration(person.authUserId);
+        assert.equal(registered.state,"registered");assert.equal(registered.completionBasis,"paid_membership");
+        assert.equal(registered.profileActivatedAt,null);assert.equal(registered.initialPayment.amountPaid,amount);
+        assert.deepEqual(registered.initialPayment.billingSchedule,expectedSchedule);
+        assert.equal(registered.initialPayment.isPayer,person.memberId===app.fixture.memberId);
+        const lease=randomUUID(), claim=await messageRepository.claimRegistrationMessage(lease,person.memberId);
+        assert.ok(claim);claims.push({lease,claim});
+        const delivery=await messageRepository.withRegistrationMessage(claim,lease,async (_tx,row)=>row.paid_membership);
+        assert.equal(delivery.kind,"ok");assert.equal(delivery.value.amountPaidCents,amount);
+        assert.equal(delivery.value.isPayer,person.memberId===app.fixture.memberId);
+        assert.deepEqual(delivery.value.billingSchedule,expectedSchedule);
+        assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='welcome'",[person.memberId])).rows[0].n,1);
+        assert.equal((await app.engine.query("select count(*)::int n from member_payment_method_accounts where member_id=$1",[person.memberId])).rows[0].n,0,"paid registration never requires a separate setup checkout");
+      }
+      await app.engine.query("update stripe_membership_prepaid_proofs set refund_state='review_required',review_reason='payment_adjustment' where member_id=$1",[app.fixture.memberId]);
+      await deliver("invoice.paid",invoice,"evt_prepaid_adjustment_replay");
+      for (const person of [app.fixture,partner].filter(Boolean)) {
+        const held = await app.registration.getMemberRegistration(person.authUserId);
+        assert.equal(held.ready,false);assert.equal(held.initialPayment,null,"adjusted proof cannot appear as a successful payment receipt");
+        assert.equal(held.profileActivatedAt,null);
+        assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='welcome'",[person.memberId])).rows[0].n,1,"adjustment/replay cannot enqueue duplicate welcomes");
+      }
+      for (const {claim,lease} of claims) {
+        const heldDelivery=await messageRepository.withRegistrationMessage(claim,lease,async()=>{throw new Error("Adjusted payment must never reach email rendering/sending");});
+        assert.equal(heldDelivery.kind,"deferred");
+      }
       const page = html(app, "fixture-token");
       assert.match(page, /billingSchedule:quote.billingSchedule/);
       assert.ok(!page.includes(fake.STRIPE_SECRET_KEY) && !page.includes(fake.STRIPE_WEBHOOK_SECRET));
     } finally { await app.engine.close(); }
   }
-  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly and annual immutable schedule offers, fresh consent, rejected missing/tampered schedules, exact one-time plus recurring Checkout inputs, delayed recurring trial end, idempotent session resume, signed subscription/Checkout/invoice projection, durable paid proof, webhook replay and pending service before the cohort starts. No provider network calls or live changes. Real payment collection, due service activation and refunds require their separate runtime and sandbox checks.");
+  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly and annual immutable schedule offers, fresh consent, rejected missing/tampered schedules, exact one-time plus recurring Checkout inputs, delayed recurring trial end, idempotent session resume, signed subscription/Checkout/invoice projection, durable paid proof, required paid registration for monthly/annual/couples, one welcome each after completed payment, held profiles, adjustment suppression, webhook replay and pending service before the cohort starts. No provider network calls or live changes. Real payment collection, due service activation and refunds require their separate runtime and sandbox checks.");
 }
 
 async function main() {

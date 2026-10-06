@@ -602,7 +602,7 @@ export async function acceptPublishedMembershipAgreement(
     await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
     if (identity.registrationHeld) {
       const [registration] = await tx<Array<{ ready: boolean }>>`
-        select private.ruined_member_registration_ready(${identity.memberId}::uuid) as ready`;
+        select private.ruined_member_paid_activation_ready(${identity.memberId}::uuid) as ready`;
       if (!registration?.ready) throw new MembershipConflictError("Complete your registration before reviewing paid membership.");
     }
     const profileRows = await tx<Array<{ birth_date: Date | string | null; legal_name: string | null }>>`

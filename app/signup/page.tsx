@@ -19,7 +19,7 @@ export default async function SignupPage({ searchParams }: {
   const configuration = getPlatformConfiguration();
   const setupPreview = configuration.mode === "preview" && params.preview === "payment-setup";
   return <MembershipSignupPage
-    registrationOnly={configuration.membershipRegistrationOnly || setupPreview}
+    prepaymentRequired={configuration.membershipPrepaymentRequired} registrationOnly={configuration.membershipRegistrationOnly || setupPreview}
     initialPlan={isMembershipBillingPlan(requestedPlan) ? requestedPlan : "monthly"}
     enabled={configuration.mode === "connected" && configuration.membershipSignupReady === true}
     paymentSetupOnly={setupPreview || (configuration.membershipSignupReady === true && !configuration.stripeCheckoutReady)}

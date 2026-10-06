@@ -76,7 +76,7 @@ test("public invitation routes pass the card and token without the owner's priva
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
   const rendered = await page.default(params(token));
   assert.equal(rendered.type, renderOverview, "issued links open the complete membership landing page");
-  assert.deepEqual(Object.keys(rendered.props).sort(), ["invitation", "paymentSetupOnly", "registrationOnly", "signupEnabled"]);
+  assert.deepEqual(Object.keys(rendered.props).sort(), ["invitation", "paymentSetupOnly", "prepaymentRequired", "registrationOnly", "signupEnabled"]);
   assert.equal(rendered.props.registrationOnly, false);
   assert.equal(rendered.props.invitation.membershipType, "complimentary"); assert.equal(rendered.props.invitation.complimentaryEndsAt, current.complimentaryEndsAt);
   assert.equal(rendered.props.invitation.expiresAt, expiresAt); assert.deepEqual(rendered.props.invitation.card, card); assert.equal(rendered.props.invitation.token, token);

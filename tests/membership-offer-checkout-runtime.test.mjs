@@ -27,6 +27,7 @@ async function offerHarness({ signedIn = true, trusted = true, enabled = true, c
     "@/lib/membership/paid-launch": { getMembershipFirstChargeAt: () => firstChargeAt },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => signedIn ? {authUserId:id(2)} : null },
     "@/lib/membership/repository": { getMemberOnboarding: async () => ({requiredFieldsComplete:true,membershipFunding:funding,profile:{fulfillmentAddress:{countryCode:country}}}) },
+    "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
     "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: async () => ({version:2}) },
     "@/lib/membership/commercial-repository": {
       CommercialMembershipError: OfferError,

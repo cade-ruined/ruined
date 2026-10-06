@@ -87,10 +87,19 @@ test("registration holds survive launch changes and release profiles only after 
   assert.ok(migrations.some(match => match[1].endsWith("20260930140000_member_registration_access.sql")));
   const legalMigration = "db/migrations/20260930220000_registration_legal_acknowledgment.sql";
   const pricingMigration = "db/migrations/20261002140000_registration_founding_pricing.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const paymentMigration = "db/migrations/20261006220000_registration_initial_payment.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
+  // The three pre-migration fixtures intentionally use the old enrollment shape.
+  const oldAdmission = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql },
+    "@/lib/membership/registration-repository": { enrollNewMemberRegistration: async (tx, memberId) => {
+      await tx`insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode)
+        values(${memberId}::uuid,'acct_RegistrationTest',false)`;
+    } },
+  })("src/lib/membership/public-signup-admission.ts");
+  let paymentSchemaReady = false;
   const memberRepository = load("src/lib/membership/repository.ts");
   const legal = load("src/lib/membership/registration-legal.ts");
   const published = load("src/lib/membership/published-agreement.ts");
@@ -104,7 +113,7 @@ test("registration holds survive launch changes and release profiles only after 
   const row = async (query, values=[]) => (await db.query(query, values)).rows[0];
   async function member(email) {
     const viewer = { authUserId: randomUUID(), email };
-    await sql.begin(tx => admission.claimPublicMembershipSignupInTransaction(tx,viewer,"monthly"));
+    await sql.begin(tx => (paymentSchemaReady ? admission : oldAdmission).claimPublicMembershipSignupInTransaction(tx,viewer,"monthly"));
     return { ...viewer, ...(await row("select id as member_id,person_id from ruined_members where email_normalized=$1", [email])) };
   }
   async function profile(viewer, changes = {}) {
@@ -142,6 +151,8 @@ test("registration holds survive launch changes and release profiles only after 
   await db.query("update member_registration_access set profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1", [priorActivated.member_id, priorActivated.authUserId]);
   await db.exec(read(legalMigration));
   await db.exec(read(pricingMigration));
+  await db.exec(read(paymentMigration));
+  paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
   const admin = await member("admin@example.test");
@@ -454,6 +465,39 @@ test("registration holds survive launch changes and release profiles only after 
       delete environment.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED;
       delete environment.STRIPE_MEMBERSHIP_BUYOUT_READY;
       environment.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v2";
+    }
+  });
+
+  await t.test("new prepayment requirement is pinned and card-saving cannot finish paid intake", async () => {
+    const preserved = await registration.getMemberRegistration(fresh.authUserId);
+    try {
+      environment.MEMBERSHIP_REGISTRATION_PREPAYMENT_REQUIRED = "true";
+      environment.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED = "true";
+      environment.STRIPE_MEMBERSHIP_BUYOUT_READY = "true";
+      environment.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED = "true";
+      assert.equal(config.getPlatformConfiguration().membershipPrepaymentRequired, true);
+      assert.equal(config.getPlatformConfiguration().membershipSignupReady, true);
+      environment.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED = "false";
+      assert.equal(config.getPlatformConfiguration().membershipPrepaymentRequired, true);
+      assert.equal(config.getPlatformConfiguration().membershipSignupReady, false, "missing payment prerequisite must fail closed");
+      environment.STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED = "true";
+      const target = await member("prepaid-required@example.test");
+      assert.equal((await registration.getMemberRegistration(target.authUserId)).requiresInitialPayment, true);
+      await profile(target);
+      assert.equal(await registration.getMemberRegistrationDestination(target.authUserId), "/my/activate");
+      assert.equal((await row("select private.ruined_member_paid_activation_ready($1) as ready", [target.member_id])).ready, true);
+      await savedCard(target);
+      const pending = await registration.completeMemberRegistration(target.authUserId);
+      assert.equal(pending.state, "collecting");assert.equal(pending.ready, false);assert.equal(pending.requiresPaymentMethod, false);
+      assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1", [target.member_id])).count, 0);
+      await assert.rejects(() => db.query("update member_registration_access set registered_at=now(),completion_basis='saved_card' where member_id=$1", [target.member_id]), /saved card does not complete/);
+      await assert.rejects(() => db.query("update member_registration_access set requires_initial_payment=false where member_id=$1", [target.member_id]), /immutable/);
+      await assert.rejects(() => db.query("update member_registration_access set payment_setup_livemode=true where member_id=$1", [target.member_id]), /immutable/);
+      environment.MEMBERSHIP_REGISTRATION_PREPAYMENT_REQUIRED = "false";
+      assert.equal((await registration.getMemberRegistration(target.authUserId)).requiresInitialPayment, true, "turning off new enrollment cannot rewrite an enrolled requirement");
+      assert.deepEqual(await registration.getMemberRegistration(fresh.authUserId), preserved, "completed legacy registration is unchanged");
+    } finally {
+      for (const key of ["MEMBERSHIP_REGISTRATION_PREPAYMENT_REQUIRED", "STRIPE_MEMBERSHIP_ACTIVATION_ENABLED", "STRIPE_MEMBERSHIP_BUYOUT_READY", "STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED"]) delete environment[key];
     }
   });
 
