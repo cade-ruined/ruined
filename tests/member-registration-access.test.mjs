@@ -88,7 +88,8 @@ test("registration holds survive launch changes and release profiles only after 
   const legalMigration = "db/migrations/20260930220000_registration_legal_acknowledgment.sql";
   const pricingMigration = "db/migrations/20261002140000_registration_founding_pricing.sql";
   const paymentMigration = "db/migrations/20261006220000_registration_initial_payment.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const capacityMigration = "db/migrations/20261006223000_registration_paid_capacity.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -152,6 +153,7 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec(read(legalMigration));
   await db.exec(read(pricingMigration));
   await db.exec(read(paymentMigration));
+  await db.exec(read(capacityMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
