@@ -3,67 +3,29 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { DECK_CHAPTERS, DECK_SLIDES, type Slide } from "./deck-content";
+import { DECK_CHAPTERS, DECK_SLIDES, MEMBERSHIP_URL, type Slide } from "./deck-content";
 import WalkBackdrop from "./WalkBackdrop";
 import styles from "./call-deck.module.css";
 
-const JOIN_URL = "https://members.theruinedproject.com/my/join";
 const clamp = (index: number) => Math.max(0, Math.min(DECK_SLIDES.length - 1, index));
 const number = (value: number) => String(value).padStart(2, "0");
 
 type DeckMessage = { type: "navigate" | "state"; index: number } | { type: "ready" };
 
+function MembershipLink() {
+  return <a className={styles.membershipLink} href={MEMBERSHIP_URL} target="_blank" rel="noopener noreferrer">Open Memberships <span aria-hidden="true">↗</span><span className={styles.srOnly}> (opens in a new tab)</span></a>;
+}
+
 function SlideContent({ slide }: { slide: Slide }) {
-  const [selected, setSelected] = useState(0);
-  const interactive = slide.kind === "framework" || slide.kind === "path";
   if (slide.kind === "cover") return <h1 className={styles.srOnly}>RUINED</h1>;
-  if (slide.kind === "close") return (
-    <div className={styles.closing}>
-      <Image src="/ruined-mark.svg" width={120} height={169} alt="" className={styles.botanical} />
-      <h1><Image src="/ruined-wordmark.svg" width={700} height={210} alt="Ruined" className={styles.wordmark} /></h1>
-      <a className={styles.join} href={JOIN_URL} target="_blank" rel="noopener noreferrer">Join Ruined <span aria-hidden="true">↗</span></a>
-      <p className={styles.joinUrl}>members.theruinedproject.com/my/join</p>
-    </div>
-  );
   return (
     <>
-      {(slide.eyebrow || slide.kind === "framework") && <p className={styles.eyebrow}>{slide.eyebrow ?? "The Ruined framework"}</p>}
-      <h1 className={slide.kind === "framework" ? styles.srOnly : styles.headline}>{slide.headline}</h1>
-      {slide.body && <p className={styles.bodyCopy}>{slide.body}</p>}
-      {slide.kind === "price" && slide.price && (
-        <div className={styles.pricing}>
-          <p className={styles.regular}>Regular membership <s>{slide.price.regular}</s> / month</p>
-          <p className={styles.price}><span>{slide.price.founding}</span><span className={styles.cadence}>{slide.price.cadence}</span></p>
-          <p className={styles.founding}>{slide.price.audience}</p>
-          <p className={styles.terms}>{slide.price.terms}</p>
-          {slide.price.pending && <p>{slide.price.pending}</p>}
-        </div>
-      )}
-      {slide.lines && <div className={styles.lines} data-many={slide.lines.length > 8}>{slide.lines.map((line) => <p key={line}>{line}</p>)}</div>}
-      {interactive && slide.items ? (
-        <div className={styles.explorer}>
-          <div className={styles.explorerTabs} role="tablist" aria-label={slide.title}>
-            {slide.items.map((item, index) => <button key={item.label} type="button" role="tab"
-              id={`tab-${slide.id}-${index}`} aria-controls={`panel-${slide.id}`} aria-selected={selected === index}
-              tabIndex={selected === index ? 0 : -1} onClick={() => setSelected(index)}
-              onKeyDown={(event) => {
-                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                event.preventDefault(); event.stopPropagation();
-                const next = event.key === "Home" ? 0 : event.key === "End" ? slide.items!.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + slide.items!.length) % slide.items!.length;
-                setSelected(next);
-                document.getElementById(`tab-${slide.id}-${next}`)?.focus();
-              }}><span>{number(index + 1)}</span>{item.label}</button>)}
-          </div>
-          <p className={styles.explorerDetail} id={`panel-${slide.id}`} role="tabpanel" tabIndex={0} aria-labelledby={`tab-${slide.id}-${selected}`}>{slide.items[selected].detail}</p>
-        </div>
-      ) : slide.items && (
-        <dl className={styles.items}>{slide.items.map((item, index) => <div key={item.label}>
-          {(slide.kind === "steps" || slide.kind === "month") && <span className={styles.itemNumber}>{number(index + 1)}</span>}
-          <dt>{item.label}</dt><dd>{item.detail}</dd>
-        </div>)}</dl>
-      )}
-      {slide.prompt && <p className={styles.prompt}>{slide.prompt}</p>}
-      {slide.kind === "steps" && <a className={styles.textLink} href={JOIN_URL} target="_blank" rel="noopener noreferrer">Open registration <span aria-hidden="true">↗</span></a>}
+      <h1 className={styles.headline}>{slide.headline}</h1>
+      {slide.lines && <div className={styles.lines}>{slide.lines.map((line) => <p key={line}>{line}</p>)}</div>}
+      {slide.kind === "handoff" && <div className={styles.handoff}>
+        <MembershipLink />
+        <p className={styles.handoffUrl}>members.theruinedproject.com/membership</p>
+      </div>}
     </>
   );
 }
@@ -241,15 +203,14 @@ export default function CallDeck() {
           <section className={styles.presenterCurrent}>
             <p className={styles.eyebrow}>{connected ? "On screen" : "Preview"} / {number(active + 1)}</p>
             <h1>{slide.headline}</h1>
-            {slide.body && <p>{slide.body}</p>}
-            {slide.price && <p className={styles.presenterPrice}>{slide.price.founding} {slide.price.cadence}</p>}
+            {slide.kind === "handoff" && <MembershipLink />}
             <div className={styles.presenterNav}>{controls}</div>
             <p className={styles.presenterHint}>Share the audience window only. These notes stay here.</p>
             {active < DECK_SLIDES.length - 1 && <div className={styles.upNext}><p className={styles.eyebrow}>Up next / {number(active + 2)}</p><p>{DECK_SLIDES[active + 1].title}</p></div>}
           </section>
           <section className={styles.speakerNotes} aria-label="Speaker notes">
             <p className={styles.eyebrow}>Speaker notes</p><h2>{slide.title}</h2>
-            {slide.notes.split(/\n(?=[A-Z0-9“"'])/).map((paragraph, index) => <p key={index}>{paragraph.replace(/\n/g, " ")}</p>)}
+            {slide.notes.split(/\n\s*\n/).map((paragraph, index) => <p key={index}>{paragraph.replace(/\n/g, " ")}</p>)}
           </section>
         </div>
       ) : (
@@ -284,7 +245,7 @@ export default function CallDeck() {
         <div className={styles.dialogHeader}><h2 id="call-help-title">Make room for the call</h2><button type="button" aria-label="Close help" onClick={() => helpDialog.current?.close()}>×</button></div>
         <p>Share this audience window. Open Presenter in a separate window for the full speaking notes and slide controls.</p>
         <dl><div><dt>← / → / Space</dt><dd>Previous / next slide</dd></div><div><dt>Home / End</dt><dd>First / final slide</dd></div><div><dt>O</dt><dd>Slide index</dd></div><div><dt>N</dt><dd>Presenter notes</dd></div><div><dt>F</dt><dd>Full screen</dd></div><div><dt>B</dt><dd>Blank screen / return</dd></div></dl>
-        <p>On touchscreens, swipe sideways or use the arrows. Select the framework and leadership stages to explore them.</p>
+        <p>On touchscreens, swipe sideways or use the arrows. After the final slide, open the Membership page for the live walkthrough.</p>
         <button type="button" className={styles.motionToggle} aria-pressed={quiet} onClick={() => setQuiet((value) => !value)}>{quiet ? "Enable room transitions" : "Use still rooms"}</button>
         {reduced && <p className={styles.small}>Your device’s reduced-motion preference is active.</p>}
       </dialog>
