@@ -7,7 +7,7 @@ import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-pol
 import { getMemberIdentity } from "@/lib/membership/repository";
 import { invitationCard, MemberInvitationError } from "./invitation-model";
 import {
-  PERSONAL_INVITATION_DAILY_LIMIT, PERSONAL_INVITATION_UUID, validateCreatePersonalMemberInvitationInput,
+  getPersonalInvitationDailyLimit, PERSONAL_INVITATION_UUID, validateCreatePersonalMemberInvitationInput,
   validatePersonalMemberInvitationVersionInput, type CreatePersonalMemberInvitationInput,
   type PersonalInvitationDeliveryStatus, type PersonalMemberInvitationsSnapshot, type PersonalMemberInvitationVersionInput,
 } from "./personal-invitation-model";
@@ -47,12 +47,18 @@ async function authorizeWrite(tx: TransactionSql, authUserId: string, memberId: 
   if (!authorized?.active) throw new MemberInvitationError(403, "Member access is required.");
 }
 
-async function requireComplimentaryAdministrator(tx: TransactionSql, authUserId: string, memberId: string) {
-  // Hold the issuing authority through the write, before member/invitation locks.
+async function lockInvitationAdministrator(tx: TransactionSql, authUserId: string) {
+  // Hold current administrator authority through the write, including its
+  // higher creation allowance, before member/invitation locks. Lock the user
+  // before grants, matching operator access edits to avoid a lock-order cycle.
+  await tx`select auth_user_id from platform_users where auth_user_id = ${authUserId}::uuid for share`;
   await tx`select grant_row.auth_user_id from platform_role_grants grant_row
     where grant_row.auth_user_id = ${authUserId}::uuid and grant_row.role_slug = 'ops_admin' and grant_row.revoked_at is null
     for share`;
-  await tx`select auth_user_id from platform_users where auth_user_id = ${authUserId}::uuid for share`;
+}
+
+async function requireComplimentaryAdministrator(tx: TransactionSql, authUserId: string, memberId: string) {
+  await lockInvitationAdministrator(tx, authUserId);
   const [row] = await tx<Array<{ allowed: boolean }>>`
     select private.ruined_can_authorize_complimentary_invitation(${memberId}::uuid, ${authUserId}::uuid) as allowed`;
   if (!row?.allowed) throw new MemberInvitationError(403, "Only an administrator can grant or end complimentary membership.");
@@ -81,6 +87,9 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
       from ruined_members member left join person_profiles profile on profile.person_id = member.person_id
       where member.id = ${identity.memberId}::uuid and member.deleted_at is null`;
     if (!names) throw new MemberInvitationError(403, "Member access is required.");
+    // This existing authority check pins the active administrator grant to the
+    // authenticated member; neither the recipient nor browser chooses a quota.
+    const dailyLimit = getPersonalInvitationDailyLimit(names.can_grant_complimentary);
     const rows = await sql<InvitationRow[]>`select invitation.*, referral.joined_at,
       private.ruined_personal_invitation_benefit_available(invitation.id) as benefit_available, coalesce(invitation.expires_at <= clock_timestamp(), false) as expired,
       funding.id as grant_id, funding.starts_at as grant_starts_at, funding.ends_at as grant_ends_at, funding.revoked_at as grant_revoked_at,
@@ -110,7 +119,7 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
       counts: { created: rows.length, active: rows.filter(row => row.active && !row.submitted_at && !row.joined_at).length,
         expired: rows.filter(row => row.expired && !row.revoked_at && !row.submitted_at && !row.accepted_at).length,
         submitted: rows.filter(row => row.submitted_at).length, accepted: rows.filter(row => row.accepted_at).length, joined: counts?.joined ?? 0 },
-      dailyLimit: PERSONAL_INVITATION_DAILY_LIMIT, remainingToday: Math.max(0, PERSONAL_INVITATION_DAILY_LIMIT - (counts?.recent ?? 0)),
+      dailyLimit, remainingToday: Math.max(0, dailyLimit - (counts?.recent ?? 0)),
       legacyInvitation: legacy ? { url: legacy.enabled && legacy.active && names.eligible ? `/invitation/${legacy.public_token}` : null,
         issuedAt: date(legacy.issued_at), expiresAt: date(legacy.expires_at), enabled: legacy.enabled, version: legacy.version } : null,
     };
@@ -122,6 +131,7 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
   const { identity } = await owner(authUserId);
   await getApplicationDatabase().begin(async tx => {
     if (input.membershipType === "complimentary") await requireComplimentaryAdministrator(tx, authUserId, identity.memberId);
+    else await lockInvitationAdministrator(tx, authUserId);
     await authorizeWrite(tx, authUserId, identity.memberId, identity.personId);
     // Parent serialization makes retries, duplicate-recipient checks and the
     // rolling daily cap atomic even when several tabs create at once.
@@ -154,7 +164,7 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
       if (billing?.paid) throw new MemberInvitationError(409, "This person already has membership billing. Resolve their existing subscription before offering complimentary membership.");
     }
     await requireEligible(tx, identity.memberId);
-    const [check] = await tx<Array<{ duplicate: boolean; self: boolean; recent: number }>>`select
+    const [check] = await tx<Array<{ duplicate: boolean; self: boolean; recent: number; administrator: boolean }>>`select
       exists(select 1 from member_personal_invitations where member_id = ${identity.memberId}::uuid
         and ((${input.recipientEmail} <> '' and recipient_email_normalized = ${input.recipientEmail})
           or (${input.recipientPhone}::text is not null and recipient_phone = ${input.recipientPhone}))
@@ -164,10 +174,12 @@ export async function createOwnPersonalInvitation(authUserId: string, value: Cre
         and email_normalized = ${input.recipientEmail} and retired_at is null)
         or exists(select 1 from ruined_members where id = ${identity.memberId}::uuid and email_normalized = ${input.recipientEmail})) as self,
       (select count(*)::integer from member_personal_invitations where member_id = ${identity.memberId}::uuid
-        and issued_at > clock_timestamp() - interval '24 hours') as recent`;
+        and issued_at > clock_timestamp() - interval '24 hours') as recent,
+      private.ruined_can_authorize_complimentary_invitation(${identity.memberId}::uuid, ${authUserId}::uuid) as administrator`;
     if (check?.self) throw new MemberInvitationError(400, "Choose someone else's email for this invitation.");
     if (check?.duplicate) throw new MemberInvitationError(409, "You already have an active invitation for this email or phone number. Use it or revoke it first.");
-    if ((check?.recent ?? 0) >= PERSONAL_INVITATION_DAILY_LIMIT) throw new MemberInvitationError(429, "You've reached 20 invitations in 24 hours. Please try again later.");
+    const dailyLimit = getPersonalInvitationDailyLimit(check?.administrator ?? false);
+    if ((check?.recent ?? 0) >= dailyLimit) throw new MemberInvitationError(429, `You've reached ${dailyLimit} invitations in 24 hours. Please try again later.`);
     const [profile] = await tx<Array<{ name: string; member_tag: string | null }>>`select
       coalesce(nullif(btrim(display_name), ''), nullif(btrim(preferred_name), ''), 'Member') as name, member_tag
       from person_profiles where person_id = ${identity.personId}::uuid`;

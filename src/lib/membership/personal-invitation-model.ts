@@ -3,6 +3,10 @@ import { MemberInvitationError } from "./invitation-model";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 
 export const PERSONAL_INVITATION_DAILY_LIMIT = 20;
+export const PERSONAL_INVITATION_ADMIN_DAILY_LIMIT = 100;
+export function getPersonalInvitationDailyLimit(isAdministrator: boolean): number {
+  return isAdministrator ? PERSONAL_INVITATION_ADMIN_DAILY_LIMIT : PERSONAL_INVITATION_DAILY_LIMIT;
+}
 export type PersonalInvitationDeliveryStatus = "not_requested" | "queued" | "sending" | "sent" | "failed" | "cancelled";
 export type InvitationMembershipType = "standard" | "complimentary";
 export type PersonalMemberInvitation = {
