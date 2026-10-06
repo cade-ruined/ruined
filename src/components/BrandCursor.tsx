@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 
 const INTERACTIVE_SELECTOR = [
   "a[href]",
@@ -31,9 +32,12 @@ const NATIVE_CURSOR_SELECTOR = [
 ].join(",");
 
 export default function BrandCursor() {
+  const pathname = useBackgroundPathname();
+  const disabled = pathname === "/call-deck";
   const cursorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (disabled) return;
     const cursor = cursorRef.current;
     if (!cursor) return;
 
@@ -113,7 +117,9 @@ export default function BrandCursor() {
       document.removeEventListener("transitionend", refreshTarget, true);
       document.documentElement.removeEventListener("pointerleave", hide);
     };
-  }, []);
+  }, [disabled]);
+
+  if (disabled) return null;
 
   return (
     <div ref={cursorRef} className="ruined-brand-cursor" aria-hidden="true">

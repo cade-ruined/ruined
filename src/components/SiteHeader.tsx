@@ -35,7 +35,7 @@ export default function SiteHeader() {
   const pathname = useBackgroundPathname();
   const menuTitleId = useId();
   const isLanding = pathname.startsWith("/lp");
-  const isFoundations = pathname === "/foundations";
+  const isFoundations = pathname === "/foundations" || pathname === "/call-deck";
   const isPlatform =
     pathname.startsWith("/my") || pathname.startsWith("/ops") || pathname.startsWith("/auth");
   const isHome = pathname === "/";
