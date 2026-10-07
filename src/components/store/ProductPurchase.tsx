@@ -57,6 +57,7 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
 }) {
   const options = useMemo(() => visibleOptions(product), [product]);
   const colorOption = getProductColorOption(product);
+  const fitOption = getProductFitOption(product);
   const firstAvailable = product.variants.find((variant) => variant.available) ?? product.variants[0];
   const [selection, setSelection] = useState<Record<string, string>>(() => ({
     ...Object.fromEntries(
@@ -76,8 +77,11 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
     ? product.variants.find((variant) => variantMatches(variant, selection))
     : undefined;
   const selectedColor = colorOption ? selection[colorOption.name] : undefined;
+  const selectedFit = fitOption ? selection[fitOption.name] : undefined;
   const hasAvailableVariant = product.variants.some((variant) =>
-    variant.available && (!colorOption || !selectedColor || optionValue(variant, colorOption.name) === selectedColor)
+    variant.available
+      && (!colorOption || !selectedColor || optionValue(variant, colorOption.name) === selectedColor)
+      && (!fitOption || !selectedFit || optionValue(variant, fitOption.name) === selectedFit)
   );
   const purchasable = selectedVariant?.available === true;
   const expectedShipDate = formatExpectedShipDate(product.expectedShipDate);
@@ -94,8 +98,8 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
     : "Select options";
 
   function canSelect(name: string, value: string): boolean {
-    // A sold-out color remains viewable; its sizes and purchase button cannot be used.
-    if (name === colorOption?.name) {
+    // Sold-out colors and BYOB fits remain viewable; sizes and purchase stay disabled.
+    if (name === colorOption?.name || name === fitOption?.name) {
       return product.variants.some((variant) => optionValue(variant, name) === value);
     }
     const optionIndex = options.findIndex((option) => option.name === name);
@@ -111,7 +115,7 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
   function choose(name: string, value: string) {
     setAdded(false);
     if (name === colorOption?.name) onColorChange?.(value);
-    if (name === getProductFitOption(product)?.name) onFitChange?.(value);
+    if (name === fitOption?.name) onFitChange?.(value);
     const optionIndex = options.findIndex((option) => option.name === name);
     setSelection((current) =>
       Object.fromEntries([

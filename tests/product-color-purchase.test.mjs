@@ -118,6 +118,34 @@ test("a color listing preselects its color, requires size, and adds the exact va
   }
 });
 
+test("sold-out BYOB fits remain viewable without borrowing available stock from another fit", () => {
+  for (const mensAvailable of [false, true]) {
+    const byob = {
+      ...product, id: "byob-tank", name: "BYOB Tank",
+      options: [{ name: "Fit", values: ["Men's", "Women's"] }, { name: "Size", values: ["S", "M"] }],
+      variants: ["Men's", "Women's"].flatMap((fit, index) => ["S", "M"].map((size, offset) => ({
+        ...product.variants[0], id: `gid://shopify/ProductVariant/${index * 2 + offset + 200}`,
+        title: `${fit} / ${size}`, selectedOptions: [{ name: "Fit", value: fit }, { name: "Size", value: size }],
+        available: fit === "Men's" && mensAvailable,
+      }))),
+    };
+    const view = purchase(undefined, byob);
+    assert.equal(view.button("Men's").props.disabled, false);
+    assert.equal(view.button("Women's").props.disabled, false);
+    view.button("Women's").props.onClick();
+    assert.deepEqual(view.changedFits, ["Women's"]);
+    assert.equal(view.button("S").props.disabled, true);
+    assert.equal(view.button("M").props.disabled, true);
+    assert.equal(content(view.submit()), "Sold out");
+    assert.equal(view.submit().props.disabled, true);
+    view.submit().props.onClick();
+    assert.deepEqual(view.added, []);
+    view.button("Men's").props.onClick();
+    assert.equal(view.button("S").props.disabled, !mensAvailable);
+    assert.equal(content(view.submit()), mensAvailable ? "Select size" : "Sold out");
+  }
+});
+
 test("changing color updates the gallery owner, clears size, and clears the added state", () => {
   const view = purchase("Black");
   view.button("M").props.onClick();
