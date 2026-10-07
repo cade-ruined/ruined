@@ -102,6 +102,10 @@ async function fixture({ existing = true } = {}) {
     "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true, matchesMembershipInvoice: () => true, hasFullMembershipPayment: () => true },
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: callback => callback(tx) }) },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({}), isStripeTaxEnabled: () => false },
+    "@/lib/stripe/checkout-consent": { reconcileNativeCheckoutConsent: async (_tx, _stripe, { subscription }) => {
+      assert.equal(subscription.metadata.billing_consent_source, undefined, "these prior prepaid contracts already have stored member-approved consent");
+      return true;
+    } },
     "@/lib/stripe/billing-repository": billing, "@/lib/stripe/prepaid-webhook": helper,
     "@/lib/stripe/commitment-webhook": { ...commitmentHelper, hasVerifiedCommitmentInvoicePayment: async () => true,
       invalidateCommitmentFromInvoice: async () => { log.push("invalidate");return true; },

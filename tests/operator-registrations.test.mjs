@@ -101,6 +101,7 @@ function hooks() {
 async function uiFixture({ rows = [row(), row(memberB)], preview = false, replies = [] } = {}) {
   const h = hooks(), calls = []; let refreshes = 0;
   const View = (await load("src/components/platform/OperatorRegistrations.tsx", {
+    "@/lib/membership/operator-registration-progress": await load("src/lib/membership/operator-registration-progress.ts"),
     react: h.react, "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/navigation": { useRouter: () => ({ refresh: () => { refreshes++; } }) },
     "./operatorStyles": { OPERATOR_BUTTON_CLASS: "button", OPERATOR_PRIMARY_ACTION_CLASS: "primary" },
@@ -140,6 +141,29 @@ test("unready, withdrawn-card and already-open accounts cannot be selected for r
   assert.match(text(f.render()), /Card needed|Information needed/);
   await f.click("Select ready registrations"); await f.click("Review 1 profile"); await f.click("Open profiles & queue email");
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0].body.expectedVersion, 2);
+});
+
+test("paid registration rows distinguish payment from complimentary and preserve profile holds", async () => {
+  const progress = { state: "registered", registeredAt: "2026-10-06T18:00:00Z", profileComplete: true, ready: true,
+    requiresInitialPayment: true, requiresPaymentMethod: false, completionBasis: "paid_membership", emailVerified: true,
+    paymentMethodState: "missing", paymentConfirmed: true, billingArranged: true, billingState: "pending", serviceStartsAt: "2026-11-05T22:00:00Z" };
+  const f = await uiFixture({ rows: [row(memberA, { requiresInitialPayment: true, requiresPaymentMethod: false, progress })] });
+  assert.match(text(f.render()), /Payment received/);
+  assert.match(text(f.render()), /Registration complete · profile held · service starts Nov 5/);
+  assert.doesNotMatch(text(f.render()), /Complimentary|First payment needed|Card needed/);
+  assert.deepEqual(f.calls, []);
+});
+
+test("a withdrawn saved card shows the original completed registration and the current action", async () => {
+  const progress = { state: "registered", registeredAt: "2026-10-01T18:00:00Z", profileComplete: true, ready: false,
+    requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: "saved_card", emailVerified: true,
+    paymentMethodState: "removed", paymentConfirmed: false, billingArranged: false, billingState: "pending", serviceStartsAt: null };
+  const f = await uiFixture({ rows: [row(memberA, { ready: false, progress })] });
+  await f.click("All 1");
+  assert.match(text(f.render()), /Card needed/);
+  assert.match(text(f.render()), /Previously registered · saved card removed/);
+  assert.match(text(f.render()), /This does not charge it/);
+  assert.equal(f.select("Cherry Hill"), undefined);
 });
 
 test("preview can review sample registrations but cannot release or email even if its disabled callback is called", async () => {

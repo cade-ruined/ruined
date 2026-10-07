@@ -89,7 +89,9 @@ test("registration holds survive launch changes and release profiles only after 
   const pricingMigration = "db/migrations/20261002140000_registration_founding_pricing.sql";
   const paymentMigration = "db/migrations/20261006220000_registration_initial_payment.sql";
   const capacityMigration = "db/migrations/20261006223000_registration_paid_capacity.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const quoteMigration = "db/migrations/20261007010000_membership_quote_before_agreement.sql";
+  const nativeConsentMigration = "db/migrations/20261007013000_stripe_checkout_native_consent.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -154,6 +156,8 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec(read(pricingMigration));
   await db.exec(read(paymentMigration));
   await db.exec(read(capacityMigration));
+  await db.exec(read(quoteMigration));
+  await db.exec(read(nativeConsentMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
@@ -288,6 +292,12 @@ test("registration holds survive launch changes and release profiles only after 
     const before = await registration.getMemberRegistration(fresh.authUserId);
     assert.equal(before.profileComplete,true);assert.equal(before.requiresPaymentMethod,true);assert.equal(before.ready,false);
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/payment-method");
+    const progress = await sql.begin(tx => registration.readOperatorRegistrationProgress(tx, admin.authUserId, [fresh.member_id]));
+    assert.equal(progress.get(fresh.member_id).paymentMethodState, "missing");
+    assert.equal(progress.get(fresh.member_id).ready, false);
+    assert.equal(progress.get(fresh.member_id).completionBasis, null);
+    assert.equal(progress.get(fresh.member_id).registeredAt, null);
+    await assert.rejects(() => sql.begin(tx => registration.readOperatorRegistrationProgress(tx, fresh.authUserId, [fresh.member_id])), { status: 403 });
     assert.equal((await row("select count(*)::int as count from member_registration_messages")).count,0);
     await assert.rejects(()=>registration.activateMemberRegistration(admin.authUserId,fresh.member_id,before.version),{status:409});
   });
@@ -334,6 +344,11 @@ test("registration holds survive launch changes and release profiles only after 
     assert.equal((await row("select private.ruined_member_paid_activation_ready($1) as ready",[fresh.member_id])).ready,false,"withdrawn storage consent closes held billing eligibility");
     assert.equal(snapshot.foundingPricing.confirmed, true, "Withdrawing card storage does not cancel the earned rate");
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/payment-method");
+    const progress = await sql.begin(tx => registration.readOperatorRegistrationProgress(tx, admin.authUserId, [fresh.member_id]));
+    assert.equal(progress.get(fresh.member_id).paymentMethodState, "removed");
+    assert.equal(progress.get(fresh.member_id).ready, false);
+    assert.equal(progress.get(fresh.member_id).completionBasis, "saved_card");
+    assert.ok(progress.get(fresh.member_id).registeredAt);
     await assert.rejects(()=>registration.activateMemberRegistration(admin.authUserId,fresh.member_id,snapshot.version),{status:409});
     await db.query("update member_payment_method_accounts set consent_revoked_at=null where member_id=$1 and livemode=false",[fresh.member_id]);
   });

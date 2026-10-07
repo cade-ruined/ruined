@@ -50,6 +50,21 @@ payment proof and confirms that service remains pending before the cohort starts
 Unmocked provider requests are blocked locally. This is not evidence of actual
 Stripe collection, future service activation or a real refund.
 
+To exercise the current automatic payment-form flow, run:
+
+```sh
+node scripts/stripe-sandbox-smoke.mjs --self-test --prepaid --native-consent
+```
+
+This adds pending native Stripe consent: opening the form stores no payment
+approval. Only a retrieved completed session with accepted Stripe terms can record
+the immutable consent receipt. The fixture rejects missing consent and mismatched
+member, agreement, amount, currency, customer, subscription and line items. It also
+checks invoice-first delivery with a newer event timestamp than the later-arriving
+Checkout completion, session-binding races and duplicate events. The option is
+restricted to offline self-tests; the legacy test above continues to cover existing
+browser-approved attempts.
+
 The fixture provides a named Person profile before setting profile completion, and
 sets the agreement checkpoint from the saved acceptance timestamp in PostgreSQL.
 These prerequisites matter: setting a checkpoint before acceptance or leaving the

@@ -1,16 +1,16 @@
 import Link from "next/link";
 
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
-import { guidanceForMemberRecord } from "@/lib/platform/operator-member-guidance";
+import { guidanceForMemberRecord, type OperatorMemberGuidance } from "@/lib/platform/operator-member-guidance";
 
 const ACTION_CLASS = "ui-heading mt-2 inline-flex min-h-11 items-center gap-3 text-sm font-semibold underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]";
 
-export default function OperatorMemberSetup({ record }: { record: OpsMemberRecord }) {
+export default function OperatorMemberSetup({ record, guidance }: { record: OpsMemberRecord; guidance?: OperatorMemberGuidance }) {
   if (!record.access.roles.includes("ops_admin")) return null;
 
   const memberId = encodeURIComponent(record.header.memberId);
   const circle = record.community.circle;
-  const next = guidanceForMemberRecord(record);
+  const next = guidance ?? guidanceForMemberRecord(record);
   const participationReview = next.key === "ongoing-review";
   const placementBlocked = next.placement === "blocked";
 

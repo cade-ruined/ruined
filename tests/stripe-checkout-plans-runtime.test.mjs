@@ -107,6 +107,24 @@ async function routeHarness({ reserve, retrieve, validationError, agreementPubli
   return { creations, expirations, opened, reserved, released, post: body => { requestedPlan = body.plan ?? "monthly"; return route.POST(new Request("https://members.example.test/api/stripe/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acceptanceId: uuid, attemptId: uuid, recurringPaymentAccepted: true, commercialReservationId: uuid, plan: "monthly", ...body }) })); } };
 }
 
+test("native Stripe consent prepares the form without fabricating member authorization", async () => {
+  const preparedAt = new Date("2026-10-07T00:00:00Z");
+  const harness = await routeHarness({ reserve: input => reservation(input.plan, {
+    consentSource: input.consentSource, checkoutPreparedAt: preparedAt, recurringPaymentAcceptedAt: null,
+  }) });
+  assert.equal((await harness.post({ consentSource: "stripe_checkout", recurringPaymentAccepted: undefined })).status, 200);
+  assert.equal(harness.reserved[0].consentSource, "stripe_checkout");
+  assert.equal(harness.creations.length, 1);
+  const params = harness.creations[0].params;
+  assert.equal(params.consent_collection.terms_of_service, "required");
+  assert.equal(params.metadata.billing_consent_source, "stripe_checkout");
+  assert.equal(params.metadata.billing_prepared_at, preparedAt.toISOString());
+  assert.equal(params.metadata.billing_consent_at, undefined);
+  assert.equal(params.subscription_data.metadata.billing_consent_at, undefined);
+  assert.equal((await harness.post({ consentSource: "browser_guess", recurringPaymentAccepted: true })).status, 400);
+  assert.equal(harness.creations.length, 1);
+});
+
 test("checkout requires an approved plan and explicit recurring-payment consent before Stripe is called", async () => {
   for (const body of [{ plan: "price_cheap" }, { plan: null }, { recurringPaymentAccepted: false }, { recurringPaymentAccepted: "true" }]) {
     const harness = await routeHarness();

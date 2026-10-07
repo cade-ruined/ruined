@@ -134,6 +134,7 @@ test("unknown preview IDs never silently manufacture another member's record or 
 function routeHarness(context, { record = null, profile = null, publicScope = null } = {}) {
   const calls = [];
   const Page = load("app/ops/members/[memberId]/page.tsx", {
+    "@/lib/membership/registration-repository": { getOpsMemberRegistrationProgress: async () => { if (context.state === "preview") throw new Error("Unexpected live registration lookup"); return null; } },
     "next/navigation": { notFound: () => { throw new Error("not_found"); }, redirect: () => { throw new Error("redirect"); } },
     "@/components/platform/OperatorMemberRecord": { __esModule: true, default: "operator-member-record" },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: "platform-unavailable" },

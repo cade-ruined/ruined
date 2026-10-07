@@ -23,6 +23,7 @@ export function optionsFrom(args) {
     const arg = args[index];
     if (arg === "--self-test") options.selfTest = true;
     else if (arg === "--prepaid") options.prepaid = true;
+    else if (arg === "--native-consent") options.nativeConsent = true;
     else if (arg === "--deferred") options.deferred = true;
     else if (arg === "--help") options.help = true;
     else if (arg === "--port" && /^\d+$/.test(args[index + 1] ?? "")) {
@@ -30,6 +31,7 @@ export function optionsFrom(args) {
       if (options.port < 1024 || options.port > 65535) throw new Error("Port must be between 1024 and 65535.");
     } else throw new Error("Unknown or invalid argument. Use --help, --self-test, --prepaid, --deferred, or --port NUMBER.");
   }
+  if (options.nativeConsent && (!options.selfTest || !options.prepaid)) throw new Error("--native-consent requires --self-test --prepaid.");
   if (options.prepaid && options.deferred) throw new Error("--prepaid and --deferred are mutually exclusive.");
   return options;
 }
@@ -520,8 +522,10 @@ async function selfTestPrepaid() {
       assert.equal(expectedSchedule.version, "foundations-prepaid-v1");
       assert.equal(expectedSchedule.callStartsAt.length, 4);
       assert.equal(expectedSchedule.serviceStartsAt, expectedSchedule.callStartsAt[0]);
-      const input = { attemptId: quote.id, commercialReservationId: quote.id, acceptanceId: app.fixture.acceptanceId, plan, firstChargeAt: null, billingSchedule: expectedSchedule, recurringPaymentAccepted: true };
-      assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, recurringPaymentAccepted: false })).status, 400);
+      const nativeConsent = process.argv.includes("--native-consent");
+      const input = { attemptId: quote.id, commercialReservationId: quote.id, acceptanceId: app.fixture.acceptanceId, plan, firstChargeAt: null, billingSchedule: expectedSchedule,
+        ...(nativeConsent ? { consentSource: "stripe_checkout" } : { recurringPaymentAccepted: true }) };
+      assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, consentSource: undefined, recurringPaymentAccepted: false })).status, 400);
       assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, billingSchedule: null })).status, 409);
       assert.equal((await post(app.checkout, "/api/stripe/checkout", { ...input, billingSchedule: { ...expectedSchedule, serviceStartsAt: expectedSchedule.nextChargeAt } })).status, 409);
       assert.equal(creations, 0);
@@ -529,6 +533,14 @@ async function selfTestPrepaid() {
       assert.equal(opened.status, 200, JSON.stringify(await opened.clone().json()));
       assert.equal((await post(app.checkout, "/api/stripe/checkout", input)).status, 200, "stored paid-due session must resume without another provider creation");
       assert.equal(creations, 1);
+      if (nativeConsent) {
+        const pending = (await app.engine.query("select recurring_payment_accepted_at,billing_consent_evidence,billing_consent_source from stripe_checkout_attempts where id=$1", [quote.id])).rows[0];
+        assert.deepEqual(pending, { recurring_payment_accepted_at: null, billing_consent_evidence: null, billing_consent_source: "stripe_checkout" });
+        assert.equal(session.metadata.billing_consent_at, undefined, "preparing the form never invents accepted consent");
+        await assert.rejects(app.engine.query("update stripe_checkout_attempts set billing_consent_source='member' where id=$1", [quote.id]), /immutable/);
+        await assert.rejects(app.engine.query("update stripe_checkout_attempts set recurring_payment_accepted_at=now() where id=$1", [quote.id]), /check constraint/);
+        await assert.rejects(app.engine.query("update stripe_checkout_attempts set offer_id='individual_monthly' where id=$1", [quote.id]), /immutable/);
+      }
       await assert.rejects(reserveNext(),error=>error.code==='founding_place_pending',"unfinished final founding Checkout stays a temporary hold");
       const status = await app.status();
       assert.equal(status.member.billing_state, "pending");
@@ -563,14 +575,19 @@ async function selfTestPrepaid() {
       stripe.charges.retrieve = async () => ({ id: "ch_prepaid_fixture", status: "succeeded", paid: true, captured: true, refunded: false, amount_refunded: 0, disputed: false,
         amount, currency: "usd", livemode: false, customer: subscription.customer, payment_intent: "pi_prepaid_fixture" });
       stripe.refunds.list = async () => ({ data: [], has_more: false });
-      const deliver = async (type, object, eventId) => {
-        const payload = JSON.stringify({ id: eventId, object: "event", api_version: app.server.STRIPE_API_VERSION, created: now, livemode: false, type, data: { object } });
+      const deliver = async (type, object, eventId, expectedStatus = 200, created = now) => {
+        const payload = JSON.stringify({ id: eventId, object: "event", api_version: app.server.STRIPE_API_VERSION, created, livemode: false, type, data: { object } });
         const signature = stripe.webhooks.generateTestHeaderString({ payload, secret: fake.STRIPE_WEBHOOK_SECRET });
         const result = await app.webhook.POST(new Request(`${app.origin}/api/stripe/webhook`, { method: "POST", headers: { "stripe-signature": signature }, body: payload }));
-        assert.equal(result.status, 200, JSON.stringify({ response: await result.clone().json(), failures: (await app.engine.query("select last_error from stripe_webhook_events where event_id=$1", [eventId])).rows }));
+        assert.equal(result.status, expectedStatus, JSON.stringify({ response: await result.clone().json(), failures: (await app.engine.query("select last_error from stripe_webhook_events where event_id=$1", [eventId])).rows }));
         return result.json();
       };
-      await deliver("customer.subscription.updated", subscription, "evt_prepaid_before_checkout");
+      await deliver("customer.subscription.updated", subscription, "evt_prepaid_before_checkout", 200, now + 1);
+      if (nativeConsent) {
+        assert.equal((await app.engine.query("select count(*)::int n from stripe_invoices")).rows[0].n, 0,
+          "pending consent must not advance an invoice fence as a price mismatch before an older completion arrives");
+        assert.equal((await app.engine.query("select count(*)::int n from stripe_membership_commitments")).rows[0].n, 0);
+      }
       assert.equal((await app.status()).member.billing_state, "pending");
       for (const person of [app.fixture,partner].filter(Boolean)) {
         const before = await app.registration.completeMemberRegistration(person.authUserId);
@@ -578,7 +595,43 @@ async function selfTestPrepaid() {
         assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1",[person.memberId])).rows[0].n,0);
       }
       session = { ...session, status: "complete", payment_status: "paid", customer: subscription.customer, subscription: subscription.id,
-        customer_details: { email: app.fixture.email }, consent: { terms_of_service: "accepted" } };
+        customer_details: { email: app.fixture.email }, consent: { terms_of_service: "accepted" },
+        line_items: { has_more: false, data: [
+          { quantity: 1, currency: "usd", amount_subtotal: 0, price },
+          { quantity: 1, currency: "usd", amount_subtotal: amount, price: { id: "price_upfront", unit_amount: amount, currency: "usd", tax_behavior: "exclusive", product: "prod_fixture", recurring: null } },
+        ] } };
+      if (nativeConsent) {
+        const cleanSession = session;
+        if (kind === "individual" && plan === "monthly") {
+          for (const [name, change] of Object.entries({
+            missingConsent: { consent: null }, missingRequiredTerms: { consent_collection: null },
+            wrongCurrency: { currency: "eur" }, wrongAmount: { amount_subtotal: amount + 1 },
+            wrongCustomer: { customer: "cus_someone_else" }, wrongSubscription: { subscription: "sub_someone_else" },
+            wrongMode: { livemode: true }, wrongMember: { metadata: { ...cleanSession.metadata, ruined_member_id: randomUUID() } },
+            wrongAgreement: { metadata: { ...cleanSession.metadata, agreement_acceptance_id: randomUUID() } },
+            wrongPrice: { metadata: { ...cleanSession.metadata, ruined_price_id: "price_forged" } },
+            wrongLine: { line_items: { ...cleanSession.line_items, data: [{ ...cleanSession.line_items.data[0], price: { ...price, id: "price_forged" } }, cleanSession.line_items.data[1]] } },
+          })) {
+            session = { ...cleanSession, ...change };
+            await deliver("invoice.paid", invoice, `evt_native_reject_${name}`, 500);
+            assert.equal((await app.engine.query("select recurring_payment_accepted_at from stripe_checkout_attempts where id=$1", [quote.id])).rows[0].recurring_payment_accepted_at, null);
+            assert.equal((await app.engine.query("select count(*)::int n from stripe_membership_prepaid_proofs")).rows[0].n, 0);
+          }
+        }
+        session = cleanSession;
+        // Simulate a completed session beating the API's session-binding write.
+        await app.engine.query("update stripe_checkout_attempts set stripe_session_id=null where id=$1", [quote.id]);
+        stripe.checkout.sessions.list = async () => ({ data: [session], has_more: false });
+        await deliver("invoice.paid", invoice, "evt_native_invoice_first");
+        const confirmed = (await app.engine.query("select recurring_payment_accepted_at,billing_consent_evidence from stripe_checkout_attempts where id=$1", [quote.id])).rows[0];
+        assert.ok(confirmed.recurring_payment_accepted_at);
+        assert.equal(confirmed.billing_consent_evidence.sessionId, session.id);
+        assert.equal(confirmed.billing_consent_evidence.providerEventId, "evt_native_invoice_first");
+        await assert.rejects(app.engine.query("update stripe_checkout_attempts set recurring_payment_accepted_at=now() where id=$1", [quote.id]), /immutable/);
+        await assert.rejects(app.engine.query("update stripe_checkout_attempts set billing_consent_evidence=null where id=$1", [quote.id]), /immutable/);
+        const replay = await deliver("invoice.paid", invoice, "evt_native_invoice_first");
+        assert.equal(replay.duplicate, true);
+      }
       await deliver("checkout.session.completed", session, "evt_prepaid_checkout");
       await deliver("invoice.paid", invoice, "evt_prepaid_invoice");
       assert.equal((await deliver("invoice.paid", invoice, "evt_prepaid_invoice")).duplicate, true);
@@ -641,7 +694,7 @@ async function selfTestPrepaid() {
         const cancelResult=await post(app.cancellation,'/api/stripe/cancellation',{action:'confirm',quoteId:cancelQuote.id,confirmed:true});
         assert.equal(cancelResult.status,200,JSON.stringify(await cancelResult.clone().json()));
         assert.equal((await cancelResult.json()).cancellation.refundStatus,'succeeded');
-        await deliver('customer.subscription.deleted',subscription,'evt_prepaid_refund_cancelled');
+        await deliver('customer.subscription.deleted',subscription,'evt_prepaid_refund_cancelled',200,now+2);
         assert.equal(await registeredCount(),50,JSON.stringify({reason:'fully settled pre-service refund retains the completed registration reservation',
           diagnostics:(await app.engine.query(`select private.ruined_paid_registration_never_started($1) never_started,
           private.ruined_paid_registration_refund_reserved($1) refund_reserved,private.ruined_registration_pricing_end_reason($1) end_reason,

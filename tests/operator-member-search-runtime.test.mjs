@@ -72,6 +72,11 @@ test("member search uses saved names, visible statuses and paginated results wit
     "server-only": {}, "@/lib/platform/model": model,
     "@/lib/membership/personal-invitation-admission": {},
     "@/lib/membership/public-signup-admission": {},
+    "@/lib/membership/registration-repository": { readOperatorRegistrationProgress: async (_tx, actor, memberIds) => {
+      assert.equal(actor, admin, "scoped operators never read private registration progress");
+      assert.ok(memberIds.length <= 25, "progress reads stay bounded to the selected page");
+      return new Map();
+    } },
     "@/lib/identity/repository": {}, "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/membership-state": {}, "@/lib/stripe/database": { getBillingDatabase: () => wrap(db) },
   });

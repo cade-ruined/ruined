@@ -111,7 +111,11 @@ export async function reserveCommercialMembership(input: {
 export async function bindCommercialMembershipPrice(input: { reservationId: string; stripePriceId: string }, tx?: CommercialTransaction) {
   if (!/^price_[A-Za-z0-9_]+$/.test(input.stripePriceId)) throw new CommercialMembershipError(400, "Invalid membership price.");
   return transaction(tx, async sql => {
-    const reservation = await lockCommercialMembershipReservation(input.reservationId, sql);
+    // Preparing a price is only review. Checkout uses the stricter reservation
+    // lock above and still requires the actual signed paid agreement.
+    await sql`select private.ruined_reconcile_commercial_memberships()`;
+    await sql`select private.ruined_validate_commercial_quote(${input.reservationId}::uuid)`;
+    const reservation = await getCommercialMembershipReservation(input.reservationId, sql);
     if (!reservation || reservation.status !== "reserved" ||
       (reservation.stripePriceId && reservation.stripePriceId !== input.stripePriceId)) {
       throw new CommercialMembershipError(409, "This membership offer is no longer available.");

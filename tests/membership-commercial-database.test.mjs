@@ -450,4 +450,88 @@ test("commercial enrollment uses the real schema, current registered people, saf
       has_function_privilege('authenticated','private.ruined_registration_founding_pricing_is_current(uuid)','execute') as reveal`)).rows[0];
     assert.deepEqual(privileges, { read: false, allocate: false, reveal: false });
   });
+
+  async function quoteIntake(who, number, { legal = true, profile = true } = {}) {
+    await db.query(`insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode,requires_initial_payment)
+      values($1,'acct_FoundingFixture',false,true)`, [who.member]);
+    if (profile) await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1", [who.member]);
+    if (legal) await registrationDocuments(who, number);
+  }
+  async function registrationDocuments(who, number) {
+    await db.query(`insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key,source,actor_auth_user_id,evidence)
+      values($1,'privacy','test-registration-documents',now(),$2,'member',$3,$4::jsonb)`, [who.member, `quote-documents-${number}`, who.auth,
+      JSON.stringify({ context: "registration_documents_v1", affirmativeAction: "checkbox_and_submit",
+        membershipTerms: { key: "ruined_registration", sha256: "a".repeat(64) },
+        registrationTermsAccepted: true, paidAgreementAccepted: false, chargeAuthorized: false })]);
+  }
+  await t.test("complete verified registration intake can review and bind an exact quote before its paid agreement", async () => {
+    const payer = await member(180, { age: false });
+    await quoteIntake(payer, 180);
+    const quote = await reserve(payer, 5080);
+    const bound = await repository.bindCommercialMembershipPrice({ reservationId: quote.id, stripePriceId: "price_review_before_agreement" });
+    assert.equal(bound.id, quote.id);
+    assert.equal((await reserve(payer, 5081)).id, quote.id, "repeat quote review reuses the same price and identity");
+    await assert.rejects(wrap(db).begin(tx => repository.lockCommercialMembershipReservation(quote.id, tx)), /verified adult account/,
+      "payment-time validation still requires durable age and paid agreement evidence");
+    const untouched = (await db.query(`select registered_at,profile_activated_at,requires_initial_payment,
+      (select count(*)::int from membership_agreement_acceptances where member_id=$1) as agreements,
+      (select count(*)::int from member_consents where member_id=$1 and consent_type='age_attestation') as ages,
+      (select count(*)::int from stripe_checkout_attempts where member_id=$1) as attempts,
+      (select count(*)::int from member_registration_messages where member_id=$1) as messages
+      from member_registration_access where member_id=$1`, [payer.member])).rows[0];
+    assert.deepEqual(untouched, { registered_at: null, profile_activated_at: null, requires_initial_payment: true, agreements: 0, ages: 0, attempts: 0, messages: 0 });
+    await db.query("update person_email_addresses set verification_state='unverified',verified_at=null where person_id=$1", [payer.person]);
+    await assert.rejects(repository.bindCommercialMembershipPrice({ reservationId: quote.id, stripePriceId: "price_review_before_agreement" }), /verified adult account/);
+    await assert.rejects(reserve(payer, 5081), /verified adult account/);
+    await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+  });
+
+  await t.test("quote-before-agreement fails closed for absent legal intake, incomplete profiles and arbitrary unsigned accounts", async () => {
+    for (const [number, options] of [[181, { legal: false }], [182, { profile: false }]]) {
+      const who = await member(number, { age: false });
+      await quoteIntake(who, number, options);
+      await assert.rejects(reserve(who, number + 5000), /verified adult account/);
+    }
+    const unsigned = await member(183, { age: false });
+    await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1", [unsigned.member]);
+    await assert.rejects(reserve(unsigned, 5183), /verified adult account/);
+    const minor = await member(184, { age: false });
+    await quoteIntake(minor, 184);
+    await db.query("update person_private_profiles set birth_date=current_date-interval '17 years' where person_id=$1", [minor.person]);
+    await assert.rejects(reserve(minor, 5184), /verified adult account/);
+    const privileges = (await db.query(`select
+      has_function_privilege('authenticated','private.ruined_validate_commercial_quote(uuid)','execute') as validate,
+      has_function_privilege('anon','private.ruined_commercial_quote_agreement_ready(uuid,uuid)','execute') as intake`)).rows[0];
+    assert.deepEqual(privileges, { validate: false, intake: false });
+  });
+
+  await t.test("a completed historical saved-card registration can review a quote without changing its promise", async () => {
+    const legacy = await member(185, { age: false });
+    await db.query("update member_onboardings set profile_completed_at=now() where member_id=$1", [legacy.member]);
+    await savedCardRegistration(legacy, 185);
+    await completeRegistration(legacy);
+    const before = (await db.query("select * from member_registration_access where member_id=$1", [legacy.member])).rows[0];
+    const quote = await reserve(legacy, 5185);
+    await repository.bindCommercialMembershipPrice({ reservationId: quote.id, stripePriceId: "price_legacy_review" });
+    await assert.rejects(wrap(db).begin(tx => repository.lockCommercialMembershipReservation(quote.id, tx)), /verified adult account/);
+    assert.deepEqual((await db.query("select * from member_registration_access where member_id=$1", [legacy.member])).rows[0], before);
+    assert.equal(before.requires_initial_payment, false);
+    assert.equal(before.completion_basis, "saved_card");
+    await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+  });
+
+  await t.test("a pre-agreement payer still needs a signed and explicitly approving second adult", async () => {
+    const payer = await member(186, { age: false }), unsignedPartner = await member(187, { age: false }), partner = await member(188);
+    await quoteIntake(payer, 186); await quoteIntake(unsignedPartner, 187);
+    await repository.createCoupleMembershipAuthorization({ id: id(5186), memberId: payer.member, partnerMemberId: unsignedPartner.member });
+    await assert.rejects(repository.acceptCoupleMembershipAuthorization({ id: id(5186), authUserId: unsignedPartner.auth }), /second adult.*verified account/);
+    await assert.rejects(reserve(payer, 5187, { kind: "couple", partnerMemberId: unsignedPartner.member, coupleAuthorizationId: id(5186) }), /second adult must accept/);
+    await repository.createCoupleMembershipAuthorization({ id: id(5188), memberId: payer.member, partnerMemberId: partner.member });
+    await repository.acceptCoupleMembershipAuthorization({ id: id(5188), authUserId: partner.auth });
+    const quote = await reserve(payer, 5189, { kind: "couple", partnerMemberId: partner.member, coupleAuthorizationId: id(5188) });
+    await repository.bindCommercialMembershipPrice({ reservationId: quote.id, stripePriceId: "price_shared_review" });
+    await assert.rejects(wrap(db).begin(tx => repository.lockCommercialMembershipReservation(quote.id, tx)), /verified adult account/);
+    await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+  });
+
 });

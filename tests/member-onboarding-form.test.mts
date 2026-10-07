@@ -131,7 +131,8 @@ test("member entry uses a live accessible step rail beneath the header", () => {
   assert.doesNotMatch(entryProgress, /color-highlight|sticky|rounded/);
   assert.match(joinForm, /useMembershipEntryProgressStage\(stage\)/);
   assert.match(joinForm, /previousStage\.current === stage[\s\S]*stageHeadingRef\.current\?\.focus\(\)/);
-  assert.equal((joinForm.match(/ref=\{stageHeadingRef\}/g) ?? []).length, 5);
+  assert.equal((joinForm.match(/ref=\{stageHeadingRef\}/g) ?? []).length, 6);
+  assert.match(joinForm, /<h3 id="payment-review-title" ref=\{stageHeadingRef\} tabIndex=\{-1\}/);
   assert.doesNotMatch(joinForm, /complete=\{Boolean\(clientSecret\)\}/);
   assert.match(platformShell, /const membershipEntry = member && pathname === "\/my\/join";/);
   assert.match(platformShell, /membershipEntry[\s\S]*\? "pb-10 sm:pb-14 lg:pb-16"/);

@@ -1,5 +1,6 @@
 import type { FoundationsBillingSchedule } from "./foundations-schedule";
 import type { MembershipOfferId } from "./pricing";
+import type { OperatorRegistrationProgress } from "./operator-registration-progress";
 
 export type RegistrationInitialPayment = {
   amountPaid: number;
@@ -36,6 +37,7 @@ export type MemberRegistrationSnapshot = {
 };
 
 export type OpsMemberRegistration = MemberRegistrationSnapshot & {
+  progress?: OperatorRegistrationProgress;
   name: string;
   email: string;
   welcomeStatus: string | null;

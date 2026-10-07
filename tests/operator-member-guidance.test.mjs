@@ -30,6 +30,7 @@ const Setup = load("src/components/platform/OperatorMemberSetup.tsx", guidanceDe
 const empty = { __esModule: true, default: () => null };
 const stateLabel = { __esModule: true, default: ({ state }) => React.createElement("span", null, state) };
 const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
+  "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"),
   ...guidanceDeps,
   "@/components/platform/OperatorProgress": empty,
   "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: ({ memberId }) => React.createElement("span", { "data-avatar-member": memberId }) },
@@ -37,6 +38,7 @@ const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
   "@/components/platform/operatorStyles": {},
 }).default;
 const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
+  "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"),
   "@/components/platform/CirclePlacementRecommendations": empty,
   "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
   ...guidanceDeps,
@@ -77,6 +79,24 @@ const nodes = (node) => [node, ...(node.childNodes ?? []).flatMap(nodes)].filter
 const text = (node) => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(text).join("");
 const render = (Component, props) => parseFragment(renderToStaticMarkup(React.createElement(Component, props)));
 const nextPanel = (tree) => nodes(tree).find((node) => attr(node, "aria-label") === "Next member step");
+
+test("paid held registration has consistent member directory and detail guidance without exposing it to Circle staff", () => {
+  const progress = { state: "registered", registeredAt: "2026-10-06T18:00:00Z", profileComplete: true, ready: true,
+    requiresInitialPayment: true, requiresPaymentMethod: false, completionBasis: "paid_membership", emailVerified: true,
+    paymentMethodState: "missing", paymentConfirmed: true, billingArranged: true, billingState: "pending", serviceStartsAt: "2026-11-05T22:00:00Z" };
+  const directory = render(Directory, { members: [summary({ billingState: "pending", administrativeOnboardingState: "in_progress", standingState: "pre_active", programState: "prospect", registration: progress })] });
+  assert.match(text(directory), /Payment received/);
+  assert.match(text(directory), /service starts Nov 5/);
+  assert.doesNotMatch(text(directory), /Complete joining|Check payment confirmation/);
+  const member = record({ states: { account: "active", billing: "pending", administrativeOnboarding: "in_progress", standing: "pre_active" } });
+  member.membership.registration = progress;
+  const detail = render(Record, { record: member });
+  assert.match(text(nextPanel(detail)), /Payment received/);
+  assert.match(text(nextPanel(detail)), /Operator opens the profile when ready/);
+  assert.match(text(detail), /service checkpoints can remain pending until membership begins/);
+  member.access.roles = ["circle_leader"];
+  assert.doesNotMatch(text(nextPanel(render(Record, { record: member }))), /Payment received|service starts Nov 5/);
+});
 
 test("an absent billing record is not described as a permission problem for an authorized operator", () => {
   const member = record();

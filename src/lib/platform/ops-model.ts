@@ -1,3 +1,5 @@
+import type { OperatorRegistrationProgress } from "@/lib/membership/operator-registration-progress";
+
 export type OpsAccessRole = "circle_leader" | "guide" | "ops_admin";
 
 export type OpsCapability =
@@ -56,6 +58,7 @@ export type OpsRequirementSummary = {
 };
 
 export type OpsMemberMembershipRecord = {
+  registration?: OperatorRegistrationProgress | null;
   membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   agreement: {
     acceptedAt: string | null;

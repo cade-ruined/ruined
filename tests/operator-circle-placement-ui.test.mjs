@@ -440,6 +440,7 @@ test("Shapers and Guides get a scoped Circle snapshot without manager, full rost
 
 function directoryHarness(role = "ops_admin", rows = []) {
   const queries = [];
+  const progressReads = [];
   const sql = async (parts, ...parameters) => {
     const statement = parts.join("?");
     queries.push({ statement, parameters });
@@ -467,13 +468,18 @@ function directoryHarness(role = "ops_admin", rows = []) {
     "server-only": {},
     "@/lib/membership/personal-invitation-admission": {},
     "@/lib/membership/public-signup-admission": {},
+    "@/lib/membership/registration-repository": { readOperatorRegistrationProgress: async (_tx, actor, memberIds) => {
+      assert.equal(role, "ops_admin", "private registration progress remains administrator-only");
+      progressReads.push({ actor, memberIds });
+      return new Map();
+    } },
     "@/lib/identity/repository": {},
     "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/database": { getBillingDatabase: () => sql },
     "@/lib/stripe/membership-state": {},
     "@/lib/platform/model": load("src/lib/platform/model.ts"),
   });
-  return { lookup: repository.getOperatorMemberDirectoryPage, queries };
+  return { lookup: repository.getOperatorMemberDirectoryPage, queries, progressReads };
 }
 
 test("exact member directory lookup preserves permission predicates, pagination and lifecycle fields", async () => {
@@ -491,11 +497,14 @@ test("exact member directory lookup preserves permission predicates, pagination 
   assert.equal(result.members[0].programState, "paused");
   assert.match(getCirclePlacementIssue(result.members[0]), /currently suspended.*currently paused/);
   assert.equal(admin.queries.length, 3);
+  assert.deepEqual(admin.progressReads, [{ actor: "admin-fixture", memberIds: [member.memberId] }]);
   const scoped = directoryHarness("circle_leader", []);
   assert.deepEqual((await scoped.lookup("shaper-fixture", { memberId: member.memberId })).members, []);
+  assert.deepEqual(scoped.progressReads, []);
   const denied = directoryHarness(null);
   assert.equal(await denied.lookup("no-role-fixture", { memberId: member.memberId }), null);
   assert.equal(denied.queries.length, 1, "no member queries execute without an active operator role");
+  assert.deepEqual(denied.progressReads, []);
 });
 
 test("malformed exact member IDs fail closed rather than falling back to a full member query", async () => {
@@ -503,5 +512,6 @@ test("malformed exact member IDs fail closed rather than falling back to a full 
     const harness = directoryHarness();
     assert.equal(await harness.lookup("admin-fixture", { memberId }), null);
     assert.equal(harness.queries.length, 0);
+    assert.deepEqual(harness.progressReads, []);
   }
 });

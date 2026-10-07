@@ -136,7 +136,7 @@ export async function invalidateCommitmentFromInvoice(tx: BillingTransaction, in
 
 export async function lockCommitmentSubscriptionProjection(tx: BillingTransaction, subscription: Stripe.Subscription): Promise<void> {
   let group = await getCommercialBillingGroupBySubscription(subscription.id, tx);
-  if (!group && (subscription.metadata.ruined_first_charge_at || subscription.metadata.ruined_billing_schedule_version)) {
+  if (!group && (subscription.metadata.ruined_first_charge_at || subscription.metadata.ruined_billing_schedule_version || subscription.metadata.billing_consent_source === "stripe_checkout")) {
     const pending = await getCommercialMembershipReservation(subscription.metadata.ruined_commercial_reservation_id, tx);
     if (pending?.memberId === subscription.metadata.ruined_member_id &&
       (!pending.stripeSubscriptionId || pending.stripeSubscriptionId === subscription.id)) group = pending;

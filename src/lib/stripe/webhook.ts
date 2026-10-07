@@ -95,6 +95,14 @@ async function handleCheckoutSession(
   const subscriptionId = expandableId(session.subscription);
   const email = await customerEmail(session.customer, session.customer_details?.email ?? session.customer_email);
 
+  // Match the invoice path's participant → attempt lock order, including the
+  // two adults on one bill, before reconciling a completed native Checkout.
+  if (subscriptionId && (session.metadata.ruined_billing_schedule_version || session.metadata.billing_consent_source === "stripe_checkout")) {
+    const current = await getStripe().subscriptions.retrieve(subscriptionId);
+    const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
+    await lockCommitmentSubscriptionProjection(tx, current);
+  }
+
   const checkoutAttemptId = session.metadata.ruined_checkout_attempt_id;
   if (isUuid(checkoutAttemptId)) {
     await reconcileCheckoutAttempt(tx, {
@@ -122,11 +130,6 @@ async function handleCheckoutSession(
     throw new Error("Membership Checkout Session is missing its billing identity.");
   }
 
-  if (subscriptionId && session.metadata.ruined_billing_schedule_version) {
-    const current = await getStripe().subscriptions.retrieve(subscriptionId);
-    const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
-    await lockCommitmentSubscriptionProjection(tx, current);
-  }
   const member = await ensureBillingMember(tx, {
     agreementAcceptedAt: parseMetadataDate(session.metadata.agreement_accepted_at),
     agreementVersion: session.metadata.agreement_version ?? null,
@@ -147,6 +150,12 @@ async function handleCheckoutSession(
     subscriptionId,
   });
 
+  if (session.status === "complete" && subscriptionId) {
+    const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+    const { reconcileNativeCheckoutConsent } = await import("@/lib/stripe/checkout-consent");
+    await reconcileNativeCheckoutConsent(tx, getStripe(), { subscription, sessionId: session.id, eventId: event.id });
+  }
+
   if (session.status === "complete" && subscriptionId && session.metadata.ruined_first_charge_at) {
     const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
     if (!isExpectedMembershipPrice(subscription)) throw new Error("Scheduled membership price does not match the accepted offer.");
@@ -157,7 +166,8 @@ async function handleCheckoutSession(
   }
 
 
-  if (session.status === "complete" && subscriptionId && session.metadata.ruined_billing_schedule_version) {
+  if (session.status === "complete" && subscriptionId && (session.metadata.ruined_billing_schedule_version ||
+    session.metadata.billing_consent_source === "stripe_checkout" && !session.metadata.ruined_first_charge_at)) {
     const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
     const latestInvoiceId = expandableId(subscription.latest_invoice);
     if (latestInvoiceId) await handleInvoice(tx, event, await getStripe().invoices.retrieve(latestInvoiceId));
@@ -233,18 +243,23 @@ async function handleInvoice(
   let member: BillingMember | null = null;
   let subscription: Stripe.Subscription | null = null;
   let membershipPriceMatches = false;
+  let nativeConsentPending = false;
 
   if (isMembership && subscriptionId) {
     subscription = await getStripe().subscriptions.retrieve(subscriptionId);
     if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
       invoice = await getStripe().invoices.retrieve(invoice.id);
     }
-    if (subscription.metadata.ruined_billing_schedule_version) {
+    if (subscription.metadata.ruined_billing_schedule_version || subscription.metadata.billing_consent_source === "stripe_checkout") {
       const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
       await lockCommitmentSubscriptionProjection(tx, subscription);
     }
     member = await ensureMemberFromSubscription(tx, subscription, invoice.customer_email);
     membershipPriceMatches = matchesMembershipInvoice(invoice, subscription, getMembershipPriceConfiguration());
+    if (subscription.metadata.billing_terms_version === "membership-billing-v2") {
+      const { reconcileNativeCheckoutConsent } = await import("@/lib/stripe/checkout-consent");
+      nativeConsentPending = !await reconcileNativeCheckoutConsent(tx, getStripe(), { subscription, eventId: event.id });
+    }
     const plan = subscription.metadata.ruined_billing_plan;
     if (isMembershipBillingPlan(plan)) {
       const attemptId = subscription.metadata.ruined_checkout_attempt_id;
@@ -263,6 +278,12 @@ async function handleInvoice(
         });
     }
   }
+
+  // A paid invoice can precede Checkout's final state. Defer before persisting
+  // it as a price mismatch or advancing any event-time fence: the completed
+  // Checkout event may arrive later with an OLDER provider timestamp. Its fresh
+  // retrieval must still be able to project this invoice once consent is real.
+  if (nativeConsentPending) return true;
 
   const purpose = isMembership
     ? membershipPriceMatches
@@ -308,7 +329,7 @@ async function handleInvoice(
   }
   if (v2) {
     const { invalidateCommitmentFromInvoice } = await import("@/lib/stripe/commitment-webhook");
-    if (subscription.metadata.ruined_billing_schedule_version) {
+    if (subscription.metadata.ruined_billing_schedule_version || subscription.metadata.billing_consent_source === "stripe_checkout") {
       const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
       await lockCommitmentSubscriptionProjection(tx, subscription);
       await tx`select pg_advisory_xact_lock(hashtext('ruined-membership-commercial-eligibility'))`;
@@ -379,7 +400,7 @@ async function handleSubscription(
   // Subscription webhooks can arrive out of order. Reconcile from Stripe's
   // current object instead of toggling access from the stale event snapshot.
   const subscription = await getStripe().subscriptions.retrieve(eventSubscription.id);
-  if (subscription.metadata.ruined_billing_schedule_version) {
+  if (subscription.metadata.ruined_billing_schedule_version || subscription.metadata.billing_consent_source === "stripe_checkout") {
     const { lockCommitmentSubscriptionProjection } = await import("@/lib/stripe/commitment-webhook");
     await lockCommitmentSubscriptionProjection(tx, subscription);
   }

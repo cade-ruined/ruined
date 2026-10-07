@@ -95,6 +95,8 @@ const migrations = [
   "../db/migrations/20261005213000_personal_invitation_no_expiry.sql",
   "../db/migrations/20261006220000_registration_initial_payment.sql",
   "../db/migrations/20261006223000_registration_paid_capacity.sql",
+  "../db/migrations/20261007010000_membership_quote_before_agreement.sql",
+  "../db/migrations/20261007013000_stripe_checkout_native_consent.sql",
 ];
 
 function migrationBody(migration, migrationName) {

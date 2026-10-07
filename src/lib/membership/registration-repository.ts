@@ -4,6 +4,7 @@ import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import type { MemberRegistrationSnapshot, OpsMemberRegistration, RegistrationFoundingPricing, RegistrationInitialPayment } from "./registration-model";
+import type { OperatorRegistrationProgress } from "./operator-registration-progress";
 
 export class MemberRegistrationError extends Error {
   constructor(readonly status: number, message: string) {
@@ -166,6 +167,72 @@ export async function getOpsMemberRegistration(actor: string, memberId: string) 
   return getApplicationDatabase().begin(async tx => { await requireAdministrator(tx, actor); return readRegistration(tx, memberId); });
 }
 
+/** Admin-only, current progress for a bounded, already selected roster. No writes. */
+export async function readOperatorRegistrationProgress(tx: TransactionSql, actor: string, memberIds: string[]): Promise<Map<string, OperatorRegistrationProgress>> {
+  validId(actor);
+  const [authorized] = await tx`select identity.auth_user_id from platform_users identity
+    join platform_role_grants grant_row on grant_row.auth_user_id=identity.auth_user_id
+      and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
+    where identity.auth_user_id=${actor}::uuid and identity.status='active'`;
+  if (!authorized) throw new MemberRegistrationError(403, "Operations administrator access is required.");
+  if (!memberIds.length) return new Map();
+  if (memberIds.length > 200) throw new MemberRegistrationError(400, "Choose up to 200 members.");
+  memberIds.forEach(validId);
+  const rows = await tx<Array<RegistrationRow & { email_verified: boolean; card_saved: boolean; card_removed: boolean;
+    payment_confirmed: boolean; billing_arranged: boolean; checkout_started: boolean; billing_state: string; service_starts_at: Date | string | null }>>`
+    select registration.*,
+      (private.ruined_member_has_complimentary_funding(member.id) or private.ruined_member_has_operator_funding(member.id)) as complimentary,
+      (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(member.id)
+        and (registration.profile_activated_at is not null or private.ruined_registration_intake_eligibility_error(
+          profile.birth_date,profile.default_fulfillment_address->>'countryCode') is null)) as profile_complete,
+      private.ruined_member_registration_ready(member.id) as ready,
+      exists(select 1 from person_email_addresses address where address.person_id=member.person_id
+        and address.email_normalized=member.email_normalized and address.verification_state='verified' and address.retired_at is null) as email_verified,
+      (method.stripe_payment_method_id is not null and method.saved_at is not null and method.consent_revoked_at is null
+        and not method.cleanup_pending and setup.status='saved' and setup.consent_revoked_at is null
+        and not exists(select 1 from member_payment_method_detachments detached where detached.stripe_account_id=method.stripe_account_id
+          and detached.livemode=method.livemode and detached.stripe_payment_method_id=method.stripe_payment_method_id)) as card_saved,
+      (method.consent_revoked_at is not null or method.cleanup_pending or setup.consent_revoked_at is not null
+        or exists(select 1 from member_payment_method_detachments detached where detached.stripe_account_id=method.stripe_account_id
+          and detached.livemode=method.livemode and detached.stripe_payment_method_id=method.stripe_payment_method_id)) as card_removed,
+      paid.reservation_id is not null as payment_confirmed,paid.service_starts_at,
+      exists(select 1 from membership_commercial_participants participant
+        join membership_commercial_reservations reservation on reservation.id=participant.reservation_id and reservation.status='reserved'
+        join stripe_checkout_attempts attempt on attempt.commercial_reservation_id=reservation.id and attempt.status in ('creating','open','completed')
+        where participant.member_id=member.id and participant.person_id=member.person_id) as checkout_started,
+      exists(select 1 from membership_commercial_participants participant
+        join membership_commercial_reservations reservation on reservation.id=participant.reservation_id and reservation.status in ('reserved','activated')
+        join stripe_membership_commitments commitment on commitment.checkout_attempt_id=reservation.id and commitment.status='active'
+        join stripe_subscriptions subscription on subscription.id=commitment.stripe_subscription_id and subscription.stripe_status in ('active','trialing')
+        where participant.member_id=member.id and participant.person_id=member.person_id
+          and (subscription.cancel_at is null or subscription.cancel_at>statement_timestamp())) as billing_arranged,
+      coalesce(private.ruined_member_shared_billing_state(member.id),lifecycle.billing_state) as billing_state
+    from member_registration_access registration
+    join ruined_members member on member.id=registration.member_id and member.deleted_at is null
+    join member_lifecycle lifecycle on lifecycle.member_id=member.id
+    left join member_onboardings onboarding on onboarding.member_id=member.id
+    left join person_private_profiles profile on profile.person_id=member.person_id
+    left join member_payment_method_accounts method on method.member_id=member.id
+      and method.stripe_account_id=registration.payment_setup_account_id and method.livemode=registration.payment_setup_livemode
+    left join member_payment_method_setup_attempts setup on setup.id=method.consent_attempt_id and setup.member_id=method.member_id
+      and setup.stripe_account_id=method.stripe_account_id and setup.livemode=method.livemode
+    left join stripe_membership_prepaid_proofs paid on paid.reservation_id=private.ruined_registration_paid_reservation(member.id)
+    where member.id=any(${memberIds}::uuid[])`;
+  return new Map(rows.map(row => [row.member_id, {
+    state: row.profile_activated_at ? "activated" : row.registered_at ? "registered" : "collecting",
+    registeredAt: iso(row.registered_at), profileComplete: row.profile_complete, ready: row.ready,
+    requiresInitialPayment: !row.complimentary && row.requires_initial_payment,
+    requiresPaymentMethod: !row.complimentary && !row.requires_initial_payment, completionBasis: row.completion_basis,
+    emailVerified: row.email_verified, paymentMethodState: row.card_saved ? "saved" : row.card_removed ? "removed" : "missing",
+    paymentConfirmed: row.payment_confirmed, billingArranged: row.billing_arranged, checkoutStarted: row.checkout_started, billingState: row.billing_state,
+    serviceStartsAt: iso(row.service_starts_at),
+  }]));
+}
+
+export async function getOpsMemberRegistrationProgress(actor: string, memberId: string): Promise<OperatorRegistrationProgress | null> {
+  return getApplicationDatabase().begin(async tx => (await readOperatorRegistrationProgress(tx, actor, [memberId])).get(memberId) ?? null);
+}
+
 export async function getOpsMemberRegistrations(actor: string): Promise<OpsMemberRegistration[]> {
   return getApplicationDatabase().begin(async tx => {
     await requireAdministrator(tx, actor);
@@ -194,7 +261,8 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
       left join member_registration_messages ready_message on ready_message.member_id=member.id and ready_message.kind='profile_ready'
       left join member_registration_couple_intents couple on couple.member_id=member.id
       order by registration.profile_activated_at nulls first,registration.created_at desc limit 200`;
-    return rows.map(row => ({ ...snapshot(row), name: row.display_name, email: row.email,
+    const progress = await readOperatorRegistrationProgress(tx, actor, rows.map(row => row.member_id));
+    return rows.map(row => ({ ...snapshot(row), progress: progress.get(row.member_id), name: row.display_name, email: row.email,
       welcomeStatus: row.welcome_status, activationEmailStatus: row.profile_ready_status,
       coupleStatus: row.couple_partner_member_id ? "paired" : row.couple_partner_email ? "pending" : "none",
       couplePartnerEmail: row.couple_partner_email, couplePartnerMemberId: row.couple_partner_member_id }));

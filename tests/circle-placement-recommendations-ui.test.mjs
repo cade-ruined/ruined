@@ -193,7 +193,7 @@ test("preview only uses passed active/forming Circles and never invents invitati
 
 test("the member Overview exposes placement only to administrators and preserves preview Circle identities", () => {
   const Placement = () => null;
-  const Record = load("src/components/platform/OperatorMemberRecord.tsx", { "@/components/platform/CirclePlacementRecommendations": { __esModule: true, default: Placement } }).default;
+  const Record = load("src/components/platform/OperatorMemberRecord.tsx", { "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"), "@/components/platform/CirclePlacementRecommendations": { __esModule: true, default: Placement } }).default;
   const preview = load("src/lib/platform/ops-preview.ts");
   const record = preview.getPreviewOpsMemberRecord("preview-03");
   const tree = Record({ record, preview: true, previewCircles: preview.PREVIEW_OPS_CIRCLES });

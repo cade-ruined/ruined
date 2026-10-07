@@ -1,4 +1,5 @@
 import "server-only";
+import { readOperatorRegistrationProgress } from "@/lib/membership/registration-repository";
 
 import {
   completePersonalInvitationClaim, lockPersonalInvitationClaim, preparePersonalInvitationClaim,
@@ -963,9 +964,12 @@ export async function getOperatorMemberDirectoryPage(
       offset ${offset}
     `;
 
+    const registrations = role === "ops_admin"
+      ? await readOperatorRegistrationProgress(tx, authUserId, rows.map(row => row.member_id)) : new Map();
     return {
       filter,
-      members: rows.map((row) => operatorMemberSummary(row, role === "ops_admin")),
+      members: rows.map((row) => ({ ...operatorMemberSummary(row, role === "ops_admin"),
+        ...(registrations.has(row.member_id) ? { registration: registrations.get(row.member_id) } : {}) })),
       page,
       pageCount,
       pageSize: OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE,

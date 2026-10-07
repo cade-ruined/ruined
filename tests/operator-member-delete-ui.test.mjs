@@ -125,6 +125,7 @@ const deferred = () => {
 test("record exposes deletion only to member override administrators and carries preview scope", () => {
   const empty = { __esModule: true, default: () => null };
   const dependencies = {
+    "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"),
     "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: () => null, OperatorTaskCreateAction: () => null, OperatorOverrideAction: () => null },

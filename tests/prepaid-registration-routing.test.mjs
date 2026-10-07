@@ -107,7 +107,7 @@ function Provider({ children }) { return children; }
 class Redirect extends Error {
   constructor(destination) { super(destination); this.destination = destination; }
 }
-async function activationPage({ registration = paidRegistration, state = "ready", data = onboarding, currentOffer = null, searchParams = {} } = {}) {
+async function activationPage({ registration = paidRegistration, state = "ready", data = onboarding, currentOffer = null, searchParams = {}, coupleAuthorization = null } = {}) {
   const reads = [];
   const context = { state, data, viewer: { authUserId: "authenticated-owner" },
     configuration: { stripeActivationReady: true, stripeCheckoutReady: false, minimumAge: 18 } };
@@ -125,7 +125,8 @@ async function activationPage({ registration = paidRegistration, state = "ready"
     "@/lib/membership/paid-launch": { getMembershipFirstChargeAt: () => null },
     "@/lib/membership/cohort-prepayment": { isMembershipCohortPrepaymentEnabled: () => true },
     "@/lib/membership/foundations-schedule": { createFoundationsBillingSchedule: () => schedule },
-    "@/lib/membership/commercial-repository": { getCurrentCommercialMembershipReservation: async () => currentOffer },
+    "@/lib/membership/commercial-repository": { getCurrentCommercialMembershipReservation: async () => currentOffer,
+      getCoupleMembershipAuthorization: async () => coupleAuthorization },
     "@/lib/platform/repository": { requireActivePlatformMemberLink: async () => ({ memberId: "owner-member" }) },
     "@/lib/platform/config": { getStripePublishableKey: () => "pk_test_inert_fixture" },
   }, { process: { env: { STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION: "ruined_membership-v3" } } })).default;
@@ -139,6 +140,21 @@ test("billing page denies signed-out and unauthorized accounts before reading re
   const denied = await activationPage({ state: "denied" });
   assert.equal((await denied.render()).type, Unavailable);
   assert.deepEqual(denied.reads, []);
+});
+
+test("only the targeted partner receives an agreement-only return to shared membership approval", async () => {
+  const id = "c941bd49-a4a1-45fd-acbb-836d4659758a";
+  const authorization = { id, partnerMemberId: "owner-member", memberId: "paying-partner", revokedAt: null, expiresAt: new Date("2100-01-01") };
+  const valid = await activationPage({ searchParams: { coupleAuthorization: id }, coupleAuthorization: authorization });
+  const component = nodes(await valid.render()).find(node => node.type === Activation);
+  assert.equal(component.props.agreementOnlyReturnHref, `/my/couple?authorization=${id}`);
+  for (const value of [null, { ...authorization, partnerMemberId: "another-member" },
+    { ...authorization, revokedAt: new Date() }, { ...authorization, expiresAt: new Date("2020-01-01") }]) {
+    const denied = await activationPage({ searchParams: { coupleAuthorization: id }, coupleAuthorization: value });
+    assert.equal((await denied.render()).type, Unavailable);
+  }
+  const invalid = await activationPage({ searchParams: { coupleAuthorization: "https://another.example" } });
+  await assert.rejects(invalid.render, error => error instanceof Redirect && error.destination === "/my/couple");
 });
 
 test("new prepaid members finish intake before agreement/payment, without requiring an already saved card", async () => {
