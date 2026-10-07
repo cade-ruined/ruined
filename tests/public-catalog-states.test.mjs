@@ -8,6 +8,7 @@ import ts from "typescript";
 import { loadCatalog } from "../src/lib/store/catalog-loader.ts";
 import * as catalog from "../src/lib/store/catalog.ts";
 import * as productColors from "../src/lib/store/product-colors.ts";
+import * as productFits from "../src/lib/store/product-fit-images.ts";
 
 const product = {
   id: "byob-tank", name: "BYOB Tank", code: "RU—001", price: "$ 48",
@@ -35,6 +36,7 @@ const uiDependencies = {
   "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
   "@/lib/store/catalog": catalog,
   "@/lib/store/product-colors": productColors,
+  "@/lib/store/product-fit-images": productFits,
 };
 const { default: StoreGallery } = await compile("src/components/store/StoreGallery.tsx", {
   ...uiDependencies,

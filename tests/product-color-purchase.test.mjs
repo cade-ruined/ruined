@@ -5,6 +5,7 @@ import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as colors from "../src/lib/store/product-colors.ts";
+import * as fits from "../src/lib/store/product-fit-images.ts";
 
 function load(path, dependencies) {
   const code = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
@@ -38,6 +39,7 @@ const dependencies = {
   "next/link": { default: () => null },
   "next/image": { default: () => null },
   "@/lib/store/product-colors": colors,
+  "@/lib/store/product-fit-images": fits,
   "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Free standard shipping on U.S. orders $70+." },
   "./bag-store": { useBag: () => ({}), isShopifyVariantId: (id) => id.startsWith("gid://shopify/") },
   "@/data/product-size-guides": { getProductSizeGuide: () => undefined, getProductSizeGuideConfig: () => undefined },
@@ -50,11 +52,12 @@ function elements(node) {
 function content(node) {
   return typeof node === "string" ? node : React.isValidElement(node) ? React.Children.toArray(node.props.children).map(content).join("") : "";
 }
-function purchase(initialColor) {
+function purchase(initialColor, selectedProduct = product) {
   const slots = [];
   let cursor = 0;
   const added = [];
   const changed = [];
+  const changedFits = [];
   const Component = load("src/components/store/ProductPurchase.tsx", {
     ...dependencies,
     react: { ...React, useMemo: (fn) => fn(), useState(initial) {
@@ -64,11 +67,37 @@ function purchase(initialColor) {
     } },
     "./bag-store": { ...dependencies["./bag-store"], useBag: () => ({ add: (item) => added.push(item) }) },
   }).default;
-  const render = () => { cursor = 0; return elements(Component({ product, initialColor, onColorChange: (color) => changed.push(color) })); };
+  const render = () => { cursor = 0; return elements(Component({ product: selectedProduct, initialColor, onColorChange: (color) => changed.push(color), onFitChange: (fit) => changedFits.push(fit) })); };
   const button = (label) => render().find((node) => node.type === "button" && content(node) === label);
   const submit = () => render().find((node) => node.type === "button" && elements(node).some((child) => child.props["aria-live"] === "polite"));
-  return { render, button, submit, added, changed };
+  return { render, button, submit, added, changed, changedFits };
 }
+
+test("BYOB Fit selection changes its gallery, clears size, and adds the chosen fit's exact variant and photo", () => {
+  const byob = {
+    ...product, id: "byob-tank", name: "BYOB Tank",
+    options: [{ name: "Fit", values: ["Men's", "Women's"] }, { name: "Size", values: ["S", "M"] }],
+    variants: ["Men's", "Women's"].flatMap((fit, index) => ["S", "M"].map((size, offset) => ({
+      ...product.variants[0], id: `gid://shopify/ProductVariant/${index * 2 + offset + 100}`,
+      title: `${fit} / ${size}`, selectedOptions: [{ name: "Fit", value: fit }, { name: "Size", value: size }],
+      image: { url: `/byob-${fit}-back.png`, alt: `BYOB Tank — ${fit} — back` },
+    }))),
+  };
+  const view = purchase(undefined, byob);
+  assert.equal(content(view.submit()), "Select options");
+  view.button("Men's").props.onClick();
+  view.button("M").props.onClick();
+  view.submit().props.onClick();
+  view.button("Women's").props.onClick();
+  assert.deepEqual(view.changedFits, ["Men's", "Women's"]);
+  assert.deepEqual(view.changed, []);
+  assert.equal(view.button("M").props["aria-pressed"], false);
+  assert.equal(content(view.submit()), "Select size");
+  view.button("S").props.onClick();
+  view.submit().props.onClick();
+  assert.equal(view.added.at(-1).variantId, byob.variants[2].id);
+  assert.equal(view.added.at(-1).image.url, byob.variants[2].image.url);
+});
 
 test("a color listing preselects its color, requires size, and adds the exact variant and matching image", () => {
   for (const color of ["Black", "Blue", "Red"]) {

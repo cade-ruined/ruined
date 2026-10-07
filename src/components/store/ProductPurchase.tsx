@@ -9,6 +9,7 @@ import {
 } from "@/data/product-size-guides";
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
+import { getProductFitOption } from "@/lib/store/product-fit-images";
 import BagLink from "./BagLink";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
@@ -48,10 +49,11 @@ function formatExpectedShipDate(value?: string): string | undefined {
   }).format(date);
 }
 
-export default function ProductPurchase({ product, initialColor, onColorChange }: {
+export default function ProductPurchase({ product, initialColor, onColorChange, onFitChange }: {
   product: Product;
   initialColor?: string;
   onColorChange?: (color: string) => void;
+  onFitChange?: (fit: string) => void;
 }) {
   const options = useMemo(() => visibleOptions(product), [product]);
   const colorOption = getProductColorOption(product);
@@ -109,6 +111,7 @@ export default function ProductPurchase({ product, initialColor, onColorChange }
   function choose(name: string, value: string) {
     setAdded(false);
     if (name === colorOption?.name) onColorChange?.(value);
+    if (name === getProductFitOption(product)?.name) onFitChange?.(value);
     const optionIndex = options.findIndex((option) => option.name === name);
     setSelection((current) =>
       Object.fromEntries([

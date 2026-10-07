@@ -64,10 +64,10 @@ test("the opening cards lead with open BYOB registration, then new arrivals, the
   assert.equal(nodes(cards[3]).filter((node) => node.tagName === "video").length, 1);
 });
 
-test("new arrivals uses live non-tank product images in a single catalog-linked grid", () => {
+test("new arrivals includes the reactivated BYOB tank in the live catalog-linked grid", () => {
   for (const count of [4, 9]) {
-    const selected = handles.slice(0, count).map(makeProduct);
-    const { cards } = render({ products: [makeProduct("byob-tank"), ...selected, { ...makeProduct("missing-photo"), image: undefined }] });
+    const selected = [makeProduct("byob-tank"), ...handles.slice(0, count - 1).map(makeProduct)];
+    const { cards } = render({ products: [...selected, { ...makeProduct("missing-photo"), image: undefined }] });
     const store = cards.find((card) => attr(card, "href") === "/store");
     assert.ok(store);
     const imageUrls = nodes(store).filter((node) => node.tagName === "img").map((node) => attr(node, "src"));

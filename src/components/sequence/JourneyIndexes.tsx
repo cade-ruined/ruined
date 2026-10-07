@@ -141,7 +141,7 @@ export function JourneyLobbyIndex({
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
   const nextByob = events.find((candidate) => candidate.id.startsWith("byob-") && candidate.registration?.status === "Open" && candidate.status !== "Ended");
   const newProducts = products
-    .filter((product) => product.id !== "byob-tank" && product.image)
+    .filter((product) => product.image)
     .slice(0, 9);
   const selections: LobbySelection[] = [
     ...(nextByob?.registration
