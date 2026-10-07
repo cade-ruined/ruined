@@ -97,6 +97,8 @@ const migrations = [
   "../db/migrations/20261006223000_registration_paid_capacity.sql",
   "../db/migrations/20261007010000_membership_quote_before_agreement.sql",
   "../db/migrations/20261007013000_stripe_checkout_native_consent.sql",
+  "../db/migrations/20261007110000_member_payment_evidence.sql",
+  "../db/migrations/20261007111000_legacy_registration_checkout.sql",
 ];
 
 function migrationBody(migration, migrationName) {

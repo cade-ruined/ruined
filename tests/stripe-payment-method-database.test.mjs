@@ -60,6 +60,7 @@ test("storage-only Checkout binds consent, mode and method without activating me
     paymentMethods:{retrieve:async methodId=>structuredClone(methods.get(methodId)),update:async(methodId,params)=>Object.assign(methods.get(methodId),params),detach:async methodId=>{if(failDetach)throw new Error("provider unavailable");methods.get(methodId).customer=null;return structuredClone(methods.get(methodId));}},
   };
   const registration = await load("src/lib/membership/registration-repository.ts", {
+    "./registration-routing": await load("src/lib/membership/registration-routing.ts"),
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
   });

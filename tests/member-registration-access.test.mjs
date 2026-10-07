@@ -91,7 +91,9 @@ test("registration holds survive launch changes and release profiles only after 
   const capacityMigration = "db/migrations/20261006223000_registration_paid_capacity.sql";
   const quoteMigration = "db/migrations/20261007010000_membership_quote_before_agreement.sql";
   const nativeConsentMigration = "db/migrations/20261007013000_stripe_checkout_native_consent.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const evidenceMigration = "db/migrations/20261007110000_member_payment_evidence.sql";
+  const legacyCheckoutMigration = "db/migrations/20261007111000_legacy_registration_checkout.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -158,6 +160,8 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec(read(capacityMigration));
   await db.exec(read(quoteMigration));
   await db.exec(read(nativeConsentMigration));
+  await db.exec(read(evidenceMigration));
+  await db.exec(read(legacyCheckoutMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
@@ -341,7 +345,7 @@ test("registration holds survive launch changes and release profiles only after 
     await db.query("update member_payment_method_accounts set consent_revoked_at=now() where member_id=$1 and livemode=false",[fresh.member_id]);
     const snapshot=await registration.getMemberRegistration(fresh.authUserId);
     assert.equal(snapshot.state,"registered");assert.equal(snapshot.ready,false);
-    assert.equal((await row("select private.ruined_member_paid_activation_ready($1) as ready",[fresh.member_id])).ready,false,"withdrawn storage consent closes held billing eligibility");
+    assert.equal((await row("select private.ruined_member_paid_activation_ready($1) as ready",[fresh.member_id])).ready,true,"withdrawing stored-card consent does not prevent a fresh explicitly authorized checkout");
     assert.equal(snapshot.foundingPricing.confirmed, true, "Withdrawing card storage does not cancel the earned rate");
     assert.equal(await registration.getMemberRegistrationDestination(fresh.authUserId),"/my/payment-method");
     const progress = await sql.begin(tx => registration.readOperatorRegistrationProgress(tx, admin.authUserId, [fresh.member_id]));
@@ -383,8 +387,11 @@ test("registration holds survive launch changes and release profiles only after 
   await t.test("the real setup webhook completes registration atomically and never opens paid checkout",async()=>{
     const pending = await member("webhook-registered@example.test");
     await profile(pending);
+    assert.equal((await row("select private.ruined_member_paid_activation_ready($1) ready",[pending.member_id])).ready,true,
+      "intake permits later explicit payment; saving a card still does not initiate it");
+    const unfinished = await member("checkout-before-intake@example.test");
     await assert.rejects(()=>db.query(`insert into stripe_checkout_attempts(id,member_id,email_normalized,agreement_version,agreement_accepted_at,age_attested_at,expires_at)
-      values($1,$2,$3,'test',now(),now(),now()+interval '1 hour')`,[randomUUID(),pending.member_id,pending.email]),error=>error.code==='P4201');
+      values($1,$2,$3,'test',now(),now(),now()+interval '1 hour')`,[randomUUID(),unfinished.member_id,unfinished.email]),error=>error.code==='P4201');
     const attemptId = await savedCard(pending), token = attemptId.replaceAll("-", "");
     await db.query("update member_payment_method_setup_attempts set status='open' where id=$1",[attemptId]);
     await db.query("update member_payment_method_accounts set stripe_payment_method_id=null,payment_method_display=null,saved_at=null where member_id=$1",[pending.member_id]);
@@ -450,7 +457,7 @@ test("registration holds survive launch changes and release profiles only after 
     assert.equal((await row("select completion_basis from member_registration_access where member_id=$1",[complimentary.member_id])).completion_basis,"complimentary");
     assert.equal((await row("select count(*)::int as count from member_payment_method_accounts where member_id=$1",[complimentary.member_id])).count,0);
   });
-  await t.test("paid agreement acceptance requires the activation gate and complete registration without opening held profiles", async () => {
+  await t.test("paid agreement acceptance requires the activation gate and complete intake without opening held profiles", async () => {
     const target = await member("paid-agreement-held@example.test");
     await profile(target); await savedCard(target); await registration.completeMemberRegistration(target.authUserId);
     const agreementId = randomUUID(), agreementBody = "Offline paid membership agreement fixture.";
@@ -465,7 +472,9 @@ test("registration holds survive launch changes and release profiles only after 
       environment.STRIPE_MEMBERSHIP_ACTIVATION_ENABLED = "true";
       environment.STRIPE_MEMBERSHIP_BUYOUT_READY = "true";
       await db.query("update member_payment_method_accounts set consent_revoked_at=now() where member_id=$1", [target.member_id]);
-      await assert.rejects(() => memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input()), /Complete your registration/);
+      const freshConsent = await memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input());
+      assert.ok(freshConsent.acceptance.id,"an explicit new agreement does not depend on withdrawn card-storage consent");
+      assert.equal((await registration.getMemberRegistration(target.authUserId)).ready,false,"agreement alone does not substitute for card or payment");
       await db.query("update member_payment_method_accounts set consent_revoked_at=null where member_id=$1", [target.member_id]);
       environment.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION = "ruined_membership-v4";
       await assert.rejects(() => memberRepository.acceptPublishedMembershipAgreement(target.authUserId, input()), /no longer current/);

@@ -76,7 +76,8 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
         coalesce(nullif(btrim(private_profile.legal_name),''),nullif(btrim(profile.display_name),''),'Friend') as member_name,
         registration.completion_basis,
         proof.reservation_id as paid_reservation_id,
-        case when registration.completion_basis='paid_membership' and proof.reservation_id is not null
+        case when (registration.completion_basis='paid_membership'
+          or (message.kind='profile_ready' and registration.completion_basis='saved_card')) and proof.reservation_id is not null
           and private.ruined_registration_paid_reservation(member.id)=proof.reservation_id
           then jsonb_build_object('offerId',contract.terms_snapshot->>'offerId',
             'billingPlan',contract.terms_snapshot->>'billingPlan','amountPaidCents',proof.amount_paid,

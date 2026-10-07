@@ -1,7 +1,7 @@
 import "server-only";
 import { getMemberRegistrationDestination } from "@/lib/membership/registration-repository";
 
-type SignInDestination = "/my" | "/my/join" | "/ops" | "/my/payment-method" | "/my/registered";
+type SignInDestination = "/my" | "/my/join" | "/ops" | "/my/payment-method" | "/my/registered" | "/my/activate";
 
 import type { PlatformViewer } from "@/lib/platform/model";
 import { getSupportReturnTo } from "@/lib/auth/support-return";
@@ -20,7 +20,7 @@ export async function getSupportSignInDestination(
   requestedReturnTo: unknown,
   fallback: SignInDestination,
 ): Promise<string> {
-  if (fallback === "/my/payment-method" || fallback === "/my/registered") return fallback;
+  if (fallback === "/my/payment-method" || fallback === "/my/registered" || fallback === "/my/activate") return fallback;
   const returnTo = getSupportReturnTo(requestedReturnTo);
   if (!returnTo) return fallback;
   if (returnTo.startsWith("/ops/") && await getOperatorRole(viewer.authUserId) !== "ops_admin") return fallback;

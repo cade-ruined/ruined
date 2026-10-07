@@ -95,6 +95,7 @@ export async function fixture(t, { applyExpiry = true, persistentPersonalInvitat
   });
   const waitlist = await load("src/lib/membership/waitlist-repository.ts", { "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = await load("src/lib/membership/registration-repository.ts", {
+    "./registration-routing": await load("src/lib/membership/registration-routing.ts"),
     "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
   });

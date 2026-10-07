@@ -66,6 +66,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
       Object.values(MEMBERSHIP_OFFERS).map(offer => `| ${offer.tier === "founding_individual" ? "Founding individual" : offer.tier === "couple" ? "Couples" : "Individual"}, ${offer.plan} | ${formatMembershipPrice(offer.amount)}${future ? ` on ${future}` : " at checkout"} | ${formatMembershipPrice(offer.initialTermAmount)} | ${formatMembershipPrice(offer.amount)} ${offer.plan === "monthly" ? "monthly" : "annually"} |`).join("\n"),
   } } : onboarding;
   const status = commitment?.status;
+  const complimentary = onboarding.membershipFunding === "operator" || onboarding.membershipFunding === "complimentary";
   const reviewingCanceledOffer = reviewAgain && enabled && status === "canceled" && commitment?.canceledBeforeStart === true && (!commitment.billingSchedule || commitment.refundStatus === "succeeded");
   const commitmentEnd = commitment ? longDate(commitment.initialTermEndsAt) : null;
 
@@ -128,7 +129,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
       <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Your confirmation has not reached this account yet. Check again in a moment before starting another checkout.</p>
       <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation</button>
     </section> : <>
-      {agreementOnlyReturnHref ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Accept the membership agreement, then return to approve your shared membership. Your partner will handle the payment.</p> : !completingRegistration ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Review your membership and pay your first period below." : future ? `Your first charge is ${future}. Nothing is charged today.` : "Review your membership and payment terms below."} Your saved card alone does not authorize billing.</p> : null}
+      {agreementOnlyReturnHref ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Accept the membership agreement, then return to approve your shared membership. Your partner will handle the payment.</p> : !completingRegistration && !complimentary ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Review your membership and pay your first period below." : future ? `Your first charge is ${future}. Nothing is charged today.` : "Review your membership and payment terms below."} Your saved card alone does not authorize billing.</p> : null}
       {disabledReason && !preview ? <p className="mt-5 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">{disabledReason}</p> : null}
       {enabled || preview ? <JoinForm
         activationOnly

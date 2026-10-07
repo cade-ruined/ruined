@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { jsx, jsxs } from "react/jsx-runtime";
 import ts from "typescript";
+import * as registrationRouting from "../src/lib/membership/registration-routing.ts";
 
 const output = ts.transpileModule(await readFile(new URL("../app/my/join/page.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
@@ -16,6 +17,7 @@ function fixture({ membershipFunding = "self", billingState = "pending", state =
     "next/image": () => null,
     "next/headers": { cookies: async () => ({ get: () => undefined }) },
     "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
+    "@/lib/membership/registration-routing": registrationRouting,
     "@/lib/membership/registration-legal": { getMemberRegistrationLegalNotice: async () => assert.fail("Existing members without held registrations must not require registration terms") },
     "@/lib/membership/preview-scenarios": { memberRegistrationPreview: () => null, memberPreviewScenario: () => "active" },
     "next/navigation": { redirect: href => { throw Object.assign(new Error("redirect"), { href }); } },

@@ -101,7 +101,7 @@ function sourceLoader(overrides) {
   return load;
 }
 
-async function createFixture(origin, { paidRegistration = false } = {}) {
+async function createFixture(origin, { paidRegistration = false, legacyRegistration = false } = {}) {
   const engine = new PGlite();
   try {
     await engine.exec("create role anon; create role authenticated; create role service_role;");
@@ -151,14 +151,17 @@ async function createFixture(origin, { paidRegistration = false } = {}) {
       "@/lib/support/delivery": noCommunication,
     });
     const registration = load("src/lib/membership/registration-repository.ts");
-    async function enrollPaidRegistration(person) {
-      await sql.begin(tx => registration.enrollNewMemberRegistration(tx, person.memberId));
+    async function enrollPaidRegistration(person, legacy = false) {
+      if (legacy) {
+        await engine.query("insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode,requires_initial_payment) values($1,$2,false,false)",
+          [person.memberId, process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID]);
+      } else await sql.begin(tx => registration.enrollNewMemberRegistration(tx, person.memberId));
       await engine.query(`insert into member_consents(member_id,consent_type,policy_version,accepted_at,source,actor_auth_user_id,evidence,dedupe_key)
         values($1,'privacy','offline-registration',now(),'member',$2,$3::jsonb,$4)`, [person.memberId,person.authUserId,
         JSON.stringify({context:"registration_documents_v1",affirmativeAction:"checkbox_and_submit",membershipTerms:{key:"ruined_registration",sha256:"a".repeat(64)},registrationTermsAccepted:true,paidAgreementAccepted:false,chargeAuthorized:false}),
         `offline-registration:${person.memberId}`]);
     }
-    if (paidRegistration) await enrollPaidRegistration(fixture);
+    if (paidRegistration) await enrollPaidRegistration(fixture, legacyRegistration);
     const checkout = load("app/api/stripe/checkout/route.ts");
     const offer = load("app/api/stripe/membership-offer/route.ts");
     const cancellation = load("app/api/stripe/cancellation/route.ts");
@@ -423,8 +426,18 @@ async function selfTestPrepaid() {
   assert.equal(optionsFrom(["--self-test", "--prepaid"]).prepaid, true);
   assert.throws(() => validateEnvironment({ ...fake, STRIPE_SECRET_KEY: "sk_live_forbidden" }), /Live Stripe/);
   Object.assign(process.env, fake);
-  for (const [plan, kind, existingCount] of [["monthly", "individual",49], ["annual", "individual",49], ["monthly", "couple",48], ["monthly", "couple",49]]) {
-    const app = await createFixture("http://127.0.0.1:3233", { paidRegistration: true });
+  for (const [plan, kind, existingCount, legacyRegistration = false] of [
+    ["monthly", "individual",49], ["annual", "individual",49], ["monthly", "couple",48], ["monthly", "couple",49],
+    ["monthly", "individual",49,true], ["annual", "individual",49,true], ["monthly", "couple",49,true],
+  ]) {
+    const app = await createFixture("http://127.0.0.1:3233", { paidRegistration: true, legacyRegistration });
+    if (legacyRegistration) {
+      const intake = await app.registration.getMemberRegistration(app.fixture.authUserId);
+      assert.equal(intake.requiresInitialPayment,false);
+      assert.equal(intake.ready,false,"historical intake without card/payment is not completed by checkout eligibility");
+      assert.equal((await app.engine.query("select private.ruined_member_paid_activation_ready($1) ready",[app.fixture.memberId])).rows[0].ready,true,
+        "verified historical intake can authorize checkout without a separate save-card step");
+    }
     let partner = null;
     if (kind === "couple") {
       partner = {memberId:randomUUID(),authUserId:randomUUID(),email:`partner-${randomUUID()}@example.test`};
@@ -662,6 +675,13 @@ async function selfTestPrepaid() {
         const registered = await app.registration.getMemberRegistration(person.authUserId);
         assert.equal(registered.state,"registered");assert.equal(registered.completionBasis,"paid_membership");
         assert.equal(registered.profileActivatedAt,null);assert.equal(registered.initialPayment.amountPaid,amount);
+        if (legacyRegistration && person.memberId === app.fixture.memberId) {
+          assert.equal(registered.requiresInitialPayment,false,"voluntary payment must not rewrite the original requirement");
+          assert.equal(registered.ready,true,"verified payment completes legacy registration without standalone card setup");
+        }
+        const checkPayment = await app.load("app/api/my/registration/status/route.ts").GET();
+        assert.equal((await checkPayment.json()).paymentConfirmed,true);
+
         assert.deepEqual(registered.initialPayment.billingSchedule,expectedSchedule);
         assert.equal(registered.initialPayment.isPayer,person.memberId===app.fixture.memberId);
         const lease=randomUUID(), claim=await messageRepository.claimRegistrationMessage(lease,person.memberId);
@@ -744,7 +764,7 @@ async function selfTestPrepaid() {
       assert.ok(!page.includes(fake.STRIPE_SECRET_KEY) && !page.includes(fake.STRIPE_WEBHOOK_SECRET));
     } finally { await app.engine.close(); }
   }
-  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly/annual/couple paid onboarding, immutable schedules and consent, signed webhook settlement, one welcome per adult, held profiles, 50th/51st founding capacity, per-adult couple boundary flags, actual cancellation/refund routes plus canceled-subscription reconciliation, retained pre-service founding rejoin and post-service-departure policy fixture, adjustment suppression and replay. No provider network calls or live changes. Real provider collection/refunds and due service activation require separate runtime and sandbox checks.");
+  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly/annual/couple new and historical paid onboarding without card-saving detours, immutable schedules and consent, signed webhook settlement, one welcome per adult, held profiles, 50th/51st founding capacity, per-adult couple boundary flags, actual cancellation/refund routes plus canceled-subscription reconciliation, retained pre-service founding rejoin and post-service-departure policy fixture, adjustment suppression and replay. No provider network calls or live changes. Real provider collection/refunds and due service activation require separate runtime and sandbox checks.");
 }
 
 async function main() {

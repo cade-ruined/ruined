@@ -83,7 +83,8 @@ export function createRegistrationEmail(input: RegistrationEmailInput) {
     ? `${name}, you’re in.`
     : `${name}, your Ruined profile is now open.`;
   const next = "Add your photo, tell a little of your story, and make this space your own.";
-  const charge = input.completionBasis === "paid_membership"
+  const charge = input.completionBasis === "paid_membership" ||
+    (!welcome && input.completionBasis === "saved_card" && Boolean(input.paidMembership))
     ? "Opening your profile does not authorize a new charge. Your membership billing follows the terms you already accepted; review Membership billing for its current status."
     : input.completionBasis === "saved_card"
     ? "Paid membership begins only after you review the price and terms and explicitly confirm activation. Saving a card or opening your profile does not authorize future charges."
