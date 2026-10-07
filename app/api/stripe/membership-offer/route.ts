@@ -6,6 +6,7 @@ import { getMemberOnboarding } from "@/lib/membership/repository";
 import { getMembershipFirstChargeAt } from "@/lib/membership/paid-launch";
 import { isMembershipCohortPrepaymentEnabled } from "@/lib/membership/cohort-prepayment";
 import { createFoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
+import { prepaidScheduleFingerprint } from "@/lib/stripe/prepaid-policy";
 import { getPublishedMembershipAgreement } from "@/lib/membership/published-agreement";
 import {
   bindCommercialMembershipPrice,
@@ -35,10 +36,45 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) return response({ error: "Choose your membership and payment plan." }, 400);
     const platformUser = await requireActivePlatformMemberLink(viewer);
-    if (body.action === "release") {
+    if (body.action === "release" || body.action === "change_plan") {
       if (!isUuid(body.reservationId) || Object.keys(body).some(key => !["action", "reservationId"].includes(key))) return response({ error: "A valid offer is required." }, 400);
       const existing = await getCurrentCommercialMembershipReservation(platformUser.memberId);
       if (!existing || existing.id !== body.reservationId) return response({ error: "This offer is no longer current." }, 409);
+      if (body.action === "change_plan") {
+        const locked = () => response({ error: "Your current payment is still being confirmed. Keep this checkout open and try again shortly.", code: "checkout_plan_locked" }, 409);
+        const attempt = await getMembershipCheckoutForReservation(existing.id, platformUser.memberId);
+        if (attempt) {
+          // A creating attempt without a bound session may already exist remotely.
+          // Never start another charge until that identity can be verified.
+          if (attempt.consentSource !== "stripe_checkout" || !attempt.stripeSessionId || attempt.status === "completed") return locked();
+          try {
+            const stripe = getStripe();
+            const matches = (session: Awaited<ReturnType<typeof stripe.checkout.sessions.retrieve>>) =>
+              session.id === attempt.stripeSessionId && session.mode === "subscription" && session.ui_mode === "embedded_page" &&
+              session.livemode === getStripeLivemode() && session.client_reference_id === platformUser.memberId &&
+              session.metadata?.billing_consent_source === "stripe_checkout" &&
+              session.metadata?.ruined_member_id === platformUser.memberId &&
+              session.metadata?.ruined_checkout_attempt_id === attempt.id &&
+              session.metadata?.ruined_commercial_reservation_id === existing.id &&
+              session.metadata?.ruined_price_id === existing.stripePriceId &&
+              session.metadata?.ruined_offer_id === existing.offerId && session.metadata?.ruined_billing_plan === existing.plan &&
+              (session.metadata?.ruined_first_charge_at ?? null) === (existing.firstChargeAt?.toISOString() ?? null) &&
+              (session.metadata?.ruined_billing_schedule_sha256 ?? null) === (existing.billingSchedule ? prepaidScheduleFingerprint(existing.billingSchedule) : null) &&
+              session.payment_status === "unpaid" && !session.subscription;
+            let session = await stripe.checkout.sessions.retrieve(attempt.stripeSessionId);
+            if (!matches(session) || !["open", "expired"].includes(session.status ?? "")) return locked();
+            if (session.status === "open") session = await stripe.checkout.sessions.expire(session.id);
+            // Stripe's expiration is the authority, including races with Pay. A
+            // timeout, completion or unknown result leaves the local hold intact.
+            if (!matches(session) || session.status !== "expired") return locked();
+            await expireMembershipCheckoutAttempt(attempt.id);
+            await releaseCommercialMembershipReservation({ reservationId: existing.id, reason: "checkout_expired" });
+            return response({ released: true });
+          } catch {
+            return locked();
+          }
+        }
+      }
       await releaseCommercialMembershipReservation({ reservationId: existing.id, reason: "before_checkout_abandoned" });
       return response({ released: true });
     }

@@ -19,11 +19,11 @@ const isUuid = value => typeof value === "string" && /^[0-9a-f-]{36}$/.test(valu
 class Denied extends Error {}
 class OfferError extends Error { constructor(status,message,code) { super(message); this.status=status; this.code=code; } }
 
-async function offerHarness({ signedIn = true, trusted = true, enabled = true, country = "US", funding = "self", readyPair = null, current = null, releaseError = false, pending = false, firstChargeAt = null, activationEnabled = false, oldAttempt = null, oldSession = null } = {}) {
-  const calls = { reserved:[], bound:[], released:[], prices:[] };
+async function offerHarness({ signedIn = true, trusted = true, enabled = true, country = "US", funding = "self", readyPair = null, current = null, releaseError = false, pending = false, firstChargeAt = null, activationEnabled = false, oldAttempt = null, oldSession = null, expireSession = null, retrievalError = false } = {}) {
+  const calls = { reserved:[], bound:[], released:[], prices:[], retrieved:[], providerExpired:[], expired:[] };
   const route = await load("app/api/stripe/membership-offer/route.ts", {
     "next/server": response,
-    "@/lib/stripe/billing-repository": { getMembershipCheckoutForReservation:async()=>oldAttempt,expireMembershipCheckoutAttempt:async()=>{} },
+    "@/lib/stripe/billing-repository": { getMembershipCheckoutForReservation:async()=>oldAttempt,expireMembershipCheckoutAttempt:async id=>calls.expired.push(id) },
     "@/lib/membership/paid-launch": { getMembershipFirstChargeAt: () => firstChargeAt },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => signedIn ? {authUserId:id(2)} : null },
     "@/lib/membership/repository": { getMemberOnboarding: async () => ({requiredFieldsComplete:true,membershipFunding:funding,profile:{fulfillmentAddress:{countryCode:country}}}) },
@@ -41,7 +41,7 @@ async function offerHarness({ signedIn = true, trusted = true, enabled = true, c
     "@/lib/platform/config": {getPlatformConfiguration:()=>({stripeCheckoutReady:enabled,stripeActivationReady:activationEnabled})},
     "@/lib/platform/repository": {PlatformAccessDeniedError:Denied,requireActivePlatformMemberLink:async()=>({memberId:id(1)})},
     "@/lib/stripe/membership-state": {isUuid},
-    "@/lib/stripe/server": {getStripe:()=>({checkout:{sessions:{retrieve:async()=>oldSession}}}),getStripeLivemode:()=>false,isTrustedCheckoutOrigin:()=>trusted,getPaidMembershipAgreementVersion:()=>"ruined_membership-v2",validateStripeMembershipOfferPrice:async offerId=>{calls.prices.push(offerId);return `price_${offerId}`;}},
+    "@/lib/stripe/server": {getStripe:()=>({checkout:{sessions:{retrieve:async id=>{calls.retrieved.push(id);if(retrievalError)throw Error("Unknown provider outcome");return oldSession;},expire:async id=>{calls.providerExpired.push(id);return expireSession ? expireSession(id) : {...oldSession,status:"expired"};}}}}),getStripeLivemode:()=>false,isTrustedCheckoutOrigin:()=>trusted,getPaidMembershipAgreementVersion:()=>"ruined_membership-v2",validateStripeMembershipOfferPrice:async offerId=>{calls.prices.push(offerId);return `price_${offerId}`;}},
   });
   return {calls,post:body=>route.POST(new Request("https://members.example.test/api/stripe/membership-offer",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}))};
 }
@@ -165,4 +165,62 @@ test("after the scheduled date only confirmed terminated Checkout releases the o
     const pending=await offerHarness({current,oldAttempt,oldSession:{...oldSession,status}});
     assert.equal((await pending.post(choice)).status,409);assert.equal(pending.calls.released.length,0);assert.equal(pending.calls.reserved.length,0);
   }
+});
+
+
+test("changing a native payment plan expires the exact unpaid provider session before releasing its quote", async () => {
+  const current = { id: id(3), memberId: id(1), stripePriceId: "price_founder", offerId: "founding_individual_monthly", kind: "individual", plan: "monthly", firstChargeAt: null, billingSchedule: null };
+  const oldAttempt = { id: id(3), status: "open", stripeSessionId: "cs_native", consentSource: "stripe_checkout" };
+  const oldSession = { id: "cs_native", mode: "subscription", ui_mode: "embedded_page", livemode: false, client_reference_id: id(1), status: "open", payment_status: "unpaid", subscription: null,
+    metadata: { billing_consent_source: "stripe_checkout", ruined_member_id: id(1), ruined_checkout_attempt_id: id(3), ruined_commercial_reservation_id: id(3), ruined_price_id: "price_founder", ruined_offer_id: "founding_individual_monthly", ruined_billing_plan: "monthly" } };
+  const body = { action: "change_plan", reservationId: current.id };
+  for (const status of ["open", "expired"]) {
+    const h = await offerHarness({ current, oldAttempt, oldSession: { ...oldSession, status } });
+    const result = await h.post(body);
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), { released: true });
+    assert.deepEqual(h.calls.providerExpired, status === "open" ? ["cs_native"] : []);
+    assert.deepEqual(h.calls.expired, [id(3)]);
+    assert.deepEqual(h.calls.released, [{ reservationId: id(3), reason: "checkout_expired" }]);
+    assert.equal(h.calls.reserved.length, 0, "explicit plan edit closes only; a separate fresh offer chooses new terms");
+  }
+  const unused = await offerHarness({ current });
+  assert.equal((await unused.post(body)).status, 200);
+  assert.deepEqual(unused.calls.released, [{ reservationId: id(3), reason: "before_checkout_abandoned" }]);
+  for (const change of [
+    { signedIn: false }, { trusted: false }, { current: { ...current, id: id(4) } },
+    { oldAttempt: { ...oldAttempt, stripeSessionId: null, status: "creating" } },
+    { oldAttempt: { ...oldAttempt, status: "completed" } },
+    { oldAttempt: { ...oldAttempt, consentSource: "member" } },
+    { oldSession: { ...oldSession, status: "complete", payment_status: "paid" } },
+    { oldSession: { ...oldSession, subscription: "sub_processing" } },
+    { oldSession: { ...oldSession, payment_status: "paid" } },
+    { oldSession: { ...oldSession, livemode: true } },
+    { oldSession: { ...oldSession, id: "cs_other" } },
+    { oldSession: { ...oldSession, metadata: { ...oldSession.metadata, ruined_member_id: id(4) } } },
+    { oldSession: { ...oldSession, metadata: { ...oldSession.metadata, ruined_price_id: "price_wrong" } } },
+    { oldSession: { ...oldSession, metadata: { ...oldSession.metadata, ruined_billing_schedule_sha256: "changed" } } },
+    { retrievalError: true },
+  ]) {
+    const h = await offerHarness({ current, oldAttempt, oldSession, ...change });
+    assert.ok((await h.post(body)).status >= 400, JSON.stringify(change));
+    assert.equal(h.calls.providerExpired.length, 0);
+    assert.equal(h.calls.expired.length, 0);
+    assert.equal(h.calls.released.length, 0);
+  }
+  for (const expireSession of [
+    async () => { throw Error("Provider timeout after expiration"); },
+    async () => ({ ...oldSession, status: "complete", payment_status: "paid", subscription: "sub_raced" }),
+    async () => ({ ...oldSession, status: "open" }),
+    async () => ({ ...oldSession, id: "cs_wrong", status: "expired" }),
+  ]) {
+    const h = await offerHarness({ current, oldAttempt, oldSession, expireSession });
+    assert.equal((await h.post(body)).status, 409);
+    assert.equal(h.calls.providerExpired.length, 1);
+    assert.equal(h.calls.expired.length, 0);
+    assert.equal(h.calls.released.length, 0, "ambiguous or completed payment retains its place and cannot open a second bill");
+  }
+  const injected = await offerHarness({ current, oldAttempt, oldSession });
+  assert.equal((await injected.post({ ...body, memberId: id(4) })).status, 400);
+  assert.equal(injected.calls.retrieved.length, 0);
 });

@@ -43,6 +43,7 @@ type CheckoutRequest = {
   attemptId?: unknown;
   plan?: unknown;
   recurringPaymentAccepted?: unknown;
+  consentSource?: unknown;
   commercialReservationId?: unknown;
   firstChargeAt?: unknown;
   billingSchedule?: unknown;
@@ -90,7 +91,9 @@ export async function POST(request: Request) {
     return invalidRequest("Choose monthly or annual membership.");
   }
   const plan = body.plan;
-  if (body.recurringPaymentAccepted !== true) {
+  const consentSource = body.consentSource === "stripe_checkout" ? "stripe_checkout" : "member";
+  if (body.consentSource !== undefined && body.consentSource !== "stripe_checkout") return invalidRequest("Invalid payment confirmation method.");
+  if (consentSource === "member" && body.recurringPaymentAccepted !== true) {
     return NextResponse.json({ error: "Confirm the recurring payment amount before continuing.", code: "billing_consent_required" }, { status: 400 });
   }
 
@@ -149,7 +152,7 @@ export async function POST(request: Request) {
     const email = normalizeEmail(viewer.email);
     const reserve = (attemptId: string) => reserveMembershipCheckout({
       acceptanceId, attemptId, authUserId: viewer.authUserId, email,
-      plan, stripePriceId: priceId, paidAgreementVersion, commercialReservationId,
+      plan, stripePriceId: priceId, paidAgreementVersion, commercialReservationId, consentSource,
     });
     const reservation = await reserve(checkoutAttemptId);
     const termsMessage = `I agree to the [Ruined Membership Agreement](${applicationOrigin}/membership/agreement/${encodeURIComponent(paidAgreementVersion)}).`;
@@ -191,6 +194,9 @@ export async function POST(request: Request) {
         existingSession.metadata?.ruined_commercial_reservation_id === reservation.commercialReservationId &&
         existingSession.metadata?.ruined_price_id === reservation.stripePriceId &&
         existingSession.metadata?.agreement_acceptance_id === reservation.agreementAcceptanceId &&
+        (reservation.consentSource !== "stripe_checkout" ||
+          (existingSession.metadata?.billing_consent_source === "stripe_checkout" &&
+            existingSession.metadata?.billing_prepared_at === reservation.checkoutPreparedAt.toISOString())) &&
         (existingSession.metadata?.ruined_first_charge_at ?? null) === (reservation.firstChargeAt?.toISOString() ?? null) &&
         (existingSession.metadata?.ruined_billing_schedule_sha256 ?? null) === (billingSchedule ? prepaidScheduleFingerprint(billingSchedule) : null) &&
         existingSession.amount_subtotal === (reservation.firstChargeAt ? 0 : expected.amount) &&
@@ -223,7 +229,9 @@ export async function POST(request: Request) {
       agreement_version: reservation.agreementVersion,
       agreement_accepted_at: reservation.agreementAcceptedAt.toISOString(),
       age_attested_at: reservation.ageAttestedAt.toISOString(),
-      billing_consent_at: reservation.recurringPaymentAcceptedAt.toISOString(),
+      ...(reservation.consentSource === "stripe_checkout"
+        ? { billing_consent_source: "stripe_checkout", billing_prepared_at: reservation.checkoutPreparedAt.toISOString() }
+        : { billing_consent_at: reservation.recurringPaymentAcceptedAt!.toISOString() }),
       billing_terms_version: "membership-billing-v2",
       ...(reservation.firstChargeAt ? { ruined_first_charge_at: reservation.firstChargeAt.toISOString() } : {}),
       ...(billingSchedule ? prepaidBillingMetadata(billingSchedule) : {}),

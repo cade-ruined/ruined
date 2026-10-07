@@ -47,6 +47,10 @@ async function fixture(currentPaid) {
     "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn(async () => []) }) },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({ livemode: false, offers: { founding_individual_monthly: price.id } }), isStripeTaxEnabled: () => false },
+    "@/lib/stripe/checkout-consent": { reconcileNativeCheckoutConsent: async (_tx, _stripe, { subscription }) => {
+      assert.equal(subscription.metadata.billing_consent_source, undefined, "historical prepaid replays retain their stored member-approved consent");
+      return true;
+    } },
     "@/lib/stripe/billing-repository": {
       claimWebhookEvent: async () => "claimed", completeWebhookEvent: async () => {}, recordWebhookFailure: async () => {},
       ensureBillingMember: async () => ({ id: memberId, membershipState: "active" }), findMemberBySubscription: async () => ({ id: memberId, membershipState: "active" }),

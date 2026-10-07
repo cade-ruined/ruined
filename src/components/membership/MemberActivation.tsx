@@ -24,13 +24,14 @@ type Props = {
   publishableKey: string | null;
   returnedFromCheckout?: boolean;
   completingRegistration?: boolean;
+  agreementOnlyReturnHref?: string;
   preview?: boolean;
   previewView?: "offer" | "agreement" | "scheduled" | "canceled";
 };
 
 /** A return URL is only a cue to refresh. Billing status comes from the server. */
 export default function MemberActivation({ onboarding, enabled, disabledReason, initialPlan, firstChargeAt, billingSchedule, minimumAge,
-  publishableKey, completingRegistration = false, returnedFromCheckout = false, preview = false, previewView = "offer" }: Props) {
+  publishableKey, completingRegistration = false, agreementOnlyReturnHref, returnedFromCheckout = false, preview = false, previewView = "offer" }: Props) {
   const previewCommitment: CancellationCommitment | null = preview && ["scheduled", "canceled"].includes(previewView)
     ? { startsAt: billingSchedule?.serviceStartsAt ?? firstChargeAt ?? "2026-11-01T06:00:00.000Z", initialTermEndsAt: billingSchedule?.initialTermEndsAt ?? "2027-11-01T06:00:00.000Z", plan: initialPlan, billingSchedule, refundStatus: billingSchedule && previewView === "canceled" ? "succeeded" : null,
       installmentDues: initialPlan === "annual" ? 349000 : 34900, status: previewView === "canceled" ? "canceled" : "scheduled", canCancelBeforeStart: true, canceledBeforeStart: previewView === "canceled" } : null;
@@ -127,7 +128,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
       <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Your confirmation has not reached this account yet. Check again in a moment before starting another checkout.</p>
       <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation</button>
     </section> : <>
-      <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Pay your first period when you confirm. Service and your initial 12-month commitment begin with your cohort’s first Foundations call. Your offer shows the exact dates before you authorize payment." : future ? `Confirm ahead of time. Your first charge is ${future}, and nothing is charged today.` : "Review your exact membership offer and payment terms before confirming checkout."}{completingRegistration ? null : " Your registration and saved card alone do not authorize billing."}</p>
+      {agreementOnlyReturnHref ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Accept the membership agreement, then return to approve your shared membership. Your partner will handle the payment.</p> : !completingRegistration ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Review your membership and pay your first period below." : future ? `Your first charge is ${future}. Nothing is charged today.` : "Review your membership and payment terms below."} Your saved card alone does not authorize billing.</p> : null}
       {disabledReason && !preview ? <p className="mt-5 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">{disabledReason}</p> : null}
       {enabled || preview ? <JoinForm
         activationOnly
@@ -141,8 +142,9 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
         photoStorageReady={false}
         publishableKey={publishableKey}
         preview={preview}
-        streamlinedPayment={completingRegistration}
-        initialQuote={preview && previewView !== "agreement" ? { id: "preview-offer", expiresAt: "2026-10-31T23:00:00Z", offer: MEMBERSHIP_OFFERS[initialPlan === "annual" ? "founding_individual_annual" : "founding_individual_monthly"],
+        streamlinedPayment
+        agreementOnlyReturnHref={agreementOnlyReturnHref}
+        initialQuote={preview ? { id: "preview-offer", expiresAt: "2026-10-31T23:00:00Z", offer: MEMBERSHIP_OFFERS[initialPlan === "annual" ? "founding_individual_annual" : "founding_individual_monthly"],
           billingTermsVersion: "membership-billing-v2", buyoutCap: 150000, participants: [{ memberId: "preview-member", name: "Preview Member" }], firstChargeAt: billingSchedule ? null : firstChargeAt, ...(billingSchedule ? { billingSchedule, expiresAt: billingSchedule.cutoffAt } : {}) } : null}
       /> : null}
     </>}

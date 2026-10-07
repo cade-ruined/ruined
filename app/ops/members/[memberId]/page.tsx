@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { getOwnMemberCardPublicScope } from "@/lib/membership/public-card-repository";
+import { getOpsMemberRegistrationProgress } from "@/lib/membership/registration-repository";
 
 import OperatorMemberRecord from "@/components/platform/OperatorMemberRecord";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
@@ -58,7 +59,7 @@ export default async function OperationsMemberRecordPage({
     return <PlatformUnavailable accessHref="/ops/access" />;
   }
   if (!record) notFound();
-  const [profileSupport, publicProfile] = await Promise.all([
+  const [profileSupport, publicProfile, registration] = await Promise.all([
     record.access.capabilities.includes("member.private_profile.read")
       ? getOpsMemberProfileSupport(context.viewer.authUserId, memberId).catch((error) => {
         console.error("Operations member profile support could not be loaded", {
@@ -75,6 +76,12 @@ export default async function OperationsMemberRecordPage({
       });
       return null;
     }),
+    record.access.roles.includes("ops_admin")
+      ? getOpsMemberRegistrationProgress(context.viewer.authUserId, memberId).catch(error => {
+        console.error("Operations registration progress could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
+        return null;
+      }) : Promise.resolve(null),
   ]);
+  if (record.access.roles.includes("ops_admin")) record.membership.registration = registration;
   return <OperatorMemberRecord profileSupport={profileSupport} publicProfileHref={publicProfile ? `/journal/${publicProfile.token}` : null} record={record} returnTo={returnTo} />;
 }

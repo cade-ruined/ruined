@@ -33,7 +33,8 @@ const onboarding = { requiredFieldsComplete: true, state: "in_progress", billing
 const offer = { id: "quote-id", expiresAt: "2026-10-31T20:00:00Z", offer: pricing.MEMBERSHIP_OFFERS.founding_individual_monthly, billingTermsVersion: "membership-billing-v2", buyoutCap: 150000,
   participants: [{ memberId: "member", name: "A member" }], firstChargeAt: "2026-11-01T06:00:00.000Z" };
 async function joinFixture(extra = {}, now = "2026-10-05T18:00:00Z") {
-  const h = hooks(), calls = [];
+  const h = hooks(), calls = [], responses = [], timers = new Map(), navigations=[];
+  const formValues = { "signer-name": "Alex Member", "agreement-accepted": "on", "age-confirmed": "on" };
   const Form = (await load("src/components/membership/JoinForm.tsx", {
     react: h.react, "next/link": Link, "@stripe/stripe-js": { loadStripe: () => assert.fail("Rendering cannot start Stripe") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
@@ -43,9 +44,18 @@ async function joinFixture(extra = {}, now = "2026-10-05T18:00:00Z") {
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": pricing, "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
     "@/lib/membership/member-communication-preferences-model": await load("src/lib/membership/member-communication-preferences-model.ts"),
-  }, { Date: class extends Date { static now() { return Date.parse(now); } }, fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, json: async () => url === "/api/stripe/membership-offer" ? { quote: offer } : ({ clientSecret: "secret", plan: "monthly", commercialReservationId: "quote-id" }) }; } })).default;
+  }, { Date: class extends Date { static now() { return Date.parse(now); } },
+    FormData: class { get(key) { return formValues[key]; } },
+    setTimeout: (fn) => { const id=timers.size+1;timers.set(id,fn);return id; }, clearTimeout: id => timers.delete(id),
+    requestAnimationFrame: () => 0, cancelAnimationFrame() {},
+    window:{location:{assign:href=>navigations.push(href)}},
+    fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) });
+      if(responses.length)return responses.shift();
+      return { ok: true, json: async () => url === "/api/stripe/membership-offer" ? { quote: offer }
+        : url === "/api/my/agreement" ? {acceptance:{id:"fresh-acceptance"},onboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:"fresh-acceptance"}}}
+        : ({ clientSecret: "secret", plan: "monthly", commercialReservationId: "quote-id" }) }; } })).default;
   const props = { enabled: true, checkoutEnabled: true, initialOnboarding: onboarding, initialQuote: offer, activationOnly: true, publishableKey: "pk_live_example", minimumAge: 18, ...extra };
-  return { calls, render: () => h.render(Form, props), effects: h.effects };
+  return { calls, responses, formValues, props, navigations, render: () => h.render(Form, props), effects: h.effects };
 }
 
 test("future offer shows exact price/date and 12-month term; only fresh checked consent starts Checkout", async () => {
@@ -262,18 +272,24 @@ test("prepaid cancellation does not substitute zero or claim success when exact 
 });
 
 
-test("streamlined checkout opens from fresh payment consent without a separate continue button", async () => {
+test("returning members see Stripe automatically without an invented payment authorization", async () => {
   const schedule = (await load("src/lib/membership/foundations-schedule.ts")).foundationsBillingScheduleForMonth("2026-11", "monthly");
   const f = await joinFixture({ streamlinedPayment:true,initialQuote:{...offer,firstChargeAt:null,billingSchedule:schedule} });
   let tree=f.render();
   assert.equal(f.calls.length,0);
   assert.equal(nodes(tree).some(node=>node.type==="button" && /Pay first period with Stripe|Open secure payment|Review membership offer/.test(visible(node))),false);
-  const consent=nodes(tree).find(node=>node.props.name==="recurring-payment-accepted");
-  assert.equal(consent.props.checked,false);
-  await consent.props.onChange({target:{checked:true}});
+  assert.equal(nodes(tree).some(node=>node.props.name==="recurring-payment-accepted"),false);
+  assert.doesNotMatch(visible(tree),/By continuing, I authorize|Enter secure payment/);
+  await f.effects();
   assert.equal(f.calls.length,1); assert.equal(f.calls[0].url,"/api/stripe/checkout");
-  assert.equal(f.calls[0].body.recurringPaymentAccepted,true);
+  assert.equal(f.calls[0].body.recurringPaymentAccepted,undefined);
+  assert.equal(f.calls[0].body.consentSource,"stripe_checkout");
   tree=f.render(); assert.match(renderToStaticMarkup(tree),/Secure Stripe payment/);
+  assert.equal(nodes(tree).some(node=>node.type==="button" && visible(node)==="Enter secure payment"),false);
+  assert.doesNotMatch(visible(tree),/By continuing, I authorize/);
+  assert.match(visible(tree),/Read the Membership Agreement/);
+  assert.match(visible(tree),/full refund/);
+  assert.match(visible(tree),/lower of \$1,500/);
 });
 
 test("paid onboarding opens confirmation only after a fresh registration readiness check", async () => {
@@ -293,26 +309,202 @@ test("paid onboarding opens confirmation only after a fresh registration readine
 });
 
 
-test("streamlined registration prepares the offer automatically but never accepts or starts payment", async () => {
+test("streamlined registration prepares an offer and pending Stripe session without claiming consent", async () => {
   const f = await joinFixture({ streamlinedPayment: true, initialQuote: null });
   let tree = f.render();
-  assert.match(visible(tree), /Loading your price and payment dates/);
+  assert.match(visible(tree), /membership offer is being prepared/);
   assert.equal(nodes(tree).some(node => node.type === "button" && /Review membership offer/.test(visible(node))), false);
   await f.effects();
   tree = f.render();
   await f.effects();
-  assert.deepEqual(f.calls.map(call => call.url), ["/api/stripe/membership-offer"]);
-  const consent = nodes(tree).find(node => node.props.name === "recurring-payment-accepted");
-  assert.equal(consent.props.checked, false);
+  assert.deepEqual(f.calls.map(call => call.url), ["/api/stripe/membership-offer", "/api/stripe/checkout"]);
   assert.equal(f.calls[0].body.recurringPaymentAccepted, undefined);
   f.render(); await f.effects();
-  assert.equal(f.calls.length, 1, "Rerendering does not repeatedly reserve offers or open checkout");
+  assert.equal(f.calls.length, 2, "Rerendering does not repeatedly reserve offers or open checkout");
+  assert.equal(f.calls[1].body.recurringPaymentAccepted,undefined);
+  assert.equal(f.calls[1].body.consentSource,"stripe_checkout");
 });
 
-test("automatic offer preparation respects preview, disabled checkout, and unsigned agreements", async () => {
-  for (const extra of [{ preview: true }, { enabled: false }, { checkoutEnabled: false }, { initialOnboarding: { ...onboarding, agreement: { ...onboarding.agreement, acceptanceId: null } } }]) {
+test("automatic offer preparation respects preview, disabled checkout and incomplete intake", async () => {
+  for (const extra of [{ preview: true }, { enabled: false }, { checkoutEnabled: false }, { initialOnboarding: { ...onboarding, requiredFieldsComplete:false } }]) {
     const f = await joinFixture({ streamlinedPayment: true, initialQuote: null, ...extra });
     f.render(); await f.effects();
     assert.equal(f.calls.length, 0);
   }
+});
+
+test("new members see a quote before signing, and agreement acceptance opens pending Stripe without payment consent", async () => {
+  const schedule=(await load("src/lib/membership/foundations-schedule.ts")).foundationsBillingScheduleForMonth("2026-11","monthly");
+  const f=await joinFixture({streamlinedPayment:true,initialQuote:{...offer,firstChargeAt:null,billingSchedule:schedule},
+    initialOnboarding:{...onboarding,profile:{legalName:"Alex Member"},agreement:{...onboarding.agreement,acceptanceId:null}}});
+  let tree=f.render();
+  assert.equal(nodes(tree).find(node=>node.props.name==="signer-name").props.defaultValue,"Alex Member");
+  const disclosures=visible(tree);
+  for(const phrase of ["$349","12-month commitment","$4,188","November 5, 2026","December 5, 2026","November 5, 2027","$1,500","full refund","Agree & continue"])
+    assert.ok(disclosures.includes(phrase),phrase);
+  assert.equal(f.calls.length,0);
+  await nodes(tree).find(node=>node.type==="form").props.onSubmit({preventDefault(){},currentTarget:{}});
+  assert.deepEqual(f.calls.map(call=>call.url),["/api/my/agreement","/api/stripe/checkout"]);
+  assert.equal(f.calls[0].body.ageConfirmed,true);
+  assert.equal(f.calls[1].body.acceptanceId,"fresh-acceptance");
+  assert.equal(f.calls[1].body.commercialReservationId,"quote-id");
+  assert.deepEqual(f.calls[1].body.billingSchedule,schedule);
+  assert.equal(f.calls[1].body.recurringPaymentAccepted,undefined);
+  assert.equal(f.calls[1].body.consentSource,"stripe_checkout");
+  tree=f.render();assert.match(renderToStaticMarkup(tree),/Secure Stripe payment/);
+});
+
+test("unsigned quote preparation does not itself accept the agreement or authorize payment",async()=>{
+  const f=await joinFixture({streamlinedPayment:true,initialQuote:null,initialOnboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:null}}});
+  f.render();await f.effects();f.render();await f.effects();
+  assert.deepEqual(f.calls.map(call=>call.url),["/api/stripe/membership-offer"]);
+  assert.equal(f.calls[0].body.recurringPaymentAccepted,undefined);
+});
+
+test("combined agreement action cannot start payment without fresh consent or after an agreement error",async()=>{
+  for(const decline of [true,false]) {
+    const f=await joinFixture({streamlinedPayment:true,initialOnboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:null}}});
+    if(decline)f.formValues["agreement-accepted"]="";
+    else f.responses.push({ok:false,json:async()=>({error:"Agreement changed. Review again."})});
+    await nodes(f.render()).find(node=>node.type==="form").props.onSubmit({preventDefault(){},currentTarget:{}});
+    assert.equal(f.calls.some(call=>call.url==="/api/stripe/checkout"),false);
+    assert.match(visible(f.render()),decline?/Read and accept/:/Agreement changed/);
+  }
+});
+
+test("a failed automatic checkout preserves agreement acceptance and requires an explicit payment retry",async()=>{
+  const f=await joinFixture({streamlinedPayment:true,initialOnboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:null}}});
+  f.responses.push({ok:true,json:async()=>({acceptance:{id:"fresh-acceptance"},onboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:"fresh-acceptance"}}})},
+    {ok:false,json:async()=>({error:"Please retry secure payment."})});
+  await nodes(f.render()).find(node=>node.type==="form").props.onSubmit({preventDefault(){},currentTarget:{}});
+  let tree=f.render();await f.effects();
+  assert.equal(f.calls.length,2);
+  assert.equal(nodes(tree).some(node=>node.type==="form"),false);
+  await nodes(tree).find(node=>node.type==="button" && visible(node)==="Reload secure payment").props.onClick();
+  assert.deepEqual(f.calls.map(call=>call.url),["/api/my/agreement","/api/stripe/checkout","/api/stripe/checkout"]);
+  assert.equal(f.calls[2].body.acceptanceId,"fresh-acceptance");
+});
+
+test("couples partner signs only the agreement and returns to approval without preparing individual payment",async()=>{
+  const href="/my/couple?authorization=verified-partner-request";
+  const f=await joinFixture({streamlinedPayment:true,agreementOnlyReturnHref:href,initialQuote:null,
+    initialOnboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:null}}});
+  let tree=f.render();await f.effects();
+  assert.deepEqual(f.calls,[]);
+  assert.match(visible(tree),/Agree & return to couples approval/);
+  await nodes(tree).find(node=>node.type==="form").props.onSubmit({preventDefault(){},currentTarget:{}});
+  assert.deepEqual(f.calls.map(call=>call.url),["/api/my/agreement"]);
+  assert.deepEqual(f.navigations,[href]);
+  tree=f.render();await f.effects();
+  assert.ok(nodes(tree).find(node=>node.props.href===href));
+  assert.doesNotMatch(visible(tree),/Enter secure payment|Individual membership/);
+  const returning=await joinFixture({streamlinedPayment:true,agreementOnlyReturnHref:href,initialQuote:null});
+  tree=returning.render();await returning.effects();assert.deepEqual(returning.calls,[]);
+  assert.ok(nodes(tree).find(node=>node.props.href===href));
+});
+
+test("combined submission at the exact cohort cutoff cannot accept an agreement or start Checkout",async()=>{
+  const schedule=(await load("src/lib/membership/foundations-schedule.ts")).foundationsBillingScheduleForMonth("2026-11","monthly");
+  const f=await joinFixture({streamlinedPayment:true,initialQuote:{...offer,expiresAt:"2026-11-05T20:00:00Z",firstChargeAt:null,billingSchedule:schedule},
+    initialOnboarding:{...onboarding,agreement:{...onboarding.agreement,acceptanceId:null}}},schedule.cutoffAt);
+  await nodes(f.render()).find(node=>node.type==="form").props.onSubmit({preventDefault(){},currentTarget:{}});
+  assert.deepEqual(f.calls,[]);
+  assert.match(visible(f.render()),/expired/);
+});
+
+test("selection changes discard the prior quote and a returning accepted account never auto-authorizes on reload",async()=>{
+  const f=await joinFixture({streamlinedPayment:true});
+  await nodes(f.render()).find(node=>node.props.name==="checkout-plan" && node.props.checked===false).props.onChange();
+  let tree=f.render();
+  assert.equal(nodes(tree).some(node=>node.type==="button" && visible(node)==="Enter secure payment"),false);
+  assert.deepEqual(f.calls.map(call=>call.url),["/api/stripe/membership-offer"]);
+  assert.equal(f.calls[0].body.action,"release");
+  const reload=await joinFixture({streamlinedPayment:true});reload.render();await reload.effects();
+  assert.equal(reload.calls.length,1);
+  assert.equal(reload.calls[0].body.consentSource,"stripe_checkout");
+  assert.equal(reload.calls[0].body.recurringPaymentAccepted,undefined,"An accepted agreement and existing quote do not infer payment consent");
+});
+
+test("Stripe display errors can remount the existing pending session without another checkout request",async()=>{
+  const f=await joinFixture({streamlinedPayment:true});f.render();await f.effects();
+  const mounted=nodes(f.render()).find(node=>typeof node.type==="function" && node.type.name==="EmbeddedCheckout");
+  assert.ok(mounted);mounted.props.setError("Secure payment could not be loaded.");
+  const retry=nodes(f.render()).find(node=>node.type==="button" && visible(node)==="Reload payment form");
+  assert.ok(retry);retry.props.onClick();
+  const remounted=nodes(f.render()).find(node=>typeof node.type==="function" && node.type.name==="EmbeddedCheckout");
+  assert.notEqual(mounted.key,remounted.key);
+  assert.equal(remounted.props.clientSecret,mounted.props.clientSecret);
+  assert.equal(f.calls.length,1);
+});
+
+test("changing an automatically loaded plan first closes it, then waits while the member chooses type and schedule", async () => {
+  const f = await joinFixture({ streamlinedPayment: true });
+  f.render(); await f.effects();
+  let tree = f.render();
+  assert.ok(nodes(tree).find(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout"));
+  f.responses.push({ ok: true, json: async () => ({ released: true }) });
+  await nodes(tree).find(node => node.type === "button" && visible(node) === "Change plan").props.onClick();
+  tree = f.render(); await f.effects();
+  assert.deepEqual(f.calls[1], { url: "/api/stripe/membership-offer", body: { action: "change_plan", reservationId: offer.id } });
+  assert.equal(nodes(tree).some(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout"), false);
+  assert.match(visible(tree), /Choose your plan/);
+  await nodes(tree).find(node => node.props.name === "checkout-plan" && !node.props.checked).props.onChange();
+  tree = f.render(); await f.effects();
+  await nodes(tree).find(node => node.props.name === "membership-kind" && !node.props.checked).props.onChange();
+  tree = f.render(); await f.effects();
+  assert.equal(f.calls.length, 2, "Editing must not reopen the old payment or prepare a new one before the selection is applied");
+
+  const annualCouple = { ...offer, id: "new-annual-couple", offer: pricing.MEMBERSHIP_OFFERS.couple_annual };
+  f.responses.push({ ok: true, json: async () => ({ quote: annualCouple }) },
+    { ok: true, json: async () => ({ clientSecret: "new-secret", plan: "annual", commercialReservationId: annualCouple.id }) });
+  nodes(tree).find(node => node.type === "button" && visible(node) === "Update payment form").props.onClick();
+  f.render(); await f.effects();
+  f.render(); await f.effects();
+  tree = f.render(); await f.effects();
+  assert.equal(f.calls.length, 4);
+  assert.equal(f.calls[2].body.kind, "couple");
+  assert.equal(f.calls[2].body.plan, "annual");
+  assert.equal(f.calls[3].url, "/api/stripe/checkout");
+  assert.equal(f.calls[3].body.commercialReservationId, annualCouple.id);
+  assert.equal(f.calls[3].body.plan, "annual");
+  assert.equal(f.calls[3].body.consentSource, "stripe_checkout");
+  assert.equal(f.calls[3].body.recurringPaymentAccepted, undefined);
+  assert.equal(nodes(tree).find(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout").props.clientSecret, "new-secret");
+  assert.match(visible(tree), /Couples membership/);
+});
+
+test("completed, ambiguous, and malformed change-plan responses preserve the current Stripe form", async () => {
+  for (const response of [
+    { ok: false, json: async () => ({ error: "Your payment is already complete. Refresh to view confirmation." }) },
+    { ok: false, json: async () => ({ error: "Your payment could not be safely closed. Please retry." }) },
+    { ok: true, json: async () => ({}) },
+  ]) {
+    const f = await joinFixture({ streamlinedPayment: true });
+    f.render(); await f.effects();
+    f.responses.push(response);
+    await nodes(f.render()).find(node => node.type === "button" && visible(node) === "Change plan").props.onClick();
+    const tree = f.render(); await f.effects();
+    assert.equal(nodes(tree).find(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout").props.clientSecret, "secret");
+    assert.equal(nodes(tree).some(node => node.props.name === "checkout-plan"), false);
+    assert.equal(nodes(tree).some(node => node.type === "button" && visible(node) === "Update payment form"), false);
+    assert.equal(f.calls.length, 2, "A rejected release cannot open another payment");
+    assert.ok(nodes(tree).find(node => node.props.role === "alert"));
+  }
+});
+
+test("the Stripe form is retained until its change-plan release has been confirmed", async () => {
+  const f = await joinFixture({ streamlinedPayment: true });
+  f.render(); await f.effects();
+  let resolveRelease;
+  f.responses.push({ ok: true, json: () => new Promise(resolve => { resolveRelease = resolve; }) });
+  const pending = nodes(f.render()).find(node => node.type === "button" && visible(node) === "Change plan").props.onClick();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  let tree = f.render(); await f.effects();
+  assert.ok(nodes(tree).find(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout"));
+  assert.equal(nodes(tree).find(node => node.type === "button" && /Closing your current payment/.test(visible(node))).props.disabled, true);
+  assert.equal(nodes(tree).some(node => node.props.name === "checkout-plan"), false);
+  resolveRelease({ released: true }); await pending;
+  tree = f.render(); await f.effects();
+  assert.equal(nodes(tree).some(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout"), false);
+  assert.equal(f.calls.length, 2);
 });

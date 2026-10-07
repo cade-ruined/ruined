@@ -83,6 +83,7 @@ test("real role lookup excludes revoked grants and inactive accounts before the 
   const sql = async (strings, ...values) => (await db.query(strings.reduce((query, part, index) => query + (index ? `$${index}` : "") + part, ""), values)).rows;
   const realRepository = await load("src/lib/platform/repository.ts", {
     "server-only": {}, "@/lib/membership/personal-invitation-admission": {}, "@/lib/membership/public-signup-admission": {},
+    "@/lib/membership/registration-repository": {},
     "@/lib/identity/repository": {}, "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/database": { getBillingDatabase: () => sql }, "@/lib/stripe/membership-state": {}, "@/lib/platform/model": {},
   });

@@ -80,6 +80,7 @@ async function fixture(t, { role = "ops_admin", launched = false } = {}) {
   const sql = wrap(db);
   const platform = await load("src/lib/platform/repository.ts", {
     "server-only": {}, "@/lib/membership/personal-invitation-admission": {}, "@/lib/membership/public-signup-admission": {},
+    "@/lib/membership/registration-repository": {},
     "@/lib/identity/repository": {}, "@/lib/platform/calendar-audience-invalidation": {},
     "@/lib/stripe/database": { getBillingDatabase: () => sql }, "@/lib/stripe/membership-state": {}, "@/lib/platform/model": {},
   });

@@ -9,6 +9,7 @@ import {
 } from "@/components/platform/operatorStyles";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { guidanceForMemberSummary } from "@/lib/platform/operator-member-guidance";
+import { operatorRegistrationStatus } from "@/lib/membership/operator-registration-progress";
 import type {
   OperatorMemberDirectoryFilter,
   OperatorMemberDirectoryPage,
@@ -126,6 +127,10 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {directory.members.map((member) => {
           const next = guidanceForMemberSummary(member);
+          const registration = member.registration && member.accountState === "active"
+            && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(next.key)
+            ? operatorRegistrationStatus(member.registration) : null;
+          const registrationNext = registration && (member.registration?.state !== "activated" || member.billingState !== "active");
           return (
           <Link
             className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
@@ -148,14 +153,14 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
               {member.blockName ? <p className="text-black/50">{member.blockName}</p> : null}
             </div>
             <div>
-              <span className="operator-compact-label mb-1 block text-black/50">Billing</span>
-              <StateLabel state={member.billingState} />
+              <span className="operator-compact-label mb-1 block text-black/50">{registration ? "Registration" : "Billing"}</span>
+              {registration ? <><p className={`text-sm font-semibold ${registration.attention ? "text-[var(--color-poster)]" : ""}`}>{registration.label}</p><p className="mt-1 text-xs leading-relaxed text-black/55">{registration.detail}</p></> : <StateLabel state={member.billingState} />}
               <p className="mt-2 text-xs tabular-nums text-black/45">Foundations {member.foundationsProgress}%</p>
               <div className="mt-2"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
             </div>
             <p className="col-span-2 text-xs leading-relaxed text-black/58">
-              <span className="mb-1 block text-xs font-semibold text-black/70">{next.status} · {next.actor}</span>
-              {next.title}
+              <span className="mb-1 block text-xs font-semibold text-black/70">{registrationNext ? `Next · ${registration.actor}` : `${next.status} · ${next.actor}`}</span>
+              {registrationNext ? registration.next : next.title}
               <span className="mt-2 flex min-h-11 items-center font-semibold text-black">Open member record <span aria-hidden="true">→</span></span>
             </p>
           </Link>

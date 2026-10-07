@@ -37,6 +37,7 @@ test("member return locations reject external, nested, encoded and malformed des
 test("member directory records and pagination retain the canonical query, filter and page", () => {
   const stub = { __esModule: true, default: () => null };
   const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
+    "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"),
     "@/components/platform/OperatorProgress": stub,
     "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: ({ memberId }) => React.createElement("span", { "data-avatar-member": memberId }) },
     "@/components/platform/StateLabel": stub,

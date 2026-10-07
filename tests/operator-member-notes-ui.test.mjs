@@ -28,7 +28,7 @@ function load(path, dependencies = {}, fetch = () => { throw new Error("Unexpect
   }, mod, mod.exports, fetch, class FormData { constructor(form) { this.fields = form.fields; } get(key) { return this.fields[key] ?? null; } });
   return mod.exports;
 }
-const Record = load("src/components/platform/OperatorMemberRecord.tsx").default;
+const Record = load("src/components/platform/OperatorMemberRecord.tsx", { "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts") }).default;
 const sample = load("src/lib/platform/ops-preview.ts").getPreviewOpsMemberRecord("preview-01");
 const note = { noteId: "note-one", category: "support", createdAt: "2026-10-05T16:08:00Z", createdBy: "Casey Operator", visibility: "ops_only", body: "Private support context <script>alert(1)</script>" };
 const record = { ...sample, operational: { ...sample.operational, notes: [note] } };

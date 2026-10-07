@@ -12,15 +12,15 @@ import { getMemberSignupPlan } from "@/lib/membership/public-signup-admission";
 import { getMembershipFirstChargeAt } from "@/lib/membership/paid-launch";
 import { isMembershipCohortPrepaymentEnabled } from "@/lib/membership/cohort-prepayment";
 import { createFoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
-import { getCurrentCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
+import { getCoupleMembershipAuthorization, getCurrentCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
 import { requireActivePlatformMemberLink } from "@/lib/platform/repository";
 import { getStripePublishableKey } from "@/lib/platform/config";
 
-export const metadata: Metadata = { title: "Confirm membership billing | Ruined", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Membership checkout | Ruined", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 export default async function MembershipActivationPage({ searchParams }: {
-  searchParams: Promise<{ checkout?: string; view?: string }>;
+  searchParams: Promise<{ checkout?: string; view?: string; coupleAuthorization?: string }>;
 }) {
   const context = await getMembershipPageContext(PREVIEW_MEMBER_ONBOARDING, getMemberOnboarding, "activation");
   if (context.state === "signed_out") redirect("/my/access");
@@ -41,6 +41,16 @@ export default async function MembershipActivationPage({ searchParams }: {
     (context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady);
   const initialPlan = context.viewer ? await getMemberSignupPlan(context.viewer.authUserId) ?? "monthly" : "monthly";
   const platformUser = context.viewer && !preview ? await requireActivePlatformMemberLink(context.viewer) : null;
+  let agreementOnlyReturnHref: string | undefined;
+  if (parameters.coupleAuthorization && !preview) {
+    const authorizationId = parameters.coupleAuthorization;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorizationId)) redirect("/my/couple");
+    const authorization = await getCoupleMembershipAuthorization(authorizationId);
+    if (!authorization || authorization.partnerMemberId !== platformUser?.memberId || authorization.revokedAt || authorization.expiresAt <= new Date()) {
+      return <PlatformUnavailable reason="member_access" />;
+    }
+    agreementOnlyReturnHref = `/my/couple?authorization=${encodeURIComponent(authorizationId)}`;
+  }
   const currentOffer = platformUser ? await getCurrentCommercialMembershipReservation(platformUser.memberId) : null;
   const prepaid = isMembershipCohortPrepaymentEnabled();
   const billingSchedule = currentOffer ? currentOffer.billingSchedule ?? null
@@ -51,10 +61,12 @@ export default async function MembershipActivationPage({ searchParams }: {
     : complimentary ? "Your membership is complimentary. No payment is needed."
       : !registrationReady || !context.data.requiredFieldsComplete ? "Complete your registration before confirming membership billing."
         : !enabled ? "Membership activation is not available yet. Existing billing can still be managed below." : null;
-  return <MembershipEntryProgressProvider initialStage={membershipEntryStage(context.data.requiredFieldsComplete, Boolean(context.data.agreement.acceptanceId))}><main className="mx-auto min-h-[72vh] max-w-3xl px-5 pb-16 pt-10 sm:px-8 sm:pt-16">
+  const initialStage = preview ? parameters.view === "agreement" ? "agreement" : "payment"
+    : membershipEntryStage(context.data.requiredFieldsComplete, Boolean(context.data.agreement.acceptanceId));
+  return <MembershipEntryProgressProvider initialStage={initialStage}><main className="mx-auto min-h-[72vh] max-w-3xl px-5 pb-16 pt-10 sm:px-8 sm:pt-16">
     {completingRegistration ? <MembershipEntryProgress /> : null}
-    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Ruined / {completingRegistration ? "Complete your registration" : "Membership billing"}</p>
-    <h1 className="mt-5 font-[var(--font-display)] text-[clamp(2.8rem,8vw,4.7rem)] leading-[0.98] tracking-[-0.04em]">Your membership.{completingRegistration ? null : <><br />Your confirmation.</>}</h1>
+    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Ruined membership</p>
+    <h1 className="mt-4 font-[var(--font-display)] text-[clamp(2.5rem,7vw,3.75rem)] leading-[1.04] tracking-[-0.04em]">{agreementOnlyReturnHref ? "Your shared membership." : completingRegistration ? "Make it official." : "Your membership."}</h1>
     <MemberActivation
       onboarding={context.data}
       enabled={enabled}
@@ -65,6 +77,7 @@ export default async function MembershipActivationPage({ searchParams }: {
       minimumAge={context.configuration.minimumAge}
       publishableKey={getStripePublishableKey()}
       completingRegistration={completingRegistration}
+      agreementOnlyReturnHref={agreementOnlyReturnHref}
       returnedFromCheckout={parameters.checkout === "returned"}
       preview={preview}
       previewView={preview && ["agreement", "scheduled", "canceled"].includes(parameters.view ?? "") ? parameters.view as "agreement" | "scheduled" | "canceled" : "offer"}

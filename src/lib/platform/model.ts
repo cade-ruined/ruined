@@ -1,3 +1,5 @@
+import type { OperatorRegistrationProgress } from "@/lib/membership/operator-registration-progress";
+
 export type AccountState = "provisional" | "invited" | "active" | "suspended" | "closed";
 export type ArtifactState = "not_started" | "collecting" | "in_production" | "fulfilled";
 export type BillingState = "pending" | "active" | "attention_required" | "ended";
@@ -30,6 +32,7 @@ export type MemberPlatformSnapshot = {
 };
 
 export type OperatorMemberSummary = {
+  registration?: OperatorRegistrationProgress;
   membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   administrativeOnboardingState?: "completed" | "in_progress" | "not_started";
   standingState?: string;

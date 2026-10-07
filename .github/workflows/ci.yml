@@ -19,4 +19,6 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - name: Verify native Stripe consent and paid registration offline
+        run: node scripts/stripe-sandbox-smoke.mjs --self-test --prepaid --native-consent
       - run: npm run build

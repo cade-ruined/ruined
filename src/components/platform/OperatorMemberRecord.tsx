@@ -17,6 +17,7 @@ import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspa
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { guidanceForMemberRecord, memberGuidanceAction } from "@/lib/platform/operator-member-guidance";
+import { operatorRegistrationStatus } from "@/lib/membership/operator-registration-progress";
 import type { OpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
 import { operatorMemberReturnLocation } from "@/lib/platform/operator-return-location";
 
@@ -80,7 +81,14 @@ export default function OperatorMemberRecord({
   const canReadNotes = access.roles.includes("ops_admin");
   const canWriteNote = canReadNotes && access.capabilities.includes("member.note.write");
   const canManageSetup = access.roles.includes("ops_admin");
-  const next = guidanceForMemberRecord(record);
+  const lifecycleNext = guidanceForMemberRecord(record);
+  const registration = access.roles.includes("ops_admin") && membership.registration && header.states.account === "active"
+    && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(lifecycleNext.key)
+    ? operatorRegistrationStatus(membership.registration) : null;
+  const registrationNeedsAction = registration && (membership.registration?.state !== "activated" || header.states.billing !== "active");
+  const next = registrationNeedsAction ? { ...lifecycleNext, key: "registration", title: registration.label,
+    detail: `${registration.detail}. ${registration.next}`, actor: registration.actor,
+    status: "Waiting" as const, target: "membership" as const, placement: "blocked" as const } : lifecycleNext;
   const nextAction = memberGuidanceAction(next, header.memberId, canManageSetup);
   const circlePlacementHref = next.key === "ongoing-review" ? "#journey" : next.placement === "blocked" ? "#membership" : `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#assign-member`;
 
@@ -142,7 +150,7 @@ export default function OperatorMemberRecord({
 
       <section className="scroll-mt-36" id="overview">
         <SectionHeading title="Overview" />
-        <OperatorMemberSetup record={record} />
+        <OperatorMemberSetup record={record} guidance={next} />
         {canManageSetup ? <CirclePlacementRecommendations key={header.memberId} display="member" memberId={header.memberId} preview={preview} previewCircles={previewCircles} /> : null}
         {canManageSetup ? <OperatorMemberReferrals memberId={header.memberId} preview={preview} /> : null}
         {!canManageSetup ? <p className="mt-4 text-sm text-black/60">Review this member’s joining, progress, and Circle below. An Administrator manages Circle placement and operator access.</p> : null}
@@ -154,16 +162,17 @@ export default function OperatorMemberRecord({
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="operator-bento-card">
             <div className="flex items-center justify-between gap-4">
-              <h3 className="ui-heading text-base font-semibold">Joining progress</h3>
+              <h3 className="ui-heading text-base font-semibold">{registration ? "Membership service setup" : "Joining progress"}</h3>
               <StateLabel state={membership.onboarding.state} />
             </div>
+            {registration ? <p className="mt-3 text-sm leading-relaxed text-black/60">Registration and payment status are shown above. These service checkpoints can remain pending until membership begins.</p> : null}
             <p className="mt-3 text-sm leading-relaxed text-black/60">The member completes these steps in their own account. This record is for review, not accepting an agreement or making a payment for them.</p>
             <p className="mt-2 text-sm text-black/60">Sign-in address to share: <a className="inline-flex min-h-11 items-center break-all underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a></p>
             <div className="mt-3 grid gap-2">
               {membership.onboarding.requirements.map((requirement) => (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/25 px-3 py-2" key={requirement.key}>
                   <div>
-                    <p className="text-sm text-black/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? requirement.label : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
+                    <p className="text-sm text-black/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? requirement.label : registration ? "Membership billing active" : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
                     <p className="mt-1 text-xs text-black/38">
                       {requirement.state === "not_required" ? "Not required" : requirement.required ? "Required" : "Collected when needed"}
                     </p>
@@ -225,8 +234,9 @@ export default function OperatorMemberRecord({
           <div className="operator-bento-card">
             <div className="flex items-start justify-between gap-4">
               <h3 className="ui-heading text-base font-semibold">Membership billing</h3>
-              <StateLabel state={header.states.billing} />
+              {registration ? <span className="text-sm font-semibold">{registration.label}</span> : <StateLabel state={header.states.billing} />}
             </div>
+            {registration ? <p className="mt-2 text-sm leading-relaxed text-black/60">{registration.detail}. {registration.next}</p> : null}
             {membership.billing ? (
               <dl className="mt-3 grid gap-2">
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">

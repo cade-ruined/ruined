@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { OpsMemberRegistration } from "@/lib/membership/registration-model";
+import { operatorRegistrationStatus } from "@/lib/membership/operator-registration-progress";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "./operatorStyles";
 
 export type OperatorRegistrationRow = OpsMemberRegistration;
@@ -92,14 +93,20 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
     {message ? <p className="my-4 text-sm" role="status">{message}</p> : null}
     {failures.length ? <div className="my-4 border-l-2 border-[var(--color-poster)] pl-3 text-sm" role="alert"><p>Refresh before trying any unconfirmed changes again.</p><ul>{failures.map(item => <li className="mt-2" key={item}>{item}</li>)}</ul></div> : null}
     <div className="divide-y divide-black/10 border-y border-black/15">
-      {visible.map(row => <article key={row.memberId} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+      {visible.map(row => {
+        const status = operatorRegistrationStatus({ ...row,
+          paymentMethodState: row.requiresPaymentMethod && row.ready ? "saved" : "missing",
+          paymentConfirmed: Boolean(row.initialPayment), billingArranged: false, billingState: "pending", serviceStartsAt: null,
+          ...row.progress, state: row.state, registeredAt: row.registeredAt, ready: row.ready,
+        });
+        return <article key={row.memberId} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1.2fr)_10rem]">
         <div className="flex items-start gap-3">
           {row.state === "registered" && row.ready ? <input className="mt-1 size-5 accent-black" type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.memberId)} disabled={pending} onChange={event => choose(row.memberId, event.target.checked)} /> : <span className="w-5" aria-hidden="true" />}
           <div className="min-w-0"><Link className="inline-flex min-h-8 items-center font-semibold underline underline-offset-4" href={`/ops/members/${row.memberId}?returnTo=%2Fops%2Fregistrations`}>{row.name}</Link><p className="break-all text-sm text-black/55">{row.email}</p></div>
         </div>
-        <div className="text-sm"><p>{row.state === "activated" ? "Profile open" : row.state === "registered" && row.ready ? "Registered · profile closed" : row.profileComplete ? row.requiresPaymentMethod ? "Card needed" : "Registration needs review" : "Information needed"}</p><p className="mt-1 text-xs text-black/55">{row.requiresPaymentMethod ? "Standard registration" : "Complimentary · no card required"}</p>{row.coupleStatus && row.coupleStatus !== "none" ? <p className="mt-2 break-words text-xs leading-5"><strong>{row.coupleStatus === "paired" ? "Couple · confirmed" : "Couple · awaiting confirmation"}</strong><br />{row.couplePartnerEmail}</p> : null}</div>
+        <div className="text-sm"><p className={`font-semibold ${status.attention ? "text-[var(--color-poster)]" : ""}`}>{status.label}</p><p className="mt-1 text-xs leading-relaxed text-black/55">{status.detail}</p><p className="mt-2 text-xs leading-relaxed text-black/65">{status.next}</p>{row.coupleStatus && row.coupleStatus !== "none" ? <p className="mt-2 break-words text-xs leading-5"><strong>{row.coupleStatus === "paired" ? "Couple · confirmed" : "Couple · awaiting confirmation"}</strong><br />{row.couplePartnerEmail}</p> : null}</div>
         <div className="text-xs leading-6 text-black/60"><p>Welcome: {deliveryLabel(row.welcomeStatus)}</p><p>Activation: {deliveryLabel(row.activationEmailStatus)}</p></div>
-      </article>)}
+      </article>; })}
       {!visible.length ? <p className="py-10 text-sm text-black/55">No registrations in this view.</p> : null}
     </div>
     <p className="mt-4 text-xs text-black/45">Showing up to 200 recent registrations. Existing members keep their current access.</p>

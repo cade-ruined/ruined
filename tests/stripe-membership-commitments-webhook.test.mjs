@@ -81,6 +81,10 @@ async function webhookHarness({ verified = true, fee = false, latestInvoice = "i
     "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true, matchesMembershipInvoice: () => true, hasFullMembershipPayment: () => true },
     "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn({}) }) },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({}), isStripeTaxEnabled: () => false },
+    "@/lib/stripe/checkout-consent": { reconcileNativeCheckoutConsent: async (_tx, _stripe, { subscription }) => {
+      assert.equal(subscription.metadata.billing_consent_source, undefined, "these existing billing fixtures retain stored member-approved consent");
+      return true;
+    } },
     "@/lib/stripe/billing-repository": { claimWebhookEvent: async () => "claimed", completeWebhookEvent: async () => {}, recordWebhookFailure: async () => {},
       ensureBillingMember: async () => ({ id: memberId, membershipState: "pending" }), findMemberBySubscription: async () => ({ id: memberId, membershipState: "pending" }),
       hasMembershipCheckoutConsent: async (_, input) => { consents.push(input); return true; }, updateMemberBillingState: async (_, input) => states.push(input),

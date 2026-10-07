@@ -31,7 +31,9 @@ export type MembershipCheckoutReservation = {
   attemptId: string;
   plan: MembershipBillingPlan;
   stripePriceId: string;
-  recurringPaymentAcceptedAt: Date;
+  recurringPaymentAcceptedAt: Date | null;
+  consentSource: "member" | "stripe_checkout";
+  checkoutPreparedAt: Date;
   existingAcceptanceMatches: boolean;
   existingStripeSessionId: string | null;
   memberId: string;
@@ -158,13 +160,13 @@ export async function findBillingMemberById(memberId: string): Promise<BillingMe
 }
 
 export async function getMembershipCheckoutForReservation(reservationId: string, memberId: string): Promise<{
-  id: string; status: string; stripeSessionId: string | null;
+  id: string; status: string; stripeSessionId: string | null; consentSource: "member" | "stripe_checkout";
 } | null> {
   const sql = getBillingDatabase();
-  const [row] = await sql<Array<{ id: string; status: string; stripe_session_id: string | null }>>`
-    select id,status,stripe_session_id from stripe_checkout_attempts
+  const [row] = await sql<Array<{ id: string; status: string; stripe_session_id: string | null; billing_consent_source: "member" | "stripe_checkout" }>>`
+    select id,status,stripe_session_id,billing_consent_source from stripe_checkout_attempts
     where commercial_reservation_id=${reservationId}::uuid and member_id=${memberId}::uuid limit 1`;
-  return row ? { id: row.id,status: row.status,stripeSessionId: row.stripe_session_id } : null;
+  return row ? { id: row.id,status: row.status,stripeSessionId: row.stripe_session_id,consentSource: row.billing_consent_source } : null;
 }
 
 export async function reserveMembershipCheckout({
@@ -176,6 +178,7 @@ export async function reserveMembershipCheckout({
   stripePriceId,
   paidAgreementVersion,
   commercialReservationId,
+  consentSource = "member",
 }: {
   acceptanceId: string;
   attemptId: string;
@@ -185,6 +188,7 @@ export async function reserveMembershipCheckout({
   stripePriceId: string;
   paidAgreementVersion: string;
   commercialReservationId: string;
+  consentSource?: "member" | "stripe_checkout";
 }): Promise<MembershipCheckoutReservation> {
   if (!commercialReservationId || attemptId !== commercialReservationId) throw new MembershipCheckoutConflictError();
   const sql = getBillingDatabase();
@@ -336,13 +340,15 @@ export async function reserveMembershipCheckout({
         first_charge_at: Date | null;
         billing_schedule: FoundationsBillingSchedule | null;
         recurring_payment_accepted_at: Date | null;
+        billing_consent_source: "member" | "stripe_checkout";
+        checkout_prepared_at: Date;
         commercial_reservation_id: string | null;
         offer_id: string | null;
         recurring_payment_terms: { version?: string } | null;
       }>
     >`
       select
-        billing_plan, stripe_price_id, expires_at, first_charge_at, billing_schedule, recurring_payment_accepted_at,
+        billing_plan, stripe_price_id, expires_at, first_charge_at, billing_schedule, recurring_payment_accepted_at, billing_consent_source, checkout_prepared_at,
         commercial_reservation_id, offer_id, recurring_payment_terms,
         id,
         stripe_session_id,
@@ -365,7 +371,7 @@ export async function reserveMembershipCheckout({
       // Never resume an older policy's session under newly displayed v2 consent.
       if (existingAttempt.commercial_reservation_id !== commercial.id || existingAttempt.offer_id !== offer.id ||
         existingAttempt.recurring_payment_terms?.version !== "membership-billing-v2") throw new MembershipCheckoutConflictError();
-      if (!isMembershipBillingPlan(existingAttempt.billing_plan) || !existingAttempt.stripe_price_id || !existingAttempt.recurring_payment_accepted_at) {
+      if (!isMembershipBillingPlan(existingAttempt.billing_plan) || !existingAttempt.stripe_price_id || (!existingAttempt.recurring_payment_accepted_at && existingAttempt.billing_consent_source !== "stripe_checkout")) {
         throw new MembershipCheckoutConflictError();
       }
       if (existingAttempt.billing_plan !== plan && !existingAttempt.stripe_session_id) {
@@ -388,6 +394,8 @@ export async function reserveMembershipCheckout({
         plan: existingAttempt.billing_plan,
         stripePriceId: existingAttempt.stripe_price_id,
         recurringPaymentAcceptedAt: existingAttempt.recurring_payment_accepted_at,
+        consentSource: existingAttempt.billing_consent_source,
+        checkoutPreparedAt: existingAttempt.checkout_prepared_at,
         existingAcceptanceMatches:
           existingAttempt.agreement_acceptance_id === acceptance.id &&
           existingAttempt.agreement_version === agreementVersion,
@@ -416,7 +424,7 @@ export async function reserveMembershipCheckout({
       where member_id = ${member.id}::uuid and billing_plan is distinct from ${plan}
     `;
 
-    const [{ recurring_payment_accepted_at: recurringPaymentAcceptedAt }] = await tx<Array<{ recurring_payment_accepted_at: Date }>>`
+    const [{ recurring_payment_accepted_at: recurringPaymentAcceptedAt, checkout_prepared_at: checkoutPreparedAt }] = await tx<Array<{ recurring_payment_accepted_at: Date | null; checkout_prepared_at: Date }>>`
       insert into stripe_checkout_attempts (
         id,
         member_id,
@@ -428,6 +436,7 @@ export async function reserveMembershipCheckout({
         billing_plan,
         stripe_price_id,
         recurring_payment_accepted_at,
+        billing_consent_source,
         billing_consent_auth_user_id,
         recurring_payment_terms,
         commercial_reservation_id,
@@ -445,7 +454,8 @@ export async function reserveMembershipCheckout({
         ${acceptance.age_attested_at},
         ${plan},
         ${stripePriceId},
-        statement_timestamp(),
+        case when ${consentSource}='stripe_checkout' then null else statement_timestamp() end,
+        ${consentSource},
         ${authUserId}::uuid,
         ${tx.json({ version: "membership-billing-v2", ...offer, firstPayment: commercial.billingSchedule ? "prepaid" : commercial.firstChargeAt ? "scheduled" : "upfront", billingSchedule: commercial.billingSchedule ?? null, firstChargeAt: commercial.firstChargeAt?.toISOString() ?? null, recurring: true,
           offerId: offer.id, buyoutCap: 150_000, buyoutReplacesRemainingInstallments: true,
@@ -457,7 +467,7 @@ export async function reserveMembershipCheckout({
         ${commercial.firstChargeAt ?? null},
         ${commercial.billingSchedule ? tx.json(JSON.parse(JSON.stringify(commercial.billingSchedule))) : null}::jsonb,
         ${checkoutExpiresAt}
-      ) returning recurring_payment_accepted_at
+      ) returning recurring_payment_accepted_at, checkout_prepared_at
     `;
 
     return {
@@ -471,6 +481,8 @@ export async function reserveMembershipCheckout({
       plan,
       stripePriceId,
       recurringPaymentAcceptedAt,
+      consentSource,
+      checkoutPreparedAt,
       existingAcceptanceMatches: true,
       existingStripeSessionId: null,
       memberId: member.id,
@@ -845,9 +857,11 @@ export async function reconcileCheckoutAttempt(
       expires_at = ${input.expiresAt},
       status = ${input.status},
       stripe_session_id = ${input.sessionId},
-      stripe_subscription_id = ${input.subscriptionId},
+      stripe_subscription_id = coalesce(${input.subscriptionId},stripe_subscription_id),
       updated_at = now()
     where id = ${input.attemptId}
+      and (stripe_session_id is null or stripe_session_id=${input.sessionId})
+      and (stripe_subscription_id is null or ${input.subscriptionId}::text is null or stripe_subscription_id=${input.subscriptionId})
       and (
         ${input.acceptanceId}::uuid is null
         or agreement_acceptance_id = ${input.acceptanceId}::uuid
