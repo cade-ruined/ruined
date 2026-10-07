@@ -150,7 +150,7 @@ test("paid registration rows distinguish payment from complimentary and preserve
   const f = await uiFixture({ rows: [row(memberA, { requiresInitialPayment: true, requiresPaymentMethod: false, progress })] });
   assert.match(text(f.render()), /Payment received/);
   assert.match(text(f.render()), /Registration complete · profile held · service starts Nov 5/);
-  assert.doesNotMatch(text(f.render()), /Complimentary|First payment needed|Card needed/);
+  assert.doesNotMatch(text(nodes(f.render()).find(node => node.type === "article")), /Complimentary|First payment needed|Card needed/);
   assert.deepEqual(f.calls, []);
 });
 
@@ -219,4 +219,49 @@ test("operations registration page is admin-only, and preview never reads live r
   current = { state: "preview", viewer: null, dashboard: {} }; const preview = nodes(await Page()).find(node => node.type === View);
   assert.equal(preview.props.preview, true); assert.ok(preview.props.rows.every(item => item.email.endsWith("example.test"))); assert.equal(reads.length, 1);
   current = { state: "signed_out" }; await assert.rejects(Page, error => error.href === "/ops/access");
+});
+
+test("legacy paid and unpaid registrations stay distinct in the profile access queue", async () => {
+  const progress = { state: "registered", registeredAt: "2026-10-01T18:00:00Z", profileComplete: true, ready: true,
+    requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: "saved_card", emailVerified: true,
+    paymentMethodState: "saved", paidCheckoutAvailable: true, paymentConfirmed: true, billingArranged: true,
+    billingState: "pending", serviceStartsAt: "2026-11-05T22:00:00Z" };
+  const f = await uiFixture({ rows: [row(memberA, { progress }), row(memberB, { progress: { ...progress, paymentConfirmed: false, billingArranged: false } })] });
+  assert.match(text(f.render()), /Awaiting profile access/);
+  assert.doesNotMatch(text(f.render()), /Ready to open/);
+  const articles=nodes(f.render()).filter(node=>node.type==="article");
+  assert.match(text(articles[0]), /Payment received/);
+  assert.doesNotMatch(text(articles[0]), /First payment needed|Card needed/);
+  assert.match(text(articles[1]), /First payment needed/);
+  assert.match(text(articles[1]), /Card saved · not charged/);
+  assert.deepEqual(f.calls,[]);
+});
+
+test("payment filters narrow the current access queue without treating saved cards or arrangements as paid", async () => {
+  const progress = { state: "registered", registeredAt: "2026-10-01T18:00:00Z", profileComplete: true, ready: true,
+    requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: "saved_card", emailVerified: true,
+    paymentMethodState: "saved", paidCheckoutAvailable: true, paymentConfirmed: false, billingArranged: false,
+    billingState: "pending", serviceStartsAt: null };
+  const f=await uiFixture({rows:[
+    row(memberA,{name:"Saved only",progress}),
+    row(memberB,{name:"Paid held",progress:{...progress,paymentConfirmed:true}}),
+    row("00000000-0000-4000-8000-000000000103",{name:"Complimentary held",requiresPaymentMethod:false,progress:{...progress,requiresPaymentMethod:false,completionBasis:"complimentary"}}),
+    row("00000000-0000-4000-8000-000000000104",{name:"Arranged only",progress:{...progress,billingArranged:true}}),
+    row("00000000-0000-4000-8000-000000000105",{name:"Needs details",state:"collecting",registeredAt:null,ready:false,profileComplete:false,progress:{...progress,profileComplete:false}}),
+    row("00000000-0000-4000-8000-000000000106",{name:"Paid open",state:"activated",progress:{...progress,paymentConfirmed:true}}),
+  ]});
+  const shown=()=>nodes(f.render()).filter(node=>node.type==="article").map(text).join("\n");
+  assert.equal(f.button("All statuses 4").props["aria-pressed"],true);
+  await f.click("Paid 1");assert.match(shown(),/Paid held/);assert.doesNotMatch(shown(),/Saved only|Paid open|Arranged only/);
+  await f.click("Needs payment 1");assert.match(shown(),/Saved only/);assert.doesNotMatch(shown(),/Paid held|Arranged only/);
+  await f.click("Complimentary 1");assert.match(shown(),/Complimentary held/);
+  await f.click("Needs review 1");assert.match(shown(),/Arranged only/);assert.doesNotMatch(shown(),/Paid held/);
+  await f.click("All 6");await f.click("Needs information 1");assert.match(shown(),/Needs details/);
+  await f.click("Paid 2");assert.match(shown(),/Paid held/);assert.match(shown(),/Paid open/);
+  await f.click("Select ready registrations");await f.click("Review 1 profile");
+  const review=nodes(f.render()).find(node=>node.props["aria-labelledby"]==="profile-release-review");
+  assert.match(text(review),/Paid held/);assert.doesNotMatch(text(review),/Paid open|Saved only/);
+  await f.click("Needs payment 1");assert.equal(f.button("Open profiles & queue email"),undefined);
+  assert.equal(f.select("Saved only").props.checked,false);
+  assert.deepEqual(f.calls,[],"Filtering or selecting never opens access or sends messages");
 });

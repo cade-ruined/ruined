@@ -215,6 +215,7 @@ test("payment-method page uses entry access without a paid agreement and ignores
     "next/link": Link, "next/navigation": { redirect: href => { throw Object.assign(Error("redirect"), { href }); } },
     "next/headers": { cookies: async () => ({ get: () => undefined }) },
     "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
+    "@/lib/membership/registration-routing": await load("src/lib/membership/registration-routing.ts"),
     "@/lib/membership/preview-scenarios": { memberRegistrationPreview: () => null, memberPreviewScenario: () => "active" },
     "@/components/membership/MemberPaymentMethod": Panel,
     "@/components/membership/MemberSettingsHeader": Stub, "@/components/platform/PlatformUnavailable": Stub,

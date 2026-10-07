@@ -19,6 +19,7 @@ import { getMemberRegistration } from "@/lib/membership/registration-repository"
 import { getMemberRegistrationLegalNotice } from "@/lib/membership/registration-legal";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberRegistrationPreview } from "@/lib/membership/preview-scenarios";
 import { getStripePublishableKey } from "@/lib/platform/config";
+import { memberRegistrationDestination, registrationPaymentDestination } from "@/lib/membership/registration-routing";
 
 export const metadata: Metadata = {
   title: "Enter Ruined Membership",
@@ -39,6 +40,8 @@ export default async function JoinMyRuinedPage() {
     ? await getMemberRegistration(context.viewer.authUserId)
     : context.state === "preview" ? memberRegistrationPreview(memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value)) : null;
   const registrationOnly = Boolean(registration && registration.state !== "activated");
+  const paidCheckoutAvailable = context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady;
+  const registrationNextHref = registration ? registrationPaymentDestination(registration, paidCheckoutAvailable) : undefined;
   const registrationLegalNotice = registrationOnly && context.state === "authenticated" && context.viewer
     ? await getMemberRegistrationLegalNotice(context.viewer.authUserId)
     : null;
@@ -46,9 +49,8 @@ export default async function JoinMyRuinedPage() {
     ? { ...context.data, requiredFieldsComplete: false }
     : context.data;
   if (context.state === "authenticated" && registrationOnly && registration && !registrationLegalNotice) {
-    if (registration.state === "registered" && registration.ready) redirect("/my/registered");
-    if (registration.profileComplete && registration.requiresInitialPayment && !registration.ready) redirect("/my/activate");
-    if (registration.profileComplete) redirect(registration.requiresPaymentMethod && !registration.ready ? "/my/payment-method" : "/my/registered");
+    const destination = memberRegistrationDestination(registration, paidCheckoutAvailable);
+    if (destination && destination !== "/my/join") redirect(destination);
   }
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
   const sharedMembership = context.data.membershipFunding === "couple" && context.data.billingState === "active";
@@ -101,13 +103,14 @@ export default async function JoinMyRuinedPage() {
         </header>
 
         <section className="member-entry-fields" aria-label="Membership entry">
-          {!prelaunch || registration?.requiresInitialPayment ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">{registrationOnly ? "Registration / Your details" : "Your profile / Before launch"}</p>}
+          {!prelaunch || registrationNextHref === "/my/activate" ? <MembershipEntryProgress complimentary={complimentary || sharedMembership} /> : <p className="py-4 text-xs uppercase tracking-[0.12em] text-[var(--member-muted)]">{registrationOnly ? "Registration / Your details" : "Your profile / Before launch"}</p>}
           <JoinForm
             checkoutDisabledReason={checkoutDisabledReason}
             checkoutEnabled={checkoutEnabled}
             registrationOnly={registrationOnly}
             registrationRequiresPaymentMethod={registration?.requiresPaymentMethod ?? true}
             registrationRequiresInitialPayment={registration?.requiresInitialPayment ?? false}
+            registrationNextHref={registrationNextHref}
             registrationLegalNotice={registrationLegalNotice}
             disabledReason={disabledReason}
             enabled={writable}

@@ -12,7 +12,7 @@ export async function GET() {
     if (!viewer) return response({ error: "Sign in to check registration." }, 401);
     const registration = await getMemberRegistration(viewer.authUserId);
     return response({ paymentConfirmed: Boolean(registration?.ready && registration.registeredAt &&
-      registration.completionBasis === "paid_membership" && registration.initialPayment) });
+      registration.initialPayment) });
   } catch (error) {
     if (error instanceof MemberRegistrationError) return response({ error: "Registration is unavailable for this account." }, error.status);
     return response({ error: "Registration could not be checked. Please try again." }, 503);

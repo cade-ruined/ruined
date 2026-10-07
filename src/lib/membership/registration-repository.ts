@@ -5,6 +5,7 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import type { MemberRegistrationSnapshot, OpsMemberRegistration, RegistrationFoundingPricing, RegistrationInitialPayment } from "./registration-model";
 import type { OperatorRegistrationProgress } from "./operator-registration-progress";
+import { memberRegistrationDestination } from "./registration-routing";
 
 export class MemberRegistrationError extends Error {
   constructor(readonly status: number, message: string) {
@@ -92,11 +93,8 @@ export async function getMemberRegistration(authUserId: string): Promise<MemberR
 
 export async function getMemberRegistrationDestination(authUserId: string): Promise<string | null> {
   const registration = await getMemberRegistration(authUserId);
-  if (!registration || registration.state === "activated") return null;
-  if (!registration.profileComplete) return "/my/join";
-  if (!registration.ready && registration.requiresInitialPayment) return "/my/activate";
-  if (!registration.ready && registration.requiresPaymentMethod) return "/my/payment-method";
-  return "/my/registered";
+  const configuration = getPlatformConfiguration();
+  return memberRegistrationDestination(registration, configuration.stripeActivationReady || configuration.stripeCheckoutReady);
 }
 
 /** Caller holds funding and member locks, in that order. No billing state changes. */
@@ -112,8 +110,9 @@ export async function reconcileMemberRegistration(tx: TransactionSql, memberId: 
   const [completed] = await tx<Array<{ member_id: string }>>`update member_registration_access registration
     set registered_at=clock_timestamp(),
       completion_basis=case when private.ruined_member_has_complimentary_funding(registration.member_id)
-        or private.ruined_member_has_operator_funding(registration.member_id) then 'complimentary' when registration.requires_initial_payment then 'paid_membership' else 'saved_card' end,
-      payment_reservation_id=case when registration.requires_initial_payment and not (private.ruined_member_has_complimentary_funding(registration.member_id)
+        or private.ruined_member_has_operator_funding(registration.member_id) then 'complimentary'
+        when private.ruined_member_paid_reservation(registration.member_id) is not null then 'paid_membership' else 'saved_card' end,
+      payment_reservation_id=case when not (private.ruined_member_has_complimentary_funding(registration.member_id)
         or private.ruined_member_has_operator_funding(registration.member_id)) then private.ruined_registration_paid_reservation(registration.member_id) end,
       payment_setup_attempt_id=(select consent_attempt_id from member_payment_method_accounts account
         where account.member_id=registration.member_id and account.stripe_account_id=registration.payment_setup_account_id
@@ -178,8 +177,10 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
   if (!memberIds.length) return new Map();
   if (memberIds.length > 200) throw new MemberRegistrationError(400, "Choose up to 200 members.");
   memberIds.forEach(validId);
+  const configuration = getPlatformConfiguration();
+  const paidCheckoutAvailable = configuration.stripeActivationReady || configuration.stripeCheckoutReady;
   const rows = await tx<Array<RegistrationRow & { email_verified: boolean; card_saved: boolean; card_removed: boolean;
-    payment_confirmed: boolean; billing_arranged: boolean; checkout_started: boolean; billing_state: string; service_starts_at: Date | string | null }>>`
+    payment_confirmed: boolean; payment_needs_review: boolean; billing_arranged: boolean; checkout_started: boolean; billing_state: string; service_starts_at: Date | string | null }>>`
     select registration.*,
       (private.ruined_member_has_complimentary_funding(member.id) or private.ruined_member_has_operator_funding(member.id)) as complimentary,
       (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(member.id)
@@ -196,6 +197,10 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
         or exists(select 1 from member_payment_method_detachments detached where detached.stripe_account_id=method.stripe_account_id
           and detached.livemode=method.livemode and detached.stripe_payment_method_id=method.stripe_payment_method_id)) as card_removed,
       paid.reservation_id is not null as payment_confirmed,paid.service_starts_at,
+      (paid.reservation_id is null and exists(select 1 from membership_commercial_participants participant
+        join membership_commercial_reservations reservation on reservation.id=participant.reservation_id and reservation.status in ('reserved','activated')
+        join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id
+        where participant.member_id=member.id and participant.person_id=member.person_id)) as payment_needs_review,
       exists(select 1 from membership_commercial_participants participant
         join membership_commercial_reservations reservation on reservation.id=participant.reservation_id and reservation.status='reserved'
         join stripe_checkout_attempts attempt on attempt.commercial_reservation_id=reservation.id and attempt.status in ('creating','open','completed')
@@ -216,7 +221,7 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
       and method.stripe_account_id=registration.payment_setup_account_id and method.livemode=registration.payment_setup_livemode
     left join member_payment_method_setup_attempts setup on setup.id=method.consent_attempt_id and setup.member_id=method.member_id
       and setup.stripe_account_id=method.stripe_account_id and setup.livemode=method.livemode
-    left join stripe_membership_prepaid_proofs paid on paid.reservation_id=private.ruined_registration_paid_reservation(member.id)
+    left join stripe_membership_prepaid_proofs paid on paid.reservation_id=private.ruined_member_paid_reservation(member.id)
     where member.id=any(${memberIds}::uuid[])`;
   return new Map(rows.map(row => [row.member_id, {
     state: row.profile_activated_at ? "activated" : row.registered_at ? "registered" : "collecting",
@@ -224,7 +229,7 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
     requiresInitialPayment: !row.complimentary && row.requires_initial_payment,
     requiresPaymentMethod: !row.complimentary && !row.requires_initial_payment, completionBasis: row.completion_basis,
     emailVerified: row.email_verified, paymentMethodState: row.card_saved ? "saved" : row.card_removed ? "removed" : "missing",
-    paymentConfirmed: row.payment_confirmed, billingArranged: row.billing_arranged, checkoutStarted: row.checkout_started, billingState: row.billing_state,
+    paymentConfirmed: row.payment_confirmed, paidCheckoutAvailable, paymentNeedsReview: row.payment_needs_review, billingArranged: row.billing_arranged, checkoutStarted: row.checkout_started, billingState: row.billing_state,
     serviceStartsAt: iso(row.service_starts_at),
   }]));
 }
@@ -301,7 +306,7 @@ export async function reconcilePaidMemberRegistrations(subscriptionId: string): 
       from membership_commercial_participants participant
       join membership_commercial_reservations reservation on reservation.id=participant.reservation_id
       join member_registration_access registration on registration.member_id=participant.member_id
-      where reservation.stripe_subscription_id=${subscriptionId} and registration.requires_initial_payment
+      where reservation.stripe_subscription_id=${subscriptionId}
       order by participant.member_id`;
     for (const participant of participants) await tx`select private.ruined_lock_member_complimentary_funding(${participant.member_id}::uuid)`;
     for (const participant of participants) await tx`select id from ruined_members where id=${participant.member_id}::uuid for update`;

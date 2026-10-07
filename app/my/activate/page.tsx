@@ -15,6 +15,7 @@ import { createFoundationsBillingSchedule } from "@/lib/membership/foundations-s
 import { getCoupleMembershipAuthorization, getCurrentCommercialMembershipReservation } from "@/lib/membership/commercial-repository";
 import { requireActivePlatformMemberLink } from "@/lib/platform/repository";
 import { getStripePublishableKey } from "@/lib/platform/config";
+import { canReviewRegistrationBilling } from "@/lib/membership/registration-routing";
 
 export const metadata: Metadata = { title: "Membership checkout | Ruined", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -31,14 +32,17 @@ export default async function MembershipActivationPage({ searchParams }: {
   const registration = context.viewer ? await getMemberRegistration(context.viewer.authUserId) : null;
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
   const completingRegistration = preview ? context.configuration.membershipPrepaymentRequired :
-    Boolean(registration?.requiresInitialPayment && registration.state !== "activated" &&
+    Boolean(registration && (registration.requiresInitialPayment || registration.requiresPaymentMethod) && registration.state !== "activated" &&
       (!registration.registeredAt || parameters.checkout === "returned"));
   if (!preview && completingRegistration && !registration?.profileComplete) redirect("/my/join");
-  const registrationReady = !registration || registration.state === "activated" || registration.ready || (registration.requiresInitialPayment && registration.profileComplete);
+  const paidCheckoutAvailable = context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady;
+  if (!preview && registration?.state !== "activated" && registration?.profileComplete &&
+    !registration.ready && registration.requiresPaymentMethod && !paidCheckoutAvailable && parameters.checkout !== "returned") redirect("/my/payment-method");
+  const registrationReady = canReviewRegistrationBilling(registration, paidCheckoutAvailable);
   const expectedAgreement = process.env.STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION?.trim();
   const agreementReady = preview || Boolean(expectedAgreement && `ruined_membership-v${context.data.agreement.version}` === expectedAgreement);
   const enabled = !preview && !complimentary && registrationReady && context.data.requiredFieldsComplete && agreementReady &&
-    (context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady);
+    paidCheckoutAvailable;
   const initialPlan = context.viewer ? await getMemberSignupPlan(context.viewer.authUserId) ?? "monthly" : "monthly";
   const platformUser = context.viewer && !preview ? await requireActivePlatformMemberLink(context.viewer) : null;
   let agreementOnlyReturnHref: string | undefined;

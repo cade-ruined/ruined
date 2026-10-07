@@ -53,3 +53,32 @@ test("a subscription or billing arrangement alone is never payment received", ()
   assert.equal(checkout.label, "Checkout started");
   assert.match(checkout.next, /checks confirmation before another attempt/);
 });
+
+test("live paid checkout replaces the legacy save-card prerequisite without calling a card payment", () => {
+  for (const paymentMethodState of ["missing", "removed", "saved"]) {
+    const unpaid = status(registration({ requiresInitialPayment: false, requiresPaymentMethod: true,
+      completionBasis: "saved_card", registeredAt: "2026-10-01T18:00:00Z", state: "registered",
+      ready: paymentMethodState === "saved", paymentMethodState, paidCheckoutAvailable: true }));
+    assert.equal(unpaid.label, "First payment needed");
+    assert.match(unpaid.next, /\/my\/activate/);
+    assert.match(unpaid.next, /No separate card-saving step/);
+    assert.doesNotMatch(unpaid.label, /Payment received|Complimentary|Card needed/);
+    if(paymentMethodState === "saved") assert.equal(unpaid.detail, "Card saved · not charged");
+  }
+});
+
+test("legacy completed registration that later pays shows received despite its saved-card completion basis", () => {
+  const paid = status(registration({ requiresInitialPayment: false, requiresPaymentMethod: true,
+    completionBasis: "saved_card", registeredAt: "2026-10-01T18:00:00Z", state: "registered", ready: true,
+    paymentMethodState: "removed", paymentConfirmed: true, billingArranged: true, paidCheckoutAvailable: true }));
+  assert.equal(paid.label,"Payment received");
+  assert.match(paid.detail,/profile held/);
+  assert.equal(paid.next,"Operator opens the profile when ready.");
+});
+
+test("uncertain legacy proof requires review before asking for another charge", () => {
+  const uncertain = status(registration({ requiresInitialPayment: false, requiresPaymentMethod: true,
+    completionBasis: "saved_card", paidCheckoutAvailable: true, paymentNeedsReview: true, billingArranged: true }));
+  assert.equal(uncertain.label, "Payment needs review");
+  assert.match(uncertain.next, /refund before asking the member to pay again/);
+});

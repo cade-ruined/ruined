@@ -45,6 +45,7 @@ async function pageFixture(path, initialRegistration, initialContext = context()
       return currentContext;
     } },
     "@/lib/membership/registration-repository": { getMemberRegistration: async () => currentRegistration },
+    "@/lib/membership/registration-routing": await load("src/lib/membership/registration-routing.ts"),
     "@/lib/membership/registration-legal": { getMemberRegistrationLegalNotice: async () => currentLegalNotice },
     "@/lib/membership/preview-scenarios": previewDeps,
     "@/lib/membership/repository": { getMemberOnboarding: () => assert.fail("No live database reads") },
@@ -54,24 +55,25 @@ async function pageFixture(path, initialRegistration, initialContext = context()
     "@/lib/membership/photos": { isMemberPhotoStorageConfigured: () => false },
     "@/lib/platform/config": { getStripePublishableKey: () => null },
   })).default;
-  return { page: () => page({ searchParams: Promise.resolve({}) }), Form, Payment, Receipt, Progress,
+  return { page: (query = {}) => page({ searchParams: Promise.resolve(query) }), Form, Payment, Receipt, Progress,
     setRegistration: value => { currentRegistration = value; }, setContext: value => { currentContext = value; }, setLegalNotice: value => { currentLegalNotice = value; } };
 }
 
-test("held join ignores live checkout availability and offers registration details without agreement progress", async () => {
+test("held join shows the details-agreement-payment journey when paid checkout is available", async () => {
   const f = await pageFixture("app/my/join/page.tsx", registration());
   const tree = await f.page(), form = nodes(tree).find(node => node.type === f.Form);
   assert.equal(form.props.registrationOnly, true);
   assert.equal(form.props.checkoutEnabled, false);
   assert.equal(form.props.registrationRequiresPaymentMethod, true);
-  assert.equal(nodes(tree).some(node => node.type === f.Progress), false);
+  assert.equal(nodes(tree).some(node => node.type === f.Progress), true);
+  assert.equal(form.props.registrationNextHref, "/my/activate");
   f.setRegistration(registration({ requiresPaymentMethod: false }));
   assert.equal(nodes(await f.page()).find(node => node.type === f.Form).props.registrationRequiresPaymentMethod, false);
 });
 
-test("returning registrations resume card or receipt while existing activated accounts keep home access", async () => {
+test("returning registrations resume checkout or receipt while existing activated accounts keep home access", async () => {
   const f = await pageFixture("app/my/join/page.tsx", registration({ profileComplete: true }));
-  await assert.rejects(f.page, error => error.href === "/my/payment-method");
+  await assert.rejects(f.page, error => error.href === "/my/activate");
   f.setRegistration(registration({ state: "registered", profileComplete: true }));
   await assert.rejects(f.page, error => error.href === "/my/registered");
   f.setRegistration(null); f.setContext(context({ data: onboarding({ state: "completed", billingState: "active" }) }));
@@ -96,7 +98,7 @@ test("registration legal acknowledgment keeps completed details on intake until 
     assert.equal(form.props.initialOnboarding.requiredFieldsComplete, false);
   }
   f.setLegalNotice(null);
-  await assert.rejects(f.page, error => error.href === "/my/payment-method");
+  await assert.rejects(f.page, error => error.href === "/my/activate");
 });
 
 test("card page sends incomplete details back to entry and exempts complimentary registration", async () => {
@@ -106,7 +108,8 @@ test("card page sends incomplete details back to entry and exempts complimentary
   await assert.rejects(f.page, error => error.href === "/my/registered");
   f.setRegistration(registration({ profileComplete: true }));
   f.setContext(context({ data: onboarding({ requiredFieldsComplete: true }) }));
-  const tree = await f.page();
+  await assert.rejects(f.page, error => error.href === "/my/activate");
+  const tree = await f.page({ setup: "returned" });
   assert.equal(nodes(tree).find(node => node.type === f.Payment).props.registrationOnly, true);
   assert.equal(nodes(tree).some(node => node.props.href === "/my"), false);
 });
@@ -115,7 +118,7 @@ test("receipt requires registered server state and cannot grant access from a UR
   const f = await pageFixture("app/my/registered/page.tsx", registration());
   await assert.rejects(f.page, error => error.href === "/my/join");
   f.setRegistration(registration({ profileComplete: true }));
-  await assert.rejects(f.page, error => error.href === "/my/payment-method");
+  await assert.rejects(f.page, error => error.href === "/my/activate");
   f.setRegistration(registration({ state: "registered", profileComplete: true }));
   const tree = await f.page();
   assert.equal(tree.type, f.Receipt); assert.equal(tree.props.email, "new@example.test"); assert.equal(tree.props.preview, false);
@@ -123,7 +126,7 @@ test("receipt requires registered server state and cannot grant access from a UR
   f.setRegistration(registration({state:"registered",profileComplete:true,foundingPricing}));
   assert.deepEqual((await f.page()).props.foundingPricing,foundingPricing,"Use the server's persisted rate on the receipt");
   f.setRegistration(registration({ state: "registered", profileComplete: true, ready: false }));
-  await assert.rejects(f.page, error => error.href === "/my/payment-method");
+  await assert.rejects(f.page, error => error.href === "/my/activate");
   f.setRegistration(registration({ state: "activated", profileComplete: true }));
   await assert.rejects(f.page, error => error.href === "/my");
   f.setContext(context({ state: "signed_out", viewer: null }));
@@ -491,4 +494,29 @@ test("paid registration receipt uses confirmed amount and cohort without claimin
   assert.doesNotMatch(withTax, /\$375 paid/, "Never round a confirmed tax-inclusive payment");
   const partner = renderToStaticMarkup(React.createElement(Receipt, {...props,initialPayment:{...props.initialPayment,offerId:"couple_monthly",isPayer:false}}));
   assert.match(partner,/Your shared membership is paid/); assert.doesNotMatch(partner, /\$370 paid/);
+});
+
+test("historical details proceed directly to paid checkout without changing the stored no-charge requirement", async () => {
+  const f = await detailsFixture(true, { registrationRequiresInitialPayment: false, registrationNextHref: "/my/activate" });
+  assert.match(renderToStaticMarkup(f.render()), /Continue to agreement &amp; payment/);
+  await f.submit();
+  assert.deepEqual(f.redirects, ["/my/activate"]);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].url, "/api/my/onboarding");
+  assert.equal("requiresInitialPayment" in f.calls[0].body, false);
+});
+
+test("historical registration pages retain the no-charge card step while paid checkout is closed", async () => {
+  const closed = context({ configuration: { mode: "connected", stripeCheckoutReady: false, stripeActivationReady: false, stripePaymentSetupReady: true, minimumAge: 18 }, data: onboarding({ requiredFieldsComplete: true }) });
+  const registrationWithDetails = registration({ profileComplete: true });
+  const join = await pageFixture("app/my/join/page.tsx", registrationWithDetails, closed);
+  await assert.rejects(join.page, error => error.href === "/my/payment-method");
+  const card = await pageFixture("app/my/payment-method/page.tsx", registrationWithDetails, closed);
+  assert.equal(nodes(await card.page()).some(node => node.type === card.Payment), true);
+});
+
+test("saved-card registrations with verified payment display the paid receipt without another payment prompt", async () => {
+  const initialPayment = { amountPaid: 34900, installmentDues: 34900, currency: "usd", offerId: "founding_individual_monthly", plan: "monthly", isPayer: true, billingSchedule: {}, paidAt: "2026-10-07T18:00:00Z" };
+  const f = await pageFixture("app/my/registered/page.tsx", registration({ state: "registered", profileComplete: true, completionBasis: "saved_card", initialPayment }));
+  assert.deepEqual((await f.page()).props.initialPayment, initialPayment);
 });

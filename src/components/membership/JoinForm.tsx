@@ -168,6 +168,7 @@ export default function JoinForm({
   registrationOnly = false,
   registrationRequiresPaymentMethod = true,
   registrationRequiresInitialPayment = false,
+  registrationNextHref,
   registrationLegalNotice = null,
   preview = false,
   activationOnly = false,
@@ -188,6 +189,7 @@ export default function JoinForm({
   registrationOnly?: boolean;
   registrationRequiresPaymentMethod?: boolean;
   registrationRequiresInitialPayment?: boolean;
+  registrationNextHref?: "/my/activate" | "/my/payment-method" | "/my/registered";
   registrationLegalNotice?: RegistrationLegalNotice | null;
   preview?: boolean;
   activationOnly?: boolean;
@@ -203,6 +205,8 @@ export default function JoinForm({
   const registrationCouple = useRegistrationCouple({ enabled: registrationOnly, preview });
   const legalAcknowledgmentRef = useRef<HTMLInputElement>(null);
   const legalNotice = registrationOnly ? registrationLegalNotice : null;
+  const registrationDestination = registrationNextHref ?? (registrationRequiresInitialPayment ? "/my/activate" : registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered");
+  const registrationToCheckout = registrationDestination === "/my/activate";
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const memberTagRef = useRef<HTMLInputElement>(null);
   const [memberTag, setMemberTag] = useState(initialOnboarding.profile.memberTag ?? "");
@@ -447,7 +451,7 @@ export default function JoinForm({
       if (registrationOnly) await registrationCouple.save();
       setOnboarding(payload.onboarding);
       if (registrationOnly && payload.onboarding.requiredFieldsComplete) {
-        window.location.assign(registrationRequiresInitialPayment ? "/my/activate" : registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered");
+        window.location.assign(registrationDestination);
       }
     } catch (requestError) {
       setError(
@@ -941,10 +945,10 @@ export default function JoinForm({
           {legalRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload & review updated documents ↻</button> : null}
           {communicationRefreshRequired ? <button className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" onClick={() => window.location.reload()} type="button">Reload current update preferences ↻</button> : null}
           {photoDraft ? <p className="text-sm text-[var(--member-muted)]" role="status">Use your photo or cancel the crop before continuing.</p> : null}
-          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || communicationRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationRequiresInitialPayment ? "Continue to agreement & payment" : registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
+          <button className="min-h-12 border border-white bg-white px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white disabled:cursor-wait disabled:opacity-50" disabled={!enabled || submitting || photoPending || photoDraft || legalRefreshRequired || communicationRefreshRequired || legalNotice?.state === "unavailable" || (registrationOnly && (registrationCouple.loading || Boolean(registrationCouple.loadError)))} type="submit">{submitting ? registrationOnly ? "Saving details" : "Saving profile" : registrationOnly ? registrationToCheckout ? "Continue to agreement & payment" : registrationRequiresPaymentMethod ? "Save details & continue" : "Complete registration" : prelaunch ? "Save my profile" : "Save & review agreement"}</button>
         </form>
       ) : null}
-      {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Preview card step · no details saved</Link> : null}
+      {preview && registrationOnly && !profileComplete ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={registrationDestination}>Preview next step · no details saved</Link> : null}
 
       {profileComplete && prelaunch && !registrationOnly && !activationOnly ? <div className="mt-9">
         <h3 className="font-[var(--font-display)] text-4xl" ref={stageHeadingRef} tabIndex={-1}>Your profile is ready.</h3>
@@ -954,8 +958,8 @@ export default function JoinForm({
 
       {profileComplete && registrationOnly ? <div className="mt-9">
         <h3 className="font-[var(--font-display)] text-4xl" tabIndex={-1}>Your details are saved.</h3>
-        <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{registrationRequiresInitialPayment ? "Next, review your membership agreement, exact price and Foundations dates. Your first monthly installment or full annual payment completes registration. Your profile opens later." : registrationRequiresPaymentMethod ? "Save a card securely with Stripe to finish registration. No charge is made today." : "Your complimentary registration does not require a payment card."}</p>
-        <Link className="mt-6 inline-flex min-h-12 items-center bg-white px-6 py-3 text-sm font-semibold text-black" href={registrationRequiresInitialPayment ? "/my/activate" : registrationRequiresPaymentMethod ? "/my/payment-method" : "/my/registered"}>{preview ? "Preview next step" : "Continue registration"}</Link>
+        <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{registrationToCheckout ? "Next, review your membership agreement, exact price and Foundations dates, then complete payment with Stripe. Nothing is charged until you confirm payment. Your profile opens later." : registrationRequiresPaymentMethod ? "Save a card securely with Stripe to finish registration. No charge is made today." : "Your complimentary registration does not require a payment card."}</p>
+        <Link className="mt-6 inline-flex min-h-12 items-center bg-white px-6 py-3 text-sm font-semibold text-black" href={registrationDestination}>{preview ? "Preview next step" : "Continue registration"}</Link>
       </div> : null}
 
       {compactCheckout && (stage === "agreement" || stage === "payment") ? <section aria-labelledby="payment-review-title" className="mt-5">

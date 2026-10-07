@@ -5,6 +5,7 @@ import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { getMemberRegistration } from "@/lib/membership/registration-repository";
 import { memberRegistrationPreview } from "@/lib/membership/preview-scenarios";
+import { memberRegistrationDestination } from "@/lib/membership/registration-routing";
 
 export const metadata: Metadata = { title: "You’re registered | Ruined", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -20,7 +21,9 @@ export default async function MemberRegisteredPage() {
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
   const registration = context.data.registration;
   if (!registration || registration.state === "activated") redirect("/my");
-  if (!registration.ready || registration.state !== "registered") redirect(!registration.profileComplete ? "/my/join" : registration.requiresInitialPayment ? "/my/activate" : "/my/payment-method");
+  const paidCheckoutAvailable = context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady;
+  if (!registration.ready) redirect(memberRegistrationDestination(registration, paidCheckoutAvailable) ?? "/my");
+  if (registration.state !== "registered") return <PlatformUnavailable accessHref="/my/activate" />;
   return <MemberRegistrationReceipt
     email={context.viewer?.email ?? "you@example.com"}
     registeredAt={registration.registeredAt}
@@ -28,6 +31,6 @@ export default async function MemberRegisteredPage() {
     foundingPricing={registration.foundingPricing}
     initialPayment={registration.initialPayment}
     preview={context.state === "preview"}
-    activationAvailable={context.configuration.stripeActivationReady || context.state === "preview"}
+    activationAvailable={paidCheckoutAvailable || context.state === "preview"}
   />;
 }

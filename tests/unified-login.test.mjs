@@ -398,3 +398,12 @@ test("verified support links return to the ticket only after successful authoriz
   assert.equal(response.status, 401);
   assert.equal((await response.json()).redirectTo, undefined);
 });
+
+test("support return links cannot bypass held registration or its paid checkout destination", async () => {
+  const member = await accessModule("returning", "none");
+  for (const fallback of ["/my/payment-method", "/my/registered", "/my/activate"]) {
+    for (const requested of ["/my/support", "/ops/support", `/my/support/${viewer.authUserId}`]) {
+      assert.equal(await member.getSupportSignInDestination(viewer, requested, fallback), fallback);
+    }
+  }
+});

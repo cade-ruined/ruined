@@ -10,6 +10,7 @@ import { PREVIEW_MEMBER_ONBOARDING } from "@/lib/membership/preview";
 import { getMemberRegistration } from "@/lib/membership/registration-repository";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberRegistrationPreview } from "@/lib/membership/preview-scenarios";
 import { getMemberOnboarding } from "@/lib/membership/repository";
+import { registrationPaymentDestination } from "@/lib/membership/registration-routing";
 
 export const metadata: Metadata = { title: "Payment method | Ruined", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -23,13 +24,17 @@ export default async function MemberPaymentMethodPage({ searchParams }: { search
     ? await getMemberRegistration(context.viewer.authUserId)
     : context.state === "preview" ? memberRegistrationPreview(memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value)) : null;
   const registrationOnly = Boolean(registration && registration.state !== "activated");
+  const query = await searchParams;
+  const returnState = query.setup === "returned" || query.setup === "cancelled" ? query.setup : null;
   if (context.state === "authenticated" && registrationOnly && registration) {
     if (!registration.profileComplete) redirect("/my/join");
     if (registration.requiresInitialPayment) redirect("/my/activate");
     if (!registration.requiresPaymentMethod) redirect("/my/registered");
+    // Existing setup returns and saved-card management remain available. A new
+    // payment does not need a separate setup session first.
+    if (!registration.ready && !returnState && registrationPaymentDestination(registration,
+      context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady) === "/my/activate") redirect("/my/activate");
   }
-  const query = await searchParams;
-  const returnState = query.setup === "returned" || query.setup === "cancelled" ? query.setup : null;
   const preview = context.state === "preview";
   const initialPreviewState = preview && (query.view === "saved" || query.view === "pending") ? query.view : "not_saved";
   return <main className="member-journey-page mx-auto min-h-[70vh] max-w-3xl pb-24 font-[var(--font-body)] text-[var(--member-ink)]">

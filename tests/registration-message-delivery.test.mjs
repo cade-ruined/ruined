@@ -329,8 +329,8 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
   };
 }
 
-async function paidFixture(t,{payment=confirmedPaidMembership,...options}={}) {
-  const f=await fixture(t,{...options,basis:"paid_membership"});
+async function paidFixture(t,{payment=confirmedPaidMembership,basis="paid_membership",...options}={}) {
+  const f=await fixture(t,{...options,basis});
   const addPayment=async payment=>{
   const reservation=crypto.randomUUID(),contract=crypto.randomUUID(),invoice=`in_${crypto.randomUUID()}`;
   await f.pg.query("insert into membership_commercial_reservations values($1,$2::jsonb)",[reservation,JSON.stringify(payment.billingSchedule)]);
@@ -345,9 +345,41 @@ async function paidFixture(t,{payment=confirmedPaidMembership,...options}={}) {
   return {reservation,contract};
   };
   const {reservation,contract}=await addPayment(payment);
-  await f.pg.query("update member_registration_access set payment_reservation_id=$1 where member_id=$2",[reservation,f.ids.member]);
+  if (basis === "paid_membership") await f.pg.query("update member_registration_access set payment_reservation_id=$1 where member_id=$2",[reservation,f.ids.member]);
   return {...f,reservation,contract,addPayment};
 }
+
+test("legacy profile-ready email recognizes later verified payment without changing completion history or sending a receipt",async t=>{
+  const f=await paidFixture(t,{basis:"saved_card",kind:"profile_ready",activated:true});
+  const before=(await f.pg.query("select * from member_registration_access where member_id=$1",[f.ids.member])).rows[0];
+  assert.equal(before.completion_basis,"saved_card");assert.equal(before.payment_reservation_id,null);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  for(const output of [f.sends[0].payload.text,f.sends[0].payload.html]) {
+    assert.match(output,/does not authorize a new charge/);
+    assert.match(output,/terms you already accepted/);
+    assert.doesNotMatch(output,/Paid membership begins only|future paid membership requires|\$375|first payment is confirmed/);
+  }
+  assert.deepEqual((await f.pg.query("select * from member_registration_access where member_id=$1",[f.ids.member])).rows[0],before);
+  assert.equal((await f.row()).delivery_payment_reservation_id,null,"profile access is not a new paid receipt");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("legacy profile-ready message requires current payment proof before using accepted-billing wording",async t=>{
+  const f=await paidFixture(t,{basis:"saved_card",kind:"profile_ready",activated:true});
+  await f.pg.query("update test_paid_registration_current set current=false");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.match(f.sends[0].payload.text,/Paid membership begins only after/);
+  assert.doesNotMatch(f.sends[0].payload.text,/terms you already accepted/);
+});
+
+test("later payment does not replace an original saved-card welcome with a paid receipt",async t=>{
+  const f=await paidFixture(t,{basis:"saved_card"});
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.deepEqual(f.sends[0].payload.text,email.createRegistrationEmail({kind:"welcome",memberName:"Alex Rivera",
+    completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")}).text);
+  assert.equal((await f.row()).delivery_payment_reservation_id,null);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
 
 test("paid welcome uses the bound proof once, never today's catalog or saved-card founding copy",async t=>{
   const f=await paidFixture(t);
