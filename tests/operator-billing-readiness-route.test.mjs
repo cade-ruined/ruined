@@ -37,7 +37,7 @@ function fixture(options = {}) {
   }, loaded, loaded.exports, { env: { STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED: options.prepaid === false ? "false" : "true" } }, {
     error: (...args) => logs.push(args), warn: (...args) => logs.push(args), log: (...args) => logs.push(args),
   });
-  return { route: loaded.exports, calls, logs };
+  return { route: { ...loaded.exports, GET: (request = new Request("https://members.theruinedproject.com/api/ops/billing/readiness")) => loaded.exports.GET(request) }, calls, logs };
 }
 
 async function responseBody(response) {
@@ -129,4 +129,70 @@ test("version checks retain legacy v2 support when cohort prepayment is disabled
   const f = fixture({ version: "ruined_membership-v2", prepaid: false });
   assert.equal((await responseBody(await f.route.GET())).ready, true);
   assert.deepEqual(f.calls.filter(([name]) => name === "agreement"), [["agreement", "ruined_membership-v2"]]);
+});
+
+const htmlRequest = () => new Request("https://members.theruinedproject.com/api/ops/billing/readiness", { headers: { accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" } });
+
+async function htmlBody(response) {
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("vary"), "Accept");
+  assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.match(response.headers.get("content-security-policy"), /default-src 'none'/);
+  const text = await response.text();
+  assert.match(text, /^<!doctype html>/);
+  assert.doesNotMatch(text, /PRIVATE|admin@example\.com|trusted-admin|<script|<form|<iframe|<img|\son\w+=/i);
+  return text;
+}
+
+test("browser Accept renders only a script-free boolean summary after administrator authorization", async () => {
+  const f = fixture();
+  const response = await f.route.GET(htmlRequest());
+  assert.equal(response.status, 200);
+  const html = await htmlBody(response);
+  assert.match(html, /Ready: <strong>true<\/strong>/);
+  for (const label of ["Configuration", "Published agreement", "All six membership prices", "Commitment portal"]) {
+    assert.ok(html.includes(`<li>${label}: <strong>true</strong></li>`));
+  }
+  assert.deepEqual(f.calls.slice(0, 3), [["viewer", undefined], ["role", "trusted-admin"], ["configuration", undefined]]);
+  assert.equal(f.calls.filter(([name]) => name.startsWith("price:")).length, 6);
+});
+
+test("unauthorized HTML requests retain HTTP denial and never read provider settings", async () => {
+  for (const [options, status, message, expectedCalls] of [
+    [{ signedOut: true }, 401, "Sign in required.", ["viewer"]],
+    [{ role: "guide" }, 403, "Administrator access required.", ["viewer", "role"]],
+    [{ failures: ["role"] }, 503, "Billing readiness could not be checked.", ["viewer", "role"]],
+  ]) {
+    const f = fixture(options);
+    const response = await f.route.GET(htmlRequest());
+    assert.equal(response.status, status);
+    const html = await htmlBody(response);
+    assert.ok(html.includes(message));
+    assert.match(html, /Ready: <strong>false<\/strong>/);
+    assert.doesNotMatch(html, /<ul>/);
+    assert.deepEqual(f.calls.map(([name]) => name), expectedCalls);
+    assert.deepEqual(f.logs, []);
+  }
+});
+
+test("HTML provider failures show failed booleans without provider objects or error details", async () => {
+  const f = fixture({ failures: ["price:couple_annual", "portal"] });
+  const response = await f.route.GET(htmlRequest());
+  assert.equal(response.status, 200);
+  const html = await htmlBody(response);
+  assert.match(html, /Ready: <strong>false<\/strong>/);
+  assert.match(html, /All six membership prices: <strong>false<\/strong>/);
+  assert.match(html, /Commitment portal: <strong>false<\/strong>/);
+  assert.deepEqual(f.logs, []);
+});
+
+test("API Accept values keep the existing JSON shape and status", async () => {
+  for (const accept of ["application/json", "*/*"]) {
+    const f = fixture();
+    const response = await f.route.GET(new Request("https://members.theruinedproject.com/api/ops/billing/readiness", { headers: { accept } }));
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /application\/json/);
+    assert.deepEqual(await responseBody(response), { ready: true, checks: { configuration: true, agreement: true, prices: true, portal: true } });
+  }
 });
