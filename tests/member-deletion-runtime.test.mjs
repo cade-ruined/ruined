@@ -29,6 +29,20 @@ async function fixture(t, accountState = "closed") {
   return { db,person,eligibility,remove };
 }
 
+test("authorized erasure removes private Foundations meaning and all its history without copying it into the deletion record", async t => {
+  const { db, remove } = await fixture(t);
+  const secret = "PRIVATE_FOUNDATIONS_MEANING_TO_ERASE";
+  await db.query("insert into member_journal_entries(id,member_id,kind,event_year,title,include_on_timeline,foundations_meaning) values($1,$2,'text',2020,'An experience',true,$3)", [id(987), member, secret]);
+  await db.query("update member_journal_entries set foundations_meaning=$1 where id=$2", [`${secret}_REVISED`, id(987)]);
+  assert.equal((await db.query("select count(*)::int n from member_journal_entry_versions where journal_entry_id=$1 and foundations_meaning is not null", [id(987)])).rows[0].n, 2);
+  assert.equal((await remove()).deleted, true);
+  for (const table of ["member_journal_entries", "member_journal_entry_versions"]) {
+    assert.equal((await db.query(`select count(*)::int n from ${table} where member_id=$1`, [member])).rows[0].n, 0);
+  }
+  const record = (await db.query("select to_jsonb(r) record from private.member_deletion_records r where member_id=$1", [member])).rows[0].record;
+  assert.equal(JSON.stringify(record).includes(secret), false);
+});
+
 test("administrator authorization, confirmation, version and reason remain mandatory and failure does not close an active account", async t => {
   const { db,eligibility,remove } = await fixture(t,"active");
   const before = (await db.query("select to_jsonb(m) as row from ruined_members m where id=$1", [member])).rows;

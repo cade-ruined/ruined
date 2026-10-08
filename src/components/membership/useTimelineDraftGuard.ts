@@ -12,6 +12,8 @@ type DraftState = {
   baseline: TimelineFormValue;
   editingEntryId: string | null;
   revision: string;
+  scope?: string;
+  onNavigate?: (url: string) => void;
 };
 
 function checkpoint(state: DraftState): TimelineDraftCheckpoint {
@@ -19,7 +21,7 @@ function checkpoint(state: DraftState): TimelineDraftCheckpoint {
 }
 
 function sameForm(left: TimelineFormValue, right: TimelineFormValue) {
-  return left.year === right.year && left.month === right.month && left.title === right.title && left.details === right.details;
+  return (left.meaning ?? "") === (right.meaning ?? "") && left.year === right.year && left.month === right.month && left.title === right.title && left.details === right.details;
 }
 
 function sameDraft(left: DraftState | null, right: DraftState) {
@@ -49,32 +51,33 @@ export function timelineNavigationTarget(event: MouseEvent, currentUrl: string):
 
 export function useTimelineDraftGuard(state: DraftState) {
   const store = useTimelineDraftStore();
+  const scope = state.scope ?? "timeline";
   const writer = useRef(Symbol("timeline-draft"));
   const latest = useRef(state);
   latest.current = state;
   const currentStore = useRef(store);
   currentStore.current = store;
   const cleared = useRef<DraftState | null>(null);
-  const [recovery, setRecovery] = useState(() => ({ store, record: state.enabled ? store?.read() ?? null : null }));
+  const [recovery, setRecovery] = useState(() => ({ store, record: state.enabled ? store?.read(scope) ?? null : null }));
   const recoveryRecord = recovery.store === store ? recovery.record : null;
 
   useEffect(() => {
-    const record = state.enabled ? store?.read() ?? null : null;
+    const record = state.enabled ? store?.read(scope) ?? null : null;
     setRecovery({ store, record: record?.writer === writer.current ? null : record });
-  }, [store, state.enabled]);
+  }, [store, state.enabled, scope]);
 
   useEffect(() => {
-    if (state.enabled && (state.dirty || state.pending) && !sameDraft(cleared.current, state)) store?.write(writer.current, checkpoint(state));
-    else store?.clear(writer.current);
+    if (state.enabled && (state.dirty || state.pending) && !sameDraft(cleared.current, state)) store?.write(writer.current, checkpoint(state), scope);
+    else store?.clear(writer.current, scope);
     // Do not clear on unmount: Back/Forward and programmatic navigation need
     // the checkpoint. The enclosing member layout owns its lifetime.
-  }, [store, state]);
+  }, [store, state, scope]);
 
   useEffect(() => {
     if (!state.enabled) return;
     const active = () => currentStore.current === store && !sameDraft(cleared.current, latest.current)
       && latest.current.enabled && (latest.current.dirty || latest.current.pending);
-    const remember = () => store?.write(writer.current, checkpoint(latest.current));
+    const remember = () => store?.write(writer.current, checkpoint(latest.current), scope);
     function beforeUnload(event: BeforeUnloadEvent) {
       if (!active()) return;
       remember();
@@ -86,9 +89,15 @@ export function useTimelineDraftGuard(state: DraftState) {
       const next = timelineNavigationTarget(event, window.location.href);
       if (!next) return;
       remember();
+      if (next.origin !== window.location.origin) return;
+      if (latest.current.onNavigate) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        latest.current.onNavigate(next.href);
+        return;
+      }
       // External navigations get the browser's beforeunload dialog. Next's
       // same-origin navigation needs a prompt before its click handler runs.
-      if (next.origin !== window.location.origin) return;
       const staysInMemberArea = next.pathname === "/my" || (next.pathname.startsWith("/my/") && next.pathname !== "/my/access");
       const message = latest.current.pending
         ? "A Timeline change is still saving. Leave anyway? Check the saved events when you return."
@@ -107,20 +116,20 @@ export function useTimelineDraftGuard(state: DraftState) {
       window.removeEventListener("beforeunload", beforeUnload);
       if (active()) remember();
     };
-  }, [store, state.enabled]);
+  }, [store, state.enabled, scope]);
 
   const dismissRecovery = useCallback(() => {
     if (currentStore.current !== store) return;
-    if (recoveryRecord) store?.clear(recoveryRecord.writer);
+    if (recoveryRecord) store?.clear(recoveryRecord.writer, scope);
     setRecovery({ store, record: null });
-  }, [store, recoveryRecord]);
+  }, [store, recoveryRecord, scope]);
   const clearDraft = useCallback(() => {
     if (currentStore.current !== store) return;
     cleared.current = { ...latest.current, form: { ...latest.current.form }, baseline: { ...latest.current.baseline } };
-    store?.clear(writer.current);
-    if (recoveryRecord) store?.clear(recoveryRecord.writer);
+    store?.clear(writer.current, scope);
+    if (recoveryRecord) store?.clear(recoveryRecord.writer, scope);
     setRecovery({ store, record: null });
-  }, [store, recoveryRecord]);
+  }, [store, recoveryRecord, scope]);
 
   return {
     recoveryDraft: state.enabled ? recoveryRecord?.draft ?? null : null,

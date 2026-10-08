@@ -19,17 +19,18 @@ function copyDraft(draft: TimelineDraftCheckpoint): TimelineDraftCheckpoint {
 
 /** A single private draft lives only for this verified member-layout instance. */
 export function createTimelineDraftStore(ownerId?: string) {
-  let stored: StoredDraft | null = null;
+  const records = new Map<string, StoredDraft>();
   return {
-    read(): StoredDraft | null {
+    read(scope = "timeline"): StoredDraft | null {
+      const stored = records.get(scope);
       return ownerId && stored ? { writer: stored.writer, draft: copyDraft(stored.draft) } : null;
     },
-    write(writer: symbol, draft: TimelineDraftCheckpoint) {
-      if (ownerId) stored = { writer, draft: copyDraft(draft) };
+    write(writer: symbol, draft: TimelineDraftCheckpoint, scope = "timeline") {
+      if (ownerId) records.set(scope, { writer, draft: copyDraft(draft) });
     },
-    clear(writer: symbol) {
+    clear(writer: symbol, scope = "timeline") {
       // A disappearing page must never clear a newer page's checkpoint.
-      if (stored?.writer === writer) stored = null;
+      if (records.get(scope)?.writer === writer) records.delete(scope);
     },
   };
 }

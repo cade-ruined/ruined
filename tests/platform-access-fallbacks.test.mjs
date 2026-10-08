@@ -40,7 +40,8 @@ test("every member page context handles denied before its unavailable fallback",
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
   const pages = [...modernPages, ...legacyPages];
 
-  assert.equal(modernPages.length, 17);
+  assert.equal(modernPages.length, 18);
+  assert.ok(modernPages.some(page => page.entry === "foundations/timeline/part-1/page.tsx"));
   assert.ok(modernPages.some(page => page.entry === "activate/page.tsx"));
   assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
@@ -48,7 +49,12 @@ test("every member page context handles denied before its unavailable fallback",
     const deniedFallback = contents.indexOf('reason="member_access"');
     assert.ok(denied >= 0, `${entry} must recognize an authenticated non-member`);
     assert.ok(deniedFallback > denied, `${entry} must show the member permission fallback`);
-    assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\("\/my\/access"\)/);
+    if (entry === "foundations/timeline/part-1/page.tsx") {
+      assert.match(contents, /getSupportAccessUrl\("\/my\/foundations\/timeline\/part-1"\)/);
+      assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\(ACCESS_URL\)/);
+    } else {
+      assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\("\/my\/access"\)/);
+    }
   }
 });
 

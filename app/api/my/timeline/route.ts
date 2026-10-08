@@ -33,7 +33,9 @@ function isTimelineEntry(value: unknown): value is MemberTimelineInput[number] {
       || (typeof candidate.month === "number" && Number.isInteger(candidate.month) && candidate.month >= 1 && candidate.month <= 12)) &&
     typeof candidate.title === "string" &&
     (candidate.details === null || typeof candidate.details === "string") &&
-    Object.keys(candidate).every((key) => ["details", "id", "month", "title", "year"].includes(key))
+    (candidate.meaning === undefined || candidate.meaning === null
+      || (typeof candidate.meaning === "string" && candidate.meaning.trim().length <= 4000)) &&
+    Object.keys(candidate).every((key) => ["details", "id", "meaning", "month", "title", "year"].includes(key))
   );
 }
 

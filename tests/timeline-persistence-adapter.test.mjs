@@ -133,3 +133,26 @@ test("preview edits keep durable positions, insert after prior positions and ret
   assert.deepEqual(added.entries.map(e => e.position), [1, 3]);
   assert.equal(f.calls.length, 0);
 });
+
+test("Foundations meaning-only edits update the original moment and preserve older clients", async () => {
+  const original = { ...entry, id: "same-id", position: 1, meaning: "I was on my own." };
+  const snapshot = { ...current, entries: [original] };
+  const f = fixture([Response.json({ timeline: snapshot }), Response.json({ timeline: snapshot })]);
+  const adapter = f.createTimelinePersistenceAdapter({ preview: false, writable: true, ownerId: "verified-owner" });
+  await adapter.save([{ ...original, meaning: "I needed to earn belonging." }], snapshot);
+  assert.deepEqual(JSON.parse(f.calls[0][1].body), { action: "upsert", expectedRevision: "12", entry: { ...entry, id: "same-id", meaning: "I needed to earn belonging." } });
+  assert.equal(f.calls[0][1].headers["x-ruined-session-owner"], "verified-owner");
+  await adapter.save([{ ...original, meaning: "" }], snapshot);
+  assert.equal(JSON.parse(f.calls[1][1].body).entry.meaning, null);
+  const { meaning, ...oldClient } = original;
+  assert.equal(meaning, "I was on my own.");
+  assert.equal(await adapter.save([oldClient], snapshot), snapshot);
+  assert.equal(f.calls.length, 2);
+});
+
+test("Foundations owner identity accompanies reload and completion too", async () => {
+  const f = fixture([Response.json({ timeline: current }), Response.json({ requirements: { timeline: { completedAt: "2026-10-08" } } })]);
+  const adapter = f.createTimelinePersistenceAdapter({ preview: false, writable: true, ownerId: "verified-owner" });
+  await adapter.load(current); await adapter.complete(current);
+  for (const call of f.calls) assert.equal(call[1].headers["x-ruined-session-owner"], "verified-owner");
+});

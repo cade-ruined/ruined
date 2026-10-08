@@ -2,6 +2,7 @@ import type { MemberTimelineEntry } from "@/lib/membership/model";
 
 export const TIMELINE_LIMITS = {
   details: 4000,
+  meaning: 4000,
   maximumYear: 2200,
   minimumYear: 1900,
   title: 200,
@@ -40,6 +41,7 @@ export function groupTimelineEntries(entries: TimelineDraftEntry[]) {
 }
 
 export type TimelineDraftEntry = {
+  meaning?: string | null;
   clientKey: string;
   createdOrder: number;
   details: string;
@@ -52,6 +54,7 @@ export type TimelineDraftEntry = {
 };
 
 export type TimelineFormValue = {
+  meaning?: string;
   details: string;
   month: string;
   title: string;
@@ -111,6 +114,7 @@ export function fromMemberTimelineEntries(
     clientKey: entry.id,
     createdOrder: entry.position || index + 1,
     details: entry.details ?? "",
+    ...(entry.meaning === undefined ? {} : { meaning: entry.meaning }),
     id: entry.id,
     month: entry.month ?? null,
     position: entry.position || index + 1,
@@ -137,6 +141,7 @@ export function sortTimelineEntries(
 export function toTimelineSaveEntries(entries: TimelineDraftEntry[]) {
   return sortTimelineEntries(entries).map((entry) => ({
     details: entry.details.trim() || null,
+    ...(entry.meaning === undefined ? {} : { meaning: entry.meaning?.trim() || null }),
     id: entry.id,
     month: entry.month ?? null,
     title: entry.title.trim(),
@@ -160,6 +165,7 @@ export function timelineFormIsDirty(
   baseline: TimelineFormValue,
 ): boolean {
   return (
+    (form.meaning ?? "") !== (baseline.meaning ?? "") ||
     form.year !== baseline.year ||
     form.month !== baseline.month ||
     form.title !== baseline.title ||

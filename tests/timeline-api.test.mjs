@@ -116,6 +116,23 @@ test("Timeline rejects noninteger, out-of-range and nonnumeric months before inv
   }
 });
 
+test("Timeline meaning preserves omission, explicit clearing and multiline text without accepting invalid or oversized values", async () => {
+  for (const meaning of [undefined, null, "", "I believed one thing.\nThen carried it forward.", "x".repeat(4000)]) {
+    const f = fixture();
+    const entry = { id: null, title: "An experience", year: 2020, details: "Original event details", ...(meaning === undefined ? {} : { meaning }) };
+    const response = await f.POST(request({ action: "upsert", entry, expectedRevision: "5" }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(f.calls, [["upsert", "verified-account", entry, "5"]]);
+    assert.equal(Object.hasOwn(f.calls[0][2], "meaning"), meaning !== undefined);
+  }
+  for (const meaning of [1, true, [], {}, "x".repeat(4001)]) {
+    const f = fixture();
+    const response = await f.POST(request({ action: "upsert", entry: { id: null, title: "An experience", year: 2020, details: null, meaning }, expectedRevision: "5" }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test("single moment upsert and deletion use verified ownership, revision and private snapshots", async () => {
   const entry = { id: null, year: 2020, month: 9, title: "A moment", details: null };
   for (const payload of [{ action: "upsert", entry }, { action: "delete", id: "entry-id" }]) {
