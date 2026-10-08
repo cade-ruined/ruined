@@ -40,6 +40,8 @@ export default function MembershipTextMessagesPage() {
       { title: "Registration opt-in example", body: <>
         <p>This public example shows the optional email and text choices presented in registration. The text disclosure and policy links are the same ones used in the registration form. The example is interactive, but cannot submit an enrollment.</p>
         <MemberSmsOptInExample />
+        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-sms-opt-in.jpg">View the registration form screenshot ↗</a></p>
+        <p>The screenshot shows our registration form in preview mode, with no real member information. Actual registration requires email verification.</p>
       </> },
       { title: "Continue to Ruined", body: <>
         <p>To begin membership registration, follow the membership invitation flow. Text reminders remain optional throughout registration.</p>

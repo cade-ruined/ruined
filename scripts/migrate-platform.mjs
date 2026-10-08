@@ -107,6 +107,7 @@ const migrations = [
   "../db/migrations/20261008210000_admin_email_images.sql",
   "../db/migrations/20261008210000_member_sms_phone_consent.sql",
   "../db/migrations/20261008220000_member_sms_transport.sql",
+  "../db/migrations/20261008230000_member_sms_automation.sql",
 ];
 
 function migrationBody(migration, migrationName) {

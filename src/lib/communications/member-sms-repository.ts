@@ -9,6 +9,7 @@ const CONTEXT = "member_communication_preferences_v1";
 const phonePattern = /^[+][1-9][0-9]{1,14}$/;
 type Eligible = { phone: string; consentId: string };
 type Gate = Eligible | { reason: MemberSmsBlockedReason };
+export type MemberSmsDispatchOptions = { guard?: (tx: TransactionSql) => Promise<boolean> };
 type Reservation = { attemptId: string; phone: string; consentId: string };
 
 async function lockPhone(tx: TransactionSql, phone: string) {
@@ -16,13 +17,15 @@ async function lockPhone(tx: TransactionSql, phone: string) {
 }
 
 /** Lock order is phone, member, lifecycle, then profile. No network operation precedes this gate. */
-async function eligibleMember(tx: TransactionSql, memberId: string, lockedPhone: string): Promise<Gate> {
+async function eligibleMember(tx: TransactionSql, input: MemberSmsReminder, lockedPhone: string): Promise<Gate> {
+  const memberId = input.memberId;
+  const confirmation = input.kind === "opt_in_confirmation";
   const [member] = await tx<Array<{ personId: string | null; state: string; deleted: boolean }>>`
     select person_id as "personId",membership_state as state,deleted_at is not null as deleted from ruined_members where id=${memberId}::uuid for no key update`;
-  if (!member || member.deleted || member.state !== "active") return { reason: "member_inactive" };
+  if (!member || member.deleted || (!confirmation && member.state !== "active")) return { reason: "member_inactive" };
   const [lifecycle] = await tx<Array<{ accountState: string }>>`select account_state as "accountState"
     from member_lifecycle where member_id=${memberId}::uuid for share`;
-  if (lifecycle?.accountState !== "active") return { reason: "member_inactive" };
+  if (!lifecycle || !(confirmation ? ["provisional", "invited", "active"] : ["active"]).includes(lifecycle.accountState)) return { reason: "member_inactive" };
   if (!member.personId) return { reason: "phone_missing" };
   const [profile] = await tx<Array<{ phone: string | null }>>`select mobile_e164 as phone
     from person_private_profiles where person_id=${member.personId}::uuid for share`;
@@ -42,21 +45,25 @@ async function eligibleMember(tx: TransactionSql, memberId: string, lockedPhone:
     from member_consents where member_id=${memberId}::uuid and consent_type='communications'
       and evidence->>'context'=${CONTEXT} and evidence->>'purpose'='membership_updates'
       and evidence->>'channel'='sms' order by id desc limit 1`;
-  if (!consent?.allowed) return { reason: "no_current_consent" };
+  if (!consent?.allowed || (input.expectedConsentId !== undefined && consent.id !== input.expectedConsentId)
+    || (confirmation && (!/^[1-9][0-9]*$/.test(input.expectedConsentId ?? "") || input.reminderKey !== `consent:${input.expectedConsentId}`))) return { reason: "no_current_consent" };
   return { phone, consentId: consent.id };
 }
 
 /** A committed dispatching reservation is never automatically resumed or reclaimed. */
-export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder, body: string): Promise<Reservation | MemberSmsSendResult> {
+export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder, body: string, options: MemberSmsDispatchOptions = {}): Promise<Reservation | MemberSmsSendResult> {
   return await sql.begin(async tx => {
+    await tx`set local lock_timeout='3s'`;
+    await tx`set local statement_timeout='10s'`;
     const [profile] = await tx<Array<{ phone: string | null }>>`select profile.mobile_e164 as phone
       from ruined_members member left join person_private_profiles profile on profile.person_id=member.person_id
       where member.id=${input.memberId}::uuid`;
     const phone = profile?.phone;
     if (!phone || !phonePattern.test(phone)) return { status: "blocked" as const, reason: "phone_missing" as const };
     await lockPhone(tx, phone);
-    const gate = await eligibleMember(tx, input.memberId, phone);
+    const gate = await eligibleMember(tx, input, phone);
     if ("reason" in gate) return { status: "blocked" as const, reason: gate.reason };
+    if (options.guard && !await options.guard(tx)) return { status: "blocked" as const, reason: "source_ineligible" as const };
     const digest = createHash("sha256").update(body, "utf8").digest("hex");
     const [attempt] = await tx<Array<{ id: string }>>`insert into private.member_sms_delivery_attempts
       (member_id,reminder_key,reminder_kind,destination_e164,consent_id,body_sha256)
@@ -78,14 +85,17 @@ export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder
  * reservation intact, so retries cannot issue another billable request.
  */
 export async function dispatchReservedMemberSms(sql: Sql, input: MemberSmsReminder, reservation: Reservation,
-  send: (phone: string) => Promise<string>): Promise<MemberSmsSendResult> {
+  send: (phone: string) => Promise<string>, options: MemberSmsDispatchOptions = {}): Promise<MemberSmsSendResult> {
   return await sql.begin(async tx => {
+    await tx`set local lock_timeout='3s'`;
+    await tx`set local statement_timeout='10s'`;
     await lockPhone(tx, reservation.phone);
-    const gate = await eligibleMember(tx, input.memberId, reservation.phone);
+    const gate = await eligibleMember(tx, input, reservation.phone);
     const [attempt] = await tx<Array<{ status: string }>>`select status from private.member_sms_delivery_attempts
       where id=${reservation.attemptId}::uuid for update`;
     if (attempt?.status !== "dispatching") return { status: "duplicate" as const, attemptId: reservation.attemptId };
-    const blocked = "reason" in gate ? gate.reason : gate.consentId !== reservation.consentId ? "no_current_consent" : null;
+    const sourceAllowed = !("reason" in gate) && (!options.guard || await options.guard(tx));
+    const blocked = "reason" in gate ? gate.reason : gate.consentId !== reservation.consentId ? "no_current_consent" : !sourceAllowed ? "source_ineligible" : null;
     if (blocked) {
       await tx`update private.member_sms_delivery_attempts set status='blocked',blocked_reason=${blocked},updated_at=statement_timestamp()
         where id=${reservation.attemptId}::uuid`;
