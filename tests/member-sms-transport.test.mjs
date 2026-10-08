@@ -22,7 +22,7 @@ test("SMS is disabled by default and incomplete configuration cannot reach a dat
     assert.equal(config.readMemberSmsConfiguration({ ...configuration(), TWILIO_WEBHOOK_BASE_URL: origin }).webhookReady, false);
   }
   const model = load(modelPath);
-  const confirmation = model.memberSmsReminderBody({ memberId: id(1), reminderKey: "consent:1", kind: "opt_in_confirmation" }, "https://members.theruinedproject.com");
+  const confirmation = model.memberSmsReminderBody({ memberId: id(1), reminderKey: "consent:1", kind: "opt_in_confirmation", expectedConsentId: "1" }, "https://members.theruinedproject.com");
   for (const expected of ["Ruined:", "membership updates and call reminders", "frequency varies", "data rates", "HELP", "STOP", "connect@theruinedproject.com"]) assert.ok(confirmation.includes(expected));
   assert.throws(() => model.memberSmsReminderBody({ memberId: id(1), reminderKey: "call:1", kind: "marketing" }, "https://members.theruinedproject.com"));
 });
@@ -30,12 +30,14 @@ test("SMS is disabled by default and incomplete configuration cannot reach a dat
 test("private SMS ledger gates exact consent, idempotent delivery, STOP, and ambiguous failures", async t => {
   const db = new PGlite(); t.after(() => db.close());
   await db.exec(`create role anon; create role authenticated;
+    create table experiences(id uuid primary key);
     create table ruined_members(id uuid primary key,person_id uuid,membership_state text,deleted_at timestamptz);
     create table member_lifecycle(member_id uuid primary key,account_state text);
     create table person_private_profiles(person_id uuid primary key,mobile_e164 text);
     create table member_consents(id bigint generated always as identity primary key,member_id uuid,consent_type text,
       policy_version text,decision text,accepted_at timestamptz,source text,actor_auth_user_id uuid,evidence jsonb,dedupe_key text unique);`);
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
+  await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   const sql = sqlFor(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true" }, calls = [];
   let failProvider = false, providerErrorCode;
   const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql }, twilio: (account, token, options) => {
@@ -60,9 +62,10 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
     const evidence = { context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "sms",
       destination: m.phone, requested: true, action: "sms_checkbox_checked", marketingConsent: false,
       termsVersion: model.MEMBER_SMS_TERMS_VERSION, ...overrides.evidence };
-    await db.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
-      values($1,'communications',$2,$3,now(),$4,$5,$6)`, [m.memberId, overrides.version ?? model.MEMBER_COMMUNICATION_NOTICE_VERSION,
+    const result = await db.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
+      values($1,'communications',$2,$3,now(),$4,$5,$6) returning id::text`, [m.memberId, overrides.version ?? model.MEMBER_COMMUNICATION_NOTICE_VERSION,
       overrides.decision ?? "accepted", overrides.source ?? "member", overrides.actor === null ? null : id(999), JSON.stringify(evidence)]);
+    return result.rows[0].id;
   }
   const reserve = m => repository.reserveMemberSmsAttempt(sql, m, "Ruined reminder fixture");
   await t.test("no consent, legacy v1, other topics, missing evidence, and stale numbers cannot send", async () => {
@@ -189,9 +192,49 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
     assert.equal(accepted, 1);
     assert.equal((await db.query("select status from private.member_sms_delivery_attempts where id=$1", [reservation.attemptId])).rows[0].status, "dispatching");
   });
+  await t.test("confirmation binds its exact consent event and allows pending registration without paid access", async () => {
+    for (const state of ["provisional", "invited", "active"]) {
+      const m = await member(); const consentId = await consent(m);
+      await db.query("update ruined_members set membership_state='invited' where id=$1", [m.memberId]);
+      await db.query("update member_lifecycle set account_state=$2 where member_id=$1", [m.memberId, state]);
+      const input = { ...m, kind: "opt_in_confirmation", expectedConsentId: consentId, reminderKey: `consent:${consentId}` };
+      assert.equal((await service.sendMemberSmsReminder(input)).status, "accepted");
+      assert.equal((await service.sendMemberSmsReminder(input)).status, "duplicate");
+      assert.equal((await service.sendMemberSmsReminder(m)).reason, "member_inactive");
+    }
+    const m = await member(); const previous = await consent(m); await consent(m);
+    assert.equal((await service.sendMemberSmsReminder({ ...m, kind: "opt_in_confirmation", expectedConsentId: previous, reminderKey: `consent:${previous}` })).reason, "no_current_consent");
+    await assert.rejects(() => service.sendMemberSmsReminder({ ...m, kind: "opt_in_confirmation" }), /confirmation identity/);
+    for (const state of ["suspended", "closed"]) {
+      const consentId = await consent(m);
+      await db.query("update member_lifecycle set account_state=$2 where member_id=$1", [m.memberId, state]);
+      assert.equal((await service.sendMemberSmsReminder({ ...m, kind: "opt_in_confirmation", expectedConsentId: consentId, reminderKey: `consent:${consentId}` })).reason, "member_inactive");
+    }
+  });
+  await t.test("source guard runs before reservation and again at dispatch; revoked event cannot send", async () => {
+    const m = await member(); await consent(m);
+    const before = calls.length;
+    assert.deepEqual(await service.sendMemberSmsReminder(m, { guard: async () => false }), { status: "blocked", reason: "source_ineligible" });
+    assert.equal((await db.query("select id from private.member_sms_delivery_attempts where member_id=$1", [m.memberId])).rows.length, 0);
+    let checked = 0;
+    assert.deepEqual(await service.sendMemberSmsReminder(m, { guard: async () => ++checked === 1 }), { status: "blocked", reason: "source_ineligible" });
+    assert.equal(checked, 2); assert.equal(calls.length, before);
+    assert.equal((await service.sendMemberSmsReminder(m, { guard: async () => true })).status, "duplicate");
+    const attempt = (await db.query("select * from private.member_sms_delivery_attempts where member_id=$1", [m.memberId])).rows[0];
+    assert.equal(attempt.status, "blocked"); assert.equal(attempt.blocked_reason, "source_ineligible");
+  });
+  await t.test("call details carry title, named timezone, calendar destination and per-attempt callback", async () => {
+    const m = await member(); await consent(m);
+    const result = await service.sendMemberSmsReminder({ ...m, callDetails: { eventId: id(800), title: "Foundations", startsAt: "2026-11-05T22:00:00Z", timeZone: "America/Denver" } });
+    assert.equal(result.status, "accepted");
+    const payload = calls.at(-1);
+    assert.match(payload.body, /Foundations starts Thu, Nov 5, 3:00 PM MST/);
+    assert.match(payload.body, /https:\/\/members\.theruinedproject\.com\/my\/experiences/);
+    assert.equal(payload.statusCallback, `https://members.theruinedproject.com/api/twilio/status?attempt=${result.attemptId}`);
+  });
   await t.test("private transport tables enable RLS and reject browser roles", async () => {
     const rows = (await db.query("select relname,relrowsecurity from pg_class where relnamespace='private'::regnamespace and relkind='r'")).rows;
-    assert.equal(rows.length, 3); assert.ok(rows.every(row => row.relrowsecurity));
+    assert.equal(rows.length, 4); assert.ok(rows.every(row => row.relrowsecurity));
     for (const role of ["anon", "authenticated"]) {
       await db.exec(`set role ${role}`);
       await assert.rejects(() => db.query("select * from private.member_sms_phone_suppressions"));

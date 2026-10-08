@@ -1,5 +1,6 @@
 import "server-only";
 
+export const MEMBER_SMS_STATUS_PATH = "/api/twilio/status";
 export const MEMBER_SMS_INBOUND_PATH = "/api/twilio/inbound";
 export const MEMBER_SMS_HELP_MESSAGE = "Ruined membership reminders: For help, email connect@theruinedproject.com. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe.";
 
@@ -24,6 +25,7 @@ export function readMemberSmsConfiguration(env: NodeJS.ProcessEnv = process.env)
   return {
     enabled: value("MEMBER_SMS_ENABLED") === "true",
     accountSid, authToken, phoneNumber, messagingServiceSid, publicOrigin,
+    statusUrl: publicOrigin ? `${publicOrigin}${MEMBER_SMS_STATUS_PATH}` : null,
     inboundUrl: publicOrigin ? `${publicOrigin}${MEMBER_SMS_INBOUND_PATH}` : null,
     webhookReady,
     sendReady: webhookReady && /^MG[0-9a-f]{32}$/i.test(messagingServiceSid),
