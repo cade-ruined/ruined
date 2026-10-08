@@ -1,0 +1,120 @@
+.trigger {
+  display: inline-flex;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(42 42 42 / 55%);
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.trigger:hover,
+.trigger[aria-expanded="true"] {
+  color: var(--color-faded);
+  background: rgb(42 42 42 / 5%);
+}
+
+.trigger:focus-visible,
+.close:focus-visible {
+  outline: 2px solid var(--color-faded);
+  outline-offset: -3px;
+}
+
+.panel {
+  position: fixed;
+  inset: auto;
+  z-index: 100;
+  box-sizing: border-box;
+  width: min(336px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  margin: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 20px 20px;
+  border: 1px solid rgb(42 42 42 / 22%);
+  border-radius: 2px;
+  background: var(--color-surface, #f3efe6);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+  color: var(--color-faded);
+  font-family: var(--font-body);
+  text-align: left;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px -12px 6px 0;
+}
+
+.heading h3 {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.close {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.name {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.email {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgb(42 42 42 / 65%);
+}
+
+.details {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgb(42 42 42 / 14%);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.details > div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.details dt {
+  color: rgb(42 42 42 / 60%);
+}
+
+.details dd {
+  overflow-wrap: anywhere;
+}
+
+.subline {
+  display: block;
+  margin-top: 2px;
+  color: rgb(42 42 42 / 65%);
+}
+
+.empty {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgb(42 42 42 / 70%);
+}

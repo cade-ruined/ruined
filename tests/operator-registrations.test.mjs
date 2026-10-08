@@ -111,6 +111,7 @@ async function uiFixture({ rows = [row(), row(memberB)], preview = false, replie
     "@/lib/membership/operator-registration-progress": await load("src/lib/membership/operator-registration-progress.ts"),
     "@/lib/membership/operator-registration-follow-up": await load("src/lib/membership/operator-registration-follow-up.ts", { "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts") }),
     "./OperatorMemberCheckpoints": await load("src/components/platform/OperatorMemberCheckpoints.tsx"),
+    "./OperatorInvitationDetails": () => null,
     "./OperatorRegistrationNextStep": function OperatorRegistrationNextStep({ action, onReviewProfile, disabled }) {
       return React.createElement("section", { "aria-label": "Operator next step" }, action.title, action.detail,
         action.memberUrl ? React.createElement("input", { readOnly: true, "aria-label": "Member follow-up link", value: action.memberUrl }) : null,
