@@ -17,7 +17,7 @@ export function createWorkQueueDigestEmail(input: { queue: OpsWorkQueue; slot: W
   const summary = `${count(queue.totals.tasks)} tasks · ${count(queue.totals.artifacts)} Artifacts · ${count(queue.totals.failures)} failed actions`;
   const items = queue.items.slice(0, MAX_ITEMS).map((item) => {
     const title = cleanText(item.label);
-    const member = item.memberName ? cleanText(item.memberName, 100) : "System work";
+    const member = cleanText(item.memberName ?? "", 100) || (item.memberId ? "Member awaiting information" : "System work");
     const state = cleanText(item.state.replaceAll("_", " "), 40);
     const date = item.dueAt && Number.isFinite(Date.parse(item.dueAt)) ? formatTime(new Date(item.dueAt)) : null;
     const due = date ? `${item.kind === "workflow_failure" ? "Updated" : "Due"} ${date}` : "No due date";

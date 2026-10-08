@@ -171,7 +171,7 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
                 <Link className="group grid gap-2 rounded-[4px] py-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black" href={workHref(item)} key={`${item.kind}-${item.workId}`}>
                   <span className="font-medium leading-tight group-hover:text-[var(--color-poster)]">{item.label}</span>
                   <span className="flex flex-wrap items-center justify-between gap-3 text-xs text-black/42">
-                    <span>{item.memberName ?? (item.kind === "workflow_failure" ? "System" : "Operations")}</span>
+                    <span className="min-w-0 break-words">{item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || (item.memberId ? "View member" : item.kind === "workflow_failure" ? "System" : "Operations")}</span>
                     <StateLabel state={item.state} />
                   </span>
                   {item.kind === "task" ? <span className="break-words text-xs font-medium text-black/65">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</span> : null}

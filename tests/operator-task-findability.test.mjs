@@ -567,3 +567,22 @@ test("work queue shows full claimant names and passes exact ownership and versio
   assert.equal((html.match(/>Unclaim<\/button>/g) ?? []).length, 1);
   assert.equal((html.match(/>Claim<\/button>/g) ?? []).length, 1);
 });
+
+test("incomplete registrations stay identifiable and linked before they have a profile name", () => {
+  const task = preview.PREVIEW_OPS_WORK_QUEUE.items.find(item => item.kind === "task");
+  const variants = [
+    { memberName: " ", memberEmail: "new.member@example.com", expected: "new.member@example.com" },
+    { memberName: null, memberEmail: null, expected: "View member" },
+    { memberName: "Alex Morgan", memberEmail: "new.member@example.com", expected: "Alex Morgan" },
+  ];
+  for (const { expected, ...identity } of variants) {
+    const queue = { items: [{ ...task, ...identity, memberId: "new-member", taskType: "registration.checkpoint.information" }], totals: { tasks: 1, artifacts: 0, failures: 0 } };
+    const tree = render("OperatorWorkQueue", { queue, preview: true });
+    const link = elements(tree).find(node => node.tagName === "a" && attr(node, "href") === "/ops/members/new-member#membership");
+    assert.ok(link, "every member task links to the registration checkpoints");
+    assert.equal(text(link), expected);
+    assert.doesNotMatch(text(tree), /System work/);
+  }
+  const system = render("OperatorWorkQueue", { queue: { items: [{ ...task, memberId: null, memberName: null }], totals: { tasks: 1, artifacts: 0, failures: 0 } }, preview: true });
+  assert.match(text(system), /System work/);
+});

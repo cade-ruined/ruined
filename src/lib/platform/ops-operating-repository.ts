@@ -1234,6 +1234,7 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       due_at: Date | string | null;
       member_id: string | null;
       member_name: string | null;
+      member_email: string | null;
       priority: string;
       state: string;
       task_id: string;
@@ -1258,7 +1259,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         task.status as state,
         task.due_at,
         task.member_id,
-        coalesce(profile.preferred_name, profile.display_name) as member_name
+        coalesce(nullif(btrim(profile.preferred_name), ''), nullif(btrim(profile.display_name), '')) as member_name,
+        nullif(btrim(member.email_normalized), '') as member_email
       from operator_tasks task
       left join ruined_members member on member.id = task.member_id
       left join person_profiles profile on profile.person_id = member.person_id
@@ -1371,6 +1373,7 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         label: row.title,
         memberId: row.member_id,
         memberName: row.member_name,
+        memberEmail: row.member_email,
         priority: priorityWeight(row.priority),
         state: row.state,
         workId: row.task_id,
@@ -1895,6 +1898,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           label: string;
           member_id: string | null;
           member_name: string | null;
+          member_email: string | null;
           priority: number | string;
           state: string;
           work_id: string;
@@ -1906,7 +1910,8 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               task.id::text as work_id,
               task.title as label,
               task.member_id,
-              coalesce(profile.preferred_name, profile.display_name) as member_name,
+              coalesce(nullif(btrim(profile.preferred_name), ''), nullif(btrim(profile.display_name), '')) as member_name,
+              nullif(btrim(member.email_normalized), '') as member_email,
               case task.priority
                 when 'urgent' then 100 when 'high' then 75 when 'low' then 20 else 50
               end as priority,
@@ -1937,6 +1942,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               coalesce(award.award_name, template_version.name),
               job.member_id,
               coalesce(profile.preferred_name, profile.display_name, 'Member'),
+              null::text,
               job.priority,
               job.status,
               job.due_at,
@@ -1960,6 +1966,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               replace(action.action_type, '_', ' '),
               domain_event.member_id,
               coalesce(profile.preferred_name, profile.display_name),
+              null::text,
               case when action.status = 'dead_letter' then 100 else 80 end,
               action.status,
               action.updated_at,
@@ -2111,6 +2118,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           label: row.label,
           memberId: row.member_id,
           memberName: row.member_name,
+          memberEmail: row.member_email,
           priority: Number(row.priority),
           state: row.state,
           workId: row.work_id,

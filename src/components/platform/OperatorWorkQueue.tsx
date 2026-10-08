@@ -62,10 +62,10 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
           >
             <div className="min-w-0">
               <h2 className="break-words text-base font-semibold leading-snug">{item.label}</h2>
-              <p className="mt-1 text-sm text-black/55">
-                {item.memberId && item.memberName ? (
+              <p className="mt-1 break-words text-sm text-black/55">
+                {item.memberId ? (
                   <Link className="underline decoration-black/25 underline-offset-4 hover:text-black" href={`/ops/members/${item.memberId}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}`}>
-                    {item.memberName}
+                    {item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || "View member"}
                   </Link>
                 ) : "System work"}
               </p>
