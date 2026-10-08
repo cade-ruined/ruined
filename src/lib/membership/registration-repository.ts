@@ -174,17 +174,37 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
       and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
     where identity.auth_user_id=${actor}::uuid and identity.status='active'`;
   if (!authorized) throw new MemberRegistrationError(403, "Operations administrator access is required.");
+  return readMemberRegistrationProgress(tx, memberIds);
+}
+
+/** Trusted server workers only. Public/operator callers must pass through the administrator wrapper. */
+export async function readMemberRegistrationProgress(tx: TransactionSql, memberIds: string[]): Promise<Map<string, OperatorRegistrationProgress>> {
   if (!memberIds.length) return new Map();
   if (memberIds.length > 200) throw new MemberRegistrationError(400, "Choose up to 200 members.");
   memberIds.forEach(validId);
   const configuration = getPlatformConfiguration();
   const paidCheckoutAvailable = configuration.stripeActivationReady || configuration.stripeCheckoutReady;
   const rows = await tx<Array<RegistrationRow & { email_verified: boolean; card_saved: boolean; card_removed: boolean;
-    payment_confirmed: boolean; payment_needs_review: boolean; billing_arranged: boolean; checkout_started: boolean; billing_state: string; service_starts_at: Date | string | null }>>`
-    select registration.*,
+    payment_confirmed: boolean; payment_needs_review: boolean; billing_arranged: boolean; checkout_started: boolean; billing_state: string; service_starts_at: Date | string | null;
+    email_verified_at: Date | string | null; information_collected_at: Date | string | null; payment_information_collected_at: Date | string | null;
+    payment_received_at: Date | string | null; profile_granted: boolean; payment_by_partner: boolean; historical_payment_recorded: boolean }>>`
+    select registration.*,member.id as member_id,
+      private.ruined_member_profile_released(member.id) as profile_granted,
+      (select max(address.verified_at) from person_email_addresses address where address.person_id=member.person_id
+        and address.email_normalized=member.email_normalized and address.verification_state='verified' and address.retired_at is null) as email_verified_at,
+      greatest(onboarding.profile_completed_at, (select min(consent.accepted_at) from member_consents consent
+        where registration.legal_acknowledgment_required and consent.member_id=member.id and consent.consent_type='privacy'
+          and consent.decision='accepted' and consent.source='member' and consent.actor_auth_user_id is not null
+          and consent.evidence->>'context'='registration_documents_v1'
+          and consent.evidence->>'affirmativeAction'='checkbox_and_submit'
+          and consent.evidence->'membershipTerms'->>'key'='ruined_registration'
+          and consent.evidence->'membershipTerms'->>'sha256' ~ '^[0-9a-f]{64}$'
+          and consent.evidence->>'registrationTermsAccepted'='true'
+          and consent.evidence->>'paidAgreementAccepted'='false' and consent.evidence->>'chargeAuthorized'='false')) as information_collected_at,
+      method.saved_at as payment_information_collected_at, paid_invoice.paid_at as payment_received_at,
       (private.ruined_member_has_complimentary_funding(member.id) or private.ruined_member_has_operator_funding(member.id)) as complimentary,
       (onboarding.profile_completed_at is not null and private.ruined_registration_legal_complete(member.id)
-        and (registration.profile_activated_at is not null or private.ruined_registration_intake_eligibility_error(
+        and (registration.member_id is null or registration.profile_activated_at is not null or private.ruined_registration_intake_eligibility_error(
           profile.birth_date,profile.default_fulfillment_address->>'countryCode') is null)) as profile_complete,
       private.ruined_member_registration_ready(member.id) as ready,
       exists(select 1 from person_email_addresses address where address.person_id=member.person_id
@@ -198,9 +218,25 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
           and detached.livemode=method.livemode and detached.stripe_payment_method_id=method.stripe_payment_method_id)) as card_removed,
       paid.reservation_id is not null as payment_confirmed,paid.service_starts_at,
       (paid.reservation_id is null and exists(select 1 from membership_commercial_participants participant
-        join membership_commercial_reservations reservation on reservation.id=participant.reservation_id and reservation.status in ('reserved','activated')
+        join membership_commercial_reservations reservation on reservation.id=participant.reservation_id
         join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id
         where participant.member_id=member.id and participant.person_id=member.person_id)) as payment_needs_review,
+      exists(select 1 from membership_commercial_participants participant
+        join membership_commercial_reservations reservation on reservation.id=participant.reservation_id
+          and reservation.kind='couple' and reservation.status in ('reserved','activated')
+        join membership_commercial_participants payer on payer.reservation_id=reservation.id and payer.member_id=reservation.payer_member_id
+        join ruined_members payer_member on payer_member.id=payer.member_id and payer_member.person_id=payer.person_id
+        where participant.member_id=member.id and participant.person_id=member.person_id and reservation.payer_member_id<>member.id
+          and payer.member_id=private.ruined_commercial_circle_couple_partner(member.id)) as payment_by_partner,
+      exists(select 1 from stripe_invoices invoice
+        join stripe_subscriptions subscription on subscription.id=invoice.stripe_subscription_id
+          and subscription.member_id=member.id and subscription.stripe_customer_id=invoice.stripe_customer_id
+        where invoice.member_id=member.id and invoice.purpose='membership' and invoice.stripe_status='paid'
+          and invoice.amount_paid>0 and invoice.paid_at is not null
+          and not exists(select 1 from stripe_membership_prepaid_proofs proof where proof.stripe_invoice_id=invoice.id)
+          and exists(select 1 from stripe_webhook_events event where event.object_id=invoice.id
+            and event.event_type='invoice.paid' and event.status='processed'
+            and event.livemode=coalesce(registration.payment_setup_livemode,${process.env.STRIPE_SECRET_KEY?.trim().match(/^(?:sk|rk)_(test|live)_/)?.[1] === "live"}))) as historical_payment_recorded,
       exists(select 1 from membership_commercial_participants participant
         join membership_commercial_reservations reservation on reservation.id=participant.reservation_id and reservation.status='reserved'
         join stripe_checkout_attempts attempt on attempt.commercial_reservation_id=reservation.id and attempt.status in ('creating','open','completed')
@@ -212,8 +248,8 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
         where participant.member_id=member.id and participant.person_id=member.person_id
           and (subscription.cancel_at is null or subscription.cancel_at>statement_timestamp())) as billing_arranged,
       coalesce(private.ruined_member_shared_billing_state(member.id),lifecycle.billing_state) as billing_state
-    from member_registration_access registration
-    join ruined_members member on member.id=registration.member_id and member.deleted_at is null
+    from ruined_members member
+    left join member_registration_access registration on registration.member_id=member.id
     join member_lifecycle lifecycle on lifecycle.member_id=member.id
     left join member_onboardings onboarding on onboarding.member_id=member.id
     left join person_private_profiles profile on profile.person_id=member.person_id
@@ -222,15 +258,22 @@ export async function readOperatorRegistrationProgress(tx: TransactionSql, actor
     left join member_payment_method_setup_attempts setup on setup.id=method.consent_attempt_id and setup.member_id=method.member_id
       and setup.stripe_account_id=method.stripe_account_id and setup.livemode=method.livemode
     left join stripe_membership_prepaid_proofs paid on paid.reservation_id=private.ruined_member_paid_reservation(member.id)
-    where member.id=any(${memberIds}::uuid[])`;
+    left join stripe_invoices paid_invoice on paid_invoice.id=paid.stripe_invoice_id
+    where member.id=any(${memberIds}::uuid[]) and member.deleted_at is null`;
   return new Map(rows.map(row => [row.member_id, {
-    state: row.profile_activated_at ? "activated" : row.registered_at ? "registered" : "collecting",
+    state: row.profile_granted ? "activated" : row.registered_at ? "registered" : "collecting",
     registeredAt: iso(row.registered_at), profileComplete: row.profile_complete, ready: row.ready,
-    requiresInitialPayment: !row.complimentary && row.requires_initial_payment,
+    requiresInitialPayment: !row.complimentary && Boolean(row.requires_initial_payment),
     requiresPaymentMethod: !row.complimentary && !row.requires_initial_payment, completionBasis: row.completion_basis,
     emailVerified: row.email_verified, paymentMethodState: row.card_saved ? "saved" : row.card_removed ? "removed" : "missing",
     paymentConfirmed: row.payment_confirmed, paidCheckoutAvailable, paymentNeedsReview: row.payment_needs_review, billingArranged: row.billing_arranged, checkoutStarted: row.checkout_started, billingState: row.billing_state,
     serviceStartsAt: iso(row.service_starts_at),
+    emailVerifiedAt: row.email_verified ? iso(row.email_verified_at) : null,
+    informationCollectedAt: row.profile_complete ? iso(row.information_collected_at) : null,
+    paymentInformationCollectedAt: row.card_saved ? iso(row.payment_information_collected_at) : row.payment_confirmed ? iso(row.payment_received_at) : null,
+    paymentReceivedAt: row.payment_confirmed ? iso(row.payment_received_at) : null,
+    profileGranted: row.profile_granted, profileGrantedAt: iso(row.profile_activated_at), paymentExempt: row.complimentary,
+    paymentByPartner: row.payment_by_partner, historicalPaymentRecorded: row.historical_payment_recorded,
   }]));
 }
 

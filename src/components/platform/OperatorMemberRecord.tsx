@@ -14,10 +14,11 @@ import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
 import OperatorMemberDeleteAction from "@/components/platform/OperatorMemberDeleteAction";
 import OperatorMemberReferrals from "@/components/platform/OperatorMemberReferrals";
 import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspace";
+import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { guidanceForMemberRecord, memberGuidanceAction } from "@/lib/platform/operator-member-guidance";
-import { operatorRegistrationStatus } from "@/lib/membership/operator-registration-progress";
+import { operatorMemberJourney } from "@/lib/membership/operator-registration-progress";
 import type { OpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
 import { operatorMemberReturnLocation } from "@/lib/platform/operator-return-location";
 
@@ -82,15 +83,20 @@ export default function OperatorMemberRecord({
   const canWriteNote = canReadNotes && access.capabilities.includes("member.note.write");
   const canManageSetup = access.roles.includes("ops_admin");
   const lifecycleNext = guidanceForMemberRecord(record);
-  const registration = access.roles.includes("ops_admin") && membership.registration && header.states.account === "active"
-    && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(lifecycleNext.key)
-    ? operatorRegistrationStatus(membership.registration) : null;
-  const registrationNeedsAction = registration && (membership.registration?.state !== "activated" || header.states.billing !== "active");
-  const next = registrationNeedsAction ? { ...lifecycleNext, key: "registration", title: registration.label,
-    detail: `${registration.detail}. ${registration.next}`, actor: registration.actor,
+  const registration = access.roles.includes("ops_admin") && membership.registration
+    ? operatorMemberJourney(membership.registration) : null;
+  const registrationNeedsAction = registration && registration.next.key !== "complete" && ["active", "invited"].includes(header.states.account)
+    && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(lifecycleNext.key);
+  const next = registrationNeedsAction ? { ...lifecycleNext, key: "registration", title: registration.next.label,
+    detail: registration.next.detail, actor: registration.next.actor,
     status: "Waiting" as const, target: "membership" as const, placement: "blocked" as const } : lifecycleNext;
-  const nextAction = memberGuidanceAction(next, header.memberId, canManageSetup);
+  const paymentCheckpoint = registration?.checkpoints.find(checkpoint => checkpoint.key === "payment");
+  const nextAction = registrationNeedsAction && registration.next.key === "profile"
+    ? { href: "/ops/registrations", label: "Review profile access" }
+    : memberGuidanceAction(next, header.memberId, canManageSetup);
+  const NextActionLink = nextAction.href.startsWith("#") ? "a" : Link;
   const circlePlacementHref = next.key === "ongoing-review" ? "#journey" : next.placement === "blocked" ? "#membership" : `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#assign-member`;
+  const CirclePlacementLink = circlePlacementHref.startsWith("#") ? "a" : Link;
 
   const stateRows = [
     ["Admission", header.states.admission],
@@ -127,9 +133,9 @@ export default function OperatorMemberRecord({
           <p className="operator-compact-label text-[var(--color-poster)]">{next.status} · {next.actor}</p>
           <h3 className="ui-heading mt-1 text-base font-semibold leading-tight">{next.title}</h3>
           <div className="mt-1 flex flex-wrap items-start gap-x-4">
-          <Link className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={nextAction.href}>
+          <NextActionLink className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={nextAction.href}>
             {nextAction.label} →
-          </Link>
+          </NextActionLink>
           <details aria-labelledby="member-next-step-guidance" className="text-sm text-black/60 open:basis-full">
             <summary className="min-h-11 cursor-pointer content-center text-xs font-medium" id="member-next-step-guidance">Why this step?</summary>
             <p className="pb-1 leading-relaxed">{next.detail}</p>
@@ -146,6 +152,12 @@ export default function OperatorMemberRecord({
         </nav>
       ) : null}
 
+      {access.roles.includes("ops_admin") ? <section className="operator-bento-card my-4" aria-labelledby="member-checkpoints-heading">
+        <h3 className="ui-heading mb-2 text-base font-semibold" id="member-checkpoints-heading">Member checkpoints</h3>
+        <OperatorMemberCheckpoints journey={registration} />
+        {registration?.attention ? <p className="mt-3 border-l-2 border-[var(--color-poster)] pl-3 text-sm leading-relaxed"><strong>Attention:</strong> {registration.attention}</p> : null}
+      </section> : null}
+
       <OperatorMemberWorkspace>
 
       <section className="scroll-mt-36" id="overview">
@@ -158,16 +170,17 @@ export default function OperatorMemberRecord({
 
       <section className="scroll-mt-36" id="membership">
         <SectionHeading title="Membership" />
+<p className="mt-2 text-sm text-black/60">Sign-in address to share: <a className="inline-flex min-h-11 items-center break-all underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a></p>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
-          <div className="operator-bento-card">
+          <details className="operator-bento-card" aria-labelledby="member-service-details" open={!registration}>
+            <summary className="min-h-11 cursor-pointer content-center text-base font-semibold" id="member-service-details">{registration ? "Membership service setup" : "Joining progress"}</summary>
             <div className="flex items-center justify-between gap-4">
-              <h3 className="ui-heading text-base font-semibold">{registration ? "Membership service setup" : "Joining progress"}</h3>
+              <span className="text-xs text-black/50">Service status</span>
               <StateLabel state={membership.onboarding.state} />
             </div>
-            {registration ? <p className="mt-3 text-sm leading-relaxed text-black/60">Registration and payment status are shown above. These service checkpoints can remain pending until membership begins.</p> : null}
+            {registration ? <p className="mt-3 text-sm leading-relaxed text-black/60">The five registration checkpoints are shown above. Service setup can remain pending until membership begins.</p> : null}
             <p className="mt-3 text-sm leading-relaxed text-black/60">The member completes these steps in their own account. This record is for review, not accepting an agreement or making a payment for them.</p>
-            <p className="mt-2 text-sm text-black/60">Sign-in address to share: <a className="inline-flex min-h-11 items-center break-all underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a></p>
             <div className="mt-3 grid gap-2">
               {membership.onboarding.requirements.map((requirement) => (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/25 px-3 py-2" key={requirement.key}>
@@ -184,7 +197,7 @@ export default function OperatorMemberRecord({
             <p className="mt-5 text-xs text-black/42">
               Completed {formatDate(membership.onboarding.completedAt)}
             </p>
-          </div>
+          </details>
 
           <div className="operator-bento-card">
             <h3 className="ui-heading text-base font-semibold">Contact</h3>
@@ -234,9 +247,9 @@ export default function OperatorMemberRecord({
           <div className="operator-bento-card">
             <div className="flex items-start justify-between gap-4">
               <h3 className="ui-heading text-base font-semibold">Membership billing</h3>
-              {registration ? <span className="text-sm font-semibold">{registration.label}</span> : <StateLabel state={header.states.billing} />}
+              <StateLabel state={header.states.billing} />
             </div>
-            {registration ? <p className="mt-2 text-sm leading-relaxed text-black/60">{registration.detail}. {registration.next}</p> : null}
+            {paymentCheckpoint ? <p className="mt-2 text-sm leading-relaxed text-black/60">Initial payment: {paymentCheckpoint.state === "complete" ? "Received" : paymentCheckpoint.state === "not_required" ? "Not required" : paymentCheckpoint.state === "review" ? "Needs review" : "Not received"}.</p> : null}
             {membership.billing ? (
               <dl className="mt-3 grid gap-2">
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
@@ -380,9 +393,9 @@ export default function OperatorMemberRecord({
               <>
                 <EmptyRow>No current Circle assignment.</EmptyRow>
                 {canManageSetup ? (
-                  <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
+                  <CirclePlacementLink className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
                     {next.key === "ongoing-review" ? "Review ongoing participation" : next.placement === "blocked" ? "Review joining & billing" : "Review Circle placement"} →
-                  </Link>
+                  </CirclePlacementLink>
                 ) : <p className="mt-3 text-sm text-black/50">An Administrator can place this member in a Circle.</p>}
               </>
             )}

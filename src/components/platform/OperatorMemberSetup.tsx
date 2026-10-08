@@ -13,6 +13,8 @@ export default function OperatorMemberSetup({ record, guidance }: { record: OpsM
   const next = guidance ?? guidanceForMemberRecord(record);
   const participationReview = next.key === "ongoing-review";
   const placementBlocked = next.placement === "blocked";
+  const placementHref = participationReview ? "#journey" : placementBlocked ? "#membership" : circle ? `/ops/circles?circleId=${encodeURIComponent(circle.circleId)}&memberId=${memberId}#circle-${encodeURIComponent(circle.circleId)}` : `/ops/circles?memberId=${memberId}#assign-member`;
+  const PlacementLink = placementHref.startsWith("#") ? "a" : Link;
 
   return (
     <section aria-label="Circle placement and operator access" className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -48,9 +50,9 @@ export default function OperatorMemberSetup({ record, guidance }: { record: OpsM
           </ol>
         )}
         </details>
-        <Link className={ACTION_CLASS} href={participationReview ? "#journey" : placementBlocked ? "#membership" : circle ? `/ops/circles?circleId=${encodeURIComponent(circle.circleId)}&memberId=${memberId}#circle-${encodeURIComponent(circle.circleId)}` : `/ops/circles?memberId=${memberId}#assign-member`}>
+        <PlacementLink className={ACTION_CLASS} href={placementHref}>
           {participationReview ? "Review ongoing participation" : placementBlocked ? "Review joining & billing" : circle?.state === "forming" ? "Review Circle activation" : circle ? "View Circles" : "Review Circle placement"}<span aria-hidden="true">→</span>
-        </Link>
+        </PlacementLink>
       </article>
 
       <article className="operator-bento-card">

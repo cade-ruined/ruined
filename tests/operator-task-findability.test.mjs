@@ -319,6 +319,19 @@ test("saved-card review explains the hold and opens Membership without exposing 
   assert.deepEqual(fixture.calls, []);
 });
 
+test("checkpoint work keeps the canonical next action visible and links to the member checkpoints", () => {
+  const item = { kind: "task", taskType: "registration.checkpoint.payment", label: "Complete membership checkout", description: "Member reviews the price and terms, then pays through Stripe. No separate card-saving step.", memberId: "member-one", memberName: "Example member", state: "open", priority: 50, dueAt: null, workId: "checkout-one", claimedByName: "Libby Zaritsky", claimedByCurrentOperator: false, version: 4 };
+  const fixture = harness("src/components/platform/OperatorWorkQueue.tsx", "default", { queue: { items: [item], totals: { tasks: 1, artifacts: 0, failures: 0 } }, preview: true });
+  assert.match(reactText(fixture.draw()), /No separate card-saving step/);
+  assert.match(reactText(fixture.draw()), /Claimed by Libby Zaritsky/);
+  const links = nodes(fixture.draw()).filter(node => node.props?.href);
+  assert.ok(links.some(node => node.props.href === "/ops/members/member-one#membership"));
+  const action = nodes(fixture.draw()).find(node => node.type?.name === "OperatorTaskAction");
+  assert.equal(action.props.claimedByCurrentOperator, false);
+  assert.equal(action.props.expectedVersion, 4);
+  assert.deepEqual(fixture.calls, []);
+});
+
 test("System puts failed services first while preserving modes, evidence and retry permissions", () => {
   const services = [...preview.PREVIEW_OPS_SYSTEM.services].reverse();
   services[0] = { ...services[0], label: "Healthy service", state: "verified" };

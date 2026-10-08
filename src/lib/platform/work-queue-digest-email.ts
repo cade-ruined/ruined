@@ -23,7 +23,7 @@ export function createWorkQueueDigestEmail(input: { queue: OpsWorkQueue; slot: W
     const due = date ? `${item.kind === "workflow_failure" ? "Updated" : "Due"} ${date}` : "No due date";
     const href = item.kind === "artifact"
       ? `${WORK_QUEUE_DIGEST_SITE}/ops/artifacts?focus=${encodeURIComponent(item.workId)}#artifact-${encodeURIComponent(item.workId)}`
-      : item.memberId ? `${WORK_QUEUE_DIGEST_SITE}/ops/members/${encodeURIComponent(item.memberId)}${item.kind === "task" && item.taskType === "registration.billing_review" ? "#membership" : "#record"}` : workUrl;
+      : item.memberId ? `${WORK_QUEUE_DIGEST_SITE}/ops/members/${encodeURIComponent(item.memberId)}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}` : workUrl;
     return { title, member, state, due, href };
   });
   const remainder = queue.items.length > MAX_ITEMS ? `Showing the first ${MAX_ITEMS} prioritized items. Open the work queue for the rest.` : "";

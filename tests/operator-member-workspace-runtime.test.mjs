@@ -19,7 +19,8 @@ const elements = (node) => [node, ...(node.childNodes ?? []).flatMap(elements)].
 function fixture({ queuedFrames = false, includeNotes = true } = {}) {
   const slots = []; const effects = []; const scrolls = []; const hashes = []; const frames = []; const scrollOptions = [];
   let cursor = 0; let pending = false;
-  const window = { location: { hash: "", pathname: "/ops/members/fixture", search: "?returnTo=%2Fops%2Fmembers" }, history: { state: { router: "retained" }, replaceState(state, _title, url) { assert.deepEqual(state, this.state); hashes.push(url); window.location.hash = url.includes("#") ? url.slice(url.indexOf("#")) : ""; } }, addEventListener() {}, removeEventListener() {} };
+  const listeners = new Map();
+  const window = { location: { hash: "", pathname: "/ops/members/fixture", search: "?returnTo=%2Fops%2Fmembers" }, history: { state: { router: "retained" }, replaceState(state, _title, url) { assert.deepEqual(state, this.state); hashes.push(url); window.location.hash = url.includes("#") ? url.slice(url.indexOf("#")) : ""; } }, addEventListener(name, callback) { listeners.set(name, callback); }, removeEventListener(name, callback) { if (listeners.get(name) === callback) listeners.delete(name); } };
   const panels = Object.fromEntries(views.map((id) => [id, { dataset: { memberView: id }, contains: (form) => form.view === id, querySelector: () => null }]));
   class Element {
     constructor(view) { this.view = view; this.isConnected = true; }
@@ -47,7 +48,7 @@ function fixture({ queuedFrames = false, includeNotes = true } = {}) {
   const children = views.filter((id) => includeNotes || id !== "operator-notes").map((id) => React.createElement("section", { id, key: id }, React.createElement("input", { name: `${id}-preserved-field`, defaultValue: `saved-${id}` })));
   function draw() { cursor = 0; const result = loadedModule.exports.default({ children }); result.props.ref.current = root; return result; }
   const button = (label) => nodes(draw()).find((node) => node.type === "button" && text(node) === label);
-  return { draw, button, window, effects, scrolls, scrollOptions, hashes, targets, nextFrame: () => frames.shift()?.(), setPending: (value) => { pending = value; } };
+  return { draw, button, window, effects, dispatchHash: hash => { window.location.hash = hash; listeners.get("hashchange")?.(); }, scrolls, scrollOptions, hashes, targets, nextFrame: () => frames.shift()?.(), setPending: (value) => { pending = value; } };
 }
 
 test("a fresh hashless record reveals its header after router focus without scrolling tab changes", () => {
@@ -130,4 +131,24 @@ test("unsaved edits require acknowledgement to switch and are kept, never discar
   f.draw().props.onResetCapture({ target: f.targets["new-member-note"] });
   f.button("Membership").props.onClick();
   assert.equal(f.button("Membership").props["aria-pressed"], true, "successful form reset clears its dirty marker");
+});
+
+
+test("native next-step hash navigation reveals the panel through pending and dirty guards", () => {
+  const f = fixture(); f.draw(); f.effects[0]();
+  f.dispatchHash("#membership");
+  assert.equal(f.button("Membership").props["aria-pressed"], true);
+  f.button("Operator notes").props.onClick(); f.setPending(true);
+  f.dispatchHash("#membership");
+  assert.equal(f.button("Operator notes").props["aria-pressed"], true);
+  assert.equal(f.window.location.hash, "#operator-notes");
+  assert.match(text(f.draw()), /Wait for the current save/);
+  f.setPending(false);
+  f.draw().props.onChangeCapture({ target: f.targets["new-member-note"] });
+  f.dispatchHash("#membership");
+  assert.equal(f.button("Operator notes").props["aria-pressed"], true);
+  assert.match(text(f.draw()), /Your edits in Operator notes are not saved/);
+  f.button("Switch view — keep edits").props.onClick();
+  assert.equal(f.button("Membership").props["aria-pressed"], true);
+  assert.equal(f.window.location.hash, "#membership");
 });

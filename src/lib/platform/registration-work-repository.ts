@@ -3,197 +3,159 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
-import { getPlatformConfiguration } from "@/lib/platform/config";
+import { operatorMemberJourney } from "@/lib/membership/operator-registration-progress";
+import { readMemberRegistrationProgress } from "@/lib/membership/registration-repository";
 
 export type RegistrationOperatorWorkResult = { created: number; updated: number; resolved: number };
 type TaskStatus = "open" | "in_progress" | "blocked" | "completed" | "cancelled";
+type Checkpoint = "email" | "information" | "payment" | "profile" | "review";
+type Resolution = "checkpoint_satisfied" | "next_step_changed" | "member_no_longer_eligible";
 type WorkRow = {
-  id: string; payment_setup_attempt_id: string; status: TaskStatus; version: number | string;
+  id: string; checkpoint: Checkpoint; status: TaskStatus; version: number | string;
   title: string; description: string | null; blocked_reason: string | null; due_at: Date | null;
-  resolution_reason: string | null;
+  assigned_to_auth_user_id: string | null; resolution_reason: Resolution | null; manually_resolved: boolean;
 };
-type RegistrationState = {
-  person_id: string; attempt_id: string | null; eligible: boolean; billing_confirmed: boolean;
-  profile_released: boolean; checkout_pending: boolean; registration_partner_id: string | null;
-  payer_ids: string[];
-};
+type Journey = ReturnType<typeof operatorMemberJourney>;
+const live = (status: TaskStatus) => status === "open" || status === "in_progress" || status === "blocked";
 
 async function recordEvent(tx: postgres.TransactionSql, task: { id: string; version: number },
-  previousStatus: TaskStatus | null, nextStatus: TaskStatus, reason: string, attemptId: string) {
+  previousStatus: TaskStatus | null, nextStatus: TaskStatus, reason: string, checkpoint: Checkpoint) {
   await tx`
     insert into operator_task_events (operator_task_id, event_type, previous_status, next_status, actor_type, evidence, dedupe_key)
     values (${task.id}::uuid, ${previousStatus === null ? "created" : nextStatus === "completed" ? "completed" : nextStatus === "cancelled" ? "cancelled" : "state_changed"},
       ${previousStatus}, ${nextStatus}, 'system',
-      ${tx.json({ source: "registration.billing_review", reason, paymentSetupAttemptId: attemptId })},
-      ${`registration-work:${task.id}:v${task.version}`})
+      ${tx.json({ source: "registration.checkpoint", reason, checkpoint })},
+      ${`registration-checkpoint-work:${task.id}:v${task.version}`})
   `;
 }
 
-async function readRegistrationState(tx: postgres.TransactionSql, memberId: string) {
-  const [row] = await tx<RegistrationState[]>`
-    select member.person_id, method.consent_attempt_id as attempt_id,
-      (registration.registered_at is not null and registration.completion_basis = 'saved_card'
-        and member.deleted_at is null and person.status = 'active' and lifecycle.account_state = 'active'
-        and member.membership_state = 'pending' and lifecycle.billing_state = 'pending'
-        and lifecycle.standing_state = 'pre_active' and lifecycle.program_state in ('prospect', 'onboarding')
-        and private.ruined_member_registration_ready(member.id)
-        and not private.ruined_member_has_complimentary_funding(member.id)
-        and not private.ruined_member_has_operator_funding(member.id)
-        and not private.ruined_member_has_couple_funding(member.id)
-        and coalesce(private.ruined_member_shared_billing_state(member.id), 'pending') = 'pending'
-        and not exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
-          and subscription.stripe_status in ('past_due', 'unpaid', 'paused'))
-      ) as eligible,
-      (not scheduled_confirmation.pending and coalesce(private.ruined_member_shared_billing_state(member.id) = 'active',
-        (exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
-            and subscription.stripe_status in ('active', 'trialing')
-            and (subscription.cancel_at is null or subscription.cancel_at > statement_timestamp()))
-          and not exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
-            and subscription.stripe_status in ('incomplete', 'past_due', 'unpaid', 'paused')))
-        or (lifecycle.billing_state = 'active' and not exists (
-          select 1 from stripe_subscriptions subscription where subscription.member_id = member.id)))) as billing_confirmed,
-      private.ruined_member_profile_released(member.id) as profile_released,
-      (exists (select 1 from stripe_checkout_attempts checkout where checkout.member_id = member.id
-          and (checkout.status in ('creating', 'open') or (checkout.status = 'completed'
-            and (checkout.stripe_subscription_id is null or not exists (
-              select 1 from stripe_subscriptions subscription where subscription.id = checkout.stripe_subscription_id)))))
-        or exists (select 1 from stripe_subscriptions subscription where subscription.member_id = member.id
-          and subscription.stripe_status = 'incomplete') or scheduled_confirmation.pending) as checkout_pending,
-      private.ruined_registration_circle_couple_partner(member.id) as registration_partner_id,
-      array(select distinct reservation.payer_member_id from membership_commercial_participants participant
-        join membership_commercial_reservations reservation on reservation.id = participant.reservation_id
-          and reservation.kind = 'couple' and reservation.status in ('reserved', 'activated')
-        join membership_commercial_participants partner on partner.reservation_id = reservation.id
-          and partner.member_id = private.ruined_commercial_circle_couple_partner(member.id)
-        where participant.member_id = member.id and participant.person_id = member.person_id
-      ) as payer_ids
-    from ruined_members member
-    join people person on person.id = member.person_id
-    join member_lifecycle lifecycle on lifecycle.member_id = member.id
-    left join member_registration_access registration on registration.member_id = member.id
-    left join member_payment_method_accounts method on method.member_id = member.id
-      and method.stripe_account_id = registration.payment_setup_account_id
-      and method.livemode = registration.payment_setup_livemode
-    cross join lateral (
-      select exists (select 1 from stripe_checkout_attempts checkout
-        where checkout.member_id = member.id and checkout.status in ('creating', 'open', 'completed')
-          and checkout.recurring_payment_terms->>'firstPayment' = 'scheduled'
-          and not exists (select 1 from stripe_subscriptions subscription
-            where subscription.id = checkout.stripe_subscription_id and subscription.member_id = member.id
-              and subscription.stripe_status in ('canceled', 'incomplete_expired'))
-          and not (checkout.status = 'completed' and exists (
-            select 1 from stripe_membership_commitments commitment
-            where commitment.checkout_attempt_id = checkout.id and commitment.member_id = member.id
-              and commitment.stripe_subscription_id = checkout.stripe_subscription_id and commitment.status = 'active'
-              and commitment.terms_snapshot->>'startsAt' = checkout.recurring_payment_terms->>'firstChargeAt'
-          ))
-      ) as pending
-    ) scheduled_confirmation
-    where member.id = ${memberId}::uuid
-  `;
-  return row;
+function satisfied(journey: Journey, checkpoint: Checkpoint) {
+  if (checkpoint === "review") return journey.next.key !== "review" && !journey.attention;
+  const state = journey.checkpoints.find(item => item.key === checkpoint)?.state;
+  return state === "complete" || state === "not_required";
 }
 
-/** Reconcile review tasks only. Call from an authenticated internal worker, never
- * a member read. Existing registrations are backfilled on the first run. Global
- * checkout/activation readiness follows the existing commercial and payment
- * release gates; the optional automatic-tax switch does not control this review.
- */
+/** Adopt one existing consent-based billing task instead of recreating it.
+ * Prefer live work, then a manually closed obligation, then resolved history.
+ * Older consent records and all task events remain in place. */
+async function adoptLegacyWork(tx: postgres.TransactionSql, memberId: string) {
+  await tx`
+    insert into registration_checkpoint_work (member_id, checkpoint, operator_task_id, resolution_reason, resolved_at)
+    select legacy.member_id, 'payment', task.id,
+      case when legacy.resolution_reason is null then null
+        when legacy.resolution_reason = 'billing_active' then 'checkpoint_satisfied'
+        else 'next_step_changed' end,
+      legacy.resolved_at
+    from registration_operator_work legacy join operator_tasks task on task.id = legacy.operator_task_id
+    where legacy.member_id = ${memberId}::uuid
+      and not exists (select 1 from registration_checkpoint_work work where work.member_id = legacy.member_id and work.checkpoint = 'payment')
+    order by case when task.status in ('open','in_progress','blocked') then 0
+      when legacy.resolution_reason is null and task.status in ('completed','cancelled') then 1 else 2 end,
+      task.created_at desc, task.id
+    limit 1
+    on conflict (member_id, checkpoint) do nothing
+  `;
+}
+
+/** Reconcile the same next action displayed by the operator member journey.
+ * This worker creates operator obligations only: never billing, profile access,
+ * member communications or evidence that a checkpoint happened. */
 export async function reconcileRegistrationOperatorWork(): Promise<RegistrationOperatorWorkResult> {
   const sql = getApplicationDatabase();
-  const configuration = getPlatformConfiguration();
-  // The independent activation gate arrives with the confirmed-registration
-  // billing release. Recognize that runtime contract without requiring its new
-  // config type or database function before that release is merged.
-  const activationReady = "stripeActivationReady" in configuration && configuration.stripeActivationReady === true;
-  const billingReady = configuration.stripeCheckoutReady || activationReady;
   const result: RegistrationOperatorWorkResult = { created: 0, updated: 0, resolved: 0 };
+  // Explicit enrollment scope avoids new payment tasks for legacy members or
+  // administrators who never entered registration. Include tracked work so
+  // deleted/inactive members' outstanding tasks can be closed with a ledger.
   const members = await sql<Array<{ member_id: string }>>`
-    select registration.member_id from member_registration_access registration
-    join ruined_members member on member.id = registration.member_id and member.deleted_at is null
-    join member_lifecycle lifecycle on lifecycle.member_id = member.id
-    where registration.registered_at is not null and registration.completion_basis = 'saved_card'
-      and member.membership_state = 'pending' and lifecycle.billing_state = 'pending'
-      and lifecycle.account_state = 'active' and lifecycle.standing_state = 'pre_active'
-      and lifecycle.program_state in ('prospect', 'onboarding')
-    union select work.member_id from registration_operator_work work
-      join operator_tasks task on task.id = work.operator_task_id and task.status in ('open', 'in_progress', 'blocked')
+    select member_id from member_registration_access
+    union select member_id from registration_checkpoint_work
+    union select member_id from registration_operator_work
     order by member_id
   `;
   for (const { member_id: memberId } of members) {
-    const change = await sql.begin(async (tx) => {
+    const change = await sql.begin(async tx => {
       const counts: RegistrationOperatorWorkResult = { created: 0, updated: 0, resolved: 0 };
-      // Match setup/registration/funding writers' lock order. Separate member
-      // transactions avoid holding one member's lock while waiting on another.
+      // Match the funding/payment writers' lock order and serialize workers per
+      // member so concurrent queue refreshes cannot duplicate an obligation.
       await tx`select private.ruined_lock_member_complimentary_funding(${memberId}::uuid)`;
-      await tx`select id from ruined_members where id = ${memberId}::uuid for update`;
-      const state = await readRegistrationState(tx, memberId);
+      const [member] = await tx<Array<{ person_id: string; eligible: boolean }>>`
+        select member.person_id, (registration.member_id is not null and member.deleted_at is null
+          and person.status = 'active' and member.membership_state <> 'ended'
+          and lifecycle.account_state in ('provisional','invited','active')
+          and lifecycle.billing_state <> 'ended' and lifecycle.program_state <> 'withdrawn') as eligible
+        from ruined_members member join people person on person.id = member.person_id
+        join member_lifecycle lifecycle on lifecycle.member_id = member.id
+        left join member_registration_access registration on registration.member_id = member.id
+        where member.id = ${memberId}::uuid for update of member
+      `;
+      await adoptLegacyWork(tx, memberId);
       const work = await tx<WorkRow[]>`
-        select task.id, work.payment_setup_attempt_id, task.status, task.version, task.title, task.description,
-          task.blocked_reason, task.due_at, work.resolution_reason
-        from registration_operator_work work join operator_tasks task on task.id = work.operator_task_id
+        select task.id, work.checkpoint, task.status, task.version, task.title, task.description,
+          task.blocked_reason, task.due_at, task.assigned_to_auth_user_id, work.resolution_reason,
+          coalesce((select event.actor_type = 'operator' from operator_task_events event
+            where event.operator_task_id = task.id and event.next_status = task.status
+              and event.event_type in ('completed','cancelled','state_changed')
+            order by event.id desc limit 1), false) as manually_resolved
+        from registration_checkpoint_work work join operator_tasks task on task.id = work.operator_task_id
         where work.member_id = ${memberId}::uuid order by task.id for update of task, work
       `;
-      const otherPayer = state?.payer_ids.length === 1 && state.payer_ids[0] !== memberId;
-      const eligible = Boolean(state?.eligible && state.attempt_id && !state.billing_confirmed && !otherPayer);
+      const progress = member?.eligible ? (await readMemberRegistrationProgress(tx, [memberId])).get(memberId) : null;
+      const journey = progress ? operatorMemberJourney(progress) : null;
+      // Shared billing has one payer follow-up. The partner's checkpoints still
+      // show why they are waiting; their own email/info/profile work remains.
+      const next = journey?.next.key === "complete" || (journey?.next.key === "payment" && progress?.paymentByPartner)
+        ? null : journey?.next ?? null;
       for (const task of work) {
-        if (["completed", "cancelled"].includes(task.status) || (eligible && task.payment_setup_attempt_id === state!.attempt_id)) continue;
-        // Keep the deployed registry's existing reason value. Completion means
-        // the billing arrangement is confirmed, including a future first charge;
-        // it is not evidence of money received or member access being released.
-        const reason = state?.billing_confirmed ? "billing_active" : otherPayer ? "billing_owner_changed"
-          : eligible ? "saved_method_replaced" : "registration_no_longer_eligible";
-        const status = reason === "billing_active" ? "completed" : "cancelled";
+        if (!live(task.status) || task.checkpoint === next?.key) continue;
+        const done = Boolean(journey && satisfied(journey, task.checkpoint));
+        const resolution: Resolution = !journey ? "member_no_longer_eligible" : done ? "checkpoint_satisfied" : "next_step_changed";
+        const status: TaskStatus = done ? "completed" : "cancelled";
         const version = Number(task.version) + 1;
         await tx`update operator_tasks set status = ${status}, completed_at = case when ${status} = 'completed' then statement_timestamp() else null end,
-          title = case when ${status} = 'completed' then 'Membership billing confirmed' else title end,
-          description = case when ${status} = 'completed' then 'The membership billing arrangement is confirmed. This closes the registration billing review; it does not record payment received or activate profile access.' else description end,
           due_at = null, blocked_reason = null, version = ${version}, updated_at = statement_timestamp() where id = ${task.id}::uuid`;
-        await tx`update registration_operator_work set resolution_reason = ${reason}, resolved_at = statement_timestamp(), updated_at = statement_timestamp()
+        await tx`update registration_checkpoint_work set resolution_reason = ${resolution}, resolved_at = statement_timestamp(), updated_at = statement_timestamp()
           where operator_task_id = ${task.id}::uuid`;
-        await recordEvent(tx, { id: task.id, version }, task.status, status,
-          reason === "billing_active" ? "billing_confirmed" : reason, task.payment_setup_attempt_id);
-        counts.resolved += 1;
+        // The legacy table is retained for old audit/reporting paths. Its reason
+        // says billing confirmed only when verified payment is actually present.
+        await tx`update registration_operator_work set resolution_reason = ${task.checkpoint === "payment" && progress?.paymentConfirmed ? "billing_active" : "registration_no_longer_eligible"},
+          resolved_at = statement_timestamp(), updated_at = statement_timestamp() where operator_task_id = ${task.id}::uuid`;
+        await recordEvent(tx, { id: task.id, version }, task.status, status, resolution, task.checkpoint);
+        counts.resolved++;
       }
-      if (!eligible || !state?.attempt_id) return counts;
-      const current = work.find(task => task.payment_setup_attempt_id === state.attempt_id);
-      // Operator completion is durable for this exact consent. A new saved-card
-      // attempt creates a new task; refreshing the queue never reopens it.
-      if (current?.status === "completed" || (current?.status === "cancelled" && !current.resolution_reason)) return counts;
-      const profileCanConfirmBilling = state.profile_released || activationReady;
-      const blockedReason = !billingReady ? "Paid membership is not open. Keep this review on hold until the existing commercial and payment release checks are approved."
-        : !profileCanConfirmBilling ? "This member's registration profile has not been activated. The existing registration hold prevents paid checkout."
-        : state.payer_ids.length > 1 ? "Shared billing responsibility is ambiguous. Confirm the canonical billing owner before proceeding."
-        : state.checkout_pending ? "A membership checkout or subscription confirmation is already pending. Verify its outcome before starting another checkout."
+      if (!next || !journey || !progress || !member) return counts;
+      const checkpoint = next.key as Checkpoint;
+      const current = work.find(task => task.checkpoint === checkpoint);
+      // A manual completion/cancellation is durable even if information or a
+      // saved card later changes. System-resolved work can resume the same task.
+      if (current && !live(current.status) && (!current.resolution_reason || current.manually_resolved)) return counts;
+      const blockedReason = checkpoint === "payment" && progress.paidCheckoutAvailable === false
+        ? "Paid membership is not open. Follow up when checkout is available; do not charge a saved card."
         : null;
-      const status: TaskStatus = blockedReason ? "blocked" : current?.status === "in_progress" ? "in_progress" : "open";
-      const title = blockedReason ? state.checkout_pending && billingReady && profileCanConfirmBilling
-        ? "Card saved — checkout confirmation pending" : "Card saved — billing opening pending" : "Review membership billing";
-      const description = [
-        "Registration is complete and a payment method is saved. Review the member's billing next step; the saved card does not authorize a charge.",
-        blockedReason ?? "Confirm the applicable membership offer and guide the member through the published agreement and final checkout. This task does not start billing or activate access.",
-        state.registration_partner_id && state.payer_ids.length !== 1
-          ? "A registration couple link is present. It records Circle placement intent only; confirm shared billing responsibility separately."
-          : state.payer_ids.length === 1 ? "This member is the canonical billing owner for the shared membership." : null,
-      ].filter(Boolean).join("\n\n");
+      const status: TaskStatus = blockedReason ? "blocked" : current?.assigned_to_auth_user_id ? "in_progress" : "open";
+      const title = next.label;
+      const description = [next.detail, journey.attention, blockedReason,
+        checkpoint === "payment" ? progress.paymentByPartner ? "Follow up with the shared billing owner. Do not start a separate checkout for this member."
+          : "Payment is completed by the member through their membership checkout. A saved card alone is not permission to charge."
+          : checkpoint === "profile" ? "Review the member's checkpoints and grant profile access when the launch plan allows. Completing this task does not open the profile."
+          : null,
+      ].filter((value, index, values) => value && values.indexOf(value) === index).join("\n\n");
       if (current) {
         if (current.status === status && current.title === title && current.description === description && current.blocked_reason === blockedReason && current.due_at === null) return counts;
         const version = Number(current.version) + 1;
         await tx`update operator_tasks set status = ${status}, title = ${title}, description = ${description}, blocked_reason = ${blockedReason},
           due_at = null, completed_at = null, version = ${version}, updated_at = statement_timestamp() where id = ${current.id}::uuid`;
-        await tx`update registration_operator_work set resolution_reason = null, resolved_at = null, updated_at = statement_timestamp()
+        await tx`update registration_checkpoint_work set resolution_reason = null, resolved_at = null, updated_at = statement_timestamp()
           where operator_task_id = ${current.id}::uuid`;
-        await recordEvent(tx, { id: current.id, version }, current.status, status, blockedReason ? "review_blocked" : "review_ready", state.attempt_id);
-        counts.updated += 1;
+        await recordEvent(tx, { id: current.id, version }, current.status, status, blockedReason ? "checkpoint_blocked" : "checkpoint_needed", checkpoint);
+        counts.updated++;
       } else {
         const id = randomUUID();
         await tx`insert into operator_tasks (id, member_id, person_id, task_type, title, description, status, blocked_reason, created_by_type, idempotency_key)
-          values (${id}::uuid, ${memberId}::uuid, ${state.person_id}::uuid, 'registration.billing_review', ${title}, ${description}, ${status},
-            ${blockedReason}, 'system', ${`registration-billing-review:${memberId}:${state.attempt_id}`})`;
-        await tx`insert into registration_operator_work (member_id, payment_setup_attempt_id, operator_task_id)
-          values (${memberId}::uuid, ${state.attempt_id}::uuid, ${id}::uuid)`;
-        await recordEvent(tx, { id, version: 1 }, null, status, blockedReason ? "review_blocked" : "review_ready", state.attempt_id);
-        counts.created += 1;
+          values (${id}::uuid, ${memberId}::uuid, ${member.person_id}::uuid, ${`registration.checkpoint.${checkpoint}`}, ${title}, ${description}, ${status},
+            ${blockedReason}, 'system', ${`registration-checkpoint:${memberId}:${checkpoint}`})`;
+        await tx`insert into registration_checkpoint_work (member_id, checkpoint, operator_task_id) values (${memberId}::uuid, ${checkpoint}, ${id}::uuid)`;
+        await recordEvent(tx, { id, version: 1 }, null, status, blockedReason ? "checkpoint_blocked" : "checkpoint_needed", checkpoint);
+        counts.created++;
       }
       return counts;
     });
