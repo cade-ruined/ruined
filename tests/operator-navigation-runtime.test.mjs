@@ -29,6 +29,8 @@ function load(path, overrides = {}, browserWindow, runtime = {}) {
       "@/components/platform/OperatorPageFrame": "src/components/platform/OperatorPageFrame.tsx",
       "@/components/platform/OperatorDialog": "src/components/platform/OperatorDialog.tsx",
       "@/components/platform/OperatorDateTimeField": "src/components/platform/OperatorDateTimeField.tsx",
+      "@/components/platform/OperatorQuickEventForm": "src/components/platform/OperatorQuickEventForm.tsx",
+      "@/lib/datetime/zoned-date-time": "src/lib/datetime/zoned-date-time.ts",
       "@/components/platform/StateLabel": "src/components/platform/StateLabel.tsx",
       "@/components/platform/operatorStyles": "src/components/platform/operatorStyles.ts",
     };
@@ -482,15 +484,16 @@ test("Circle shortcut filters by exact ID and prefills a no-reservation meeting 
     assert.ok(form);
     const input = (name) => nodes(form, "input").find((node) => attr(node, "name") === name);
     assert.equal(attr(input("title"), "value"), "Same display name meeting");
-    for (const [name, value] of [["kind", "circle_meeting"], ["visibility", "circle"], ["circleId", meetingCircleId], ["registrationMode", "none"]]) {
+    for (const [name, value] of [["audience", `circle:${meetingCircleId}`]]) {
       assert.equal(attr(input(name), "type"), "hidden");
       assert.equal(attr(input(name), "value"), value);
       assert.equal(nodes(form, "select").some((node) => attr(node, "name") === name), false);
     }
     assert.equal(input("capacity"), undefined);
     assert.equal(nodes(form, "input").some((node) => attr(node, "name") === "waitlistEnabled"), false);
-    assert.match(text(form), /No reservation needed/);
-    assert.match(text(form), /Nothing is published or sent yet/);
+    assert.ok(input("meetingUrl"));
+    assert.match(text(form), /No registration needed/);
+    assert.match(text(form), /sends calendar invitations to this audience/);
     assert.equal(nodes(form, "ol").length, 0, "the draft form does not repeat the entire publishing process");
   }
 });
@@ -509,14 +512,16 @@ test("invalid, unauthorized, ambiguous and empty Circle shortcuts never fall bac
   }
 });
 
-test("saving a scoped meeting pins the request audience and opens meeting setup without sending invitations", async () => {
+test("advanced draft setup pins the Circle audience and opens meeting setup without sending invitations", async () => {
   const calls = [];
   const navigations = [];
   let resets = 0;
+  const state = [];
+  let cursor = 0;
   const descendants = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(descendants) : [node, ...descendants(node.props?.children)];
   const Form = load("src/components/platform/OperatorExperienceDirectory.tsx", {
     ...eventClientDependencies,
-    react: { ...React, useState: (initial) => [initial, () => {}], useEffect() {} },
+    react: { ...React, useState(initial) { const index = cursor++; if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial; return [state[index], (next) => { state[index] = typeof next === "function" ? next(state[index]) : next; }]; }, useEffect() {} },
     "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), refresh() {} }) },
   }, undefined, {
     FormData: class { constructor(form) { this.values = form.values; } get(name) { return this.values[name] ?? null; } },
@@ -530,7 +535,11 @@ test("saving a scoped meeting pins the request audience and opens meeting setup 
       registrationMode: "internal", capacity: "100", waitlistEnabled: "on",
     } },
   };
-  const form = descendants(Form({ directory: meetingDirectory, requestedCircleId: meetingCircleId })).find((node) => node.type === "form");
+  const draw = (preview = false) => { cursor = 0; return Form({ directory: meetingDirectory, requestedCircleId: meetingCircleId, preview }); };
+  const quick = descendants(draw()).find((node) => node.type === modules.get("src/components/platform/OperatorQuickEventForm.tsx").default);
+  assert.ok(quick, "quick event creation is the default");
+  quick.props.onAdvanced();
+  const form = descendants(draw()).find((node) => node.type === "form");
   await form.props.onSubmit(event);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "/api/ops/experiences");
@@ -545,7 +554,7 @@ test("saving a scoped meeting pins the request audience and opens meeting setup 
   assert.equal(calls[0].body.startsAt, "2026-10-02T00:00:00.000Z");
   assert.deepEqual(navigations, ["/ops/experiences/new-meeting#meeting-setup"]);
   assert.equal(resets, 1);
-  const preview = descendants(Form({ directory: meetingDirectory, requestedCircleId: meetingCircleId, preview: true })).find((node) => node.type === "form");
+  const preview = descendants(draw(true)).find((node) => node.type === "form");
   await preview.props.onSubmit(event);
   assert.equal(calls.length, 1, "preview cannot create or publish an event");
 });

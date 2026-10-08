@@ -7,6 +7,7 @@ import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import OperatorQuickEventForm from "@/components/platform/OperatorQuickEventForm";
 import StateLabel from "@/components/platform/StateLabel";
 import {
   OPERATOR_FIELD_CLASS,
@@ -75,6 +76,7 @@ export default function OperatorExperienceDirectory({
   const [createOpen, setCreateOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [formVersion, setFormVersion] = useState(0);
+  const [advancedCreate, setAdvancedCreate] = useState(false);
   const [newRegistrationMode, setNewRegistrationMode] = useState<"external" | "internal" | "none">(selectedCircle ? "none" : "internal");
   const [newVisibility, setNewVisibility] = useState<"all_members" | "block" | "circle" | "invite_only" | "public">(
     selectedCircle || !directory.canManageGlobal ? "circle" : "all_members",
@@ -107,6 +109,7 @@ export default function OperatorExperienceDirectory({
     setDirty(false);
     setError(null);
     setFormVersion((version) => version + 1);
+    setAdvancedCreate(false);
     setNewRegistrationMode(selectedCircle ? "none" : "internal");
     setNewVisibility(selectedCircle || !directory.canManageGlobal ? "circle" : "all_members");
     if (window.location.hash === "#new-experience") {
@@ -209,7 +212,7 @@ export default function OperatorExperienceDirectory({
               {["draft", "published", "completed", "cancelled", "archived"].map((state) => <option key={state} value={state}>{state[0].toUpperCase() + state.slice(1)}</option>)}
             </select>
           </label>
-          {directory.canCreate ? <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} w-full sm:w-auto`} id="new-experience-trigger" onClick={openCreate} type="button">{selectedCircle ? "+ Schedule a meeting" : "+ New experience"}</button> : null}
+          {directory.canCreate ? <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} w-full sm:w-auto`} id="new-experience-trigger" onClick={openCreate} type="button">{selectedCircle ? "+ Schedule a meeting" : "+ New event"}</button> : null}
         </div>
         <p className="pb-1 text-sm text-black/50" aria-live="polite">{visibleExperiences.length} {visibleExperiences.length === 1 ? "experience" : "experiences"}{stateFilter !== "all" || query.trim() ? ` of ${experiences.length}` : ""}</p>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -241,7 +244,9 @@ export default function OperatorExperienceDirectory({
       </section>
 
       {directory.canCreate ? (
-        <OperatorDialog open={createOpen} title={selectedCircle ? "Schedule a meeting" : "New experience"} context={selectedCircle ? <span className="text-sm text-black/60">{selectedCircle.name}</span> : undefined} onClose={closeCreate} pending={pending} returnFocusId="new-experience-trigger">
+        <OperatorDialog key={formVersion} open={createOpen} title={advancedCreate ? "Advanced event setup" : selectedCircle ? "Schedule a meeting" : "New event"} context={selectedCircle ? <span className="text-sm text-black/60">{selectedCircle.name}</span> : undefined} onClose={closeCreate} pending={pending} returnFocusId="new-experience-trigger">
+          {!advancedCreate ? <OperatorQuickEventForm key={formVersion} directory={directory} selectedCircle={selectedCircle} preview={preview} onPendingChange={setPending} onAdvanced={() => setAdvancedCreate(true)} onCreated={(experienceId) => { router.push(`/ops/experiences/${experienceId}`); router.refresh(); }} /> : <>
+          <p className="mb-5 text-sm text-black/55">For registration, public events, or a draft to finish later.</p>
           <form key={formVersion} id="new-experience" className="space-y-6" data-operator-dirty={dirty ? "true" : undefined} data-operator-pending={pending ? "true" : undefined} onChange={() => setDirty(true)} onInvalidCapture={(event) => { if (event.target instanceof Element) { const details = event.target.closest("details"); if (details) details.open = true; } }} onSubmit={createExperience}>
             <FormField label={selectedCircle ? "Meeting title" : "Title"}>
               <input className={OPERATOR_FIELD_CLASS} maxLength={200} name="title" defaultValue={selectedCircle ? `${selectedCircle.name} meeting` : undefined} required />
@@ -312,6 +317,7 @@ export default function OperatorExperienceDirectory({
               <p className="text-sm text-black/55">Nothing is published or sent yet.</p>
             </div>
           </form>
+          </>}
         </OperatorDialog>
       ) : null}
 

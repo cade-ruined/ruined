@@ -83,8 +83,11 @@ organizer. Calendar credentials remain separate from
 
 - One stable Ruined request key becomes one deterministic Google event ID, so a
   retried create cannot produce a second invitation.
-- Every event requests its own Google Meet conference. Conference details are
-  never copied between events.
+- The simple **New event** form preserves the Google Meet link supplied by the
+  operator in the invitation location and description. It does not generate a
+  replacement conference. Legacy events without a supplied link still request
+  their own Google Meet conference; conference details are never copied between
+  events.
 - Creates, updates, and cancellations use `sendUpdates=all` so Google emails
   every attendee affected by that change.
 - Member registrations and cancellations reconcile an existing published invite
@@ -102,7 +105,24 @@ organizer. Calendar credentials remain separate from
 Keep `GOOGLE_CALENDAR_ENABLED=false` until the organizer, OAuth grant, secrets,
 and a real test invitation have all been verified in that environment.
 
+## Supplied Meet links
+
+Apply `20261008180000_operator_event_meet_links.sql` before deploying the simple
+creation flow. It permits one supplied Meet URL to be used by multiple events,
+while retaining per-event uniqueness and exclusive bindings for every other
+provider/entity source. It does not modify existing event records or send invites.
+
 ## Durable delivery and recovery
+
+The simple **New event → Create event** action atomically publishes the event,
+saves its supplied Meet link, and records the first Calendar invitation. It
+requires configured Calendar delivery, an eligible member audience, and no
+registration step. After the transaction commits, the route immediately attempts
+delivery for that event. A failed attempt remains queued for recovery.
+
+The response reports **queued**, never delivered. Google controls whether each
+recipient sees an invitation on their personal calendar immediately or after
+accepting it; see [Google invitation settings](https://developers.google.com/workspace/calendar/api/concepts/inviting-attendees-to-events).
 
 Explicitly publishing an event that has not ended records its first Calendar
 invitation in the same transaction as the Experience change, only when Calendar
@@ -130,8 +150,9 @@ verify the deterministic provider identity and reconcile current contents before
 reporting success. A cancelled Experience still delivers its cancellation if it
 is archived before the worker runs.
 
-The Vercel schedule is only a daily fallback on the current Hobby plan. Timely
-automatic delivery requires activation of a supported frequent scheduler; see
+New simple events attempt delivery immediately after creation. The Vercel
+schedule remains a daily recovery fallback on the current Hobby plan. Timely
+recovery from failed or interrupted delivery requires a supported frequent scheduler; see
 [`worker-recovery-activation.md`](worker-recovery-activation.md). This code change
 does not activate that scheduler or send a test invitation.
 

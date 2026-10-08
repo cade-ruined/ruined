@@ -4,12 +4,12 @@ import { getGoogleCalendarConfigurationStatus } from "@/lib/google/calendar";
 import { googleCommunicationLivemode } from "@/lib/google/communications";
 import { getPendingCalendarReconciliations, reconcilePendingExperienceCalendar } from "@/lib/platform/ops-calendar-repository";
 
-export async function processCalendarReconciliationBatch(requestedLimit = 1) {
+async function processCalendarReconciliation(requestedLimit = 1, experienceId?: string) {
   const ready = getGoogleCalendarConfigurationStatus().ready && googleCommunicationLivemode() !== null;
   const result = { ready, claimed: 0, processed: 0, failed: 0, skipped: 0 };
   if (!ready) return result;
   const startedAt = Date.now();
-  const candidates = await getPendingCalendarReconciliations(requestedLimit);
+  const candidates = await getPendingCalendarReconciliations(requestedLimit, experienceId);
   for (const candidate of candidates) {
     if (Date.now() - startedAt > 20_000) break;
     result.claimed += 1;
@@ -25,4 +25,13 @@ export async function processCalendarReconciliationBatch(requestedLimit = 1) {
     }
   }
   return result;
+}
+
+export async function processCalendarReconciliationBatch(requestedLimit = 1) {
+  return processCalendarReconciliation(requestedLimit);
+}
+
+/** Run only the event just committed by the authorized server mutation. */
+export async function processCalendarReconciliationForExperience(experienceId: string) {
+  return processCalendarReconciliation(1, experienceId);
 }

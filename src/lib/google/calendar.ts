@@ -458,8 +458,9 @@ export async function createGoogleCalendarEvent(
   }
 
   return toGoogleCalendarEventResult(
-    await waitForGoogleMeet(configuration, event),
+    input.meetingUrl ? event : await waitForGoogleMeet(configuration, event),
     configuration.organizerEmail,
+    input.meetingUrl,
   );
 }
 
@@ -476,7 +477,7 @@ export async function updateGoogleCalendarEvent(
   for (let attempt = 0; attempt < MAX_UPDATE_RECONCILIATION_ATTEMPTS; attempt += 1) {
     const conferenceStatus = googleCalendarConferenceStatus(current);
     const needsMeetRequest =
-      !googleCalendarMeetUrl(current) && conferenceStatus !== "pending";
+      !input.meetingUrl && !googleCalendarMeetUrl(current) && conferenceStatus !== "pending";
     const body = buildGoogleCalendarUpdateBody(
       input,
       configuration.organizerEmail,
@@ -497,10 +498,11 @@ export async function updateGoogleCalendarEvent(
       googleCalendarEventMatchesAppliedUpdate(current, body)
       && !needsMeetRequest
     ) {
-      const settled = await waitForGoogleMeet(configuration, current);
+      const settled = input.meetingUrl ? current : await waitForGoogleMeet(configuration, current);
       return toGoogleCalendarEventResult(
         settled,
         configuration.organizerEmail,
+        input.meetingUrl,
       );
     }
     if (!current.etag) throw new GoogleCalendarConflictError();
@@ -526,19 +528,21 @@ export async function updateGoogleCalendarEvent(
         current = event;
         continue;
       }
-      const settled = await waitForGoogleMeet(configuration, event);
+      const settled = input.meetingUrl ? event : await waitForGoogleMeet(configuration, event);
       return toGoogleCalendarEventResult(
         settled,
         configuration.organizerEmail,
+        input.meetingUrl,
       );
     } catch (error) {
       if (!isAmbiguousWriteFailure(error)) throw error;
       current = await getRuinedOwnedGoogleCalendarEvent(configuration, eventId);
       if (googleCalendarEventMatchesAppliedUpdate(current, body)) {
-        const settled = await waitForGoogleMeet(configuration, current);
+        const settled = input.meetingUrl ? current : await waitForGoogleMeet(configuration, current);
         return toGoogleCalendarEventResult(
           settled,
           configuration.organizerEmail,
+          input.meetingUrl,
         );
       }
     }

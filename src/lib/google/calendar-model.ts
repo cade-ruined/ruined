@@ -38,6 +38,7 @@ export type GoogleCalendarEventDraft = {
   description?: string | null;
   end: GoogleCalendarEventTime;
   location?: string | null;
+  meetingUrl?: string | null;
   requestKey: string;
   sourceUrl?: string | null;
   start: GoogleCalendarEventTime;
@@ -80,7 +81,7 @@ export type GoogleCalendarEventBody = {
       };
       requestId: string;
     };
-  };
+  } | null;
   description?: string;
   end: GoogleCalendarEventTime;
   extendedProperties: {
@@ -358,12 +359,15 @@ function normalizedDraft(
     throw new Error("Calendar end must be after its start.");
   }
 
+  const meetingUrl = normalizeGoogleCalendarMeetingUrl(input.meetingUrl);
   const description = optionalText(
-    input.description,
+    meetingUrl
+      ? [input.description?.trim(), `Join on Google Meet: ${meetingUrl}`].filter(Boolean).join("\n\n")
+      : input.description,
     "Calendar description",
     MAX_DESCRIPTION_LENGTH,
   );
-  const location = optionalText(input.location, "Calendar location", MAX_LOCATION_LENGTH);
+  const location = optionalText(meetingUrl ?? input.location, "Calendar location", MAX_LOCATION_LENGTH);
   const sourceUrl = normalizedSourceUrl(input.sourceUrl);
 
   return {
@@ -393,12 +397,14 @@ export function buildGoogleCalendarCreateBody(
   const requestHash = googleCalendarRequestHash(input.requestKey);
   return {
     ...normalizedDraft(input, organizerEmail),
-    conferenceData: {
-      createRequest: {
-        conferenceSolutionKey: { type: "hangoutsMeet" },
-        requestId: googleMeetRequestIdForRequestKey(input.requestKey),
-      },
-    },
+    conferenceData: normalizeGoogleCalendarMeetingUrl(input.meetingUrl)
+      ? null
+      : {
+          createRequest: {
+            conferenceSolutionKey: { type: "hangoutsMeet" },
+            requestId: googleMeetRequestIdForRequestKey(input.requestKey),
+          },
+        },
     extendedProperties: {
       private: {
         ruinedCreateRequest: requestHash,
@@ -415,20 +421,23 @@ export function buildGoogleCalendarUpdateBody(
   options: GoogleCalendarUpdateBodyOptions = {},
 ): GoogleCalendarEventBody {
   const normalized = normalizedDraft(input, organizerEmail);
-  const meetRequestId = options.meetRequestId?.trim();
+  const meetingUrl = normalizeGoogleCalendarMeetingUrl(input.meetingUrl);
+  const meetRequestId = meetingUrl ? undefined : options.meetRequestId?.trim();
   if (meetRequestId) googleMeetRequestHash(meetRequestId);
   return {
     ...normalized,
-    ...(meetRequestId
-      ? {
-          conferenceData: {
-            createRequest: {
-              conferenceSolutionKey: { type: "hangoutsMeet" as const },
-              requestId: meetRequestId,
+    ...(meetingUrl
+      ? { conferenceData: null }
+      : meetRequestId
+        ? {
+            conferenceData: {
+              createRequest: {
+                conferenceSolutionKey: { type: "hangoutsMeet" as const },
+                requestId: meetRequestId,
+              },
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
     description: normalized.description ?? "",
     extendedProperties: {
       private: {
@@ -550,6 +559,7 @@ export function googleCalendarEventMatchesBody(
     event.summary === body.summary
     && (event.description ?? "") === (body.description ?? "")
     && (event.location ?? "") === (body.location ?? "")
+    && (body.conferenceData !== null || (!event.conferenceData && !event.hangoutLink))
     && calendarTimesMatch(event.start, body.start)
     && calendarTimesMatch(event.end, body.end)
     && providerAttendees !== null
@@ -606,6 +616,19 @@ function safeMeetUrl(value: unknown): string | null {
   return url.hostname === "meet.google.com" ? safe : null;
 }
 
+/** Supplied meeting links are carried as links, never copied conference data. */
+export function normalizeGoogleCalendarMeetingUrl(value?: string | null): string | null {
+  if (!value?.trim()) return null;
+  const safe = safeMeetUrl(value);
+  if (!safe) throw new Error("Google Meet link is invalid.");
+  const url = new URL(safe);
+  if (url.pathname.length > 129 || !/^\/[a-z]+-[a-z]+-[a-z]+\/?$/.test(url.pathname)) {
+    throw new Error("Google Meet link is invalid.");
+  }
+  url.hash = "";
+  return url.toString();
+}
+
 export function googleCalendarConferenceStatus(
   event: GoogleCalendarApiEvent,
 ): GoogleCalendarConferenceStatus {
@@ -630,12 +653,14 @@ export function googleCalendarMeetUrl(event: GoogleCalendarApiEvent): string | n
 export function toGoogleCalendarEventResult(
   event: GoogleCalendarApiEvent,
   expectedOrganizerEmail: string,
+  suppliedMeetingUrl?: string | null,
 ): GoogleCalendarEventResult {
   if (typeof event.id !== "string" || !event.id.trim()) {
     throw new Error("Google Calendar returned an event without an ID.");
   }
-  const meetUrl = googleCalendarMeetUrl(event);
-  const conferenceStatus = googleCalendarConferenceStatus(event);
+  const explicitMeetUrl = normalizeGoogleCalendarMeetingUrl(suppliedMeetingUrl);
+  const meetUrl = explicitMeetUrl ?? googleCalendarMeetUrl(event);
+  const conferenceStatus = explicitMeetUrl ? "success" : googleCalendarConferenceStatus(event);
   const organizerEmail = googleCalendarOrganizerEmail(event);
   return {
     conferenceId:
