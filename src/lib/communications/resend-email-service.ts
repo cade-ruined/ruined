@@ -177,11 +177,11 @@ async function campaignPayload(actor: string, input: Record<string, unknown>) {
   return { name: line(input.name, rendered.subject), segment_id: segmentId, topic_id: topicId, from: rendered.from,
     subject: rendered.subject, html: rendered.html, text: rendered.text, ...(rendered.replyTo.length ? { reply_to: rendered.replyTo } : {}), send: false };
 }
-async function audit(actor: string, action: string, subjectId: string, metadata: Record<string, unknown>) {
+async function audit(actor: string, action: string, subjectId: string, metadata: Record<string, string>) {
   await getApplicationDatabase().begin(async tx => {
     await requireAdminEmailActor(tx, actor);
     await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,metadata)
-      values(${actor}::uuid,${action},'resend_email',${subjectId},${JSON.stringify(metadata)}::jsonb)`;
+      values(${actor}::uuid,${action},'resend_email',${subjectId},${tx.json(metadata)}::jsonb)`;
   });
 }
 export async function saveResendBroadcast(actor: string, input: Record<string, unknown>) {
@@ -189,7 +189,7 @@ export async function saveResendBroadcast(actor: string, input: Record<string, u
   const payload = await campaignPayload(actor, input);
   // A save never sends and never changes contact preferences or segments.
   const created = await provider<{ id: string }>("/broadcasts", "POST", payload);
-  await audit(actor, "resend_email.draft_created", created.id, { templateId: input.templateId });
+  await audit(actor, "resend_email.draft_created", created.id, { templateId: id(input.templateId) });
   return created;
 }
 export async function reviewResendEmail(actor: string, input: Record<string, unknown>) {
@@ -215,7 +215,7 @@ export async function reviewResendEmail(actor: string, input: Record<string, unk
   const review = await getApplicationDatabase().begin(async tx => {
     await requireAdminEmailActor(tx, actor, true);
     const [row] = await tx<Array<{ id: string; expires_at: Date }>>`insert into admin_resend_reviews(actor_auth_user_id,snapshot,recipient_hash)
-      values(${actor}::uuid,${JSON.stringify(snapshot)}::jsonb,${digest(snapshot.recipients)}) returning id,expires_at`;
+      values(${actor}::uuid,${tx.json(snapshot)}::jsonb,${digest(snapshot.recipients)}) returning id,expires_at`;
     return row;
   });
   return { id: review.id, ...snapshot, recipientCount: snapshot.recipients.length, expiresAt: new Date(review.expires_at).toISOString() };
@@ -273,7 +273,7 @@ export async function sendResendEmail(actor: string, reviewId: unknown) {
   await db.begin(async tx => {
     await tx`update admin_resend_reviews set status='sent',provider_id=${providerId},completed_at=clock_timestamp() where id=${reviewKey}::uuid`;
     await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,metadata)
-      values(${actor}::uuid,'resend_email.sent','resend_email',${reviewKey},${JSON.stringify({ providerId, mode: snapshot.mode, recipientCount: snapshot.recipients.length })}::jsonb)`;
+      values(${actor}::uuid,'resend_email.sent','resend_email',${reviewKey},${tx.json({ providerId, mode: snapshot.mode, recipientCount: snapshot.recipients.length })}::jsonb)`;
   });
   return result("sent", providerId);
 }

@@ -5,6 +5,7 @@ import test from "node:test";
 import * as parse5 from "parse5";
 import ts from "typescript";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
+import { json, serializeJsonBindings } from "./helpers/postgres-json-bindings.mjs";
 
 async function load(path, dependencies = {}, globals = {}) {
   const code = ts.transpileModule(await readFile(new URL(`../${path}`, import.meta.url), "utf8"), {
@@ -54,7 +55,7 @@ async function fixture(t) {
     create role anon; create role authenticated; create schema private;
     create table platform_users(auth_user_id uuid primary key,status text not null);
     create table platform_role_grants(auth_user_id uuid references platform_users,role_slug text,revoked_at timestamptz);
-    create table operator_audit_events(id bigint generated always as identity,actor_auth_user_id uuid,action text,subject_type text,subject_id text,metadata jsonb);
+    create table operator_audit_events(id bigint generated always as identity,actor_auth_user_id uuid,action text,subject_type text,subject_id text,metadata jsonb check(jsonb_typeof(metadata)='object'));
   `);
   await pg.exec(await readFile(new URL("../db/migrations/20261008200000_resend_email_frontend.sql", import.meta.url), "utf8"));
   const admin = crypto.randomUUID(), guide = crypto.randomUUID(), other = crypto.randomUUID();
@@ -66,10 +67,11 @@ async function fixture(t) {
       const query = strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, "");
       const fault = faults.findIndex(pattern => query.includes(pattern));
       if (fault >= 0) { faults.splice(fault, 1); throw Error("injected database acknowledgement failure"); }
-      const result = await client.query(query, params);
+      const result = await client.query(query, serializeJsonBindings(strings, params));
       if (query.includes("set status='sending'")) for (const row of result.rows) claims.push(row.id);
       return result.rows;
     };
+    sql.json = json;
     sql.begin = async callback => {
       const claims = [];
       const result = await client.transaction(tx => callback(wrap(tx, claims)));
@@ -166,8 +168,20 @@ async function fixture(t) {
     state.template.html = '<html><body><p>Hello {{{NAME}}}</p><img src="https://assets.example.test/exact.svg"></body></html>';
     return { ...input, mode: "individual", recipients: [contact.email] };
   }
-  return { pg, admin, guide, other, service, state, input, campaign, individual, env, faults };
+  return { pg, db, admin, guide, other, service, state, input, campaign, individual, env, faults };
 }
+
+test("database fixture preserves postgres.js JSON object and pre-stringified scalar behavior", async t => {
+  const f = await fixture(t);
+  const value = { subject: 'A note, "from Ruined"', nested: { enabled: true } };
+  const [typed] = await f.db`select ${f.db.json(value)}::jsonb as value`;
+  const [preStringified] = await f.db`select ${JSON.stringify(value)}::jsonb as value`;
+  assert.deepEqual(typed.value, value);
+  assert.equal(preStringified.value, JSON.stringify(value));
+  const [nulls] = await f.db`select ${null}::jsonb is null as raw, ${f.db.json(null)}::jsonb is null as typed`;
+  assert.deepEqual(nulls, { raw: true, typed: true });
+  await assert.rejects(f.db`insert into operator_audit_events(metadata) values(${JSON.stringify(value)}::jsonb)`, /check constraint/);
+});
 
 test("manual email configuration does not depend on an OpenAI key or model", async t => {
   const f = await fixture(t);
@@ -302,6 +316,10 @@ test("individual sign-off review freezes hosted artwork and plain text for subse
   assert.equal(f.state.signOffs.length, 1, "sending never recreates or changes reviewed artwork");
   assert.equal(f.state.sends[0].body.html, review.html);
   assert.equal(f.state.sends[0].body.text, review.text);
+  const audit = (await f.pg.query("select metadata from operator_audit_events where action='resend_email.sent'")).rows[0].metadata;
+  assert.equal(audit.mode, "individual");
+  assert.equal(audit.recipientCount, 1);
+  assert.equal(typeof audit.providerId, "string");
 });
 
 test("native campaign drafts retain a hosted sign-off before review without sending", async t => {
