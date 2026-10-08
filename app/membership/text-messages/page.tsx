@@ -8,19 +8,19 @@ const description = "Ruined membership text-message terms, privacy, and an examp
 const contact = <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a>;
 
 export const metadata: Metadata = {
-  title: "Membership text messages",
+  title: "Terms & Conditions",
   description,
   alternates: { canonical: "/membership/text-messages" },
-  ...sharingMetadata({ title: "Membership text messages", description, path: "/membership/text-messages" }),
+  ...sharingMetadata({ title: "Terms & Conditions", description, path: "/membership/text-messages" }),
 };
 
 export default function MembershipTextMessagesPage() {
   return <EditorialPage
     eyebrow="SMS terms · October 8, 2026"
-    title="Membership text messages."
+    title="Terms & Conditions"
     intro="A separate, optional way to receive Ruined membership updates and call reminders."
     sections={[
-      { title: "The program", body: <>
+      { title: "SMS Terms", body: <>
         <p>Ruined membership texts cover membership updates and call reminders only. If you opt in, you agree to recurring text messages from Ruined at the mobile number you provide. Message frequency varies with your membership and call schedule. Message and data rates may apply.</p>
         <p>Text-message delivery is being prepared and is not currently enabled. These terms describe the planned program; submitting a preference does not mean that messages have started.</p>
       </> },
@@ -40,8 +40,11 @@ export default function MembershipTextMessagesPage() {
       { title: "Registration opt-in example", body: <>
         <p>This public example shows the optional email and text choices presented in registration. The text disclosure and policy links are the same ones used in the registration form. The example is interactive, but cannot submit an enrollment.</p>
         <MemberSmsOptInExample />
-        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-sms-opt-in.jpg">View the registration form screenshot ↗</a></p>
-        <p>The screenshot shows our registration form in preview mode, with no real member information. Actual registration requires email verification.</p>
+        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-sms-form.jpg">View the full registration form preview ↗</a></p>
+        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-sms-opt-in.jpg">View the text-message consent close-up ↗</a></p>
+        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-payment-preview.jpg">View the agreement and payment preview ↗</a></p>
+        <p>These screenshots show the registration form and payment page in preview mode, using example details and no real member information. The previews cannot submit a registration, accept an agreement, or authorize billing.</p>
+        <p>Actual registration requires email verification, followed by registration details, the membership agreement, and payment when required. Members can continue through those steps whether or not they choose text messages.</p>
       </> },
       { title: "Continue to Ruined", body: <>
         <p>To begin membership registration, follow the membership invitation flow. Text reminders remain optional throughout registration.</p>
