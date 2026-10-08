@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
@@ -8,6 +8,7 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import {
   googleCommunicationLivemode,
   googleCommunicationUrlFromMetadata,
+  safeGoogleCommunicationUrl,
 } from "@/lib/google/communications";
 import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
 import {
@@ -16,9 +17,12 @@ import {
 import {
   getOpsExperienceCalendarStateForTx,
   markOpsExperienceCalendarPending,
+  requireOpsExperienceCalendarAudienceForCreation,
+  requireOpsExperienceCalendarCreationReady,
 } from "@/lib/platform/ops-calendar-repository";
 import type {
   OpsExperienceDirectory,
+  OpsExperienceCreateAndPublishInput,
   OpsExperienceDraftInput,
   OpsExperienceLifecycleState,
   OpsExperienceRecord,
@@ -367,6 +371,7 @@ async function writeOperatorAudit(
     actorAuthUserId: string;
     after?: postgres.JSONValue;
     before?: postgres.JSONValue;
+    dedupeKey?: string;
     memberId?: string | null;
     metadata?: postgres.JSONValue;
     reason?: string | null;
@@ -396,7 +401,7 @@ async function writeOperatorAudit(
       ${input.before === undefined ? null : tx.json(input.before)},
       ${input.after === undefined ? null : tx.json(input.after)},
       ${tx.json(input.metadata ?? {})},
-      ${randomUUID()}
+      ${input.dedupeKey ?? randomUUID()}
     )
   `;
 }
@@ -990,6 +995,52 @@ export async function createOpsExperience(input: {
   actorAuthUserId: string;
   draft: OpsExperienceDraftInput;
 }): Promise<{ experienceId: string }> {
+  return persistOpsExperience(input);
+}
+
+export async function createAndPublishOpsExperience(input: {
+  actorAuthUserId: string;
+  event: OpsExperienceCreateAndPublishInput;
+}): Promise<{ experienceId: string }> {
+  const meetingUrl = safeGoogleCommunicationUrl("meet", input.event.meetingUrl);
+  if (!meetingUrl) {
+    throw new OpsOperatingRepositoryError(
+      "invalid_request",
+      "Enter a Google Meet link such as https://meet.google.com/abc-defg-hij.",
+    );
+  }
+  if (!["all_members", "circle", "block"].includes(input.event.visibility)) {
+    throw new OpsOperatingRepositoryError(
+      "invalid_request",
+      "Choose all members, a Circle, or a Block for automatic calendar invitations.",
+    );
+  }
+  if (input.event.registrationMode !== "none" || input.event.capacity !== null
+    || input.event.waitlistEnabled || input.event.externalRegistrationUrl
+    || input.event.registrationOpensAt || input.event.registrationClosesAt) {
+    throw new OpsOperatingRepositoryError(
+      "invalid_request",
+      "Automatic calendar events invite the audience directly and do not require registration.",
+    );
+  }
+  const normalizedMeetingUrl = new URL(meetingUrl);
+  normalizedMeetingUrl.search = "";
+  normalizedMeetingUrl.hash = "";
+  normalizedMeetingUrl.pathname = normalizedMeetingUrl.pathname.replace(/\/$/, "");
+  return persistOpsExperience({
+    actorAuthUserId: input.actorAuthUserId,
+    draft: input.event,
+    meetingUrl: normalizedMeetingUrl.toString(),
+    requestId: requireUuid(input.event.requestId, "Creation request"),
+  });
+}
+
+async function persistOpsExperience(input: {
+  actorAuthUserId: string;
+  draft: OpsExperienceDraftInput;
+  meetingUrl?: string;
+  requestId?: string;
+}): Promise<{ experienceId: string }> {
   const draft = normalizeDraft(input.draft);
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
@@ -1000,7 +1051,7 @@ export async function createOpsExperience(input: {
         draft.kind !== "circle_meeting" ||
         draft.visibility !== "circle" ||
         !draft.circleId ||
-        !(await hasAssignedCircle(tx, access, draft.circleId, ["circle_leader"]))
+        !(await hasAssignedCircle(tx, access, draft.circleId, ["circle_leader"], true))
       ) {
         throw new OpsOperatingRepositoryError(
           "forbidden",
@@ -1008,6 +1059,31 @@ export async function createOpsExperience(input: {
         );
       }
     }
+    const dedupeKey = input.requestId ? `experience-create:${access.authUserId}:${input.requestId}` : undefined;
+    const requestFingerprint = input.meetingUrl
+      ? createHash("sha256").update(JSON.stringify({ draft, meetingUrl: input.meetingUrl })).digest("hex")
+      : null;
+    if (dedupeKey) {
+      await tx`select pg_advisory_xact_lock(hashtext(${dedupeKey}), 50)`;
+      const prior = await tx<Array<{ experience_id: string; request_fingerprint: string }>>`
+        select subject_id as experience_id, metadata->>'requestFingerprint' as request_fingerprint
+        from operator_audit_events
+        where dedupe_key = ${dedupeKey}
+          and actor_auth_user_id = ${access.authUserId}::uuid
+          and action = 'experience.created' and subject_type = 'experience'
+      `;
+      if (prior[0]) {
+        if (prior[0].request_fingerprint !== requestFingerprint) {
+          throw new OpsOperatingRepositoryError(
+            "conflict",
+            "This creation request already saved a different event. Open the existing event or start a new event.",
+          );
+        }
+        return { experienceId: prior[0].experience_id };
+      }
+    }
+    const livemode = input.meetingUrl ? requireOpsExperienceCalendarCreationReady() : null;
+    const state = input.meetingUrl ? "published" : "draft";
     const experienceId = randomUUID();
     const base = slugBase(draft.title);
     await tx`select pg_advisory_xact_lock(hashtext(${base}), 49)`;
@@ -1037,6 +1113,7 @@ export async function createOpsExperience(input: {
         capacity,
         waitlist_enabled,
         status,
+        published_at,
         created_by_auth_user_id,
         updated_by_auth_user_id
       ) values (
@@ -1059,12 +1136,37 @@ export async function createOpsExperience(input: {
         ${draft.registrationClosesAt}::timestamptz,
         ${draft.capacity},
         ${draft.waitlistEnabled},
-        'draft',
+        ${state},
+        case when ${state} = 'published' then statement_timestamp() else null end,
         ${access.authUserId}::uuid,
         ${access.authUserId}::uuid
       )
     `;
-    const snapshot = { status: "draft", title: draft.title, version: 1 };
+    if (input.meetingUrl) {
+      await tx`
+        insert into integration_entity_links (
+          provider, local_entity_type, local_entity_id, external_entity_type,
+          external_entity_id, livemode, metadata
+        ) values (
+          'google', 'experience', ${experienceId}, 'meet_space',
+          ${new URL(input.meetingUrl).pathname.slice(1)}, ${livemode},
+          ${tx.json({ meetingUri: input.meetingUrl, source: "operator_event" })}
+        )
+      `;
+      await requireOpsExperienceCalendarAudienceForCreation(tx, experienceId);
+      const queued = await markOpsExperienceCalendarPending(tx, {
+        actorAuthUserId: access.authUserId,
+        experienceId,
+        reason: "publish",
+      });
+      if (!queued) {
+        throw new OpsOperatingRepositoryError(
+          "conflict",
+          "The event could not be scheduled for calendar delivery. Check that its end time is in the future and Calendar setup is complete.",
+        );
+      }
+    }
+    const snapshot = { status: state, title: draft.title, version: 1 };
     await writeExperienceEvent(tx, {
       actorAuthUserId: access.authUserId,
       eventType: "created",
@@ -1075,9 +1177,28 @@ export async function createOpsExperience(input: {
       action: "experience.created",
       actorAuthUserId: access.authUserId,
       after: snapshot,
+      dedupeKey,
+      metadata: requestFingerprint ? { requestFingerprint } : {},
       subjectId: experienceId,
       subjectType: "experience",
     });
+    if (input.meetingUrl) {
+      await writeExperienceEvent(tx, {
+        actorAuthUserId: access.authUserId,
+        eventType: "published",
+        experienceId,
+        next: snapshot,
+        reason: "Created with automatic calendar invitations.",
+      });
+      await writeOperatorAudit(tx, {
+        action: "experience.published",
+        actorAuthUserId: access.authUserId,
+        after: snapshot,
+        metadata: { calendarDelivery: "queued" },
+        subjectId: experienceId,
+        subjectType: "experience",
+      });
+    }
     return { experienceId };
   });
 }

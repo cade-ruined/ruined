@@ -196,7 +196,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
           <p className="text-sm leading-relaxed text-black/60">
             {kind === "chat"
               ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
-              : "Paste an existing Google Meet link here. Saving it does not send invitations or change Google access; use Calendar invitations for that flow."}
+              : "Paste an existing Google Meet link here. Saving does not send invitations or change Google access. Calendar invitations will use this link."}
           </p>
           {setupHelp}
           <form className="mt-3 grid gap-3" onSubmit={submit}>

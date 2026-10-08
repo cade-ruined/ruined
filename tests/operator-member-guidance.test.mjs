@@ -25,7 +25,8 @@ function load(path, dependencies = {}) {
 const helper = load("src/lib/platform/operator-member-guidance.ts");
 const { guidanceForMemberSummary, guidanceForMemberRecord, memberGuidanceAction } = helper;
 const preview = load("src/lib/platform/ops-preview.ts");
-const guidanceDeps = { "@/lib/platform/operator-member-guidance": helper };
+const Checkpoints = load("src/components/platform/OperatorMemberCheckpoints.tsx");
+const guidanceDeps = { "@/components/platform/OperatorMemberCheckpoints": Checkpoints, "@/lib/platform/operator-member-guidance": helper };
 const Setup = load("src/components/platform/OperatorMemberSetup.tsx", guidanceDeps).default;
 const empty = { __esModule: true, default: () => null };
 const stateLabel = { __esModule: true, default: ({ state }) => React.createElement("span", null, state) };
@@ -85,17 +86,55 @@ test("paid held registration has consistent member directory and detail guidance
     requiresInitialPayment: true, requiresPaymentMethod: false, completionBasis: "paid_membership", emailVerified: true,
     paymentMethodState: "missing", paymentConfirmed: true, billingArranged: true, billingState: "pending", serviceStartsAt: "2026-11-05T22:00:00Z" };
   const directory = render(Directory, { members: [summary({ billingState: "pending", administrativeOnboardingState: "in_progress", standingState: "pre_active", programState: "prospect", registration: progress })] });
-  assert.match(text(directory), /Payment received/);
-  assert.match(text(directory), /service starts Nov 5/);
+  assert.ok(nodes(directory).find(node => attr(node, "aria-label") === "Payment received: Complete"));
   assert.doesNotMatch(text(directory), /Complete joining|Check payment confirmation/);
   const member = record({ states: { account: "active", billing: "pending", administrativeOnboarding: "in_progress", standing: "pre_active" } });
   member.membership.registration = progress;
   const detail = render(Record, { record: member });
-  assert.match(text(nextPanel(detail)), /Payment received/);
-  assert.match(text(nextPanel(detail)), /Operator opens the profile when ready/);
-  assert.match(text(detail), /service checkpoints can remain pending until membership begins/);
+  assert.match(text(nextPanel(detail)), /profile/i);
+  assert.match(text(detail), /Payment received/);
+  assert.match(text(detail), /Service setup can remain pending until membership begins/);
   member.access.roles = ["circle_leader"];
   assert.doesNotMatch(text(nextPanel(render(Record, { record: member }))), /Payment received|service starts Nov 5/);
+});
+
+test("invited members use the same verified checkpoint next action in directory and record", () => {
+  const progress = { state: "collecting", registeredAt: null, profileComplete: false, ready: false,
+    requiresInitialPayment: true, requiresPaymentMethod: false, completionBasis: null, emailVerified: false,
+    paymentMethodState: "missing", paymentConfirmed: false, billingArranged: false, billingState: "pending", serviceStartsAt: null };
+  for (const emailVerified of [false, true]) {
+    const registration = { ...progress, emailVerified };
+    const expected = emailVerified ? /Complete registration information/ : /Confirm email/;
+    const directory = render(Directory, { members: [summary({ accountState: "invited", billingState: "pending", administrativeOnboardingState: "not_started", standingState: "pre_active", programState: "prospect", membershipState: "pending", registration })] });
+    assert.match(text(directory), expected);
+    assert.doesNotMatch(text(directory), /Sign in to start joining|Complete joining/);
+    const member = record({ states: { account: "invited", admission: "invited", billing: "pending", administrativeOnboarding: "not_started", standing: "pre_active" } });
+    member.membership.registration = registration;
+    const next = nextPanel(render(Record, { record: member }));
+    assert.match(text(next), expected);
+    assert.doesNotMatch(text(next), /Sign in to start joining|Complete joining/);
+  }
+});
+
+test("checkpoint next actions never override suspended, closed, paused or admission-review restrictions", () => {
+  const registration = { state: "collecting", registeredAt: null, profileComplete: false, ready: false,
+    requiresInitialPayment: true, requiresPaymentMethod: false, completionBasis: null, emailVerified: false,
+    paymentMethodState: "missing", paymentConfirmed: false, billingArranged: false, billingState: "pending", serviceStartsAt: null };
+  for (const [states, summaryPatch, expected] of [
+    [{ account: "suspended" }, { accountState: "suspended" }, /Review the account suspension/],
+    [{ account: "closed" }, { accountState: "closed" }, /Review the closed account/],
+    [{ account: "invited", standing: "paused" }, { accountState: "invited", programState: "paused" }, /Review the membership pause/],
+    [{ account: "invited", admission: "withdrawn" }, { accountState: "invited", programState: "withdrawn" }, /Review the membership decision/],
+  ]) {
+    const member = record({ states });
+    member.membership.registration = registration;
+    const next = nextPanel(render(Record, { record: member }));
+    assert.match(text(next), expected);
+    assert.doesNotMatch(text(next), /Confirm email|Complete registration information/);
+    const directory = render(Directory, { members: [summary({ ...summaryPatch, registration })] });
+    assert.match(text(directory), expected);
+    assert.doesNotMatch(text(directory), /Confirm email|Complete registration information/);
+  }
 });
 
 test("an absent billing record is not described as a permission problem for an authorized operator", () => {
@@ -361,4 +400,21 @@ test("guidance navigation encodes only member ID and never transports grants or 
   assert.deepEqual([...url.searchParams.keys()], ["memberId"]);
   assert.equal(url.searchParams.get("memberId"), id);
   assert.equal(url.hash, "#assign-member");
+});
+
+
+test("same-page next-step and placement links use native hash navigation while route links stay routed", () => {
+  const rawNodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(rawNodes)] : [];
+  const blocked = record({ states: { billing: "pending", administrativeOnboarding: "in_progress", standing: "pre_active" }, requirements: [required("agreement")], circle: null });
+  const alumni = record({ states: { standing: "alumni", billing: "active", administrativeOnboarding: "completed" }, circle: null });
+  for (const [member, target] of [[blocked, "#membership"], [alumni, "#journey"]]) {
+    const recordLinks = rawNodes(Record({ record: member })).filter(node => node.props.href === target);
+    assert.equal(recordLinks.length, 2, "both the top next step and empty Circle action target the member panel");
+    assert.ok(recordLinks.every(node => node.type === "a"), "native anchors emit the hashchange consumed by the workspace guard");
+    const setupLink = rawNodes(Setup({ record: member })).find(node => node.props.href === target);
+    assert.equal(setupLink.type, "a", "the overview's placement action uses the same panel navigation");
+  }
+  const ready = record({ states: { billing: "active", administrativeOnboarding: "completed", standing: "active" }, circle: null });
+  const crossRoute = rawNodes(Setup({ record: ready })).find(node => node.props.href?.startsWith("/ops/circles"));
+  assert.notEqual(crossRoute.type, "a", "different-page navigation retains Next Link");
 });

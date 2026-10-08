@@ -56,6 +56,7 @@ function fixture({ entries = remembered, writable = true, preview = false, save,
   new Function("require", "module", "exports", "window", "crypto", "Date", "CSS", "HTMLElement", output)(name => {
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return require(name);
+    if (name === "next/link") return { __esModule: true, default: "a" };
     if (name.endsWith("/timeline-model")) return timelineModel;
     if (name === "./timeline-persistence") return { createTimelinePersistenceAdapter: () => adapter, TimelineConflictError, TimelineSaveUncertainError };
     if (name === "./useTimelineDraftGuard") return { __esModule: true, default: state => { guardStates.push(state); return { recoveryDraft, dismissRecovery() { recoveryDraft = null; }, clearDraft() { cleared++; } }; } };
@@ -136,7 +137,7 @@ test("Save & add another retains the selected date, clears only content and reco
   const ui = fixture({ entries: [] }); ui.add();
   for (const [name, value] of Object.entries({ year: "2021", month: "11", title: "  A new practice  ", details: "  Remember the morning.  " })) ui.change(name, value);
   await ui.submit(true); const tree = ui.render();
-  assert.equal(ui.calls.length, 1); assert.deepEqual(ui.calls[0].entries, [{ id: null, year: 2021, month: 11, title: "A new practice", details: "Remember the morning." }]);
+  assert.equal(ui.calls.length, 1); assert.deepEqual(ui.calls[0].entries, [{ id: null, year: 2021, month: 11, title: "A new practice", details: "Remember the morning.", meaning: null }]);
   assert.ok(form(tree)); assert.equal(control(tree, "year").props.value, "2021"); assert.equal(control(tree, "month").props.value, "11");
   assert.equal(control(tree, "title").props.value, ""); assert.equal(control(tree, "details").props.value, "");
   assert.equal(ui.guardStates.at(-1).dirty, false); assert.equal(ui.cleared(), 1);
@@ -215,4 +216,27 @@ test("restoring a stale or uncertain recovery requires loading saved moments bef
     assert.equal(control(tree, "details").props.value, draft.details);
     assert.equal(ui.calls.length, 0, "loading latest must not automatically resubmit the recovered draft"); ui.unmount();
   }
+});
+
+
+test("the full Timeline links to Part I and preserves its private meaning during ordinary edits", async () => {
+  const meaning = "I could begin again.";
+  const entries = remembered.map(entry => entry.id === "year-only" ? { ...entry, meaning } : entry);
+  const ui = fixture({ entries });
+  const tree = ui.render();
+  const worksheetLink = nodes(tree).find(node => node.type === "a" && node.props.href === "/my/foundations/timeline/part-1");
+  assert.ok(worksheetLink);
+  assert.match(text(worksheetLink), /Foundations 01 worksheet/);
+  assert.match(text(tree), /What I made it meanI could begin again/);
+  nodes(tree).find(node => node.props["aria-label"] === "Edit A year remembered").props.onClick();
+  ui.change("title", "A clearer title for the same moment");
+  await ui.submit();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].entries.find(entry => entry.id === "year-only").meaning, meaning);
+  assert.match(text(ui.render()), /What I made it meanI could begin again/);
+  ui.unmount();
+  const readonly = fixture({ entries, writable: false });
+  assert.match(text(readonly.render()), /What I made it meanI could begin again/);
+  assert.equal(readonly.calls.length, 0);
+  readonly.unmount();
 });

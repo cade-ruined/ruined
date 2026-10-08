@@ -17,13 +17,13 @@ export function createWorkQueueDigestEmail(input: { queue: OpsWorkQueue; slot: W
   const summary = `${count(queue.totals.tasks)} tasks · ${count(queue.totals.artifacts)} Artifacts · ${count(queue.totals.failures)} failed actions`;
   const items = queue.items.slice(0, MAX_ITEMS).map((item) => {
     const title = cleanText(item.label);
-    const member = item.memberName ? cleanText(item.memberName, 100) : "System work";
+    const member = cleanText(item.memberName ?? "", 100) || (item.memberId ? "Member awaiting information" : "System work");
     const state = cleanText(item.state.replaceAll("_", " "), 40);
     const date = item.dueAt && Number.isFinite(Date.parse(item.dueAt)) ? formatTime(new Date(item.dueAt)) : null;
     const due = date ? `${item.kind === "workflow_failure" ? "Updated" : "Due"} ${date}` : "No due date";
     const href = item.kind === "artifact"
       ? `${WORK_QUEUE_DIGEST_SITE}/ops/artifacts?focus=${encodeURIComponent(item.workId)}#artifact-${encodeURIComponent(item.workId)}`
-      : item.memberId ? `${WORK_QUEUE_DIGEST_SITE}/ops/members/${encodeURIComponent(item.memberId)}${item.kind === "task" && item.taskType === "registration.billing_review" ? "#membership" : "#record"}` : workUrl;
+      : item.memberId ? `${WORK_QUEUE_DIGEST_SITE}/ops/members/${encodeURIComponent(item.memberId)}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}` : workUrl;
     return { title, member, state, due, href };
   });
   const remainder = queue.items.length > MAX_ITEMS ? `Showing the first ${MAX_ITEMS} prioritized items. Open the work queue for the rest.` : "";

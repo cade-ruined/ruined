@@ -45,10 +45,11 @@ test("the member directory opens one unified, server-projected operating record"
   assert.doesNotMatch(memberRecord, /divide-y|border-y|uppercase tracking-\[0\.1/);
   assert.match(memberRecord, /Member record actions/);
   const optionalDetails = [...memberRecord.matchAll(/<details\b[\s\S]*?<\/details>/g)].map((match) => match[0]);
-  assert.equal(optionalDetails.length, 2);
+  assert.equal(optionalDetails.length, 3);
   assert.match(optionalDetails[0], /aria-labelledby="member-next-step-guidance"/);
-  assert.match(optionalDetails[1], /aria-labelledby="member-state-details"/);
-  for (const disclosure of optionalDetails) assert.doesNotMatch(disclosure, /OperatorTaskCreateAction|OperatorNoteAction|OperatorOverrideAction|<Link|\bopen=/, "only guidance and diagnostics are collapsed; work actions remain directly reachable");
+  assert.match(optionalDetails[1], /Membership service setup/);
+  assert.match(optionalDetails[2], /aria-labelledby="member-state-details"/);
+  for (const disclosure of optionalDetails) assert.doesNotMatch(disclosure, /OperatorTaskCreateAction|OperatorNoteAction|OperatorOverrideAction|<Link/, "guidance, service detail and diagnostics may collapse; work actions remain directly reachable");
   assert.match(memberRecord, /OperatorTaskCreateAction/);
   assert.match(memberRecord, /OperatorNoteAction/);
   assert.match(memberRecord, /OperatorOverrideAction/);

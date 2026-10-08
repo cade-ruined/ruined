@@ -14,7 +14,7 @@ import {
   GoogleCalendarConflictError,
   updateGoogleCalendarEvent,
 } from "@/lib/google/calendar";
-import { googleCalendarEventIdForRequestKey, type GoogleCalendarEventResult } from "@/lib/google/calendar-model";
+import { googleCalendarEventIdForRequestKey, normalizeGoogleCalendarMeetingUrl, type GoogleCalendarEventResult } from "@/lib/google/calendar-model";
 import { googleCommunicationLivemode } from "@/lib/google/communications";
 import type { OpsExperienceCalendarState } from "@/lib/platform/ops-experience-model";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
@@ -39,6 +39,7 @@ type CalendarExperience = {
   ends_at: Date | string;
   experience_id: string;
   location_label: string | null;
+  meeting_url?: string | null;
   starts_at: Date | string;
   state: string;
   summary: string | null;
@@ -85,6 +86,7 @@ type CalendarSnapshot = {
   description: string | null;
   end: string;
   location: string | null;
+  meetingUrl?: string | null;
   sourceUrl: string;
   start: string;
   summary: string;
@@ -316,7 +318,19 @@ async function getCalendarExperience(
       `;
   const experience = rows[0];
   if (!experience) throw new OpsOperatingRepositoryError("not_found", "Experience not found.");
-  return experience;
+  const mode = googleCommunicationLivemode();
+  const meetingLinks = await tx<Array<{ meeting_url: string | null }>>`
+    select metadata->>'meetingUri' as meeting_url
+    from integration_entity_links
+    where provider = 'google'
+      and local_entity_type = 'experience'
+      and local_entity_id = ${experienceId}
+      and external_entity_type = 'meet_space'
+      and livemode = ${mode}
+      and metadata->>'source' = 'operator_event'
+    limit 1
+  `;
+  return { ...experience, meeting_url: normalizeGoogleCalendarMeetingUrl(meetingLinks[0]?.meeting_url) };
 }
 
 async function resolveCalendarAttendees(
@@ -543,10 +557,38 @@ export async function getOpsExperienceCalendarStateForTx(
         : safeFailureCopy(link?.last_failure_code ?? null)
       : "The configured Google organizer does not match this existing invitation.",
     lastSyncedAt: asIso(link?.last_synced_at),
-    meetingUrl: link?.meet_url ?? null,
+    meetingUrl: experience.meeting_url ?? link?.meet_url ?? null,
+    preservesMeetingUrl: Boolean(experience.meeting_url),
     organizerEmail: configuration.organizerEmail,
     status: calendarStatus(link),
   };
+}
+
+export function requireOpsExperienceCalendarCreationReady(): boolean {
+  const mode = googleCommunicationLivemode();
+  if (!getGoogleCalendarConfigurationStatus().ready || mode === null) {
+    throw new OpsOperatingRepositoryError(
+      "conflict",
+      "Google Calendar delivery must be connected before creating an event. Ask an administrator to finish Calendar setup.",
+    );
+  }
+  return mode;
+}
+
+export async function requireOpsExperienceCalendarAudienceForCreation(
+  tx: postgres.TransactionSql,
+  experienceIdValue: string,
+): Promise<number> {
+  const experienceId = requireUuid(experienceIdValue, "Experience");
+  const experience = await getCalendarExperience(tx, experienceId);
+  const attendees = await resolveCalendarAttendees(tx, experience, "authorization");
+  if (!attendees.length) {
+    throw new OpsOperatingRepositoryError(
+      "conflict",
+      "This audience has no eligible members with a verified email address. Choose another audience or finish member setup.",
+    );
+  }
+  return attendees.length;
 }
 
 export async function markOpsExperienceCalendarPending(
@@ -618,6 +660,7 @@ function eventSnapshot(
     description: experience.details ?? experience.summary,
     end: asIso(experience.ends_at)!,
     location: experience.location_label,
+    meetingUrl: experience.meeting_url ?? null,
     sourceUrl: eventSourceUrl(experience.experience_id),
     start: asIso(experience.starts_at)!,
     summary: experience.title,
@@ -1288,6 +1331,7 @@ function googleDraft(reservation: ReservedSync) {
       timeZone: reservation.snapshot.timezone,
     },
     location: reservation.snapshot.location,
+    meetingUrl: reservation.snapshot.meetingUrl ?? null,
     requestKey: reservation.providerRequestKey,
     sourceUrl: reservation.snapshot.sourceUrl,
     start: {
@@ -1511,7 +1555,7 @@ async function finalizeCalendarSuccess(
 
     const livemode = input.reservation.livemode;
     const meetUrl = input.result?.meetUrl ?? link.meet_url;
-    if (livemode !== null && meetUrl && !cancelled) {
+    if (livemode !== null && meetUrl && !cancelled && !input.reservation.snapshot.meetingUrl) {
       await tx`
         insert into integration_entity_links (
           provider,
@@ -1544,6 +1588,7 @@ async function finalizeCalendarSuccess(
           external_entity_id = excluded.external_entity_id,
           metadata = excluded.metadata,
           updated_at = statement_timestamp()
+        where integration_entity_links.metadata->>'source' is distinct from 'operator_event'
       `;
     } else if (livemode !== null && cancelled) {
       await tx`
@@ -1553,6 +1598,7 @@ async function finalizeCalendarSuccess(
           and local_entity_id = ${input.experienceId}
           and external_entity_type = 'meet_space'
           and livemode = ${livemode}
+          and metadata->>'source' is distinct from 'operator_event'
       `;
     }
     await tx`
@@ -1855,10 +1901,11 @@ export async function bindLegacyExperienceCalendar(input: { actorAuthUserId: str
 
 /** Server-only worker discovery. The durable request lease is claimed again
  * under the same per-Experience lock used by manual sync before any HTTP call. */
-export async function getPendingCalendarReconciliations(limit: number) {
+export async function getPendingCalendarReconciliations(limit: number, experienceIdValue?: string) {
   const configuration = getGoogleCalendarConfigurationStatus();
   const mode = googleCommunicationLivemode();
   if (!configuration.ready || mode === null) return [];
+  const experienceId = experienceIdValue ? requireUuid(experienceIdValue, "Experience") : null;
   const sql = getApplicationDatabase();
   return sql<Array<{ experience_id: string; actor_auth_user_id: string; intent: CalendarIntent }>>`
     select link.experience_id,
@@ -1869,6 +1916,7 @@ export async function getPendingCalendarReconciliations(limit: number) {
     join experiences experience on experience.id = link.experience_id
     left join experience_calendar_sync_requests request on request.id = link.current_sync_request_id
     where link.livemode = ${mode}
+      and (${experienceId}::uuid is null or link.experience_id = ${experienceId}::uuid)
       and link.organizer_email = ${configuration.organizerEmail}
       and link.organizer_calendar_id = ${configuration.calendarId}
       and link.status in ('pending_create', 'pending_update', 'pending_cancel', 'failed')

@@ -109,7 +109,10 @@ test("Experiences keeps creation one click away in a closed modal without an alw
   assert.ok(elements(dialog).includes(byId(tree, "new-experience")));
   assert.equal(all.filter((node) => node.tagName === "form").length, 1);
   assert.ok(all.some((node) => node.tagName === "input" && attr(node, "type") === "search"));
-  assert.match(text(tree), /Nothing is published or sent yet/);
+  assert.match(text(tree), /Creates the event and sends calendar invitations to this audience/);
+  assert.ok(elements(dialog).some((node) => node.tagName === "input" && attr(node, "name") === "meetingUrl"));
+  assert.ok(elements(dialog).some((node) => node.tagName === "button" && text(node) === "Create event"));
+  assert.ok(elements(dialog).some((node) => node.tagName === "button" && text(node) === "Advanced event setup"));
   const restricted = render("OperatorExperienceDirectory", { directory: { ...experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, canCreate: false } });
   assert.equal(byId(restricted, "new-experience"), undefined);
   assert.equal(elements(restricted).some((node) => attr(node, "href") === "#new-experience"), false);
@@ -313,6 +316,19 @@ test("saved-card review explains the hold and opens Membership without exposing 
   const links = nodes(fixture.draw()).filter(node => node.props?.href);
   assert.ok(links.some(node => node.props.href === "/ops/members/member-one#membership"));
   assert.ok(links.some(node => node.props.href === "/ops/members/member-one#record"));
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("checkpoint work keeps the canonical next action visible and links to the member checkpoints", () => {
+  const item = { kind: "task", taskType: "registration.checkpoint.payment", label: "Complete membership checkout", description: "Member reviews the price and terms, then pays through Stripe. No separate card-saving step.", memberId: "member-one", memberName: "Example member", state: "open", priority: 50, dueAt: null, workId: "checkout-one", claimedByName: "Libby Zaritsky", claimedByCurrentOperator: false, version: 4 };
+  const fixture = harness("src/components/platform/OperatorWorkQueue.tsx", "default", { queue: { items: [item], totals: { tasks: 1, artifacts: 0, failures: 0 } }, preview: true });
+  assert.match(reactText(fixture.draw()), /No separate card-saving step/);
+  assert.match(reactText(fixture.draw()), /Claimed by Libby Zaritsky/);
+  const links = nodes(fixture.draw()).filter(node => node.props?.href);
+  assert.ok(links.some(node => node.props.href === "/ops/members/member-one#membership"));
+  const action = nodes(fixture.draw()).find(node => node.type?.name === "OperatorTaskAction");
+  assert.equal(action.props.claimedByCurrentOperator, false);
+  assert.equal(action.props.expectedVersion, 4);
   assert.deepEqual(fixture.calls, []);
 });
 
@@ -550,4 +566,23 @@ test("work queue shows full claimant names and passes exact ownership and versio
   assert.equal((html.match(/>Complete<\/button>/g) ?? []).length, 1);
   assert.equal((html.match(/>Unclaim<\/button>/g) ?? []).length, 1);
   assert.equal((html.match(/>Claim<\/button>/g) ?? []).length, 1);
+});
+
+test("incomplete registrations stay identifiable and linked before they have a profile name", () => {
+  const task = preview.PREVIEW_OPS_WORK_QUEUE.items.find(item => item.kind === "task");
+  const variants = [
+    { memberName: " ", memberEmail: "new.member@example.com", expected: "new.member@example.com" },
+    { memberName: null, memberEmail: null, expected: "View member" },
+    { memberName: "Alex Morgan", memberEmail: "new.member@example.com", expected: "Alex Morgan" },
+  ];
+  for (const { expected, ...identity } of variants) {
+    const queue = { items: [{ ...task, ...identity, memberId: "new-member", taskType: "registration.checkpoint.information" }], totals: { tasks: 1, artifacts: 0, failures: 0 } };
+    const tree = render("OperatorWorkQueue", { queue, preview: true });
+    const link = elements(tree).find(node => node.tagName === "a" && attr(node, "href") === "/ops/members/new-member#membership");
+    assert.ok(link, "every member task links to the registration checkpoints");
+    assert.equal(text(link), expected);
+    assert.doesNotMatch(text(tree), /System work/);
+  }
+  const system = render("OperatorWorkQueue", { queue: { items: [{ ...task, memberId: null, memberName: null }], totals: { tasks: 1, artifacts: 0, failures: 0 } }, preview: true });
+  assert.match(text(system), /System work/);
 });

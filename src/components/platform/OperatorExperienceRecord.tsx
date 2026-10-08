@@ -239,7 +239,7 @@ export default function OperatorExperienceRecord({
   const [cancellationDirty, setCancellationDirty] = useState(false);
   const canEditDetails = experience.canEdit && ["draft", "published"].includes(experience.state);
   const calendarManaged = Boolean(experience.calendar.googleEventId)
-    || ["pending_create", "pending_update", "pending_cancel"].includes(experience.calendar.status);
+    || experience.calendar.status !== "not_created";
   const eventEnded = new Date(experience.endsAt ?? new Date(new Date(experience.startsAt).getTime() + 3_600_000).toISOString()).getTime() <= Date.now();
   const willQueue = experience.calendar.configured && !eventEnded;
 
@@ -481,8 +481,8 @@ export default function OperatorExperienceRecord({
             audienceReviewHref={experience.circleId ? `/ops/circles?circleId=${encodeURIComponent(experience.circleId)}` : "#experience-roster"}
             audienceReviewLabel={experience.circleId ? "Review Circle" : "Review people"}
           >
-            {calendarManaged ? <p className="text-sm text-black/60">Google Calendar manages this meeting link.</p> : <>
-              <p className="mb-3 text-sm text-black/60">Use a Meet link you already have. Saving does not send invitations. If you later send Google Calendar invitations, Google creates a new link and replaces this one.</p>
+            {calendarManaged ? <p className="text-sm text-black/60">{experience.calendar.preservesMeetingUrl ? "Calendar invitations use the Google Meet link you supplied." : "Google Calendar manages this meeting link."}</p> : <>
+              <p className="mb-3 text-sm text-black/60">Use a Meet link you already have. Saving does not send invitations. Calendar invitations will use the link you save here.</p>
               <OperatorGoogleCommunicationField configured={experience.googleCommunicationsConfigured} editable={experience.canManageCommunication && !["cancelled", "archived", "completed"].includes(experience.state)} entityId={experience.experienceId} entityType="experience" initialUrl={experience.meetingUrl} kind="meet" inline preview={preview} />
             </>}
           </OperatorExperienceCalendar>
@@ -641,7 +641,7 @@ export default function OperatorExperienceRecord({
           <p>{formatDate(experience.startsAt, experience.timezone)} · {experience.scope}</p>
           <p>{willQueue ? `Publishing makes this Experience visible and queues Google Calendar invitations for ${experience.calendar.attendeeCount} ${experience.calendar.attendeeCount === 1 ? "person" : "people"}. Delivery status appears in Meeting; queued does not mean sent.` : eventEnded ? "This event has ended. Publishing makes it visible but will not automatically send Google invitations." : "Publishing makes this Experience visible. Google invitations will not be sent automatically while Calendar setup needs attention."}</p>
           {experience.calendar.attendeeCount === 0 && willQueue ? <p className="rounded-[4px] bg-[var(--color-highlight)]/35 p-3">No one is currently eligible for an invitation. Review the audience before publishing; a Google event can still be created for the organizer.</p> : null}
-          {experience.meetingUrl && willQueue && !calendarManaged ? <p className="text-[var(--color-poster)]">Google will replace your saved meeting link with a new Meet link.</p> : null}
+          {experience.meetingUrl && willQueue && !calendarManaged && !experience.calendar.preservesMeetingUrl ? <p className="text-[var(--color-poster)]">Google will replace your saved meeting link with a new Meet link.</p> : null}
           <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{pending ? "Publishing" : willQueue ? "Publish + queue invitations" : "Publish Experience"}</button>
           {error ? <p role="alert" className="text-[var(--color-poster)]">{error}</p> : null}
         </div>

@@ -230,6 +230,8 @@ export type OpsWorkItem =
       label: string;
       memberId: string | null;
       memberName: string | null;
+      /** Admin-only display fallback. Deliberately excluded from work digest emails. */
+      memberEmail?: string | null;
       priority: number;
       state: string;
       workId: string;

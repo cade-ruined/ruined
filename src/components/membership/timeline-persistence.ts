@@ -21,12 +21,14 @@ function singleMutation(entries: TimelineSaveEntry[], current: MemberTimelineSna
     const payload = {
       id: entry.id, year: entry.year, title: entry.title.trim(), details: entry.details?.trim() || null,
       ...(entry.month === undefined ? {} : { month: entry.month }),
+      ...(entry.meaning === undefined ? {} : { meaning: entry.meaning?.trim() || null }),
     };
     if (entry.id === null) { changes.push({ action: "upsert", entry: payload }); continue; }
     const saved = existing.get(entry.id);
     if (!saved || seen.has(entry.id)) throw new TimelineConflictError("Load the latest saved events before saving this moment.");
     seen.add(entry.id);
-    if (entry.year !== saved.year || (entry.month !== undefined && entry.month !== (saved.month ?? null))
+    if ((entry.meaning !== undefined && (entry.meaning?.trim() || null) !== (saved.meaning?.trim() || null))
+      || entry.year !== saved.year || (entry.month !== undefined && entry.month !== (saved.month ?? null))
       || entry.title.trim() !== saved.title.trim() || (entry.details?.trim() || null) !== (saved.details?.trim() || null)) {
       changes.push({ action: "upsert", entry: payload });
     }
@@ -36,9 +38,10 @@ function singleMutation(entries: TimelineSaveEntry[], current: MemberTimelineSna
   return changes[0] ?? null;
 }
 
-export function createTimelinePersistenceAdapter({ preview, writable }: {
+export function createTimelinePersistenceAdapter({ preview, writable, ownerId }: {
   preview: boolean;
   writable: boolean;
+  ownerId?: string;
 }): TimelinePersistenceAdapter {
   if (preview) {
     let lastPosition = 0;
@@ -71,6 +74,8 @@ export function createTimelinePersistenceAdapter({ preview, writable }: {
     };
   }
 
+  const ownerHeaders = ownerId ? { "x-ruined-session-owner": ownerId } : undefined;
+
   async function readTimeline(response: Response) {
     const payload = (await response.json()) as { error?: string; timeline?: MemberTimelineSnapshot };
     if (response.status === 409) {
@@ -87,7 +92,7 @@ export function createTimelinePersistenceAdapter({ preview, writable }: {
       if (!writable) throw new Error("This Timeline is read-only.");
       const response = await fetch("/api/my/timeline", {
         body: JSON.stringify({ action: "complete" }),
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...ownerHeaders },
         method: "POST",
       });
       const payload = (await response.json()) as {
@@ -101,7 +106,7 @@ export function createTimelinePersistenceAdapter({ preview, writable }: {
       return { ...current, completedAt };
     },
     async load() {
-      return readTimeline(await fetch("/api/my/timeline", { cache: "no-store" }));
+      return readTimeline(await fetch("/api/my/timeline", { cache: "no-store", ...(ownerHeaders ? { headers: ownerHeaders } : {}) }));
     },
     async save(entries, current) {
       if (!writable) throw new Error("This Timeline is read-only.");
@@ -111,7 +116,7 @@ export function createTimelinePersistenceAdapter({ preview, writable }: {
       try {
         response = await fetch("/api/my/timeline", {
           body: JSON.stringify({ ...mutation, expectedRevision: current.revision }),
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...ownerHeaders },
           method: "POST",
         });
         if (response.status >= 500) throw new Error("Unconfirmed response");

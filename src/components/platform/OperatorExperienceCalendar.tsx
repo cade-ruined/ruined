@@ -156,7 +156,7 @@ export default function OperatorExperienceCalendar({
         </p>
       ) : experienceState === "draft" ? (
         <p className="mt-3 text-sm text-black/62">
-          Review & publish to make this Experience available. Google creates the Meet link when its invitation is processed; publishing alone does not confirm delivery.
+          Review & publish to make this Experience available. {calendar.preservesMeetingUrl ? "Invitations will include your saved Google Meet link" : "Google creates the Meet link when its invitation is processed"}; publishing alone does not confirm delivery.
         </p>
       ) : null}
 

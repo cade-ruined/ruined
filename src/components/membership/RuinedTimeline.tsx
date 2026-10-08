@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 
+import Link from "next/link";
+
 import TimelineExportStudio from "@/components/membership/TimelineExportStudio";
 import {
   EMPTY_TIMELINE_FORM,
@@ -300,6 +302,7 @@ export default function RuinedTimeline({
         clientKey: local?.clientKey ?? entry.id,
         createdOrder: entry.position,
         details: entry.details ?? "",
+        meaning: entry.meaning ?? null,
         id: entry.id,
         month: entry.month ?? null,
         position: entry.position,
@@ -399,6 +402,7 @@ export default function RuinedTimeline({
       clientKey,
       createdOrder: existing?.createdOrder ?? Date.now(),
       details: form.details.trim(),
+      meaning: existing?.meaning ?? null,
       id: existing?.id ?? null,
       month: form.month === "" ? null : Number(form.month),
       position: existing?.position ?? entries.length + 1,
@@ -514,6 +518,7 @@ export default function RuinedTimeline({
           <p className={styles.readingMeta}>{summaryFor(sortedEntries, examples)}</p>
         </div>
         <div className={styles.readingActions}>
+          <Link className={styles.readingTextButton} href="/my/foundations/timeline/part-1" prefetch={false}>Foundations 01 worksheet <span aria-hidden="true">↗</span></Link>
           {writable || preview ? <button aria-controls={editorId} aria-expanded={editorOpen} className={`${styles.button} ${styles.primaryButton}`} disabled={Boolean(pending) || needsReload || Boolean(recoveryDraft)} onClick={editorOpen ? focusYear : prepareNewEvent} ref={addRef} type="button">{editorOpen ? "Continue writing" : "+ Add moment"}</button> : null}
           {entries.length > 0 ? <button aria-controls={exportId} aria-expanded={exportOpen} className={styles.readingTextButton} onClick={() => setExportOpen(current => !current)} type="button">{exportOpen ? "Close export" : "Export timeline"} <span aria-hidden="true">↗</span></button> : null}
         </div>
@@ -552,6 +557,7 @@ export default function RuinedTimeline({
                       <span aria-hidden="true" className={styles.momentToggle}>+</span>
                     </summary>
                     {entry.details ? <p className={styles.momentDetails}>{entry.details}</p> : <p className={styles.momentEmpty}>{examples ? "An example moment." : "A moment worth keeping."}</p>}
+                    {entry.meaning ? <p className={styles.momentDetails}><strong>What I made it mean</strong><br />{entry.meaning}</p> : null}
                   {!examples && (writable || preview) ? <button aria-label={`Edit ${entry.title}`} className={styles.momentEdit} disabled={!canInteract || Boolean(pending)} onClick={() => beginEdit(entry)} type="button">Edit</button> : null}
                   </details>
                 </li>)}

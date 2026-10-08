@@ -6,58 +6,37 @@ import ts from "typescript";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const migrationPath = "db/migrations/20261005190000_registration_operator_work.sql";
-async function shippedFunction(db, path, name, replacement = name) {
-  const migration = await source(path);
-  const start = migration.search(new RegExp(`create (?:or replace )?function private\\.${name}\\(`));
-  assert.ok(start >= 0, `Missing ${name}`);
-  await db.exec(migration.slice(start, migration.indexOf("$$;", start) + 3).replace(name, replacement));
+const legacyMigrationPath = "db/migrations/20261005190000_registration_operator_work.sql";
+const migrationPath = "db/migrations/20261008100000_registration_checkpoint_work.sql";
+async function load(path, dependencies = {}) {
+  const loaded = { exports: {} };
+  new Function("require", "module", "exports", ts.transpileModule(await source(path), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(name => { assert.ok(Object.hasOwn(dependencies, name), `Unexpected ${name}`); return dependencies[name]; }, loaded, loaded.exports);
+  return loaded.exports;
 }
+const journey = await load("src/lib/membership/operator-registration-progress.ts");
+const defaultProgress = {
+  state: "collecting", registeredAt: null, profileComplete: true, ready: false,
+  requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: null,
+  emailVerified: true, paymentMethodState: "missing", paymentConfirmed: false,
+  paidCheckoutAvailable: true, paymentNeedsReview: false, billingArranged: false,
+  billingState: "pending", serviceStartsAt: null,
+};
 async function fixture(t) {
   const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite();
   t.after(() => db.close());
   await db.exec(`
     create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key, status text default 'active');
-    create table ruined_members(id uuid primary key, person_id uuid references people(id), email_normalized text,
+    create table ruined_members(id uuid primary key, person_id uuid references people(id),
       membership_state text default 'pending', deleted_at timestamptz, unique(id,person_id));
-    create table member_lifecycle(member_id uuid primary key, account_state text default 'active', billing_state text default 'pending',
-      standing_state text default 'pre_active', program_state text default 'prospect', cancellation_effective_at timestamptz);
-    create table platform_users(auth_user_id uuid primary key, person_id uuid, member_id uuid, email_normalized text, status text default 'active');
-    create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz);
-    create table person_email_addresses(person_id uuid, email_normalized text, verification_state text default 'verified', retired_at timestamptz);
+    create table member_lifecycle(member_id uuid primary key, account_state text default 'active', billing_state text default 'pending', program_state text default 'prospect');
+    create table platform_users(auth_user_id uuid primary key);
     create table circles(id uuid primary key); create table membership_blocks(id uuid primary key);
-    create table member_onboardings(member_id uuid primary key, profile_completed_at timestamptz);
-    create table person_private_profiles(person_id uuid primary key, birth_date date, default_fulfillment_address jsonb);
-    create table member_registration_access(member_id uuid primary key, registered_at timestamptz, completion_basis text,
-      payment_setup_account_id text, payment_setup_livemode boolean, profile_activated_at timestamptz,
-      legal_acknowledgment_required boolean default false);
-    create table member_consents(member_id uuid, consent_type text, decision text, source text, actor_auth_user_id uuid, evidence jsonb);
-    create table member_payment_method_accounts(member_id uuid, stripe_account_id text, livemode boolean, consent_attempt_id uuid,
-      stripe_payment_method_id text, saved_at timestamptz, consent_revoked_at timestamptz, cleanup_pending boolean default false,
-      primary key(member_id,stripe_account_id,livemode));
-    create table member_payment_method_setup_attempts(id uuid primary key, member_id uuid, stripe_account_id text, livemode boolean,
-      status text default 'saved', consent_revoked_at timestamptz);
-    create table member_payment_method_detachments(stripe_account_id text, livemode boolean, stripe_payment_method_id text);
-    create table stripe_checkout_attempts(id uuid primary key default gen_random_uuid(), member_id uuid, status text,
-      stripe_subscription_id text, recurring_payment_terms jsonb default '{}');
-    create table stripe_membership_commitments(checkout_attempt_id uuid, member_id uuid, stripe_subscription_id text,
-      terms_snapshot jsonb, status text default 'active');
-    create table stripe_subscriptions(id text primary key, member_id uuid, stripe_status text, cancel_at timestamptz);
-    create table membership_couple_authorizations(id uuid primary key, payer_member_id uuid, partner_member_id uuid,
-      accepted_at timestamptz, accepted_by_auth_user_id uuid);
-    create table membership_commercial_reservations(id uuid primary key, kind text, status text, payer_member_id uuid,
-      couple_authorization_id uuid, stripe_subscription_id text, created_at timestamptz default now());
-    create table membership_commercial_participants(reservation_id uuid, member_id uuid, person_id uuid, ordinal integer);
-    create table membership_enrollment_episodes(reservation_id uuid, member_id uuid, ended_at timestamptz);
-    create table member_registration_couple_intents(member_id uuid primary key, partner_email_normalized text, consented_by_auth_user_id uuid);
-    create table fixture_funding(member_id uuid primary key, complimentary boolean default false, operator boolean default false);
-    create function private.ruined_member_has_complimentary_funding(id uuid) returns boolean language sql as
-      $$ select coalesce((select complimentary from fixture_funding where member_id=id),false) $$;
-    create function private.ruined_member_has_operator_funding(id uuid) returns boolean language sql as
-      $$ select coalesce((select operator from fixture_funding where member_id=id),false) $$;
-    create function private.ruined_lock_member_complimentary_funding(id uuid) returns boolean language sql as
-      $$ select private.ruined_member_has_complimentary_funding(id) $$;
+    create table member_registration_access(member_id uuid primary key, progress jsonb);
+    create table member_payment_method_setup_attempts(id uuid primary key, member_id uuid);
+    create function private.ruined_lock_member_complimentary_funding(id uuid) returns boolean language sql as $$ select true $$;
   `);
   const operations = await source("db/migrations/20260826_membership_operating_spine_05_content_operations.sql");
   await db.exec(operations.slice(operations.indexOf("create table if not exists public.operator_tasks ("), operations.indexOf("-- Overrides are immutable")));
@@ -65,275 +44,246 @@ async function fixture(t) {
     $$ begin raise exception 'Append-only records'; end $$;
     create trigger operator_task_events_append_only before update or delete on operator_task_events
       for each row execute function public.ruined_reject_append_only_mutation();`);
-  await shippedFunction(db,"db/migrations/20260930200000_registration_eligibility.sql","ruined_registration_intake_eligibility_error");
-  await shippedFunction(db,"db/migrations/20260930220000_registration_legal_acknowledgment.sql","ruined_registration_legal_complete");
-  await shippedFunction(db,"db/migrations/20260930220000_registration_legal_acknowledgment.sql","ruined_member_registration_ready");
-  await shippedFunction(db,"db/migrations/20260930140000_member_registration_access.sql","ruined_member_profile_released");
-  await shippedFunction(db,"db/migrations/20260929006000_membership_commercial_eligibility.sql","ruined_member_has_couple_funding");
-  await shippedFunction(db,"db/migrations/20260929006000_membership_commercial_eligibility.sql","ruined_member_shared_billing_state");
-  await shippedFunction(db,"db/migrations/20260930113000_couple_circle_placement.sql","ruined_circle_couple_partner","ruined_commercial_circle_couple_partner");
-  await shippedFunction(db,"db/migrations/20260930210000_registration_couples.sql","ruined_registration_circle_couple_partner");
+  await db.exec(await source(legacyMigrationPath));
   const migration = await source(migrationPath);
   await db.exec(migration);
-  const configuration = {stripeCheckoutReady:false}, failures = {events:false};
+  const failures = { events: false };
   function sqlFor(engine) {
-    const sql = async (parts,...values) => {
-      const query = parts.reduce((out,part,index) => out+(index ? `$${index}` : "")+part,"");
-      if(failures.events && /insert into operator_task_events/.test(query)) throw new Error("Injected event failure");
-      return (await engine.query(query,values)).rows;
+    const sql = async (parts, ...values) => {
+      const query = parts.reduce((out, part, index) => out + (index ? `$${index}` : "") + part, "");
+      if (failures.events && /insert into operator_task_events/.test(query)) throw new Error("Injected event failure");
+      return (await engine.query(query, values)).rows;
     };
     sql.json = JSON.stringify;
     sql.begin = fn => engine.transaction(tx => fn(sqlFor(tx)));
     return sql;
   }
-  const loaded = {exports:{}};
-  const dependencies = {"server-only":{},"node:crypto":crypto,
-    "@/lib/database/server":{getApplicationDatabase:()=>sqlFor(db)},
-    "@/lib/platform/config":{getPlatformConfiguration:()=>configuration}};
-  new Function("require","module","exports",ts.transpileModule(await source("src/lib/platform/registration-work-repository.ts"),{
-    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
-  }).outputText)(name => { assert.ok(Object.hasOwn(dependencies,name),`Unexpected ${name}`); return dependencies[name]; },loaded,loaded.exports);
-  const reconcile = loaded.exports.reconcileRegistrationOperatorWork;
-  async function member() {
-    const id=crypto.randomUUID(),auth=crypto.randomUUID(),attempt=crypto.randomUUID(),email=`${id}@example.test`;
-    await db.query("insert into people(id) values($1)",[id]);
-    await db.query("insert into ruined_members(id,person_id,email_normalized) values($1,$1,$2)",[id,email]);
-    await db.query("insert into member_lifecycle(member_id) values($1)",[id]);
-    await db.query("insert into platform_users(auth_user_id,person_id,member_id,email_normalized) values($1,$2,$2,$3)",[auth,id,email]);
-    await db.query("insert into platform_role_grants values($1,'member',null)",[auth]);
-    await db.query("insert into person_email_addresses(person_id,email_normalized) values($1,$2)",[id,email]);
-    await db.query("insert into member_onboardings values($1,now())",[id]);
-    await db.query(`insert into person_private_profiles values($1,'1990-01-01','{"countryCode":"US"}')`,[id]);
-    await db.query("insert into member_registration_access(member_id,registered_at,completion_basis,payment_setup_account_id,payment_setup_livemode) values($1,now(),'saved_card','acct_Fixture',false)",[id]);
-    await db.query("insert into member_payment_method_setup_attempts(id,member_id,stripe_account_id,livemode) values($1,$2,'acct_Fixture',false)",[attempt,id]);
-    await db.query("insert into member_payment_method_accounts(member_id,stripe_account_id,livemode,consent_attempt_id,stripe_payment_method_id,saved_at) values($1,'acct_Fixture',false,$2,$3,now())",[id,attempt,`pm_${id}`]);
-    return {id,auth,attempt,email};
+  const { reconcileRegistrationOperatorWork: reconcile } = await load("src/lib/platform/registration-work-repository.ts", {
+    "server-only": {}, "node:crypto": crypto,
+    "@/lib/database/server": { getApplicationDatabase: () => sqlFor(db) },
+    "@/lib/membership/operator-registration-progress": journey,
+    // Evidence projection is tested in the registration repository tests. These
+    // queue tests exercise real SQL/tasks/migrations with the shipped journey.
+    "@/lib/membership/registration-repository": { readMemberRegistrationProgress: async (tx, ids) => {
+      const rows = await tx`select member_id, progress from member_registration_access where member_id = any(${ids}::uuid[])`;
+      return new Map(rows.map(row => [row.member_id, row.progress]));
+    } },
+  });
+  async function member(progress = {}, { enrolled = true } = {}) {
+    const id = crypto.randomUUID(), auth = crypto.randomUUID();
+    await db.query("insert into people(id) values($1)", [id]);
+    await db.query("insert into ruined_members(id,person_id) values($1,$1)", [id]);
+    await db.query("insert into member_lifecycle(member_id) values($1)", [id]);
+    await db.query("insert into platform_users values($1)", [auth]);
+    if (enrolled) await db.query("insert into member_registration_access values($1,$2)", [id, JSON.stringify({ ...defaultProgress, ...progress })]);
+    return { id, auth };
   }
-  const tasks = async id => (await db.query("select * from operator_tasks where member_id=$1 order by created_at,id",[id])).rows;
-  async function replaceCard(member) {
-    const attempt = crypto.randomUUID();
-    await db.query("insert into member_payment_method_setup_attempts(id,member_id,stripe_account_id,livemode) values($1,$2,'acct_Fixture',false)",[attempt,member.id]);
-    await db.query("update member_payment_method_accounts set consent_attempt_id=$2 where member_id=$1",[member.id,attempt]);
-    return attempt;
+  async function update(member, progress) {
+    await db.query("update member_registration_access set progress=progress || $2::jsonb where member_id=$1", [member.id, JSON.stringify(progress)]);
   }
-  async function couple(a,b,{commercial=false}={}) {
-    for(const [own,partner] of [[a,b],[b,a]]) await db.query("insert into member_registration_couple_intents values($1,$2,$3)",[own.id,partner.email,own.auth]);
-    if(!commercial) return;
-    const id=crypto.randomUUID(),authorization=crypto.randomUUID();
-    await db.query("insert into membership_couple_authorizations values($1,$2,$3,now(),$4)",[authorization,a.id,b.id,b.auth]);
-    await db.query("insert into membership_commercial_reservations(id,kind,status,payer_member_id,couple_authorization_id) values($1,'couple','reserved',$2,$3)",[id,a.id,authorization]);
-    await db.query("insert into membership_commercial_participants values($1,$2,$2,1),($1,$3,$3,2)",[id,a.id,b.id]);
-    return id;
+  async function legacy(member, { status = "open", claimed = false, resolution = null, createdAt = "2026-10-05T12:00:00Z" } = {}) {
+    const id = crypto.randomUUID(), attempt = crypto.randomUUID();
+    await db.query("insert into member_payment_method_setup_attempts values($1,$2)", [attempt, member.id]);
+    await db.query(`insert into operator_tasks(id,member_id,person_id,task_type,title,description,status,assigned_to_auth_user_id,created_by_type,created_at,completed_at)
+      values($1,$2,$2,'registration.billing_review','Review membership billing','Old review',$3,$4,'system',$5,case when $3='completed' then now() else null end)`,
+    [id, member.id, status, claimed ? member.auth : null, createdAt]);
+    await db.query("insert into registration_operator_work(member_id,payment_setup_attempt_id,operator_task_id,resolution_reason,resolved_at) values($1,$2,$3,$4,case when $4::text is not null then now() else null end)", [member.id, attempt, id, resolution]);
+    await db.query(`insert into operator_task_events(operator_task_id,event_type,next_status,actor_type,evidence,dedupe_key)
+      values($1,'created',$2,'system','{"source":"legacy"}',$3)`, [id, status, `legacy:${id}`]);
+    return { id, attempt };
   }
-  return {db,configuration,failures,reconcile,member,tasks,replaceCard,couple,migration};
+  const tasks = async id => (await db.query("select * from operator_tasks where member_id=$1 order by created_at,id", [id])).rows;
+  const registry = async id => (await db.query("select * from registration_checkpoint_work where member_id=$1 order by checkpoint", [id])).rows;
+  return { db, failures, reconcile, member, update, legacy, tasks, registry, migration };
 }
 
-test("existing saved-card registrations get one durable blocked task; release gates preserve assignment and never set overdue dates",async t=>{
-  const f=await fixture(t),member=await f.member();
-  assert.deepEqual(await f.reconcile(),{created:1,updated:0,resolved:0});
-  let [task]=await f.tasks(member.id);
-  assert.equal(task.status,"blocked"); assert.equal(task.due_at,null);
-  assert.match(task.title,/billing opening pending/); assert.match(task.blocked_reason,/commercial and payment/);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-  await Promise.all([f.reconcile(),f.reconcile()]);
-  assert.equal((await f.tasks(member.id)).length,1);
-  f.configuration.stripeCheckoutReady=true;
-  assert.equal((await f.reconcile()).updated,1);
-  [task]=await f.tasks(member.id); assert.equal(task.status,"blocked"); assert.match(task.blocked_reason,/profile has not been activated/);
-  await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1",[member.id]);
-  assert.equal((await f.reconcile()).updated,1);
-  [task]=await f.tasks(member.id); assert.equal(task.status,"open"); assert.equal(task.blocked_reason,null);
-  await f.db.query("update operator_tasks set status='in_progress',assigned_to_auth_user_id=$2 where id=$1",[task.id,member.auth]);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-  f.configuration.stripeCheckoutReady=false;
-  await f.reconcile(); [task]=await f.tasks(member.id);
-  assert.equal(task.status,"blocked"); assert.equal(task.assigned_to_auth_user_id,member.auth); assert.equal(task.due_at,null);
-  const events=(await f.db.query("select * from operator_task_events order by id")).rows;
-  assert.equal(events.length,4); assert.ok(events.every(event=>event.actor_type==='system' && event.actor_auth_user_id===null));
-  assert.equal((await f.db.query("select count(*)::int n from stripe_subscriptions")).rows[0].n,0);
-  assert.equal((await f.db.query("select count(*)::int n from stripe_checkout_attempts")).rows[0].n,0);
-});
-
-test("completed reviews stay completed for the same consent; a new saved method starts one fresh review",async t=>{
-  const f=await fixture(t),member=await f.member(); await f.reconcile();
-  const [original]=await f.tasks(member.id);
-  await f.db.query("update operator_tasks set status='completed',completed_at=now() where id=$1",[original.id]);
-  f.configuration.stripeCheckoutReady=true;
-  await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1",[member.id]);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-  await f.replaceCard(member);
-  assert.deepEqual(await f.reconcile(),{created:1,updated:0,resolved:0});
-  const tasks=await f.tasks(member.id); assert.equal(tasks.length,2);
-  assert.equal(tasks.find(task=>task.id===original.id).status,"completed");
-  assert.equal(tasks.filter(task=>task.status==='open').length,1);
-});
-
-test("held profiles become review-ready only under the explicit confirmed-registration activation gate",async t=>{
-  const f=await fixture(t),member=await f.member();
-  await f.reconcile();
-  assert.equal((await f.tasks(member.id))[0].status,'blocked','the absent new config property fails closed');
-  f.configuration.stripeActivationReady=false;
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-  f.configuration.stripeActivationReady='true';
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0},'a truthy string is not a release gate');
-  f.configuration.stripeActivationReady=true;
-  assert.equal((await f.reconcile()).updated,1);
-  let [task]=await f.tasks(member.id);
-  assert.equal(task.status,'open'); assert.equal(task.blocked_reason,null); assert.equal(task.due_at,null);
-  assert.equal((await f.db.query("select profile_activated_at from member_registration_access where member_id=$1",[member.id])).rows[0].profile_activated_at,null);
-  assert.equal((await f.db.query("select billing_state from member_lifecycle where member_id=$1",[member.id])).rows[0].billing_state,'pending');
-  f.configuration.stripeActivationReady=false;
-  assert.equal((await f.reconcile()).updated,1); [task]=await f.tasks(member.id);
-  assert.equal(task.status,'blocked');
-});
-
-test("scheduled subscription confirmation closes the review only after accepted completed checkout without claiming a payment",async t=>{
-  const f=await fixture(t),member=await f.member(),attempt=crypto.randomUUID();
-  f.configuration.stripeActivationReady=true;
-  await f.reconcile();
-  const firstChargeAt='2099-11-01T06:00:00.000Z';
-  await f.db.query("insert into stripe_checkout_attempts(id,member_id,status,recurring_payment_terms) values($1,$2,'open',$3)",
-    [attempt,member.id,JSON.stringify({firstPayment:'scheduled',firstChargeAt})]);
-  await f.db.query("insert into stripe_subscriptions values('sub_scheduled',$1,'active',null)",[member.id]);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:1,resolved:0},'subscription webhook can arrive before checkout completion');
-  let [task]=await f.tasks(member.id); assert.equal(task.status,'blocked'); assert.match(task.title,/checkout confirmation pending/);
-  await f.db.query("update stripe_checkout_attempts set status='completed',stripe_subscription_id='sub_scheduled' where id=$1",[attempt]);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0},'unverified completion alone is insufficient');
-  await f.db.query("insert into stripe_membership_commitments values($1,$2,'sub_wrong',$3,'active')",[attempt,member.id,JSON.stringify({startsAt:firstChargeAt})]);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0},'commitment must match the completed subscription');
-  await f.db.query("update stripe_membership_commitments set stripe_subscription_id='sub_scheduled' where checkout_attempt_id=$1",[attempt]);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:1});
-  [task]=await f.tasks(member.id); assert.equal(task.status,'completed'); assert.equal(task.title,'Membership billing confirmed');
-  assert.match(task.description,/does not record payment received or activate profile access/);
-  const event=(await f.db.query("select evidence from operator_task_events where operator_task_id=$1 order by id desc limit 1",[task.id])).rows[0];
-  assert.equal(event.evidence.reason,'billing_confirmed');
-  assert.equal((await f.db.query("select resolution_reason from registration_operator_work where member_id=$1",[member.id])).rows[0].resolution_reason,'billing_active','deployed registry reason remains compatible');
-  assert.equal((await f.db.query("select profile_activated_at from member_registration_access where member_id=$1",[member.id])).rows[0].profile_activated_at,null);
-  assert.equal((await f.db.query("select billing_state from member_lifecycle where member_id=$1",[member.id])).rows[0].billing_state,'pending');
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-  await f.db.exec("update stripe_subscriptions set stripe_status='canceled'; update stripe_membership_commitments set status='ended'");
-  await f.replaceCard(member);
-  assert.deepEqual(await f.reconcile(),{created:1,updated:0,resolved:0},'a confirmed cancellation does not block a later new review');
-  assert.equal((await f.tasks(member.id)).find(value=>value.id!==task.id).status,'open');
-});
-
-test("payment resolves the review; replaced cards retire stale work; withdrawal cancels it without erasing history",async t=>{
-  const f=await fixture(t),paid=await f.member(),replaced=await f.member(),withdrawn=await f.member(); await f.reconcile();
-  await f.db.query("insert into stripe_subscriptions values('sub_paid',$1,'active',null)",[paid.id]);
-  await f.replaceCard(replaced);
-  await f.db.query("update member_payment_method_accounts set consent_revoked_at=now() where member_id=$1",[withdrawn.id]);
-  assert.deepEqual(await f.reconcile(),{created:1,updated:0,resolved:3});
-  assert.equal((await f.tasks(paid.id))[0].status,"completed");
-  assert.equal((await f.tasks(withdrawn.id))[0].status,"cancelled");
-  assert.deepEqual((await f.tasks(replaced.id)).map(task=>task.status).sort(),['blocked','cancelled']);
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-  await assert.rejects(f.db.exec("delete from operator_task_events"),/Append-only/);
-});
-
-test("ineligible, inactive, funded, detached and incomplete registrations produce no billing work",async t=>{
-  const f=await fixture(t);
-  const changes=[
-    "update member_registration_access set registered_at=null,completion_basis=null where member_id=$1",
-    "update member_registration_access set completion_basis='complimentary' where member_id=$1",
-    "update ruined_members set deleted_at=now() where id=$1",
-    "update people set status='inactive' where id=$1",
-    "update member_lifecycle set account_state='suspended' where member_id=$1",
-    "update member_lifecycle set account_state='closed' where member_id=$1",
-    "update member_lifecycle set program_state='withdrawn' where member_id=$1",
-    "update member_lifecycle set billing_state='active' where member_id=$1",
-    "update member_lifecycle set billing_state='attention_required' where member_id=$1",
-    "insert into fixture_funding values($1,true,false)",
-    "insert into fixture_funding values($1,false,true)",
-    "update member_registration_access set legal_acknowledgment_required=true where member_id=$1",
-    "update member_onboardings set profile_completed_at=null where member_id=$1",
-    "update person_email_addresses set verification_state='unverified' where person_id=$1",
-    "update member_payment_method_accounts set cleanup_pending=true where member_id=$1",
-    "update member_payment_method_accounts set saved_at=null where member_id=$1",
-    "update member_payment_method_accounts set stripe_payment_method_id=null where member_id=$1",
-    "update member_payment_method_accounts set livemode=true where member_id=$1",
-    "update member_payment_method_accounts set stripe_account_id='acct_Wrong' where member_id=$1",
-    "update member_payment_method_setup_attempts set consent_revoked_at=now() where member_id=$1",
-    "update member_payment_method_setup_attempts set status='revoked' where member_id=$1",
-    "insert into member_payment_method_detachments select stripe_account_id,livemode,stripe_payment_method_id from member_payment_method_accounts where member_id=$1",
-  ];
-  for(const query of changes){ const member=await f.member(); await f.db.query(query,[member.id]); }
-  assert.deepEqual(await f.reconcile(),{created:0,updated:0,resolved:0});
-});
-
-test("registration-only couples retain independent reviews; canonical shared billing moves review to the payer",async t=>{
-  const f=await fixture(t),a=await f.member(),b=await f.member(); await f.couple(a,b);
-  assert.equal((await f.reconcile()).created,2);
-  assert.match((await f.tasks(a.id))[0].description,/Circle placement intent only/);
-  await f.db.exec("delete from member_registration_couple_intents");
-  const reservation=await f.couple(a,b,{commercial:true});
-  const changed=await f.reconcile(); assert.equal(changed.resolved,1);
-  assert.equal((await f.tasks(a.id))[0].status,"blocked");
-  assert.match((await f.tasks(a.id))[0].description,/canonical billing owner/);
-  assert.equal((await f.tasks(b.id))[0].status,"cancelled");
-  await f.db.query("insert into stripe_subscriptions values('sub_couple',$1,'active',null)",[a.id]);
-  await f.db.query("update member_lifecycle set billing_state='active' where member_id=$1",[a.id]);
-  await f.db.query("update membership_commercial_reservations set status='activated',stripe_subscription_id='sub_couple' where id=$1",[reservation]);
-  assert.equal((await f.reconcile()).resolved,1);
-  assert.equal((await f.tasks(a.id))[0].status,"completed");
-  assert.equal((await f.tasks(b.id)).length,1);
-});
-
-test("pending checkout blocks review and clearing the hold restores only system-cancelled work",async t=>{
-  const f=await fixture(t),member=await f.member(); f.configuration.stripeCheckoutReady=true;
-  await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1",[member.id]);
-  await f.db.query("insert into stripe_checkout_attempts(member_id,status,stripe_subscription_id) values($1,'creating',null)",[member.id]);
-  await f.reconcile(); let [task]=await f.tasks(member.id);
-  assert.equal(task.status,"blocked"); assert.match(task.blocked_reason,/checkout or subscription confirmation/);
-  await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1",[member.id]);
-  assert.equal((await f.reconcile()).resolved,1);
-  await f.db.query("update member_lifecycle set account_state='active' where member_id=$1",[member.id]);
-  await f.db.exec("delete from stripe_checkout_attempts");
-  assert.equal((await f.reconcile()).updated,1); [task]=await f.tasks(member.id);
-  assert.equal(task.status,"open"); assert.equal((await f.tasks(member.id)).length,1);
-});
-
-test("stale active lifecycle projections cannot mark troubled or ended Stripe billing as paid",async t=>{
-  const f=await fixture(t);
-  for(const status of ['paused','past_due','unpaid','canceled','incomplete_expired']) {
-    const member=await f.member(); await f.reconcile();
-    await f.db.query("update member_lifecycle set billing_state='active' where member_id=$1",[member.id]);
-    await f.db.query("insert into stripe_subscriptions values($1,$2,$3,null)",[`sub_${member.id}`,member.id,status]);
-    await f.reconcile();
-    assert.equal((await f.tasks(member.id))[0].status,'cancelled',status);
+test("Aaron-style incomplete legacy signup and new prepaid signup get the same durable checkout follow-up", async t => {
+  const f = await fixture(t);
+  const legacy = await f.member();
+  const prepaid = await f.member({ requiresInitialPayment: true, requiresPaymentMethod: false });
+  assert.deepEqual(await f.reconcile(), { created: 2, updated: 0, resolved: 0 });
+  for (const member of [legacy, prepaid]) {
+    const [task] = await f.tasks(member.id);
+    assert.equal(task.task_type, "registration.checkpoint.payment");
+    assert.equal(task.title, "Complete membership checkout");
+    assert.match(task.description, /No separate card-saving step/);
+    assert.equal(task.status, "open"); assert.equal(task.due_at, null);
   }
-  const payer=await f.member(),partner=await f.member(); await f.reconcile();
-  const reservation=await f.couple(payer,partner,{commercial:true});
-  await f.db.query("update member_lifecycle set billing_state='active' where member_id in ($1,$2)",[payer.id,partner.id]);
-  await f.db.query("insert into stripe_subscriptions values('sub_troubled_couple',$1,'paused',null)",[payer.id]);
-  await f.db.query("update membership_commercial_reservations set status='activated',stripe_subscription_id='sub_troubled_couple' where id=$1",[reservation]);
-  await f.reconcile();
-  assert.equal((await f.tasks(payer.id))[0].status,'cancelled');
-  assert.equal((await f.tasks(partner.id))[0].status,'cancelled');
-  assert.equal((await f.db.query("select count(*)::int n from registration_operator_work where resolution_reason='billing_active'")).rows[0].n,0);
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 0 });
+  await Promise.all([f.reconcile(), f.reconcile()]);
+  assert.equal((await f.tasks(legacy.id)).length, 1);
+  assert.equal((await f.db.query("select count(*)::int n from member_payment_method_setup_attempts")).rows[0].n, 0, "no saved card is required to track payment work");
 });
 
-test("event failures roll back task creation, and the migration keeps the task source private and immutable",async t=>{
-  const f=await fixture(t),member=await f.member();
-  f.failures.events=true; await assert.rejects(f.reconcile(),/Injected event failure/);
-  assert.equal((await f.tasks(member.id)).length,0);
-  assert.equal((await f.db.query("select count(*)::int n from registration_operator_work")).rows[0].n,0);
-  f.failures.events=false; await f.reconcile(); await f.db.exec(f.migration);
-  await assert.rejects(f.db.exec("delete from registration_operator_work"),/history must be retained/);
-  await assert.rejects(f.db.exec("update registration_operator_work set payment_setup_attempt_id=gen_random_uuid()"),/identity is immutable/);
-  for(const role of ['anon','authenticated']) {
-    assert.equal((await f.db.query("select has_table_privilege($1,'registration_operator_work','select') allowed",[role])).rows[0].allowed,false);
+test("email, information, payment and profile tasks advance one checkpoint at a time without releasing access", async t => {
+  const f = await fixture(t), member = await f.member({ emailVerified: false, profileComplete: false });
+  await f.reconcile(); assert.equal((await f.registry(member.id))[0].checkpoint, "email");
+  await f.update(member, { emailVerified: true });
+  assert.deepEqual(await f.reconcile(), { created: 1, updated: 0, resolved: 1 });
+  assert.equal((await f.tasks(member.id)).find(row => row.status === "open").title, "Complete registration information");
+  await f.update(member, { profileComplete: true });
+  assert.deepEqual(await f.reconcile(), { created: 1, updated: 0, resolved: 1 });
+  await f.update(member, { paymentMethodState: "saved", registeredAt: "2026-10-08T12:00:00Z", ready: true, completionBasis: "saved_card" });
+  await f.reconcile(); assert.equal((await f.tasks(member.id)).length, 3, "saving a card is not a new payment obligation");
+  const [before] = (await f.tasks(member.id)).filter(row => row.status === "open");
+  await f.db.query("update operator_tasks set assigned_to_auth_user_id=$2,status='in_progress' where id=$1", [before.id, member.auth]);
+  await f.update(member, { paymentConfirmed: true });
+  assert.deepEqual(await f.reconcile(), { created: 1, updated: 0, resolved: 1 });
+  const tasks = await f.tasks(member.id), closedPayment = tasks.find(row => row.id === before.id);
+  assert.equal(closedPayment.status, "completed"); assert.equal(closedPayment.assigned_to_auth_user_id, member.auth);
+  assert.equal(tasks.find(row => row.status === "open").title, "Grant profile access");
+  assert.equal((await f.db.query("select progress->>'state' state from member_registration_access where member_id=$1", [member.id])).rows[0].state, "collecting", "queue did not grant access");
+  await f.update(member, { profileGranted: true, state: "activated" });
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 1 });
+  assert.equal((await f.tasks(member.id)).filter(row => ["open", "blocked", "in_progress"].includes(row.status)).length, 0);
+});
+
+test("legacy live billing review is adopted in place with claim, task ID and event history intact", async t => {
+  const f = await fixture(t), member = await f.member({ paymentMethodState: "saved", completionBasis: "saved_card" });
+  const old = await f.legacy(member, { status: "in_progress", claimed: true });
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 1, resolved: 0 });
+  const [task] = await f.tasks(member.id);
+  assert.equal(task.id, old.id); assert.equal(task.assigned_to_auth_user_id, member.auth); assert.equal(task.status, "in_progress");
+  assert.equal(task.title, "Complete membership checkout");
+  assert.equal((await f.registry(member.id))[0].operator_task_id, old.id);
+  assert.equal((await f.db.query("select count(*)::int n from operator_task_events where operator_task_id=$1", [old.id])).rows[0].n, 2);
+  assert.equal((await f.db.query("select payment_setup_attempt_id from registration_operator_work where operator_task_id=$1", [old.id])).rows[0].payment_setup_attempt_id, old.attempt);
+  await f.update(member, { paymentMethodState: "removed" }); await f.reconcile();
+  await f.update(member, { paymentMethodState: "saved" }); await f.reconcile();
+  assert.equal((await f.tasks(member.id)).length, 1);
+});
+
+test("manually completed legacy and checkpoint reviews stay complete even when saved-card evidence changes", async t => {
+  const f = await fixture(t);
+  for (const status of ["completed", "cancelled"]) {
+    const member = await f.member({ paymentMethodState: "saved" });
+    const old = await f.legacy(member, { status, claimed: true });
+    assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 0 });
+    await f.update(member, { paymentMethodState: "removed" }); await f.reconcile();
+    assert.equal((await f.tasks(member.id)).length, 1); assert.equal((await f.tasks(member.id))[0].id, old.id);
+    assert.equal((await f.tasks(member.id))[0].status, status);
   }
-  assert.equal((await f.db.query("select relrowsecurity enabled from pg_class where oid='registration_operator_work'::regclass")).rows[0].enabled,true);
-  assert.equal((await f.tasks(member.id)).length,1);
+  const current = await f.member(); await f.reconcile();
+  const [task] = await f.tasks(current.id);
+  await f.db.query("update operator_tasks set status='completed',completed_at=now(),assigned_to_auth_user_id=$2 where id=$1", [task.id, current.auth]);
+  await f.update(current, { paymentMethodState: "saved" });
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 0 });
+  assert.equal((await f.tasks(current.id)).length, 1);
 });
 
-test("registration work migration applies after the existing complete platform schema without data backfill",async t=>{
-  const PGlite=await loadPGliteForSchemaChecks(),db=new PGlite(); t.after(()=>db.close());
+test("operator completion stays durable even when the task was previously resolved by the worker", async t => {
+  const f = await fixture(t), member = await f.member();
+  await f.reconcile(); const [task] = await f.tasks(member.id);
+  await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [member.id]);
+  await f.reconcile();
+  await f.db.query("update operator_tasks set status='completed',completed_at=now(),assigned_to_auth_user_id=$2 where id=$1", [task.id, member.auth]);
+  await f.db.query(`insert into operator_task_events(operator_task_id,event_type,previous_status,next_status,actor_type,actor_auth_user_id,evidence)
+    values($1,'completed','in_progress','completed','operator',$2,'{}')`, [task.id, member.auth]);
+  await f.db.query("update member_lifecycle set account_state='active' where member_id=$1", [member.id]);
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 0 });
+  assert.equal((await f.tasks(member.id))[0].status, "completed");
+});
+
+test("legacy adoption prefers live claims over old completed consent history and never duplicates them", async t => {
+  const f = await fixture(t), member = await f.member();
+  await f.legacy(member, { status: "completed", createdAt: "2026-10-04T12:00:00Z" });
+  const active = await f.legacy(member, { status: "blocked", claimed: true });
+  await f.reconcile();
+  assert.equal((await f.registry(member.id))[0].operator_task_id, active.id);
+  assert.equal((await f.tasks(member.id)).length, 2);
+  assert.equal((await f.tasks(member.id)).find(row => row.id === active.id).assigned_to_auth_user_id, member.auth);
+});
+
+test("refunds, pending confirmation and historical billing are review tasks instead of requests to pay twice", async t => {
+  const f = await fixture(t);
+  for (const progress of [{ paymentNeedsReview: true }, { billingArranged: true }, { billingState: "attention_required" }, { historicalPaymentRecorded: true }, { completionBasis: "paid_membership" }]) {
+    const member = await f.member(progress); await f.reconcile();
+    const [task] = await f.tasks(member.id);
+    assert.equal(task.task_type, "registration.checkpoint.review");
+    assert.match(task.description, /before requesting|before starting|historical payment/);
+    assert.doesNotMatch(task.description, /pays through Stripe at/);
+  }
+  const paid = await f.member({ paymentConfirmed: true, ready: true, registeredAt: "2026-10-08T12:00:00Z" });
+  await f.reconcile();
+  await f.update(paid, { paymentConfirmed: false, paymentNeedsReview: true });
+  const changed = await f.reconcile(); assert.equal(changed.created, 1); assert.equal(changed.resolved, 1);
+  assert.equal((await f.tasks(paid.id)).find(row => row.status === "open").task_type, "registration.checkpoint.review");
+  await f.update(paid, { paymentConfirmed: true, paymentNeedsReview: false });
+  await f.reconcile();
+  assert.equal((await f.tasks(paid.id)).length, 2, "returning to profile checkpoint reuses its task");
+});
+
+test("complimentary members skip payment tasks and shared billing does not ask the partner to pay separately", async t => {
+  const f = await fixture(t), comp = await f.member({ paymentExempt: true, requiresInitialPayment: false, requiresPaymentMethod: false, registeredAt: "2026-10-08T12:00:00Z", ready: true });
+  const partner = await f.member({ paymentByPartner: true });
+  await f.reconcile();
+  assert.equal((await f.tasks(comp.id))[0].task_type, "registration.checkpoint.profile");
+  assert.equal((await f.tasks(partner.id)).length, 0, "only the canonical payer receives a payment obligation");
+  await f.update(partner, { profileComplete: false }); await f.reconcile();
+  assert.equal((await f.tasks(partner.id))[0].task_type, "registration.checkpoint.information");
+  await f.update(partner, { profileComplete: true, paymentConfirmed: true, ready: true, registeredAt: "2026-10-08T12:00:00Z" });
+  await f.reconcile();
+  assert.equal((await f.tasks(partner.id)).find(row => row.status === "open").task_type, "registration.checkpoint.profile");
+});
+
+test("checkout release gates block payment work and restore the existing claimant when reopened", async t => {
+  const f = await fixture(t), member = await f.member({ paidCheckoutAvailable: false });
+  await f.reconcile(); let [task] = await f.tasks(member.id);
+  assert.equal(task.status, "blocked"); assert.equal(task.due_at, null);
+  await f.db.query("update operator_tasks set assigned_to_auth_user_id=$2 where id=$1", [task.id, member.auth]);
+  await f.update(member, { paidCheckoutAvailable: true }); await f.reconcile();
+  [task] = await f.tasks(member.id); assert.equal(task.status, "in_progress"); assert.equal(task.assigned_to_auth_user_id, member.auth);
+  await f.update(member, { paidCheckoutAvailable: false }); await f.reconcile();
+  [task] = await f.tasks(member.id); assert.equal(task.status, "blocked"); assert.equal(task.assigned_to_auth_user_id, member.auth);
+});
+
+test("ended, suspended, deleted and inactive members produce no new enrollment tasks; prior live work is retained as resolved history", async t => {
+  const f = await fixture(t), oldAdmin = await f.member({}, { enrolled: false });
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 0 });
+  assert.equal((await f.tasks(oldAdmin.id)).length, 0);
+  for (const sql of ["update ruined_members set deleted_at=now() where id=$1", "update people set status='inactive' where id=$1", "update member_lifecycle set account_state='suspended' where member_id=$1", "update member_lifecycle set account_state='closed' where member_id=$1", "update member_lifecycle set billing_state='ended' where member_id=$1", "update ruined_members set membership_state='ended' where id=$1", "update member_lifecycle set program_state='withdrawn' where member_id=$1"]) {
+    const member = await f.member(); await f.reconcile();
+    const [task] = await f.tasks(member.id);
+    await f.db.query(sql, [member.id]);
+    assert.equal((await f.reconcile()).resolved, 1);
+    assert.equal((await f.tasks(member.id)).length, 1); assert.equal((await f.tasks(member.id))[0].id, task.id);
+    assert.equal((await f.tasks(member.id))[0].status, "cancelled");
+    assert.equal((await f.registry(member.id))[0].resolution_reason, "member_no_longer_eligible");
+  }
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 0 });
+});
+
+test("a suppressed member can resume the same system-resolved task with ownership preserved", async t => {
+  const f = await fixture(t), member = await f.member(); await f.reconcile();
+  const [task] = await f.tasks(member.id);
+  await f.db.query("update operator_tasks set assigned_to_auth_user_id=$2,status='in_progress' where id=$1", [task.id, member.auth]);
+  await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [member.id]); await f.reconcile();
+  await f.db.query("update member_lifecycle set account_state='active' where member_id=$1", [member.id]);
+  assert.deepEqual(await f.reconcile(), { created: 0, updated: 1, resolved: 0 });
+  const [restored] = await f.tasks(member.id); assert.equal(restored.id, task.id); assert.equal(restored.assigned_to_auth_user_id, member.auth); assert.equal(restored.status, "in_progress");
+});
+
+test("event failures roll back task/registry writes and registry identities stay private and immutable", async t => {
+  const f = await fixture(t), member = await f.member();
+  f.failures.events = true; await assert.rejects(f.reconcile(), /Injected event failure/);
+  assert.equal((await f.tasks(member.id)).length, 0); assert.equal((await f.registry(member.id)).length, 0);
+  f.failures.events = false; await f.reconcile(); await f.db.exec(f.migration);
+  await assert.rejects(f.db.exec("delete from registration_checkpoint_work"), /history must be retained/);
+  await assert.rejects(f.db.exec("update registration_checkpoint_work set checkpoint='review'"), /identity is immutable/);
+  await assert.rejects(f.db.exec("update operator_task_events set evidence='{}'"), /Append-only/);
+  for (const role of ["anon", "authenticated"]) assert.equal((await f.db.query("select has_table_privilege($1,'registration_checkpoint_work','select') allowed", [role])).rows[0].allowed, false);
+  assert.equal((await f.db.query("select relrowsecurity enabled from pg_class where oid='registration_checkpoint_work'::regclass")).rows[0].enabled, true);
+  const other = await f.member();
+  await assert.rejects(f.db.query("insert into registration_checkpoint_work(member_id,checkpoint,operator_task_id) values($1,'email',$2)", [other.id, (await f.tasks(member.id))[0].id]), /must match/);
+});
+
+test("checkpoint migration applies after the complete deployed schema without backfilling tasks or changing members", async t => {
+  const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite(); t.after(() => db.close());
   await db.exec("create role anon; create role authenticated; create role service_role;");
-  const paths=[...((await source("scripts/migrate-platform.mjs")).matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g))].map(match=>match[1]);
+  const paths = [...((await source("scripts/migrate-platform.mjs")).matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g))].map(match => match[1]);
   assert.ok(paths.includes(migrationPath));
-  for(const path of paths.slice(0,paths.indexOf(migrationPath))) await db.exec(await source(path));
+  for (const path of paths.slice(0, paths.indexOf(migrationPath))) await db.exec(await source(path));
   await db.exec(await source(migrationPath)); await db.exec(await source(migrationPath));
-  assert.equal((await db.query("select count(*)::int n from registration_operator_work")).rows[0].n,0);
-  assert.equal((await db.query("select count(*)::int n from operator_tasks where task_type='registration.billing_review'")).rows[0].n,0);
+  assert.equal((await db.query("select count(*)::int n from registration_checkpoint_work")).rows[0].n, 0);
+  assert.equal((await db.query("select count(*)::int n from operator_tasks where task_type like 'registration.%'")).rows[0].n, 0);
 });

@@ -64,15 +64,15 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
     return sql;
   }
   const model = await load("src/lib/google/calendar-model.ts");
-  const providerResult = (id) => ({ eventId: id, organizerVerified: true, organizerEmail: configuration.organizerEmail,
-    meetReady: true, meetUrl: "https://meet.google.com/abc-defg-hij", conferenceStatus: "success", conferenceId: "abc-defg-hij",
+  const providerResult = (id, meetingUrl) => ({ eventId: id, organizerVerified: true, organizerEmail: configuration.organizerEmail,
+    meetReady: true, meetUrl: meetingUrl ?? "https://meet.google.com/abc-defg-hij", conferenceStatus: "success", conferenceId: meetingUrl ? null : "abc-defg-hij",
     etag: '"etag"', htmlUrl: "https://calendar.google.com/event/test", iCalUid: "test", status: "confirmed" });
   async function provider(action, input) {
     assert.equal(transactionDepth, 0, "Provider calls must occur outside database transactions");
     calls.push(action);
     const id = typeof input === "string" ? input : input.eventId ?? model.googleCalendarEventIdForRequestKey(input.requestKey);
     if (action === "cancel") remote.delete(id);
-    else if (action !== "verify") remote.set(id, { ...input, result: providerResult(id) });
+    else if (action !== "verify") remote.set(id, { ...input, result: providerResult(id, input.meetingUrl) });
     if (providerHook) { const hook = providerHook; providerHook = null; await hook(); }
     if (action === "verify" && !remote.has(id)) throw new ApiError(404);
     return remote.get(id)?.result ?? providerResult(id);
@@ -101,7 +101,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
   const run = () => worker.processCalendarReconciliationBatch(1);
   const bind = (livemode = false) => repo.bindLegacyExperienceCalendar({ actorAuthUserId: actor, experienceId: event, livemode });
   async function reset(createLink = true) {
-    await db.exec("truncate people,platform_users,experiences,operator_audit_events restart identity cascade");
+    await db.exec("truncate people,platform_users,experiences,operator_audit_events,integration_entity_links restart identity cascade");
     mode = false; configuration.ready = true; configuration.organizerEmail = "operator@example.test";
     calls.length = 0; remote.clear(); providerHook = null; failFinalize = false;
     await db.query("insert into platform_users values ($1,null,'active')", [actor]);
@@ -151,6 +151,71 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       await reset(); assert.equal((await link()).status, "pending_create");
       assert.equal((await run()).processed, 1); assert.equal((await link()).status, "active");
       assert.equal((await run()).processed, 0); assert.deepEqual(calls, ["create"]);
+    });
+    await t.test("simple creation requires an actual eligible verified recipient in its selected audience", async () => {
+      await reset(false);
+      const audience = () => bridge(db).begin((tx) => repo.requireOpsExperienceCalendarAudienceForCreation(tx, event));
+      const empty = () => assert.rejects(audience, (error) => error.code === "conflict" && /no eligible members/.test(error.message));
+      await empty();
+      const member = crypto.randomUUID(), memberActor = crypto.randomUUID(), circle = crypto.randomUUID();
+      await db.query("insert into people values ($1,'active')", [person]);
+      await db.query("insert into ruined_members values ($1,$2)", [member, person]);
+      await db.query("insert into platform_users values ($1,$2,'active',$3)", [memberActor, person, member]);
+      await db.query("insert into platform_role_grants values ($1,'member',null)", [memberActor]);
+      await db.query("insert into member_lifecycle (member_id,account_state,billing_state,administrative_onboarding_state,standing_state) values ($1,'active','active','completed','active')", [member]);
+      await db.query("insert into person_email_addresses values ($1,'member@example.test',true,null,'unverified')", [person]);
+      await db.exec("update experiences set visibility='all_members'");
+      await empty();
+      await db.exec("update person_email_addresses set verification_state='verified'");
+      assert.equal(await audience(), 1);
+      await db.query("update person_email_addresses set email_normalized=$1", [configuration.organizerEmail]);
+      await empty();
+      await db.exec("update person_email_addresses set email_normalized='member@example.test'");
+      await db.query("update experiences set visibility='circle',circle_id=$1", [circle]);
+      await empty();
+      await db.query("insert into circle_member_assignments values ($1,$2,null)", [member, circle]);
+      assert.equal(await audience(), 1);
+      await db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [memberActor]);
+      await empty();
+      assert.deepEqual(calls, [], "audience validation never contacts Google");
+    });
+    await t.test("immediate reconciliation processes only its committed event, even with older pending work", async () => {
+      await reset();
+      const secondEvent = crypto.randomUUID();
+      await db.query("insert into experiences (id,title,status,starts_at,ends_at,visibility) values ($1,'Just created','published',now()+interval '1 day',now()+interval '2 days','public')", [secondEvent]);
+      await bridge(db).begin((tx) => repo.markOpsExperienceCalendarPending(tx, { actorAuthUserId: actor, experienceId: secondEvent, reason: "publish" }));
+      assert.equal((await worker.processCalendarReconciliationForExperience(secondEvent)).processed, 1);
+      assert.equal((await link()).status, "pending_create");
+      assert.equal([...remote.values()][0].summary, "Just created");
+      assert.equal((await worker.processCalendarReconciliationForExperience(secondEvent)).processed, 0);
+      assert.deepEqual(calls, ["create"]);
+    });
+    await t.test("supplied Meet survives delivery and a provider response racing with a new saved link", async () => {
+      await reset();
+      const meetingUrl = "https://meet.google.com/xyz-abcd-efg";
+      const saveLink = async () => {
+        await db.query("insert into integration_entity_links (provider,local_entity_type,local_entity_id,external_entity_type,external_entity_id,livemode,metadata) values ('google','experience',$1,'meet_space','xyz-abcd-efg',false,$2::jsonb)", [event, JSON.stringify({ meetingUri: meetingUrl, source: "operator_event" })]);
+        await db.exec("update experiences set version=version+1");
+        await mark();
+      };
+      providerHook = saveLink;
+      assert.equal((await run()).processed, 1);
+      assert.equal((await link()).status, "pending_update");
+      const saved = () => db.query("select metadata from integration_entity_links where local_entity_id=$1", [event]);
+      assert.deepEqual((await saved()).rows[0].metadata, { meetingUri: meetingUrl, source: "operator_event" });
+      assert.equal((await worker.processCalendarReconciliationForExperience(event)).processed, 1);
+      assert.equal([...remote.values()][0].meetingUrl, meetingUrl);
+      assert.equal((await link()).meet_url, meetingUrl);
+      assert.equal((await link()).status, "active");
+      assert.deepEqual((await saved()).rows[0].metadata, { meetingUri: meetingUrl, source: "operator_event" });
+      assert.deepEqual(calls, ["create", "update"]);
+    });
+    await t.test("a supplied Meet in a different delivery mode never reaches the provider", async () => {
+      await reset();
+      await db.query("insert into integration_entity_links (provider,local_entity_type,local_entity_id,external_entity_type,external_entity_id,livemode,metadata) values ('google','experience',$1,'meet_space','xyz-abcd-efg',true,$2::jsonb)", [event, JSON.stringify({ meetingUri: "https://meet.google.com/xyz-abcd-efg", source: "operator_event" })]);
+      assert.equal((await run()).processed, 1);
+      assert.equal([...remote.values()][0].meetingUrl, null);
+      assert.equal((await link()).meet_url, "https://meet.google.com/abc-defg-hij");
     });
     await t.test("ordinary edits never create a first invitation for an unlinked published event", async () => {
       for (const past of [false, true]) {

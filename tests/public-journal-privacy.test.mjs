@@ -9,7 +9,7 @@ const edit = (entry, changes) => ({ expectedVersion: entry.version, kind: entry.
   includeOnTimeline: entry.includeOnTimeline, ...changes });
 
 test("visibility migration leaves legacy content, revisions and history untouched and defaults every row private", async t => {
-  const f = await publicJournalFixture(t, { applyPrivacy: false });
+  const f = await publicJournalFixture(t, { applyPrivacy: false, meaningMigration: false });
   const id = randomUUID();
   await f.db.query("insert into member_journal_entries(id,member_id,kind,title,body,event_year,include_on_timeline,saved) values($1,$2,'text','Private title','PRIVATE BODY',2010,true,true)", [id,timelineIds.member]);
   await f.db.query("update member_journal_entries set body='PRIVATE REVISION' where id=$1",[id]);

@@ -10,6 +10,7 @@ const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "u
 const elements = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(elements) : [node, ...elements(node.props?.children)];
 const text = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 const Dialog = ({ children }) => children;
+const QuickForm = () => null;
 const directory = {
   canCreate: true, canManageGlobal: true,
   circles: [{ id: "circle-one", name: "Founders Circle" }], blocks: [{ id: "block-one", name: "Block 01" }],
@@ -48,6 +49,7 @@ function fixture(patch = {}, { hash = "", respond = async () => Response.json({ 
     "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), refresh() {} }) },
     "next/link": { __esModule: true, default: "a" },
     "@/components/platform/OperatorDialog": { __esModule: true, default: Dialog },
+    "@/components/platform/OperatorQuickEventForm": { __esModule: true, default: QuickForm },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
     "@/components/platform/StateLabel": { __esModule: true, default: "span" },
   };
@@ -74,6 +76,8 @@ function fixture(patch = {}, { hash = "", respond = async () => Response.json({ 
   return {
     draw, calls, navigations, browserWindow, listeners, resets: () => resets,
     modal: () => find((node) => node.type === Dialog),
+    quick: () => find((node) => node.type === QuickForm),
+    advanced() { this.quick().props.onAdvanced(); },
     form: () => find((node) => node.type === "form"),
     field: (name) => find((node) => node.props?.name === name),
     open() { find((node) => node.props?.id === "new-experience-trigger").props.onClick(); },
@@ -93,6 +97,11 @@ test("the directory uses one destination per event and one guarded creation task
   f.open();
   assert.equal(f.modal().props.open, true);
   assert.equal(f.browserWindow.location.hash, "#new-experience");
+  assert.equal(f.modal().props.title, "New event");
+  assert.equal(f.form(), undefined);
+  assert.equal(f.quick().props.directory, directory);
+  f.advanced();
+  assert.equal(f.modal().props.title, "Advanced event setup");
   assert.deepEqual(elements(f.form()).filter((node) => node.type === "legend").map(text), ["When", "Who"]);
   assert.equal(elements(f.form()).find((node) => node.type === "details").props.open, undefined);
   assert.match(text(f.form()), /Nothing is published or sent yet/);
@@ -102,6 +111,8 @@ test("the directory uses one destination per event and one guarded creation task
 test("Circle deep links open creation, pin scope, preserve every time and never send invitations", async () => {
   const f = fixture({ requestedCircleId: "circle-one" }, { hash: "#new-experience" });
   assert.equal(f.modal().props.open, true);
+  assert.equal(f.quick().props.selectedCircle.id, "circle-one");
+  f.advanced();
   assert.equal(f.field("title").props.defaultValue, "Founders Circle meeting");
   assert.equal(f.field("circleId").props.value, "circle-one");
   assert.equal(f.field("registrationMode").props.value, "none");
@@ -122,13 +133,14 @@ test("Circle deep links open creation, pin scope, preserve every time and never 
 test("closing after the dialog's discard confirmation resets only its own draft and hash", () => {
   const f = fixture({ requestedCircleId: "circle-one" });
   f.open();
+  f.advanced();
   f.form().props.onChange();
   assert.equal(f.form().props["data-operator-dirty"], "true");
   const before = f.form().key;
   f.modal().props.onClose();
   assert.equal(f.modal().props.open, false);
-  assert.equal(f.form().props["data-operator-dirty"], undefined);
-  assert.notEqual(f.form().key, before);
+  assert.equal(f.form(), undefined);
+  assert.notEqual(f.quick().key, before);
   assert.equal(f.browserWindow.location.search, "?circleId=circle-one");
   assert.equal(f.browserWindow.location.hash, "");
   assert.deepEqual(f.calls, []);
@@ -137,7 +149,7 @@ test("closing after the dialog's discard confirmation resets only its own draft 
 test("pending requests prevent duplicate creates and closing; failures preserve unsaved input", async () => {
   let resolve;
   const f = fixture({}, { respond: () => new Promise((done) => { resolve = done; }) });
-  f.open(); f.form().props.onChange();
+  f.open(); f.advanced(); f.form().props.onChange();
   const version = f.form().key;
   const request = f.submit();
   assert.equal(f.modal().props.pending, true);
@@ -156,6 +168,7 @@ test("pending requests prevent duplicate creates and closing; failures preserve 
 
 test("advanced registration values still reach the unchanged draft API", async () => {
   const f = fixture();
+  f.advanced();
   await f.submit({ ...values, visibility: "block", blockId: "block-one", summary: "A short introduction", details: "The full plan", locationLabel: "The studio", registrationOpensAt: "2026-09-20T09:00", registrationClosesAt: "2026-10-01T12:00" });
   const saved = f.calls[0].body;
   assert.equal(saved.blockId, "block-one"); assert.equal(saved.circleId, null);
@@ -164,6 +177,7 @@ test("advanced registration values still reach the unchanged draft API", async (
   assert.equal(saved.registrationClosesAt, "2026-10-01T18:00:00.000Z");
   assert.equal(saved.summary, "A short introduction"); assert.equal(saved.details, "The full plan"); assert.equal(saved.locationLabel, "The studio");
   const external = fixture();
+  external.advanced();
   await external.submit({ ...values, registrationMode: "external", externalRegistrationUrl: "https://example.test/event" });
   assert.equal(external.calls[0].body.externalRegistrationUrl, "https://example.test/event");
   assert.equal(external.calls[0].body.capacity, null); assert.equal(external.calls[0].body.registrationOpensAt, null);
@@ -171,6 +185,8 @@ test("advanced registration values still reach the unchanged draft API", async (
 
 test("preview, invalid context, missing permission, and invalid local time cannot create an event", async () => {
   const preview = fixture({ preview: true });
+  assert.equal(preview.quick().props.preview, true);
+  preview.advanced();
   await preview.form().props.onSubmit({ preventDefault() {}, get currentTarget() { throw new Error("Preview must not read the form"); } });
   assert.match(text(preview.draw()), /Preview only/);
   assert.deepEqual(preview.calls, []);
@@ -181,6 +197,7 @@ test("preview, invalid context, missing permission, and invalid local time canno
     assert.deepEqual(f.calls, []);
   }
   const invalidTime = fixture();
+  invalidTime.advanced();
   await invalidTime.submit({ ...values, startsAt: "2027-03-14T02:30" });
   assert.deepEqual(invalidTime.calls, []);
   assert.match(text(invalidTime.form()), /does not exist/);
@@ -192,5 +209,24 @@ test("late hash navigation opens the same creation dialog without scrolling the 
   f.browserWindow.location.hash = "#new-experience";
   f.listeners.get("hashchange")();
   assert.equal(f.modal().props.open, true);
+  assert.deepEqual(f.calls, []);
+});
+
+
+test("the quick event flow shares pending protection, navigates to the saved event, and resets after close", () => {
+  const f = fixture({ requestedCircleId: "circle-one" });
+  f.open();
+  const version = f.quick().key;
+  f.quick().props.onPendingChange(true);
+  assert.equal(f.modal().props.pending, true);
+  f.modal().props.onClose();
+  assert.equal(f.modal().props.open, true);
+  f.quick().props.onPendingChange(false);
+  f.quick().props.onCreated("quick-event-id");
+  assert.deepEqual(f.navigations, ["/ops/experiences/quick-event-id"]);
+  f.modal().props.onClose();
+  assert.equal(f.modal().props.open, false);
+  assert.equal(f.modal().props.title, "Schedule a meeting");
+  assert.notEqual(f.quick().key, version);
   assert.deepEqual(f.calls, []);
 });

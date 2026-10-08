@@ -38,6 +38,32 @@ test("digest defaults to Denver daylight savings and retains explicit fixed MST 
   assert.deepEqual(model.dueWorkQueueDigestSlots(new Date("2026-07-06T07:00:00Z"), "Etc/GMT+7"), []);
 });
 
+test("checkpoint digest items link to membership checkpoints without sending their detailed descriptions", () => {
+  const slot = model.dueWorkQueueDigestSlots(new Date("2026-10-05T17:00:00Z"), "Etc/GMT+7")[0];
+  const queue = { ...sampleQueue, items: sampleQueue.items.map(item => ({ ...item, taskType: "registration.checkpoint.information", label: "Complete registration information" })) };
+  const result = email.createWorkQueueDigestEmail({ queue, slot, generatedAt: slot.scheduledFor });
+  assert.match(result.text, /Complete registration information/);
+  assert.match(result.html, /#membership/);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE TASK DESCRIPTION/);
+});
+
+test("digest labels nameless registrations as member work without exposing their contact fallback", () => {
+  const slot = model.dueWorkQueueDigestSlots(new Date("2026-10-05T17:00:00Z"), "Etc/GMT+7")[0];
+  for (const memberName of [null,"", " \t\n "]) {
+    const item = { ...sampleQueue.items[0], memberName, memberEmail: "PRIVATE-CONTACT@example.test", taskType: "registration.checkpoint.information" };
+    const result = email.createWorkQueueDigestEmail({ queue: { ...sampleQueue,items:[item] },slot,generatedAt:slot.scheduledFor });
+    for (const content of [result.text,result.html]) {
+      assert.match(content,/Member awaiting information/);
+      assert.match(content,new RegExp(`/ops/members/${item.memberId}#membership`));
+      assert.doesNotMatch(content,/System work|PRIVATE-CONTACT@example\.test/);
+    }
+  }
+  const system = { ...sampleQueue.items[0],memberId:null,memberName:null,memberEmail:"PRIVATE-CONTACT@example.test" };
+  const result = email.createWorkQueueDigestEmail({ queue:{ ...sampleQueue,items:[system] },slot,generatedAt:slot.scheduledFor });
+  assert.match(result.text,/System work/);
+  assert.doesNotMatch(JSON.stringify(result),/Member awaiting information|PRIVATE-CONTACT@example\.test/);
+});
+
 test("digest email escapes titles, uses the official wordmark, respects capped totals, and omits private fields", () => {
   const slot = model.dueWorkQueueDigestSlots(new Date("2026-10-05T17:00:00Z"), "Etc/GMT+7")[0];
   const queue = { items: [...sampleQueue.items.map((item) => ({ ...item, label: '<script>alert("title")</script>', notes: "PRIVATE NOTE", email: "PRIVATE CONTACT", card: "PRIVATE CARD" })), { kind: "workflow_failure", workId: "failure-1", label: "Review automation", memberName: null, memberId: null, state: "failed", dueAt: "2026-10-05T16:00:00Z", priority: 100, errorCode: "PRIVATE ERROR" }], totals: { tasks: 200, artifacts: 0, failures: 1 } };

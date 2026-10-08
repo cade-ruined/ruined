@@ -15,7 +15,7 @@ export async function load(path, dependencies = {}) {
   }, loaded, loaded.exports);
   return loaded.exports;
 }
-export async function publicJournalFixture(t, { applyPrivacy = true, applyTimelinePosts = true } = {}) {
+export async function publicJournalFixture(t, { applyPrivacy = true, applyTimelinePosts = true, meaningMigration = true } = {}) {
   const base = await timelineFixture(t, { visibilityMigration: false }), db = base.db;
   await db.exec(`
     alter table ruined_members add column membership_activated_at timestamptz default '2020-01-01';
@@ -32,6 +32,7 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   const migratePrivacy = async () => {
     await db.exec(privacyMigration);
     if (applyTimelinePosts) await db.exec(timelinePostsMigration);
+    if (meaningMigration) await db.exec(await source("db/migrations/20261008200000_foundations_timeline_meaning.sql"));
   };
   if (applyPrivacy) await migratePrivacy();
   const token = "a".repeat(43), otherToken = "b".repeat(43);

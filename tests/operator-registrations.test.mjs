@@ -9,8 +9,9 @@ const require = createRequire(import.meta.url);
 const memberA = "00000000-0000-4000-8000-000000000101";
 const memberB = "00000000-0000-4000-8000-000000000102";
 const actor = "00000000-0000-4000-8000-000000000099";
-const nodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : [];
-const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : node == null || typeof node === "boolean" ? "" : String(node);
+const expand = node => React.isValidElement(node) && ["OperatorMemberCheckpoints", "OperatorRegistrationNextStep"].includes(node.type?.name) ? node.type(node.props) : node;
+const nodes = input => { const node = expand(input); return React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : []; };
+const text = input => { const node = expand(input); return React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : node == null || typeof node === "boolean" ? "" : String(node); };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 async function load(path, deps = {}, globals = {}) {
   const source = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -19,7 +20,13 @@ async function load(path, deps = {}, globals = {}) {
   new Function("require", "module", "exports", ...Object.keys(globals), js)(name => name in deps ? deps[name] : require(name), loaded, loaded.exports, ...Object.values(globals));
   return loaded.exports;
 }
-const row = (memberId = memberA, changes = {}) => ({ memberId, name: memberId === memberA ? "Cherry Hill" : "Alex Rivera", email: memberId === memberA ? "cherry@example.test" : "alex@example.test", state: "registered", registeredAt: "2026-09-30T12:00:00Z", profileActivatedAt: null, requiresPaymentMethod: true, profileComplete: true, ready: true, version: memberId === memberA ? 2 : 5, welcomeStatus: "sent", activationEmailStatus: null, ...changes });
+const defaultProgress = { state: "registered", registeredAt: "2026-09-30T12:00:00Z", profileComplete: true, ready: true,
+  requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: "saved_card", emailVerified: true,
+  paymentMethodState: "saved", paymentConfirmed: true, paidCheckoutAvailable: true, billingArranged: false, billingState: "pending", serviceStartsAt: null };
+const row = (memberId = memberA, changes = {}) => {
+  const result = { memberId, name: memberId === memberA ? "Cherry Hill" : "Alex Rivera", email: memberId === memberA ? "cherry@example.test" : "alex@example.test", state: "registered", registeredAt: "2026-09-30T12:00:00Z", profileActivatedAt: null, requiresPaymentMethod: true, requiresInitialPayment: false, completionBasis: "saved_card", initialPayment: null, profileComplete: true, ready: true, version: memberId === memberA ? 2 : 5, welcomeStatus: "sent", activationEmailStatus: null, ...changes };
+  return { ...result, progress: Object.hasOwn(changes, "progress") ? changes.progress : { ...defaultProgress, state: result.state, ready: result.ready, profileComplete: result.profileComplete } };
+};
 
 class RegistrationError extends Error {
   constructor(message, status) { super(message); this.status = status; }
@@ -102,6 +109,14 @@ async function uiFixture({ rows = [row(), row(memberB)], preview = false, replie
   const h = hooks(), calls = []; let refreshes = 0;
   const View = (await load("src/components/platform/OperatorRegistrations.tsx", {
     "@/lib/membership/operator-registration-progress": await load("src/lib/membership/operator-registration-progress.ts"),
+    "@/lib/membership/operator-registration-follow-up": await load("src/lib/membership/operator-registration-follow-up.ts", { "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts") }),
+    "./OperatorMemberCheckpoints": await load("src/components/platform/OperatorMemberCheckpoints.tsx"),
+    "./OperatorInvitationDetails": () => null,
+    "./OperatorRegistrationNextStep": function OperatorRegistrationNextStep({ action, onReviewProfile, disabled }) {
+      return React.createElement("section", { "aria-label": "Operator next step" }, action.title, action.detail,
+        action.memberUrl ? React.createElement("input", { readOnly: true, "aria-label": "Member follow-up link", value: action.memberUrl }) : null,
+        action.kind === "release" ? React.createElement("button", { disabled, onClick: onReviewProfile }, "Review profile access") : null);
+    },
     react: h.react, "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/navigation": { useRouter: () => ({ refresh: () => { refreshes++; } }) },
     "./operatorStyles": { OPERATOR_BUTTON_CLASS: "button", OPERATOR_PRIMARY_ACTION_CLASS: "primary" },
@@ -134,11 +149,31 @@ test("operators must review the named recipients before activating, with each ro
   assert.equal(f.button("Open profiles & queue email"), undefined);
 });
 
+test("the row's operator action reviews only that ready profile before any release", async () => {
+  const f = await uiFixture();
+  await f.click("Review profile access");
+  const review = nodes(f.render()).find(node => node.props["aria-labelledby"] === "profile-release-review");
+  assert.match(text(review), /Cherry Hill · cherry@example.test/);
+  assert.doesNotMatch(text(review), /Alex Rivera/);
+  assert.deepEqual(f.calls, []);
+  await f.click("Open profiles & queue email");
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].url, `/api/ops/members/${memberA}/registration`);
+});
+
+test("registrations show exact member links and operator instructions instead of internal paths", async () => {
+  const f = await uiFixture({ rows: [row(memberA, { progress: { ...defaultProgress, paymentConfirmed: false } })] });
+  assert.match(text(f.render()), /Send the payment link/);
+  const field = nodes(f.render()).find(node => node.type === "input" && node.props["aria-label"] === "Member follow-up link");
+  assert.equal(field.props.value, "https://members.theruinedproject.com/access?returnTo=%2Fmy%2Factivate");
+  assert.deepEqual(f.calls, []);
+});
+
 test("unready, withdrawn-card and already-open accounts cannot be selected for release", async () => {
   const f = await uiFixture({ rows: [row(), row(memberB, { ready: false }), row("00000000-0000-4000-8000-000000000103", { name: "Incomplete", state: "collecting", profileComplete: false, ready: false }), row("00000000-0000-4000-8000-000000000104", { name: "Already open", state: "activated" })] });
   await f.click("All 4");
   assert.ok(f.select("Cherry Hill")); assert.equal(f.select("Alex Rivera"), undefined); assert.equal(f.select("Incomplete"), undefined); assert.equal(f.select("Already open"), undefined);
-  assert.match(text(f.render()), /Card needed|Information needed/);
+  assert.match(text(f.render()), /Collect payment|Collect info/);
   await f.click("Select ready registrations"); await f.click("Review 1 profile"); await f.click("Open profiles & queue email");
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0].body.expectedVersion, 2);
 });
@@ -148,9 +183,9 @@ test("paid registration rows distinguish payment from complimentary and preserve
     requiresInitialPayment: true, requiresPaymentMethod: false, completionBasis: "paid_membership", emailVerified: true,
     paymentMethodState: "missing", paymentConfirmed: true, billingArranged: true, billingState: "pending", serviceStartsAt: "2026-11-05T22:00:00Z" };
   const f = await uiFixture({ rows: [row(memberA, { requiresInitialPayment: true, requiresPaymentMethod: false, progress })] });
-  assert.match(text(f.render()), /Payment received/);
-  assert.match(text(f.render()), /Registration complete · profile held · service starts Nov 5/);
-  assert.doesNotMatch(text(nodes(f.render()).find(node => node.type === "article")), /Complimentary|First payment needed|Card needed/);
+  assert.equal(f.button("Grant profile 1").props["aria-pressed"], false);
+  const article = nodes(f.render()).find(node => node.type === "article");
+  assert.match(nodes(article).find(node => node.type === "li" && node.props["aria-label"].startsWith("Payment received:")).props["aria-label"], /Complete/);
   assert.deepEqual(f.calls, []);
 });
 
@@ -160,9 +195,9 @@ test("a withdrawn saved card shows the original completed registration and the c
     paymentMethodState: "removed", paymentConfirmed: false, billingArranged: false, billingState: "pending", serviceStartsAt: null };
   const f = await uiFixture({ rows: [row(memberA, { ready: false, progress })] });
   await f.click("All 1");
-  assert.match(text(f.render()), /Card needed/);
-  assert.match(text(f.render()), /Previously registered · saved card removed/);
-  assert.match(text(f.render()), /This does not charge it/);
+  assert.equal(f.button("Collect payment 1") !== undefined, true);
+  const method = nodes(f.render()).find(node => node.type === "li" && node.props["aria-label"]?.startsWith("Payment information collected:"));
+  assert.match(method.props["aria-label"], /Needed/);
   assert.equal(f.select("Cherry Hill"), undefined);
 });
 
@@ -227,21 +262,17 @@ test("legacy paid and unpaid registrations stay distinct in the profile access q
     paymentMethodState: "saved", paidCheckoutAvailable: true, paymentConfirmed: true, billingArranged: true,
     billingState: "pending", serviceStartsAt: "2026-11-05T22:00:00Z" };
   const f = await uiFixture({ rows: [row(memberA, { progress }), row(memberB, { progress: { ...progress, paymentConfirmed: false, billingArranged: false } })] });
-  assert.match(text(f.render()), /Awaiting profile access/);
+  assert.equal(f.button("All 2").props["aria-pressed"], true);
   assert.doesNotMatch(text(f.render()), /Ready to open/);
   const articles=nodes(f.render()).filter(node=>node.type==="article");
-  assert.match(text(articles[0]), /Payment received/);
-  assert.doesNotMatch(text(articles[0]), /First payment needed|Card needed/);
-  assert.match(text(articles[1]), /First payment needed/);
-  assert.match(text(articles[1]), /Card saved · not charged/);
+  const payment = article => nodes(article).find(node => node.type === "li" && node.props["aria-label"]?.startsWith("Payment received:"));
+  assert.match(payment(articles[0]).props["aria-label"], /Complete/);
+  assert.match(payment(articles[1]).props["aria-label"], /Needed/);
   assert.deepEqual(f.calls,[]);
 });
 
-test("payment filters narrow the current access queue without treating saved cards or arrangements as paid", async () => {
-  const progress = { state: "registered", registeredAt: "2026-10-01T18:00:00Z", profileComplete: true, ready: true,
-    requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: "saved_card", emailVerified: true,
-    paymentMethodState: "saved", paidCheckoutAvailable: true, paymentConfirmed: false, billingArranged: false,
-    billingState: "pending", serviceStartsAt: null };
+test("one next-step filter includes incomplete signups by default and keeps review cases separate", async () => {
+  const progress = { ...defaultProgress, paymentConfirmed: false };
   const f=await uiFixture({rows:[
     row(memberA,{name:"Saved only",progress}),
     row(memberB,{name:"Paid held",progress:{...progress,paymentConfirmed:true}}),
@@ -251,17 +282,47 @@ test("payment filters narrow the current access queue without treating saved car
     row("00000000-0000-4000-8000-000000000106",{name:"Paid open",state:"activated",progress:{...progress,paymentConfirmed:true}}),
   ]});
   const shown=()=>nodes(f.render()).filter(node=>node.type==="article").map(text).join("\n");
-  assert.equal(f.button("All statuses 4").props["aria-pressed"],true);
-  await f.click("Paid 1");assert.match(shown(),/Paid held/);assert.doesNotMatch(shown(),/Saved only|Paid open|Arranged only/);
-  await f.click("Needs payment 1");assert.match(shown(),/Saved only/);assert.doesNotMatch(shown(),/Paid held|Arranged only/);
-  await f.click("Complimentary 1");assert.match(shown(),/Complimentary held/);
-  await f.click("Needs review 1");assert.match(shown(),/Arranged only/);assert.doesNotMatch(shown(),/Paid held/);
-  await f.click("All 6");await f.click("Needs information 1");assert.match(shown(),/Needs details/);
-  await f.click("Paid 2");assert.match(shown(),/Paid held/);assert.match(shown(),/Paid open/);
-  await f.click("Select ready registrations");await f.click("Review 1 profile");
+  assert.equal(f.button("All 6").props["aria-pressed"],true);
+  assert.match(shown(),/Needs details/);
+  await f.click("Grant profile 2");assert.match(shown(),/Paid held/);assert.match(shown(),/Complimentary held/);assert.doesNotMatch(shown(),/Saved only|Paid open|Arranged only/);
+  await f.click("Select ready registrations");await f.click("Review 2 profiles");
   const review=nodes(f.render()).find(node=>node.props["aria-labelledby"]==="profile-release-review");
-  assert.match(text(review),/Paid held/);assert.doesNotMatch(text(review),/Paid open|Saved only/);
-  await f.click("Needs payment 1");assert.equal(f.button("Open profiles & queue email"),undefined);
-  assert.equal(f.select("Saved only").props.checked,false);
+  assert.match(text(review),/Paid held/);assert.match(text(review),/Complimentary held/);assert.doesNotMatch(text(review),/Paid open|Saved only/);
+  await f.click("Collect payment 1");assert.equal(f.button("Open profiles & queue email"),undefined);
+  assert.match(shown(),/Saved only/);assert.doesNotMatch(shown(),/Paid held|Arranged only/);
+  assert.equal(f.select("Saved only"),undefined);
+  await f.click("Needs review 1");assert.match(shown(),/Arranged only/);assert.doesNotMatch(shown(),/Paid held/);
+  await f.click("Collect info 1");assert.match(shown(),/Needs details/);
+  await f.click("Complete 1");assert.match(shown(),/Paid open/);assert.doesNotMatch(shown(),/Paid held/);
   assert.deepEqual(f.calls,[],"Filtering or selecting never opens access or sends messages");
+});
+
+test("missing progress is shown as unavailable rather than inferred from registration readiness", async () => {
+  const f = await uiFixture({ rows: [row(memberA, { progress: undefined })] });
+  assert.match(text(f.render()), /Registration checkpoints are unavailable/);
+  assert.equal(f.button("Needs review 1") !== undefined, true);
+  assert.equal(nodes(f.render()).filter(node => node.type === "li" && node.props["aria-label"]?.startsWith("Payment")).length, 0);
+});
+
+
+test("saved-card completion cannot enter the recommended profile-release selection", async () => {
+  const f = await uiFixture({ rows: [row(memberA, { progress: { ...defaultProgress, paymentConfirmed: false } })] });
+  assert.equal(f.select("Cherry Hill"), undefined);
+  assert.equal(f.button("Select ready registrations").props.disabled, true);
+  await f.click("Select ready registrations");
+  assert.equal(f.button("Review selected profiles").props.disabled, true);
+  assert.deepEqual(f.calls, []);
+});
+
+test("a previously reviewed selection is rechecked against current checkpoint evidence before release", async () => {
+  const f = await uiFixture({ rows: [row()] });
+  await f.click("Select ready registrations"); await f.click("Review 1 profile");
+  const staleConfirm = f.button("Open profiles & queue email");
+  f.replaceRows([row(memberA, { progress: { ...defaultProgress, paymentConfirmed: false } })]);
+  f.render();
+  assert.equal(f.select("Cherry Hill"), undefined);
+  assert.equal(f.button("Open profiles & queue email"), undefined);
+  staleConfirm.props.onClick(); await flush();
+  assert.deepEqual(f.calls, [], "even a stale callback cannot open a profile after its checkpoint evidence changes");
+  assert.match(text(f.render()), /Registration progress changed/);
 });
