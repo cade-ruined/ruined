@@ -49,14 +49,14 @@ export function operatorMemberJourney(row: OperatorRegistrationProgress): Operat
   const checkpoints: OperatorMemberJourney["checkpoints"] = [
     { key: "email", label: "Email verified", state: row.emailVerified ? "complete" : "needed", completedAt: row.emailVerified ? row.emailVerifiedAt ?? null : null },
     { key: "information", label: "Registration info collected", state: row.profileComplete ? "complete" : "needed", completedAt: row.profileComplete ? row.informationCollectedAt ?? null : null },
-    { key: "payment_method", label: "Payment information collected", state: exempt || row.paymentByPartner ? "not_required" : collected ? "complete" : "needed",
+    { key: "payment_method", label: "Payment information collected", state: exempt ? "complete" : row.paymentByPartner ? "not_required" : collected ? "complete" : "needed",
       completedAt: exempt || row.paymentByPartner ? null : collected ? row.paymentInformationCollectedAt ?? row.paymentReceivedAt ?? null : null,
-      detail: exempt ? "Complimentary membership" : row.paymentByPartner ? "Shared billing is handled by their partner."
+      detail: exempt ? "No payment required. Complimentary membership." : row.paymentByPartner ? "Shared billing is handled by their partner."
         : row.paymentMethodState === "saved" ? "Saved with Stripe. A saved card alone is not a payment."
         : paid ? "Collected through Stripe checkout." : row.paymentMethodState === "removed" ? "Previously saved payment method removed." : undefined },
-    { key: "payment", label: "Payment received", state: exempt ? "not_required" : paid ? "complete" : paymentReview || row.billingState === "attention_required" ? "review" : "needed",
+    { key: "payment", label: "Payment received", state: exempt || paid ? "complete" : paymentReview || row.billingState === "attention_required" ? "review" : "needed",
       completedAt: !exempt && paid ? row.paymentReceivedAt ?? null : null,
-      detail: exempt ? "Complimentary membership" : row.paymentByPartner ? paid ? "Shared membership payment confirmed." : "Awaiting payment from their partner." : undefined },
+      detail: exempt ? "No payment required. Complimentary membership." : row.paymentByPartner ? paid ? "Shared membership payment confirmed." : "Awaiting payment from their partner." : undefined },
     { key: "profile", label: "Profile access granted", state: granted ? "complete" : "needed", completedAt: granted ? row.profileGrantedAt ?? null : null,
       detail: granted && !row.profileGrantedAt ? "Existing profile access; original grant date not recorded." : undefined },
   ];

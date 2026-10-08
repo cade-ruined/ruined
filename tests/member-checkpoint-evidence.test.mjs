@@ -186,12 +186,21 @@ test("canonical checkpoint evidence executes the reader SQL against provider and
     await f.db.query("update member_registration_access set registered_at=$2,completion_basis='complimentary' where member_id=$1", [member, dates.info]);
     await f.db.query("update fixture_policies set complimentary=true,ready=true where member_id=$1", [member]);
     let journey = await f.journey(member);
-    assert.equal(checkpoint(journey, "payment").state, "not_required"); assert.equal(journey.next.key, "profile");
+    for (const key of ["payment_method", "payment"]) {
+      assert.equal(checkpoint(journey, key).state, "complete"); assert.equal(checkpoint(journey, key).completedAt, null);
+      assert.match(checkpoint(journey, key).detail, /No payment required/);
+    }
+    assert.equal((await f.progress(member)).paymentConfirmed, false); assert.equal(journey.next.key, "profile");
     await f.db.query("update fixture_policies set complimentary=false,ready=false where member_id=$1", [member]);
     journey = await f.journey(member);
     assert.equal(checkpoint(journey, "payment").state, "needed"); assert.equal(journey.next.key, "payment");
     await f.db.query("update fixture_policies set operator_funding=true where member_id=$1", [member]);
-    assert.equal(checkpoint(await f.journey(member), "payment").state, "not_required");
+    journey = await f.journey(member);
+    for (const key of ["payment_method", "payment"]) {
+      assert.equal(checkpoint(journey, key).state, "complete"); assert.equal(checkpoint(journey, key).completedAt, null);
+      assert.match(checkpoint(journey, key).detail, /No payment required/);
+    }
+    assert.equal((await f.progress(member)).paymentConfirmed, false);
   });
   await isolated("canonical couples share the payer evidence; mismatched participant identity cannot inherit it", async () => {
     const payer = await f.member(1), partner = await f.member(2); await f.paid(payer, partner);
