@@ -1,5 +1,5 @@
 import type { Product, ProductVariant } from "@/data/products";
-import { isMarketingPage, marketingConsentAllowed, META_PIXEL_ID, type CustomerPrivacy } from "./consent";
+import { isMarketingPage, marketingConsentAllowed, visitorConsentForCheckout, META_PIXEL_ID, type CustomerPrivacy } from "./consent";
 
 type Pixel = ((...arguments_: unknown[]) => void) & { callMethod?: (...arguments_: unknown[]) => void; queue: unknown[][]; push?: Pixel; loaded: boolean; version: string; disablePushState: boolean };
 
@@ -41,6 +41,10 @@ export function safeMarketingLocation(href: string, referrer = ""): boolean {
 
 export function hasLocalMarketingVeto(): boolean {
   try { return window.localStorage.getItem(DENY_KEY) === "true"; } catch { return true; }
+}
+
+export function checkoutVisitorConsent() {
+  return visitorConsentForCheckout(window.Shopify?.customerPrivacy, hasLocalMarketingVeto(), window.navigator.globalPrivacyControl === true);
 }
 
 export function grantMetaTracking(explicit = false) {

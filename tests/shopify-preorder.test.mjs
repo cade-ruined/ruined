@@ -86,7 +86,7 @@ test("checkout derives preorder attributes from the trusted Shopify catalogue", 
     checkoutRoute,
     /attributes:\s*\[[\s\S]*?\{ key:\s*"Order type",\s*value:\s*"Preorder" \}[\s\S]*?\{ key:\s*"Expected ship date",\s*value:\s*expectedShipDate \}[\s\S]*?\]/
   );
-  assert.match(checkoutRoute, /const checkoutUrl = await createCheckoutUrl\(lines\)/);
+  assert.match(checkoutRoute, /const checkoutUrl = await createCheckoutUrl\(lines, 1, body\.visitorConsent\)/);
 
   assert.match(
     shopify,
@@ -106,7 +106,7 @@ test("the browser cannot provide trusted preorder dates or checkout attributes",
     checkoutRoute,
     /const ALLOWED_LINE_FIELDS = new Set\(\["variantId",\s*"quantity"\]\)/
   );
-  assert.match(checkoutRoute, /type RequestBody\s*=\s*\{\s*lines\?:\s*unknown;\s*\}/);
+  assert.match(checkoutRoute, /type RequestBody\s*=\s*\{\s*lines\?:\s*unknown;\s*visitorConsent\?:\s*unknown;\s*\}/);
   assert.match(
     checkoutRoute,
     /Object\.keys\(line\)\.some\(\(field\)\s*=>\s*!ALLOWED_LINE_FIELDS\.has\(field\)\)/

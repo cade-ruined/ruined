@@ -4,23 +4,44 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  isMarketingPage, marketingConsentAllowed, MARKETING_CONSENT_EVENT, MARKETING_PREFERENCES_EVENT,
-  type MarketingConfig,
+  isMarketingPage, marketingConsentAllowed, setConsentUpdatePending, MARKETING_CONSENT_EVENT, MARKETING_PREFERENCES_EVENT,
+  type MarketingConfig, type CustomerPrivacy,
 } from "@/lib/marketing/consent";
 import { configureMetaTracking, grantMetaTracking, hasLocalMarketingVeto, revokeMetaTracking, trackMetaPageView, vetoMetaTracking } from "@/lib/marketing/meta";
 
 let privacyScript: Promise<void> | undefined;
-function loadPrivacyApi() {
-  privacyScript ??= new Promise<void>((resolve, reject) => {
-    if (window.Shopify?.customerPrivacy?.setTrackingConsent) { resolve(); return; }
-    const script = document.createElement("script");
-    script.id = "ruined-customer-privacy";
-    script.src = "https://cdn.shopify.com/shopifycloud/consent-tracking-api/v0.1/consent-tracking-api.js";
-    script.async = true;
-    script.onload = () => window.Shopify?.customerPrivacy?.setTrackingConsent ? resolve() : reject(new Error("Privacy preferences unavailable."));
-    script.onerror = () => { privacyScript = undefined; reject(new Error("Privacy preferences unavailable.")); };
-    document.head.appendChild(script);
-  });
+let authoritativeBootstrap = false;
+function loadPrivacyApi(config: MarketingConfig) {
+  privacyScript ??= (async () => {
+    const shopify = (window.Shopify ??= {});
+    const privacy = (shopify.customerPrivacy ??= {} as CustomerPrivacy);
+    // A foreign initialized SDK can retain an in-memory choice over injected
+    // state. Only this single loader owns initialization on the storefront.
+    if (typeof privacy.setTrackingConsent === "function") throw new Error("Privacy API was already initialized.");
+    const response = await fetch("/api/unstable/graphql.json", {
+      method: "POST", credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(10000),
+      headers: { "Content-Type": "application/json", "Shopify-Storefront-Consent-Management": "1" },
+      body: JSON.stringify({ query: "query { consentManagement { cookies(visitorConsent:{}) { trackingConsentCookie } } }", variables: {} }),
+    });
+    if (!response.ok) throw new Error("Privacy preferences unavailable.");
+    const payload = await response.json();
+    const injectedConsent = payload.data?.consentManagement?.cookies?.trackingConsentCookie;
+    if (payload.errors?.length || typeof injectedConsent !== "string" || !injectedConsent || injectedConsent.length > 8192) throw new Error("Privacy preferences unavailable.");
+    // Feed Shopify's opaque current state into its supported initialization
+    // option. Never replay an Allow choice from local/session storage.
+    privacy.config = { ...privacy.config, isHeadless: true, asyncConsent: true, asyncVisitorState: true,
+      consentDomain: window.location.host, storefrontAccessToken: config.storefrontAccessToken, injectedConsent };
+    authoritativeBootstrap = true;
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.id = "ruined-customer-privacy";
+      script.src = "https://cdn.shopify.com/shopifycloud/consent-tracking-api/v0.2/consent-tracking-api.js";
+      script.async = true;
+      script.onload = () => window.Shopify?.customerPrivacy?.setTrackingConsent ? resolve() : reject(new Error("Privacy preferences unavailable."));
+      script.onerror = () => reject(new Error("Privacy preferences unavailable."));
+      document.head.appendChild(script);
+    });
+  })();
   return privacyScript;
 }
 
@@ -40,22 +61,33 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
     const hostAllowed = window.location.hostname === config.storefrontRootDomain
       || window.location.hostname === `www.${config.storefrontRootDomain}`;
     configureMetaTracking(hostAllowed);
+    setConsentUpdatePending(true);
     const refresh = () => {
       const privacy = window.Shopify?.customerPrivacy;
-      if (!active || !privacy) return;
+      if (!active || !authoritativeBootstrap || !privacy || privacy.consentStatus !== "loaded") return;
       const browserOptOut = window.navigator.globalPrivacyControl === true;
       setGpc(browserOptOut);
       setReady(true);
       const consent = privacy.currentVisitorConsent();
+      if (!pending.current && !failed.current) setConsentUpdatePending(false);
       if (!consent.marketing || !consent.analytics) setOpen(true);
       if (pending.current || failed.current || hasLocalMarketingVeto() || !marketingConsentAllowed(privacy, browserOptOut)) revokeMetaTracking();
       else { grantMetaTracking(); trackMetaPageView(); }
       window.dispatchEvent(new Event(MARKETING_CONSENT_EVENT));
     };
     const show = () => { setOpen(true); };
+    const leave = () => { setConsentUpdatePending(true); configureMetaTracking(false); revokeMetaTracking(); };
+    const restore = (event: PageTransitionEvent) => {
+      // A checkout can change consent while this document is in the back/forward
+      // cache. Reload to let Shopify read its current cookies, never replay Allow.
+      if (event.persisted) { leave(); setReady(false); window.location.reload(); }
+    };
     window.addEventListener(MARKETING_PREFERENCES_EVENT, show);
+    window.addEventListener("pagehide", leave);
+    window.addEventListener("pageshow", restore);
     document.addEventListener("visitorConsentCollected", refresh);
-    if (hostAllowed) void loadPrivacyApi().then(refresh).catch(() => {
+    document.addEventListener("consentTrackingApiLoaded", refresh);
+    if (hostAllowed) void loadPrivacyApi(config).then(refresh).catch(() => {
       if (active) setError("Cookie preferences are unavailable. Optional tracking remains off. Please try again later.");
     });
     return () => {
@@ -63,7 +95,10 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
       configureMetaTracking(false);
       revokeMetaTracking();
       window.removeEventListener(MARKETING_PREFERENCES_EVENT, show);
+      window.removeEventListener("pagehide", leave);
+      window.removeEventListener("pageshow", restore);
       document.removeEventListener("visitorConsentCollected", refresh);
+      document.removeEventListener("consentTrackingApiLoaded", refresh);
     };
   }, [config]);
 
@@ -78,9 +113,10 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
 
   function choose(allow: boolean) {
     const privacy = window.Shopify?.customerPrivacy;
-    if (!privacy || saving || (allow && gpc)) return;
+    if (!privacy || privacy.consentStatus !== "loaded" || saving || (allow && gpc)) return;
     const request = ++attempt.current;
     pending.current = true;
+    setConsentUpdatePending(true);
     failed.current = false;
     setSaving(true);
     setError("");
@@ -95,7 +131,7 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
       setError("Saving your choice is taking longer than expected. Optional tracking remains off while we wait.");
       revokeMetaTracking();
     }, 15000);
-    privacy.setTrackingConsent({ ...config, headlessStorefront: true, marketing: allow, analytics: allow }, (result) => {
+    privacy.setTrackingConsent({ ...config, checkoutRootDomain: window.location.host, storefrontRootDomain: `.${config.storefrontRootDomain}`, headlessStorefront: true, marketing: allow, analytics: allow }, (result) => {
       if (request !== attempt.current) return;
       window.clearTimeout(timeout);
       pending.current = false;
@@ -107,6 +143,7 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
         setError("Your choice could not be saved. Optional tracking remains off. Please try again.");
         return;
       }
+      setConsentUpdatePending(false);
       failed.current = false;
       setError("");
       configureMetaTracking(true);

@@ -1,6 +1,6 @@
 "use client";
 
-import { checkoutWithAttribution } from "@/lib/marketing/meta";
+import { checkoutVisitorConsent, checkoutWithAttribution } from "@/lib/marketing/meta";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -130,6 +130,7 @@ export default function BagPageClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          visitorConsent: checkoutVisitorConsent(),
           lines: displayItems.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,

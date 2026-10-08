@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCheckoutUrl, getProducts, type CheckoutLine } from "@/lib/shopify";
+import { validVisitorConsent } from "@/lib/marketing/consent";
 
 const VARIANT_ID = /^gid:\/\/shopify\/ProductVariant\/\d+$/;
 const MAX_LINES = 25;
@@ -8,6 +9,7 @@ const ALLOWED_LINE_FIELDS = new Set(["variantId", "quantity"]);
 
 type RequestBody = {
   lines?: unknown;
+  visitorConsent?: unknown;
 };
 
 type RequestLine = { variantId?: unknown; quantity?: unknown };
@@ -20,6 +22,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "The bag could not be read." }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || !validVisitorConsent(body.visitorConsent)) {
+    return NextResponse.json({ error: "The checkout preferences could not be read." }, { status: 400 });
+  }
   if (!Array.isArray(body.lines) || body.lines.length === 0 || body.lines.length > MAX_LINES) {
     return NextResponse.json({ error: "The bag is empty or too large." }, { status: 400 });
   }
@@ -84,7 +89,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const checkoutUrl = await createCheckoutUrl(lines);
+  const checkoutUrl = await createCheckoutUrl(lines, 1, body.visitorConsent);
   if (!checkoutUrl) {
     return NextResponse.json(
       { error: "Checkout is temporarily unavailable. Your bag is still saved." },
