@@ -94,7 +94,9 @@ export default function OperatorMemberRecord({
   const nextAction = registrationNeedsAction && registration.next.key === "profile"
     ? { href: "/ops/registrations", label: "Review profile access" }
     : memberGuidanceAction(next, header.memberId, canManageSetup);
+  const NextActionLink = nextAction.href.startsWith("#") ? "a" : Link;
   const circlePlacementHref = next.key === "ongoing-review" ? "#journey" : next.placement === "blocked" ? "#membership" : `/ops/circles?memberId=${encodeURIComponent(header.memberId)}#assign-member`;
+  const CirclePlacementLink = circlePlacementHref.startsWith("#") ? "a" : Link;
 
   const stateRows = [
     ["Admission", header.states.admission],
@@ -131,9 +133,9 @@ export default function OperatorMemberRecord({
           <p className="operator-compact-label text-[var(--color-poster)]">{next.status} · {next.actor}</p>
           <h3 className="ui-heading mt-1 text-base font-semibold leading-tight">{next.title}</h3>
           <div className="mt-1 flex flex-wrap items-start gap-x-4">
-          <Link className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={nextAction.href}>
+          <NextActionLink className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={nextAction.href}>
             {nextAction.label} →
-          </Link>
+          </NextActionLink>
           <details aria-labelledby="member-next-step-guidance" className="text-sm text-black/60 open:basis-full">
             <summary className="min-h-11 cursor-pointer content-center text-xs font-medium" id="member-next-step-guidance">Why this step?</summary>
             <p className="pb-1 leading-relaxed">{next.detail}</p>
@@ -391,9 +393,9 @@ export default function OperatorMemberRecord({
               <>
                 <EmptyRow>No current Circle assignment.</EmptyRow>
                 {canManageSetup ? (
-                  <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
+                  <CirclePlacementLink className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
                     {next.key === "ongoing-review" ? "Review ongoing participation" : next.placement === "blocked" ? "Review joining & billing" : "Review Circle placement"} →
-                  </Link>
+                  </CirclePlacementLink>
                 ) : <p className="mt-3 text-sm text-black/50">An Administrator can place this member in a Circle.</p>}
               </>
             )}

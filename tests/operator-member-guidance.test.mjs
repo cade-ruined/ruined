@@ -401,3 +401,20 @@ test("guidance navigation encodes only member ID and never transports grants or 
   assert.equal(url.searchParams.get("memberId"), id);
   assert.equal(url.hash, "#assign-member");
 });
+
+
+test("same-page next-step and placement links use native hash navigation while route links stay routed", () => {
+  const rawNodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(rawNodes)] : [];
+  const blocked = record({ states: { billing: "pending", administrativeOnboarding: "in_progress", standing: "pre_active" }, requirements: [required("agreement")], circle: null });
+  const alumni = record({ states: { standing: "alumni", billing: "active", administrativeOnboarding: "completed" }, circle: null });
+  for (const [member, target] of [[blocked, "#membership"], [alumni, "#journey"]]) {
+    const recordLinks = rawNodes(Record({ record: member })).filter(node => node.props.href === target);
+    assert.equal(recordLinks.length, 2, "both the top next step and empty Circle action target the member panel");
+    assert.ok(recordLinks.every(node => node.type === "a"), "native anchors emit the hashchange consumed by the workspace guard");
+    const setupLink = rawNodes(Setup({ record: member })).find(node => node.props.href === target);
+    assert.equal(setupLink.type, "a", "the overview's placement action uses the same panel navigation");
+  }
+  const ready = record({ states: { billing: "active", administrativeOnboarding: "completed", standing: "active" }, circle: null });
+  const crossRoute = rawNodes(Setup({ record: ready })).find(node => node.props.href?.startsWith("/ops/circles"));
+  assert.notEqual(crossRoute.type, "a", "different-page navigation retains Next Link");
+});
