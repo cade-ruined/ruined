@@ -33,3 +33,9 @@
 .entryContent{max-width:none;padding:0}
 
 .journey.cardRoom{display:block;padding:0;background:#141413}
+
+/* Quiet canvas for writing; colors continue to come from the member theme. */
+.journey.timelineWorksheet {
+  background-image: none;
+  background-color: var(--member-paper);
+}
