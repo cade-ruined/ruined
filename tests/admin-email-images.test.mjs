@@ -5,6 +5,7 @@ import test from "node:test";
 import sharp from "sharp";
 import ts from "typescript";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
+import { json, serializeJsonBindings } from "./helpers/postgres-json-bindings.mjs";
 
 async function load(path, dependencies = {}, globals = {}) {
   const code = ts.transpileModule(await readFile(new URL(`../${path}`, import.meta.url), "utf8"), {
@@ -58,7 +59,7 @@ async function fixture(t, options = {}) {
     create schema private; create schema storage;
     create table platform_users(auth_user_id uuid primary key,status text not null);
     create table platform_role_grants(auth_user_id uuid references platform_users,role_slug text,revoked_at timestamptz);
-    create table operator_audit_events(id bigint generated always as identity,actor_auth_user_id uuid,action text,subject_type text,subject_id text,metadata jsonb);
+    create table operator_audit_events(id bigint generated always as identity,actor_auth_user_id uuid,action text,subject_type text,subject_id text,metadata jsonb check(jsonb_typeof(metadata)='object'));
     create table storage.buckets(id text primary key,name text not null,public boolean not null default false,file_size_limit bigint,allowed_mime_types text[]);
     create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text not null,name text not null);
     alter table storage.objects enable row level security;
@@ -77,8 +78,9 @@ async function fixture(t, options = {}) {
   function wrap(client) {
     const sql = async (strings, ...params) => {
       const query = strings.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, "");
-      return (await client.query(query, params)).rows;
+      return (await client.query(query, serializeJsonBindings(strings, params))).rows;
     };
+    sql.json = json;
     sql.begin = callback => client.transaction(tx => callback(wrap(tx)));
     return sql;
   }
@@ -248,8 +250,10 @@ test("successful uploads use immutable random object names and stable public URL
     assert.equal(f.state.clients[index].options.auth.persistSession, false);
   }
   assert.equal((await f.pg.query("select attempts from admin_email_image_upload_limits where actor_auth_user_id=$1", [f.admin])).rows[0].attempts, 2);
-  const actions = (await f.pg.query("select action from operator_audit_events order by id")).rows.map(row => row.action);
-  assert.deepEqual(actions, ["admin_email.image_upload_requested", "admin_email.image_uploaded", "admin_email.image_upload_requested", "admin_email.image_uploaded"]);
+  const audits = (await f.pg.query("select action,metadata from operator_audit_events order by id")).rows;
+  assert.deepEqual(audits.map(row => row.action), ["admin_email.image_upload_requested", "admin_email.image_uploaded", "admin_email.image_upload_requested", "admin_email.image_uploaded"]);
+  assert.deepEqual(audits[0].metadata, { inputBytes: jpeg.length, contentType: "image/jpeg" });
+  assert.deepEqual(audits[1].metadata, { contentType: first.contentType, width: first.width, height: first.height, bytes: first.bytes });
 });
 
 test("a private bucket or revoked access during bucket lookup prevents an upload", async t => {

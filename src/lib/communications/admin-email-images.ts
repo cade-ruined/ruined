@@ -91,7 +91,7 @@ export async function uploadAdminEmailImage(actorAuthUserId: string, file: File)
     if (!rows.length) return false;
     await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,metadata)
       values(${actorAuthUserId}::uuid,'admin_email.image_upload_requested','admin_email_image',${objectId},
-      ${JSON.stringify({ inputBytes: file.size, contentType: file.type.toLowerCase() })}::jsonb)`;
+      ${tx.json({ inputBytes: file.size, contentType: file.type.toLowerCase() })}::jsonb)`;
     return true;
   });
   if (!allowed) throw new AdminEmailError(429, "You've reached the photo upload limit. Try again next hour.");
@@ -124,7 +124,7 @@ export async function uploadAdminEmailImage(actorAuthUserId: string, file: File)
     } catch (error) { reportStorageFailure("upload", error); }
     await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,metadata)
       values(${actorAuthUserId}::uuid,${succeeded ? "admin_email.image_uploaded" : "admin_email.image_upload_failed"},'admin_email_image',${objectId},
-      ${JSON.stringify({ contentType: image.contentType, width: image.width, height: image.height, bytes: image.bytes })}::jsonb)`;
+      ${tx.json({ contentType: image.contentType, width: image.width, height: image.height, bytes: image.bytes })}::jsonb)`;
     return succeeded;
   });
   if (!uploaded) throw new AdminEmailError(503, "The photo could not be uploaded. Keep it open and try again.");
