@@ -6,427 +6,354 @@ import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
-import { ADMIN_EMAIL_MAX_RECIPIENTS, isAdminEmailAddress, type AdminEmailContent, type AdminEmailDraft, type AdminEmailPreview } from "@/lib/communications/admin-email-model";
+import type { ResendEmailEdits, ResendEmailTemplate } from "@/lib/communications/resend-email-model";
+import { renderResendEmailTemplate } from "@/lib/communications/resend-email-templates";
 
-type EmailConfiguration = {
-  aiReady: boolean;
-  deliveryReady: boolean;
-  marketingReady: boolean;
-  missing: string[];
+type TemplateSummary = { id: string; name: string; status: "draft" | "published"; updatedAt?: string };
+type BroadcastSummary = { id: string; name: string; subject?: string; status: string; createdAt: string };
+type SentEmail = { id: string; subject: string; to: string[]; lastEvent: string; createdAt: string };
+type Overview = {
+  templates: TemplateSummary[];
+  segments: Array<{ id: string; name: string }>;
+  topics: Array<{ id: string; name: string; defaultSubscription: string }>;
+  broadcasts: BroadcastSummary[];
+  emails: SentEmail[];
+  configuration: { connected: boolean; aiReady: boolean; sendingReady: boolean; issues: string[] };
+  cursors: { broadcasts: string | null; emails: string | null };
+};
+export type ResendEmailPreviewCatalog = Pick<Overview, "segments" | "topics"> & { templates: ResendEmailTemplate[] };
+type RenderedEmail = { html: string; text?: string; subject: string; from: string };
+type BroadcastDetail = BroadcastSummary & { html: string; from: string; segmentId: string; topicId: string | null; previewText: string };
+type SendReview = RenderedEmail & {
+  id: string; recipientCount: number; recipients: Array<{ email: string; name: string }>; excludedCount: number;
+  mode: "individual" | "campaign"; segmentName: string | null; expiresAt: string; broadcastId?: string;
+};
+type View = "templates" | "broadcasts" | "emails";
+type Pending = "loading" | "template" | "generate" | "save" | "review" | "send" | "refresh" | "more" | null;
+const API = "/api/ops/emails/resend";
+const SECONDARY_BUTTON = "inline-flex min-h-11 items-center justify-center rounded-[4px] border border-black/25 px-4 py-2 text-sm font-medium hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40";
+const SAMPLE_HTML = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f2f0e9;font-family:Arial,sans-serif;color:#20201e"><main style="max-width:520px;margin:auto;padding:48px 28px"><p style="font-size:11px;letter-spacing:2px">EXAMPLE RESEND TEMPLATE</p><hr style="border:0;border-top:1px solid #b9b6ad;margin:32px 0"><h1 style="font-size:34px;line-height:1.15;font-weight:400">{{HEADLINE}}</h1><p style="font-size:15px;line-height:1.8">Hi {{FIRST_NAME}},</p><p style="font-size:15px;line-height:1.8;white-space:pre-wrap">{{MESSAGE}}</p><hr style="border:0;border-top:1px solid #b9b6ad;margin:40px 0 20px"><p style="font-size:11px;color:#666">Sample design for this preview. No email will be sent.</p></main></body></html>';
+const SAMPLE_TEMPLATE: ResendEmailTemplate = {
+  id: "sample-template", name: "Example member update", status: "published", version: "sample-v1", hasUnpublishedVersions: false,
+  html: SAMPLE_HTML, text: null, subject: "A note for our members", from: "Ruined <hello@example.test>", replyTo: [],
+  variables: [{ key: "FIRST_NAME", type: "string", fallbackValue: "there" }],
+  fields: [{ key: "headline", label: "Heading", value: "A little room for what matters." }, { key: "message", label: "Message", value: "Here is a short member update. Replace this copy while keeping the template’s layout intact." }],
+};
+const SAMPLE_OVERVIEW: Overview = {
+  templates: [{ id: SAMPLE_TEMPLATE.id, name: SAMPLE_TEMPLATE.name, status: "published" }],
+  segments: [{ id: "sample-members", name: "Members — sample segment" }],
+  topics: [{ id: "sample-updates", name: "Member updates — sample topic", defaultSubscription: "opt_in" }],
+  broadcasts: [], emails: [], configuration: { connected: false, aiReady: false, sendingReady: false, issues: [] },
+  cursors: { broadcasts: null, emails: null },
 };
 
-type PendingAction = "generate" | "save" | "review" | "send" | "refresh" | null;
-const SECONDARY_BUTTON = "inline-flex min-h-11 items-center justify-center rounded-[4px] border border-black/25 px-4 py-2 text-sm font-medium hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40";
-const EMPTY_CONTENT: AdminEmailContent = { subject: "", preheader: "", body: "", purpose: "marketing", audience: "individual", recipients: [] };
-
-function addresses(value: string): string[] {
-  return [...new Set(value.split(/[\s,;]+/).map((email) => email.trim().toLowerCase()).filter(Boolean))];
+function defaultEdits(template: ResendEmailTemplate): ResendEmailEdits {
+  return {
+    subject: template.subject,
+    values: Object.fromEntries(template.variables.map((field) => [field.key, field.fallbackValue == null ? "" : String(field.fallbackValue)])),
+    copy: Object.fromEntries(template.fields.map((field) => [field.key, field.value])),
+  };
 }
-
-function contentOf(draft: AdminEmailDraft): AdminEmailContent {
-  return { subject: draft.subject, preheader: draft.preheader, body: draft.body, purpose: draft.purpose, audience: draft.audience, recipients: draft.recipients };
+function escapeText(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
+function sampleRender(edits: ResendEmailEdits): RenderedEmail {
+  return { subject: edits.subject, from: SAMPLE_TEMPLATE.from, html: SAMPLE_HTML.replace("{{HEADLINE}}", escapeText(edits.copy.headline ?? "")).replace("{{MESSAGE}}", escapeText(edits.copy.message ?? "")).replace("{{FIRST_NAME}}", escapeText(edits.values.FIRST_NAME ?? "there")) };
 }
-
-function audienceLabel(draft: AdminEmailContent): string {
-  if (draft.audience === "updates") return "Ruined updates";
-  if (draft.audience === "members") return draft.purpose === "marketing" ? "Subscribed members" : "Registered members";
-  return draft.recipients.length === 1 ? "Individual email" : "Individual recipients";
-}
-
-function formatDate(value: string): string {
+function dateLabel(value: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 }
-
-function deliveryLabel(draft: AdminEmailDraft): string {
-  if (draft.status === "draft") return "Draft";
-  const counts = draft.deliveryCounts;
-  if (counts.manual_review > 0) return "Needs review";
-  if (counts.pending + counts.sending > 0) return "Sending";
-  if (counts.failed > 0) return "Some sends failed";
-  if (counts.sent === 0 && counts.skipped > 0) return "Not sent";
-  return "Sent";
+function statusLabel(value: string): string { return value.replace(/^email\./, "").replaceAll("_", " "); }
+function safePreview(html: string): string {
+  const policy = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src https: data:; style-src \'unsafe-inline\' https:; font-src https: data:; script-src \'none\'; connect-src \'none\'; object-src \'none\'; frame-src \'none\'; base-uri \'none\'; form-action \'none\'">';
+  return /<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}`) : `${policy}${html}`;
 }
-
-async function emailRequest<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: "no-store",
-  });
+async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { method: body === undefined ? "GET" : "POST", headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store", signal });
   const result = await response.json().catch(() => null) as (T & { error?: string }) | null;
-  if (!response.ok || !result) throw new Error(result?.error || "The email service could not be reached. Please try again.");
+  if (!response.ok || !result) throw new Error(typeof result?.error === "string" ? result.error : "Resend could not be reached. Please try again.");
   return result;
 }
 
-function EmailPreview({ content }: { content: Pick<AdminEmailContent, "subject" | "preheader" | "body" | "purpose"> }) {
-  return <div className="min-w-0 overflow-hidden rounded-[5px] border border-black/15 bg-[var(--color-shop)]">
-    <div className="border-b border-black/10 px-5 py-4">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-black/45">Subject</p>
-      <p className="mt-1 break-words text-sm font-semibold">{content.subject || "Your subject goes here"}</p>
-      <p className="mt-1 break-words text-xs leading-relaxed text-black/50">{content.preheader || "Preview text appears beside the subject in an inbox."}</p>
+function DesignPreview({ email, updating = false, error = "", compact = false }: { email: RenderedEmail | null; updating?: boolean; error?: string; compact?: boolean }) {
+  const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
+  return <section className="min-w-0" aria-label="Email design preview">
+    <header className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Design preview</h3><div className="flex gap-1" role="group" aria-label="Preview width">{(["desktop", "mobile"] as const).map((size) => <button aria-pressed={width === size} className={`min-h-9 rounded-[3px] px-2.5 text-xs capitalize ${width === size ? "bg-black/10" : "text-black/55 hover:bg-black/5"}`} key={size} onClick={() => setWidth(size)} type="button">{size}</button>)}</div></header>
+    <div className="overflow-hidden rounded-[5px] border border-black/15 bg-[var(--color-shop)]">
+      <div className="border-b border-black/10 px-4 py-3"><p className="break-words text-xs text-black/55">{email?.from || "Template sender"}</p><p className="mt-1 break-words text-sm font-semibold">{email?.subject || "Email subject"}</p></div>
+      <div className="bg-black/5 p-2">
+        {email ? <iframe className={`mx-auto block w-full border-0 bg-white ${compact ? "h-[440px]" : "h-[480px] sm:h-[690px]"} ${width === "mobile" ? "max-w-[375px]" : ""}`} referrerPolicy="no-referrer" sandbox="" srcDoc={safePreview(email.html)} title="Rendered email template" /> : <p className="px-5 py-16 text-center text-sm text-black/55">Preparing the template preview…</p>}
+      </div>
     </div>
-    <div className="px-5 py-6 sm:px-6">
-      <p className="whitespace-pre-wrap break-words text-sm leading-[1.8] text-black/80">{content.body || "Write a draft to see your message here."}</p>
-      {content.purpose === "marketing" ? <p className="mt-8 border-t border-black/10 pt-4 text-xs leading-relaxed text-black/50">An unsubscribe link and Ruined’s mailing address are added when this email is sent.</p> : null}
-    </div>
-  </div>;
+    <p aria-live="polite" className={`mt-2 text-xs leading-relaxed ${error ? "text-[var(--color-poster)]" : "text-black/50"}`}>{error || (updating ? "Updating preview…" : "The Resend design is preserved. Appearance can vary between inboxes.")}</p>
+  </section>;
 }
 
-export default function OperatorEmailComposer({
-  drafts: initialDrafts,
-  configuration: initialConfiguration,
-  preview = false,
-}: {
-  drafts: AdminEmailDraft[];
-  configuration: EmailConfiguration;
-  preview?: boolean;
-}) {
-  const [drafts, setDrafts] = useState(initialDrafts);
-  const [configuration, setConfiguration] = useState(initialConfiguration);
-  const [content, setContent] = useState<AdminEmailContent>({ ...EMPTY_CONTENT });
-  const [recipientInput, setRecipientInput] = useState("");
-  const [selected, setSelected] = useState<AdminEmailDraft | null>(null);
+export default function OperatorEmailComposer({ preview = false, previewCatalog }: { preview?: boolean; previewCatalog?: ResendEmailPreviewCatalog | null }) {
+  const [overview, setOverview] = useState<Overview | null>(preview ? previewCatalog ? { ...SAMPLE_OVERVIEW, ...previewCatalog } : SAMPLE_OVERVIEW : null);
+  const [view, setView] = useState<View>("templates");
+  const [template, setTemplate] = useState<ResendEmailTemplate | null>(null);
+  const [edits, setEdits] = useState<ResendEmailEdits>({ subject: "", values: {}, copy: {} });
+  const [undo, setUndo] = useState<ResendEmailEdits | null>(null);
+  const [mode, setMode] = useState<"individual" | "campaign">("individual");
+  const [recipient, setRecipient] = useState("");
+  const [segmentId, setSegmentId] = useState("");
+  const [topicId, setTopicId] = useState("");
+  const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [pending, setPending] = useState<PendingAction>(null);
+  const [pending, setPending] = useState<Pending>(null);
   const pendingRef = useRef(false);
-  const [review, setReview] = useState<AdminEmailPreview | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const selectionRef = useRef(0);
+  const previewSequenceRef = useRef(0);
+  const allowNavigationRef = useRef(false);
+  const [confirm, setConfirm] = useState<{ description: string; action: () => void } | null>(null);
+  const [rendered, setRendered] = useState<RenderedEmail | null>(null);
+  const [previewUpdating, setPreviewUpdating] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [switchTarget, setSwitchTarget] = useState<{ draft: AdminEmailDraft | null } | null>(null);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "draft" | "queued">("all");
-  const reviewButtonRef = useRef<HTMLButtonElement>(null);
-  const subjectRef = useRef<HTMLInputElement>(null);
+  const [review, setReview] = useState<SendReview | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [broadcast, setBroadcast] = useState<BroadcastDetail | null>(null);
+  const [savedBroadcast, setSavedBroadcast] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
-  const readOnly = selected?.status === "queued";
   const busy = pending !== null;
-  const deliveryReady = configuration.deliveryReady && (content.purpose !== "marketing" || configuration.marketingReady);
-  const hasInFlightDelivery = drafts.some((draft) => draft.status === "queued" && draft.deliveryCounts.pending + draft.deliveryCounts.sending > 0);
 
+  useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [error]);
   useEffect(() => {
-    if (!dirty) return;
-    function preventLoss(event: BeforeUnloadEvent) { event.preventDefault(); }
+    function preventLoss(event: BeforeUnloadEvent) { if ((dirty || pendingRef.current) && !allowNavigationRef.current) event.preventDefault(); }
+    function guardNavigation(event: MouseEvent) {
+      if ((!dirty && !pendingRef.current) || allowNavigationRef.current || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+      const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (!["http:", "https:"].includes(destination.protocol) || (destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash)) return;
+      event.preventDefault(); event.stopPropagation();
+      if (pendingRef.current) { setNotice("Wait for the current email action to finish before leaving."); return; }
+      setConfirm({ description: "Leave this email and discard the unsaved changes?", action: () => { allowNavigationRef.current = true; window.location.assign(destination.href); } });
+    }
     window.addEventListener("beforeunload", preventLoss);
-    return () => window.removeEventListener("beforeunload", preventLoss);
+    document.addEventListener("click", guardNavigation, true);
+    return () => { window.removeEventListener("beforeunload", preventLoss); document.removeEventListener("click", guardNavigation, true); };
   }, [dirty]);
 
-  useEffect(() => {
-    if (error) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [error]);
-
-  const refreshHistory = useCallback(async (quiet = false) => {
+  const loadOverview = useCallback(async (initial = false) => {
     if (preview || pendingRef.current) return;
     pendingRef.current = true;
-    if (!quiet) { setPending("refresh"); setError(""); setNotice(""); }
-    try {
-      const result = await emailRequest<{ drafts: AdminEmailDraft[]; configuration: EmailConfiguration }>("/api/ops/emails");
-      setDrafts(result.drafts);
-      setConfiguration(result.configuration);
-      setSelected((current) => current?.status === "queued" ? result.drafts.find((item) => item.id === current.id) ?? current : current);
-      if (!quiet) setNotice("Email history updated.");
-    } catch (failure) {
-      if (!quiet) setError(failure instanceof Error ? failure.message : "Email history could not be refreshed.");
-    } finally {
-      pendingRef.current = false;
-      if (!quiet) setPending(null);
-    }
+    setPending(initial ? "loading" : "refresh"); setError("");
+    try { setOverview(await request<Overview>(API)); if (!initial) setNotice("Templates, audiences, and history refreshed from Resend."); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "Resend could not be loaded."); }
+    finally { pendingRef.current = false; setPending(null); }
   }, [preview]);
+  useEffect(() => { void loadOverview(true); }, [loadOverview]);
 
   useEffect(() => {
-    if (preview || !hasInFlightDelivery) return;
-    const interval = window.setInterval(() => { void refreshHistory(true); }, 15_000);
-    return () => window.clearInterval(interval);
-  }, [hasInFlightDelivery, preview, refreshHistory]);
+    if (!template) return;
+    const controller = new AbortController();
+    const sequence = ++previewSequenceRef.current;
+    const timer = window.setTimeout(async () => {
+      setPreviewUpdating(true); setPreviewError("");
+      try {
+        const result = preview ? previewCatalog ? renderResendEmailTemplate(template, edits, { campaign: mode === "campaign" }) : sampleRender(edits) : await request<RenderedEmail>(`${API}/preview`, { templateId: template.id, templateVersion: template.version, edits, mode }, controller.signal);
+        if (sequence === previewSequenceRef.current && !controller.signal.aborted) setRendered(result);
+      } catch (failure) {
+        if (!controller.signal.aborted && sequence === previewSequenceRef.current) setPreviewError(failure instanceof Error ? failure.message : "The updated preview could not be loaded.");
+      } finally { if (!controller.signal.aborted && sequence === previewSequenceRef.current) setPreviewUpdating(false); }
+    }, 450);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [edits, mode, preview, previewCatalog, template]);
 
-  function edit(patch: Partial<AdminEmailContent>) {
-    setContent((current) => ({ ...current, ...patch }));
-    setDirty(true);
-    setReview(null);
-    setAcknowledged(false);
-    setError("");
-    setNotice("");
-  }
+  useEffect(() => {
+    if (!review) return;
+    const remaining = new Date(review.expiresAt).getTime() - Date.now();
+    if (!Number.isFinite(remaining)) return;
+    const timeout = window.setTimeout(() => { setReview(null); setAcknowledged(false); setError("This review expired. Review the recipients again before sending."); }, Math.max(0, remaining));
+    return () => window.clearTimeout(timeout);
+  }, [review]);
 
-  function remember(draft: AdminEmailDraft) {
-    setDrafts((current) => [draft, ...current.filter((item) => item.id !== draft.id)]);
-    setSelected(draft);
-    setContent(contentOf(draft));
-    setRecipientInput(draft.recipients.join("\n"));
-    setDirty(false);
-  }
-
-  function openDraft(draft: AdminEmailDraft | null) {
-    if (pendingRef.current) return;
-    setSelected(draft);
-    setContent(draft ? contentOf(draft) : { ...EMPTY_CONTENT });
-    setRecipientInput(draft?.recipients.join("\n") ?? "");
-    setPrompt("");
-    setDirty(false);
-    setReview(null);
-    setAcknowledged(false);
-    setError("");
-    setNotice("");
-    setSwitchTarget(null);
-    requestAnimationFrame(() => {
-      document.getElementById("email-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      subjectRef.current?.focus({ preventScroll: true });
-    });
-  }
-
-  function requestOpen(draft: AdminEmailDraft | null) {
-    if (pendingRef.current) return;
-    if (dirty) setSwitchTarget({ draft });
-    else openDraft(draft);
-  }
-
-  function begin(action: Exclude<PendingAction, null>): boolean {
+  function begin(action: Exclude<Pending, null>): boolean {
     if (pendingRef.current) return false;
-    pendingRef.current = true;
-    setPending(action);
-    setError("");
-    setNotice("");
-    return true;
+    pendingRef.current = true; setPending(action); setError(""); setNotice(""); return true;
   }
-
   function finish() { pendingRef.current = false; setPending(null); }
-
+  function change() { setDirty(true); setReview(null); setAcknowledged(false); setSavedBroadcast(null); setError(""); setNotice(""); }
+  function changeEdits(next: ResendEmailEdits) { setEdits(next); change(); }
+  function requestChange(action: () => void, description = "Discard the unsaved changes to this email?") {
+    if (pendingRef.current) return;
+    if (dirty) setConfirm({ description, action }); else action();
+  }
+  function resetWorkspace(nextView: View) {
+    ++selectionRef.current; ++previewSequenceRef.current;
+    setView(nextView); setTemplate(null); setBroadcast(null); setRendered(null); setPreviewError(""); setPreviewUpdating(false);
+    setDirty(false); setUndo(null); setReview(null); setAcknowledged(false); setSavedBroadcast(null); setQuery(""); setError(""); setNotice("");
+  }
+  async function chooseTemplate(id: string) {
+    if (!begin("template")) return;
+    const selection = ++selectionRef.current;
+    try {
+      const next = preview ? previewCatalog ? previewCatalog.templates.find((item) => item.id === id) : SAMPLE_TEMPLATE : (await request<{ template: ResendEmailTemplate }>(`${API}/templates/${encodeURIComponent(id)}`)).template;
+      if (!next) throw new Error("That template is no longer in this preview. Reload the workspace.");
+      if (selection !== selectionRef.current) return;
+      const nextEdits = defaultEdits(next);
+      if (next.campaignOnly) setMode("campaign");
+      setTemplate(next); setEdits(nextEdits); setRendered(preview && !previewCatalog ? sampleRender(nextEdits) : { html: next.html, subject: next.subject, from: next.from });
+      setBroadcast(null); setView("templates"); setUndo(null); setPrompt(""); setName(next.name); setSavedBroadcast(null); setDirty(false); setReview(null); setAcknowledged(false); setPreviewError("");
+      requestAnimationFrame(() => document.getElementById("resend-composer")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "That template could not be loaded."); }
+    finally { finish(); }
+  }
+  function editorPayload() {
+    if (!template) throw new Error("Choose a Resend template first.");
+    if (template.campaignOnly && mode === "individual") throw new Error("This design uses Resend campaign personalization. Choose a campaign or an individual-email design.");
+    if (!edits.subject.trim()) throw new Error("Add the email subject.");
+    if (mode === "individual" && !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(recipient.trim())) throw new Error("Enter one valid recipient email address.");
+    if (mode === "campaign" && (!segmentId || !topicId || !name.trim())) throw new Error("Add a campaign name and choose its Resend segment and topic.");
+    return { templateId: template.id, templateVersion: template.version, edits, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
+  }
   async function generate() {
-    if (!prompt.trim() || readOnly || !begin("generate")) return;
+    if (!template || !prompt.trim() || (preview && previewCatalog) || !begin("generate")) return;
     try {
-      if (preview) {
-        const sample = content.body.trim() ? {
-          subject: content.subject || "A note from Ruined",
-          preheader: content.preheader || "A little space for what matters.",
-          body: `${content.body}\n\n[Preview revision. In the live composer, ChatGPT applies your instructions here.]`,
-        } : {
-          subject: "Make room for what matters",
-          preheader: "A note from Ruined.",
-          body: "There is value in making room. For the work. For the people around it. For what comes next.\n\nWe’ll share the details soon.\n\nRuined",
-        };
-        edit(sample);
-        setNotice("Sample draft added. ChatGPT is not called in preview.");
-      } else {
-        const result = await emailRequest<{ draft: Pick<AdminEmailContent, "subject" | "preheader" | "body"> }>("/api/ops/emails/generate", {
-          prompt: prompt.trim(),
-          ...(content.subject.trim() || content.body.trim() ? { currentDraft: { subject: content.subject, preheader: content.preheader, body: content.body } } : {}),
-        });
-        edit(result.draft);
-        setNotice("Draft ready. Check names, dates, links, and claims before saving.");
-      }
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "ChatGPT could not create the draft.");
-    } finally { finish(); }
+      const previous = structuredClone(edits);
+      const next = preview ? { ...edits, copy: { ...edits.copy, message: "A short update, with room for what matters.\n\nThis is sample copy. In the connected workspace, ChatGPT follows your direction while preserving the template." } } : (await request<{ edits: ResendEmailEdits }>(`${API}/generate`, { templateId: template.id, templateVersion: template.version, edits, mode, prompt: prompt.trim() })).edits;
+      changeEdits(next); setUndo(previous); setNotice(preview ? "Sample revision applied. ChatGPT was not called." : "Copy updated. Review the wording and links before sending.");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "ChatGPT could not revise the copy."); }
+    finally { finish(); }
   }
-
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (readOnly || !begin("save")) return;
+  async function saveBroadcast() {
+    if (preview || mode !== "campaign" || !begin("save")) return;
     try {
-      const next: AdminEmailContent = {
-        ...content,
-        subject: content.subject.trim(),
-        preheader: content.preheader.trim(),
-        body: content.body.trim(),
-        recipients: content.audience === "individual" ? addresses(recipientInput) : [],
-      };
-      if (!next.subject || !next.body) throw new Error("Add a subject and message before saving.");
-      if (next.audience === "individual" && !next.recipients.length) throw new Error("Add at least one recipient email address.");
-      if (next.recipients.some((email) => !isAdminEmailAddress(email))) throw new Error("Check the recipient addresses. Enter one email per line, or separate them with commas.");
-      if (next.recipients.length > ADMIN_EMAIL_MAX_RECIPIENTS) throw new Error(`Add up to ${ADMIN_EMAIL_MAX_RECIPIENTS} recipients per email.`);
-      if (preview) {
-        const now = new Date().toISOString();
-        remember({ ...next, id: selected?.id ?? `preview-${crypto.randomUUID()}`, version: (selected?.version ?? 0) + 1, status: "draft", createdAt: selected?.createdAt ?? now, updatedAt: now, queuedAt: null, recipientCount: 0, deliveryCounts: { pending: 0, sending: 0, sent: 0, failed: 0, skipped: 0, manual_review: 0 } });
-        setNotice("Preview draft saved for this visit only.");
-      } else {
-        const result = await emailRequest<{ draft: AdminEmailDraft }>("/api/ops/emails", { ...next, ...(selected ? { draftId: selected.id, expectedVersion: selected.version } : {}) });
-        remember(result.draft);
-        setNotice("Draft saved. Review the recipients before sending.");
-      }
-      setReview(null);
-      setAcknowledged(false);
-      requestAnimationFrame(() => reviewButtonRef.current?.focus());
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The draft could not be saved.");
-    } finally { finish(); }
+      const payload = editorPayload();
+      const result = await request<{ id: string }>(`${API}/broadcasts`, payload);
+      setSavedBroadcast(result.id); setDirty(false); setNotice("Campaign draft saved in Resend. It has not been sent.");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The campaign draft could not be saved."); }
+    finally { finish(); }
   }
-
-  async function reviewRecipients() {
-    if (!selected || dirty || readOnly || !begin("review")) return;
+  async function reviewEmail(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!begin("review")) return;
     try {
+      const payload = broadcast ? { broadcastId: broadcast.id } : mode === "campaign" && savedBroadcast ? { broadcastId: savedBroadcast } : editorPayload();
       if (preview) {
-        const recipients = selected.audience === "individual"
-          ? selected.recipients.map((email) => ({ email, name: "Preview recipient" }))
-          : [{ email: "alex@example.test", name: "Alex — sample recipient" }, { email: "jordan@example.test", name: "Jordan — sample recipient" }];
-        setReview({ draftId: selected.id, version: selected.version, recipientHash: "preview-only", recipientCount: recipients.length, recipients, excludedCount: 0 });
+        const sampleRecipients = mode === "individual" ? [{ email: recipient.trim().toLowerCase(), name: "Preview recipient" }] : [{ email: "alex@example.test", name: "Alex — sample recipient" }, { email: "jordan@example.test", name: "Jordan — sample recipient" }];
+        const previewEmail = previewCatalog && template ? renderResendEmailTemplate(template, edits, { campaign: mode === "campaign" }) : sampleRender(edits);
+        setReview({ ...previewEmail, id: "preview-review", recipients: sampleRecipients, recipientCount: sampleRecipients.length, excludedCount: 0, mode, segmentName: mode === "campaign" ? overview?.segments.find((segment) => segment.id === segmentId)?.name ?? "Sample segment" : null, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() });
       } else {
-        const result = await emailRequest<{ review: AdminEmailPreview }>(`/api/ops/emails/${encodeURIComponent(selected.id)}/review`, { expectedVersion: selected.version });
+        const result = await request<{ review: SendReview }>(`${API}/review`, payload);
         setReview(result.review);
+        if (!broadcast && result.review.mode === "campaign" && result.review.broadcastId) {
+          setSavedBroadcast(result.review.broadcastId);
+          setDirty(false);
+        }
       }
       setAcknowledged(false);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The recipients could not be checked.");
-    } finally { finish(); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The email could not be reviewed."); }
+    finally { finish(); }
   }
-
   async function send() {
-    if (preview || !review || !selected || dirty || !acknowledged || !deliveryReady || review.recipientCount === 0 || !begin("send")) return;
+    if (preview || !review || !acknowledged || !overview?.configuration.sendingReady || !begin("send")) return;
     try {
-      const result = await emailRequest<{ draft: AdminEmailDraft }>(`/api/ops/emails/${encodeURIComponent(selected.id)}/send`, {
-        expectedVersion: review.version,
-        recipientHash: review.recipientHash,
-        recipientCount: review.recipientCount,
-      });
-      remember(result.draft);
-      setReview(null);
-      setAcknowledged(false);
-      setNotice(`Queued for ${result.draft.recipientCount.toLocaleString()} ${result.draft.recipientCount === 1 ? "recipient" : "recipients"}. Delivery progress appears in email history.`);
+      const result = await request<{ status: "sent" | "queued" | "unknown"; id: string; message: string }>(`${API}/send`, { reviewId: review.id });
+      setReview(null); setAcknowledged(false);
+      if (result.status === "unknown") setError(result.message || "Resend’s response could not be confirmed. Check the delivery history before trying again.");
+      else { setDirty(false); setNotice(result.message || (result.status === "queued" ? "Campaign queued in Resend." : "Email sent through Resend.")); }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Sending could not be confirmed. Refresh email history before trying again.");
-      setReview(null);
-      setAcknowledged(false);
+      setReview(null); setAcknowledged(false);
+      setError(failure instanceof Error ? failure.message : "Sending could not be confirmed. Check Resend before trying again.");
     } finally { finish(); }
   }
+  async function openBroadcast(id: string) {
+    if (!begin("template")) return;
+    const selection = ++selectionRef.current;
+    try {
+      const result = await request<{ broadcast: BroadcastDetail }>(`${API}/broadcasts/${encodeURIComponent(id)}`);
+      if (selection !== selectionRef.current) return;
+      setBroadcast(result.broadcast); setTemplate(null); setDirty(false); setReview(null); setView("broadcasts"); setPreviewError("");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The campaign could not be loaded."); }
+    finally { finish(); }
+  }
+  async function loadMore(collection: "broadcasts" | "emails") {
+    const cursor = overview?.cursors[collection];
+    if (!cursor || !begin("more")) return;
+    try {
+      if (collection === "broadcasts") {
+        const result = await request<{ items: BroadcastSummary[]; nextCursor: string | null }>(`${API}?collection=broadcasts&after=${encodeURIComponent(cursor)}`);
+        setOverview((current) => current ? { ...current, broadcasts: [...current.broadcasts, ...result.items.filter((item) => !current.broadcasts.some((existing) => existing.id === item.id))], cursors: { ...current.cursors, broadcasts: result.nextCursor } } : current);
+      } else {
+        const result = await request<{ items: SentEmail[]; nextCursor: string | null }>(`${API}?collection=emails&after=${encodeURIComponent(cursor)}`);
+        setOverview((current) => current ? { ...current, emails: [...current.emails, ...result.items.filter((item) => !current.emails.some((existing) => existing.id === item.id))], cursors: { ...current.cursors, emails: result.nextCursor } } : current);
+      }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "More history could not be loaded."); }
+    finally { finish(); }
+  }
 
-  const visibleHistory = drafts.filter((draft) => historyFilter === "all" || draft.status === historyFilter);
+  const templates = overview?.templates.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())) ?? [];
+  const broadcasts = overview?.broadcasts.filter((item) => `${item.name} ${item.subject ?? ""} ${item.status}`.toLowerCase().includes(query.toLowerCase())) ?? [];
+  const emails = overview?.emails.filter((item) => `${item.subject} ${item.to.join(" ")}`.toLowerCase().includes(query.toLowerCase())) ?? [];
+  const canCompose = preview || !!overview?.configuration.connected;
 
   return <OperatorPageFrame title="Messages">
     <OperatorMessagesTabs active="emails" />
     <header className="operator-record-header mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div><h2 className="operator-page-heading">Emails</h2><p className="mt-2 max-w-lg text-sm leading-relaxed text-black/60">Write with ChatGPT, make it yours, then send to one person or an audience.</p></div>
-      <button className={SECONDARY_BUTTON} disabled={busy} onClick={() => requestOpen(null)} type="button">New email</button>
+      <div><h2 className="operator-page-heading">Emails</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-black/60">Your Resend templates, audiences, and email history. ChatGPT helps with the words.</p></div>
+      <div className="flex flex-wrap gap-2">{template || broadcast ? <button className={SECONDARY_BUTTON} disabled={busy} onClick={() => requestChange(() => resetWorkspace("templates"))} type="button">New email</button> : null}<button className={SECONDARY_BUTTON} disabled={busy || preview} onClick={() => void loadOverview()} type="button">{pending === "refresh" ? "Refreshing…" : "Refresh Resend"}</button></div>
     </header>
-
-    {preview ? <p className="mb-5 rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed text-black/65" role="status">Preview workspace. Drafts stay in this visit. ChatGPT and email sending are off.</p> : null}
-    {!preview && (!configuration.aiReady || !configuration.deliveryReady || !configuration.marketingReady) ? <div className="mb-5 rounded-[4px] border border-black/15 px-4 py-3 text-sm leading-relaxed">
-      <p className="font-semibold">Email setup is incomplete.</p>
-      <p className="mt-1 text-black/60">{!configuration.aiReady ? "ChatGPT drafting is unavailable. You can write and save manually. " : ""}{!configuration.deliveryReady ? "Sending is unavailable until the email service is configured. " : !configuration.marketingReady ? "Marketing emails need a mailing address and unsubscribe configuration before sending." : ""}</p>
-    </div> : null}
-
-    <div className="mb-4 empty:hidden" aria-live="polite" aria-atomic="true">{notice ? <p className="rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed">{notice}</p> : null}</div>
+    {preview ? <p className="mb-5 rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed text-black/65" role="status">{previewCatalog ? "Your existing Resend designs and audience names, loaded for preview. Edits stay in this page. ChatGPT, saving, and sending are off." : "Preview workspace. The template and audience below are samples. Resend, ChatGPT, and sending are off."}</p> : null}
+    {overview && !preview && overview.configuration.issues.length ? <div className="mb-5 rounded-[4px] border border-black/15 px-4 py-3 text-sm leading-relaxed"><p className="font-semibold">{overview.configuration.connected ? "Some email tools need attention." : "Connect Resend to load your workspace."}</p><ul className="mt-1 space-y-1 text-black/60">{overview.configuration.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
+    <div aria-live="polite" aria-atomic="true" className="mb-4 empty:hidden">{notice ? <p className="rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed">{notice}</p> : null}</div>
     {error ? <p className="mb-4 scroll-mt-28 rounded-[4px] border border-[var(--color-poster)]/35 bg-[var(--color-poster)]/5 px-4 py-3 text-sm leading-relaxed" ref={errorRef} role="alert">{error}</p> : null}
+    <nav aria-label="Resend workspace" className="mb-5 flex flex-wrap gap-1 border-b border-black/15 pb-3">{([{ id: "templates", label: "Templates" }, { id: "broadcasts", label: "Campaigns" }, { id: "emails", label: "Sent emails" }] as const).map((item) => <button aria-current={view === item.id ? "page" : undefined} className={`min-h-11 rounded-[4px] px-4 text-sm ${view === item.id ? "bg-black/10 font-semibold" : "text-black/60 hover:bg-black/5"}`} disabled={busy} key={item.id} onClick={() => requestChange(() => resetWorkspace(item.id))} type="button">{item.label}</button>)}</nav>
+    {pending === "loading" ? <p className="py-12 text-sm text-black/55" role="status">Loading templates, audiences, and history from Resend…</p> : null}
 
-    <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.8fr)]" id="email-workspace">
-      <section aria-label="Email composer" className="min-w-0 scroll-mt-28">
-        {readOnly ? <div className="operator-bento-card mb-4">
-          <p className="text-sm font-semibold">{deliveryLabel(selected)}</p>
-          <p className="mt-1 text-sm leading-relaxed text-black/60">This email has been queued and can no longer be edited. Start a new email for another message.</p>
-        </div> : <section className="operator-bento-card mb-4" aria-labelledby="email-ai-title">
-          <div className="flex items-baseline justify-between gap-3"><h3 id="email-ai-title" className="text-base font-semibold">Write with ChatGPT</h3><span className="text-xs text-black/45">{content.body ? "Refine your draft" : "Start with a direction"}</span></div>
-          <label className="mt-3 block text-sm" htmlFor="email-prompt">{content.body ? "What should change?" : "What do you want to say?"}</label>
-          <textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} disabled={busy || (!preview && !configuration.aiReady)} id="email-prompt" maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder={content.body ? "Make it shorter. Keep the opening and the date. End with a direct invitation." : "Who is this for, what should they know, and what should they do next? Include the facts, dates, and links to use."} rows={4} value={prompt} />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-xs text-xs leading-relaxed text-black/55">{content.body ? "Your current draft is included. Review the result before saving." : "ChatGPT drafts the words. You choose the recipients and approve the send."}</p>
-            <button className={OPERATOR_BUTTON_CLASS} disabled={busy || !prompt.trim() || (!preview && !configuration.aiReady)} onClick={() => void generate()} type="button">{pending === "generate" ? "Writing…" : preview ? content.body ? "Try sample revision" : "Try sample draft" : content.body ? "Revise draft" : "Create draft"}</button>
-          </div>
-        </section>}
+    {view === "templates" && !template && overview ? <section aria-labelledby="resend-templates-title">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h3 className="text-lg font-semibold" id="resend-templates-title">Start with your design.</h3><p className="mt-1 text-sm text-black/55">Choose a template from Resend. Its layout, images, and links stay intact.</p></div><a className="min-h-11 py-3 text-sm underline underline-offset-4" href="https://resend.com/templates" rel="noreferrer" target="_blank">Open templates in Resend ↗</a></div>
+      <label className="mb-5 block max-w-md text-sm" htmlFor="resend-template-search">Find a template<input className={OPERATOR_FIELD_CLASS} id="resend-template-search" onChange={(event) => setQuery(event.target.value)} placeholder="Search your Resend templates" type="search" value={query} /></label>
+      {templates.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{templates.map((item) => <li className="operator-bento-card flex flex-col items-start" key={item.id}><span className="mb-6 rounded-[3px] bg-black/5 px-2 py-1 text-xs capitalize text-black/60">{item.status}</span><h4 className="break-words text-base font-semibold leading-snug">{item.name}</h4>{item.updatedAt ? <p className="mt-2 text-xs text-black/45">Updated {dateLabel(item.updatedAt)}</p> : null}<button className={`${SECONDARY_BUTTON} mt-5 w-full`} disabled={busy || !canCompose} onClick={() => requestChange(() => { void chooseTemplate(item.id); })} type="button">{pending === "template" ? "Loading…" : "Use template"}<span className="sr-only">: {item.name}</span></button></li>)}</ul> : <p className="rounded-[4px] border border-dashed border-black/20 p-6 text-sm leading-relaxed text-black/60">{query ? "No templates match this search." : canCompose ? "No templates were found in Resend. Add your design in Resend, then refresh this workspace." : "Your templates will appear here when Resend is connected."}</p>}
+    </section> : null}
 
-        <form onSubmit={(event) => void save(event)} className="operator-bento-card" aria-label="Edit email draft" data-operator-dirty={dirty} data-operator-pending={busy}>
-          <div className="mb-5 flex items-baseline justify-between gap-3"><h3 className="text-base font-semibold">{readOnly ? "Email details" : "Your draft"}</h3><span className="text-xs text-black/45">{readOnly ? deliveryLabel(selected) : dirty ? "Unsaved changes" : selected ? "Saved" : "Not saved"}</span></div>
-          <fieldset disabled={busy || readOnly} className="min-w-0 space-y-5">
-            <legend className="sr-only">Email audience and content</legend>
-            <div>
-              <p className="text-sm font-medium" id="email-target-label">Send to</p>
-              <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-labelledby="email-target-label">
-                <button aria-pressed={content.audience === "individual"} className={`${SECONDARY_BUTTON} ${content.audience === "individual" ? "border-black bg-black/[0.07]" : ""}`} onClick={() => edit({ audience: "individual" })} type="button">Individual emails</button>
-                <button aria-pressed={content.audience !== "individual"} className={`${SECONDARY_BUTTON} ${content.audience !== "individual" ? "border-black bg-black/[0.07]" : ""}`} onClick={() => edit({ audience: "updates", purpose: "marketing" })} type="button">Audience campaign</button>
-              </div>
-            </div>
-            {content.audience === "individual" ? <label className="block text-sm font-medium" htmlFor="email-recipients">Recipient emails
-              <textarea autoCapitalize="none" autoCorrect="off" className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} id="email-recipients" maxLength={20000} onChange={(event) => { setRecipientInput(event.target.value); edit({}); }} placeholder="name@example.com" required rows={3} spellCheck={false} value={recipientInput} aria-describedby="email-recipient-help" />
-              <span className="mt-2 block text-xs font-normal leading-relaxed text-black/55" id="email-recipient-help">Up to {ADMIN_EMAIL_MAX_RECIPIENTS} addresses, one per line or separated by commas. Each recipient receives their own email.</span>
-            </label> : <label className="block text-sm font-medium" htmlFor="email-audience">Audience
-              <select className={OPERATOR_FIELD_CLASS} id="email-audience" onChange={(event) => edit({ audience: event.target.value as "updates" | "members", ...(event.target.value === "updates" ? { purpose: "marketing" as const } : {}) })} value={content.audience}>
-                <option value="updates">Ruined updates — confirmed subscribers</option><option value="members">Registered members</option>
-              </select>
-            </label>}
-            <div>
-              <label className="block text-sm font-medium" htmlFor="email-purpose">Email purpose
-                <select className={OPERATOR_FIELD_CLASS} disabled={content.audience === "updates" || busy || readOnly} id="email-purpose" onChange={(event) => edit({ purpose: event.target.value as AdminEmailContent["purpose"] })} value={content.purpose}>
-                  <option value="marketing">Marketing / brand update</option><option value="service">Service / member support</option>
-                </select>
-              </label>
-              <p className="mt-2 text-xs leading-relaxed text-black/55">{content.purpose === "marketing" ? "Only confirmed subscribers are eligible. Unsubscribed addresses are excluded and an unsubscribe link is included." : "For registered members’ requested support and essential membership information. Promotions and brand campaigns belong under Marketing."}</p>
-            </div>
-            <label className="block text-sm font-medium" htmlFor="email-subject">Subject
-              <input className={OPERATOR_FIELD_CLASS} id="email-subject" maxLength={200} onChange={(event) => edit({ subject: event.target.value })} placeholder="A clear reason to open" ref={subjectRef} required type="text" value={content.subject} />
-            </label>
-            <label className="block text-sm font-medium" htmlFor="email-preheader">Inbox preview <span className="font-normal text-black/45">(optional)</span>
-              <input className={OPERATOR_FIELD_CLASS} id="email-preheader" maxLength={200} onChange={(event) => edit({ preheader: event.target.value })} placeholder="The line beside the subject" type="text" value={content.preheader} />
-            </label>
-            <label className="block text-sm font-medium" htmlFor="email-body">Message
-              <textarea className={`${OPERATOR_FIELD_CLASS} min-h-72 resize-y leading-relaxed`} id="email-body" maxLength={12000} onChange={(event) => edit({ body: event.target.value })} placeholder="Write directly, or use ChatGPT to make a first draft." required rows={12} value={content.body} />
-            </label>
+    {view === "templates" && template ? <section className="scroll-mt-28" id="resend-composer" aria-labelledby="resend-template-title">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><p className="mb-1 text-xs text-black/50">{preview && !previewCatalog ? "Sample template" : "Resend template"}</p><h3 className="break-words text-lg font-semibold" id="resend-template-title">{template.name}</h3><p className="mt-1 text-xs text-black/50">{dirty ? "Unsaved changes" : savedBroadcast ? "Draft saved in Resend" : "Original design loaded"}</p></div><button className={SECONDARY_BUTTON} disabled={busy} onClick={() => requestChange(() => resetWorkspace("templates"))} type="button">Change template</button></header>
+      {template.hasUnpublishedVersions ? <p className="mb-4 rounded-[4px] bg-black/5 p-3 text-sm leading-relaxed">This template has unpublished changes in Resend. Review the exact design below before sending.</p> : null}
+      {template.campaignOnly ? <p className="mb-4 rounded-[4px] bg-black/5 p-3 text-sm leading-relaxed">This design uses Resend campaign personalization. Choose an audience campaign, or use an individual-email design for a direct message.</p> : null}
+      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <form aria-label="Compose with Resend template" className="min-w-0 space-y-4" data-operator-dirty={dirty} data-operator-pending={busy} onSubmit={(event) => void reviewEmail(event)}>
+          <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-4"><legend className="sr-only">Recipients</legend><h4 className="text-base font-semibold">Recipients</h4>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Email delivery type"><button aria-pressed={mode === "individual"} className={`${SECONDARY_BUTTON} ${mode === "individual" ? "border-black bg-black/5" : ""}`} disabled={!!template.campaignOnly} onClick={() => { setMode("individual"); change(); }} type="button">Individual email</button><button aria-pressed={mode === "campaign"} className={`${SECONDARY_BUTTON} ${mode === "campaign" ? "border-black bg-black/5" : ""}`} onClick={() => { setMode("campaign"); change(); }} type="button">Audience campaign</button></div>
+            {mode === "individual" ? <label className="block text-sm font-medium" htmlFor="resend-recipient">Recipient email<input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} id="resend-recipient" maxLength={254} onChange={(event) => { setRecipient(event.target.value); change(); }} placeholder="name@example.com" required type="email" value={recipient} /><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">For a direct message or service email to one person. Use a campaign for marketing audiences.</span></label> : <>
+              <label className="block text-sm font-medium" htmlFor="resend-campaign-name">Campaign name<input className={OPERATOR_FIELD_CLASS} id="resend-campaign-name" maxLength={200} onChange={(event) => { setName(event.target.value); change(); }} required type="text" value={name} /><span className="mt-2 block text-xs font-normal text-black/55">Visible in your Resend workspace.</span></label>
+              <label className="block text-sm font-medium" htmlFor="resend-segment">Resend segment<select className={OPERATOR_FIELD_CLASS} id="resend-segment" onChange={(event) => { setSegmentId(event.target.value); change(); }} required value={segmentId}><option value="">Choose a segment</option>{overview?.segments.map((segment) => <option key={segment.id} value={segment.id}>{segment.name}</option>)}</select></label>
+              <label className="block text-sm font-medium" htmlFor="resend-topic">Subscription topic<select className={OPERATOR_FIELD_CLASS} id="resend-topic" onChange={(event) => { setTopicId(event.target.value); change(); }} required value={topicId}><option value="">Choose a topic</option>{overview?.topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">Resend applies this topic’s subscription preferences and unsubscribe settings.</span></label>
+            </>}
           </fieldset>
-          {!readOnly ? <div className="mt-5 border-t border-black/10 pt-5">
-            <div className="flex flex-wrap gap-3">
-              <button className={SECONDARY_BUTTON} disabled={busy || (!dirty && !!selected)} type="submit">{pending === "save" ? "Saving…" : "Save draft"}</button>
-              <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={busy || dirty || !selected} id="review-email-recipients" onClick={() => void reviewRecipients()} ref={reviewButtonRef} type="button">{pending === "review" ? "Checking recipients…" : "Review recipients"}</button>
-            </div>
-            <p className="mt-3 text-xs leading-relaxed text-black/55">{dirty || !selected ? "Save the draft to review its exact recipients." : "Review the message and recipient list before sending."}</p>
-          </div> : null}
+          <section className="operator-bento-card" aria-labelledby="resend-ai-title"><div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="text-base font-semibold" id="resend-ai-title">Refine with ChatGPT</h4><span className="text-xs text-black/45">Copy, within your design</span></div><label className="mt-3 block text-sm" htmlFor="resend-prompt">What should this email say?<textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} disabled={busy || !!(preview && previewCatalog) || (!preview && !overview?.configuration.aiReady)} id="resend-prompt" maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Write a short member update. Keep the tone direct. Include these details…" rows={4} value={prompt} /></label><p className="mt-2 text-xs leading-relaxed text-black/55">{preview && previewCatalog ? "ChatGPT is off in preview. Edit the template copy below to try the workspace." : !preview && !overview?.configuration.aiReady ? "ChatGPT is not connected. You can edit the template copy below." : "Only editable words and template values change. The original design stays intact."}</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={busy || !!(preview && previewCatalog) || !prompt.trim() || (!preview && !overview?.configuration.aiReady)} onClick={() => void generate()} type="button">{pending === "generate" ? "Refining…" : preview && previewCatalog ? "ChatGPT off in preview" : preview ? "Try sample revision" : "Refine copy"}</button>{undo ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} onClick={() => { changeEdits(undo); setUndo(null); }} type="button">Undo last revision</button> : null}</div></section>
+          <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-5"><legend className="sr-only">Email copy</legend><h4 className="text-base font-semibold">Email copy</h4><label className="block text-sm font-medium" htmlFor="resend-subject">Subject<input className={OPERATOR_FIELD_CLASS} id="resend-subject" maxLength={200} onChange={(event) => changeEdits({ ...edits, subject: event.target.value })} required type="text" value={edits.subject} /></label>
+            {template.variables.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-variable-${index}`} key={field.key}>{field.key.replaceAll("_", " ")}<input className={OPERATOR_FIELD_CLASS} id={`resend-variable-${index}`} maxLength={6000} onChange={(event) => changeEdits({ ...edits, values: { ...edits.values, [field.key]: event.target.value } })} required={field.fallbackValue == null} step={field.type === "number" ? "any" : undefined} type={field.type === "number" ? "number" : "text"} value={edits.values[field.key] ?? ""} /></label>)}
+            {template.fields.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-copy-${index}`} key={field.key}>{field.label}<textarea className={`${OPERATOR_FIELD_CLASS} resize-y leading-relaxed`} id={`resend-copy-${index}`} maxLength={12000} onChange={(event) => changeEdits({ ...edits, copy: { ...edits.copy, [field.key]: event.target.value } })} rows={field.value.length > 160 ? 5 : field.value.length > 65 ? 3 : 2} value={edits.copy[field.key] ?? field.value} /></label>)}
+            {!template.fields.length && !template.variables.length ? <p className="text-sm leading-relaxed text-black/55">This template has no editable text fields. You can change its subject here or edit its design in Resend.</p> : null}
+          </fieldset>
+          <div className="operator-bento-card"><div className="flex flex-wrap gap-3">{mode === "campaign" ? <button className={SECONDARY_BUTTON} disabled={busy || preview || !!savedBroadcast || !!previewError} onClick={() => void saveBroadcast()} type="button">{pending === "save" ? "Saving…" : preview ? "Saving off in preview" : savedBroadcast ? "Saved in Resend" : "Save new Resend draft"}</button> : null}<button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={busy || !!previewError || !rendered} id="resend-review-button" type="submit">{pending === "review" ? "Checking recipients…" : "Review & send"}</button></div><p className="mt-3 text-xs leading-relaxed text-black/55">{mode === "campaign" ? "Review prepares a Resend draft. You approve sending separately after checking the recipients." : "Review the exact design and recipient before sending."}</p></div>
         </form>
-      </section>
-      <aside className="min-w-0 xl:sticky xl:top-28" aria-label="Email content preview">
-        <div className="mb-3 flex items-baseline justify-between gap-3"><h3 className="text-sm font-semibold">Message preview</h3><span className="text-xs text-black/45">Content only</span></div>
-        <EmailPreview content={content} />
-        <p className="mt-3 text-xs leading-relaxed text-black/50">Formatting can vary between inboxes. Check every link and detail before sending.</p>
-      </aside>
-    </div>
-
-    <section className="mt-9 border-t border-black/15 pt-6" aria-labelledby="email-history-title">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold" id="email-history-title">{preview ? "Preview drafts" : "Email history"}</h3>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="sr-only" htmlFor="email-history-filter">Filter email history</label>
-          <select className="min-h-11 rounded-[4px] border border-black/20 bg-transparent px-3 text-sm" id="email-history-filter" onChange={(event) => setHistoryFilter(event.target.value as typeof historyFilter)} value={historyFilter}><option value="all">All emails</option><option value="draft">Drafts</option><option value="queued">Sent / queued</option></select>
-          {!preview ? <button className={SECONDARY_BUTTON} disabled={busy} onClick={() => void refreshHistory()} type="button">{pending === "refresh" ? "Refreshing…" : "Refresh status"}</button> : null}
-        </div>
-      </header>
-      {visibleHistory.length ? <ul className="space-y-3">{visibleHistory.map((draft) => <li key={draft.id} className={`operator-bento-card flex flex-wrap items-start justify-between gap-4 ${selected?.id === draft.id ? "ring-1 ring-black/25" : ""}`}>
-        <div className="min-w-0 flex-1 basis-56">
-          <p className="break-words text-sm font-semibold">{draft.subject}</p>
-          <p className="mt-1 text-xs leading-relaxed text-black/55">{audienceLabel(draft)} · {formatDate(draft.updatedAt)}</p>
-          {draft.status === "queued" ? <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-relaxed text-black/60">
-            <span>{draft.deliveryCounts.sent} sent</span>
-            {draft.deliveryCounts.pending + draft.deliveryCounts.sending > 0 ? <span>{draft.deliveryCounts.pending + draft.deliveryCounts.sending} pending</span> : null}
-            {draft.deliveryCounts.failed > 0 ? <span>{draft.deliveryCounts.failed} failed</span> : null}
-            {draft.deliveryCounts.skipped > 0 ? <span>{draft.deliveryCounts.skipped} excluded</span> : null}
-            {draft.deliveryCounts.manual_review > 0 ? <span>{draft.deliveryCounts.manual_review} need delivery review</span> : null}
-          </div> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-4"><span className="rounded-[3px] bg-black/5 px-2.5 py-1.5 text-xs">{deliveryLabel(draft)}</span><button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy || (selected?.id === draft.id && selected.version === draft.version && selected.status === draft.status)} onClick={() => requestOpen(draft)} type="button">{selected?.id === draft.id ? selected.version !== draft.version || selected.status !== draft.status ? "Load latest" : "Open" : draft.status === "draft" ? "Edit draft" : "View email"}<span className="sr-only">: {draft.subject}</span></button></div>
-      </li>)}</ul> : <p className="rounded-[5px] border border-dashed border-black/20 px-5 py-8 text-sm text-black/55">{drafts.length ? "No emails in this view." : "Saved drafts and sending progress will appear here."}</p>}
-      {!preview && drafts.some((draft) => draft.deliveryCounts.manual_review > 0) ? <p className="mt-3 text-xs leading-relaxed text-black/60">A delivery needs review when the email provider’s response could not be confirmed. Check the provider before sending that message again.</p> : null}
-    </section>
-
-    {review && selected ? <OperatorDialog open title="Review email" pending={pending === "send"} onClose={() => { setReview(null); setAcknowledged(false); }} returnFocusId="review-email-recipients">
-      <p className="mb-5 text-sm leading-relaxed text-black/60">{preview ? "This is a preview. No email can be sent." : "Confirm the message and everyone who will receive it. Sending cannot be undone."}</p>
-      <div className="grid min-w-0 items-start gap-5 md:grid-cols-2">
-        <section className="min-w-0" aria-label="Reviewed recipient list">
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-base font-semibold">{review.recipientCount.toLocaleString()} {review.recipientCount === 1 ? "recipient" : "recipients"}</h3><span className="text-xs text-black/55">{audienceLabel(selected)}</span></div>
-          {review.recipientCount > 0 ? <ul className="max-h-72 divide-y divide-black/10 overflow-y-auto rounded-[4px] border border-black/15 px-4">{review.recipients.map((recipient) => <li className="py-3" key={recipient.email}>{recipient.name ? <p className="break-words text-xs text-black/55">{recipient.name}</p> : null}<p className="break-all text-sm">{recipient.email}</p></li>)}</ul> : <p className="rounded-[4px] border border-black/15 p-4 text-sm leading-relaxed">No eligible recipients. Update the audience or check their subscription status.</p>}
-          {review.excludedCount > 0 ? <p className="mt-3 text-xs leading-relaxed text-black/60">{review.excludedCount.toLocaleString()} {review.excludedCount === 1 ? "address was" : "addresses were"} excluded from this audience.</p> : null}
-          <p className="mt-3 text-xs leading-relaxed text-black/55">Each recipient receives a separate email. Eligibility is checked again before delivery.</p>
-        </section>
-        <section className="min-w-0" aria-label="Final email content"><h3 className="mb-3 text-base font-semibold">Final message</h3><EmailPreview content={contentOf(selected)} /></section>
+        <aside className="order-first min-w-0 xl:order-last xl:sticky xl:top-28"><DesignPreview email={rendered} error={previewError} updating={previewUpdating} /></aside>
       </div>
-      <div className="mt-6 border-t border-black/15 pt-5">
-        <label className="flex items-start gap-3 text-sm leading-relaxed"><input checked={acknowledged} className="mt-1 h-4 w-4 shrink-0 accent-black" disabled={busy || review.recipientCount === 0} onChange={(event) => setAcknowledged(event.target.checked)} type="checkbox" /><span>I reviewed the message and all {review.recipientCount.toLocaleString()} {review.recipientCount === 1 ? "recipient" : "recipients"}.</span></label>
-        {!deliveryReady && !preview ? <p className="mt-3 text-sm text-black/60">Sending is unavailable until {content.purpose === "marketing" && configuration.deliveryReady ? "marketing email setup is complete" : "the email service is configured"}.</p> : null}
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={busy || preview || !acknowledged || !deliveryReady || review.recipientCount === 0} onClick={() => void send()} type="button">{pending === "send" ? "Queuing email…" : preview ? "Sending off in preview" : `Send to ${review.recipientCount.toLocaleString()} ${review.recipientCount === 1 ? "recipient" : "recipients"}`}</button>
-          <button className={SECONDARY_BUTTON} disabled={busy} onClick={() => { setReview(null); setAcknowledged(false); }} type="button">Back to draft</button>
-        </div>
-      </div>
-    </OperatorDialog> : null}
+    </section> : null}
 
-    {switchTarget ? <OperatorDialog open title="Unsaved email" onClose={() => setSwitchTarget(null)}>
-      <p className="mb-5 text-sm leading-relaxed">This draft has unsaved changes. Keep editing to save them, or discard the changes to {switchTarget.draft ? "open the other email" : "start a new email"}.</p>
-      <div className="flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} onClick={() => setSwitchTarget(null)} type="button">Keep editing</button><button className={SECONDARY_BUTTON} onClick={() => openDraft(switchTarget.draft)} type="button">Discard changes</button></div>
+    {view === "broadcasts" && overview ? <section aria-labelledby="resend-campaigns-title">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold" id="resend-campaigns-title">Campaigns in Resend</h3><p className="mt-1 text-sm text-black/55">Your existing broadcast drafts and sending history.</p></div><a className="min-h-11 py-3 text-sm underline underline-offset-4" href="https://resend.com/broadcasts" rel="noreferrer" target="_blank">Open campaigns in Resend ↗</a></header>
+      {broadcast ? <div className="mb-6 grid items-start gap-5 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]"><div className="operator-bento-card min-w-0"><span className="mb-3 inline-block rounded-[3px] bg-black/5 px-2 py-1 text-xs capitalize">{statusLabel(broadcast.status)}</span><h4 className="break-words text-lg font-semibold">{broadcast.name || broadcast.subject}</h4><p className="mt-3 text-sm text-black/60">{overview.segments.find((segment) => segment.id === broadcast.segmentId)?.name ?? "Resend audience"}</p><p className="mt-4 text-xs leading-relaxed text-black/55">The content is loaded from Resend. Edit this existing campaign in Resend. Some drafts created in the Resend dashboard must also be sent there.</p>{broadcast.status === "draft" ? <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} mt-5`} disabled={busy} id="resend-broadcast-review" onClick={() => void reviewEmail()} type="button">{pending === "review" ? "Checking campaign…" : "Review campaign"}</button> : null}<a className="mt-3 block min-h-11 py-3 text-sm underline underline-offset-4" href="https://resend.com/broadcasts" rel="noreferrer" target="_blank">Open in Resend ↗</a></div><DesignPreview compact email={{ html: broadcast.html, subject: broadcast.subject ?? "", from: broadcast.from }} /></div> : null}
+      <label className="mb-4 block max-w-md text-sm" htmlFor="resend-campaign-search">Find a campaign<input className={OPERATOR_FIELD_CLASS} id="resend-campaign-search" onChange={(event) => setQuery(event.target.value)} placeholder="Search campaign name or status" type="search" value={query} /></label>
+      {broadcasts.length ? <ul className="space-y-3">{broadcasts.map((item) => <li className="operator-bento-card flex flex-wrap items-start justify-between gap-4" key={item.id}><div className="min-w-0 flex-1 basis-48"><h4 className="break-words text-sm font-semibold">{item.name || item.subject || "Untitled campaign"}</h4>{item.subject && item.subject !== item.name ? <p className="mt-1 break-words text-xs text-black/55">{item.subject}</p> : null}<p className="mt-2 text-xs text-black/45">{dateLabel(item.createdAt)}</p></div><div className="flex items-center gap-3"><span className="rounded-[3px] bg-black/5 px-2 py-1 text-xs capitalize">{statusLabel(item.status)}</span><button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy || broadcast?.id === item.id} onClick={() => void openBroadcast(item.id)} type="button">{broadcast?.id === item.id ? "Open" : "View"}<span className="sr-only">: {item.name}</span></button></div></li>)}</ul> : <p className="rounded-[4px] border border-dashed border-black/20 p-6 text-sm text-black/55">{preview ? "Live Resend campaign history is unavailable in preview." : query ? "No campaigns match this search." : "No campaigns were returned by Resend."}</p>}
+      {overview.cursors.broadcasts ? <button className={`${SECONDARY_BUTTON} mt-4`} disabled={busy} onClick={() => void loadMore("broadcasts")} type="button">{pending === "more" ? "Loading…" : "Load more campaigns"}</button> : null}
+    </section> : null}
+
+    {view === "emails" && overview ? <section aria-labelledby="resend-history-title"><header className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold" id="resend-history-title">Sent through Resend</h3><p className="mt-1 text-sm text-black/55">Delivery activity from your connected Resend account.</p></div><a className="min-h-11 py-3 text-sm underline underline-offset-4" href="https://resend.com/emails" rel="noreferrer" target="_blank">Open email activity in Resend ↗</a></header><label className="mb-4 block max-w-md text-sm" htmlFor="resend-email-search">Find an email<input className={OPERATOR_FIELD_CLASS} id="resend-email-search" onChange={(event) => setQuery(event.target.value)} placeholder="Search subject or recipient" type="search" value={query} /></label>
+      {emails.length ? <ul className="space-y-3">{emails.map((email) => <li className="operator-bento-card flex flex-wrap items-start justify-between gap-4" key={email.id}><div className="min-w-0 flex-1 basis-48"><h4 className="break-words text-sm font-semibold">{email.subject || "No subject"}</h4><p className="mt-1 break-all text-xs leading-relaxed text-black/55">{email.to.join(", ")}</p><p className="mt-2 text-xs text-black/45">{dateLabel(email.createdAt)}</p></div><span className="rounded-[3px] bg-black/5 px-2.5 py-1.5 text-xs capitalize">{statusLabel(email.lastEvent || "sent")}</span></li>)}</ul> : <p className="rounded-[4px] border border-dashed border-black/20 p-6 text-sm text-black/55">{preview ? "Live email delivery history is unavailable in preview." : query ? "No emails match this search." : "No sent emails were returned by Resend."}</p>}{overview.cursors.emails ? <button className={`${SECONDARY_BUTTON} mt-4`} disabled={busy} onClick={() => void loadMore("emails")} type="button">{pending === "more" ? "Loading…" : "Load more emails"}</button> : null}
+    </section> : null}
+
+    {review ? <OperatorDialog open title="Review email" pending={pending === "send"} onClose={() => { setReview(null); setAcknowledged(false); }} returnFocusId={broadcast ? "resend-broadcast-review" : "resend-review-button"}>
+      <p className="mb-5 text-sm leading-relaxed text-black/60">{preview ? "Preview review. Audience recipients below are examples; sending is disabled." : "Review the exact design and everyone who will receive it. Sending cannot be undone."}</p>
+      <div className="grid min-w-0 items-start gap-5 md:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]"><section className="min-w-0" aria-label="Reviewed recipients"><h3 className="text-base font-semibold">{review.recipientCount.toLocaleString()} {review.recipientCount === 1 ? "recipient" : "recipients"}</h3>{review.segmentName ? <p className="mt-1 text-sm text-black/55">{review.segmentName}</p> : null}{review.recipients.length ? <ul className="mt-4 max-h-80 divide-y divide-black/10 overflow-y-auto rounded-[4px] border border-black/15 px-3">{review.recipients.map((person) => <li className="py-3" key={person.email}>{person.name ? <p className="break-words text-xs text-black/55">{person.name}</p> : null}<p className="break-all text-sm">{person.email}</p></li>)}</ul> : <p className="mt-4 text-sm text-black/60">No eligible recipients were found.</p>}{review.excludedCount > 0 ? <p className="mt-3 text-xs text-black/55">{review.excludedCount.toLocaleString()} {review.excludedCount === 1 ? "address" : "addresses"} excluded.</p> : null}<p className="mt-3 text-xs leading-relaxed text-black/55">{review.mode === "campaign" ? "Resend applies subscription preferences again when sending." : "This email goes to the recipient shown here."}</p></section><DesignPreview compact email={review} /></div>
+      <div className="mt-5 border-t border-black/15 pt-4"><label className="flex items-start gap-3 text-sm leading-relaxed"><input checked={acknowledged} className="mt-1 h-4 w-4 shrink-0 accent-black" disabled={busy || !review.recipientCount} onChange={(event) => setAcknowledged(event.target.checked)} type="checkbox" /><span>I reviewed the design, copy, and {review.recipientCount === 1 ? "recipient" : `all ${review.recipientCount.toLocaleString()} recipients`}.</span></label>{!preview && !overview?.configuration.sendingReady ? <p className="mt-3 text-sm text-black/60">Sending is unavailable until the Resend connection is ready.</p> : null}<div className="mt-4 flex flex-wrap gap-3"><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={busy || preview || !acknowledged || !review.recipientCount || !overview?.configuration.sendingReady} onClick={() => void send()} type="button">{pending === "send" ? "Sending through Resend…" : preview ? "Sending off in preview" : `Send to ${review.recipientCount.toLocaleString()} ${review.recipientCount === 1 ? "recipient" : "recipients"}`}</button><button className={SECONDARY_BUTTON} disabled={busy} onClick={() => { setReview(null); setAcknowledged(false); }} type="button">Back to email</button></div></div>
     </OperatorDialog> : null}
+    {confirm ? <OperatorDialog open title="Unsaved email" onClose={() => setConfirm(null)}><p className="mb-5 text-sm leading-relaxed">{confirm.description}</p><div className="flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} onClick={() => setConfirm(null)} type="button">Keep editing</button><button className={SECONDARY_BUTTON} onClick={() => { const action = confirm.action; setConfirm(null); setDirty(false); action(); }} type="button">Discard changes</button></div></OperatorDialog> : null}
   </OperatorPageFrame>;
 }

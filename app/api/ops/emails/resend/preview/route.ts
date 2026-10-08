@@ -1,16 +1,15 @@
 import { adminEmailErrorResponse, readAdminEmailJson, requireAdminEmailMutation } from "@/lib/communications/admin-email-api";
-import { previewAdminEmailDraft } from "@/lib/communications/admin-email-repository";
 import { opsJson } from "@/lib/platform/ops-api";
-
+import { prepareResendEmail } from "@/lib/communications/resend-email-service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request, context: { params: Promise<{ draftId: string }> }) {
+export const maxDuration = 60;
+export async function POST(request: Request) {
   try {
     const access = await requireAdminEmailMutation(request);
     if ("response" in access) return access.response;
-    const { draftId } = await context.params;
     const body = await readAdminEmailJson(request);
-    const review = await previewAdminEmailDraft({ actorAuthUserId: access.viewer.authUserId, draftId, expectedVersion: body.expectedVersion as number });
-    return opsJson({ review });
+    const result = await prepareResendEmail(access.viewer.authUserId, body);
+    return opsJson(result);
   } catch (error) { return adminEmailErrorResponse(error); }
 }

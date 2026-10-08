@@ -32,10 +32,6 @@
     {
       "path": "/api/internal/stripe/prepaid/process",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/internal/communications/admin-emails",
-      "schedule": "*/5 * * * *"
     }
   ]
 }

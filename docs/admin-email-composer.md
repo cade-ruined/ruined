@@ -1,46 +1,62 @@
-# Administrator email composer
+# Resend email workspace
 
-The admin workspace includes **Messages → Emails** at `/ops/messages?mode=emails` (also `/ops/emails`). Administrators can ask ChatGPT to write or revise copy, edit the subject, preview text and body, save drafts, review the resolved recipient list, and explicitly queue delivery. Board posts and app alerts remain separate message types.
+**Messages → Emails** (`/ops/messages?mode=emails`, also `/ops/emails`) gives Ruined administrators a front end for the existing Resend account. Resend supplies designs, audience groups, topics, campaign drafts and sending history. ChatGPT revises copy within the selected design.
 
-## Audience and review
+## Designs and copy
 
-- **Individual addresses**: up to 250 addresses, normalized and deduplicated. Eligibility follows the chosen purpose.
-- **General updates**: marketing to contacts with a confirmed general Ruined updates subscription.
-- **Members**: canonical registered members; marketing additionally requires their general-updates subscription.
-- **Service**: membership service notices to registered members only. This is not a way to bypass marketing preferences.
+The workspace loads a template's current HTML, version, subject, sender, reply address and variables from Resend. Published and draft templates can both supply a design snapshot. A published template with unpublished changes is identified explicitly: the preview reflects the current version returned by Resend. This workflow does not publish or overwrite the original template.
 
-Review shows included recipients and an excluded count. The server saves the review against the administrator, draft version, content and exact resolved recipient set. Sending requires that same review, no more than 30 minutes old. Changes to copy or audience require another review. Queued copy and recipients are immutable, and resubmitting the same approved request returns its original queue.
+Static designs also work. The editor exposes visible text fields while preserving the original layout, styles, images, logos, links and conditional markup. Edits replace only selected text spans or declared variables. Unsubscribe labels, hidden preheaders, decorative punctuation and active code are excluded from copy editing. Authored copy is escaped as text; the browser and model cannot supply replacement HTML.
 
-Drafting sends only the administrator's prompt and optional editable copy to OpenAI. Recipient lists and member records are not added to the model request. An administrator can include sensitive information in their own prompt; use the same care as when drafting in any connected writing tool. Responses are requested with `store: false`. The model has no tools or sending capability.
+Fill required variables before requesting a ChatGPT revision. The model receives the administrator's prompt, subject and editable text values; recipient lists, member records and design HTML are not automatically included. Returned copy must retain the exact known field and variable keys and pass the same rendering checks as manual edits. Requests use `store: false`. Administrators should still avoid unnecessary sensitive information in their prompts.
+
+Copy fields allow 12,000 characters, variables 6,000, combined edits 48,000, and the completed subject 200. Numeric variables are validated. Variables in unsupported layout or active-code contexts must be corrected in Resend. Link variables must form safe absolute URLs.
+
+The preview uses the actual rendered design in a sandboxed frame. When static copy changes, the plain-text alternative is regenerated from the edited design so it does not retain old copy. Unchanged designs retain their authored text alternative.
+
+## Individual emails and campaigns
+
+**Individual email** sends one direct or service email to one reviewed address through Resend. It respects the provider's global unsubscribe and suppression state and does not enroll the address in an audience or topic. Templates containing native campaign personalization, such as `{{{contact.first_name|friend}}}` or `{{{RESEND_UNSUBSCRIBE_URL}}}`, are campaign-only; choose an individual-email design for a direct message.
+
+**Campaign** uses an existing Resend group and topic. Review applies global unsubscribe, suppressions and the topic's current preference, including its configured default where no explicit preference exists. Selecting a group never changes preferences. Review is limited to 1,000 contacts; narrow larger groups in Resend.
+
+Saving a campaign creates a native Resend broadcast draft with the selected design and edited copy. Reviewing an unsaved campaign first creates that draft. Existing Resend drafts can also be opened and reviewed. Campaign unsubscribe links and contact personalization remain native markers for Resend to resolve. Required footer content, including the sender's postal address, belongs in the Resend design.
+
+Some dashboard-created campaigns cannot be modified or sent through the provider API. The workspace reports this limitation and offers **Open in Resend** to finish there.
+
+## Review and sending
+
+Review stores an immutable rendered snapshot, provider campaign state where applicable, and the exact resolved recipient list. Reviews belong to the administrator who created them and expire after 30 minutes. Changed template, campaign, audience or preference state requires another review.
+
+Sending requires an explicit administrator action. The server checks the current grant, rechecks provider state and recipients, and commits a durable send claim before contacting Resend. Campaigns send through the existing native broadcast ID. Individual emails use frozen HTML/text and a stable idempotency key. A campaign cannot be claimed through another review while its previous sending result is uncertain.
+
+Uncertain responses are not automatically retried. Check Resend before another send. Provider acceptance is not inbox-delivery proof; history shows the provider's reported status.
+
+The application stores review snapshots, send claims, audit events and AI usage limits. It does not maintain a second audience database or a separate background email delivery queue for this workspace.
 
 ## Configuration
 
-Apply `20261008180000_admin_email.sql` using the existing platform migration runner. The new tables use row-level security and deny direct public/client access. The server uses its existing database connection and active administrator checks.
+Apply both migrations with the existing platform migration runner:
+
+1. `20261008180000_admin_email.sql` — private administrator AI generation limits.
+2. `20261008200000_resend_email_frontend.sql` — private immutable reviews and send claims.
+
+New tables have row-level security and deny direct public/client access. The server uses its existing database connection and active administrator grants.
 
 Server environment:
 
-- `OPENAI_API_KEY`: OpenAI API project key for drafting. Keep this in deployment secrets, never in public configuration or source control.
-- `OPENAI_EMAIL_MODEL`: defaults to `gpt-4.1-mini`; select a model supporting Responses structured outputs.
-- `ADMIN_EMAIL_SENDING_ENABLED=true`: enable the delivery queue.
-- Existing `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `NEXT_PUBLIC_SITE_URL` and `CRON_SECRET`.
-- Marketing also requires `RESEND_MARKETING_ENABLED=true`, `RESEND_TOPIC_UPDATES_ID` and `ADMIN_EMAIL_POSTAL_ADDRESS` (included in the marketing footer).
+- `RESEND_API_KEY`: full access to the required template, segment, topic, contact, suppression, email and broadcast APIs. A sending-only key cannot power the workspace.
+- `OPENAI_API_KEY`: enables ChatGPT revisions. Manual editing remains available without it.
+- `OPENAI_EMAIL_MODEL`: defaults to `gpt-4.1-mini`; use a model supporting Responses structured outputs.
+- `ADMIN_EMAIL_SENDING_ENABLED=true`: enables sending on a connected platform. Disabled by default.
+- `RESEND_FROM_EMAIL`: optional fallback when a template has no sender. Configure a verified sender in Resend.
 
-Missing OpenAI configuration leaves manual drafting available. Sending stays unavailable until delivery configuration is complete. Each administrator may request 30 generations per hour; the limit is stored in the database and also applies to failed provider requests.
+No new cron job or application postal-address setting is required. Resend handles campaign delivery, and its template supplies the footer. Each administrator can request 30 AI revisions per hour; failed provider requests consume that limit.
 
-## Delivery
+In non-production development with `PLATFORM_MODE=preview`, an optional Resend key can load real templates, groups and topics for design inspection. This preview exposes neither contacts nor sending history and cannot send or create provider drafts. Production routes require administrator authentication.
 
-Each recipient receives a separate email, keeping other addresses private. Delivery rechecks membership/consent and suppression. Marketing also checks current Resend preferences. Emails use escaped plain text rendered into a restrained HTML template; model-generated HTML is never executed.
+## Validation and release
 
-A successful send action means **queued**, not delivered. An after-response batch begins processing promptly; `/api/internal/communications/admin-emails` runs every five minutes for remaining recipients and retries. It requires `CRON_SECRET`. Provider acceptance is shown as **sent**; this is not inbox-delivery proof.
+Tests mock OpenAI and Resend and use an isolated database. They cover provider pagination, preferences, exact design preservation, safe substitutions, version and audience conflicts, send claims, uncertainty handling, authorization and AI output validation. The actual retrieved Resend design was separately checked for byte-identical round-tripping and precise copy edits without changing links, images or personalization.
 
-The queue stores immutable provider payloads and stable per-recipient idempotency keys. Ambiguous sends past the safe retry window require manual review rather than risking duplicate mail. The history displays pending, sending, sent, failed, skipped and review-needed counts.
-
-Marketing emails include a token-protected unsubscribe link and one-click unsubscribe headers. Opening the landing page does not change preferences; a confirmed POST does. Unsubscribing updates the local general-updates preference immediately and queues the existing Resend contact sync. Essential account and membership emails are separate.
-
-## Verification and release
-
-The focused runtime tests cover authorization, review/version conflicts, eligibility, unsubscribe, immutable queue payloads, provider failures and retry behavior. AI tests use mocked OpenAI responses and check input limits, refusal/incomplete handling, and that recipient data is excluded. Browser QA should cover desktop and narrow mobile widths, saving/reopening a draft, revising, reviewing, and send confirmation.
-
-Before enabling production, configure the secrets, apply the migration, deploy this branch to the membership application, and verify a real generation and a single explicitly approved recipient. Local mocked-provider tests do not establish live OpenAI access or live email delivery.
-
-Implementation references: [OpenAI Responses structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [GPT-4.1 mini model](https://developers.openai.com/api/docs/models/gpt-4.1-mini).
+This implementation is delivered as a draft pull request. It has not been deployed or enabled in production. Before release, apply migrations, configure credentials, complete review and deployment checks, then verify a real AI revision and one explicitly authorized send. Local tests and design previews do not establish live delivery.
