@@ -24,25 +24,18 @@ Ty's final story, speaker assignments, and section timing remain open.
 - Arrow keys/Space advance, O opens the index, N opens Presenter, F toggles full
   screen, and B blanks the audience screen. Share only the audience window.
 
-## Timeline worksheet
+## Connected Timeline worksheet
 
-Writing stays in the open tab. Download copy exports a local JSON file; Load
-saved copy restores it. There is no automatic browser storage or server save.
-The Print / Save PDF button uses the browser print dialog and separate static
-print text so multiline writing is not constrained by textarea height.
+`/foundations/01/timeline` hands off to the authenticated membership route
+`/my/foundations/timeline/part-1`. It uses the existing canonical private Timeline
+entries and stores a separate meaning on each original event. Signing in returns
+to Part I. The member app retains its existing launch and access gates.
 
-The version 1 file shape is:
+Production uses `https://members.theruinedproject.com`. For a local review, set
+`NEXT_PUBLIC_MEMBERSHIP_SITE_URL=http://127.0.0.1:3130` when building/running this
+public deck and run the member application on that port. The member dev preview
+uses example moments and keeps edits only in its open tab.
 
-```json
-{
-  "schemaVersion": 1,
-  "experiences": [
-    { "when": "", "event": "", "meaning": "" }
-  ]
-}
-```
-
-Imports validate the schema, string types, field sizes, entry count, and file
-size before replacing anything. The worksheet uses the brief's two questions,
-category hints, and four meaning prompts. It does not mark member progress or
-submit personal writing.
+Release the membership database migration and member route before releasing this
+public redirect. The former standalone worksheet is replaced; account saves and
+conflict protection now belong to the member app.
