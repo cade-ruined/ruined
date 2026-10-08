@@ -99,6 +99,7 @@ const migrations = [
   "../db/migrations/20261007013000_stripe_checkout_native_consent.sql",
   "../db/migrations/20261007110000_member_payment_evidence.sql",
   "../db/migrations/20261007111000_legacy_registration_checkout.sql",
+  "../db/migrations/20261008100000_registration_checkpoint_work.sql",
 ];
 
 function migrationBody(migration, migrationName) {

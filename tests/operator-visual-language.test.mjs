@@ -78,9 +78,13 @@ test("operator navigation and member records avoid stacked utility rails and div
   assert.doesNotMatch(memberRecord, /divide-y|border-y/);
   assert.doesNotMatch(memberRecord, /uppercase tracking-\[0\.1/);
   assert.match(memberRecord, /Member record actions/);
-  assert.equal([...memberRecord.matchAll(/<details\b/g)].length, 2, "only explanation and diagnostic states use optional disclosure");
-  assert.match(memberRecord, /<details[^>]*aria-labelledby="member-state-details"/);
-  for (const disclosure of memberRecord.matchAll(/<details\b[\s\S]*?<\/details>/g)) assert.doesNotMatch(disclosure[0], /new-member-task|new-member-note|OperatorOverrideAction|<Link/);
+  const disclosures = [...memberRecord.matchAll(/<details\b[\s\S]*?<\/details>/g)].map(match => match[0]);
+  assert.deepEqual(disclosures.map(disclosure => disclosure.match(/aria-labelledby="([^"]+)"/)?.[1]),
+    ["member-next-step-guidance", "member-service-details", "member-state-details"],
+    "only next-step explanation, secondary service setup and diagnostic states use disclosure");
+  assert.match(disclosures[1], /open=\{!registration\}/, "service setup stays open when no canonical registration checkpoints exist");
+  for (const disclosure of disclosures) assert.doesNotMatch(disclosure, /OperatorMemberCheckpoints|new-member-task|new-member-note|OperatorOverrideAction|<Link/,
+    "the five checkpoints and work actions remain visible outside disclosures");
   assert.match(memberRecord, /operator-record-title/);
   assert.match(memberRecord, /operator-bento-card/);
 });

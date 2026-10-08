@@ -266,6 +266,7 @@ test("member record action anchors have visible authorized destinations and neve
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
     "@/components/platform/OperatorMemberDeleteAction": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberSetup": { __esModule: true, default: component },
+    "@/components/platform/OperatorMemberCheckpoints": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberReferrals": { __esModule: true, default: Referrals },
     "@/components/platform/OperatorMemberWorkspace": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },
     "@/components/platform/OperatorMemberAvatar": { __esModule: true, default: () => null },
@@ -288,9 +289,9 @@ test("member record action anchors have visible authorized destinations and neve
     assert.ok(list.some((node) => node.props?.id === id));
   }
   const disclosures = list.filter((node) => node.type === "details");
-  assert.deepEqual(disclosures.map((node) => node.props["aria-labelledby"]), ["member-next-step-guidance", "member-state-details"], "only explanatory guidance and diagnostic states are collapsed");
+  assert.deepEqual(disclosures.map((node) => node.props["aria-labelledby"]), ["member-next-step-guidance", "member-service-details", "member-state-details"], "guidance, service details and diagnostic states can collapse");
   for (const disclosure of disclosures) {
-    assert.equal(disclosure.props.open, undefined);
+    assert.equal(disclosure.props.open, disclosure.props["aria-labelledby"] === "member-service-details" ? true : undefined);
     assert.equal(nodes(disclosure).some((node) => ["new-member-task", "new-member-note"].includes(node.props?.id) || node.type === "a"), false, "work actions remain outside optional guidance");
   }
   assert.equal(list.filter((node) => node.type === component && Object.hasOwn(node.props, "memberId")).every((node) => node.props.preview), true);

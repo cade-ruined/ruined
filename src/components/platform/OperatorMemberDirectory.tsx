@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
+import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
 import StateLabel from "@/components/platform/StateLabel";
 import {
   OPERATOR_FIELD_CLASS,
@@ -9,7 +10,7 @@ import {
 } from "@/components/platform/operatorStyles";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { guidanceForMemberSummary } from "@/lib/platform/operator-member-guidance";
-import { operatorRegistrationStatus } from "@/lib/membership/operator-registration-progress";
+import { operatorMemberJourney } from "@/lib/membership/operator-registration-progress";
 import type {
   OperatorMemberDirectoryFilter,
   OperatorMemberDirectoryPage,
@@ -127,10 +128,9 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {directory.members.map((member) => {
           const next = guidanceForMemberSummary(member);
-          const registration = member.registration && member.accountState === "active"
-            && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(next.key)
-            ? operatorRegistrationStatus(member.registration) : null;
-          const registrationNext = registration && (member.registration?.state !== "activated" || member.billingState !== "active");
+          const registration = member.registration ? operatorMemberJourney(member.registration) : null;
+          const registrationNext = registration && registration.next.key !== "complete" && ["active", "invited"].includes(member.accountState)
+            && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(next.key);
           return (
           <Link
             className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
@@ -153,14 +153,16 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
               {member.blockName ? <p className="text-black/50">{member.blockName}</p> : null}
             </div>
             <div>
-              <span className="operator-compact-label mb-1 block text-black/50">{registration ? "Registration" : "Billing"}</span>
-              {registration ? <><p className={`text-sm font-semibold ${registration.attention ? "text-[var(--color-poster)]" : ""}`}>{registration.label}</p><p className="mt-1 text-xs leading-relaxed text-black/55">{registration.detail}</p></> : <StateLabel state={member.billingState} />}
+              <span className="operator-compact-label mb-1 block text-black/50">{registration ? "Membership" : "Billing"}</span>
+              {!registration ? <StateLabel state={member.billingState} /> : null}
               <p className="mt-2 text-xs tabular-nums text-black/45">Foundations {member.foundationsProgress}%</p>
               <div className="mt-2"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
             </div>
+            <div className="col-span-2 border-t border-black/10 pt-3"><OperatorMemberCheckpoints journey={registration} compact /></div>
             <p className="col-span-2 text-xs leading-relaxed text-black/58">
-              <span className="mb-1 block text-xs font-semibold text-black/70">{registrationNext ? `Next · ${registration.actor}` : `${next.status} · ${next.actor}`}</span>
-              {registrationNext ? registration.next : next.title}
+              <span className="mb-1 block text-xs font-semibold text-black/70">{registrationNext ? `Next · ${registration.next.actor}` : `${next.status} · ${next.actor}`}</span>
+              {registrationNext ? registration.next.label : next.title}
+              {registration?.attention ? <span className="mt-2 block text-[var(--color-poster)]">Attention: {registration.attention}</span> : null}
               <span className="mt-2 flex min-h-11 items-center font-semibold text-black">Open member record <span aria-hidden="true">→</span></span>
             </p>
           </Link>

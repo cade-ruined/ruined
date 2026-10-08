@@ -13,7 +13,68 @@ export type OperatorRegistrationProgress = Pick<MemberRegistrationSnapshot,
   checkoutStarted?: boolean;
   billingState: string;
   serviceStartsAt: string | null;
+  emailVerifiedAt?: string | null;
+  informationCollectedAt?: string | null;
+  paymentInformationCollectedAt?: string | null;
+  paymentReceivedAt?: string | null;
+  profileGrantedAt?: string | null;
+  profileGranted?: boolean;
+  paymentExempt?: boolean;
+  paymentByPartner?: boolean;
+  historicalPaymentRecorded?: boolean;
 };
+
+export type MemberCheckpointKey = "email" | "information" | "payment_method" | "payment" | "profile";
+export type MemberJourneyNextKey = "email" | "information" | "payment" | "profile" | "review" | "complete";
+export type OperatorMemberJourney = {
+  checkpoints: Array<{ key: MemberCheckpointKey; label: string; state: "complete" | "needed" | "not_required" | "review"; completedAt: string | null; detail?: string }>;
+  next: { key: MemberJourneyNextKey; label: string; detail: string; actor: "Member" | "Operator" | "Support" };
+  attention: string | null;
+};
+
+/** One presentation and follow-up model. Never grants access or authorizes money movement. */
+export function operatorMemberJourney(row: OperatorRegistrationProgress): OperatorMemberJourney {
+  const exempt = row.paymentExempt ?? (!row.requiresInitialPayment && !row.requiresPaymentMethod);
+  const granted = row.profileGranted ?? row.state === "activated";
+  const paymentReview = !exempt && (row.paymentNeedsReview || (!row.paymentConfirmed &&
+    (row.completionBasis === "paid_membership" || row.historicalPaymentRecorded || row.billingArranged || row.billingState === "active")));
+  const attention = row.billingState === "ended" ? "Membership has ended. Review any return arrangements."
+    : row.billingState === "attention_required" ? "Membership billing needs attention. Check the existing payment before requesting another."
+    : paymentReview ? row.historicalPaymentRecorded ? "A historical payment is recorded. Verify the current billing arrangement before requesting payment."
+      : "Payment or billing confirmation needs review. Check for a pending payment, refund or adjustment before requesting another payment."
+    : !exempt && row.paymentConfirmed && row.paymentMethodState === "removed" ? "The saved payment method was removed. Review future billing with the member."
+    : null;
+  const paid = row.paymentConfirmed;
+  const collected = row.paymentMethodState === "saved" || paid;
+  const checkpoints: OperatorMemberJourney["checkpoints"] = [
+    { key: "email", label: "Email verified", state: row.emailVerified ? "complete" : "needed", completedAt: row.emailVerified ? row.emailVerifiedAt ?? null : null },
+    { key: "information", label: "Registration info collected", state: row.profileComplete ? "complete" : "needed", completedAt: row.profileComplete ? row.informationCollectedAt ?? null : null },
+    { key: "payment_method", label: "Payment information collected", state: exempt || row.paymentByPartner ? "not_required" : collected ? "complete" : "needed",
+      completedAt: exempt || row.paymentByPartner ? null : collected ? row.paymentInformationCollectedAt ?? row.paymentReceivedAt ?? null : null,
+      detail: exempt ? "Complimentary membership" : row.paymentByPartner ? "Shared billing is handled by their partner."
+        : row.paymentMethodState === "saved" ? "Saved with Stripe. A saved card alone is not a payment."
+        : paid ? "Collected through Stripe checkout." : row.paymentMethodState === "removed" ? "Previously saved payment method removed." : undefined },
+    { key: "payment", label: "Payment received", state: exempt ? "not_required" : paid ? "complete" : paymentReview || row.billingState === "attention_required" ? "review" : "needed",
+      completedAt: !exempt && paid ? row.paymentReceivedAt ?? null : null,
+      detail: exempt ? "Complimentary membership" : row.paymentByPartner ? paid ? "Shared membership payment confirmed." : "Awaiting payment from their partner." : undefined },
+    { key: "profile", label: "Profile access granted", state: granted ? "complete" : "needed", completedAt: granted ? row.profileGrantedAt ?? null : null,
+      detail: granted && !row.profileGrantedAt ? "Existing profile access; original grant date not recorded." : undefined },
+  ];
+  let next: OperatorMemberJourney["next"];
+  if (attention) next = { key: "review", label: "Review membership billing", detail: attention, actor: "Support" };
+  else if (!row.emailVerified) next = { key: "email", label: "Confirm email", detail: "Member enters their email confirmation code.", actor: "Member" };
+  else if (!row.profileComplete) next = { key: "information", label: "Complete registration information", detail: "Member finishes their information and registration terms at /my/join.", actor: "Member" };
+  else if (!exempt && !paid) next = { key: "payment", label: row.paymentByPartner ? "Await shared membership payment" : "Complete membership checkout",
+    detail: row.paymentByPartner ? "Their partner handles the shared membership checkout. Do not request a separate payment."
+      : row.billingArranged ? "Review the existing billing arrangement before starting another checkout."
+      : row.checkoutStarted ? "Member resumes their existing checkout. If they already submitted payment, check its confirmation before another attempt."
+      : row.paidCheckoutAvailable === false ? "Paid checkout is not open. Keep the payment follow-up on hold."
+      : "Member reviews the price and terms, then pays through Stripe at /my/activate. No separate card-saving step.", actor: "Member" };
+  else if (!granted && (!row.registeredAt || !row.ready)) next = { key: "review", label: "Review registration completion", detail: "Payment is confirmed or not required, but registration is not ready for profile access. Check the remaining registration record.", actor: "Support" };
+  else if (!granted) next = { key: "profile", label: "Grant profile access", detail: "An Administrator opens the profile when ready. This sends the profile-access email and does not charge the member.", actor: "Operator" };
+  else next = { key: "complete", label: "Onboarding complete", detail: "All required checkpoints are complete.", actor: "Operator" };
+  return { checkpoints, next, attention: attention ?? (next.key === "review" ? next.detail : null) };
+}
 
 export type OperatorRegistrationStatus = {
   category: "information" | "payment" | "paid" | "complimentary" | "review";
