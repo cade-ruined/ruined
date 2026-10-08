@@ -81,11 +81,11 @@ const text = node => React.isValidElement(node) ? React.Children.toArray(node.pr
 const button = (tree, label) => nodes(tree).find(node => node.type === "button" && text(node) === label);
 const image = tree => nodes(tree).find(node => node.props.alt === "Unsaved profile photo crop" || node.props.alt === "Your profile photo");
 async function fixture(options = {}) {
-  const slots = [], effects = [], calls = [], changed = [], published = [], busy = [], drafts = [], revoked = [], decodes = [], exports = [];
+  const slots = [], updates = [], effects = [], calls = [], changed = [], published = [], busy = [], drafts = [], revoked = [], decodes = [], exports = [];
   let cursor = 0, urlNumber = 0, ownerId = "owner-a", saved = options.avatarUrl ?? oldUrl, override;
   const props = { avatarUrl: saved, enabled: true, available: true, onChange(value) { changed.push(value); saved = value; }, onBusyChange: value => busy.push(value), onDraftChange: value => drafts.push(value) };
   const hooks = { ...React, useId: () => "photo",
-    useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], next => { slots[i] = typeof next === "function" ? next(slots[i]) : next; }]; },
+    useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], next => { updates.push(() => { slots[i] = typeof next === "function" ? next(slots[i]) : next; }); }]; },
     useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
     useEffect(effect, deps) { const i = cursor++, prior = slots[i]; if (!prior || deps.some((v, n) => v !== prior.deps[n])) { const current = { deps }; slots[i] = current; effects.push(() => { prior?.cleanup?.(); current.cleanup = effect(); }); } },
   };
@@ -94,7 +94,7 @@ async function fixture(options = {}) {
     "@/lib/membership/member-photo-crop": { ...crop, decodeMemberPhoto(url, signal) { const task = deferred(); decodes.push({ ...task, url, signal }); return task.promise; }, async exportMemberPhotoCrop(source, position) { exports.push({ source, position }); return options.export ? options.export() : new File(["cropped"], "profile.jpg", { type: "image/jpeg" }); } },
     "@/components/membership/MemberPortraitState": { useMemberPortrait() { const captured = ownerId; return { avatarUrl: override === undefined ? saved : override, ownerId, setAvatarUrl(value) { published.push({ ownerId: captured, value }); override = value; } }; } },
   }, { window: new EventTarget(), URL: { createObjectURL: () => `blob:photo-${++urlNumber}`, revokeObjectURL: url => revoked.push(url) }, fetch: async (url, init) => { calls.push({ url, ...init }); return options.fetch ? options.fetch(url, init) : { ok: true, json: async () => ({ avatarUrl: init.method === "DELETE" ? null : newUrl }) }; } })).default;
-  const render = () => { cursor = 0; const tree = Component(props); effects.splice(0).forEach(effect => effect()); return tree; };
+  const render = () => { updates.splice(0).forEach(update => update()); cursor = 0; const tree = Component(props); effects.splice(0).forEach(effect => effect()); return tree; };
   const select = (file = photo) => nodes(render()).find(node => node.type === "input" && node.props.type === "file").props.onChange({ currentTarget: { files: [file], value: "selected" } });
   const choose = async () => { const pending = select(); decodes.at(-1).resolve(decoded); await pending; render(); };
   return { render, select, choose, calls, changed, published, busy, drafts, revoked, decodes, exports, props, setOwner(value) { ownerId = value; render(); render(); }, unmount() { for (const slot of slots) slot?.cleanup?.(); } };
@@ -114,6 +114,49 @@ test("selection previews immediately but never publishes or uploads until Use ph
   response.resolve({ ok: true, json: async () => ({ avatarUrl: newUrl }) }); await saving;
   assert.deepEqual(ui.changed, [newUrl]); assert.deepEqual(ui.published, [{ ownerId: "owner-a", value: newUrl }]); assert.deepEqual(ui.busy, [true, false]);
   assert.deepEqual(ui.drafts, [true, false]); assert.equal(image(ui.render()).props.src, newUrl); assert.deepEqual(ui.revoked, ["blob:photo-1"]); ui.unmount();
+});
+
+test("repeated crop controls survive released change events and preserve the combined preview and export", async () => {
+  const ui = await fixture(); await ui.choose();
+  function change(tree, control, value) {
+    const input = nodes(tree).find(node => node.props.id === `photo-${control}`);
+    assert.equal(input.props.disabled, false);
+    const event = { currentTarget: { value: String(value) } };
+    input.props.onChange(event);
+    // React releases currentTarget after dispatch, before a deferred updater may run.
+    event.currentTarget = null;
+  }
+  let tree = ui.render();
+  change(tree, "zoom", 1.5);
+  tree = ui.render();
+  assert.equal(nodes(tree).find(node => node.props.id === "photo-zoom").props.value, 1.5);
+
+  // Multiple pending controls must merge without restoring another axis's old value.
+  change(tree, "zoom", 2);
+  change(tree, "horizontal", 0.25);
+  change(tree, "vertical", 0.2);
+  change(tree, "zoom", 2.5);
+  change(tree, "vertical", -0.5);
+  change(tree, "horizontal", 0.5);
+  tree = ui.render();
+  assert.equal(nodes(tree).find(node => node.props.id === "photo-zoom").props.value, 2.5);
+  assert.equal(nodes(tree).find(node => node.props.id === "photo-horizontal").props.value, 0.5);
+  assert.equal(nodes(tree).find(node => node.props.id === "photo-vertical").props.value, -0.5);
+  const expected = { zoom: 2.5, x: 0.5, y: -0.5 };
+  const rect = crop.memberPhotoCropRect(decoded.naturalWidth, decoded.naturalHeight, expected);
+  assert.deepEqual(image(tree).props.style, {
+    width: `${decoded.naturalWidth / rect.side * 100}%`,
+    height: `${decoded.naturalHeight / rect.side * 100}%`,
+    left: `${-rect.x / rect.side * 100}%`,
+    top: `${-rect.y / rect.side * 100}%`,
+  });
+  assert.deepEqual(ui.calls, []);
+  await button(tree, "Use photo").props.onClick();
+  assert.deepEqual(ui.exports, [{ source: decoded, position: expected }]);
+  assert.equal(ui.calls.length, 1);
+  assert.deepEqual(ui.changed, [newUrl]);
+  assert.equal(image(ui.render()).props.src, newUrl);
+  ui.unmount();
 });
 
 test("failed save retains editable crop and old saved state; cancel works when sharing disables upload", async () => {
