@@ -14,3 +14,22 @@ export function publicWebsiteHref(path: string) {
     "https://members.theruinedproject.com";
   return memberDeployment ? `${PRODUCTION_SITE_URL}${path}` : path;
 }
+
+
+export const PRODUCTION_MEMBERSHIP_SITE_URL = "https://members.theruinedproject.com";
+
+/** Send public-site entry points to the member deployment, including local previews. */
+export function membershipWebsiteHref(path: string) {
+  let origin = PRODUCTION_MEMBERSHIP_SITE_URL;
+  const configured = process.env.NEXT_PUBLIC_MEMBERSHIP_SITE_URL?.trim();
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password &&
+        url.pathname === "/" && !url.search && !url.hash) origin = url.origin;
+    } catch {
+      // A malformed optional override must never break the production destination.
+    }
+  }
+  return `${origin}${path}`;
+}

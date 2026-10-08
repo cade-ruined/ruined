@@ -1,5 +1,24 @@
 # Ruined Foundations
 
+## Foundations 01 live call
+
+`/foundations/01` is the 22-slide live call deck using the Walk room imagery,
+transitions, and a separate presenter window. The source brief content lives in
+`src/components/foundations-call/deck-content.ts`.
+
+The deck’s `/foundations/01/timeline` link redirects to
+`https://members.theruinedproject.com/my/foundations/timeline/part-1`. That member
+route requires the existing member and Foundations launch permissions. Signed-out
+members sign in at `/access` and return to the worksheet. It saves events and their
+private meanings into the member’s canonical private Timeline and Journal.
+
+For a local deck connected to the member server on port 3130, set
+`NEXT_PUBLIC_MEMBERSHIP_SITE_URL=http://localhost:3130` when starting the public
+server. The default is the production membership origin. The unused standalone
+worksheet component is retained as a reference; no public route renders it.
+
+## Existing Foundations experience
+
 The public `/foundations` route redirects to
 `https://members.theruinedproject.com/my/foundations`, where member access and
 launch availability are enforced. It never renders the presentation publicly.
