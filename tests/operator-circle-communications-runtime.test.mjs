@@ -104,7 +104,7 @@ test("editing a saved Circle chat exposes its help without adding it to Google M
     const tree = parseFragment(renderToStaticMarkup(meet.draw()));
     assert.equal(elements(tree).some((node) => node.tagName === "details"), false);
     assert.doesNotMatch(text(tree), /Where do I find|Copy link to this space|Google Chat/);
-    assert.match(text(tree), /Saving it does not send invitations/);
+    assert.match(text(tree), /Saving does not send invitations/);
   }
 });
 

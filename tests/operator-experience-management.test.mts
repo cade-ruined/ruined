@@ -130,7 +130,7 @@ test("operator pages and JSON boundaries expose creation, roster, waitlist, atte
   assert.match(recordPage, /getOpsExperienceRecord/);
   assert.match(recordPage, /notFound\(\)/);
   assert.match(directory, /id="new-experience-trigger" onClick=\{openCreate\}/);
-  assert.match(directory, /<OperatorDialog open=\{createOpen\}/);
+  assert.match(directory, /<OperatorDialog[^>]* open=\{createOpen\}/);
   assert.match(directory, /id="new-experience"/);
   assert.match(record, /Roster/);
   assert.match(record, /Move to waitlist/);

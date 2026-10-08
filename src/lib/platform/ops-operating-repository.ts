@@ -2460,7 +2460,7 @@ export async function setOpsGoogleCommunicationLink(input: {
     const externalEntityId = googleExternalEntityId(kind, url);
     const metadata = kind === "chat"
       ? { spaceUri: url, source: "operator" }
-      : { meetingUri: url, source: "operator" };
+      : { meetingUri: url, source: "operator_event" };
     try {
       await tx`
         insert into integration_entity_links (

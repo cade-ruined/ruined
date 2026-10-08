@@ -250,3 +250,30 @@ test("event action failures stay inside the dialog and successful saves dismiss 
     if (!preview) assert.deepEqual(JSON.parse(f.calls[0].options.body), { intent: "complete", reason: "" });
   }
 });
+
+
+test("supplied Meet links remain explicit after delivery failures and cannot fall back to the legacy editor", () => {
+  for (const status of ["pending_create", "failed", "synced"]) {
+    const f = interactive({
+      state: "published", meetingUrl: "https://meet.google.com/abc-defg-hij",
+      calendar: { ...calendar, status, preservesMeetingUrl: true, meetingUrl: "https://meet.google.com/abc-defg-hij" },
+    });
+    const meeting = nodes(f.draw()).find((node) => node.type === calendarModule.default);
+    const management = render(React.createElement(React.Fragment, null, meeting.props.children));
+    assert.match(text(management), /Calendar invitations use the Google Meet link you supplied/);
+    assert.doesNotMatch(text(management), /Manual link editor|replaces this one|replace your saved meeting link/);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test("drafts with newly saved Meet links promise preservation in both meeting and publish review", () => {
+  const provided = { ...calendar, preservesMeetingUrl: true, meetingUrl: "https://meet.google.com/abc-defg-hij" };
+  const f = interactive({ calendar: provided, meetingUrl: provided.meetingUrl });
+  nodes(f.draw()).find((node) => node.props?.id === "publish-experience-trigger").props.onClick();
+  const review = elements(render(f.draw())).find((node) => node.tagName === "dialog");
+  assert.doesNotMatch(text(review), /replace your saved meeting link/);
+  assert.match(text(review), /queued does not mean sent/);
+  const meeting = panel(provided);
+  assert.match(text(meeting), /Invitations will include your saved Google Meet link/);
+  assert.doesNotMatch(text(meeting), /Google creates the Meet link/);
+});

@@ -109,7 +109,10 @@ test("Experiences keeps creation one click away in a closed modal without an alw
   assert.ok(elements(dialog).includes(byId(tree, "new-experience")));
   assert.equal(all.filter((node) => node.tagName === "form").length, 1);
   assert.ok(all.some((node) => node.tagName === "input" && attr(node, "type") === "search"));
-  assert.match(text(tree), /Nothing is published or sent yet/);
+  assert.match(text(tree), /Creates the event and sends calendar invitations to this audience/);
+  assert.ok(elements(dialog).some((node) => node.tagName === "input" && attr(node, "name") === "meetingUrl"));
+  assert.ok(elements(dialog).some((node) => node.tagName === "button" && text(node) === "Create event"));
+  assert.ok(elements(dialog).some((node) => node.tagName === "button" && text(node) === "Advanced event setup"));
   const restricted = render("OperatorExperienceDirectory", { directory: { ...experiences.PREVIEW_OPS_EXPERIENCE_DIRECTORY, canCreate: false } });
   assert.equal(byId(restricted, "new-experience"), undefined);
   assert.equal(elements(restricted).some((node) => attr(node, "href") === "#new-experience"), false);
