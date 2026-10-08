@@ -123,7 +123,7 @@ test("registration holds survive launch changes and release profiles only after 
   }
   async function profile(viewer, changes = {}) {
     return memberRepository.saveMemberOnboardingProfile(viewer.authUserId, {
-      legalAcknowledgment: { acknowledged: true, privacyVersion: "privacy-2026-08-19", agreementVersionId: currentRegistrationAgreementId },
+      legalAcknowledgment: { acknowledged: true, privacyVersion: "privacy-2026-10-08", agreementVersionId: currentRegistrationAgreementId },
       apparelTopSize: "M", birthDate: "1990-01-01", legalName: "Registration Test", mobile: "+12025550123",
       memberTag: `member${viewer.member_id.replaceAll("-", "").slice(0,14)}`,
       shippingAddress: { addressLine1: "123 Test Street", addressLine2: null, city: "Denver", countryCode: "US", postalCode: "80202", region: "CO" },
@@ -208,7 +208,7 @@ test("registration holds survive launch changes and release profiles only after 
   await t.test("new details reject missing, false, and stale review before any profile write", async () => {
     await assert.rejects(() => profile(fresh, { legalAcknowledgment: undefined }), { name: "RegistrationLegalError", status: 400 });
     await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: false } }), { name: "RegistrationLegalError", status: 400 });
-    await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: true, privacyVersion: "privacy-2026-08-19", agreementVersionId: registrationAgreementId } }), { status: 409, code: "registration_documents_changed" });
+    await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: true, privacyVersion: "privacy-2026-10-08", agreementVersionId: registrationAgreementId } }), { status: 409, code: "registration_documents_changed" });
     await assert.rejects(() => profile(fresh, { legalAcknowledgment: { acknowledged: true, privacyVersion: "old", agreementVersionId: currentRegistrationAgreementId } }), { status: 409 });
     assert.equal((await row("select count(*)::int as count from person_private_profiles where person_id=$1", [fresh.person_id])).count, 0);
     assert.equal((await row("select count(*)::int as count from member_consents where member_id=$1", [fresh.member_id])).count, 0);

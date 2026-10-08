@@ -47,6 +47,7 @@ async function fixture(kind, tag = null) {
     "@/components/membership/CoupleMembershipApproval": Stub,
     "@/components/membership/AgreementText": Stub, "@/components/membership/MemberPhotoUpload": Stub,
     "@/components/membership/MemberPaymentMethod": Stub,
+    "@/components/membership/MemberSmsConsentDisclosure": Stub,
     "@/components/membership/MemberSettingsHeader": Stub, "@/components/membership/MemberPublicSharingSettings": Stub,
     "@/components/support/supportStyles": {}, "@/lib/membership/entry-stage": entryStage, "@/lib/membership/pricing": pricing, "@/lib/membership/phone": phone,
     "@/lib/membership/member-communication-preferences-model": communicationPreferences,

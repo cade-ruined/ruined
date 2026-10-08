@@ -417,7 +417,9 @@ export async function saveMemberOnboardingProfile(
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 41)`;
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 44)`;
-    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
+    // The phone-change trigger appends consent through this member's FK. A
+    // non-key lock keeps that KEY SHARE check compatible with profile writes.
+    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for no key update`;
     // Intake eligibility applies only while a new registration is held. Existing
     // members can still correct their historical details after profile release.
     if (identity.registrationHeld) {

@@ -1,7 +1,10 @@
-export const MEMBER_COMMUNICATION_NOTICE_VERSION = "membership-reminders-v1";
+export const MEMBER_COMMUNICATION_NOTICE_VERSION = "membership-reminders-v2";
 export const MEMBER_EMAIL_UPDATES_NOTICE = "Email me membership updates and call reminders.";
-export const MEMBER_SMS_UPDATES_NOTICE = "Text me membership updates and call reminders.";
-export const MEMBER_SMS_UPDATES_DETAIL = "Optional. Message frequency varies. Message and data rates may apply.";
+export const MEMBER_SMS_UPDATES_NOTICE = "I agree to receive recurring text messages from Ruined about membership updates and call reminders.";
+export const MEMBER_SMS_UPDATES_DETAIL = "Optional. Consent is not a condition of purchase or membership. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe or HELP for help.";
+export const MEMBER_SMS_TERMS_VERSION = "membership-text-messages-v1";
+export const MEMBER_SMS_TERMS_HREF = "/membership/text-messages";
+export const MEMBER_SMS_PRIVACY_HREF = "/privacy";
 
 export type MemberCommunicationPreferencesSnapshot = {
   email: boolean | null;

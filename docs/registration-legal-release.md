@@ -98,20 +98,17 @@ transactional. These preferences must not enroll a Resend marketing topic or
 override an existing provider unsubscribe. The existing service segments are not
 proof of optional reminder consent.
 
-This change captures preferences; it does not connect a text-message service or
-start a reminder campaign. Before enabling either reminder sender, filter its
-audience by the latest destination-bound preference, honor provider suppression,
-and implement a working channel-specific opt-out. SMS delivery also requires
-sender registration and a supported STOP/HELP flow. Until self-service preference
-editing is available, preference changes are handled by
-connect@theruinedproject.com as stated in the form and draft terms.
+The October 8 SMS update adds a disabled Twilio transport and signed inbound
+webhook; it does not start a reminder campaign. See [SMS setup](member-sms-setup.md)
+for the remaining sender-registration, enrollment-confirmation, and delivery
+checks. Until self-service preference editing is available, preference changes
+are handled by connect@theruinedproject.com.
 
-The shared registration form explicitly clears text selection when its number
-changes. Legacy profile-only requests that omit preferences retain previous
-destination-bound decisions; returning to an older consented number can make
-that historical decision applicable again. Before enabling SMS delivery, extend
-phone-change invalidation to those paths as well, or require a fresh confirmation
-of the current number as part of SMS enrollment.
+New SMS enrollment requires the current disclosure and SMS terms. Historical
+email choices and acceptance evidence remain intact. The registration form
+clears text selection when its number changes, and a database trigger also
+withdraws the previous choice for operator, legacy, and direct phone edits.
+Returning to an older number cannot reactivate its historical consent.
 
 Documented provider requirements for the default selection:
 

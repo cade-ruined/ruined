@@ -19,6 +19,7 @@ import { RegistrationCoupleFields, useRegistrationCouple } from "@/components/me
 import AgreementText from "@/components/membership/AgreementText";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import MemberPaymentMethod from "@/components/membership/MemberPaymentMethod";
+import MemberSmsConsentDisclosure from "@/components/membership/MemberSmsConsentDisclosure";
 import { formatMembershipPrice, isMembershipBillingPlan, MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS, type MembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
 import { membershipEntryStage } from "@/lib/membership/entry-stage";
 import type { MemberOnboardingSnapshot } from "@/lib/membership/model";
@@ -28,7 +29,6 @@ import {
   MEMBER_COMMUNICATION_NOTICE_VERSION,
   MEMBER_EMAIL_UPDATES_NOTICE,
   MEMBER_SMS_UPDATES_NOTICE,
-  MEMBER_SMS_UPDATES_DETAIL,
 } from "@/lib/membership/member-communication-preferences-model";
 import {
   formatPhoneInput,
@@ -921,11 +921,11 @@ export default function JoinForm({
           </div> : null}
 
           {registrationOnly && communicationControlsAvailable ? <fieldset className="grid gap-3 border-t border-[var(--member-rule)] pt-6" disabled={submitting}>
-            <legend className="sr-only">Optional membership updates and reminders</legend>
+            <legend className="mb-3 pt-6 text-sm font-semibold">Membership updates</legend>
             <label className="flex items-start gap-3 text-sm leading-relaxed"><input checked={emailUpdates} className="mt-1 size-4 shrink-0 accent-current" name="membership-email-updates" onChange={event => setEmailUpdates(event.currentTarget.checked)} type="checkbox" /><span>{MEMBER_EMAIL_UPDATES_NOTICE}</span></label>
             <div>
               <label className="flex items-start gap-3 text-sm leading-relaxed"><input aria-describedby="membership-text-updates-help" checked={smsUpdates} className="mt-1 size-4 shrink-0 accent-current" disabled={!currentMobile || submitting} name="membership-text-updates" onChange={changeTextUpdates} type="checkbox" /><span>{MEMBER_SMS_UPDATES_NOTICE}</span></label>
-              <p className="mt-1 pl-7 text-xs leading-relaxed text-[var(--member-muted)]" id="membership-text-updates-help">{MEMBER_SMS_UPDATES_DETAIL} <a className="underline underline-offset-4" href="/privacy" rel="noopener noreferrer" target="_blank">Privacy</a> · <a className="underline underline-offset-4" href={legalNotice?.state === "required" ? legalNotice.agreementHref : "/membership/registration-terms"} rel="noopener noreferrer" target="_blank">Terms</a></p>
+              <MemberSmsConsentDisclosure className="mt-1 pl-7 text-xs leading-relaxed text-[var(--member-muted)]" id="membership-text-updates-help" />
               {!currentMobile || smsPhoneChanged ? <p className="mt-1 pl-7 text-xs leading-relaxed text-[var(--member-muted)]" role="status">{!currentMobile ? "Enter your mobile number above to choose text updates." : "Mobile number changed. Select text updates again for this number."}</p> : null}
             </div>
             <p className="pl-7 text-xs leading-relaxed text-[var(--member-muted)]">Security, account and registration emails still arrive if these are off. <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">Contact us</a> to change your preferences anytime.</p>

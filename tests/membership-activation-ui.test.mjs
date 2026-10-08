@@ -38,6 +38,7 @@ async function joinFixture(extra = {}, now = "2026-10-05T18:00:00Z") {
   const Form = (await load("src/components/membership/JoinForm.tsx", {
     react: h.react, "next/link": Link, "@stripe/stripe-js": { loadStripe: () => assert.fail("Rendering cannot start Stripe") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
+    "@/components/membership/MemberSmsConsentDisclosure": Stub,
     "@/components/membership/CoupleMembershipApproval": Stub, "@/components/membership/AgreementText": Stub,
     "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => ({ loading: false, loadError: null }), RegistrationCoupleFields: Stub },
     "@/components/membership/MemberPhotoUpload": Stub, "@/components/membership/MemberPaymentMethod": Stub,
