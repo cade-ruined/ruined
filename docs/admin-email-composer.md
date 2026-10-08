@@ -4,7 +4,7 @@
 
 ## Designs and copy
 
-The workspace loads a template's current HTML, version, subject, sender, reply address and variables from Resend. Published and draft templates can both supply a design snapshot. A published template with unpublished changes is identified explicitly: the preview reflects the current version returned by Resend. This workflow does not publish or overwrite the original template.
+The workspace loads a template's current HTML, version, subject, sender, reply address and variables from Resend. Published and draft templates can both supply a design snapshot. A published template with unpublished changes is identified explicitly: Resend returns its published HTML until those changes are published. The preview reflects the version returned by Resend. This workflow does not publish or overwrite the original template.
 
 Static designs also work. The editor exposes visible text fields while preserving the original layout, styles, images, logos, links and conditional markup. Edits replace only selected text spans or declared variables. Unsubscribe labels, hidden preheaders, decorative punctuation and active code are excluded from copy editing. Authored copy is escaped as text; the browser and model cannot supply replacement HTML.
 
@@ -13,6 +13,8 @@ Fill required variables before requesting a ChatGPT revision. The model receives
 Copy fields allow 12,000 characters, variables 6,000, combined edits 48,000, and the completed subject 200. Numeric variables are validated. Variables in unsupported layout or active-code contexts must be corrected in Resend. Link variables must form safe absolute URLs.
 
 The preview uses the actual rendered design in a sandboxed frame. When static copy changes, the plain-text alternative is regenerated from the edited design so it does not retain old copy. Unchanged designs retain their authored text alternative.
+
+**Image banner** adds an optional image to this email. Paste a public HTTPS image URL from Resend or another image host, add a short image description, and optionally a HTTPS destination URL. Replace the URL to change the image, or choose **Remove banner** to restore the original design. This control uses hosted images; it does not upload files. The banner appears before the main headline, below the existing logo, scales to the available width without cropping, and is included in the preview, individual email, and native campaign draft. It leaves the source Resend template unchanged. ChatGPT revisions preserve the selected banner. Banner changes invalidate the previous recipient review and saved draft selection.
 
 ## Individual emails and campaigns
 

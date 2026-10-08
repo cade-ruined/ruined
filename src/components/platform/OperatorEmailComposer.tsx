@@ -7,7 +7,7 @@ import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import type { ResendEmailEdits, ResendEmailTemplate } from "@/lib/communications/resend-email-model";
-import { renderResendEmailTemplate } from "@/lib/communications/resend-email-templates";
+import { insertResendEmailBanner, normalizeResendEmailBanner, renderResendEmailTemplate } from "@/lib/communications/resend-email-templates";
 
 type TemplateSummary = { id: string; name: string; status: "draft" | "published"; updatedAt?: string };
 type BroadcastSummary = { id: string; name: string; subject?: string; status: string; createdAt: string };
@@ -56,7 +56,15 @@ function defaultEdits(template: ResendEmailTemplate): ResendEmailEdits {
 }
 function escapeText(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
 function sampleRender(edits: ResendEmailEdits): RenderedEmail {
-  return { subject: edits.subject, from: SAMPLE_TEMPLATE.from, html: SAMPLE_HTML.replace("{{HEADLINE}}", escapeText(edits.copy.headline ?? "")).replace("{{MESSAGE}}", escapeText(edits.copy.message ?? "")).replace("{{FIRST_NAME}}", escapeText(edits.values.FIRST_NAME ?? "there")) };
+  const html = SAMPLE_HTML.replace("{{HEADLINE}}", escapeText(edits.copy.headline ?? "")).replace("{{MESSAGE}}", escapeText(edits.copy.message ?? "")).replace("{{FIRST_NAME}}", escapeText(edits.values.FIRST_NAME ?? "there"));
+  const banner = normalizeResendEmailBanner(edits.banner);
+  return { subject: edits.subject, from: SAMPLE_TEMPLATE.from, html: banner ? insertResendEmailBanner(html, banner) : html };
+}
+function previewEdits(edits: ResendEmailEdits): ResendEmailEdits {
+  // Keep an unfinished banner editable without interrupting the rest of the preview.
+  // Save and review validate the complete banner through editorPayload instead.
+  try { return { ...edits, banner: normalizeResendEmailBanner(edits.banner) }; }
+  catch { return { ...edits, banner: null }; }
 }
 function dateLabel(value: string): string {
   const date = new Date(value);
@@ -119,6 +127,11 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   const [query, setQuery] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
   const busy = pending !== null;
+  let bannerHint = "";
+  if (edits.banner) {
+    try { normalizeResendEmailBanner(edits.banner); }
+    catch (failure) { bannerHint = failure instanceof Error ? failure.message : "Complete the image details to preview the banner."; }
+  }
 
   useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [error]);
   useEffect(() => {
@@ -155,7 +168,8 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     const timer = window.setTimeout(async () => {
       setPreviewUpdating(true); setPreviewError("");
       try {
-        const result = preview ? previewCatalog ? renderResendEmailTemplate(template, edits, { campaign: mode === "campaign" }) : sampleRender(edits) : await request<RenderedEmail>(`${API}/preview`, { templateId: template.id, templateVersion: template.version, edits, mode }, controller.signal);
+        const visibleEdits = previewEdits(edits);
+        const result = preview ? previewCatalog ? renderResendEmailTemplate(template, visibleEdits, { campaign: mode === "campaign" }) : sampleRender(visibleEdits) : await request<RenderedEmail>(`${API}/preview`, { templateId: template.id, templateVersion: template.version, edits: visibleEdits, mode }, controller.signal);
         if (sequence === previewSequenceRef.current && !controller.signal.aborted) setRendered(result);
       } catch (failure) {
         if (!controller.signal.aborted && sequence === previewSequenceRef.current) setPreviewError(failure instanceof Error ? failure.message : "The updated preview could not be loaded.");
@@ -209,14 +223,15 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     if (!edits.subject.trim()) throw new Error("Add the email subject.");
     if (mode === "individual" && !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(recipient.trim())) throw new Error("Enter one valid recipient email address.");
     if (mode === "campaign" && (!segmentId || !topicId || !name.trim())) throw new Error("Add a campaign name and choose its Resend segment and topic.");
-    return { templateId: template.id, templateVersion: template.version, edits, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
+    const banner = normalizeResendEmailBanner(edits.banner);
+    return { templateId: template.id, templateVersion: template.version, edits: { ...edits, banner }, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
   }
   async function generate() {
     if (!template || !prompt.trim() || (preview && previewCatalog) || !begin("generate")) return;
     try {
       const previous = structuredClone(edits);
-      const next = preview ? { ...edits, copy: { ...edits.copy, message: "A short update, with room for what matters.\n\nThis is sample copy. In the connected workspace, ChatGPT follows your direction while preserving the template." } } : (await request<{ edits: ResendEmailEdits }>(`${API}/generate`, { templateId: template.id, templateVersion: template.version, edits, mode, prompt: prompt.trim() })).edits;
-      changeEdits(next); setUndo(previous); setNotice(preview ? "Sample revision applied. ChatGPT was not called." : "Copy updated. Review the wording and links before sending.");
+      const next = preview ? { ...edits, copy: { ...edits.copy, message: "A short update, with room for what matters.\n\nThis is sample copy. In the connected workspace, ChatGPT follows your direction while preserving the template." } } : (await request<{ edits: ResendEmailEdits }>(`${API}/generate`, { templateId: template.id, templateVersion: template.version, edits: previewEdits(edits), mode, prompt: prompt.trim() })).edits;
+      changeEdits({ ...next, banner: previous.banner ?? null }); setUndo(previous); setNotice(preview ? "Sample revision applied. ChatGPT was not called." : "Copy updated. Review the wording and links before sending.");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "ChatGPT could not revise the copy."); }
     finally { finish(); }
   }
@@ -325,7 +340,18 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
               <label className="block text-sm font-medium" htmlFor="resend-topic">Subscription topic<select className={OPERATOR_FIELD_CLASS} id="resend-topic" onChange={(event) => { setTopicId(event.target.value); change(); }} required value={topicId}><option value="">Choose a topic</option>{overview?.topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">Resend applies this topic’s subscription preferences and unsubscribe settings.</span></label>
             </>}
           </fieldset>
-          <section className="operator-bento-card" aria-labelledby="resend-ai-title"><div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="text-base font-semibold" id="resend-ai-title">Refine with ChatGPT</h4><span className="text-xs text-black/45">Copy, within your design</span></div><label className="mt-3 block text-sm" htmlFor="resend-prompt">What should this email say?<textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} disabled={busy || !!(preview && previewCatalog) || (!preview && !overview?.configuration.aiReady)} id="resend-prompt" maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Write a short member update. Keep the tone direct. Include these details…" rows={4} value={prompt} /></label><p className="mt-2 text-xs leading-relaxed text-black/55">{preview && previewCatalog ? "ChatGPT is off in preview. Edit the template copy below to try the workspace." : !preview && !overview?.configuration.aiReady ? "ChatGPT is not connected. You can edit the template copy below." : "Only editable words and template values change. The original design stays intact."}</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={busy || !!(preview && previewCatalog) || !prompt.trim() || (!preview && !overview?.configuration.aiReady)} onClick={() => void generate()} type="button">{pending === "generate" ? "Refining…" : preview && previewCatalog ? "ChatGPT off in preview" : preview ? "Try sample revision" : "Refine copy"}</button>{undo ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} onClick={() => { changeEdits(undo); setUndo(null); }} type="button">Undo last revision</button> : null}</div></section>
+          <section className="operator-bento-card" aria-labelledby="resend-ai-title"><div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="text-base font-semibold" id="resend-ai-title">Refine with ChatGPT</h4><span className="text-xs text-black/45">Copy, within your design</span></div><label className="mt-3 block text-sm" htmlFor="resend-prompt">What should this email say?<textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} disabled={busy || !!(preview && previewCatalog) || (!preview && !overview?.configuration.aiReady)} id="resend-prompt" maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Write a short member update. Keep the tone direct. Include these details…" rows={4} value={prompt} /></label><p className="mt-2 text-xs leading-relaxed text-black/55">{preview && previewCatalog ? "ChatGPT is off in preview. Edit the template copy below to try the workspace." : !preview && !overview?.configuration.aiReady ? "ChatGPT is not connected. You can edit the template copy below." : "Only editable words and template values change. The original design stays intact."}</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={busy || !!(preview && previewCatalog) || !prompt.trim() || (!preview && !overview?.configuration.aiReady)} onClick={() => void generate()} type="button">{pending === "generate" ? "Refining…" : preview && previewCatalog ? "ChatGPT off in preview" : preview ? "Try sample revision" : "Refine copy"}</button>{undo ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} onClick={() => { changeEdits({ ...undo, banner: edits.banner ?? null }); setUndo(null); }} type="button">Undo last revision</button> : null}</div></section>
+          <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-4" aria-labelledby="resend-banner-title">
+            <legend className="sr-only">Image banner</legend>
+            <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-base font-semibold" id="resend-banner-title">Image banner</h4>{edits.banner ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" id="resend-remove-banner" onClick={() => changeEdits({ ...edits, banner: null })} type="button">Remove banner</button> : null}</div>
+            <p className="text-xs leading-relaxed text-black/55">Add an image below the existing logo and above the main heading. Use a public HTTPS image URL from Resend or your image host.</p>
+            {edits.banner ? <>
+              <label className="block text-sm font-medium" htmlFor="resend-banner-url">Image URL<input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} id="resend-banner-url" maxLength={2048} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, url: event.target.value } })} pattern="https://.*" placeholder="https://…/image.jpg" required spellCheck={false} type="url" value={edits.banner.url} /></label>
+              <label className="block text-sm font-medium" htmlFor="resend-banner-alt">Image description<input className={OPERATOR_FIELD_CLASS} id="resend-banner-alt" maxLength={300} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, alt: event.target.value } })} placeholder="Describe what the image shows" required type="text" value={edits.banner.alt} /><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">Shown when images are unavailable and read by screen readers.</span></label>
+              <label className="block text-sm font-medium" htmlFor="resend-banner-link">Destination URL <span className="font-normal text-black/45">(optional)</span><input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} id="resend-banner-link" maxLength={2048} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, linkUrl: event.target.value } })} pattern="https://.*" placeholder="https://…" spellCheck={false} type="url" value={edits.banner.linkUrl ?? ""} /></label>
+              {bannerHint ? <p aria-live="polite" className="text-xs leading-relaxed text-black/55" id="resend-banner-hint">{!edits.banner.url.trim() && !edits.banner.alt.trim() ? "Add the image URL and description to preview your banner. You can keep editing the email." : bannerHint}</p> : null}
+            </> : <button className={SECONDARY_BUTTON} id="resend-add-banner" onClick={() => { changeEdits({ ...edits, banner: { url: "", alt: "" } }); requestAnimationFrame(() => document.getElementById("resend-banner-url")?.focus()); }} type="button">Add image banner</button>}
+          </fieldset>
           <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-5"><legend className="sr-only">Email copy</legend><h4 className="text-base font-semibold">Email copy</h4><label className="block text-sm font-medium" htmlFor="resend-subject">Subject<input className={OPERATOR_FIELD_CLASS} id="resend-subject" maxLength={200} onChange={(event) => changeEdits({ ...edits, subject: event.target.value })} required type="text" value={edits.subject} /></label>
             {template.variables.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-variable-${index}`} key={field.key}>{field.key.replaceAll("_", " ")}<input className={OPERATOR_FIELD_CLASS} id={`resend-variable-${index}`} maxLength={6000} onChange={(event) => changeEdits({ ...edits, values: { ...edits.values, [field.key]: event.target.value } })} required={field.fallbackValue == null} step={field.type === "number" ? "any" : undefined} type={field.type === "number" ? "number" : "text"} value={edits.values[field.key] ?? ""} /></label>)}
             {template.fields.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-copy-${index}`} key={field.key}>{field.label}<textarea className={`${OPERATOR_FIELD_CLASS} resize-y leading-relaxed`} id={`resend-copy-${index}`} maxLength={12000} onChange={(event) => changeEdits({ ...edits, copy: { ...edits.copy, [field.key]: event.target.value } })} rows={field.value.length > 160 ? 5 : field.value.length > 65 ? 3 : 2} value={edits.copy[field.key] ?? field.value} /></label>)}

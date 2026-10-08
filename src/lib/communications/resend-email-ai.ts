@@ -42,7 +42,10 @@ export async function generateResendEmailCopy(actor: string, input: Record<strin
     || !isRecord(result.values) || !exactKeys(result.values, variables.map(variable => variable.key)) || Object.values(result.values).some(value => typeof value !== "string")) {
     throw new AdminEmailAIError("ChatGPT returned an incomplete revision. Your current copy is unchanged.", 502);
   }
-  try { await prepareResendEmail(actor, { ...input, edits: result }); }
+  // Copy revisions retain the administrator's image choice. The model never
+  // receives or controls banner assets, descriptions, or destinations.
+  const revised = { ...result, ...(edits.banner !== undefined ? { banner: edits.banner } : {}) } as ResendEmailEdits;
+  try { await prepareResendEmail(actor, { ...input, edits: revised }); }
   catch { throw new AdminEmailAIError("The proposed revision did not fit this template. Your current copy is unchanged. Try a more specific request.", 502); }
-  return result as unknown as ResendEmailEdits;
+  return revised;
 }

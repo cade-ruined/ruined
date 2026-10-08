@@ -27,7 +27,9 @@ export type ResendEmailEdits = {
   subject: string;
   values: Record<string, string>;
   copy: Record<string, string>;
+  banner?: ResendEmailBanner | null;
 };
+export type ResendEmailBanner = { url: string; alt: string; linkUrl?: string };
 export type RenderedResendEmail = {
   html: string;
   text: string;

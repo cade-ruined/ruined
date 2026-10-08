@@ -25,6 +25,26 @@ const templates = await load("src/lib/communications/resend-email-templates.ts",
 const fixed = { segment: crypto.randomUUID(), topic: crypto.randomUUID(), template: crypto.randomUUID(), version: crypto.randomUUID() };
 const unsubscribe = '<a href="{{{RESEND_UNSUBSCRIBE_URL}}}">Manage preferences</a>';
 const makeContact = (email, extra = {}) => ({ id: crypto.randomUUID(), email, first_name: "A", last_name: "Person", unsubscribed: false, ...extra });
+const banner = { url: "https://assets.example.com/campaign-banner.jpg", alt: "A quiet moment & room", linkUrl: "https://example.com/stories/quiet-moment" };
+function elements(html, tagName) {
+  const found = [];
+  function visit(node) {
+    if (node.tagName === tagName) found.push(Object.fromEntries(node.attrs.map(({ name, value }) => [name, value])));
+    for (const child of node.childNodes ?? []) visit(child);
+  }
+  visit(parse5.parse(html));
+  return found;
+}
+function assertBanner(html) {
+  const images = elements(html, "img");
+  assert.equal(images.filter(image => image.src === "https://assets.example.test/exact.svg").length, 1, "the original logo remains intact");
+  const banners = images.filter(image => image.src === banner.url);
+  assert.equal(banners.length, 1);
+  assert.equal(banners[0].alt, banner.alt);
+  assert.ok(elements(html, "a").some(link => link.href === banner.linkUrl));
+  assert.ok(html.indexOf("exact.svg") < html.indexOf("campaign-banner.jpg"));
+  assert.ok(html.indexOf("campaign-banner.jpg") < html.indexOf("<h1"));
+}
 
 async function fixture(t) {
   const PGlite = await loadPGliteForSchemaChecks(), pg = new PGlite();
@@ -170,6 +190,40 @@ test("saving creates a real native draft with send false and leaves contacts/pre
   assert.equal(f.state.broadcasts.get(saved.id).status, "draft");
   assert.equal(f.state.sends.length, 0);
   assert.equal((await f.pg.query("select action from operator_audit_events")).rows[0].action, "resend_email.draft_created");
+});
+
+test("optional image banner reaches the native campaign draft and recipient review without replacing the logo", async t => {
+  const f = await fixture(t);
+  f.state.template.html = `<html><body><table><tr><td><img src="https://assets.example.test/exact.svg"><h1>A considered update</h1><p>Hello {{{NAME}}}</p>${unsubscribe}</td></tr></table></body></html>`;
+  const saved = await f.service.saveResendBroadcast(f.admin, { ...f.input, edits: { ...f.input.edits, banner: { ...banner } } });
+  const payload = f.state.requests.find(item => item.path === "/broadcasts" && item.method === "POST").body;
+  assert.equal(payload.send, false);
+  assertBanner(payload.html);
+  assert.ok(payload.text.includes(banner.alt));
+  assert.ok(payload.text.includes(banner.linkUrl));
+  const review = await f.service.reviewResendEmail(f.admin, { broadcastId: saved.id });
+  assert.equal(review.html, payload.html);
+  assertBanner(review.html);
+  assert.equal(f.state.sends.length, 0);
+});
+
+test("individual send keeps the reviewed image banner when later edits or provider template content change", async t => {
+  const f = await fixture(t);
+  const input = f.individual();
+  f.state.template.html = '<html><body><table><tr><td><img src="https://assets.example.test/exact.svg"><h1>A considered update</h1><p>Hello {{{NAME}}}</p></td></tr></table></body></html>';
+  input.edits = { ...input.edits, banner: { ...banner } };
+  const review = await f.service.reviewResendEmail(f.admin, input);
+  assertBanner(review.html);
+  input.edits.banner.url = "https://assets.example.test/later-unreviewed-banner.jpg";
+  f.state.template.html = "<p>New unreviewed provider content</p>";
+  assert.equal((await f.service.sendResendEmail(f.admin, review.id)).status, "sent");
+  assert.equal(f.state.sends.length, 1);
+  assert.equal(f.state.sends[0].body.html, review.html);
+  assert.equal(f.state.sends[0].body.text, review.text);
+  assert.ok(f.state.sends[0].body.text.includes(banner.alt));
+  assert.ok(f.state.sends[0].body.text.includes(banner.linkUrl));
+  assertBanner(f.state.sends[0].body.html);
+  assert.doesNotMatch(f.state.sends[0].body.html, /later-unreviewed-banner|New unreviewed/);
 });
 
 test("provider template version changes invalidate preparation before native draft mutation", async t => {

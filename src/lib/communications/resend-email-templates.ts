@@ -1,7 +1,7 @@
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
 import { AdminEmailError } from "./admin-email-model";
 import type {
-  RenderedResendEmail, ResendEmailEdits, ResendEmailTemplate, ResendEmailTemplateField, ResendEmailTemplateVariable,
+  RenderedResendEmail, ResendEmailBanner, ResendEmailEdits, ResendEmailTemplate, ResendEmailTemplateField, ResendEmailTemplateVariable,
 } from "./resend-email-model";
 
 type Node = DefaultTreeAdapterTypes.Node;
@@ -18,6 +18,7 @@ const BLOCK_TAGS = new Set(["p", "div", "section", "article", "h1", "h2", "h3", 
 const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]{0,99}$/;
 const MAX_HTML_LENGTH = 1_000_000;
 const MAX_FIELD_LENGTH = 12_000;
+const BANNER_CONTAINERS = new Set(["body", "div", "section", "article", "main", "header", "footer", "aside", "td", "th", "center", "blockquote", "li"]);
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 const isElement = (node: Node): node is Element => "tagName" in node;
 const isText = (node: Node): node is DefaultTreeAdapterTypes.TextNode => node.nodeName === "#text";
@@ -41,6 +42,119 @@ function hidden(element: Element) {
   return element.attrs.some(attribute => attribute.name === "hidden"
     || (attribute.name === "aria-hidden" && attribute.value.toLowerCase() === "true")
     || (attribute.name === "style" && /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden|mso-hide\s*:\s*all)(?:\s*!important)?\s*(?:;|$)/i.test(attribute.value)));
+}
+
+function bannerUrl(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value || value.length > 2_048 || /[\u0000-\u0020\u007f-\u009f<>"\\]/.test(value)
+    || /\{\{|\}\}|%(?:0[0-9a-f]|1[0-9a-f]|7f)/i.test(value) || !/^https:\/\//i.test(value)) {
+    throw new AdminEmailError(400, `${label} must be a public HTTPS URL of 2,048 characters or fewer.`);
+  }
+  let url: URL;
+  try { url = new URL(value); } catch { throw new AdminEmailError(400, `${label} must be a valid public HTTPS URL.`); }
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  // Use public DNS names only. No server-side fetching or DNS lookup is needed
+  // to render a banner; IP literals and local-only names are not image hosts.
+  if (url.protocol !== "https:" || url.username || url.password || !hostname.includes(".") || hostname.includes(":")
+    || /^[\d.]+$/.test(hostname) || /(?:^|\.)(?:localhost|local|internal|lan|home|test|invalid|onion)$/.test(hostname)
+    || hostname.split(".").some(label => !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
+    throw new AdminEmailError(400, `${label} must use a public HTTPS domain without credentials or a local address.`);
+  }
+  return value;
+}
+
+export function normalizeResendEmailBanner(value: unknown): ResendEmailBanner | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || Object.keys(value).some(key => !["url", "alt", "linkUrl"].includes(key))) throw new AdminEmailError(400, "Add a banner image URL and alternative text.");
+  const url = bannerUrl(value.url, "The banner image address");
+  if (typeof value.alt !== "string" || !value.alt.trim() || value.alt.length > 300 || /[\u0000-\u001f\u007f-\u009f]|\{\{|\}\}/.test(value.alt)) {
+    throw new AdminEmailError(400, "Add banner alternative text of 300 characters or fewer, on one line and without placeholders.");
+  }
+  const linkUrl = value.linkUrl === undefined || value.linkUrl === "" ? undefined : bannerUrl(value.linkUrl, "The banner destination");
+  return { url, alt: value.alt.trim(), ...(linkUrl ? { linkUrl } : {}) };
+}
+
+function bannerPlacement(html: string) {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const visible: Node[] = [];
+  function visit(node: Node) {
+    if (isElement(node) && (BLOCKED_COPY_TAGS.has(node.tagName) || hidden(node))) return;
+    visible.push(node);
+    if ("childNodes" in node) for (const child of node.childNodes) visit(child);
+  }
+  visit(document);
+  const visibleSet = new Set(visible);
+  function hasCopy(node: Node): boolean {
+    if (!visibleSet.has(node)) return false;
+    return isText(node) ? /[\p{L}\p{N}]/u.test(node.value) : "childNodes" in node && node.childNodes.some(hasCopy);
+  }
+  function beside(node: Node, after = false) {
+    let current = node;
+    while ("parentNode" in current && current.parentNode) {
+      const parent = current.parentNode;
+      if (isElement(parent) && BANNER_CONTAINERS.has(parent.tagName) && current.sourceCodeLocation) {
+        return { offset: after ? current.sourceCodeLocation.endOffset : current.sourceCodeLocation.startOffset, container: parent };
+      }
+      current = parent;
+    }
+    return null;
+  }
+  const heading = visible.find(node => isElement(node) && node.tagName === "h1" && hasCopy(node));
+  if (heading) {
+    const placement = beside(heading);
+    if (placement) return placement;
+  }
+  // Logo-only paragraphs and tables have no copy, so a heading-free design
+  // still keeps its existing wordmark above the optional image.
+  const firstCopy = visible.find(node => isText(node) && hasCopy(node));
+  if (firstCopy) {
+    const placement = beside(firstCopy);
+    if (placement) return placement;
+  }
+  const firstImage = visible.find(node => isElement(node) && node.tagName === "img");
+  if (firstImage) {
+    const placement = beside(firstImage, true);
+    if (placement) return placement;
+  }
+  const cell = visible.find((node): node is Element => isElement(node) && ["td", "th"].includes(node.tagName) && Boolean(node.sourceCodeLocation?.startTag));
+  if (cell) return { offset: cell.sourceCodeLocation!.startTag!.endOffset, container: cell };
+  const body = visible.find((node): node is Element => isElement(node) && node.tagName === "body")!;
+  const htmlElement = visible.find((node): node is Element => isElement(node) && node.tagName === "html");
+  return { offset: body.sourceCodeLocation?.startTag?.endOffset
+    ?? body.childNodes.find(node => node.sourceCodeLocation)?.sourceCodeLocation?.startOffset
+    ?? htmlElement?.sourceCodeLocation?.endTag?.startOffset ?? html.length, container: body };
+}
+
+function bannerWidth(container: Element) {
+  let horizontalPadding = 0;
+  let current: Node | null = container;
+  while (current && isElement(current)) {
+    const style = current.attrs.find(attribute => attribute.name === "style")?.value ?? "";
+    const declarations = new Map(style.split(";").flatMap(declaration => {
+      const index = declaration.indexOf(":");
+      return index < 0 ? [] : [[declaration.slice(0, index).trim().toLowerCase(), declaration.slice(index + 1).trim()]];
+    }));
+    const pixels = (value: string | undefined) => value && /^(?:\d+(?:\.\d+)?)(?:px)?(?:\s*!important)?$/i.test(value) ? Number.parseFloat(value) : 0;
+    const padding = (declarations.get("padding") ?? "").split(/\s+/).map(pixels);
+    const left = declarations.has("padding-left") ? pixels(declarations.get("padding-left")) : padding.length === 4 ? padding[3] : padding.length > 1 ? padding[1] : padding[0];
+    const right = declarations.has("padding-right") ? pixels(declarations.get("padding-right")) : padding.length > 1 ? padding[1] : padding[0];
+    horizontalPadding += (left || 0) + (right || 0);
+    const widths = [pixels(declarations.get("max-width")), pixels(declarations.get("width")),
+      pixels(current.attrs.find(attribute => attribute.name === "width")?.value)].filter(width => width > 0);
+    if (widths.length) return Math.max(1, Math.round(Math.min(...widths) - horizontalPadding));
+    current = "parentNode" in current ? current.parentNode : null;
+  }
+  return Math.max(1, 600 - horizontalPadding);
+}
+
+/** Add a per-message banner using one insertion; never serialize the design. */
+export function insertResendEmailBanner(html: string, value: ResendEmailBanner): string {
+  const banner = normalizeResendEmailBanner(value)!;
+  const { offset, container } = bannerPlacement(html);
+  const width = bannerWidth(container);
+  const image = `<img src="${escapedText(banner.url)}" alt="${escapedText(banner.alt)}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0">`;
+  const linked = banner.linkUrl ? `<a href="${escapedText(banner.linkUrl)}" style="text-decoration:none">${image}</a>` : image;
+  const markup = `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="width:100%;max-width:${width}px;border-collapse:collapse"><tbody><tr><td style="padding:0 0 24px">${linked}</td></tr></tbody></table>`;
+  return html.slice(0, offset) + markup + html.slice(offset);
 }
 function inspectHtml(html: string) {
   const document = parse(html, { sourceCodeLocationInfo: true });
@@ -177,6 +291,7 @@ function plainTextFromHtml(html: string): string {
 export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: ResendEmailEdits, options: { campaign: boolean }): RenderedResendEmail {
   if (!edits || typeof edits.subject !== "string" || !edits.subject.trim() || edits.subject.length > 200
     || /[\u0000-\u001f\u007f]/.test(edits.subject)) throw new AdminEmailError(400, "Add a subject of 200 characters or fewer, on one line.");
+  const banner = normalizeResendEmailBanner(edits.banner);
   const supplied = stringRecord(edits.values, "Template variables", 6_000);
   const copy = stringRecord(edits.copy, "Design copy");
   if ([...Object.values(supplied), ...Object.values(copy)].reduce((total, value) => total + value.length, 0) > 48_000) throw new AdminEmailError(400, "The combined template edits must be 48,000 characters or fewer.");
@@ -229,7 +344,9 @@ export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: 
   if (!subject || subject.length > 200 || /[\u0000-\u001f\u007f]/.test(subject)) throw new AdminEmailError(400, "The completed subject must be one line and at most 200 characters.");
   // Preserve an authored text alternative when copy is unchanged. Regenerate
   // from the edited HTML when needed so plaintext readers receive the same copy.
-  const text = template.text && !copyChanged ? renderText(template.text) : plainTextFromHtml(html);
+  const bodyText = template.text && !copyChanged ? renderText(template.text) : plainTextFromHtml(html);
+  const text = banner ? `${banner.alt}${banner.linkUrl ? `\n${banner.linkUrl}` : ""}\n\n${bodyText}` : bodyText;
+  if (banner) html = insertResendEmailBanner(html, banner);
   const from = renderText(template.from);
   const replyTo = template.replyTo.map(renderText);
   if (/[\u0000-\u001f\u007f]/.test(from) || replyTo.some(value => /[\u0000-\u001f\u007f]/.test(value))) throw new AdminEmailError(400, "The template sender or reply address contains an invalid value.");

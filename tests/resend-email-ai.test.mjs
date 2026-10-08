@@ -106,6 +106,21 @@ test("missing key, invalid prompt and exhausted durable limit never call AI", as
   assert.equal(f.calls.some(item => item.kind === "fetch"), false);
 });
 
+test("AI copy revisions retain the administrator banner without exposing or changing its fields", async t => {
+  const f = await fixture(t);
+  const banner = { url: "https://images.example.com/private-banner.jpg", alt: "Private banner description", linkUrl: "https://example.com/private-destination" };
+  f.input.edits.banner = banner;
+  const result = await f.ai.generateResendEmailCopy("admin", f.input);
+  assert.deepEqual(result, { ...f.valid, banner });
+  const request = JSON.parse(f.calls.find(item => item.kind === "fetch").request.body);
+  assert.doesNotMatch(request.input, /private-banner|Private banner|private-destination/);
+  assert.deepEqual(Object.keys(request.text.format.schema.properties).sort(), ["copy", "subject", "values"]);
+  assert.deepEqual(f.calls.filter(item => item.kind === "prepare").at(-1).input.edits.banner, banner);
+  f.setOutput({ ...f.valid, banner: { ...banner, url: "https://other.example.com/unrequested.jpg" } });
+  await assert.rejects(f.ai.generateResendEmailCopy("admin", f.input), error => error.status === 502);
+  assert.deepEqual(f.input.edits.banner, banner);
+});
+
 test("administrator authorization failure propagates before rate consumption or AI", async t => {
   const f = await fixture(t, { denied: true });
   await assert.rejects(f.ai.generateResendEmailCopy("guide", f.input), error => error.status === 403);
