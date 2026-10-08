@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { OpsMemberRegistration } from "@/lib/membership/registration-model";
 import { operatorMemberJourney } from "@/lib/membership/operator-registration-progress";
+import { operatorRegistrationFollowUp } from "@/lib/membership/operator-registration-follow-up";
 import OperatorMemberCheckpoints from "./OperatorMemberCheckpoints";
 import OperatorInvitationDetails from "./OperatorInvitationDetails";
+import OperatorRegistrationNextStep from "./OperatorRegistrationNextStep";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "./operatorStyles";
 
 export type OperatorRegistrationRow = OpsMemberRegistration;
@@ -36,11 +38,13 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
   const [filter, setFilter] = useState<"all" | NextStep>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [review, setReview] = useState<OperatorRegistrationRow[] | null>(null);
+  const reviewPanel = useRef<HTMLElement>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [failures, setFailures] = useState<string[]>([]);
   const busy = useRef(false);
   useEffect(() => { setRows(initialRows); setSelected(new Set()); setReview(null); }, [initialRows]);
+  useEffect(() => { if (review?.length) reviewPanel.current?.focus(); }, [review]);
   const journeys = new Map(rows.map(row => [row.memberId, memberJourney(row)]));
   const matches = (row: OperatorRegistrationRow, key: "all" | NextStep) => key === "all" || (key === "review" ? !journeys.get(row.memberId) || journeys.get(row.memberId)?.next.key === "review" || Boolean(journeys.get(row.memberId)?.attention) : journeys.get(row.memberId)?.next.key === key);
   const visible = rows.filter(row => matches(row, filter));
@@ -89,7 +93,7 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
   return <div className="mx-auto max-w-6xl">
     <Link href="/ops/members" className="inline-flex min-h-11 items-center text-sm underline underline-offset-4">← Members</Link>
     <header className="mb-6 mt-4 flex flex-wrap items-end justify-between gap-4">
-      <div><h2 className="operator-page-heading">Registrations</h2><p className="mt-3 max-w-2xl text-sm leading-relaxed text-black/60">Five checkpoints. One next step for each member. Opening a profile queues its access email; it never charges their card.</p></div>
+      <div><h2 className="operator-page-heading">Registrations</h2><p className="mt-3 max-w-2xl text-sm leading-relaxed text-black/60">Five checkpoints. Your next action and the exact link to share. Complimentary payment steps count as complete.</p></div>
       <button type="button" className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => router.refresh()}>Refresh</button>
     </header>
     {preview ? <p className="mb-5 border-l-2 border-[var(--color-poster)] pl-3 text-sm">Preview only. These are sample registrations. No access changes or emails can be sent.</p> : null}
@@ -100,7 +104,7 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
       <button type="button" className={OPERATOR_BUTTON_CLASS} disabled={pending || !visible.some(readyForProfile)} onClick={() => { setSelected(new Set(visible.filter(readyForProfile).map(row => row.memberId))); setReview(null); }}>Select ready registrations</button>
       <button type="button" className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={pending || !selected.size} onClick={reviewSelection}>Review {selected.size || "selected"} profile{selected.size === 1 ? "" : "s"}</button>
     </div>
-    {review?.length ? <section className="mb-6 border border-black/20 bg-white/40 p-5" aria-labelledby="profile-release-review">
+    {review?.length ? <section ref={reviewPanel} tabIndex={-1} className="mb-6 border border-black/20 bg-white/40 p-5 focus:outline-none" aria-labelledby="profile-release-review">
       <h3 id="profile-release-review" className="text-lg font-semibold">Open {review.length} profile{review.length === 1 ? "" : "s"}?</h3>
       <p className="mt-2 text-sm text-black/65">These members will gain profile access and receive the profile-ready email. Billing stays unchanged.</p>
       <ul className="my-4 max-h-48 overflow-auto text-sm">{review.map(row => <li className="break-words py-1" key={row.memberId}>{row.name} · {row.email}</li>)}</ul>
@@ -121,7 +125,11 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
         </div>
         <div className="min-w-0">
           <OperatorMemberCheckpoints journey={journey} compact />
-          {journey ? <div className="mt-4 text-sm"><p className="font-semibold">{journey.next.label} <span className="font-normal text-black/50">· {journey.next.actor}</span></p>{journey.attention !== journey.next.detail ? <p className="mt-1 text-xs leading-relaxed text-black/60">{journey.next.detail}</p> : null}{journey.attention ? <p className="mt-2 border-l-2 border-[var(--color-poster)] pl-2 text-xs leading-relaxed"><strong>Attention:</strong> {journey.attention}</p> : null}</div> : null}
+          {row.progress?.paymentExempt ? <p className="mt-2 text-xs text-black/55">Complimentary membership · No payment required.</p> : null}
+          <OperatorRegistrationNextStep key={`${row.memberId}-${journey?.next.key}-${row.email}-${row.couplePartnerEmail ?? ""}`} action={operatorRegistrationFollowUp(row, journey)} disabled={pending} preview={preview} onReviewProfile={() => {
+            if (busy.current || !readyForProfile(row)) return;
+            setFailures([]); setMessage(""); setSelected(new Set([row.memberId])); setReview([row]);
+          }} />
         </div>
       </article>; })}
       {!visible.length ? <p className="py-10 text-sm text-black/55">No registrations in this view.</p> : null}
