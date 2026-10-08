@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import OperatorDialog from "@/components/platform/OperatorDialog";
+import OperatorEmailBannerUpload, { renderLocalEmailBanner, type LocalEmailBanner } from "@/components/platform/OperatorEmailBannerUpload";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
@@ -29,7 +30,7 @@ type SendReview = RenderedEmail & {
   mode: "individual" | "campaign"; segmentName: string | null; expiresAt: string; broadcastId?: string;
 };
 type View = "templates" | "broadcasts" | "emails";
-type Pending = "loading" | "template" | "generate" | "save" | "review" | "send" | "refresh" | "more" | null;
+type Pending = "loading" | "template" | "generate" | "save" | "review" | "send" | "refresh" | "more" | "upload" | null;
 const API = "/api/ops/emails/resend";
 const SECONDARY_BUTTON = "inline-flex min-h-11 items-center justify-center rounded-[4px] border border-black/25 px-4 py-2 text-sm font-medium hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40";
 const SAMPLE_HTML = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f2f0e9;font-family:Arial,sans-serif;color:#20201e"><main style="max-width:520px;margin:auto;padding:48px 28px"><p style="font-size:11px;letter-spacing:2px">EXAMPLE RESEND TEMPLATE</p><hr style="border:0;border-top:1px solid #b9b6ad;margin:32px 0"><h1 style="font-size:34px;line-height:1.15;font-weight:400">{{HEADLINE}}</h1><p style="font-size:15px;line-height:1.8">Hi {{FIRST_NAME}},</p><p style="font-size:15px;line-height:1.8;white-space:pre-wrap">{{MESSAGE}}</p><hr style="border:0;border-top:1px solid #b9b6ad;margin:40px 0 20px"><p style="font-size:11px;color:#666">Sample design for this preview. No email will be sent.</p></main></body></html>';
@@ -60,10 +61,11 @@ function sampleRender(edits: ResendEmailEdits): RenderedEmail {
   const banner = normalizeResendEmailBanner(edits.banner);
   return { subject: edits.subject, from: SAMPLE_TEMPLATE.from, html: banner ? insertResendEmailBanner(html, banner) : html };
 }
-function previewEdits(edits: ResendEmailEdits): ResendEmailEdits {
+function previewEdits(edits: ResendEmailEdits, fallbackAlt = false): ResendEmailEdits {
   // Keep an unfinished banner editable without interrupting the rest of the preview.
   // Save and review validate the complete banner through editorPayload instead.
-  try { return { ...edits, banner: normalizeResendEmailBanner(edits.banner) }; }
+  const banner = fallbackAlt && edits.banner && !edits.banner.alt.trim() ? { ...edits.banner, alt: "Banner preview" } : edits.banner;
+  try { return { ...edits, banner: normalizeResendEmailBanner(banner) }; }
   catch { return { ...edits, banner: null }; }
 }
 function dateLabel(value: string): string {
@@ -126,10 +128,11 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   const [savedBroadcast, setSavedBroadcast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const [localBanner, setLocalBanner] = useState<LocalEmailBanner | null>(null);
   const busy = pending !== null;
   let bannerHint = "";
   if (edits.banner) {
-    try { normalizeResendEmailBanner(edits.banner); }
+    try { normalizeResendEmailBanner(preview && localBanner ? { ...edits.banner, url: "https://banner-preview.example.com/local.png" } : edits.banner); }
     catch (failure) { bannerHint = failure instanceof Error ? failure.message : "Complete the image details to preview the banner."; }
   }
 
@@ -168,15 +171,16 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     const timer = window.setTimeout(async () => {
       setPreviewUpdating(true); setPreviewError("");
       try {
-        const visibleEdits = previewEdits(edits);
+        const visibleEdits = previewEdits(preview && localBanner ? { ...edits, banner: null } : edits, true);
         const result = preview ? previewCatalog ? renderResendEmailTemplate(template, visibleEdits, { campaign: mode === "campaign" }) : sampleRender(visibleEdits) : await request<RenderedEmail>(`${API}/preview`, { templateId: template.id, templateVersion: template.version, edits: visibleEdits, mode }, controller.signal);
+        if (preview && localBanner) result.html = renderLocalEmailBanner(result.html, localBanner, edits.banner);
         if (sequence === previewSequenceRef.current && !controller.signal.aborted) setRendered(result);
       } catch (failure) {
         if (!controller.signal.aborted && sequence === previewSequenceRef.current) setPreviewError(failure instanceof Error ? failure.message : "The updated preview could not be loaded.");
       } finally { if (!controller.signal.aborted && sequence === previewSequenceRef.current) setPreviewUpdating(false); }
     }, 450);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [edits, mode, preview, previewCatalog, template]);
+  }, [edits, localBanner, mode, preview, previewCatalog, template]);
 
   useEffect(() => {
     if (!review) return;
@@ -201,6 +205,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     ++selectionRef.current; ++previewSequenceRef.current;
     setView(nextView); setTemplate(null); setBroadcast(null); setRendered(null); setPreviewError(""); setPreviewUpdating(false);
     setDirty(false); setUndo(null); setReview(null); setAcknowledged(false); setSavedBroadcast(null); setQuery(""); setError(""); setNotice("");
+    setLocalBanner(null);
   }
   async function chooseTemplate(id: string) {
     if (!begin("template")) return;
@@ -210,6 +215,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
       if (!next) throw new Error("That template is no longer in this preview. Reload the workspace.");
       if (selection !== selectionRef.current) return;
       const nextEdits = defaultEdits(next);
+      setLocalBanner(null);
       if (next.campaignOnly) setMode("campaign");
       setTemplate(next); setEdits(nextEdits); setRendered(preview && !previewCatalog ? sampleRender(nextEdits) : { html: next.html, subject: next.subject, from: next.from });
       setBroadcast(null); setView("templates"); setUndo(null); setPrompt(""); setName(next.name); setSavedBroadcast(null); setDirty(false); setReview(null); setAcknowledged(false); setPreviewError("");
@@ -223,7 +229,10 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     if (!edits.subject.trim()) throw new Error("Add the email subject.");
     if (mode === "individual" && !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(recipient.trim())) throw new Error("Enter one valid recipient email address.");
     if (mode === "campaign" && (!segmentId || !topicId || !name.trim())) throw new Error("Add a campaign name and choose its Resend segment and topic.");
-    const banner = normalizeResendEmailBanner(edits.banner);
+    // Local image bytes stay outside edits and all API payloads, including preview reviews.
+    const localOnly = preview && localBanner;
+    const validatedBanner = normalizeResendEmailBanner(localOnly && edits.banner ? { ...edits.banner, url: "https://banner-preview.example.com/local.png" } : edits.banner);
+    const banner = localOnly ? null : validatedBanner;
     return { templateId: template.id, templateVersion: template.version, edits: { ...edits, banner }, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
   }
   async function generate() {
@@ -251,7 +260,9 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
       const payload = broadcast ? { broadcastId: broadcast.id } : mode === "campaign" && savedBroadcast ? { broadcastId: savedBroadcast } : editorPayload();
       if (preview) {
         const sampleRecipients = mode === "individual" ? [{ email: recipient.trim().toLowerCase(), name: "Preview recipient" }] : [{ email: "alex@example.test", name: "Alex — sample recipient" }, { email: "jordan@example.test", name: "Jordan — sample recipient" }];
-        const previewEmail = previewCatalog && template ? renderResendEmailTemplate(template, edits, { campaign: mode === "campaign" }) : sampleRender(edits);
+        const reviewEdits = localBanner ? { ...edits, banner: null } : edits;
+        const previewEmail = previewCatalog && template ? renderResendEmailTemplate(template, reviewEdits, { campaign: mode === "campaign" }) : sampleRender(reviewEdits);
+        if (localBanner) previewEmail.html = renderLocalEmailBanner(previewEmail.html, localBanner, edits.banner);
         setReview({ ...previewEmail, id: "preview-review", recipients: sampleRecipients, recipientCount: sampleRecipients.length, excludedCount: 0, mode, segmentName: mode === "campaign" ? overview?.segments.find((segment) => segment.id === segmentId)?.name ?? "Sample segment" : null, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() });
       } else {
         const result = await request<{ review: SendReview }>(`${API}/review`, payload);
@@ -283,6 +294,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     try {
       const result = await request<{ broadcast: BroadcastDetail }>(`${API}/broadcasts/${encodeURIComponent(id)}`);
       if (selection !== selectionRef.current) return;
+      setLocalBanner(null);
       setBroadcast(result.broadcast); setTemplate(null); setDirty(false); setReview(null); setView("broadcasts"); setPreviewError("");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "The campaign could not be loaded."); }
     finally { finish(); }
@@ -341,17 +353,17 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
             </>}
           </fieldset>
           <section className="operator-bento-card" aria-labelledby="resend-ai-title"><div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="text-base font-semibold" id="resend-ai-title">Refine with ChatGPT</h4><span className="text-xs text-black/45">Copy, within your design</span></div><label className="mt-3 block text-sm" htmlFor="resend-prompt">What should this email say?<textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} disabled={busy || !!(preview && previewCatalog) || (!preview && !overview?.configuration.aiReady)} id="resend-prompt" maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Write a short member update. Keep the tone direct. Include these details…" rows={4} value={prompt} /></label><p className="mt-2 text-xs leading-relaxed text-black/55">{preview && previewCatalog ? "ChatGPT is off in preview. Edit the template copy below to try the workspace." : !preview && !overview?.configuration.aiReady ? "ChatGPT is not connected. You can edit the template copy below." : "Only editable words and template values change. The original design stays intact."}</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={busy || !!(preview && previewCatalog) || !prompt.trim() || (!preview && !overview?.configuration.aiReady)} onClick={() => void generate()} type="button">{pending === "generate" ? "Refining…" : preview && previewCatalog ? "ChatGPT off in preview" : preview ? "Try sample revision" : "Refine copy"}</button>{undo ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} onClick={() => { changeEdits({ ...undo, banner: edits.banner ?? null }); setUndo(null); }} type="button">Undo last revision</button> : null}</div></section>
-          <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-4" aria-labelledby="resend-banner-title">
-            <legend className="sr-only">Image banner</legend>
-            <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-base font-semibold" id="resend-banner-title">Image banner</h4>{edits.banner ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" id="resend-remove-banner" onClick={() => changeEdits({ ...edits, banner: null })} type="button">Remove banner</button> : null}</div>
-            <p className="text-xs leading-relaxed text-black/55">Add an image below the existing logo and above the main heading. Use a public HTTPS image URL from Resend or your image host.</p>
+          <section className="operator-bento-card min-w-0 space-y-4" aria-labelledby="resend-banner-title">
+            <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-base font-semibold" id="resend-banner-title">Image banner</h4>{edits.banner ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} id="resend-remove-banner" onClick={() => { setLocalBanner(null); changeEdits({ ...edits, banner: null }); }} type="button">Remove banner</button> : null}</div>
+            <p className="text-xs leading-relaxed text-black/55">Add a photo below the existing logo and above the main heading. Upload from your device or use a public HTTPS image URL.</p>
+            <OperatorEmailBannerUpload disabled={busy} key={template.id} local={localBanner} onBegin={() => begin("upload")} onFinish={finish} onHosted={(url) => { setLocalBanner(null); changeEdits({ ...edits, banner: { ...(edits.banner ?? { alt: "" }), url } }); }} onLocal={(photo) => { setLocalBanner(photo); changeEdits({ ...edits, banner: edits.banner ?? { url: "", alt: "" } }); }} onCancelLocal={() => { setLocalBanner(null); changeEdits({ ...edits }); }} preview={preview} />
             {edits.banner ? <>
-              <label className="block text-sm font-medium" htmlFor="resend-banner-url">Image URL<input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} id="resend-banner-url" maxLength={2048} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, url: event.target.value } })} pattern="https://.*" placeholder="https://…/image.jpg" required spellCheck={false} type="url" value={edits.banner.url} /></label>
-              <label className="block text-sm font-medium" htmlFor="resend-banner-alt">Image description<input className={OPERATOR_FIELD_CLASS} id="resend-banner-alt" maxLength={300} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, alt: event.target.value } })} placeholder="Describe what the image shows" required type="text" value={edits.banner.alt} /><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">Shown when images are unavailable and read by screen readers.</span></label>
-              <label className="block text-sm font-medium" htmlFor="resend-banner-link">Destination URL <span className="font-normal text-black/45">(optional)</span><input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} id="resend-banner-link" maxLength={2048} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, linkUrl: event.target.value } })} pattern="https://.*" placeholder="https://…" spellCheck={false} type="url" value={edits.banner.linkUrl ?? ""} /></label>
-              {bannerHint ? <p aria-live="polite" className="text-xs leading-relaxed text-black/55" id="resend-banner-hint">{!edits.banner.url.trim() && !edits.banner.alt.trim() ? "Add the image URL and description to preview your banner. You can keep editing the email." : bannerHint}</p> : null}
-            </> : <button className={SECONDARY_BUTTON} id="resend-add-banner" onClick={() => { changeEdits({ ...edits, banner: { url: "", alt: "" } }); requestAnimationFrame(() => document.getElementById("resend-banner-url")?.focus()); }} type="button">Add image banner</button>}
-          </fieldset>
+              <label className="block text-sm font-medium" htmlFor="resend-banner-url">Image URL<input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} disabled={busy || !!localBanner} id="resend-banner-url" maxLength={2048} onChange={(event) => { setLocalBanner(null); changeEdits({ ...edits, banner: { ...edits.banner!, url: event.target.value } }); }} pattern="https://.*" placeholder="https://…/image.jpg" required={!localBanner} spellCheck={false} type="url" value={edits.banner.url} /></label>
+              <label className="block text-sm font-medium" htmlFor="resend-banner-alt">Image description<input className={OPERATOR_FIELD_CLASS} disabled={busy} id="resend-banner-alt" maxLength={300} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, alt: event.target.value } })} placeholder="Describe what the image shows" required type="text" value={edits.banner.alt} /><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">Shown when images are unavailable and read by screen readers.</span></label>
+              <label className="block text-sm font-medium" htmlFor="resend-banner-link">Destination URL <span className="font-normal text-black/45">(optional)</span><input autoCapitalize="none" autoCorrect="off" className={OPERATOR_FIELD_CLASS} disabled={busy} id="resend-banner-link" maxLength={2048} onChange={(event) => changeEdits({ ...edits, banner: { ...edits.banner!, linkUrl: event.target.value } })} pattern="https://.*" placeholder="https://…" spellCheck={false} type="url" value={edits.banner.linkUrl ?? ""} /></label>
+              {bannerHint ? <p aria-live="polite" className="text-xs leading-relaxed text-black/55" id="resend-banner-hint">{!edits.banner.alt.trim() && (localBanner || edits.banner.url.trim()) ? "Add an image description before reviewing or saving this email." : !edits.banner.url.trim() && !edits.banner.alt.trim() ? "Upload a photo or add its URL, then describe the image. You can keep editing the email." : bannerHint}</p> : null}
+            </> : <button className={SECONDARY_BUTTON} disabled={busy} id="resend-add-banner" onClick={() => { changeEdits({ ...edits, banner: { url: "", alt: "" } }); requestAnimationFrame(() => document.getElementById("resend-banner-url")?.focus()); }} type="button">Use image URL</button>}
+          </section>
           <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-5"><legend className="sr-only">Email copy</legend><h4 className="text-base font-semibold">Email copy</h4><label className="block text-sm font-medium" htmlFor="resend-subject">Subject<input className={OPERATOR_FIELD_CLASS} id="resend-subject" maxLength={200} onChange={(event) => changeEdits({ ...edits, subject: event.target.value })} required type="text" value={edits.subject} /></label>
             {template.variables.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-variable-${index}`} key={field.key}>{field.key.replaceAll("_", " ")}<input className={OPERATOR_FIELD_CLASS} id={`resend-variable-${index}`} maxLength={6000} onChange={(event) => changeEdits({ ...edits, values: { ...edits.values, [field.key]: event.target.value } })} required={field.fallbackValue == null} step={field.type === "number" ? "any" : undefined} type={field.type === "number" ? "number" : "text"} value={edits.values[field.key] ?? ""} /></label>)}
             {template.fields.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-copy-${index}`} key={field.key}>{field.label}<textarea className={`${OPERATOR_FIELD_CLASS} resize-y leading-relaxed`} id={`resend-copy-${index}`} maxLength={12000} onChange={(event) => changeEdits({ ...edits, copy: { ...edits.copy, [field.key]: event.target.value } })} rows={field.value.length > 160 ? 5 : field.value.length > 65 ? 3 : 2} value={edits.copy[field.key] ?? field.value} /></label>)}

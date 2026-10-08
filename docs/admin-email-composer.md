@@ -14,7 +14,11 @@ Copy fields allow 12,000 characters, variables 6,000, combined edits 48,000, and
 
 The preview uses the actual rendered design in a sandboxed frame. When static copy changes, the plain-text alternative is regenerated from the edited design so it does not retain old copy. Unchanged designs retain their authored text alternative.
 
-**Image banner** adds an optional image to this email. Paste a public HTTPS image URL from Resend or another image host, add a short image description, and optionally a HTTPS destination URL. Replace the URL to change the image, or choose **Remove banner** to restore the original design. This control uses hosted images; it does not upload files. The banner appears before the main headline, below the existing logo, scales to the available width without cropping, and is included in the preview, individual email, and native campaign draft. It leaves the source Resend template unchanged. ChatGPT revisions preserve the selected banner. Banner changes invalidate the previous recipient review and saved draft selection.
+**Image banner** adds an optional image to this email. Choose a JPG, PNG, or WebP from your device (up to 3 MiB), or paste a public HTTPS image URL. Add a short image description and optionally a HTTPS destination URL. Uploads go to Ruined's Supabase storage and their public URL is inserted automatically; Resend uses that image when delivering individual emails or native campaigns. The original banner stays in place if an upload fails. Replace the photo or URL to change the image, or choose **Remove banner** to restore the original design. The banner appears before the main headline, below the existing logo, and scales to the available width without cropping. It leaves the source Resend template unchanged. ChatGPT revisions preserve the selected banner. Banner changes invalidate the previous recipient review and saved draft selection.
+
+Device uploads use a dedicated public `admin-email-images` bucket, separate from private member photos and journals. Only active administrators can upload through the same-origin server endpoint. Requests are bounded before multipart parsing, actual image bytes are decoded and verified, and files are resized within 1,600 × 1,600 pixels without cropping or enlargement. Metadata is removed; output is email-compatible JPEG or PNG. Invalid, animated, oversized, or unreadable files are rejected. A durable limit allows 30 upload attempts per administrator per hour. Uploads use random, immutable names; replacing or removing a banner from a draft does not delete an image that an already-sent email may use. Upload only artwork intended to be publicly accessible.
+
+Resend's public API does not document an image-hosting upload endpoint. Its [editor upload integration](https://react.email/docs/editor/features/image-upload) expects the application to provide the hosted URL. This workspace uses the existing Ruined storage service rather than relying on Resend dashboard internals.
 
 ## Individual emails and campaigns
 
@@ -38,10 +42,11 @@ The application stores review snapshots, send claims, audit events and AI usage 
 
 ## Configuration
 
-Apply both migrations with the existing platform migration runner:
+Apply these migrations with the existing platform migration runner:
 
 1. `20261008180000_admin_email.sql` — private administrator AI generation limits.
 2. `20261008200000_resend_email_frontend.sql` — private immutable reviews and send claims.
+3. `20261008210000_admin_email_images.sql` — private upload usage limits and the dedicated public email-image bucket.
 
 New tables have row-level security and deny direct public/client access. The server uses its existing database connection and active administrator grants.
 
@@ -52,10 +57,11 @@ Server environment:
 - `OPENAI_EMAIL_MODEL`: defaults to `gpt-4.1-mini`; use a model supporting Responses structured outputs.
 - `ADMIN_EMAIL_SENDING_ENABLED=true`: enables sending on a connected platform. Disabled by default.
 - `RESEND_FROM_EMAIL`: optional fallback when a template has no sender. Configure a verified sender in Resend.
+- Existing `NEXT_PUBLIC_SUPABASE_URL` and server-only `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) enable device uploads. The email-image bucket must be public; an existing private bucket with the same name is not silently made public. Uploads never reuse private member-media buckets.
 
 No new cron job or application postal-address setting is required. Resend handles campaign delivery, and its template supplies the footer. Each administrator can request 30 AI revisions per hour; failed provider requests consume that limit.
 
-In non-production development with `PLATFORM_MODE=preview`, an optional Resend key can load real templates, groups and topics for design inspection. This preview exposes neither contacts nor sending history and cannot send or create provider drafts. Production routes require administrator authentication.
+In non-production development with `PLATFORM_MODE=preview`, an optional Resend key can load real templates, groups and topics for design inspection. This preview exposes neither contacts nor sending history and cannot send or create provider drafts. Device photos stay in the browser for a clearly labeled local preview; they are not uploaded or included in API requests. Production routes require administrator authentication.
 
 ## Validation and release
 

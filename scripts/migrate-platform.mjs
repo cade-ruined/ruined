@@ -101,6 +101,7 @@ const migrations = [
   "../db/migrations/20261007111000_legacy_registration_checkout.sql",
   "../db/migrations/20261008180000_admin_email.sql",
   "../db/migrations/20261008200000_resend_email_frontend.sql",
+  "../db/migrations/20261008210000_admin_email_images.sql",
 ];
 
 function migrationBody(migration, migrationName) {
