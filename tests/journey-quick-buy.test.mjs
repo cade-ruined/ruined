@@ -11,6 +11,7 @@ import * as productColors from "../src/lib/store/product-colors.ts";
 
 const compiled = new Map();
 function load(path, dependencies, environment = {}) {
+  dependencies = { "@/lib/marketing/meta": { trackMetaAddToCart: () => assert.fail("Rendering must not record a cart event") }, ...dependencies };
   if (!compiled.has(path)) {
     compiled.set(path, ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -69,6 +70,7 @@ function fixture(item = product, add = () => {}, props = {}) {
   const slots = [];
   let cursor = 0;
   const calls = [];
+  const tracked = [];
   const hooks = {
     ...React,
     useState(initial) {
@@ -78,6 +80,7 @@ function fixture(item = product, add = () => {}, props = {}) {
     },
   };
   const Component = load("src/components/sequence/JourneyQuickBuy.tsx", {
+    "@/lib/marketing/meta": { trackMetaAddToCart: (item, selected) => tracked.push({ item, selected }) },
     "@/lib/store/product-colors": productColors,
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
@@ -91,7 +94,7 @@ function fixture(item = product, add = () => {}, props = {}) {
     return elements(label).find((node) => node.type === "select");
   };
   return {
-    calls, render, find, select,
+    calls, tracked, render, find, select,
     choose(name, value) { select(name).props.onChange({ currentTarget: { value } }); },
     button: () => find((node) => node.type === "button"),
     announcement: () => content(find((node) => node.props["aria-live"] === "polite")),
@@ -515,4 +518,19 @@ test("On the Rack features Blue, the women's script crop, and the Crest polo in 
   assert.equal(bluePurchase.calls[0].variantId, "gid://shopify/ProductVariant/403");
   assert.equal(bluePurchase.calls[0].image.url, "/SundayClothes-BlueHoodieFront.png");
   assert.deepEqual(items, before, "Featuring products must not reorder or narrow the canonical catalog input");
+});
+
+test("quick buy reports the exact added variant once and never reports a failed bag write", () => {
+  const view = fixture();
+  view.choose("Color", "Blue");
+  view.choose("Size", "M");
+  view.button().props.onClick();
+  assert.equal(view.tracked.length, 1);
+  assert.equal(view.tracked[0].item, product);
+  assert.equal(view.tracked[0].selected.id, "gid://shopify/ProductVariant/105");
+  const broken = fixture(product, () => { throw new Error("Storage unavailable"); });
+  broken.choose("Color", "Blue");
+  broken.choose("Size", "M");
+  broken.button().props.onClick();
+  assert.equal(broken.tracked.length, 0);
 });

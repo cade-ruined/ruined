@@ -32,6 +32,7 @@ async function compile(relativePath, dependencies, environment = {}) {
 const uiDependencies = {
   "react/jsx-runtime": jsxRuntime,
   react: React,
+  "@/lib/marketing/meta": { trackMetaAddToCart: () => {} },
   "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
   "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
   "@/lib/store/catalog": catalog,

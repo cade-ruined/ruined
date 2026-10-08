@@ -6,6 +6,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as fits from "../src/lib/store/product-fit-images.ts";
 import * as colors from "../src/lib/store/product-colors.ts";
+import * as links from "../src/lib/store/product-links.ts";
 
 const photos = ["Men's", "Women's"].flatMap((fit) => ["back", "front"].map((view) => ({
   url: `https://cdn.shopify.com/files/${fit.replace("'", "").toLowerCase()}-${view}-uploaded.png?v=1`,
@@ -50,7 +51,7 @@ test("product gallery switches to the selected Fit while other products retain c
   const Image = () => null;
   const Purchase = () => null;
   const dependencies = {
-    react: { ...React, useState(initial) {
+    react: { ...React, useEffect: () => {}, useState(initial) {
       const index = cursor++;
       if (!(index in slots)) slots[index] = initial;
       return [slots[index], (value) => { slots[index] = value; }];
@@ -61,6 +62,9 @@ test("product gallery switches to the selected Fit while other products retain c
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors,
     "@/lib/store/product-fit-images": fits,
+    "@/lib/store/product-links": links,
+    "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
+    "@/lib/marketing/meta": { trackMetaProductView: () => {} },
     "./ProductPurchase": { default: Purchase },
   };
   const output = { exports: {} };
@@ -72,6 +76,7 @@ test("product gallery switches to the selected Fit while other products retain c
   const render = (value = product) => { cursor = 0; return elements(output.exports.default({ product: value })); };
   const images = (tree) => tree.filter((node) => node.type === Image).map((node) => node.props.src);
   assert.deepEqual(images(render()), photos.slice(0, 2).map((photo) => photo.url));
+  globalThis.window = { location: { pathname: "/store/byob-tank", search: "" }, history: { replaceState: () => {} } };
   render().find((node) => node.type === Purchase).props.onFitChange("Women's");
   assert.deepEqual(images(render()), photos.slice(2).map((photo) => photo.url));
   assert.ok(render().some((node) => node.props["aria-label"] === "Women's product photographs"));

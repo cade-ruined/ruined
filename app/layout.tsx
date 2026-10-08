@@ -8,6 +8,8 @@ import BrandCursor from "@/components/BrandCursor";
 import { SITE_URL } from "@/lib/site";
 import { sharingMetadata } from "@/lib/sharing";
 import "@fontsource-variable/inter";
+import MarketingConsent from "@/components/MarketingConsent";
+import { publicMarketingConfig } from "@/lib/marketing/consent";
 
 const cadeHandy2 = localFont({
   src: "../public/fonts/CadeHandy2.otf",
@@ -23,6 +25,7 @@ const SITE_DESC =
   "Ruined refines potential into identity through apparel, brands, products, and experiences. Based in Alpine, Utah.";
 
 export const metadata: Metadata = {
+  other: { "facebook-domain-verification": "igij9ca4grm998rxjr6apfwuafx38t" },
   metadataBase: new URL(SITE_URL),
   // Deep pages set their own title; "%s — Ruined" wraps them. Home uses the
   // default below.
@@ -60,6 +63,7 @@ export default function RootLayout({
   children: React.ReactNode;
   modal: React.ReactNode;
 }) {
+  const marketingConfig = publicMarketingConfig(process.env);
   const organizationSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -97,9 +101,10 @@ export default function RootLayout({
         <div id="main-content" tabIndex={-1}>
           {children}
         </div>
-        <SiteFooter />
+        <SiteFooter marketingEnabled={Boolean(marketingConfig)} />
         {modal}
         <WebVitals />
+        {marketingConfig && <MarketingConsent config={marketingConfig} />}
       </body>
     </html>
   );

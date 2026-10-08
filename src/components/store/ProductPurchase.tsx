@@ -10,6 +10,7 @@ import {
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 import { getProductFitOption } from "@/lib/store/product-fit-images";
+import { trackMetaAddToCart } from "@/lib/marketing/meta";
 import BagLink from "./BagLink";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
@@ -49,11 +50,14 @@ function formatExpectedShipDate(value?: string): string | undefined {
   }).format(date);
 }
 
-export default function ProductPurchase({ product, initialColor, onColorChange, onFitChange }: {
+export default function ProductPurchase({ product, initialColor, initialFit, initialVariant, onColorChange, onFitChange, onVariantChange }: {
   product: Product;
   initialColor?: string;
+  initialFit?: string;
+  initialVariant?: ProductVariant;
   onColorChange?: (color: string) => void;
   onFitChange?: (fit: string) => void;
+  onVariantChange?: (variant: ProductVariant) => void;
 }) {
   const options = useMemo(() => visibleOptions(product), [product]);
   const colorOption = getProductColorOption(product);
@@ -68,6 +72,10 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
     ),
     ...(colorOption && initialColor && colorOption.values.includes(initialColor)
       ? { [colorOption.name]: initialColor } : {}),
+    ...(fitOption && initialFit && fitOption.values.includes(initialFit)
+      ? { [fitOption.name]: initialFit } : {}),
+    ...(initialVariant && product.variants.some((variant) => variant.id === initialVariant.id)
+      ? Object.fromEntries(initialVariant.selectedOptions.map((option) => [option.name, option.value])) : {}),
   }));
   const [added, setAdded] = useState(false);
   const { add } = useBag();
@@ -117,14 +125,17 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
     if (name === colorOption?.name) onColorChange?.(value);
     if (name === fitOption?.name) onFitChange?.(value);
     const optionIndex = options.findIndex((option) => option.name === name);
-    setSelection((current) =>
-      Object.fromEntries([
+    const next = Object.fromEntries([
         ...options.slice(0, optionIndex).flatMap((option) =>
-          current[option.name] ? [[option.name, current[option.name]]] : []
+          selection[option.name] ? [[option.name, selection[option.name]]] : []
         ),
         [name, value],
-      ])
-    );
+      ]);
+    setSelection(next);
+    if (options.every((option) => Boolean(next[option.name]))) {
+      const variant = product.variants.find((item) => variantMatches(item, next));
+      if (variant) onVariantChange?.(variant);
+    }
   }
 
   function addSelectedVariant() {
@@ -142,6 +153,7 @@ export default function ProductPurchase({ product, initialColor, onColorChange, 
       image: getVariantImage(product, selectedVariant),
       expectedShipDate: product.expectedShipDate,
     });
+    trackMetaAddToCart(product, selectedVariant);
     setAdded(true);
   }
 

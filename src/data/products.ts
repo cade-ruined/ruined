@@ -41,6 +41,7 @@ export type ProductVariant = {
 
 export type Product = {
   id: string;
+  shopifyProductGid?: string;
   code: string; // e.g. "RU—001"
   name: string; // e.g. "Field Coat"
   subtitle: string; // e.g. "FOR WEATHER"
