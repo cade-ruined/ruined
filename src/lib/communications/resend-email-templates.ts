@@ -1,7 +1,8 @@
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
 import { AdminEmailError } from "./admin-email-model";
 import type {
-  RenderedResendEmail, ResendEmailBanner, ResendEmailEdits, ResendEmailTemplate, ResendEmailTemplateField, ResendEmailTemplateVariable,
+  RenderedResendEmail, ResendEmailBanner, ResendEmailEdits, ResendEmailSignOff, ResendEmailSignOffImage,
+  ResendEmailTemplate, ResendEmailTemplateField, ResendEmailTemplateVariable,
 } from "./resend-email-model";
 
 type Node = DefaultTreeAdapterTypes.Node;
@@ -10,6 +11,7 @@ type SourceSpan = { start: number; end: number };
 type TextField = ResendEmailTemplateField & SourceSpan;
 type Token = SourceSpan & { key: string; literal: string };
 type Placement = SourceSpan & { kind: "text" | "attribute"; attribute?: string; element?: Element };
+type Replacement = SourceSpan & { value: string };
 const BLOCKED_COPY_TAGS = new Set(["head", "script", "style", "title", "textarea", "iframe", "object", "embed", "svg", "math", "template", "noscript"]);
 const BLOCKED_VARIABLE_TAGS = new Set(["script", "style", "textarea", "iframe", "object", "embed", "svg", "math", "template", "noscript"]);
 const TEXT_ATTRIBUTES = new Set(["alt", "title", "aria-label"]);
@@ -19,6 +21,7 @@ const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]{0,99}$/;
 const MAX_HTML_LENGTH = 1_000_000;
 const MAX_FIELD_LENGTH = 12_000;
 const BANNER_CONTAINERS = new Set(["body", "div", "section", "article", "main", "header", "footer", "aside", "td", "th", "center", "blockquote", "li"]);
+const TYPOGRAPHY_TAGS = new Set(["body", "div", "section", "article", "main", "header", "footer", "aside", "td", "th", "center", "blockquote", "li", "ul", "ol", "p", "a", "span", "strong", "b", "em", "i", "u", "s", "small", "sup", "sub", "h1", "h2", "h3", "h4", "h5", "h6"]);
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 const isElement = (node: Node): node is Element => "tagName" in node;
 const isText = (node: Node): node is DefaultTreeAdapterTypes.TextNode => node.nodeName === "#text";
@@ -71,6 +74,172 @@ export function normalizeResendEmailBanner(value: unknown): ResendEmailBanner | 
   }
   const linkUrl = value.linkUrl === undefined || value.linkUrl === "" ? undefined : bannerUrl(value.linkUrl, "The banner destination");
   return { url, alt: value.alt.trim(), ...(linkUrl ? { linkUrl } : {}) };
+}
+
+export function normalizeResendEmailSignOff(value: unknown): ResendEmailSignOff | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || Object.keys(value).some(key => key !== "text") || typeof value.text !== "string"
+    || !value.text.trim() || Array.from(value.text.trim()).length > 80
+    || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\{\{|\}\}/.test(value.text)) {
+    throw new AdminEmailError(400, "Add a sign-off of 80 characters or fewer, on one line and without placeholders.");
+  }
+  return { text: value.text.trim() };
+}
+
+function attribute(element: Element, name: string) { return element.attrs.find(item => item.name === name)?.value; }
+function isSignOffImage(element: Element) {
+  if (element.tagName !== "img") return false;
+  return attribute(element, "data-ruined-sign-off") !== undefined
+    || /(?:^|\/)after-the-fear-cadehandy2\.png(?:[?#].*)?$/.test(attribute(element, "src") ?? "");
+}
+function visibleNodes(html: string) {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const nodes: Node[] = [];
+  function visit(node: Node) {
+    if (isElement(node) && (BLOCKED_COPY_TAGS.has(node.tagName) || hidden(node))) return;
+    nodes.push(node);
+    if ("childNodes" in node) node.childNodes.forEach(visit);
+  }
+  visit(document);
+  return { document, nodes };
+}
+function signOffImages(nodes: Node[]) {
+  return nodes.filter((node): node is Element => isElement(node) && isSignOffImage(node) && Boolean(node.sourceCodeLocation));
+}
+function originalSignOffText(images: Element[]) {
+  const image = images.find(item => attribute(item, "data-ruined-sign-off") !== undefined) ?? images[0];
+  if (!image) return undefined;
+  const text = attribute(image, "alt")?.trim();
+  return text || (/after-the-fear-cadehandy2\.png(?:[?#].*)?$/.test(attribute(image, "src") ?? "") ? "After the fear" : undefined);
+}
+function replaceSpans(html: string, replacements: Replacement[]) {
+  for (const item of replacements.sort((a, b) => b.start - a.start)) html = html.slice(0, item.start) + item.value + html.slice(item.end);
+  return html;
+}
+function attributeReplacements(element: Element, changes: Record<string, string>): Replacement[] {
+  const tag = element.sourceCodeLocation?.startTag;
+  if (!tag) return [];
+  const replacements: Replacement[] = [];
+  let added = "";
+  for (const [name, value] of Object.entries(changes)) {
+    const rendered = `${name}="${escapedText(value)}"`;
+    const location = element.sourceCodeLocation?.attrs?.[name];
+    if (location) replacements.push({ start: location.startOffset, end: location.endOffset, value: rendered });
+    else added += ` ${rendered}`;
+  }
+  // Insert just after the tag name, which also works for XHTML self-closing tags.
+  if (added) replacements.push({ start: tag.startOffset + element.tagName.length + 1, end: tag.startOffset + element.tagName.length + 1, value: added });
+  return replacements;
+}
+function appendedStyle(element: Element, declarations: string) {
+  const existing = attribute(element, "style") ?? "";
+  return `${existing}${existing && !existing.trimEnd().endsWith(";") ? ";" : ""}${declarations}`;
+}
+
+/** Only generated assets supplied by the server may contain preview data URLs. */
+function validatedSignOffImage(image: ResendEmailSignOffImage | undefined): ResendEmailSignOffImage {
+  if (!image || !Number.isInteger(image.width) || !Number.isInteger(image.height)
+    || image.width < 1 || image.height < 1 || image.width > 1600 || image.height > 1600 || typeof image.url !== "string") {
+    throw new AdminEmailError(400, "Prepare the sign-off artwork before reviewing this email.");
+  }
+  if (image.url.startsWith("data:")) {
+    if (image.url.length > 4_194_326 || !/^data:image\/png;base64,iVBORw0KGgo[A-Za-z0-9+/]*(?:={1,2})?$/.test(image.url)
+      || (image.url.length - "data:image/png;base64,".length) % 4 !== 0) {
+      throw new AdminEmailError(400, "The sign-off preview must be a generated PNG image.");
+    }
+  } else bannerUrl(image.url, "The sign-off image address");
+  return image;
+}
+function blockBeside(node: Node, after = false) {
+  let current = node;
+  while ("parentNode" in current && current.parentNode) {
+    const parent = current.parentNode;
+    if (isElement(parent) && BANNER_CONTAINERS.has(parent.tagName) && current.sourceCodeLocation) {
+      return { offset: after ? current.sourceCodeLocation.endOffset : current.sourceCodeLocation.startOffset, container: parent, node: current };
+    }
+    current = parent;
+  }
+  return null;
+}
+function signOffPlacement(html: string, nodes: Node[]) {
+  const unsubscribe = nodes.find(node => isElement(node) && node.tagName === "a" && /\{\{\{\s*RESEND_UNSUBSCRIBE_URL\s*\}\}\}/.test(attribute(node, "href") ?? ""));
+  const mail = nodes.findLast(node => isElement(node) && node.tagName === "a" && /^mailto:/i.test(attribute(node, "href") ?? ""));
+  let footer = nodes.find(node => isElement(node) && node.tagName === "footer");
+  for (const target of [unsubscribe, mail]) {
+    let current = target;
+    while (!footer && current) {
+      if (isElement(current) && /(?:^|;)\s*border-top(?:-[a-z]+)?\s*:/i.test(attribute(current, "style") ?? "")) { footer = current; break; }
+      current = "parentNode" in current ? current.parentNode ?? undefined : undefined;
+    }
+  }
+  footer ??= unsubscribe ? blockBeside(unsubscribe)?.node : undefined;
+  if (footer?.sourceCodeLocation) {
+    const before = footer.sourceCodeLocation.startOffset;
+    const precedingCopy = nodes.findLast(node => isText(node) && /[\p{L}\p{N}]/u.test(node.value)
+      && (node.sourceCodeLocation?.endOffset ?? Infinity) <= before);
+    const precedingImage = nodes.findLast(node => isElement(node) && node.tagName === "img"
+      && (node.sourceCodeLocation?.endOffset ?? Infinity) <= before);
+    // A footer may be a separate table row. Stay in the previous content cell,
+    // never insert a table between its tr and td or inside the footer itself.
+    for (const target of [precedingCopy, precedingImage]) if (target) {
+      const placement = blockBeside(target, true);
+      if (placement && placement.offset <= before) return placement;
+    }
+    const placement = blockBeside(footer);
+    if (placement) return placement;
+  }
+  const lastCopy = nodes.findLast(node => isText(node) && /[\p{L}\p{N}]/u.test(node.value));
+  const lastImage = nodes.findLast(node => isElement(node) && node.tagName === "img");
+  for (const target of [lastCopy, lastImage]) if (target) {
+    const placement = blockBeside(target, true);
+    if (placement) return placement;
+  }
+  return bannerPlacement(html);
+}
+function applySignOff(html: string, signOff: ResendEmailSignOff | null, image?: ResendEmailSignOffImage) {
+  const { nodes } = visibleNodes(html);
+  const existing = signOffImages(nodes);
+  if (!signOff) return replaceSpans(html, existing.map(item => ({ start: item.sourceCodeLocation!.startOffset, end: item.sourceCodeLocation!.endOffset, value: "" })));
+  const asset = validatedSignOffImage(image);
+  const style = `width:${asset.width}px!important;max-width:100%!important;height:auto!important;border:0;color:#ffca2c;`;
+  if (existing.length) {
+    return replaceSpans(html, existing.flatMap(item => attributeReplacements(item, {
+      src: asset.url, alt: signOff.text, width: String(asset.width), height: String(asset.height),
+      "data-ruined-sign-off": "", style: appendedStyle(item, style),
+    })));
+  }
+  const { offset } = signOffPlacement(html, nodes);
+  const markup = `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tbody><tr><td style="padding:16px 0 8px"><img data-ruined-sign-off="" src="${escapedText(asset.url)}" alt="${escapedText(signOff.text)}" width="${asset.width}" height="${asset.height}" style="display:block;${style}"></td></tr></tbody></table>`;
+  return html.slice(0, offset) + markup + html.slice(offset);
+}
+
+function applyRuinedTypography(html: string) {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const replacements: Replacement[] = [];
+  let head: Element | undefined;
+  function visit(node: Node, heading = false) {
+    if (isElement(node)) {
+      if (node.tagName === "head") { head = node; return; }
+      if (BLOCKED_COPY_TAGS.has(node.tagName) || hidden(node)) return;
+      heading ||= /^h[1-6]$/.test(node.tagName);
+      if (TYPOGRAPHY_TAGS.has(node.tagName)) {
+        const family = heading ? "'IvyOraRuined',Georgia,'Times New Roman',serif" : "'InterRuined',Inter,'Helvetica Neue',Helvetica,Arial,sans-serif";
+        const fallback = heading ? "Georgia" : "Arial";
+        const declarations = `font-family:${family}!important;${heading ? "font-weight:500!important;letter-spacing:normal!important;" : ""}mso-ascii-font-family:${fallback};mso-hansi-font-family:${fallback};mso-bidi-font-family:${fallback};`;
+        replacements.push(...attributeReplacements(node, { style: appendedStyle(node, declarations) }));
+      }
+    }
+    if ("childNodes" in node) for (const child of node.childNodes) visit(child, heading);
+  }
+  visit(document);
+  const fonts = "<!--[if !mso]><!--><style data-ruined-email-fonts>"
+    + "@font-face{font-family:'IvyOraRuined';font-style:normal;font-weight:500;src:url('https://members.theruinedproject.com/fonts/IvyOraText-Medium.ttf') format('truetype');mso-font-alt:Georgia;}"
+    + "@font-face{font-family:'InterRuined';font-style:normal;font-weight:100 900;src:url('https://members.theruinedproject.com/fonts/Inter-Variable-Latin.woff2') format('woff2');mso-font-alt:Arial;}"
+    + "</style><!--<![endif]-->";
+  const offset = head?.sourceCodeLocation?.endTag?.startOffset ?? head?.sourceCodeLocation?.startTag?.endOffset;
+  if (offset !== undefined) replacements.push({ start: offset, end: offset, value: fonts });
+  const rendered = replaceSpans(html, replacements);
+  return offset === undefined ? fonts + rendered : rendered;
 }
 
 function bannerPlacement(html: string) {
@@ -216,6 +385,7 @@ export function normalizeResendTemplate(provider: unknown): ResendEmailTemplate 
   const subject = typeof provider.subject === "string" ? provider.subject : "";
   const text = typeof provider.text === "string" ? provider.text : null;
   const fields = inspectHtml(html).fields.map(({ key, label, value }) => ({ key, label, value }));
+  const signOffText = originalSignOffText(signOffImages(visibleNodes(html).nodes));
   return {
     id: provider.id, name: provider.name, status: provider.status as "draft" | "published", version: provider.current_version_id,
     html, text, subject,
@@ -223,6 +393,7 @@ export function normalizeResendTemplate(provider: unknown): ResendEmailTemplate 
     replyTo: Array.isArray(provider.reply_to) && provider.reply_to.every(value => typeof value === "string") ? provider.reply_to as string[] : [],
     variables, fields, hasUnpublishedVersions: provider.has_unpublished_versions === true,
     campaignOnly: [html, subject, text ?? ""].some(source => tokens(source).some(token => nativeKey(token.key))),
+    ...(signOffText === undefined ? {} : { signOffText }),
   };
 }
 
@@ -265,13 +436,14 @@ function assertUrlAttribute(element: Element, name: string, resolve: (key: strin
   if (!allowed.includes(url.protocol) || url.username || url.password) throw new AdminEmailError(400, "A link or image variable uses an unsupported URL.");
 }
 
-function plainTextFromHtml(html: string): string {
+function plainTextFromHtml(html: string, includeSignOff = false): string {
   const document = parse(html);
   const parts: string[] = [];
   function visit(node: Node) {
     if (isElement(node)) {
       if (BLOCKED_COPY_TAGS.has(node.tagName) || hidden(node)) return;
       if (node.tagName === "br") parts.push("\n");
+      if (includeSignOff && isSignOffImage(node)) parts.push(`\n\n${attribute(node, "alt") ?? ""}\n\n`);
       if (BLOCK_TAGS.has(node.tagName)) parts.push("\n\n");
       for (const child of node.childNodes) visit(child);
       if (node.tagName === "a") {
@@ -286,12 +458,30 @@ function plainTextFromHtml(html: string): string {
   return parts.join("").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function updateAuthoredSignOff(text: string, previous: string | undefined, next: string | undefined) {
+  const lines = text.split(/\r?\n/);
+  const previousIndex = previous ? lines.findLastIndex(line => line.trim() === previous) : -1;
+  const nextIndex = next ? lines.findLastIndex(line => line.trim() === next) : -1;
+  if (previousIndex >= 0) {
+    if (nextIndex >= 0 && nextIndex !== previousIndex) lines.splice(previousIndex, 1);
+    else lines.splice(previousIndex, 1, ...(next ? [next] : []));
+    return lines.join("\n");
+  }
+  if (!next || nextIndex >= 0) return text;
+  const unsubscribeIndex = lines.findIndex(line => line.includes("RESEND_UNSUBSCRIBE_URL"));
+  if (unsubscribeIndex >= 0) lines.splice(unsubscribeIndex, 0, next, "");
+  else lines.push("", next);
+  return lines.join("\n");
+}
+
 /** Render a reviewed provider design without rebuilding its DOM. Untouched
  * bytes, assets, links, conditional comments and inline styling stay intact. */
-export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: ResendEmailEdits, options: { campaign: boolean }): RenderedResendEmail {
+export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: ResendEmailEdits, options: { campaign: boolean; signOffImage?: ResendEmailSignOffImage }): RenderedResendEmail {
   if (!edits || typeof edits.subject !== "string" || !edits.subject.trim() || edits.subject.length > 200
     || /[\u0000-\u001f\u007f]/.test(edits.subject)) throw new AdminEmailError(400, "Add a subject of 200 characters or fewer, on one line.");
   const banner = normalizeResendEmailBanner(edits.banner);
+  const signOff = normalizeResendEmailSignOff(edits.signOff);
+  if (edits.typography !== undefined && edits.typography !== "ruined") throw new AdminEmailError(400, "Choose the Ruined email typography.");
   const supplied = stringRecord(edits.values, "Template variables", 6_000);
   const copy = stringRecord(edits.copy, "Design copy");
   if ([...Object.values(supplied), ...Object.values(copy)].reduce((total, value) => total + value.length, 0) > 48_000) throw new AdminEmailError(400, "The combined template edits must be 48,000 characters or fewer.");
@@ -340,13 +530,18 @@ export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: 
   }
   let html = template.html;
   for (const replacement of replacements.sort((a, b) => b.start - a.start)) html = html.slice(0, replacement.start) + replacement.value + html.slice(replacement.end);
+  if (edits.signOff !== undefined) html = applySignOff(html, signOff, options.signOffImage);
   const subject = renderText(edits.subject.trim());
   if (!subject || subject.length > 200 || /[\u0000-\u001f\u007f]/.test(subject)) throw new AdminEmailError(400, "The completed subject must be one line and at most 200 characters.");
   // Preserve an authored text alternative when copy is unchanged. Regenerate
   // from the edited HTML when needed so plaintext readers receive the same copy.
-  const bodyText = template.text && !copyChanged ? renderText(template.text) : plainTextFromHtml(html);
+  let bodyText = template.text && !copyChanged ? renderText(template.text) : plainTextFromHtml(html, edits.signOff !== undefined);
+  if (template.text && !copyChanged && edits.signOff !== undefined) {
+    bodyText = updateAuthoredSignOff(bodyText, originalSignOffText(signOffImages(visibleNodes(template.html).nodes)), signOff?.text);
+  }
   const text = banner ? `${banner.alt}${banner.linkUrl ? `\n${banner.linkUrl}` : ""}\n\n${bodyText}` : bodyText;
   if (banner) html = insertResendEmailBanner(html, banner);
+  if (edits.typography === "ruined") html = applyRuinedTypography(html);
   const from = renderText(template.from);
   const replyTo = template.replyTo.map(renderText);
   if (/[\u0000-\u001f\u007f]/.test(from) || replyTo.some(value => /[\u0000-\u001f\u007f]/.test(value))) throw new AdminEmailError(400, "The template sender or reply address contains an invalid value.");

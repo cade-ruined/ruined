@@ -6,7 +6,8 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { AdminEmailError, isAdminEmailAddress } from "./admin-email-model";
 import { assertAdminEmailAccess, requireAdminEmailActor } from "./admin-email-repository";
-import { normalizeResendTemplate, renderResendEmailTemplate } from "./resend-email-templates";
+import { prepareAdminEmailSignOff } from "./admin-email-sign-off";
+import { normalizeResendEmailSignOff, normalizeResendTemplate, renderResendEmailTemplate } from "./resend-email-templates";
 import type { ResendEmailEdits } from "./resend-email-model";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -111,16 +112,25 @@ export async function getResendEmailBroadcast(actor: string, broadcastId: unknow
   return { id: item.id, name: item.name, subject: item.subject ?? "", status: item.status, html: item.html ?? "", from: item.from ?? "",
     segmentId: item.segment_id ?? item.audience_id, topicId: item.topic_id, previewText: item.preview_text ?? "" };
 }
-export async function prepareResendEmail(actor: string, input: Record<string, unknown>) {
+export async function prepareResendEmail(actor: string, input: Record<string, unknown>, options: { persistSignOff?: boolean } = {}) {
   const template = await getResendEmailTemplate(actor, input.templateId);
   if (input.templateVersion !== template.version) throw new AdminEmailError(409, "This template changed in Resend. Reload it and review your copy again.");
   if (!["individual", "campaign"].includes(String(input.mode))) throw new AdminEmailError(400, "Choose individual email or campaign.");
   if (!record(input.edits)) throw new AdminEmailError(400, "Template edits are required.");
   const edits = input.edits as unknown as ResendEmailEdits;
-  const rendered = renderResendEmailTemplate(template, edits, { campaign: input.mode === "campaign" });
-  const from = rendered.from || process.env.RESEND_FROM_EMAIL?.trim() || "";
+  const signOff = normalizeResendEmailSignOff(edits.signOff);
+  const campaign = input.mode === "campaign";
+  // Validate all editable content before generating or retaining any artwork.
+  // Client-supplied assets never become trusted renderer options.
+  const validated = renderResendEmailTemplate(template, signOff ? { ...edits, signOff: null } : edits, { campaign });
+  const from = validated.from || process.env.RESEND_FROM_EMAIL?.trim() || "";
   if (!from || /[\r\n\0]/.test(from)) throw new AdminEmailError(400, "Set a sender on this template in Resend.");
-  return { ...rendered, from, subject: line(rendered.subject) };
+  const subject = line(validated.subject);
+  if (campaign && options.persistSignOff) requireUnsubscribe(validated.html);
+  if (!signOff) return { ...validated, from, subject };
+  const signOffImage = await prepareAdminEmailSignOff(actor, signOff.text, options.persistSignOff === true);
+  const rendered = renderResendEmailTemplate(template, { ...edits, signOff }, { campaign, signOffImage });
+  return { ...rendered, from, subject };
 }
 function requireUnsubscribe(html: string) {
   if (!/href\s*=\s*["']\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}["']/i.test(html)) {
@@ -160,9 +170,11 @@ type Snapshot = { mode: "individual" | "campaign"; subject: string; html: string
   broadcastId?: string; broadcastHash?: string };
 function broadcastHash(item: GetBroadcastResponseSuccess) { return digest({ ...item, object: undefined, created_at: undefined }); }
 async function campaignPayload(actor: string, input: Record<string, unknown>) {
-  const rendered = await prepareResendEmail(actor, input);
+  const segmentId = id(input.segmentId), topicId = id(input.topicId);
+  if (typeof input.name === "string") line(input.name);
+  const rendered = await prepareResendEmail(actor, input, { persistSignOff: true });
   requireUnsubscribe(rendered.html);
-  return { name: line(input.name, rendered.subject), segment_id: id(input.segmentId), topic_id: id(input.topicId), from: rendered.from,
+  return { name: line(input.name, rendered.subject), segment_id: segmentId, topic_id: topicId, from: rendered.from,
     subject: rendered.subject, html: rendered.html, text: rendered.text, ...(rendered.replyTo.length ? { reply_to: rendered.replyTo } : {}), send: false };
 }
 async function audit(actor: string, action: string, subjectId: string, metadata: Record<string, unknown>) {
@@ -195,8 +207,8 @@ export async function reviewResendEmail(actor: string, input: Record<string, unk
     snapshot = { mode: "campaign", subject: item.subject, html: item.html, text: item.text ?? "", from: item.from, replyTo: item.reply_to ?? [],
       segmentId, topicId, ...resolved, broadcastId, broadcastHash: broadcastHash(item) };
   } else {
-    const rendered = await prepareResendEmail(actor, input);
     const resolved = await resolveRecipients({ mode: "individual", recipients: input.recipients as string[] });
+    const rendered = await prepareResendEmail(actor, input, { persistSignOff: true });
     snapshot = { mode: "individual", ...rendered, ...resolved };
   }
   if (!snapshot.recipients.length) throw new AdminEmailError(400, "No eligible recipients. Check this audience's topic subscriptions in Resend.");
