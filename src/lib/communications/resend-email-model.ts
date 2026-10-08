@@ -15,6 +15,7 @@ export type ResendEmailTemplate = ResendEmailTemplateSummary & {
   version: string;
   hasUnpublishedVersions: boolean;
   campaignOnly?: boolean;
+  signOffText?: string;
   html: string;
   text: string | null;
   subject: string;
@@ -28,8 +29,13 @@ export type ResendEmailEdits = {
   values: Record<string, string>;
   copy: Record<string, string>;
   banner?: ResendEmailBanner | null;
+  typography?: "ruined";
+  signOff?: ResendEmailSignOff | null;
 };
 export type ResendEmailBanner = { url: string; alt: string; linkUrl?: string };
+export type ResendEmailSignOff = { text: string };
+/** Server-generated artwork; dimensions are the intended display size. */
+export type ResendEmailSignOffImage = { url: string; width: number; height: number };
 export type RenderedResendEmail = {
   html: string;
   text: string;

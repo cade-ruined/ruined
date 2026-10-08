@@ -6,9 +6,10 @@ import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorEmailBannerUpload, { renderLocalEmailBanner, type LocalEmailBanner } from "@/components/platform/OperatorEmailBannerUpload";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
+import { renderEmailSignOffPreview } from "@/components/platform/emailSignOffPreview";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
-import type { ResendEmailEdits, ResendEmailTemplate } from "@/lib/communications/resend-email-model";
-import { insertResendEmailBanner, normalizeResendEmailBanner, renderResendEmailTemplate } from "@/lib/communications/resend-email-templates";
+import type { ResendEmailEdits, ResendEmailSignOffImage, ResendEmailTemplate } from "@/lib/communications/resend-email-model";
+import { normalizeResendEmailBanner, normalizeResendEmailSignOff, renderResendEmailTemplate } from "@/lib/communications/resend-email-templates";
 
 type TemplateSummary = { id: string; name: string; status: "draft" | "published"; updatedAt?: string };
 type BroadcastSummary = { id: string; name: string; subject?: string; status: string; createdAt: string };
@@ -53,20 +54,29 @@ function defaultEdits(template: ResendEmailTemplate): ResendEmailEdits {
     subject: template.subject,
     values: Object.fromEntries(template.variables.map((field) => [field.key, field.fallbackValue == null ? "" : String(field.fallbackValue)])),
     copy: Object.fromEntries(template.fields.map((field) => [field.key, field.value])),
+    typography: "ruined",
+    signOff: template.signOffText ? { text: template.signOffText } : /\bpersonal\s+note\b/i.test(template.name) ? { text: "All the love" } : null,
   };
 }
 function escapeText(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
-function sampleRender(edits: ResendEmailEdits): RenderedEmail {
+function sampleRender(edits: ResendEmailEdits, signOffImage?: ResendEmailSignOffImage): RenderedEmail {
   const html = SAMPLE_HTML.replace("{{HEADLINE}}", escapeText(edits.copy.headline ?? "")).replace("{{MESSAGE}}", escapeText(edits.copy.message ?? "")).replace("{{FIRST_NAME}}", escapeText(edits.values.FIRST_NAME ?? "there"));
-  const banner = normalizeResendEmailBanner(edits.banner);
-  return { subject: edits.subject, from: SAMPLE_TEMPLATE.from, html: banner ? insertResendEmailBanner(html, banner) : html };
+  return renderResendEmailTemplate({ ...SAMPLE_TEMPLATE, html, variables: [], fields: [] }, { ...edits, values: {}, copy: {} }, { campaign: false, signOffImage });
+}
+async function localTemplateRender(template: ResendEmailTemplate, edits: ResendEmailEdits, campaign: boolean, sample: boolean): Promise<RenderedEmail> {
+  const signOffImage = edits.signOff ? await renderEmailSignOffPreview(edits.signOff.text) : undefined;
+  return sample ? sampleRender(edits, signOffImage) : renderResendEmailTemplate(template, edits, { campaign, signOffImage });
 }
 function previewEdits(edits: ResendEmailEdits, fallbackAlt = false): ResendEmailEdits {
   // Keep an unfinished banner editable without interrupting the rest of the preview.
   // Save and review validate the complete banner through editorPayload instead.
   const banner = fallbackAlt && edits.banner && !edits.banner.alt.trim() ? { ...edits.banner, alt: "Banner preview" } : edits.banner;
-  try { return { ...edits, banner: normalizeResendEmailBanner(banner) }; }
-  catch { return { ...edits, banner: null }; }
+  const visible: ResendEmailEdits = { ...edits, typography: "ruined" };
+  try { visible.banner = normalizeResendEmailBanner(banner); }
+  catch { visible.banner = null; }
+  // An empty newly added sign-off must not interrupt the rest of the preview.
+  if (visible.signOff && !visible.signOff.text.trim()) visible.signOff = null;
+  return visible;
 }
 function dateLabel(value: string): string {
   const date = new Date(value);
@@ -94,7 +104,7 @@ function DesignPreview({ email, updating = false, error = "", compact = false }:
         {email ? <iframe className={`mx-auto block w-full border-0 bg-white ${compact ? "h-[440px]" : "h-[480px] sm:h-[690px]"} ${width === "mobile" ? "max-w-[375px]" : ""}`} referrerPolicy="no-referrer" sandbox="" srcDoc={safePreview(email.html)} title="Rendered email template" /> : <p className="px-5 py-16 text-center text-sm text-black/55">Preparing the template preview…</p>}
       </div>
     </div>
-    <p aria-live="polite" className={`mt-2 text-xs leading-relaxed ${error ? "text-[var(--color-poster)]" : "text-black/50"}`}>{error || (updating ? "Updating preview…" : "The Resend design is preserved. Appearance can vary between inboxes.")}</p>
+    <p aria-live="polite" className={`mt-2 text-xs leading-relaxed ${error ? "text-[var(--color-poster)]" : "text-black/50"}`}>{error || (updating ? "Updating preview…" : "Some inboxes use fallback fonts. Handwritten sign-offs preserve their lettering as images.")}</p>
   </section>;
 }
 
@@ -170,7 +180,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
       setPreviewUpdating(true); setPreviewError("");
       try {
         const visibleEdits = previewEdits(preview && localBanner ? { ...edits, banner: null } : edits, true);
-        const result = preview ? previewCatalog ? renderResendEmailTemplate(template, visibleEdits, { campaign: mode === "campaign" }) : sampleRender(visibleEdits) : await request<RenderedEmail>(`${API}/preview`, { templateId: template.id, templateVersion: template.version, edits: visibleEdits, mode }, controller.signal);
+        const result = preview ? await localTemplateRender(template, visibleEdits, mode === "campaign", !previewCatalog) : await request<RenderedEmail>(`${API}/preview`, { templateId: template.id, templateVersion: template.version, edits: visibleEdits, mode }, controller.signal);
         if (preview && localBanner) result.html = renderLocalEmailBanner(result.html, localBanner, edits.banner);
         if (sequence === previewSequenceRef.current && !controller.signal.aborted) setRendered(result);
       } catch (failure) {
@@ -215,7 +225,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
       const nextEdits = defaultEdits(next);
       setLocalBanner(null);
       if (next.campaignOnly) setMode("campaign");
-      setTemplate(next); setEdits(nextEdits); setRendered(preview && !previewCatalog ? sampleRender(nextEdits) : { html: next.html, subject: next.subject, from: next.from });
+      setTemplate(next); setEdits(nextEdits); setRendered(null);
       setBroadcast(null); setView("templates"); setName(next.name); setSavedBroadcast(null); setDirty(false); setReview(null); setAcknowledged(false); setPreviewError("");
       requestAnimationFrame(() => document.getElementById("resend-composer")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (failure) { setError(failure instanceof Error ? failure.message : "That template could not be loaded."); }
@@ -231,7 +241,8 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     const localOnly = preview && localBanner;
     const validatedBanner = normalizeResendEmailBanner(localOnly && edits.banner ? { ...edits.banner, url: "https://banner-preview.example.com/local.png" } : edits.banner);
     const banner = localOnly ? null : validatedBanner;
-    return { templateId: template.id, templateVersion: template.version, edits: { ...edits, banner }, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
+    const signOff = normalizeResendEmailSignOff(edits.signOff);
+    return { templateId: template.id, templateVersion: template.version, edits: { ...edits, banner, typography: "ruined", signOff }, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
   }
   async function saveBroadcast() {
     if (preview || mode !== "campaign" || !begin("save")) return;
@@ -249,8 +260,8 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
       const payload = broadcast ? { broadcastId: broadcast.id } : mode === "campaign" && savedBroadcast ? { broadcastId: savedBroadcast } : editorPayload();
       if (preview) {
         const sampleRecipients = mode === "individual" ? [{ email: recipient.trim().toLowerCase(), name: "Preview recipient" }] : [{ email: "alex@example.test", name: "Alex — sample recipient" }, { email: "jordan@example.test", name: "Jordan — sample recipient" }];
-        const reviewEdits = localBanner ? { ...edits, banner: null } : edits;
-        const previewEmail = previewCatalog && template ? renderResendEmailTemplate(template, reviewEdits, { campaign: mode === "campaign" }) : sampleRender(reviewEdits);
+        const reviewEdits: ResendEmailEdits = { ...edits, typography: "ruined", ...(localBanner ? { banner: null } : {}) };
+        const previewEmail = await localTemplateRender(template ?? SAMPLE_TEMPLATE, reviewEdits, mode === "campaign", !previewCatalog);
         if (localBanner) previewEmail.html = renderLocalEmailBanner(previewEmail.html, localBanner, edits.banner);
         setReview({ ...previewEmail, id: "preview-review", recipients: sampleRecipients, recipientCount: sampleRecipients.length, excludedCount: 0, mode, segmentName: mode === "campaign" ? overview?.segments.find((segment) => segment.id === segmentId)?.name ?? "Sample segment" : null, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() });
       } else {
@@ -328,7 +339,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     </section> : null}
 
     {view === "templates" && template ? <section className="scroll-mt-28" id="resend-composer" aria-labelledby="resend-template-title">
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><p className="mb-1 text-xs text-black/50">{preview && !previewCatalog ? "Sample template" : "Resend template"}</p><h3 className="break-words text-lg font-semibold" id="resend-template-title">{template.name}</h3><p className="mt-1 text-xs text-black/50">{dirty ? "Unsaved changes" : savedBroadcast ? "Draft saved in Resend" : "Original design loaded"}</p></div><button className={SECONDARY_BUTTON} disabled={busy} onClick={() => requestChange(() => resetWorkspace("templates"))} type="button">Change template</button></header>
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><p className="mb-1 text-xs text-black/50">{preview && !previewCatalog ? "Sample template" : "Resend template"}</p><h3 className="break-words text-lg font-semibold" id="resend-template-title">{template.name}</h3><p className="mt-1 text-xs text-black/50">{dirty ? "Unsaved changes" : savedBroadcast ? "Draft saved in Resend" : "Ruined typography applied"}</p></div><button className={SECONDARY_BUTTON} disabled={busy} onClick={() => requestChange(() => resetWorkspace("templates"))} type="button">Change template</button></header>
       {template.hasUnpublishedVersions ? <p className="mb-4 rounded-[4px] bg-black/5 p-3 text-sm leading-relaxed">This template has unpublished changes in Resend. Review the exact design below before sending.</p> : null}
       {template.campaignOnly ? <p className="mb-4 rounded-[4px] bg-black/5 p-3 text-sm leading-relaxed">This design uses Resend campaign personalization. Choose an audience campaign, or use an individual-email design for a direct message.</p> : null}
       <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -352,10 +363,15 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
               {bannerHint ? <p aria-live="polite" className="text-xs leading-relaxed text-black/55" id="resend-banner-hint">{!edits.banner.alt.trim() && (localBanner || edits.banner.url.trim()) ? "Add an image description before reviewing or saving this email." : !edits.banner.url.trim() && !edits.banner.alt.trim() ? "Upload a photo or add its URL, then describe the image. You can keep editing the email." : bannerHint}</p> : null}
             </> : <button className={SECONDARY_BUTTON} disabled={busy} id="resend-add-banner" onClick={() => { changeEdits({ ...edits, banner: { url: "", alt: "" } }); requestAnimationFrame(() => document.getElementById("resend-banner-url")?.focus()); }} type="button">Use image URL</button>}
           </section>
-          <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-5"><legend className="sr-only">Email copy</legend><h4 className="text-base font-semibold">Email copy</h4><label className="block text-sm font-medium" htmlFor="resend-subject">Subject<input className={OPERATOR_FIELD_CLASS} id="resend-subject" maxLength={200} onChange={(event) => changeEdits({ ...edits, subject: event.target.value })} required type="text" value={edits.subject} /></label>
+          <fieldset disabled={busy} className="operator-bento-card min-w-0 space-y-5"><legend className="sr-only">Email copy</legend><div><h4 className="text-base font-semibold">Email copy</h4><p className="mt-1 text-xs leading-relaxed text-black/55">IvyOra headings · Inter body</p></div><label className="block text-sm font-medium" htmlFor="resend-subject">Subject<input className={OPERATOR_FIELD_CLASS} id="resend-subject" maxLength={200} onChange={(event) => changeEdits({ ...edits, subject: event.target.value })} required type="text" value={edits.subject} /></label>
             {template.variables.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-variable-${index}`} key={field.key}>{field.key.replaceAll("_", " ")}<input className={OPERATOR_FIELD_CLASS} id={`resend-variable-${index}`} maxLength={6000} onChange={(event) => changeEdits({ ...edits, values: { ...edits.values, [field.key]: event.target.value } })} required={field.fallbackValue == null} step={field.type === "number" ? "any" : undefined} type={field.type === "number" ? "number" : "text"} value={edits.values[field.key] ?? ""} /></label>)}
             {template.fields.map((field, index) => <label className="block text-sm font-medium" htmlFor={`resend-copy-${index}`} key={field.key}>{field.label}<textarea className={`${OPERATOR_FIELD_CLASS} resize-y leading-relaxed`} id={`resend-copy-${index}`} maxLength={12000} onChange={(event) => changeEdits({ ...edits, copy: { ...edits.copy, [field.key]: event.target.value } })} rows={field.value.length > 160 ? 5 : field.value.length > 65 ? 3 : 2} value={edits.copy[field.key] ?? field.value} /></label>)}
             {!template.fields.length && !template.variables.length ? <p className="text-sm leading-relaxed text-black/55">This template has no editable text fields. You can change its subject here or edit its design in Resend.</p> : null}
+          </fieldset>
+          <fieldset className="operator-bento-card min-w-0 space-y-4" disabled={busy}><legend className="sr-only">Handwritten sign-off</legend>
+            <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-base font-semibold">Handwritten sign-off</h4>{edits.signOff ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" id="resend-remove-sign-off" onClick={() => changeEdits({ ...edits, signOff: null })} type="button">Remove sign-off</button> : null}</div>
+            <p className="text-xs leading-relaxed text-black/55">CadeHandy2 in Ruined yellow. The lettering is saved as an image so its shape stays consistent.</p>
+            {edits.signOff ? <label className="block text-sm font-medium" htmlFor="resend-sign-off-text">Sign-off text<input aria-describedby="resend-sign-off-hint resend-sign-off-count" className={OPERATOR_FIELD_CLASS} id="resend-sign-off-text" onChange={(event) => changeEdits({ ...edits, signOff: { text: Array.from(event.target.value).slice(0, 80).join("") } })} placeholder="All the love" required type="text" value={edits.signOff.text} /><span className="mt-2 flex flex-wrap justify-between gap-2 text-xs font-normal leading-relaxed text-black/55"><span id="resend-sign-off-hint">{edits.signOff.text.trim() ? "Keep it short so the lettering stays readable." : "Add your sign-off before reviewing or saving."}</span><span id="resend-sign-off-count">{Array.from(edits.signOff.text).length} / 80</span></span></label> : <button className={SECONDARY_BUTTON} id="resend-add-sign-off" onClick={() => { changeEdits({ ...edits, signOff: { text: "" } }); requestAnimationFrame(() => document.getElementById("resend-sign-off-text")?.focus()); }} type="button">Add sign-off</button>}
           </fieldset>
           <div className="operator-bento-card"><div className="flex flex-wrap gap-3">{mode === "campaign" ? <button className={SECONDARY_BUTTON} disabled={busy || preview || !!savedBroadcast || !!previewError} onClick={() => void saveBroadcast()} type="button">{pending === "save" ? "Saving…" : preview ? "Saving off in preview" : savedBroadcast ? "Saved in Resend" : "Save new Resend draft"}</button> : null}<button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={busy || !!previewError || !rendered} id="resend-review-button" type="submit">{pending === "review" ? "Checking recipients…" : "Review & send"}</button></div><p className="mt-3 text-xs leading-relaxed text-black/55">{mode === "campaign" ? "Review prepares a Resend draft. You approve sending separately after checking the recipients." : "Review the exact design and recipient before sending."}</p></div>
         </form>

@@ -45,7 +45,7 @@ const nextConfig = {
   serverExternalPackages: ["@napi-rs/canvas"],
   // Welcome emails render the same invitation artwork on the server. Keep its
   // local textures and fonts in every function that can deliver that email.
-  outputFileTracingIncludes: Object.fromEntries([
+  outputFileTracingIncludes: { ...Object.fromEntries([
     "/api/internal/membership/registration-messages",
     "/api/my/onboarding",
     "/api/stripe/webhook",
@@ -61,7 +61,11 @@ const nextConfig = {
     "./public/fonts/IvyOraText-Regular.ttf",
     "./public/fonts/Inter-Variable-Latin.woff2",
     "./public/fonts/CadeHandy2.otf",
-  ]])),
+  ]])), ...Object.fromEntries([
+    "/api/ops/emails/resend/preview",
+    "/api/ops/emails/resend/broadcasts",
+    "/api/ops/emails/resend/review",
+  ].map(route => [route, ["./public/fonts/CadeHandy2.otf"]])) },
   async redirects() {
     return [
       {
@@ -128,13 +132,18 @@ const nextConfig = {
           },
         ],
       })),
+      ...["IvyOraText-Medium.ttf", "Inter-Variable-Latin.woff2", "CadeHandy2.otf"].map(font => ({
+        source: `/fonts/${font}`,
+        // Email previews have an opaque sandbox origin; inboxes fetch these publicly.
+        headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+      })),
       { source: "/(.*)", headers: securityHeaders },
       // Sandboxed Resend design previews inherit the parent image policy. Permit
       // template HTTPS assets only on the administrator email workspace.
       ...[
         { source: "/ops/emails" },
         { source: "/ops/messages", has: [{ type: "query", key: "mode", value: "emails" }] },
-      ].map(route => ({ ...route, headers: [{ key: "Content-Security-Policy", value: csp.replace(/img-src [^;]+/, "img-src 'self' data: blob: https:") }] })),
+      ].map(route => ({ ...route, headers: [{ key: "Content-Security-Policy", value: csp.replace(/img-src [^;]+/, "img-src 'self' data: blob: https:").replace(/font-src [^;]+/, "font-src 'self' data: https://members.theruinedproject.com") }] })),
       ...["/card/:path*", "/invitation/:path*", "/journal/:path*"].map(source => ({ source, headers: [
         { key: "Cache-Control", value: "private, no-store, max-age=0" },
         { key: "Referrer-Policy", value: "no-referrer" },

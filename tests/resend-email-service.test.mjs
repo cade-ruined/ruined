@@ -24,6 +24,7 @@ const templates = await load("src/lib/communications/resend-email-templates.ts",
 });
 const fixed = { segment: crypto.randomUUID(), topic: crypto.randomUUID(), template: crypto.randomUUID(), version: crypto.randomUUID() };
 const unsubscribe = '<a href="{{{RESEND_UNSUBSCRIBE_URL}}}">Manage preferences</a>';
+const signOffPreviewUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhVQAAAAASUVORK5CYII=";
 const makeContact = (email, extra = {}) => ({ id: crypto.randomUUID(), email, first_name: "A", last_name: "Person", unsubscribed: false, ...extra });
 const banner = { url: "https://assets.example.com/campaign-banner.jpg", alt: "A quiet moment & room", linkUrl: "https://example.com/stories/quiet-moment" };
 function elements(html, tagName) {
@@ -85,7 +86,7 @@ async function fixture(t) {
   const state = {
     contacts: [contact], contactTopics: new Map([[contact.id, [{ id: fixed.topic, subscription: "opt_in" }]]]),
     suppressions: [], topicDefault: "opt_out", broadcasts: new Map(), requests: [], sends: [],
-    sendFailure: null, getOverride: null,
+    sendFailure: null, getOverride: null, signOffs: [], signOffFailure: null,
     template: { id: fixed.template, name: "Existing Resend design", status: "published", current_version_id: fixed.version,
       subject: "A considered update", from: "Ruined <hello@example.test>", reply_to: ["support@example.test"],
       html: `<html><body><img src="https://assets.example.test/exact.svg"><p>Hello {{{NAME}}}</p>${unsubscribe}</body></html>`,
@@ -148,6 +149,12 @@ async function fixture(t) {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => db },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
     "./admin-email-model": model, "./admin-email-repository": repository, "./resend-email-templates": templates,
+    "./admin-email-sign-off": { prepareAdminEmailSignOff: async (actor, text, persist) => {
+      const image = { url: persist ? `https://storage.example.com/storage/v1/object/public/admin-email-images/${crypto.randomUUID()}.png` : signOffPreviewUrl, width: 192, height: 42 };
+      state.signOffs.push({ actor, text, persist, image });
+      if (state.signOffFailure) throw state.signOffFailure;
+      return image;
+    } },
   }, { fetch: mockFetch, process: { env }, setTimeout: callback => setTimeout(callback, 0) });
   const input = { mode: "campaign", templateId: fixed.template, templateVersion: fixed.version,
     segmentId: fixed.segment, topicId: fixed.topic, name: "Native campaign", edits: { subject: "A considered update", values: {}, copy: {} } };
@@ -182,10 +189,12 @@ test("manual email configuration does not depend on an OpenAI key or model", asy
 test("native workspace authorizes before provider access and rejects revoked administrators", async t => {
   const f = await fixture(t);
   for (const action of [() => f.service.getResendEmailOverview(f.guide), () => f.service.getResendEmailTemplate(f.guide, fixed.template),
-    () => f.service.saveResendBroadcast(f.guide, f.input), () => f.service.reviewResendEmail(f.guide, f.input)]) {
+    () => f.service.saveResendBroadcast(f.guide, f.input), () => f.service.reviewResendEmail(f.guide, f.input),
+    () => f.service.prepareResendEmail(f.guide, { ...f.input, edits: { ...f.input.edits, signOff: { text: "After the fear" } } })]) {
     await assert.rejects(action(), error => error.status === 403);
   }
   assert.equal(f.state.requests.length, 0);
+  assert.equal(f.state.signOffs.length, 0);
   const review = await f.campaign();
   await f.pg.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [f.admin]);
   await assert.rejects(f.service.sendResendEmail(f.admin, review.id), error => error.status === 403);
@@ -241,6 +250,110 @@ test("individual send keeps the reviewed image banner when later edits or provid
   assert.ok(f.state.sends[0].body.text.includes(banner.linkUrl));
   assertBanner(f.state.sends[0].body.html);
   assert.doesNotMatch(f.state.sends[0].body.html, /later-unreviewed-banner|New unreviewed/);
+});
+
+test("sign-off preview generates trusted local artwork without persisting images or sending", async t => {
+  const f = await fixture(t), input = f.individual();
+  input.edits = { ...input.edits, typography: "ruined", signOff: { text: "After the fear & onward" } };
+  const preview = await f.service.prepareResendEmail(f.admin, input);
+  assert.equal(f.state.signOffs.length, 1);
+  assert.deepEqual(f.state.signOffs[0], { actor: f.admin, text: input.edits.signOff.text, persist: false, image: { url: signOffPreviewUrl, width: 192, height: 42 } });
+  const image = elements(preview.html, "img").find(item => item.src === signOffPreviewUrl);
+  assert.ok(image, "preview uses only the server-produced data URL");
+  assert.equal(image.alt, input.edits.signOff.text);
+  assert.ok(preview.text.includes(input.edits.signOff.text));
+  assert.equal(f.state.requests.filter(item => item.method !== "GET").length, 0);
+  assert.equal((await f.pg.query("select id from admin_resend_reviews")).rows.length, 0);
+});
+
+test("omitting sign-off edits preserves the template artwork while explicit removal creates no new image", async t => {
+  const f = await fixture(t), input = f.individual();
+  const url = "https://assets.example.com/membership/email/after-the-fear-cadehandy2.png";
+  f.state.template.html = `<html><body><p>A personal message</p><img src="${url}" alt="After the fear"></body></html>`;
+  f.state.template.text = "A personal message\n\nAfter the fear";
+  const unchanged = await f.service.prepareResendEmail(f.admin, input);
+  assert.ok(elements(unchanged.html, "img").some(image => image.src === url));
+  assert.ok(unchanged.text.includes("After the fear"));
+  const removed = await f.service.prepareResendEmail(f.admin, { ...input, edits: { ...input.edits, signOff: null } });
+  assert.ok(!elements(removed.html, "img").some(image => image.src === url));
+  assert.ok(!removed.text.includes("After the fear"));
+  assert.equal(f.state.signOffs.length, 0);
+});
+
+test("individual sign-off review freezes hosted artwork and plain text for subsequent sends", async t => {
+  const f = await fixture(t), input = f.individual();
+  const text = 'Onward & upward, "Cade"';
+  input.edits = { ...input.edits, typography: "ruined", signOff: { text },
+    signOffImage: { url: "https://untrusted.example.com/client.png", width: 1, height: 1 } };
+  const review = await f.service.reviewResendEmail(f.admin, input);
+  assert.equal(f.state.signOffs.length, 1);
+  assert.equal(f.state.signOffs[0].persist, true);
+  const url = f.state.signOffs[0].image.url;
+  assert.equal(elements(review.html, "img").find(image => image.src === url)?.alt, text);
+  assert.ok(review.text.includes(text));
+  assert.doesNotMatch(review.html, /data:image|untrusted\.example/);
+  const stored = (await f.pg.query("select snapshot from admin_resend_reviews where id=$1", [review.id])).rows[0].snapshot;
+  assert.equal(stored.html, review.html);
+  input.edits.signOff.text = "Changed after review";
+  f.state.template.html = "<p>New provider content</p>";
+  assert.equal((await f.service.sendResendEmail(f.admin, review.id)).status, "sent");
+  await f.service.sendResendEmail(f.admin, review.id);
+  assert.equal(f.state.sends.length, 1);
+  assert.equal(f.state.signOffs.length, 1, "sending never recreates or changes reviewed artwork");
+  assert.equal(f.state.sends[0].body.html, review.html);
+  assert.equal(f.state.sends[0].body.text, review.text);
+});
+
+test("native campaign drafts retain a hosted sign-off before review without sending", async t => {
+  const f = await fixture(t);
+  const input = { ...f.input, edits: { ...f.input.edits, typography: "ruined", signOff: { text: "After the fear" } } };
+  const saved = await f.service.saveResendBroadcast(f.admin, input);
+  assert.equal(f.state.signOffs.length, 1);
+  assert.equal(f.state.signOffs[0].persist, true);
+  const draft = f.state.broadcasts.get(saved.id);
+  assert.equal(draft.send, false);
+  assert.equal(elements(draft.html, "img").find(image => image.src === f.state.signOffs[0].image.url)?.alt, input.edits.signOff.text);
+  assert.ok(draft.text.includes(input.edits.signOff.text));
+  assert.doesNotMatch(draft.html, /data:image/);
+  const review = await f.service.reviewResendEmail(f.admin, { broadcastId: saved.id });
+  assert.equal(review.html, draft.html);
+  assert.equal(review.text, draft.text);
+  assert.equal(f.state.signOffs.length, 1);
+  assert.equal(f.state.sends.length, 0);
+});
+
+test("invalid edits, sender, audience and unsubscribe state fail before sign-off storage", async t => {
+  const f = await fixture(t);
+  const input = { ...f.input, edits: { ...f.input.edits, typography: "ruined", signOff: { text: "After the fear" } } };
+  for (const changes of [{ segmentId: "invalid" }, { topicId: "invalid" }, { name: "x".repeat(201) },
+    { edits: { ...input.edits, subject: "" } }, { edits: { ...input.edits, copy: { unknown: "New copy" } } },
+    ...["url", "font", "width"].map(key => ({ edits: { ...input.edits, signOff: { text: "After the fear", [key]: "untrusted" } } }))]) {
+    await assert.rejects(f.service.saveResendBroadcast(f.admin, { ...input, ...changes }), error => error.status === 400);
+  }
+  const originalHtml = f.state.template.html, originalFrom = f.state.template.from;
+  f.state.template.html = "<p>No campaign unsubscribe link</p>";
+  await assert.rejects(f.service.saveResendBroadcast(f.admin, input), error => error.status === 400);
+  f.state.template.html = originalHtml;
+  f.state.template.from = "";
+  await assert.rejects(f.service.saveResendBroadcast(f.admin, input), error => error.status === 400);
+  f.state.template.from = originalFrom;
+  const individual = { ...f.individual(), edits: input.edits };
+  await assert.rejects(f.service.reviewResendEmail(f.admin, { ...individual, recipients: ["invalid"] }), error => error.status === 400);
+  f.state.contacts[0].unsubscribed = true;
+  await assert.rejects(f.service.reviewResendEmail(f.admin, individual), error => error.status === 400);
+  assert.equal(f.state.signOffs.length, 0);
+  assert.equal(f.state.requests.filter(item => item.method !== "GET").length, 0);
+});
+
+test("sign-off preparation failure cannot create a draft, review or provider send", async t => {
+  const f = await fixture(t);
+  f.state.signOffFailure = new model.AdminEmailError(503, "Image storage is temporarily unavailable.");
+  const edits = { ...f.input.edits, typography: "ruined", signOff: { text: "After the fear" } };
+  await assert.rejects(f.service.saveResendBroadcast(f.admin, { ...f.input, edits }), error => error.status === 503);
+  await assert.rejects(f.service.reviewResendEmail(f.admin, { ...f.individual(), edits }), error => error.status === 503);
+  assert.equal(f.state.requests.filter(item => item.method !== "GET").length, 0);
+  assert.equal((await f.pg.query("select id from admin_resend_reviews")).rows.length, 0);
+  assert.equal(f.state.sends.length, 0);
 });
 
 test("provider template version changes invalidate preparation before native draft mutation", async t => {

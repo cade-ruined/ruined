@@ -16,7 +16,7 @@ async function load(file, dependencies = {}) {
   return loaded.exports;
 }
 const model = await load("src/lib/communications/admin-email-model.ts");
-const { normalizeResendTemplate, renderResendEmailTemplate, normalizeResendEmailBanner } = await load("src/lib/communications/resend-email-templates.ts", {
+const { normalizeResendTemplate, renderResendEmailTemplate, normalizeResendEmailBanner, normalizeResendEmailSignOff } = await load("src/lib/communications/resend-email-templates.ts", {
   parse5, "./admin-email-model": model,
 });
 const provider = overrides => ({ id: "template-one", name: "An existing design", status: "published", current_version_id: "version-one",
@@ -250,4 +250,157 @@ test("banner alt escapes markup and plaintext retains edited copy and provider m
   assert.doesNotMatch(rendered.text, /Stale copy/);
   assert.match(rendered.text, /RESEND_UNSUBSCRIBE_URL/);
   assert.equal(rendered.text.startsWith(`${alt}\n\nOriginal heading`), true);
+});
+
+const signOffImage = { url: "https://images.example.com/sign-off.png?size=2&format=png", width: 240, height: 72 };
+const knownSignOff = '<img class="original-sign-off" src="https://members.theruinedproject.com/membership/email/after-the-fear-cadehandy2.png" alt="After the fear" width="220" style="display:block;width:220px;max-width:100%;height:auto;border:0">';
+const exactLogo = '<img src="https://images.example.com/official-logo.png" width="150" height="45" alt="Ruined">';
+const exactFooter = '<div><p style="border-top:1px solid #36352f;color:#b9b4a9">A member update. <a href="{{{RESEND_UNSUBSCRIBE_URL}}}">Manage preferences</a></p></div>';
+const attr = (node, name) => node.attrs.find(item => item.name === name)?.value;
+
+test("sign-off input is a bounded Unicode line and never accepts artwork from the editor", () => {
+  assert.deepEqual(normalizeResendEmailSignOff({ text: "  All the love  " }), { text: "All the love" });
+  assert.deepEqual(normalizeResendEmailSignOff({ text: "🌿".repeat(80) }), { text: "🌿".repeat(80) });
+  assert.equal(normalizeResendEmailSignOff(undefined), null);
+  assert.equal(normalizeResendEmailSignOff(null), null);
+  for (const text of ["", " ", "x".repeat(81), "🌿".repeat(81), "Two\nlines", "Tab\ttext", "Line\u2028break", "Bad\u0085text", "{{{contact.email}}}"]) {
+    assert.throws(() => normalizeResendEmailSignOff({ text }), /80 characters|one line/);
+  }
+  for (const value of ["All the love", [], {}, { text: "All the love", url: signOffImage.url }, { text: 123 }]) {
+    assert.throws(() => normalizeResendEmailSignOff(value), /sign-off/);
+  }
+});
+
+test("known sign-offs are detected, preserve exact source when omitted, and remove only the recognized image when null", () => {
+  const html = `<html><body><main>${exactLogo}<p>A note.</p>${knownSignOff}${exactFooter}</main></body></html>`;
+  const text = "An authored note.\n\nAfter the fear\n\n{{{RESEND_UNSUBSCRIBE_URL}}}";
+  const template = normalizeResendTemplate(provider({ html, text }));
+  assert.equal(template.signOffText, "After the fear");
+  const unchanged = renderResendEmailTemplate(template, edits(template), { campaign: true });
+  assert.equal(unchanged.html, html);
+  assert.equal(unchanged.text, text);
+  const removed = renderResendEmailTemplate(template, edits(template, { signOff: null }), { campaign: true });
+  assert.equal(removed.html, html.replace(knownSignOff, ""));
+  assert.ok(removed.html.includes(exactLogo));
+  assert.ok(removed.html.includes(exactFooter));
+  assert.match(removed.text, /An authored note/);
+  assert.doesNotMatch(removed.text, /After the fear/);
+  const arbitrary = normalizeResendTemplate(provider({ html: '<p>A note.</p><img src="https://images.example.com/handwriting.png" alt="All the love">' }));
+  assert.equal(arbitrary.signOffText, undefined);
+  assert.equal(renderResendEmailTemplate(arbitrary, edits(arbitrary, { signOff: null }), { campaign: false }).html, arbitrary.html);
+});
+
+test("a custom sign-off replaces its original image in place with escaped alt and preserves the logo, artwork styling and unsubscribe footer", () => {
+  const html = `<main>${exactLogo}<p>A note.</p><div style="padding:16px 0">${knownSignOff}</div>${exactFooter}</main>`;
+  const template = normalizeResendTemplate(provider({ html, text: "Authored copy.\n\nAfter the fear\n\n{{{RESEND_UNSUBSCRIBE_URL}}}" }));
+  const text = 'All the love <3 & "care"';
+  const rendered = renderResendEmailTemplate(template, edits(template, { signOff: { text } }), { campaign: true, signOffImage });
+  const nodes = allNodes(parse5.parse(rendered.html, { sourceCodeLocationInfo: true }));
+  const image = nodes.find(node => node.tagName === "img" && attr(node, "data-ruined-sign-off") !== undefined);
+  assert.equal(attr(image, "src"), signOffImage.url);
+  assert.equal(attr(image, "alt"), text);
+  assert.equal(attr(image, "class"), "original-sign-off");
+  assert.equal(attr(image, "width"), "240");
+  assert.equal(attr(image, "height"), "72");
+  assert.match(attr(image, "style"), /max-width:100%!important;height:auto!important/);
+  assert.ok(rendered.html.includes(exactLogo));
+  assert.ok(rendered.html.includes(exactFooter));
+  assert.equal(image.parentNode.tagName, "div");
+  assert.equal(attr(image.parentNode, "style"), "padding:16px 0");
+  assert.equal(nodes.filter(node => node.tagName === "img").length, 2);
+  assert.equal(rendered.text, `Authored copy.\n\n${text}\n\n{{{RESEND_UNSUBSCRIBE_URL}}}`);
+  assert.equal(template.html, html);
+  assert.equal(normalizeResendTemplate(provider({ html: rendered.html })).signOffText, text);
+});
+
+test("new sign-offs stay in the final content cell before a separate bordered contact footer", () => {
+  const footer = '<tr><td style="padding:20px 40px;border-top:1px solid #36352f"><p><a href="mailto:connect@example.com">Contact us</a></p></td></tr>';
+  const html = `<table width="600"><tbody><tr><td>${exactLogo}</td></tr><tr><td id="content" style="padding:0 40px"><p>Your message.</p><p><strong>Your name</strong></p></td></tr>${footer}</tbody></table>`;
+  const template = normalizeResendTemplate(provider({ html }));
+  const rendered = renderResendEmailTemplate(template, edits(template, { signOff: { text: "All the love" } }), { campaign: false, signOffImage });
+  const nodes = allNodes(parse5.parse(rendered.html, { sourceCodeLocationInfo: true }));
+  const image = nodes.find(node => node.tagName === "img" && attr(node, "data-ruined-sign-off") !== undefined);
+  const table = image.parentNode.parentNode.parentNode.parentNode;
+  assert.equal(table.tagName, "table");
+  assert.equal(table.parentNode.tagName, "td");
+  assert.equal(attr(table.parentNode, "id"), "content");
+  const { startOffset, endOffset } = table.sourceCodeLocation;
+  assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), html);
+  assert.ok(rendered.html.includes(footer));
+  assert.ok(rendered.text.indexOf("Your name") < rendered.text.indexOf("All the love"));
+  assert.ok(rendered.text.indexOf("All the love") < rendered.text.indexOf("Contact us"));
+});
+
+test("sign-off insertion preserves the complete unsubscribe footer and explicit footer and remains outside inline elements", () => {
+  for (const footer of [exactFooter, '<footer><p>Contact us.</p><a href="https://example.com/preferences">Preferences</a></footer>']) {
+    const html = `<main>${exactLogo}<p><a href="https://example.com"><strong>Final copy.</strong></a></p>${footer}</main>`;
+    const template = normalizeResendTemplate(provider({ html }));
+    const rendered = renderResendEmailTemplate(template, edits(template, { signOff: { text: "All the love" } }), { campaign: true, signOffImage });
+    const nodes = allNodes(parse5.parse(rendered.html, { sourceCodeLocationInfo: true }));
+    const image = nodes.find(node => node.tagName === "img" && attr(node, "data-ruined-sign-off") !== undefined);
+    const table = image.parentNode.parentNode.parentNode.parentNode;
+    assert.equal(table.parentNode.tagName, "main");
+    assert.ok(rendered.html.includes(footer));
+    assert.ok(rendered.html.indexOf('data-ruined-sign-off=""') < rendered.html.indexOf(footer));
+  }
+  const plain = normalizeResendTemplate(provider({ html: '<main><p><em>Last copy.</em></p></main>' }));
+  const rendered = renderResendEmailTemplate(plain, edits(plain, { signOff: { text: "All the love" } }), { campaign: false, signOffImage });
+  assert.ok(rendered.html.startsWith('<main><p><em>Last copy.</em></p><table'));
+});
+
+test("edited copy and authored plaintext retain exactly one current sign-off", () => {
+  const template = normalizeResendTemplate(provider({ html: `<p>Original copy.</p>${knownSignOff}${exactFooter}`, text: "Authored introduction.\nAfter the fear\nAll the love\n{{{RESEND_UNSUBSCRIBE_URL}}}" }));
+  const signOff = { text: "All the love" };
+  const original = renderResendEmailTemplate(template, edits(template, { signOff }), { campaign: true, signOffImage });
+  assert.equal((original.text.match(/All the love/g) ?? []).length, 1);
+  assert.doesNotMatch(original.text, /After the fear/);
+  assert.match(original.text, /Authored introduction/);
+  const changed = renderResendEmailTemplate(template, edits(template, { signOff, copy: { [template.fields[0].key]: "Updated copy." } }), { campaign: true, signOffImage });
+  assert.equal((changed.text.match(/All the love/g) ?? []).length, 1);
+  assert.match(changed.text, /Updated copy/);
+  assert.match(changed.text, /RESEND_UNSUBSCRIBE_URL/);
+  assert.doesNotMatch(changed.text, /After the fear|Original copy|Authored introduction/);
+});
+
+test("sign-off artwork allows only trusted HTTPS or PNG preview assets and rejects forged client artwork", () => {
+  const template = normalizeResendTemplate(provider());
+  const edit = edits(template, { signOff: { text: "All the love" } });
+  assert.throws(() => renderResendEmailTemplate(template, edit, { campaign: false }), /Prepare the sign-off artwork/);
+  for (const asset of [
+    { ...signOffImage, url: "javascript:bad()" }, { ...signOffImage, url: "data:image/svg+xml,<svg/>" },
+    { ...signOffImage, url: "data:image/png;base64,AAAA" }, { ...signOffImage, width: 0 },
+    { ...signOffImage, height: 1601 }, { ...signOffImage, width: NaN },
+  ]) assert.throws(() => renderResendEmailTemplate(template, edit, { campaign: false, signOffImage: asset }));
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+  const preview = renderResendEmailTemplate(template, edit, { campaign: false, signOffImage: { url: png, width: 1, height: 1 } });
+  assert.ok(preview.html.includes(png));
+  assert.throws(() => renderResendEmailTemplate(template, edits(template, { signOff: { text: "All the love", url: png } }), { campaign: false, signOffImage }), /sign-off/);
+});
+
+test("Ruined typography changes only text styling, including nested heading overrides, with exact fonts and Microsoft fallbacks", () => {
+  const hidden = '<div hidden><h1 style="font-family:Secret">Private preview</h1></div>';
+  const html = '<html><head><style>p,h1{font-family:Arial!important}h1{font-size:40px}</style></head><body>'
+    + exactLogo + hidden + '<h1 style="margin:0;font-size:40px;color:#ffca2c"><span style="font-family:Arial!important"><strong>Our next chapter.</strong></span></h1>'
+    + '<p style="font:16px/1.75 Arial;color:#e9e4d9">Hello <em>friend</em>.</p>' + knownSignOff + '</body></html>';
+  const template = normalizeResendTemplate(provider({ html, text: "Our next chapter.\nHello friend.\nAfter the fear" }));
+  const rendered = renderResendEmailTemplate(template, edits(template, { typography: "ruined" }), { campaign: false });
+  const nodes = allNodes(parse5.parse(rendered.html));
+  const heading = nodes.find(node => node.tagName === "h1" && !attr(node, "style").includes("Secret"));
+  for (const node of allNodes(heading).filter(node => node.tagName)) {
+    assert.match(attr(node, "style"), /font-family:'IvyOraRuined',Georgia,'Times New Roman',serif!important/);
+    assert.match(attr(node, "style"), /font-weight:500!important/);
+    assert.match(attr(node, "style"), /letter-spacing:normal!important/);
+    assert.match(attr(node, "style"), /mso-ascii-font-family:Georgia/);
+  }
+  assert.match(attr(heading, "style"), /margin:0;font-size:40px;color:#ffca2c/);
+  for (const node of nodes.filter(node => ["body", "p", "em"].includes(node.tagName))) assert.match(attr(node, "style"), /font-family:'InterRuined',Inter/);
+  assert.ok(rendered.html.includes(exactLogo));
+  assert.ok(rendered.html.includes(knownSignOff));
+  assert.ok(rendered.html.includes(hidden));
+  assert.ok(rendered.html.includes("<!--[if !mso]><!-->"));
+  assert.match(rendered.html, /IvyOraText-Medium\.ttf/);
+  assert.match(rendered.html, /Inter-Variable-Latin\.woff2/);
+  assert.equal(rendered.text, template.text);
+  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: false }).html, html);
+  assert.throws(() => renderResendEmailTemplate(template, edits(template, { typography: "custom" }), { campaign: false }), /Ruined email typography/);
 });
