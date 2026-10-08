@@ -281,13 +281,14 @@ export async function updateOpsMemberProfileSupport(input: {
   return sql.begin(async (tx) => {
     const actorAuthUserId = await requireProfileAdmin(tx, input.actorAuthUserId, true);
     // Member-authored and operator-assisted profile writes share this lock.
+    // The row lock below must allow the phone-change trigger's consent FK check.
     await tx`select pg_advisory_xact_lock(hashtext(${memberId}), 44)`;
     const memberRows = await tx<Array<{ person_id: string | null }>>`
       select member.person_id
       from ruined_members member
       where member.id = ${memberId}::uuid
         and member.deleted_at is null
-      for update
+      for no key update
     `;
     const member = memberRows[0];
     if (!member?.person_id) throw new OpsOperatingRepositoryError("not_found", "Member profile not found.");

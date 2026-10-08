@@ -124,7 +124,7 @@ test("member phone constraint accepts valid international numbers and fails safe
 
 
 test("registration legal API validates the exact acknowledgment payload and preserves stale-document recovery", async () => {
-  const valid = { acknowledged: true, privacyVersion: "privacy-2026-08-19", agreementVersionId: "11111111-1111-4111-8111-111111111111" };
+  const valid = { acknowledged: true, privacyVersion: "privacy-2026-10-08", agreementVersionId: "11111111-1111-4111-8111-111111111111" };
   for (const acknowledgment of [{ ...valid, acknowledged: false }, { ...valid, extra: true }, { ...valid, agreementVersionId: "invalid" }, { ...valid, privacyVersion: 1 }]) {
     const route = await loadRoute(() => assert.fail("Invalid acknowledgment must not reach profile saving"));
     assert.equal((await route.POST(request({ legalAcknowledgment: acknowledgment }))).status, 400);
@@ -142,7 +142,7 @@ test("registration legal API validates the exact acknowledgment payload and pres
 });
 
 test("reminder preferences API rejects malformed input and preserves stale-choice recovery", async () => {
-  const valid = { email: true, sms: true, expectedRevision: "a".repeat(64), noticeVersion: "membership-reminders-v1", smsOptIn: { phone: "+12025550123" } };
+  const valid = { email: true, sms: true, expectedRevision: "a".repeat(64), noticeVersion: "membership-reminders-v2", smsOptIn: { phone: "+12025550123" } };
   for (const preferences of [
     { ...valid, email: "true" }, { ...valid, sms: null }, { ...valid, expectedRevision: "" },
     { ...valid, noticeVersion: null }, { ...valid, marketing: true },

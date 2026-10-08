@@ -102,6 +102,8 @@ const migrations = [
   "../db/migrations/20261008100000_registration_checkpoint_work.sql",
   "../db/migrations/20261008180000_operator_event_meet_links.sql",
   "../db/migrations/20261008200000_foundations_timeline_meaning.sql",
+  "../db/migrations/20261008210000_member_sms_phone_consent.sql",
+  "../db/migrations/20261008220000_member_sms_transport.sql",
 ];
 
 function migrationBody(migration, migrationName) {

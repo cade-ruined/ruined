@@ -24,7 +24,7 @@ const onboarding = changes => ({ state: "in_progress", billingState: "pending", 
 const context = (changes = {}) => ({ state: "authenticated", viewer: { authUserId: "test-auth", email: "new@example.test" }, data: onboarding(), configuration: { mode: "connected", stripeCheckoutReady: true, stripePaymentSetupReady: true, minimumAge: 18 }, ...changes });
 const previewDeps = { MEMBER_PREVIEW_COOKIE: "fixture", memberPreviewScenario: value => value, memberRegistrationPreview: value => value === "registered" ? registration({ state: "registered", profileComplete: true }) : registration() };
 const legalNotice = {
-  state: "required", privacyVersion: "privacy-2026-08-19", privacyHref: "/privacy",
+  state: "required", privacyVersion: "privacy-2026-10-08", privacyHref: "/privacy",
   agreementVersionId: "11111111-1111-4111-8111-111111111111", agreementVersion: 1,
   agreementTitle: "Ruined Registration Terms", agreementHref: "/membership/agreement/ruined_registration-v1",
   noticeText: "I have read the Privacy Policy and reviewed the Membership Terms. Registration and saving a card do not start a paid membership or authorize a charge.",
@@ -159,6 +159,7 @@ async function detailsFixture(requiresPaymentMethod, changes = {}) {
     "@/components/membership/CoupleMembershipApproval": Stub, "@/components/membership/AgreementText": Stub,
     "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => preference, RegistrationCoupleFields: Stub },
     "@/components/membership/MemberPhotoUpload": Stub, "@/components/membership/MemberPaymentMethod": Stub,
+    "@/components/membership/MemberSmsConsentDisclosure": await load("src/components/membership/MemberSmsConsentDisclosure.tsx", { "@/lib/membership/member-communication-preferences-model": await load("src/lib/membership/member-communication-preferences-model.ts") }),
     "@/lib/membership/entry-stage": await load("src/lib/membership/entry-stage.ts"),
     "@/lib/membership/pricing": await load("src/lib/membership/pricing.ts"),
     "@/lib/membership/phone": await load("src/lib/membership/phone.ts"),
@@ -191,7 +192,14 @@ test("reminder choices preserve saved decisions and remain separate from require
     assert.equal(sms.props.checked, expectedSms);
     assert.equal(email.props.required, undefined); assert.equal(sms.props.required, undefined);
     assert.equal(inputNamed(f, "registration-legal-acknowledged").props.defaultChecked, false);
-    assert.match(renderToStaticMarkup(f.render()), /Message frequency varies.*Message and data rates may apply/);
+    const markup = renderToStaticMarkup(f.render());
+    assert.match(markup, /Membership updates/);
+    assert.match(markup, /recurring text messages from Ruined about membership updates and call reminders/);
+    assert.match(markup, /Consent is not a condition of purchase or membership/);
+    assert.match(markup, /Message frequency varies.*Message and data rates may apply/);
+    assert.match(markup, /Reply STOP to unsubscribe or HELP for help/);
+    assert.match(markup, /href="\/membership\/text-messages"[^>]*>SMS Terms/);
+    assert.match(markup, /href="\/privacy"[^>]*>Privacy Policy/);
     assert.match(renderToStaticMarkup(f.render()), /Security, account and registration emails still arrive/);
     assert.match(renderToStaticMarkup(f.render()), /mailto:connect@theruinedproject.com/);
   }
@@ -204,7 +212,7 @@ test("independent optional reminder choices submit explicit false and active SMS
     assert.deepEqual(f.calls, [], "Checkbox clicks must not send or persist anything");
     await f.submit();
     assert.deepEqual(f.calls[0].body.communicationPreferences, {
-      email, sms, expectedRevision: "server-revision-0", noticeVersion: "membership-reminders-v1",
+      email, sms, expectedRevision: "server-revision-0", noticeVersion: "membership-reminders-v2",
       ...(sms ? { smsOptIn: { phone: "+18015550123" } } : {}),
     });
     assert.deepEqual(f.redirects, ["/my/payment-method"], "Declining both channels does not block registration");
