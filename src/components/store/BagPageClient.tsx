@@ -1,5 +1,7 @@
 "use client";
 
+import { checkoutWithAttribution } from "@/lib/marketing/meta";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -138,7 +140,7 @@ export default function BagPageClient({
       if (!response.ok || !payload.checkoutUrl) {
         throw new Error(payload.error || "Checkout is temporarily unavailable.");
       }
-      window.location.assign(payload.checkoutUrl);
+      window.location.assign(checkoutWithAttribution(payload.checkoutUrl));
     } catch (checkoutError) {
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout is temporarily unavailable.");
       setSubmitting(false);

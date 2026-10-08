@@ -7,8 +7,9 @@ import {
   SERVICE_NAV_ITEMS,
 } from "@/data/navigation";
 import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
+import { MARKETING_PREFERENCES_EVENT } from "@/lib/marketing/consent";
 
-export default function SiteFooter() {
+export default function SiteFooter({ marketingEnabled = false }: { marketingEnabled?: boolean }) {
   const pathname = useBackgroundPathname();
   if (
     pathname === "/" ||
@@ -46,7 +47,9 @@ export default function SiteFooter() {
         </div>
       </div>
       <div className="mx-auto mt-12 flex max-w-6xl flex-wrap justify-between gap-3 border-t border-black/15 pt-5 font-sans text-[0.55rem] uppercase tracking-[0.22em] opacity-55">
-        <span>© 2026 The Ruined Project</span><span>After the fear</span>
+        <span>© 2026 The Ruined Project</span>
+        {marketingEnabled && <button type="button" onClick={() => window.dispatchEvent(new Event(MARKETING_PREFERENCES_EVENT))} className="min-h-11 underline underline-offset-4">Cookie preferences</button>}
+        <span>After the fear</span>
       </div>
     </footer>
   );

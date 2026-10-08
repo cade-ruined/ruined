@@ -35,6 +35,7 @@ const product = {
 };
 const dependencies = {
   react: React,
+  "@/lib/marketing/meta": { trackMetaAddToCart: () => {}, checkoutWithAttribution: (url) => url },
   "react/jsx-runtime": jsxRuntime,
   "next/link": { default: () => null },
   "next/image": { default: () => null },

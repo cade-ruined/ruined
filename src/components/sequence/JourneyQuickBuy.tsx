@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Product, ProductVariant } from "@/data/products";
 import { useBag } from "@/components/store/bag-store";
 import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
+import { trackMetaAddToCart } from "@/lib/marketing/meta";
 
 function matches(variant: ProductVariant, selection: Record<string, string>) {
   return Object.entries(selection).every(([name, value]) =>
@@ -71,6 +72,7 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
         image: getVariantImage(product, selectedVariant),
         expectedShipDate: product.expectedShipDate,
       });
+      trackMetaAddToCart(product, selectedVariant);
       setAdded(true);
       setError(false);
     } catch {

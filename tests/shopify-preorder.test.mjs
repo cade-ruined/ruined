@@ -134,7 +134,7 @@ test("product and bag present the restrained pay-in-full preorder promise", () =
   );
   assert.match(purchase, /isPreorder\s*\?\s*"Preorder"\s*:\s*"Add to bag"/);
   assert.match(purchase, /options\.slice\(0, optionIndex\)/);
-  assert.match(purchase, /setSelection\(\(current\)\s*=>[\s\S]*Object\.fromEntries/);
+  assert.match(purchase, /const next = Object\.fromEntries[\s\S]*setSelection\(next\)/);
 
   assert.match(bagStore, /expectedShipDate\?:\s*string/);
   assert.match(bagStore, /isOptionalString\(item\.expectedShipDate\)/);
