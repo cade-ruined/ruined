@@ -52,10 +52,16 @@ test("compact display preserves accessible full labels, current states and dates
   assert.doesNotMatch(html, /<button|<a /, "Checkpoints do not trigger actions");
 });
 
-test("complimentary and review payment states cannot visually masquerade as a received payment", () => {
+test("complimentary payment checkpoints are complete with an explicit exemption and no payment date", () => {
   const complimentary = render({ ...base, paymentExempt: true });
-  assert.match(complimentary, /aria-label="Payment received: Not required"/);
-  assert.doesNotMatch(complimentary, /aria-label="Payment received: Complete/);
+  assert.match(complimentary, /aria-label="Payment received: Complete"/);
+  assert.match(complimentary, /aria-label="Payment information collected: Complete"/);
+  assert.equal((complimentary.match(/No payment required\. Complimentary membership\./g) ?? []).length, 2);
+  assert.doesNotMatch(complimentary, /aria-label="Payment (?:received|information collected): Complete ·/);
+  assert.equal((complimentary.match(/<time /g) ?? []).length, 1, "Only verified email retains a completion timestamp");
+});
+
+test("unconfirmed payments requiring review are never marked complete", () => {
   const review = render({ ...base, paymentConfirmed: false, paymentNeedsReview: true });
   assert.match(review, /aria-label="Payment received: Review"/);
   assert.doesNotMatch(review, /aria-label="Payment received: Complete/);

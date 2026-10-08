@@ -5,7 +5,7 @@ import MemberJourneyShell from "@/components/membership/MemberJourneyShell";
 import AccessPage from "@/components/platform/AccessPage";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { completePlatformSignIn, getSupportSignInDestination } from "@/lib/auth/platform-access";
-import { getSupportReturnTo } from "@/lib/auth/support-return";
+import { getAccessReturnTo } from "@/lib/auth/support-return";
 import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { PlatformAccessDeniedError } from "@/lib/platform/repository";
@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 export default async function RuinedAccessPage({ searchParams }: {
   searchParams: Promise<{ returnTo?: string | string[] }>;
 }) {
-  const returnTo = getSupportReturnTo((await searchParams).returnTo);
+  const returnTo = getAccessReturnTo((await searchParams).returnTo);
   const configuration = getPlatformConfiguration();
   const session = configuration.mode === "connected" ? await resolveCurrentPlatformSession() : null;
   let redirectTo: string | null = null;

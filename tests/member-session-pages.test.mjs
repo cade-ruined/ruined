@@ -151,7 +151,7 @@ test("access page preserves valid sessions through provider, claim and destinati
       "@/lib/auth/session": sessionFixture(scenario),
       "@/lib/platform/config": configuration,
       "@/lib/platform/repository": { PlatformAccessDeniedError },
-      "@/lib/auth/support-return": { getSupportReturnTo: () => "/my/support" },
+      "@/lib/auth/support-return": { getAccessReturnTo: () => "/my/support" },
       "@/lib/sharing": { sharingMetadata: () => ({}) },
       "@/lib/auth/platform-access": {
         completePlatformSignIn: async (identity) => {
@@ -176,5 +176,28 @@ test("access page preserves valid sessions through provider, claim and destinati
       assert.doesNotMatch(JSON.stringify(tree.props.children.props), /PRIVATE/);
     }
     if (["unavailable", "network", "signed_out"].includes(scenario)) assert.deepEqual(calls, []);
+  }
+});
+
+test("signed-out access page passes only safe member follow-up routes into the code form", async () => {
+  const page = load("app/access/page.tsx", {
+    "next/navigation": { redirect },
+    "@/components/membership/MemberJourneyShell": Shell,
+    "@/components/platform/AccessPage": Access,
+    "@/components/platform/PlatformUnavailable": Unavailable,
+    "@/lib/auth/session": sessionFixture("signed_out"),
+    "@/lib/platform/config": configuration,
+    "@/lib/platform/repository": { PlatformAccessDeniedError },
+    "@/lib/auth/support-return": load("src/lib/auth/support-return.ts"),
+    "@/lib/sharing": { sharingMetadata: () => ({}) },
+    "@/lib/auth/platform-access": {
+      completePlatformSignIn: () => assert.fail("Signed-out pages cannot claim an identity"),
+      getSupportSignInDestination: () => assert.fail("Signed-out pages cannot select an authenticated destination"),
+    },
+  });
+  for (const [returnTo, expected] of [["/my/join", "/my/join"], ["/my/activate", "/my/activate"], ["/my", "/my"], ["https://attacker.example", undefined], [["/my/activate"], undefined]]) {
+    const tree = await page.default({ searchParams: Promise.resolve({ returnTo }) });
+    assert.equal(tree.props.children.type, Access);
+    assert.equal(tree.props.children.props.returnTo, expected);
   }
 });

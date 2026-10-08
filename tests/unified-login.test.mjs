@@ -142,7 +142,7 @@ async function routeModule(kind, options = {}) {
         if (context) calls.push({ claimContext: context });
         if (options.denied) throw new PlatformAccessDeniedError();
         if (options.billingConflict) throw Object.assign(new Error("Existing billing"), { code: "P4102" });
-        return { redirectTo: context ? "/my/join" : "/my" };
+        return { redirectTo: context ? "/my/join" : options.destination ?? "/my" };
       },
       getSupportSignInDestination: supportAccess.getSupportSignInDestination,
     },
@@ -405,5 +405,49 @@ test("support return links cannot bypass held registration or its paid checkout 
     for (const requested of ["/my/support", "/ops/support", `/my/support/${viewer.authUserId}`]) {
       assert.equal(await member.getSupportSignInDestination(viewer, requested, fallback), fallback);
     }
+  }
+});
+
+test("member action links allow only exact account routes without query strings or identities", async () => {
+  const helpers = await load("src/lib/auth/support-return.ts", {});
+  for (const valid of ["/my", "/my/join", "/my/activate"]) {
+    assert.equal(helpers.getMemberReturnTo(valid), valid);
+    assert.equal(helpers.getAccessReturnTo(valid), valid);
+    assert.equal(helpers.getMemberAccessUrl(valid), `/access?returnTo=${encodeURIComponent(valid)}`);
+  }
+  for (const invalid of [undefined, null, [], {}, "/ops", "/my/payment-method", "/my/registered", "/my/join/", "/my/activate?checkout=returned", "/my/activate#payment", "/my/activate\n", " /my/activate", "/MY", "/my/../ops", "/my/%61ctivate", "https://attacker.example/my", "//attacker.example/my", "\\my\\activate"]) {
+    assert.equal(helpers.getMemberReturnTo(invalid), null);
+    assert.equal(helpers.getAccessReturnTo(invalid), null);
+    assert.equal(helpers.getMemberAccessUrl(invalid), "/access");
+  }
+  assert.equal(helpers.getAccessReturnTo(`/my/support/${viewer.authUserId}`), `/my/support/${viewer.authUserId}`);
+});
+
+test("verified member follow-up links retain checkout after sign-in without bypassing incomplete information or profile hold", async () => {
+  for (const [returnTo, destination, expected] of [
+    ["/my/join", "/my/join", "/my/join"],
+    ["/my/activate", "/my/join", "/my/join"],
+    ["/my/activate", "/my/registered", "/my/activate"],
+    ["/my/activate", "/my/payment-method", "/my/activate"],
+    ["/my/activate", "/my/activate", "/my/activate"],
+    ["/my/activate", "/my", "/my/activate"],
+    ["/my/activate", "/ops", "/ops"],
+    ["/my", "/my/join", "/my/join"],
+    ["/my", "/my/registered", "/my/registered"],
+    ["/my/join", "/my/activate", "/my/activate"],
+    ["/my", "/my", "/my"],
+    ["/my/activate?memberId=other", "/my", "/my"],
+  ]) {
+    const api = await routeModule("verify", { destination });
+    const response = await api.POST(request("verify", { email: viewer.email, token: "123456", returnTo }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { redirectTo: expected });
+    assert.deepEqual(api.calls, ["eligibility", "verify", "claim"]);
+  }
+  for (const returnTo of ["/my/join", "/my/activate", "/my"]) {
+    const api = await routeModule("verify", { denied: true });
+    const response = await api.POST(request("verify", { email: viewer.email, token: "123456", returnTo }));
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).redirectTo, undefined);
   }
 });

@@ -4,7 +4,7 @@ import { getMemberRegistrationDestination } from "@/lib/membership/registration-
 type SignInDestination = "/my" | "/my/join" | "/ops" | "/my/payment-method" | "/my/registered" | "/my/activate";
 
 import type { PlatformViewer } from "@/lib/platform/model";
-import { getSupportReturnTo } from "@/lib/auth/support-return";
+import { getAccessReturnTo, getMemberReturnTo } from "@/lib/auth/support-return";
 import {
   claimPlatformMemberForViewer,
   getPasswordlessAccessEligibility,
@@ -14,14 +14,21 @@ import {
 import { claimPlatformOperatorForViewer } from "@/lib/platform/ops-access-repository";
 import { ensureOperatorMemberProfile } from "@/lib/platform/operator-member-profile";
 
-/** Call only after completePlatformSignIn has succeeded. This grants no access. */
+/** Call only after completePlatformSignIn has succeeded. Support and member return hints grant no access. */
 export async function getSupportSignInDestination(
   viewer: PlatformViewer,
   requestedReturnTo: unknown,
   fallback: SignInDestination,
 ): Promise<string> {
+  const returnTo = getAccessReturnTo(requestedReturnTo);
+  // An operator can send a returning member straight to paid checkout, including
+  // registrations completed under the earlier save-card flow. The checkout page
+  // still validates their registration, funding, agreement and existing billing.
+  // Incomplete information and accounts with only operator access keep their
+  // server-selected destination before any member return hint is considered.
+  if (getMemberReturnTo(returnTo) && (fallback === "/my/join" || fallback === "/ops")) return fallback;
+  if (returnTo === "/my/activate") return returnTo;
   if (fallback === "/my/payment-method" || fallback === "/my/registered" || fallback === "/my/activate") return fallback;
-  const returnTo = getSupportReturnTo(requestedReturnTo);
   if (!returnTo) return fallback;
   if (returnTo.startsWith("/ops/") && await getOperatorRole(viewer.authUserId) !== "ops_admin") return fallback;
   return returnTo;

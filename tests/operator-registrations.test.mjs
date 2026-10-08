@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const memberA = "00000000-0000-4000-8000-000000000101";
 const memberB = "00000000-0000-4000-8000-000000000102";
 const actor = "00000000-0000-4000-8000-000000000099";
-const expand = node => React.isValidElement(node) && node.type?.name === "OperatorMemberCheckpoints" ? node.type(node.props) : node;
+const expand = node => React.isValidElement(node) && ["OperatorMemberCheckpoints", "OperatorRegistrationNextStep"].includes(node.type?.name) ? node.type(node.props) : node;
 const nodes = input => { const node = expand(input); return React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : []; };
 const text = input => { const node = expand(input); return React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : node == null || typeof node === "boolean" ? "" : String(node); };
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -109,7 +109,13 @@ async function uiFixture({ rows = [row(), row(memberB)], preview = false, replie
   const h = hooks(), calls = []; let refreshes = 0;
   const View = (await load("src/components/platform/OperatorRegistrations.tsx", {
     "@/lib/membership/operator-registration-progress": await load("src/lib/membership/operator-registration-progress.ts"),
+    "@/lib/membership/operator-registration-follow-up": await load("src/lib/membership/operator-registration-follow-up.ts", { "@/lib/auth/support-return": await load("src/lib/auth/support-return.ts") }),
     "./OperatorMemberCheckpoints": await load("src/components/platform/OperatorMemberCheckpoints.tsx"),
+    "./OperatorRegistrationNextStep": function OperatorRegistrationNextStep({ action, onReviewProfile, disabled }) {
+      return React.createElement("section", { "aria-label": "Operator next step" }, action.title, action.detail,
+        action.memberUrl ? React.createElement("input", { readOnly: true, "aria-label": "Member follow-up link", value: action.memberUrl }) : null,
+        action.kind === "release" ? React.createElement("button", { disabled, onClick: onReviewProfile }, "Review profile access") : null);
+    },
     react: h.react, "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/navigation": { useRouter: () => ({ refresh: () => { refreshes++; } }) },
     "./operatorStyles": { OPERATOR_BUTTON_CLASS: "button", OPERATOR_PRIMARY_ACTION_CLASS: "primary" },
@@ -140,6 +146,26 @@ test("operators must review the named recipients before activating, with each ro
   ]);
   assert.match(text(f.render()), /2 profiles opened. Activation emails are queued/);
   assert.equal(f.button("Open profiles & queue email"), undefined);
+});
+
+test("the row's operator action reviews only that ready profile before any release", async () => {
+  const f = await uiFixture();
+  await f.click("Review profile access");
+  const review = nodes(f.render()).find(node => node.props["aria-labelledby"] === "profile-release-review");
+  assert.match(text(review), /Cherry Hill · cherry@example.test/);
+  assert.doesNotMatch(text(review), /Alex Rivera/);
+  assert.deepEqual(f.calls, []);
+  await f.click("Open profiles & queue email");
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].url, `/api/ops/members/${memberA}/registration`);
+});
+
+test("registrations show exact member links and operator instructions instead of internal paths", async () => {
+  const f = await uiFixture({ rows: [row(memberA, { progress: { ...defaultProgress, paymentConfirmed: false } })] });
+  assert.match(text(f.render()), /Send the payment link/);
+  const field = nodes(f.render()).find(node => node.type === "input" && node.props["aria-label"] === "Member follow-up link");
+  assert.equal(field.props.value, "https://members.theruinedproject.com/access?returnTo=%2Fmy%2Factivate");
+  assert.deepEqual(f.calls, []);
 });
 
 test("unready, withdrawn-card and already-open accounts cannot be selected for release", async () => {

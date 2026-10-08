@@ -71,6 +71,21 @@ test("disabled signup cannot send an email even when native submission is invoke
   assert.match(content(tree), /Signup is not available yet/);
 });
 
+test("operator follow-up destination survives email entry and code verification", async () => {
+  const hooks = harness(), calls = [], destinations = [];
+  const component = await load("src/components/platform/PasswordlessAccessForm.tsx", { react: hooks.react, "next/link": Stub }, {
+    fetch: async (url, request) => { calls.push({ url, body: JSON.parse(request.body) }); return { ok: true, json: async () => ({ requestId: "request-1", redirectTo: "/my/activate" }) }; },
+    window: { location: { assign: href => destinations.push(href) } },
+    FormData: class { get() { return "123456"; } },
+  });
+  const render = () => hooks.render(component, { enabled: true, returnTo: "/my/activate" });
+  nodes(render()).find(node => node.props.name === "email").props.onChange({ target: { value: " MEMBER@Example.test " } });
+  await render().props.onSubmit({ preventDefault() {} });
+  await render().props.onSubmit({ preventDefault() {}, currentTarget: {} });
+  assert.deepEqual(calls[1], { url: "/api/auth/otp/verify", body: { email: "member@example.test", token: "123456", returnTo: "/my/activate" } });
+  assert.deepEqual(destinations, ["/my/activate"]);
+});
+
 async function checkoutFixture({ initialPlan = "annual", membershipFunding = "self" } = {}) {
   const hooks = harness(), calls = [], responses = [];
   const component = await load("src/components/membership/JoinForm.tsx", {

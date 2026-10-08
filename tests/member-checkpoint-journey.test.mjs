@@ -20,10 +20,19 @@ test('verified ordinary checkout completes collection and payment without a stan
  assert.equal(step(result,'payment_method').state,'complete');assert.equal(step(result,'payment_method').completedAt,at);
  assert.match(step(result,'payment_method').detail,/Stripe checkout/);assert.equal(step(result,'payment').state,'complete');assert.equal(result.next.key,'profile');
 });
-test('current complimentary authority exempts both payment checkpoints and revoked authority does not',()=>{
+test('current complimentary authority completes both payment checkpoints without payment proof and revoked authority does not',()=>{
  const comp=journey(row({paymentExempt:true,registeredAt:at,ready:true}));
- assert.equal(step(comp,'payment_method').state,'not_required');assert.equal(step(comp,'payment').state,'not_required');assert.equal(resultDateCount(comp),0);assert.equal(comp.next.key,'profile');
+ for(const key of ['payment_method','payment']){assert.equal(step(comp,key).state,'complete');assert.equal(step(comp,key).completedAt,null);assert.match(step(comp,key).detail,/No payment required/);}
+ assert.equal(resultDateCount(comp),0);assert.equal(comp.next.key,'profile');
  const revoked=journey(row({completionBasis:'complimentary',paymentExempt:false}));assert.equal(revoked.next.key,'payment');assert.equal(step(revoked,'payment').state,'needed');
+});
+test('payment exemptions never create receipt dates or bypass earlier registration steps',()=>{
+ const comp=journey(row({paymentExempt:true,paymentConfirmed:true,paymentReceivedAt:at,paymentInformationCollectedAt:at,emailVerified:false,profileComplete:false}));
+ for(const key of ['payment_method','payment']){assert.equal(step(comp,key).state,'complete');assert.equal(step(comp,key).completedAt,null);}
+ assert.equal(comp.next.key,'email');assert.equal(step(comp,'information').state,'needed');
+ assert.equal(step(comp,'profile').state,'needed');
+ const paidFounding=journey(row({paymentExempt:false,completionBasis:null,registeredAt:at,ready:true}));
+ assert.equal(step(paidFounding,'payment_method').state,'needed');assert.equal(step(paidFounding,'payment').state,'needed');assert.equal(paidFounding.next.key,'payment');
 });
 function resultDateCount(result){return result.checkpoints.filter(x=>x.completedAt).length;}
 test('a shared partner has no separate collection requirement and awaits their payer until proof is received',()=>{
