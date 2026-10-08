@@ -59,6 +59,47 @@ async function fixture(t) {
 
 const code = expected => error => error.code === expected;
 
+test("admin work identifies unfinished registrations without mixing contact emails into names", async t => {
+  const f = await fixture(t);
+  const member = crypto.randomUUID(), person = crypto.randomUUID();
+  const memberEmail = "unfinished.registration@example.test";
+  await f.db.query("insert into people(id) values($1)", [person]);
+  await f.db.query("insert into ruined_members(id,person_id,email,email_normalized) values($1,$2,$3,$3)", [member,person,memberEmail]);
+  await f.db.query("insert into member_lifecycle(member_id) values($1)", [member]);
+  const id = await f.task({ member,owner:f.first.auth });
+  await f.db.query("update operator_tasks set task_type='registration.checkpoint.information' where id=$1", [id]);
+  const systemId = await f.task();
+
+  const check = async expectedName => {
+    const queue = await f.repository.getOpsWorkQueue(f.first.auth);
+    const overview = await f.repository.getOpsOverviewData(f.first.auth);
+    for (const item of [queue.items.find(item => item.workId === id),overview.priorityWork.find(item => item.workId === id)]) {
+      assert.equal(item.memberId,member);
+      assert.equal(item.memberName,expectedName);
+      assert.equal(item.memberEmail,memberEmail);
+      assert.equal(item.claimedByName,"Alexandra Operator");
+      assert.equal(item.version,1);
+    }
+    const system = queue.items.find(item => item.workId === systemId);
+    assert.equal(system.memberId,null);
+    assert.equal(system.memberEmail,null);
+  };
+
+  await check(null);
+  await f.db.query("insert into person_profiles(person_id,preferred_name,display_name) values($1,null,' Alex Member ')", [person]);
+  await check("Alex Member");
+  await f.db.query("update person_profiles set preferred_name=' Al ',display_name='Alex Member' where person_id=$1", [person]);
+  await check("Al");
+  await f.db.query("update person_profiles set preferred_name=null,display_name=null where person_id=$1", [person]);
+  await check(null);
+
+  const guide = await f.operator("Circle Guide","Guide","guide");
+  assert.equal((await f.repository.getOpsWorkQueue(guide.auth)).items.some(item => item.workId === id),false);
+  assert.doesNotMatch(JSON.stringify(await f.repository.getOpsOverviewData(guide.auth)),/unfinished\.registration@example\.test/);
+  assert.equal((await f.state(id)).version,1);
+  assert.equal((await f.state(id)).assigned_to_auth_user_id,f.first.auth);
+});
+
 test("task ownership is enforced transactionally against the complete shipped schema", async t => {
   const f = await fixture(t);
 
