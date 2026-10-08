@@ -1,20 +1,20 @@
 # Resend email workspace
 
-**Messages → Emails** (`/ops/messages?mode=emails`, also `/ops/emails`) gives Ruined administrators a front end for the existing Resend account. Resend supplies designs, audience groups, topics, campaign drafts and sending history. ChatGPT revises copy within the selected design.
+**Messages → Emails** (`/ops/messages?mode=emails`, also `/ops/emails`) gives Ruined administrators a front end for the existing Resend account. Resend supplies designs, audience groups, topics, campaign drafts and sending history. Administrators edit the copy directly within the selected design.
 
 ## Designs and copy
 
 The workspace loads a template's current HTML, version, subject, sender, reply address and variables from Resend. Published and draft templates can both supply a design snapshot. A published template with unpublished changes is identified explicitly: Resend returns its published HTML until those changes are published. The preview reflects the version returned by Resend. This workflow does not publish or overwrite the original template.
 
-Static designs also work. The editor exposes visible text fields while preserving the original layout, styles, images, logos, links and conditional markup. Edits replace only selected text spans or declared variables. Unsubscribe labels, hidden preheaders, decorative punctuation and active code are excluded from copy editing. Authored copy is escaped as text; the browser and model cannot supply replacement HTML.
+Static designs also work. The editor exposes visible text fields while preserving the original layout, styles, images, logos, links and conditional markup. Edits replace only selected text spans or declared variables. Unsubscribe labels, hidden preheaders, decorative punctuation and active code are excluded from copy editing. Authored copy is escaped as text; the browser cannot supply replacement HTML.
 
-Fill required variables before requesting a ChatGPT revision. The model receives the administrator's prompt, subject and editable text values; recipient lists, member records and design HTML are not automatically included. Returned copy must retain the exact known field and variable keys and pass the same rendering checks as manual edits. Requests use `store: false`. Administrators should still avoid unnecessary sensitive information in their prompts.
+Fill required variables and edit the subject and copy fields, then check the rendered preview before saving or reviewing recipients.
 
 Copy fields allow 12,000 characters, variables 6,000, combined edits 48,000, and the completed subject 200. Numeric variables are validated. Variables in unsupported layout or active-code contexts must be corrected in Resend. Link variables must form safe absolute URLs.
 
 The preview uses the actual rendered design in a sandboxed frame. When static copy changes, the plain-text alternative is regenerated from the edited design so it does not retain old copy. Unchanged designs retain their authored text alternative.
 
-**Image banner** adds an optional image to this email. Choose a JPG, PNG, or WebP from your device (up to 3 MiB), or paste a public HTTPS image URL. Add a short image description and optionally a HTTPS destination URL. Uploads go to Ruined's Supabase storage and their public URL is inserted automatically; Resend uses that image when delivering individual emails or native campaigns. The original banner stays in place if an upload fails. Replace the photo or URL to change the image, or choose **Remove banner** to restore the original design. The banner appears before the main headline, below the existing logo, and scales to the available width without cropping. It leaves the source Resend template unchanged. ChatGPT revisions preserve the selected banner. Banner changes invalidate the previous recipient review and saved draft selection.
+**Image banner** adds an optional image to this email. Choose a JPG, PNG, or WebP from your device (up to 3 MiB), or paste a public HTTPS image URL. Add a short image description and optionally a HTTPS destination URL. Uploads go to Ruined's Supabase storage and their public URL is inserted automatically; Resend uses that image when delivering individual emails or native campaigns. The original banner stays in place if an upload fails. Replace the photo or URL to change the image, or choose **Remove banner** to restore the original design. The banner appears before the main headline, below the existing logo, and scales to the available width without cropping. It leaves the source Resend template unchanged. Banner changes invalidate the previous recipient review and saved draft selection.
 
 Device uploads use a dedicated public `admin-email-images` bucket, separate from private member photos and journals. Only active administrators can upload through the same-origin server endpoint. Requests are bounded before multipart parsing, actual image bytes are decoded and verified, and files are resized within 1,600 × 1,600 pixels without cropping or enlargement. Metadata is removed; output is email-compatible JPEG or PNG. Invalid, animated, oversized, or unreadable files are rejected. A durable limit allows 30 upload attempts per administrator per hour. Uploads use random, immutable names; replacing or removing a banner from a draft does not delete an image that an already-sent email may use. Upload only artwork intended to be publicly accessible.
 
@@ -38,13 +38,13 @@ Sending requires an explicit administrator action. The server checks the current
 
 Uncertain responses are not automatically retried. Check Resend before another send. Provider acceptance is not inbox-delivery proof; history shows the provider's reported status.
 
-The application stores review snapshots, send claims, audit events and AI usage limits. It does not maintain a second audience database or a separate background email delivery queue for this workspace.
+The application stores review snapshots, send claims, audit events and image-upload usage limits. It does not maintain a second audience database or a separate background email delivery queue for this workspace.
 
 ## Configuration
 
-Apply these migrations with the existing platform migration runner:
+Keep these migrations in the existing platform migration runner. They are already applied in production; new installations apply them through the same runner:
 
-1. `20261008180000_admin_email.sql` — private administrator AI generation limits.
+1. `20261008180000_admin_email.sql` — historical AI generation limits, now inactive. Preserve the applied migration and checksum.
 2. `20261008200000_resend_email_frontend.sql` — private immutable reviews and send claims.
 3. `20261008210000_admin_email_images.sql` — private upload usage limits and the dedicated public email-image bucket.
 
@@ -53,18 +53,16 @@ New tables have row-level security and deny direct public/client access. The ser
 Server environment:
 
 - `RESEND_API_KEY`: full access to the required template, segment, topic, contact, suppression, email and broadcast APIs. A sending-only key cannot power the workspace.
-- `OPENAI_API_KEY`: enables ChatGPT revisions. Manual editing remains available without it.
-- `OPENAI_EMAIL_MODEL`: defaults to `gpt-4.1-mini`; use a model supporting Responses structured outputs.
 - `ADMIN_EMAIL_SENDING_ENABLED=true`: enables sending on a connected platform. Disabled by default.
 - `RESEND_FROM_EMAIL`: optional fallback when a template has no sender. Configure a verified sender in Resend.
 - Existing `NEXT_PUBLIC_SUPABASE_URL` and server-only `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) enable device uploads. The email-image bucket must be public; an existing private bucket with the same name is not silently made public. Uploads never reuse private member-media buckets.
 
-No new cron job or application postal-address setting is required. Resend handles campaign delivery, and its template supplies the footer. Each administrator can request 30 AI revisions per hour; failed provider requests consume that limit.
+No OpenAI credentials or ChatGPT setup is required. No new cron job or application postal-address setting is required. Resend handles campaign delivery, and its template supplies the footer.
 
 In non-production development with `PLATFORM_MODE=preview`, an optional Resend key can load real templates, groups and topics for design inspection. This preview exposes neither contacts nor sending history and cannot send or create provider drafts. Device photos stay in the browser for a clearly labeled local preview; they are not uploaded or included in API requests. Production routes require administrator authentication.
 
 ## Validation and release
 
-Tests mock OpenAI and Resend and use an isolated database. They cover provider pagination, preferences, exact design preservation, safe substitutions, version and audience conflicts, send claims, uncertainty handling, authorization and AI output validation. The actual retrieved Resend design was separately checked for byte-identical round-tripping and precise copy edits without changing links, images or personalization.
+Tests mock Resend and Supabase Storage and use an isolated database. They cover provider pagination, preferences, exact design preservation, safe substitutions, version and audience conflicts, send claims, uncertainty handling, authorization, image validation and storage permissions. The actual retrieved Resend design was separately checked for byte-identical round-tripping and precise copy edits without changing links, images or personalization.
 
-For release, apply migrations, configure credentials, complete review and deployment checks, then verify a real AI revision and one explicitly authorized send. Local tests and design previews do not establish live delivery. Without an OpenAI API key, template editing, uploads and reviewed sending remain available while ChatGPT revisions are disabled.
+Removing the writing assistant requires no database changes. Keep existing review history, upload limits, images and historical migrations intact. Verify manual editing, image uploads, recipient review and sending safeguards, then complete deployment checks. Local tests and design previews do not establish live delivery.
