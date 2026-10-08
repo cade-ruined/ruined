@@ -24,10 +24,9 @@ function line(value: unknown, fallback = "") {
 export function getResendEmailConfiguration() {
   const connected = Boolean(process.env.RESEND_API_KEY?.trim());
   const enabled = process.env.ADMIN_EMAIL_SENDING_ENABLED === "true" && getPlatformConfiguration().mode === "connected";
-  return { connected, aiReady: Boolean(process.env.OPENAI_API_KEY?.trim()), sendingReady: connected && enabled,
+  return { connected, sendingReady: connected && enabled,
     issues: [...(!connected ? ["Connect Resend to load your templates and audiences."] : []),
-      ...(!enabled ? ["Sending is disabled until email setup is complete."] : []),
-      ...(!process.env.OPENAI_API_KEY?.trim() ? ["Connect OpenAI to use ChatGPT. You can edit template copy manually."] : [])] };
+      ...(!enabled ? ["Sending is disabled until email setup is complete."] : [])] };
 }
 // Share pacing across requests in this process. Provider rate limiting remains authoritative across instances.
 let nextRequest = 0;

@@ -162,6 +162,23 @@ async function fixture(t) {
   return { pg, admin, guide, other, service, state, input, campaign, individual, env, faults };
 }
 
+test("manual email configuration does not depend on an OpenAI key or model", async t => {
+  const f = await fixture(t);
+  const withoutOpenAI = f.service.getResendEmailConfiguration();
+  assert.deepEqual(withoutOpenAI, { connected: true, sendingReady: true, issues: [] });
+  f.env.OPENAI_API_KEY = "unused-fixture-key";
+  f.env.OPENAI_EMAIL_MODEL = "unused-fixture-model";
+  assert.deepEqual(f.service.getResendEmailConfiguration(), withoutOpenAI);
+  f.env.ADMIN_EMAIL_SENDING_ENABLED = "false";
+  const disabled = f.service.getResendEmailConfiguration();
+  assert.equal(disabled.connected, true);
+  assert.equal(disabled.sendingReady, false);
+  delete f.env.OPENAI_API_KEY;
+  delete f.env.OPENAI_EMAIL_MODEL;
+  assert.deepEqual(f.service.getResendEmailConfiguration(), disabled);
+  assert.equal(f.state.requests.length, 0);
+});
+
 test("native workspace authorizes before provider access and rejects revoked administrators", async t => {
   const f = await fixture(t);
   for (const action of [() => f.service.getResendEmailOverview(f.guide), () => f.service.getResendEmailTemplate(f.guide, fixed.template),

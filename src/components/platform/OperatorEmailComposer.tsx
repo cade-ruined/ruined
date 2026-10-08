@@ -19,7 +19,7 @@ type Overview = {
   topics: Array<{ id: string; name: string; defaultSubscription: string }>;
   broadcasts: BroadcastSummary[];
   emails: SentEmail[];
-  configuration: { connected: boolean; aiReady: boolean; sendingReady: boolean; issues: string[] };
+  configuration: { connected: boolean; sendingReady: boolean; issues: string[] };
   cursors: { broadcasts: string | null; emails: string | null };
 };
 export type ResendEmailPreviewCatalog = Pick<Overview, "segments" | "topics"> & { templates: ResendEmailTemplate[] };
@@ -30,7 +30,7 @@ type SendReview = RenderedEmail & {
   mode: "individual" | "campaign"; segmentName: string | null; expiresAt: string; broadcastId?: string;
 };
 type View = "templates" | "broadcasts" | "emails";
-type Pending = "loading" | "template" | "generate" | "save" | "review" | "send" | "refresh" | "more" | "upload" | null;
+type Pending = "loading" | "template" | "save" | "review" | "send" | "refresh" | "more" | "upload" | null;
 const API = "/api/ops/emails/resend";
 const SECONDARY_BUTTON = "inline-flex min-h-11 items-center justify-center rounded-[4px] border border-black/25 px-4 py-2 text-sm font-medium hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40";
 const SAMPLE_HTML = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f2f0e9;font-family:Arial,sans-serif;color:#20201e"><main style="max-width:520px;margin:auto;padding:48px 28px"><p style="font-size:11px;letter-spacing:2px">EXAMPLE RESEND TEMPLATE</p><hr style="border:0;border-top:1px solid #b9b6ad;margin:32px 0"><h1 style="font-size:34px;line-height:1.15;font-weight:400">{{HEADLINE}}</h1><p style="font-size:15px;line-height:1.8">Hi {{FIRST_NAME}},</p><p style="font-size:15px;line-height:1.8;white-space:pre-wrap">{{MESSAGE}}</p><hr style="border:0;border-top:1px solid #b9b6ad;margin:40px 0 20px"><p style="font-size:11px;color:#666">Sample design for this preview. No email will be sent.</p></main></body></html>';
@@ -44,7 +44,7 @@ const SAMPLE_OVERVIEW: Overview = {
   templates: [{ id: SAMPLE_TEMPLATE.id, name: SAMPLE_TEMPLATE.name, status: "published" }],
   segments: [{ id: "sample-members", name: "Members — sample segment" }],
   topics: [{ id: "sample-updates", name: "Member updates — sample topic", defaultSubscription: "opt_in" }],
-  broadcasts: [], emails: [], configuration: { connected: false, aiReady: false, sendingReady: false, issues: [] },
+  broadcasts: [], emails: [], configuration: { connected: false, sendingReady: false, issues: [] },
   cursors: { broadcasts: null, emails: null },
 };
 
@@ -103,13 +103,11 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   const [view, setView] = useState<View>("templates");
   const [template, setTemplate] = useState<ResendEmailTemplate | null>(null);
   const [edits, setEdits] = useState<ResendEmailEdits>({ subject: "", values: {}, copy: {} });
-  const [undo, setUndo] = useState<ResendEmailEdits | null>(null);
   const [mode, setMode] = useState<"individual" | "campaign">("individual");
   const [recipient, setRecipient] = useState("");
   const [segmentId, setSegmentId] = useState("");
   const [topicId, setTopicId] = useState("");
   const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
   const pendingRef = useRef(false);
@@ -204,7 +202,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   function resetWorkspace(nextView: View) {
     ++selectionRef.current; ++previewSequenceRef.current;
     setView(nextView); setTemplate(null); setBroadcast(null); setRendered(null); setPreviewError(""); setPreviewUpdating(false);
-    setDirty(false); setUndo(null); setReview(null); setAcknowledged(false); setSavedBroadcast(null); setQuery(""); setError(""); setNotice("");
+    setDirty(false); setReview(null); setAcknowledged(false); setSavedBroadcast(null); setQuery(""); setError(""); setNotice("");
     setLocalBanner(null);
   }
   async function chooseTemplate(id: string) {
@@ -218,7 +216,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
       setLocalBanner(null);
       if (next.campaignOnly) setMode("campaign");
       setTemplate(next); setEdits(nextEdits); setRendered(preview && !previewCatalog ? sampleRender(nextEdits) : { html: next.html, subject: next.subject, from: next.from });
-      setBroadcast(null); setView("templates"); setUndo(null); setPrompt(""); setName(next.name); setSavedBroadcast(null); setDirty(false); setReview(null); setAcknowledged(false); setPreviewError("");
+      setBroadcast(null); setView("templates"); setName(next.name); setSavedBroadcast(null); setDirty(false); setReview(null); setAcknowledged(false); setPreviewError("");
       requestAnimationFrame(() => document.getElementById("resend-composer")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (failure) { setError(failure instanceof Error ? failure.message : "That template could not be loaded."); }
     finally { finish(); }
@@ -234,15 +232,6 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
     const validatedBanner = normalizeResendEmailBanner(localOnly && edits.banner ? { ...edits.banner, url: "https://banner-preview.example.com/local.png" } : edits.banner);
     const banner = localOnly ? null : validatedBanner;
     return { templateId: template.id, templateVersion: template.version, edits: { ...edits, banner }, mode, recipients: mode === "individual" ? [recipient.trim().toLowerCase()] : [], segmentId: mode === "campaign" ? segmentId : "", topicId: mode === "campaign" ? topicId : "", name: name.trim() };
-  }
-  async function generate() {
-    if (!template || !prompt.trim() || (preview && previewCatalog) || !begin("generate")) return;
-    try {
-      const previous = structuredClone(edits);
-      const next = preview ? { ...edits, copy: { ...edits.copy, message: "A short update, with room for what matters.\n\nThis is sample copy. In the connected workspace, ChatGPT follows your direction while preserving the template." } } : (await request<{ edits: ResendEmailEdits }>(`${API}/generate`, { templateId: template.id, templateVersion: template.version, edits: previewEdits(edits), mode, prompt: prompt.trim() })).edits;
-      changeEdits({ ...next, banner: previous.banner ?? null }); setUndo(previous); setNotice(preview ? "Sample revision applied. ChatGPT was not called." : "Copy updated. Review the wording and links before sending.");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "ChatGPT could not revise the copy."); }
-    finally { finish(); }
   }
   async function saveBroadcast() {
     if (preview || mode !== "campaign" || !begin("save")) return;
@@ -322,10 +311,10 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   return <OperatorPageFrame title="Messages">
     <OperatorMessagesTabs active="emails" />
     <header className="operator-record-header mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div><h2 className="operator-page-heading">Emails</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-black/60">Your Resend templates, audiences, and email history. ChatGPT helps with the words.</p></div>
+      <div><h2 className="operator-page-heading">Emails</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-black/60">Your Resend templates, audiences, and email history.</p></div>
       <div className="flex flex-wrap gap-2">{template || broadcast ? <button className={SECONDARY_BUTTON} disabled={busy} onClick={() => requestChange(() => resetWorkspace("templates"))} type="button">New email</button> : null}<button className={SECONDARY_BUTTON} disabled={busy || preview} onClick={() => void loadOverview()} type="button">{pending === "refresh" ? "Refreshing…" : "Refresh Resend"}</button></div>
     </header>
-    {preview ? <p className="mb-5 rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed text-black/65" role="status">{previewCatalog ? "Your existing Resend designs and audience names, loaded for preview. Edits stay in this page. ChatGPT, saving, and sending are off." : "Preview workspace. The template and audience below are samples. Resend, ChatGPT, and sending are off."}</p> : null}
+    {preview ? <p className="mb-5 rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed text-black/65" role="status">{previewCatalog ? "Your existing Resend designs and audience names, loaded for preview. Edits stay in this page. Saving and sending are off." : "Preview workspace. The template and audience below are samples. Saving and sending are off."}</p> : null}
     {overview && !preview && overview.configuration.issues.length ? <div className="mb-5 rounded-[4px] border border-black/15 px-4 py-3 text-sm leading-relaxed"><p className="font-semibold">{overview.configuration.connected ? "Some email tools need attention." : "Connect Resend to load your workspace."}</p><ul className="mt-1 space-y-1 text-black/60">{overview.configuration.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
     <div aria-live="polite" aria-atomic="true" className="mb-4 empty:hidden">{notice ? <p className="rounded-[4px] bg-black/5 px-4 py-3 text-sm leading-relaxed">{notice}</p> : null}</div>
     {error ? <p className="mb-4 scroll-mt-28 rounded-[4px] border border-[var(--color-poster)]/35 bg-[var(--color-poster)]/5 px-4 py-3 text-sm leading-relaxed" ref={errorRef} role="alert">{error}</p> : null}
@@ -352,7 +341,6 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
               <label className="block text-sm font-medium" htmlFor="resend-topic">Subscription topic<select className={OPERATOR_FIELD_CLASS} id="resend-topic" onChange={(event) => { setTopicId(event.target.value); change(); }} required value={topicId}><option value="">Choose a topic</option>{overview?.topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select><span className="mt-2 block text-xs font-normal leading-relaxed text-black/55">Resend applies this topic’s subscription preferences and unsubscribe settings.</span></label>
             </>}
           </fieldset>
-          <section className="operator-bento-card" aria-labelledby="resend-ai-title"><div className="flex flex-wrap items-baseline justify-between gap-2"><h4 className="text-base font-semibold" id="resend-ai-title">Refine with ChatGPT</h4><span className="text-xs text-black/45">Copy, within your design</span></div><label className="mt-3 block text-sm" htmlFor="resend-prompt">What should this email say?<textarea className={`${OPERATOR_FIELD_CLASS} min-h-28 resize-y`} disabled={busy || !!(preview && previewCatalog) || (!preview && !overview?.configuration.aiReady)} id="resend-prompt" maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Write a short member update. Keep the tone direct. Include these details…" rows={4} value={prompt} /></label><p className="mt-2 text-xs leading-relaxed text-black/55">{preview && previewCatalog ? "ChatGPT is off in preview. Edit the template copy below to try the workspace." : !preview && !overview?.configuration.aiReady ? "ChatGPT is not connected. You can edit the template copy below." : "Only editable words and template values change. The original design stays intact."}</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={busy || !!(preview && previewCatalog) || !prompt.trim() || (!preview && !overview?.configuration.aiReady)} onClick={() => void generate()} type="button">{pending === "generate" ? "Refining…" : preview && previewCatalog ? "ChatGPT off in preview" : preview ? "Try sample revision" : "Refine copy"}</button>{undo ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} onClick={() => { changeEdits({ ...undo, banner: edits.banner ?? null }); setUndo(null); }} type="button">Undo last revision</button> : null}</div></section>
           <section className="operator-bento-card min-w-0 space-y-4" aria-labelledby="resend-banner-title">
             <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-base font-semibold" id="resend-banner-title">Image banner</h4>{edits.banner ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={busy} id="resend-remove-banner" onClick={() => { setLocalBanner(null); changeEdits({ ...edits, banner: null }); }} type="button">Remove banner</button> : null}</div>
             <p className="text-xs leading-relaxed text-black/55">Add a photo below the existing logo and above the main heading. Upload from your device or use a public HTTPS image URL.</p>
