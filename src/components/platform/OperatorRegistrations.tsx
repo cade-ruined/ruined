@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import type { OpsMemberRegistration } from "@/lib/membership/registration-model";
 import { operatorMemberJourney } from "@/lib/membership/operator-registration-progress";
 import OperatorMemberCheckpoints from "./OperatorMemberCheckpoints";
+import OperatorInvitationDetails from "./OperatorInvitationDetails";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "./operatorStyles";
 
 export type OperatorRegistrationRow = OpsMemberRegistration;
@@ -113,7 +114,7 @@ export default function OperatorRegistrations({ rows: initialRows, preview = fal
         return <article key={row.memberId} className="grid gap-4 py-5 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.4fr)]">
         <div className="flex items-start gap-3">
           {readyForProfile(row) ? <input className="mt-1 size-5 accent-black" type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.memberId)} disabled={pending} onChange={event => choose(row.memberId, event.target.checked)} /> : <span className="w-5 shrink-0" aria-hidden="true" />}
-          <div className="min-w-0"><Link className="inline-flex min-h-8 items-center font-semibold underline underline-offset-4" href={`/ops/members/${row.memberId}?returnTo=%2Fops%2Fregistrations`}>{row.name}</Link><p className="break-all text-sm text-black/55">{row.email}</p>
+          <div className="min-w-0"><div className="-my-1 flex items-center gap-1"><Link className="min-w-0 break-words font-semibold underline underline-offset-4" href={`/ops/members/${row.memberId}?returnTo=%2Fops%2Fregistrations`}>{row.name}</Link><OperatorInvitationDetails invitation={row.invitation} memberName={row.name} /></div><p className="break-all text-sm text-black/55">{row.email}</p>
           {row.coupleStatus && row.coupleStatus !== "none" ? <p className="mt-2 break-words text-xs leading-5"><strong>{row.coupleStatus === "paired" ? "Couple · confirmed" : "Couple · awaiting confirmation"}</strong><br />{row.couplePartnerEmail}</p> : null}
           <details className="mt-1 text-xs text-black/55"><summary className="min-h-9 cursor-pointer content-center">Email delivery</summary><p>Welcome: {deliveryLabel(row.welcomeStatus)}</p><p>Profile access: {deliveryLabel(row.activationEmailStatus)}</p></details>
           </div>

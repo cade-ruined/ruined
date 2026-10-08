@@ -3,7 +3,7 @@ import "server-only";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import type { MemberRegistrationSnapshot, OpsMemberRegistration, RegistrationFoundingPricing, RegistrationInitialPayment } from "./registration-model";
+import type { MemberRegistrationSnapshot, OpsMemberRegistration, OpsRegistrationInvitation, RegistrationFoundingPricing, RegistrationInitialPayment } from "./registration-model";
 import type { OperatorRegistrationProgress } from "./operator-registration-progress";
 import { memberRegistrationDestination } from "./registration-routing";
 
@@ -285,7 +285,7 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
   return getApplicationDatabase().begin(async tx => {
     await requireAdministrator(tx, actor);
     const rows = await tx<Array<RegistrationRow & { display_name: string; email: string; welcome_status: string | null; profile_ready_status: string | null;
-      couple_partner_email: string | null; couple_partner_member_id: string | null }>>`
+      couple_partner_email: string | null; couple_partner_member_id: string | null; invitation: OpsRegistrationInvitation | null }>>`
       select registration.*,case when private.ruined_registration_founding_pricing_is_current(registration.member_id) then jsonb_build_object(
       'confirmed',true,'awardedAt',pricing.decided_at,'monthlyAmountCents',pricing.monthly_amount_cents,
       'annualAmountCents',pricing.annual_amount_cents,'currency',pricing.currency) end as founding_pricing,
@@ -298,7 +298,8 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
         private.ruined_member_registration_ready(member.id) as ready,
         welcome.status as welcome_status,ready_message.status as profile_ready_status,
         couple.partner_email_normalized as couple_partner_email,
-        private.ruined_registration_circle_couple_partner(member.id) as couple_partner_member_id
+        private.ruined_registration_circle_couple_partner(member.id) as couple_partner_member_id,
+        invitation.details as invitation
       from member_registration_access registration join ruined_members member on member.id=registration.member_id and member.deleted_at is null
       left join member_registration_pricing_decisions pricing on pricing.member_id=registration.member_id
       join member_lifecycle lifecycle on lifecycle.member_id=member.id and lifecycle.account_state not in ('closed','suspended')
@@ -308,10 +309,32 @@ export async function getOpsMemberRegistrations(actor: string): Promise<OpsMembe
       left join member_registration_messages welcome on welcome.member_id=member.id and welcome.kind='welcome'
       left join member_registration_messages ready_message on ready_message.member_id=member.id and ready_message.kind='profile_ready'
       left join member_registration_couple_intents couple on couple.member_id=member.id
+      left join lateral (
+        select jsonb_build_object(
+          'id',invite.id,'recipientName',invite.recipient_name,'recipientEmail',invite.recipient_email_normalized,
+          'inviterName',invite.inviter_name,'issuedAt',invite.issued_at,'expiresAt',invite.expires_at,
+          'revokedAt',invite.revoked_at,'submittedAt',invite.submitted_at,'acceptedAt',invite.accepted_at,
+          'emailRequested',invite.email_requested,'deliveryStatus',invite.delivery_status,'sentAt',invite.sent_at,
+          'origin',invite.origin,'membershipType',invite.membership_type) as details
+        from member_personal_invitations invite
+        left join member_referrals referral on referral.personal_invitation_id=invite.id
+        where invite.accepted_member_id=member.id
+          or (invite.accepted_member_id is null and invite.accepted_at is null
+            and (referral.referred_member_id is null or referral.referred_member_id=member.id)
+            and (referral.referred_member_id=member.id
+              or invite.recipient_email_normalized=lower(btrim(member.email))))
+        -- A verified association outranks a later invitation to the same mailbox.
+        -- Otherwise prefer a usable invitation, then the most recently issued.
+        order by case when invite.accepted_member_id=member.id then 0
+          when referral.referred_member_id=member.id then 1 else 2 end,
+          (invite.revoked_at is null and (invite.expires_at is null or invite.expires_at>statement_timestamp())) desc,
+          invite.issued_at desc,invite.id desc
+        limit 1
+      ) invitation on true
       order by registration.profile_activated_at nulls first,registration.created_at desc limit 200`;
     const progress = await readOperatorRegistrationProgress(tx, actor, rows.map(row => row.member_id));
     return rows.map(row => ({ ...snapshot(row), progress: progress.get(row.member_id), name: row.display_name, email: row.email,
-      welcomeStatus: row.welcome_status, activationEmailStatus: row.profile_ready_status,
+      welcomeStatus: row.welcome_status, activationEmailStatus: row.profile_ready_status, invitation: row.invitation ?? null,
       coupleStatus: row.couple_partner_member_id ? "paired" : row.couple_partner_email ? "pending" : "none",
       couplePartnerEmail: row.couple_partner_email, couplePartnerMemberId: row.couple_partner_member_id }));
   });

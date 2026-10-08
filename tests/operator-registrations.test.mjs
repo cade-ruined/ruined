@@ -110,6 +110,7 @@ async function uiFixture({ rows = [row(), row(memberB)], preview = false, replie
   const View = (await load("src/components/platform/OperatorRegistrations.tsx", {
     "@/lib/membership/operator-registration-progress": await load("src/lib/membership/operator-registration-progress.ts"),
     "./OperatorMemberCheckpoints": await load("src/components/platform/OperatorMemberCheckpoints.tsx"),
+    "./OperatorInvitationDetails": () => null,
     react: h.react, "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/navigation": { useRouter: () => ({ refresh: () => { refreshes++; } }) },
     "./operatorStyles": { OPERATOR_BUTTON_CLASS: "button", OPERATOR_PRIMARY_ACTION_CLASS: "primary" },
