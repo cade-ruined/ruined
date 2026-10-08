@@ -16,6 +16,8 @@ export default function SiteFooter() {
     pathname.startsWith("/sequence") ||
     pathname.startsWith("/lp") ||
     pathname === "/foundations" ||
+    pathname === "/foundations/01" ||
+    pathname.startsWith("/foundations/01/") ||
     pathname === "/call-deck" ||
     pathname.startsWith("/my") ||
     pathname.startsWith("/ops") ||

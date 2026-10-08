@@ -33,7 +33,7 @@ const NATIVE_CURSOR_SELECTOR = [
 
 export default function BrandCursor() {
   const pathname = useBackgroundPathname();
-  const disabled = pathname === "/call-deck";
+  const disabled = pathname === "/call-deck" || pathname === "/foundations/01" || pathname.startsWith("/foundations/01/");
   const cursorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
