@@ -200,7 +200,7 @@ export default function FoundationsTimelineWorksheet({ initialTimeline, preview 
         {timeline.entries.length > 6 ? <input className={styles.search} type="search" aria-label="Find a moment" placeholder="Find a moment…" value={search} onChange={event => { setSearch(event.target.value); setVisibleCount(40); }} /> : null}
         {!timeline.entries.length ? <div className={styles.empty}><span aria-hidden="true">↗</span><p>A beginning.<br />A turning point.<br />Anything that stayed.</p><button disabled={disabled} onClick={() => open()}>Add your first moment <Arrow /></button></div> : null}
         {timeline.entries.length > 0 && !matchingEntries.length ? <p className={styles.noResults}>No moments found.</p> : null}
-        <ol>{matchingEntries.slice(0, visibleCount).map(entry => <li key={entry.id}><button className={styles.momentCard} data-color={entry.position % 4} disabled={pending || Boolean(recoveryDraft)} aria-current={editingId === entry.id ? "true" : undefined} onClick={() => open(entry)}>
+        <ol>{matchingEntries.slice(0, visibleCount).map(entry => <li key={entry.id}><button className={styles.momentCard} disabled={pending || Boolean(recoveryDraft)} aria-current={editingId === entry.id ? "true" : undefined} onClick={() => open(entry)}>
           <span className={styles.cardTop}><time>{formatTimelineDate(entry)}</time>{entry.meaning?.trim() ? <span className={styles.check} aria-label="Meaning added"><Check /></span> : <span className={styles.cardDot} aria-hidden="true" />}</span>
           <strong>{entry.title}</strong><span className={styles.cardBottom}>{editingId === entry.id ? "Exploring now" : "Explore moment"}<Arrow /></span>
         </button></li>)}</ol>
