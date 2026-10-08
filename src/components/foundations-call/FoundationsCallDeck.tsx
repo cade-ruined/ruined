@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react
 import Image from "next/image";
 import Link from "next/link";
 import { FOUNDATION_CALL_CHAPTERS as DECK_CHAPTERS, FOUNDATION_CALL_SLIDES as DECK_SLIDES } from "./deck-content";
-import WalkBackdrop from "../call-deck/WalkBackdrop";
+import { motion } from "motion/react";
+import FilmGrain from "../foundations/FilmGrain";
 import SlideContent from "./SlideContent";
-import styles from "../call-deck/call-deck.module.css";
+import styles from "./graphic-shell.module.css";
 import foundationStyles from "./foundations-call.module.css";
 
 const clamp = (index: number) => Math.max(0, Math.min(DECK_SLIDES.length - 1, index));
@@ -21,7 +22,6 @@ export default function FoundationsCallDeck() {
   const [session, setSession] = useState<string | null>(null);
   const [reduced, setReduced] = useState(true);
   const [quiet, setQuiet] = useState(false);
-  const [traveling, setTraveling] = useState(false);
   const [blackout, setBlackout] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -39,6 +39,7 @@ export default function FoundationsCallDeck() {
   activeRef.current = active;
   const slide = DECK_SLIDES[active];
   const chapter = DECK_CHAPTERS[slide.room];
+  const reduceMotion = quiet || reduced;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -141,7 +142,9 @@ export default function FoundationsCallDeck() {
     const onKey = (event: KeyboardEvent) => {
       if (!initialized || event.metaKey || event.ctrlKey || event.altKey || event.repeat || indexDialog.current?.open || helpDialog.current?.open) return;
       const target = event.target as HTMLElement;
-      if (target.closest("input,textarea,select,[contenteditable='true'],[role='tablist']")) return;
+      if (target.closest("input,textarea,select,[contenteditable='true'],[role='tablist'],[role='slider']")) return;
+      // Let the active slide's own buttons and links keep their keyboard behavior.
+      if (stage.current?.contains(target) && target.closest("button,a,[role='button'],[role='tab']")) return;
       if (["ArrowRight", "PageDown"].includes(event.key) || (event.key === " " && !target.closest("button,a"))) {
         event.preventDefault(); navigate(activeRef.current + 1);
       } else if (["ArrowLeft", "PageUp"].includes(event.key)) {
@@ -174,9 +177,8 @@ export default function FoundationsCallDeck() {
   </>;
 
   return (
-    <main ref={root} className={`${styles.deck} ${foundationStyles.deck}`} data-presenter={presenter} data-kind={slide.kind} data-traveling={traveling} data-quiet={quiet || reduced} aria-label="Ruined Foundations 01" aria-busy={!initialized}>
-      {initialized && !presenter && <WalkBackdrop room={slide.room} still={quiet || reduced} onTravel={setTraveling} />}
-      {!presenter && <div className={`${styles.scrim} ${foundationStyles.scrim}`} />}
+    <main ref={root} className={`${styles.deck} ${foundationStyles.deck}`} data-presenter={presenter} data-kind={slide.kind} data-theme={presenter ? "ink" : slide.theme} data-quiet={reduceMotion} aria-label="Ruined Foundations 01" aria-busy={!initialized}>
+      <FilmGrain enabled={initialized && !presenter && !reduceMotion} />
       <header className={styles.header}>
         <Link href="/" prefetch={false} className={styles.home} aria-label="Return to Ruined website"><Image src="/ruined-wordmark.svg" width={130} height={39} alt="Ruined" /></Link>
         <div className={styles.headerTools}>
@@ -204,12 +206,14 @@ export default function FoundationsCallDeck() {
         </div>
       ) : (
         <div ref={stage} className={styles.stage} onTouchStart={(event) => {
-          if ((event.target as HTMLElement).closest("button,a,[role='tablist']")) return;
+          touch.current = null;
+          if ((event.target as HTMLElement).closest("button,a,input,textarea,select,[contenteditable='true'],[role='tablist'],[role='slider'],[role='button']")) return;
+          if (event.touches.length !== 1) return;
           touch.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
         }} onTouchEnd={endTouch} onTouchCancel={() => { touch.current = null; }}>
-          <article key={slide.id} className={`${styles.slide} ${foundationStyles.slide}`} data-slide={active + 1} data-layout={slide.kind} aria-roledescription="slide" aria-label={`${active + 1} of ${DECK_SLIDES.length}: ${slide.title}`}>
-            <SlideContent slide={slide} />
-          </article>
+          <motion.article key={slide.id} initial={reduceMotion ? false : { opacity: 0, y: 18, clipPath: "inset(0 0 3% 0)" }} animate={{ opacity: 1, y: 0, clipPath: "inset(0 0 0 0)" }} transition={reduceMotion ? { duration: 0 } : { duration: 0.66, ease: [0.22, 1, 0.36, 1] }} className={`${styles.slide} ${foundationStyles.slide}`} data-slide={active + 1} data-layout={slide.kind} aria-roledescription="slide" aria-label={`${active + 1} of ${DECK_SLIDES.length}: ${slide.title}`}>
+            <SlideContent slide={slide} reducedMotion={reduceMotion} />
+          </motion.article>
         </div>
       ))}
 
@@ -224,9 +228,9 @@ export default function FoundationsCallDeck() {
       <dialog ref={blankDialog} className={styles.blackout} aria-label="Presentation paused" onCancel={() => setBlackout(false)}><button type="button" aria-label="Resume presentation" onClick={() => setBlackout(false)}><span>Click or press B to return</span></button></dialog>
 
       <dialog ref={indexDialog} className={styles.indexDialog} aria-labelledby="foundations-index-title" onClick={(event) => { if (event.target === event.currentTarget) indexDialog.current?.close(); }}>
-        <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Foundations 01</p><h2 id="foundations-index-title">Inside the room</h2></div><button type="button" aria-label="Close slide index" onClick={() => indexDialog.current?.close()}>×</button></div>
+        <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Foundations 01</p><h2 id="foundations-index-title">The conversation</h2></div><button type="button" aria-label="Close slide index" onClick={() => indexDialog.current?.close()}>×</button></div>
         <div className={styles.indexChapters}>{DECK_CHAPTERS.map((item) => <section key={item.room}>
-          <h3><span>{number(item.room + 1)}</span> {item.title}<small>{item.location}</small></h3>
+          <h3><span>{number(item.room + 1)}</span> {item.title}</h3>
           <ol>{DECK_SLIDES.slice(item.start - 1, item.end).map((entry, index) => <li key={entry.id}><button type="button" aria-current={active === item.start + index - 1 ? "true" : undefined} onClick={() => { navigate(item.start + index - 1); indexDialog.current?.close(); }}><span>{number(item.start + index)}</span>{entry.title}</button></li>)}</ol>
         </section>)}</div>
       </dialog>
@@ -235,7 +239,7 @@ export default function FoundationsCallDeck() {
         <p>Share this audience window. Open Presenter in a separate window for the full speaking notes and slide controls.</p>
         <dl><div><dt>← / → / Space</dt><dd>Previous / next slide</dd></div><div><dt>Home / End</dt><dd>First / final slide</dd></div><div><dt>O</dt><dd>Slide index</dd></div><div><dt>N</dt><dd>Presenter notes</dd></div><div><dt>F</dt><dd>Full screen</dd></div><div><dt>B</dt><dd>Blank screen / return</dd></div><div><dt>?</dt><dd>Presentation help</dd></div></dl>
         <p>On touchscreens, swipe sideways or use the arrows. The closing slides review the conversation, set out the between-call work, and preview Foundations 02.</p>
-        <button type="button" className={styles.motionToggle} aria-pressed={quiet} onClick={() => setQuiet((value) => !value)}>{quiet ? "Enable room transitions" : "Use still rooms"}</button>
+        <button type="button" className={styles.motionToggle} aria-pressed={quiet} onClick={() => setQuiet((value) => !value)}>{quiet ? "Enable animations" : "Pause animations"}</button>
         {reduced && <p className={styles.small}>Your device’s reduced-motion preference is active.</p>}
       </dialog>
     </main>
