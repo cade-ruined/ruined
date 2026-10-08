@@ -33,6 +33,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   const [systemDark, setSystemDark] = useState(false);
   const threshold = registrationOnly || pathname === "/access" || ["/my/access", "/my/confirmed", "/my/join"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
   const focused = !registrationOnly && pathname.startsWith("/my/foundations/experience");
+  const timelineWorksheet = pathname === "/my/foundations/timeline/part-1";
   const cardRoom = !registrationOnly && (pathname === "/my/card" || pathname === "/my/invitation");
   const membershipEntry = pathname === "/my/join";
   const hasNavigation = !threshold && !focused;
@@ -63,7 +64,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   const menuProps = { appearance, onAppearanceChange: changeAppearance, preview, operatorRole, viewerLabel };
   if (cardRoom) return <div className={`${styles.journey} ${styles.cardRoom}`} data-member-journey data-member-theme="ink" data-platform-surface="member">{children}</div>;
 
-  return <div className={`${styles.journey} ${!hasNavigation ? styles.focused : ""}`} data-member-journey data-member-theme={theme} data-platform-surface="member" data-platform-member-home={pathname === "/my" ? "true" : undefined} data-platform-threshold={threshold ? "true" : undefined}>
+  return <div className={`${styles.journey} ${timelineWorksheet ? styles.timelineWorksheet : ""} ${!hasNavigation ? styles.focused : ""}`} data-member-journey data-member-theme={theme} data-platform-surface="member" data-platform-member-home={pathname === "/my" ? "true" : undefined} data-platform-threshold={threshold ? "true" : undefined}>
     {hasNavigation ? <aside className={styles.sidebar}>
       <Link href="/my" aria-label="My Ruined profile" className={styles.brand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
       <nav className={styles.desktopNavigation} aria-label="Member pages">{primaryLinks()}</nav>

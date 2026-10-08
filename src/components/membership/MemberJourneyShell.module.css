@@ -33,3 +33,18 @@
 .entryContent{max-width:none;padding:0}
 
 .journey.cardRoom{display:block;padding:0;background:#141413}
+
+
+/* Part I uses a clean canvas while retaining the member navigation and theme. */
+.journey.timelineWorksheet {
+  --member-paper:#f4f5f9;
+  --member-panel:#fff;
+  background-image:none;
+  background-color:#f4f5f9;
+}
+.journey.timelineWorksheet[data-member-theme="ink"] {
+  --member-paper:#14161c;
+  --member-panel:#20232c;
+  background-image:none;
+  background-color:#14161c;
+}
