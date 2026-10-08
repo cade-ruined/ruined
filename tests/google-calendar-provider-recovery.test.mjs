@@ -101,6 +101,43 @@ test("recovering an unchanged create reads the existing event without another in
   assert.equal(result.organizerVerified, true);
 });
 
+test("a supplied Meet link is sent once without creating or polling for another conference", async () => {
+  const meetingUrl = "https://meet.google.com/xyz-abcd-efg";
+  const { client, calls } = await clientFixture((options) => ({
+    ...options.data, etag: '"supplied-link"', organizer: { email: organizer }, status: "confirmed",
+  }));
+  const result = await client.createGoogleCalendarEvent({ ...draft, meetingUrl });
+  assert.deepEqual(calls.map((call) => call.method), ["POST"]);
+  assert.equal(calls[0].data.conferenceData, null);
+  assert.equal(calls[0].data.location, meetingUrl);
+  assert.ok(calls[0].data.description.includes(meetingUrl));
+  assert.equal(calls[0].params.sendUpdates, "all");
+  assert.equal(result.meetUrl, meetingUrl);
+  assert.equal(result.meetReady, true);
+});
+
+test("supplied-link recovery replaces an old generated Meet and reconciles an ambiguous update", async () => {
+  const meetingUrl = "https://meet.google.com/xyz-abcd-efg";
+  let remote = remoteEvent(draft, { hangoutLink: "https://meet.google.com/abc-defg-hij" });
+  const { client, calls } = await clientFixture((options) => {
+    if (options.method === "PATCH") {
+      assert.equal(options.data.conferenceData, null);
+      remote = { ...remote, ...options.data, etag: '"explicit-meet"' };
+      delete remote.hangoutLink;
+      throw providerError(503);
+    }
+    assert.equal(options.method, "GET");
+    return remote;
+  });
+  const result = await client.createGoogleCalendarEvent({ ...draft, meetingUrl, recoverExisting: true });
+  assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "PATCH", "GET"]);
+  assert.equal(result.meetUrl, meetingUrl);
+  assert.equal(result.meetReady, true);
+  const callCount = calls.length;
+  await client.createGoogleCalendarEvent({ ...draft, meetingUrl, recoverExisting: true });
+  assert.deepEqual(calls.slice(callCount).map((call) => call.method), ["GET"]);
+});
+
 test("recovery updates stale text and attendees using the latest provider ETag, never another create", async () => {
   let remote = remoteEvent({ ...draft, summary: "Obsolete title", attendees: [{ email: "removed-member@example.test" }] });
   const { client, calls } = await clientFixture((options, count) => {

@@ -13,6 +13,7 @@ import {
   googleMeetRequestIdForEventState,
   googleMeetRequestIdForRequestKey,
   normalizeGoogleCalendarEventId,
+  normalizeGoogleCalendarMeetingUrl,
   toGoogleCalendarEventResult,
   type GoogleCalendarEventDraft,
   type GoogleCalendarApiEvent,
@@ -37,6 +38,24 @@ const draft: GoogleCalendarEventDraft = {
   start: { dateTime: "2026-09-12T18:00:00-06:00", timeZone: "America/Denver" },
   summary: "  Every Second Friday  ",
 };
+
+test("supplied Meet links remain the invitation destination without generating a replacement", () => {
+  const meetingUrl = "https://meet.google.com/xyz-abcd-efg";
+  const body = buildGoogleCalendarCreateBody({ ...draft, meetingUrl }, "connect@theruinedproject.com");
+  assert.equal(body.conferenceData, null);
+  assert.equal(body.location, meetingUrl);
+  assert.equal(body.description, `Bring what you are building.\n\nJoin on Google Meet: ${meetingUrl}`);
+  const updated = buildGoogleCalendarUpdateBody(
+    { ...draft, meetingUrl, eventId: body.id! }, "connect@theruinedproject.com", {},
+    { meetRequestId: googleMeetRequestIdForRequestKey(draft.requestKey) },
+  );
+  assert.equal(updated.conferenceData, null, "an explicit link clears an earlier generated conference");
+  assert.equal(updated.extendedProperties.private.ruinedMeetRequest, undefined);
+  assert.equal(normalizeGoogleCalendarMeetingUrl(`${meetingUrl}#ignored`), meetingUrl);
+  for (const unsafe of ["http://meet.google.com/xyz-abcd-efg", "https://meet.google.com.evil.test/xyz-abcd-efg", "https://user@meet.google.com/xyz-abcd-efg", "https://meet.google.com/lookup/code", "https://meet.google.com:444/xyz-abcd-efg"]) {
+    assert.throws(() => buildGoogleCalendarCreateBody({ ...draft, meetingUrl: unsafe }, "connect@theruinedproject.com"), /Meet link is invalid/);
+  }
+});
 
 test("Calendar create bodies are private, deterministic, and request one unique Meet", () => {
   const body = buildGoogleCalendarCreateBody(draft, "connect@theruinedproject.com");

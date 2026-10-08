@@ -59,6 +59,7 @@ export type OpsExperienceCalendarStatus =
   | "synced";
 
 export type OpsExperienceCalendarState = {
+  preservesMeetingUrl?: boolean;
   bindingRequired?: boolean;
   bindingMode?: "live" | "test" | null;
   canSendCancellation?: boolean;
@@ -120,4 +121,9 @@ export type OpsExperienceDraftInput = {
   title: string;
   visibility: "all_members" | "block" | "circle" | "invite_only" | "public";
   waitlistEnabled: boolean;
+};
+
+export type OpsExperienceCreateAndPublishInput = OpsExperienceDraftInput & {
+  meetingUrl: string;
+  requestId: string;
 };

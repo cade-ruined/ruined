@@ -87,6 +87,7 @@ test("writes reauthorize, lock the target, upsert atomically, clear narrowly, an
 test("the JSON boundary and compact operator controls are wired into both existing pages", () => {
   assert.match(route, /requireOpsMutationRequest\(request\)/);
   assert.match(route, /actorAuthUserId: access\.viewer\.authUserId/);
+  assert.match(repository, /const metadata = kind === "chat"\s*\? \{ spaceUri: url, source: "operator" \}\s*: \{ meetingUri: url, source: "operator_event" \}/);
   assert.match(route, /export async function PUT/);
   assert.match(route, /export async function DELETE/);
   assert.match(route, /OpsOperatingRepositoryError/);
@@ -107,7 +108,7 @@ test("the JSON boundary and compact operator controls are wired into both existi
   assert.match(experiencesDirectory, /href=\{`\/ops\/experiences\/\$\{experience\.experienceId\}`\}/);
   assert.match(experienceRecord, /entityType="experience"/);
   assert.match(experienceRecord, /const calendarManaged = Boolean\(experience\.calendar\.googleEventId\)/);
-  assert.match(experienceRecord, /\["pending_create", "pending_update", "pending_cancel"\]\.includes\(experience\.calendar\.status\)/);
+  assert.match(experienceRecord, /experience\.calendar\.status !== "not_created"/);
   assert.match(experienceRecord, /calendarManaged \? <p[\s\S]*Google Calendar manages this meeting link/);
   assert.match(experienceRecord, /editable=\{experience\.canManageCommunication && !\["cancelled", "archived", "completed"\]\.includes\(experience\.state\)\}/);
   assert.match(experienceRepository, /canManageCommunication: true/);

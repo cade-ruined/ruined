@@ -1,4 +1,7 @@
-import type { OpsExperienceDraftInput } from "@/lib/platform/ops-experience-model";
+import type {
+  OpsExperienceCreateAndPublishInput,
+  OpsExperienceDraftInput,
+} from "@/lib/platform/ops-experience-model";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -70,4 +73,21 @@ export function parseOpsExperienceDraft(
     visibility: stringValue(value.visibility) as OpsExperienceDraftInput["visibility"],
     waitlistEnabled: value.waitlistEnabled,
   };
+}
+
+export function parseOpsExperienceCreateAndPublish(
+  value: unknown,
+): OpsExperienceCreateAndPublishInput | null {
+  if (!isRecord(value) || value.intent !== "create_and_publish"
+    || typeof value.meetingUrl !== "string" || typeof value.requestId !== "string") {
+    return null;
+  }
+  const meetingUrl = value.meetingUrl;
+  const requestId = value.requestId;
+  const fields = { ...value };
+  delete fields.intent;
+  delete fields.meetingUrl;
+  delete fields.requestId;
+  const draft = parseOpsExperienceDraft(fields);
+  return draft ? { ...draft, meetingUrl, requestId } : null;
 }
