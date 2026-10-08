@@ -9,14 +9,6 @@ export type OpportunityCall = {
 
 export const OPPORTUNITY_CALLS = [
   {
-    id: "2026-10-06",
-    dateLabel: "Tuesday, October 6",
-    startsAt: "2026-10-06T18:00:00-06:00",
-    endsAt: "2026-10-06T19:00:00-06:00",
-    meetUrl: "https://meet.google.com/ekx-qtsb-nqt",
-    calendarFile: "/calendar/ruined-opportunity-call-2026-10-06.ics",
-  },
-  {
     id: "2026-10-13",
     dateLabel: "Tuesday, October 13",
     startsAt: "2026-10-13T18:00:00-06:00",

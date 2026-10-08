@@ -9,11 +9,6 @@ import {
 
 const expectedCalls = [
   {
-    id: "2026-10-06",
-    dates: "20261007T000000Z/20261007T010000Z",
-    meetUrl: "https://meet.google.com/ekx-qtsb-nqt",
-  },
-  {
     id: "2026-10-13",
     dates: "20261014T000000Z/20261014T010000Z",
     meetUrl: "https://meet.google.com/top-uaii-ofh",

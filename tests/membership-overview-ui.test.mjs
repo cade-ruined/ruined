@@ -498,7 +498,7 @@ const issuedInvitation = {
   card: { name: "Cade <Sender>", memberTag: "cade", wearSeed: "inviter-wear", labels: [] },
 };
 
-test("all landing entry points share the public sections and both opportunity calls with calendar controls", async () => {
+test("all landing entry points share the public sections and remaining opportunity call with calendar controls", async () => {
   const c = await components();
   const descendants = node => [node, ...(node.childNodes ?? []).flatMap(descendants)];
   const attr = (node, name) => node.attrs?.find(attribute => attribute.name === name)?.value;
@@ -509,7 +509,6 @@ test("all landing entry points share the public sections and both opportunity ca
     ["film player", node => node.nodeName === "dialog" && attr(node, "aria-label") === "Ruined membership film"],
   ];
   const expected = [
-    { date: "Tuesday, October 6", start: "2026-10-06T18:00:00-06:00", dates: "20261007T000000Z/20261007T010000Z", meet: "https://meet.google.com/ekx-qtsb-nqt", file: "/calendar/ruined-opportunity-call-2026-10-06.ics" },
     { date: "Tuesday, October 13", start: "2026-10-13T18:00:00-06:00", dates: "20261014T000000Z/20261014T010000Z", meet: "https://meet.google.com/top-uaii-ofh", file: "/calendar/ruined-opportunity-call-2026-10-13.ics" },
   ];
   const variants = [
@@ -534,7 +533,7 @@ test("all landing entry points share the public sections and both opportunity ca
     const sections = elements.filter(node => attr(node, "id") === "opportunity-calls");
     assert.equal(sections.length, 1, `${variant} shows one call section`);
     const articles = descendants(sections[0]).filter(node => node.nodeName === "article");
-    assert.equal(articles.length, 2);
+    assert.equal(articles.length, 1);
     assert.deepEqual(elements.filter(node => node.nodeName === "a" && attr(node, "href")?.startsWith("https://meet.google.com/")).map(node => attr(node, "href")), expected.map(call => call.meet));
     for (const [index, article] of articles.entries()) {
       const call = expected[index], children = descendants(article);
