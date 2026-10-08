@@ -129,6 +129,12 @@ const nextConfig = {
         ],
       })),
       { source: "/(.*)", headers: securityHeaders },
+      // Sandboxed Resend design previews inherit the parent image policy. Permit
+      // template HTTPS assets only on the administrator email workspace.
+      ...[
+        { source: "/ops/emails" },
+        { source: "/ops/messages", has: [{ type: "query", key: "mode", value: "emails" }] },
+      ].map(route => ({ ...route, headers: [{ key: "Content-Security-Policy", value: csp.replace(/img-src [^;]+/, "img-src 'self' data: blob: https:") }] })),
       ...["/card/:path*", "/invitation/:path*", "/journal/:path*"].map(source => ({ source, headers: [
         { key: "Cache-Control", value: "private, no-store, max-age=0" },
         { key: "Referrer-Policy", value: "no-referrer" },
