@@ -177,9 +177,18 @@ export default function MemberPhotoUpload({ avatarUrl: initialAvatarUrl, enabled
       </div>
       {draft ? <div className={styles.editor}>
         <p className={styles.hint}>Drag to position, or use the controls below. This photo is not saved yet.</p>
-        <label className={styles.control} htmlFor={`${inputId}-zoom`}>Zoom <input id={`${inputId}-zoom`} type="range" min="1" max="3" step="0.01" value={crop.zoom} aria-valuetext={`${Math.round(crop.zoom * 100)} percent`} disabled={disabled || !draft.image} onChange={event => setCrop(current => ({ ...current, zoom: Number(event.currentTarget.value) }))} /></label>
-        <label className={styles.control} htmlFor={`${inputId}-horizontal`}>Horizontal position <input id={`${inputId}-horizontal`} type="range" min="-1" max="1" step="0.01" value={crop.x} disabled={disabled || !rect || draft.image?.naturalWidth === rect.side} onChange={event => setCrop(current => ({ ...current, x: Number(event.currentTarget.value) }))} /></label>
-        <label className={styles.control} htmlFor={`${inputId}-vertical`}>Vertical position <input id={`${inputId}-vertical`} type="range" min="-1" max="1" step="0.01" value={crop.y} disabled={disabled || !rect || draft.image?.naturalHeight === rect.side} onChange={event => setCrop(current => ({ ...current, y: Number(event.currentTarget.value) }))} /></label>
+        <label className={styles.control} htmlFor={`${inputId}-zoom`}>Zoom <input id={`${inputId}-zoom`} type="range" min="1" max="3" step="0.01" value={crop.zoom} aria-valuetext={`${Math.round(crop.zoom * 100)} percent`} disabled={disabled || !draft.image} onChange={event => {
+          const zoom = Number(event.currentTarget.value);
+          setCrop(current => ({ ...current, zoom }));
+        }} /></label>
+        <label className={styles.control} htmlFor={`${inputId}-horizontal`}>Horizontal position <input id={`${inputId}-horizontal`} type="range" min="-1" max="1" step="0.01" value={crop.x} disabled={disabled || !rect || draft.image?.naturalWidth === rect.side} onChange={event => {
+          const x = Number(event.currentTarget.value);
+          setCrop(current => ({ ...current, x }));
+        }} /></label>
+        <label className={styles.control} htmlFor={`${inputId}-vertical`}>Vertical position <input id={`${inputId}-vertical`} type="range" min="-1" max="1" step="0.01" value={crop.y} disabled={disabled || !rect || draft.image?.naturalHeight === rect.side} onChange={event => {
+          const y = Number(event.currentTarget.value);
+          setCrop(current => ({ ...current, y }));
+        }} /></label>
         <div className={styles.actions}>
           <button className={styles.usePhoto} disabled={disabled || !draft.image} onClick={() => savePhoto()} type="button">{pending ? "Saving…" : "Use photo"}</button>
           <button disabled={pending} onClick={cancelDraft} type="button">Cancel</button>
