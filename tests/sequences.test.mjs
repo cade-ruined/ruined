@@ -909,7 +909,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.match(purchase, /Added to bag/);
   assert.doesNotMatch(purchase, /Acquire via Shopify/i);
   assert.match(bagStore, /ruined:bag:v1/);
-  assert.match(checkout, /createCheckoutUrl\(lines\)/);
+  assert.match(checkout, /createCheckoutUrl\(lines, 1, body\.visitorConsent\)/);
   assert.match(shopify, /variants\(first: 100\)/);
   assert.match(products, /variants: localVariants/);
 });

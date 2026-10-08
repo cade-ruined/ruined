@@ -11,6 +11,7 @@ import {
 import { normalizeExpectedShipDateLanguage } from "@/lib/store/product-copy.js";
 import { loadCatalog } from "@/lib/store/catalog-loader";
 import type { CatalogResult } from "@/lib/store/catalog";
+import type { VisitorConsent } from "@/lib/marketing/consent";
 
 // ─── Storefront API client ──────────────────────────────────────────────────
 // Server-only (this module imports `server-only`, so it can never be bundled
@@ -18,14 +19,16 @@ import type { CatalogResult } from "@/lib/store/catalog";
 //
 //   SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
 //   SHOPIFY_STOREFRONT_ACCESS_TOKEN=...          (public Storefront token)
-//   SHOPIFY_API_VERSION=2024-10                  (optional)
+//   SHOPIFY_API_VERSION=2026-07                  (optional, 2025-10+ for checkout consent)
 //
 // Without credentials the public catalog reports that it is unavailable; it
 // never advertises local placeholder products or prices.
 
 const domain = process.env.SHOPIFY_STORE_DOMAIN;
 const publicAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
-const apiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-07";
+const configuredApiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-07";
+// VisitorConsent was added in 2025-10. Preserve newer configured versions.
+const apiVersion = /^\d{4}-\d{2}$/.test(configuredApiVersion) && configuredApiVersion < "2025-10" ? "2025-10" : configuredApiVersion;
 const publicCheckoutDomain = process.env.SHOPIFY_CHECKOUT_DOMAIN?.trim().toLowerCase();
 
 export const isShopifyConfigured = Boolean(domain && publicAccessToken);
@@ -126,7 +129,7 @@ export async function getShopPolicies(): Promise<ShopifyPolicies> {
 }
 
 const CART_CREATE = `#graphql
-  mutation CartCreate($lines: [CartLineInput!]!) {
+  mutation CartCreate($lines: [CartLineInput!]!, $visitorConsent: VisitorConsent) @inContext(visitorConsent: $visitorConsent) {
     cartCreate(input: { lines: $lines }) {
       cart { checkoutUrl }
       userErrors { field message }
@@ -320,7 +323,8 @@ function resolvePublicCheckoutUrl(checkoutUrl: string): string | null {
 
 export async function createCheckoutUrl(
   input: string | CheckoutLine[],
-  quantity = 1
+  quantity = 1,
+  visitorConsent?: VisitorConsent,
 ): Promise<string | null> {
   if (!client) return null;
   const lines: {
@@ -339,7 +343,7 @@ export async function createCheckoutUrl(
   try {
     const { data, errors } = await client.request<SFCartCreateResponse>(
       CART_CREATE,
-      { variables: { lines } }
+      { variables: { lines, ...(visitorConsent ? { visitorConsent } : {}) } }
     );
     const result = data?.cartCreate;
     if (

@@ -9,7 +9,10 @@ export type MarketingConfig = {
 };
 
 export type ConsentChoice = "yes" | "no" | "";
+export type VisitorConsent = Partial<Record<"marketing" | "analytics" | "preferences" | "saleOfData", boolean>>;
 export type CustomerPrivacy = {
+  consentStatus?: "loading" | "loaded";
+  config?: { isHeadless?: boolean; asyncConsent?: boolean; asyncVisitorState?: boolean; consentDomain?: string; storefrontAccessToken?: string; injectedConsent?: string };
   currentVisitorConsent(): { marketing: ConsentChoice; analytics: ConsentChoice; preferences?: ConsentChoice; sale_of_data?: ConsentChoice };
   marketingAllowed(): boolean;
   analyticsProcessingAllowed(): boolean;
@@ -22,7 +25,7 @@ export type CustomerPrivacy = {
 
 /** Explicit permission is required even where Shopify's regional default allows processing. */
 export function marketingConsentAllowed(privacy: CustomerPrivacy | undefined, globalPrivacyControl = false): boolean {
-  if (!privacy || globalPrivacyControl) return false;
+  if (!privacy || privacy.consentStatus !== "loaded" || globalPrivacyControl) return false;
   try {
     const choice = privacy.currentVisitorConsent();
     return choice.marketing === "yes" && choice.analytics === "yes"
@@ -30,6 +33,31 @@ export function marketingConsentAllowed(privacy: CustomerPrivacy | undefined, gl
   } catch {
     return false;
   }
+}
+
+let consentUpdatePending = true;
+export function setConsentUpdatePending(pending: boolean) { consentUpdatePending = pending; }
+
+/** Unknown choices stay omitted; regional processing defaults are not a choice. */
+export function visitorConsentForCheckout(privacy: CustomerPrivacy | undefined, localVeto = false, globalPrivacyControl = false): VisitorConsent | undefined {
+  let result: VisitorConsent = {};
+  if (privacy?.consentStatus === "loaded" && !consentUpdatePending) {
+    try {
+      const choice = privacy.currentVisitorConsent();
+      for (const [source, target] of [["marketing", "marketing"], ["analytics", "analytics"], ["preferences", "preferences"], ["sale_of_data", "saleOfData"]] as const) {
+        if (choice[source] === "yes") result[target] = true;
+        else if (choice[source] === "no") result[target] = false;
+      }
+    } catch { result = {}; }
+  }
+  if (localVeto) { result.marketing = false; result.analytics = false; }
+  if (globalPrivacyControl) { result.marketing = false; result.saleOfData = false; }
+  return Object.keys(result).length ? result : undefined;
+}
+
+export function validVisitorConsent(value: unknown): value is VisitorConsent | undefined {
+  return value === undefined || (value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.entries(value).every(([key, choice]) => ["marketing", "analytics", "preferences", "saleOfData"].includes(key) && typeof choice === "boolean"));
 }
 
 export function isMarketingPage(pathname: string): boolean {

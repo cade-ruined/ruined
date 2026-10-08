@@ -32,7 +32,9 @@ function browser(choice = { marketing: "", analytics: "" }) {
   const timers = new Map();
   const events = new EventTarget();
   const docEvents = new EventTarget();
+  consent.setConsentUpdatePending(false);
   const privacy = {
+    consentStatus: "loaded",
     currentVisitorConsent: () => choice,
     marketingAllowed: () => true, analyticsProcessingAllowed: () => true, saleOfDataAllowed: () => true,
     setTrackingConsent: (options, callback) => requests.push({ options, callback }),
@@ -141,6 +143,9 @@ test("only consented known attribution reaches the existing Shopify checkout URL
 });
 
 function componentHarness(b) {
+  delete window.Shopify.customerPrivacy;
+  const reads = [];
+  globalThis.fetch = async (url, options) => { reads.push({ url, options }); return Response.json({ data: { consentManagement: { cookies: { trackingConsentCookie: "opaque-from-Shopify" } } } }); };
   const slots = [];
   const effects = [];
   let cursor = 0;
@@ -158,29 +163,138 @@ function componentHarness(b) {
   const elements = (node) => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
   const render = () => { cursor = 0; const tree = elements(Component({ config })); effects.splice(0).forEach((effect) => effect()); return tree; };
   const button = (name) => render().find((node) => node.type === "button" && node.props.children === name);
-  return { render, button };
+  const boot = async () => {
+    render();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    const script = b.scripts.find((item) => item.id === "ruined-customer-privacy");
+    if (script) {
+      b.privacy.config = window.Shopify.customerPrivacy.config;
+      window.Shopify.customerPrivacy = b.privacy;
+      script.onload();
+      document.dispatchEvent(new Event("consentTrackingApiLoaded"));
+      await Promise.resolve();
+    }
+  };
+  return { render, button, boot, reads };
 }
 
 test("actual consent provider sends headless config, stays off through pending/timeout, and never overlaps writes", async () => {
   const b = browser();
-  const view = componentHarness(b); view.render(); await Promise.resolve();
+  const view = componentHarness(b); await view.boot();
   view.button("Allow optional cookies").props.onClick();
   assert.equal(b.requests.length, 1);
-  assert.deepEqual(b.requests[0].options, { ...config, headlessStorefront: true, marketing: true, analytics: true });
+  assert.deepEqual(b.requests[0].options, { ...config, checkoutRootDomain: "theruinedproject.com", storefrontRootDomain: ".theruinedproject.com", headlessStorefront: true, marketing: true, analytics: true });
   b.choose({ marketing: "yes", analytics: "yes" });
   document.dispatchEvent(new Event("visitorConsentCollected"));
   b.meta.trackMetaAddToCart(product, variant);
-  assert.equal(b.scripts.length, 0);
+  assert.equal(b.scripts.filter((script) => /fbevents/.test(script.src)).length, 0);
   [...b.timers.values()].forEach((timer) => timer());
   assert.equal(view.button("Reject optional cookies").props.disabled, true);
   view.button("Reject optional cookies").props.onClick();
   assert.equal(b.requests.length, 1);
   b.requests[0].callback();
-  assert.equal(b.scripts.length, 1);
+  assert.equal(b.scripts.filter((script) => /fbevents/.test(script.src)).length, 1);
   window.dispatchEvent(new Event(consent.MARKETING_PREFERENCES_EVENT));
   view.button("Reject optional cookies").props.onClick();
   b.meta.trackMetaAddToCart(product, variant);
   assert.equal(b.meta.currentMarketingPermission(), false);
   b.requests[1].callback({ error: "Offline" });
   assert.equal(b.meta.hasLocalMarketingVeto(), true);
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: false, analytics: false });
+  view.button("Allow optional cookies").props.onClick();
+  assert.equal(b.meta.currentMarketingPermission(), false);
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: false, analytics: false });
+  b.requests[2].callback();
+  assert.equal(b.meta.hasLocalMarketingVeto(), false);
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: true, analytics: true });
+});
+
+
+test("checkout maps actual choices, omits unknown/unready, and never forwards stale allow during a save", () => {
+  const b = browser({ marketing: "yes", analytics: "no", preferences: "", sale_of_data: "no" });
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: true, analytics: false, saleOfData: false });
+  b.privacy.consentStatus = "loading";
+  assert.equal(b.meta.checkoutVisitorConsent(), undefined);
+  b.privacy.consentStatus = "loaded";
+  consent.setConsentUpdatePending(true);
+  assert.equal(b.meta.checkoutVisitorConsent(), undefined);
+  b.meta.vetoMetaTracking();
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: false, analytics: false });
+  consent.setConsentUpdatePending(false);
+  b.meta.grantMetaTracking(true);
+  window.navigator.globalPrivacyControl = true;
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: false, analytics: false, saleOfData: false });
+  window.navigator.globalPrivacyControl = false;
+  // A later native-checkout rejection wins. There is no saved local Allow.
+  b.choose({ marketing: "no", analytics: "no", preferences: "no", sale_of_data: "no" });
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: false, analytics: false, preferences: false, saleOfData: false });
+  assert.equal(consent.marketingConsentAllowed(b.privacy), false);
+});
+
+test("consent SDK loading state cannot enable Meta or checkout consent, and BFCache return reloads without replay", async () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  b.privacy.consentStatus = "loading";
+  let reloads = 0;
+  window.location.reload = () => reloads++;
+  const view = componentHarness(b); await view.boot();
+  assert.equal(b.scripts.length, 1);
+  assert.match(b.scripts[0].src, /v0\.2/);
+  assert.equal(b.privacy.config.asyncConsent, true);
+  assert.equal(b.privacy.config.asyncVisitorState, true);
+  assert.equal(b.privacy.config.consentDomain, "theruinedproject.com");
+  b.scripts[0].onload(); await Promise.resolve();
+  assert.equal(b.meta.currentMarketingPermission(), false);
+  assert.equal(b.meta.checkoutVisitorConsent(), undefined);
+  b.privacy.consentStatus = "loaded";
+  document.dispatchEvent(new Event("consentTrackingApiLoaded"));
+  assert.equal(b.meta.currentMarketingPermission(), true);
+  window.dispatchEvent(new Event("pagehide"));
+  assert.equal(b.meta.currentMarketingPermission(), false);
+  const restored = new Event("pageshow"); Object.defineProperty(restored, "persisted", { value: true });
+  window.dispatchEvent(restored);
+  assert.equal(reloads, 1);
+  assert.equal(b.requests.length, 0);
+});
+
+
+test("fresh bootstrap injects Shopify denial over stale compatibility storage and never writes a choice", async () => {
+  const b = browser({ marketing: "no", analytics: "no" });
+  window.sessionStorage.setItem("consentHeader", "stale-allow");
+  const view = componentHarness(b);
+  await view.boot();
+  assert.equal(view.reads.length, 1);
+  assert.equal(view.reads[0].url, "/api/unstable/graphql.json");
+  assert.equal(view.reads[0].options.credentials, "same-origin");
+  assert.match(JSON.parse(view.reads[0].options.body).query, /visitorConsent:\{\}/);
+  assert.equal(b.privacy.config.injectedConsent, "opaque-from-Shopify");
+  assert.equal(window.sessionStorage.getItem("consentHeader"), "stale-allow");
+  assert.equal(b.meta.currentMarketingPermission(), false);
+  assert.deepEqual(b.meta.checkoutVisitorConsent(), { marketing: false, analytics: false });
+  assert.equal(b.requests.length, 0);
+});
+
+test("failed fresh bootstrap cannot accept an old loaded state or transmit affirmative checkout consent", async () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  const view = componentHarness(b);
+  globalThis.fetch = async () => { throw new Error("Offline"); };
+  await view.boot();
+  // A stale ready event arriving after the failure still cannot enable tracking.
+  window.Shopify.customerPrivacy = b.privacy;
+  document.dispatchEvent(new Event("consentTrackingApiLoaded"));
+  assert.equal(b.meta.currentMarketingPermission(), false);
+  assert.equal(b.meta.checkoutVisitorConsent(), undefined);
+  assert.equal(b.scripts.length, 0);
+  assert.equal(b.requests.length, 0);
+});
+
+test("a preexisting foreign loaded SDK is not trusted as authoritative checkout consent", async () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  const view = componentHarness(b);
+  window.Shopify.customerPrivacy = b.privacy;
+  await view.boot();
+  document.dispatchEvent(new Event("consentTrackingApiLoaded"));
+  assert.equal(b.meta.checkoutVisitorConsent(), undefined);
+  assert.equal(b.meta.currentMarketingPermission(), false);
+  assert.equal(b.requests.length, 0);
+  assert.equal(b.scripts.length, 0);
 });
