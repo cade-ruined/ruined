@@ -136,7 +136,8 @@ test("card bytes cannot enter Next's public image cache, while static assets and
   const cardHeaders = Object.fromEntries(headers.find(rule => rule.source === "/card/:path*").headers.map(header => [header.key, header.value]));
   assert.match(cardHeaders["Cache-Control"], /private, no-store/); assert.equal(cardHeaders["Referrer-Policy"], "no-referrer");
   assert.equal(cardHeaders["X-Robots-Tag"], "noindex, nofollow");
-  assert.ok(headers.findIndex(rule => rule.source === "/card/:path*") > headers.findIndex(rule => rule.source === "/(.*)"), "specific privacy headers must override the global referrer policy");
+  const securityIndex = headers.findIndex(rule => rule.headers.some(header => header.key === "X-Frame-Options" && header.value === "DENY"));
+  assert.ok(securityIndex >= 0 && headers.findIndex(rule => rule.source === "/card/:path*") > securityIndex, "specific privacy headers must override the global referrer policy");
 });
 
 test("card analytics are suppressed before effects and after navigation, with beacon and fetch transports", async () => {

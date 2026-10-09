@@ -21,8 +21,8 @@ import styles from "./MembershipOverview.module.css";
 
 export type MembershipLandingInvitation = PublicMemberInvitation & { token?: string };
 
-export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, invitation }: {
-  preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean; prepaymentRequired?: boolean; invitation?: MembershipLandingInvitation;
+export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, invitation, onVerified }: {
+  preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean; prepaymentRequired?: boolean; invitation?: MembershipLandingInvitation; onVerified?: (destination: string) => void;
 }) {
   const personalInvitation = Boolean(invitation?.recipientName);
   const complimentaryInvitation = personalInvitation && invitation?.membershipType === "complimentary";
@@ -127,7 +127,7 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
               <MembershipWaitlistForm tone="paper" invitationToken={invitation.token} disabled={preview || invitationExpired} />
             </> : <>
               <h3>{invitationAvailable ? "Make it yours." : "Be here for the beginning."}</h3>
-              <MembershipSignup compact showPricing={false} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} previewInvitation={preview && (mode === "payment-setup" || prepaymentRequired)} paymentSetupOnly={mode === "payment-setup"} enabled={signupEnabled} preview={preview} plan={plan} onPlanChange={setPlan} onRecipientNameChange={setRecipientName} onRequestStateChange={setRegistrationLocked} />
+              <MembershipSignup onVerified={onVerified} compact showPricing={false} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} previewInvitation={preview && (mode === "payment-setup" || prepaymentRequired)} paymentSetupOnly={mode === "payment-setup"} enabled={signupEnabled} preview={preview} plan={plan} onPlanChange={setPlan} onRecipientNameChange={setRecipientName} onRequestStateChange={setRegistrationLocked} />
             </>}
           </div>
           {!complimentaryInvitation && <div className={styles.registrationPricing}>

@@ -166,6 +166,24 @@ test("invalid verification codes and unsafe redirects never leave the code scree
   }
 });
 
+test("embedded signup preserves verification and hands its validated result to the parent continuation", async () => {
+  const f = await requestFixture(), handoffs = [];
+  f.props.onVerified = destination => handoffs.push(destination);
+  await f.submit(); f.fill("token", "123456"); await f.submit();
+  assert.deepEqual(handoffs, ["/my/join"]);
+  assert.deepEqual(f.navigations, [], "protected registration must not navigate inside the iframe");
+  assert.deepEqual(f.calls[1].body, { email: "alex@example.test", token: "123456", directSignup: true });
+});
+
+test("unavailable parent continuation keeps the code form recoverable", async () => {
+  const f = await requestFixture();
+  f.props.onVerified = () => { throw new Error("Open the membership page to continue registration."); };
+  await f.submit(); f.fill("token", "123456"); await f.submit();
+  assert.deepEqual(f.navigations, []);
+  assert.match(text(f.draw()), /Open the membership page to continue registration/);
+  assert.equal(nodes(f.draw()).find(node => node.type === "fieldset").props.disabled, false);
+});
+
 test("verification and resend errors are retryable without losing recipient context or unlocking the plan", async () => {
   let failVerify = true, starts = 0;
   const f = await requestFixture(call => {

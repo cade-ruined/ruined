@@ -6,7 +6,7 @@ import MembershipWaitlistForm from "./MembershipWaitlistForm";
 import { formatMembershipPrice, MEMBERSHIP_OFFERS, MEMBERSHIP_PLANS, type MembershipBillingPlan } from "@/lib/membership/pricing";
 import styles from "./MembershipOverview.module.css";
 
-export default function MembershipSignup({ enabled, preview = false, previewInvitation = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, plan, onPlanChange, onRecipientNameChange, showPricing = true, compact = false, onRequestStateChange }: {
+export default function MembershipSignup({ enabled, preview = false, previewInvitation = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, plan, onPlanChange, onRecipientNameChange, showPricing = true, compact = false, onRequestStateChange, onVerified }: {
   enabled: boolean;
   preview?: boolean;
   previewInvitation?: boolean;
@@ -18,6 +18,7 @@ export default function MembershipSignup({ enabled, preview = false, previewInvi
   showPricing?: boolean;
   compact?: boolean;
   onRequestStateChange?: (locked: boolean) => void;
+  onVerified?: (destination: string) => void;
 }) {
   const id = useId();
   const [verifying, setVerifying] = useState(false);
@@ -40,6 +41,6 @@ export default function MembershipSignup({ enabled, preview = false, previewInvi
     </fieldset>
     <div className={styles.signupPrice} aria-live="polite">{paymentSetupOnly && !prepaymentRequired ? "Future membership: " : null}{amount} / {price.interval}<span>{prepaymentRequired ? plan === "annual" ? "Standard individual rate. Your full year is paid at Checkout. Service and your initial 12-month term begin with your cohort’s first Foundations call; your next annual charge is one calendar year later." : "Standard individual rate. Your first month is paid at Checkout. Service and your initial 12-month term begin with your cohort’s first Foundations call; 11 further monthly installments begin one calendar month later." : paymentSetupOnly ? registrationOnly ? "Choosing a plan here is a preference, not a purchase. Eligible individual Founding pricing is confirmed when registration is complete with a verified saved card. No payment is due now. Review your confirmed offer and agreement before explicitly confirming checkout." : "Your selection is a preference, not a purchase or reserved offer. No payment is due now. Review the current offer and agreement before confirming payment at launch." : plan === "annual" ? `${amount} paid upfront when you activate membership, equal to 10 monthly payments.` : `${amount} due when you activate paid membership. 12-month initial commitment; 12 payments totaling ${formatMembershipPrice(MEMBERSHIP_OFFERS.individual_monthly.initialTermAmount)}.`} USD. Applicable tax is added. U.S. membership only.</span></div></>}
     {showPricing && prepaymentRequired ? <p className={styles.signupTerms}>Cancel before service begins for a full refund, including tax. After service begins, monthly early exit costs the lower of $1,500 or the unpaid initial installments, replacing those installments. Monthly plans renew monthly after the initial year; annual plans renew annually. Review your exact price, dates, agreement, and payment authorization before paying.</p> : null}
-    <DirectInvitationRequestForm compact={compact} paymentSetupOnly={paymentSetupOnly} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} preview={preview || !enabled} billingPlan={plan} onRequestStateChange={locked => { setVerifying(locked); onRequestStateChange?.(locked); }} onRecipientNameChange={onRecipientNameChange} />
+    <DirectInvitationRequestForm onVerified={onVerified} compact={compact} paymentSetupOnly={paymentSetupOnly} registrationOnly={registrationOnly} prepaymentRequired={prepaymentRequired} preview={preview || !enabled} billingPlan={plan} onRequestStateChange={locked => { setVerifying(locked); onRequestStateChange?.(locked); }} onRecipientNameChange={onRecipientNameChange} />
   </section>;
 }
