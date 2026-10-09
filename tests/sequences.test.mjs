@@ -939,13 +939,13 @@ test("primary destinations are direct while in-walk room controls keep their anc
   }
   assert.doesNotMatch(searchData, /href: "\/#work"/);
   assert.match(searchData, /href: `\/community#\$\{event\.id\}`/);
-  assert.match(navigation, /SERVICE_NAV_ITEMS = \[[\s\S]*SITE_ROUTES\.privacy/);
+  assert.match(navigation, /SERVICE_NAV_ITEMS = \[\s*SITE_ROUTES\.shippingReturns,\s*SITE_ROUTES\.privacy/);
   assert.doesNotMatch(
     navigation.slice(
       navigation.indexOf("export const SERVICE_NAV_ITEMS"),
       navigation.indexOf("export const EXPLORE_ROOM_IDS")
     ),
-    /shippingReturns|SITE_ROUTES\.terms/
+    /SITE_ROUTES\.terms/
   );
   assert.doesNotMatch(searchData, /href: "\/(?:shipping-returns|terms)"/);
   assert.doesNotMatch(header, />Shipping \+ Returns</);

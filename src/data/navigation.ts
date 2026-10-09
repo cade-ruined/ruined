@@ -31,6 +31,7 @@ export const GLOBAL_MENU_ITEMS = [
 ] as const;
 
 export const SERVICE_NAV_ITEMS = [
+  SITE_ROUTES.shippingReturns,
   SITE_ROUTES.privacy,
 ] as const;
 
