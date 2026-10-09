@@ -5,15 +5,15 @@
   height: 44px;
   align-items: center;
   justify-content: center;
-  color: rgb(42 42 42 / 55%);
+  color: #484239;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .trigger:hover,
 .trigger[aria-expanded="true"] {
   color: var(--color-faded);
-  background: rgb(42 42 42 / 5%);
+  background: var(--operator-surface-hover);
 }
 
 .trigger:focus-visible,
@@ -33,10 +33,10 @@
   overflow: auto;
   overscroll-behavior: contain;
   padding: 12px 20px 20px;
-  border: 1px solid rgb(42 42 42 / 22%);
-  border-radius: 2px;
-  background: var(--color-surface, #f3efe6);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+  border: 1px solid var(--operator-line);
+  border-radius: 0;
+  background: var(--operator-surface, #f3efe6);
+  box-shadow: 6px 6px 0 var(--operator-workwear);
   color: var(--color-faded);
   font-family: var(--font-body);
   text-align: left;
@@ -79,7 +79,7 @@
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.5;
-  color: rgb(42 42 42 / 65%);
+  color: #484239;
 }
 
 .details {
@@ -87,7 +87,7 @@
   gap: 12px;
   margin-top: 18px;
   padding-top: 16px;
-  border-top: 1px solid rgb(42 42 42 / 14%);
+  border-top: 1px solid var(--operator-line);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -99,7 +99,7 @@
 }
 
 .details dt {
-  color: rgb(42 42 42 / 60%);
+  color: #484239;
 }
 
 .details dd {
@@ -109,12 +109,12 @@
 .subline {
   display: block;
   margin-top: 2px;
-  color: rgb(42 42 42 / 65%);
+  color: #484239;
 }
 
 .empty {
   margin-top: 2px;
   font-size: 13px;
   line-height: 1.65;
-  color: rgb(42 42 42 / 70%);
+  color: #484239;
 }

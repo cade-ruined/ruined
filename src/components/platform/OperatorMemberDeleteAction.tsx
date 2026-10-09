@@ -228,7 +228,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="ui-heading text-base font-semibold">Delete member</h3>
-          <p className="mt-1 text-sm leading-relaxed text-black/60">Closes and deletes the account. The historical membership record stays.</p>
+          <p className="mt-1 text-sm leading-relaxed text-black/70">Closes and deletes the account. The historical membership record stays.</p>
         </div>
         <button aria-controls={panelId} aria-expanded={open} className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy) || deleted || open} onClick={openConfirmation} ref={trigger} type="button">Delete member</button>
       </div>
@@ -238,9 +238,9 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
             <h4 className="ui-heading text-base font-semibold">Permanently delete member</h4>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/68">This closes the account and removes sign-in access, the private profile, card, invitation, journal and uploads. It cannot be undone. Deletion does not cancel billing. Membership, financial and audit history are retained; this person will no longer appear in current member counts.</p>
           </div>
-          {busy === "checking" ? <p role="status" className="text-sm text-black/60">Checking eligibility…</p> : null}
+          {busy === "checking" ? <p role="status" className="text-sm text-black/70">Checking eligibility…</p> : null}
           {eligibility && !allowed ? (
-            <div className="grid gap-2 rounded-[4px] bg-black/[0.035] p-4">
+            <div className="grid gap-2 rounded-none bg-[var(--operator-surface-muted)] p-4">
               <p className="text-sm font-semibold">This member cannot be deleted.</p>
               {eligibility.blockers.length ? <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-black/68">{eligibility.blockers.map((blocker, index) => <li key={`${index}:${blocker}`}>{blocker}</li>)}</ul> : <p className="text-sm text-black/68">The account is not eligible for deletion.</p>}
             </div>
@@ -262,7 +262,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
                 </label>
               </div>
               {review ? (
-                <div aria-label="Review member deletion" className="grid gap-3 rounded-[4px] border border-[var(--color-poster)]/35 bg-black/[0.025] p-4">
+                <div aria-label="Review member deletion" className="grid gap-3 rounded-none border border-[var(--color-poster)]/35 bg-[var(--operator-surface-muted)] p-4">
                   <p className="break-words text-sm leading-relaxed">Close and permanently delete <strong>{eligibility.memberName}</strong>’s account ({review.email})? Reason: {REASONS[review.reason]}. The historical membership record stays. Account deletion cannot be undone.</p>
                   <div className="flex flex-wrap gap-2">
                     <button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy)} onClick={deleteMember} type="button">{busy === "deleting" ? "Deleting member…" : "Permanently delete member"}</button>
@@ -272,7 +272,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
               ) : <div><button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy) || !matches || !reason} type="submit">Review deletion</button></div>}
             </form>
           ) : null}
-          {message ? <p aria-live="polite" className={`text-sm leading-relaxed ${message.error ? "text-[var(--color-poster)]" : "text-black/60"}`} role={message.error ? "alert" : "status"}>{message.text}</p> : null}
+          {message ? <p aria-live="polite" className={`text-sm leading-relaxed ${message.error ? "text-[var(--operator-danger)]" : "text-black/70"}`} role={message.error ? "alert" : "status"}>{message.text}</p> : null}
           {!deleted ? <div className="flex flex-wrap gap-2">
             {!preview && !allowed && !busy ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => checkEligibility()} type="button">Check eligibility again</button> : null}
             <button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy)} onClick={cancel} type="button">Cancel</button>

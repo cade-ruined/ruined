@@ -45,7 +45,7 @@ export default function OperatorLeadershipManager({ initialDirectory, preview = 
   }
   return <div className="grid min-w-0 gap-6">
     <p className="max-w-3xl text-sm leading-relaxed text-black/70">Circle Supporters serve their Circle with preparation, support, and room to step back. Tyler and Mitch oversee readiness and coverage. Libby owns routine placement and discretionary reimbursement decisions.</p>
-    {preview ? <p className="rounded border border-black/20 p-3 text-sm">Preview — explore the forms with sample records. Changes are not saved.</p> : null}
+    {preview ? <p className="rounded-none border border-black/20 bg-[var(--operator-info)] p-3 text-sm">Preview — explore the forms with sample records. Changes are not saved.</p> : null}
     <div aria-live="polite">{message ? <p role="status" className="border-l-2 border-black p-3 text-sm">{message}</p> : null}{error ? <p role="alert" className="border-l-2 border-red-700 p-3 text-sm text-red-800">{error}</p> : null}</div>
     <section className={`${OPERATOR_PANEL_CLASS} p-4 sm:p-6`} aria-labelledby="leadership-access">
       <h2 id="leadership-access" className="font-[var(--font-display)] text-2xl">Administrator access</h2>
@@ -65,6 +65,6 @@ export default function OperatorLeadershipManager({ initialDirectory, preview = 
         {r.status === "pending" ? <form onSubmit={event => submit(event, { reimbursementId: r.id })} className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Decision"><select name="action" className={OPERATOR_FIELD_CLASS}><option value="approve">Approve reimbursement</option><option value="reject">Decline reimbursement</option></select></Field><Reason /><button disabled={busy} className={`${OPERATOR_BUTTON_CLASS} justify-self-start`}>Record decision</button></form> : null}
         {r.status === "approved" ? <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold">Record completed external payment</summary><form onSubmit={event => submit(event, { action: "process", reimbursementId: r.id })} className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Payment reference"><input name="reference" required maxLength={160} className={OPERATOR_FIELD_CLASS} /></Field><Field label="Paid on (UTC)"><input name="processedAt" type="date" required className={OPERATOR_FIELD_CLASS} /></Field><Reason /><button disabled={busy} className={`${OPERATOR_BUTTON_CLASS} justify-self-start`}>Mark processed</button></form></details> : null}
       </li>)}</ul>{!directory.reimbursements.length ? <p className="mt-4 text-sm">No reimbursements recorded yet.</p> : null}
-    </section> : <p className="text-sm text-black/60">Active Administrator access is required to view reimbursements.</p>}
+    </section> : <p className="text-sm text-black/70">Active Administrator access is required to view reimbursements.</p>}
   </div>;
 }

@@ -1,0 +1,134 @@
+/* Opaque working surfaces. Category colors are shared by navigation and cards;
+   status colors keep their meaning inside every workspace. */
+[data-platform-surface="ops"] {
+  --operator-surface: #f3efe6;
+  --operator-surface-muted: #e1d8c9;
+  --operator-surface-hover: #d6cbb9;
+  --operator-info: #b1cae0;
+  --operator-info-hover: #9abbd6;
+  --operator-wait: #ffca2c;
+  --operator-wait-hover: #f0ba18;
+  --operator-error: #f1c6bd;
+  --operator-error-hover: #e8a99d;
+  --operator-success: #c7d8ce;
+  --operator-success-hover: #b5cabf;
+  --operator-workwear: #c8b49a;
+  --operator-line: #a79c8a;
+  --operator-danger: #84201d;
+  --operator-card: var(--operator-surface);
+}
+
+[data-platform-surface="ops"] [data-operator-area] {
+  --operator-card: var(--operator-surface);
+}
+
+[data-platform-surface="ops"][data-operator-area="people"],
+[data-platform-surface="ops"] [data-operator-area="people"],
+[data-platform-surface="ops"][data-operator-area="circles"],
+[data-platform-surface="ops"] [data-operator-area="circles"],
+[data-platform-surface="ops"][data-operator-area="communication"],
+[data-platform-surface="ops"] [data-operator-area="communication"] {
+  --operator-card: var(--operator-info);
+}
+
+[data-platform-surface="ops"][data-operator-area="programme"],
+[data-platform-surface="ops"] [data-operator-area="programme"],
+[data-platform-surface="ops"][data-operator-area="sops"],
+[data-platform-surface="ops"] [data-operator-area="sops"],
+[data-platform-surface="ops"][data-operator-area="artifacts"],
+[data-platform-surface="ops"] [data-operator-area="artifacts"] {
+  --operator-card: var(--operator-workwear);
+}
+
+[data-platform-surface="ops"][data-operator-area="events"],
+[data-platform-surface="ops"] [data-operator-area="events"] {
+  --operator-card: var(--operator-success);
+}
+
+[data-platform-surface="ops"][data-operator-area="work"],
+[data-platform-surface="ops"] [data-operator-area="work"] {
+  --operator-card: var(--operator-wait);
+}
+
+@layer components {
+  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card) {
+    min-width: 0;
+    border: 1px solid var(--operator-line);
+    border-radius: 0;
+    background-color: var(--operator-card);
+    background-image: none;
+    box-shadow: none;
+  }
+
+  [data-platform-surface="ops"] .operator-bento-card {
+    padding: 1rem;
+  }
+
+  [data-platform-surface="ops"] .operator-disclosure {
+    background-color: var(--operator-surface-muted);
+  }
+
+  [data-platform-surface="ops"] .operator-disclosure[open] {
+    background-color: var(--operator-card);
+  }
+}
+
+[data-platform-surface="ops"] .operator-workspace-option::before {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 1px solid var(--operator-line);
+  background: var(--operator-card);
+}
+
+[data-platform-surface="ops"] dialog.operator-paper {
+  background-color: var(--operator-surface) !important;
+  background-image: none;
+}
+
+/* This component is shared with member pages. Only the operations surface
+   turns its existing text labels into solid, readable status chips. */
+[data-platform-surface="ops"] .operator-state-label {
+  width: fit-content;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--operator-line);
+  background: var(--operator-surface-muted);
+  color: #2a2a2a;
+  opacity: 1;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+[data-platform-surface="ops"] .operator-state-label[data-state-tone="attention"] {
+  background: var(--operator-error);
+  border-color: #bb675b;
+  color: #81251f;
+}
+
+[data-platform-surface="ops"] .operator-state-label[data-state-tone="complete"] {
+  background: #3b5d4f;
+  border-color: #3b5d4f;
+  color: #fff;
+}
+
+[data-platform-surface="ops"] .operator-state-label[data-state-tone="complete"] > span {
+  background: currentColor;
+}
+
+[data-platform-surface="ops"] .operator-state-label[data-state-tone="in-motion"] {
+  background: var(--operator-info);
+}
+
+[data-platform-surface="ops"] .operator-state-label[data-state-tone="in-motion"] > span {
+  background: currentColor;
+}
+
+@media (forced-colors: active) {
+  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card, .operator-state-label) {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

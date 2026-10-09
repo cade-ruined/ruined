@@ -17,12 +17,12 @@ export default async function OperationsSupportPage() {
   const context = await getSupportPageContext(true);
   if (context.state === "signed_out") redirect(getSupportAccessUrl("/ops/support"));
   if (context.state === "preview") return <OperatorSupport tickets={PREVIEW_SUPPORT_TICKETS} writable={false} />;
-  if (context.state !== "authenticated") return <SupportUnavailable denied={context.state === "denied"} />;
+  if (context.state !== "authenticated") return <SupportUnavailable operator denied={context.state === "denied"} />;
   try {
     const tickets = await listSupportTickets(context.viewer, true);
     return <OperatorSupport emailReady={getSupportEmailConfiguration().ready} tickets={tickets} writable />;
   } catch (error) {
     console.error("Operator support queue could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
-    return <SupportUnavailable denied={error instanceof SupportError && error.status === 403} />;
+    return <SupportUnavailable operator denied={error instanceof SupportError && error.status === 403} />;
   }
 }

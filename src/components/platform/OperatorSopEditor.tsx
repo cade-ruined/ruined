@@ -125,7 +125,7 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
   }
 
   return <OperatorPageFrame title={procedure ? `SOPs / ${procedure.title}` : "New SOP"}>
-    <Link className="mb-4 inline-flex min-h-11 items-center gap-2 text-sm text-black/60 hover:text-black" href="/ops/sops"><span aria-hidden="true">←</span> All SOPs</Link>
+    <Link className="mb-4 inline-flex min-h-11 items-center gap-2 text-sm text-black/70 hover:text-black" href="/ops/sops"><span aria-hidden="true">←</span> All SOPs</Link>
     <header className="operator-record-header">
       <div className="min-w-0 max-w-3xl">
         <p className="operator-compact-label mb-2">{procedure?.category || "Standard operating procedures"}</p>
@@ -135,11 +135,11 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
       {canManage ? <button className={OPERATOR_BUTTON_CLASS} id="edit-sop" onClick={openEditor} type="button">{procedure ? "Edit SOP" : "Create SOP"}</button> : null}
     </header>
     {notice ? <p className="mb-5 text-sm text-[var(--color-verdigris)]" role="status">{notice}</p> : null}
-    {preview && !notice ? <p className="mb-5 text-xs text-black/50">Preview workspace. Changes stay here until you reload.</p> : null}
+    {preview && !notice ? <p className="mb-5 text-xs text-black/70">Preview workspace. Changes stay here until you reload.</p> : null}
     {procedure ? <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_15rem] xl:gap-8">
       <article className="operator-bento-card !p-5 sm:!p-7" aria-label="Standard operating procedure">
-        {procedure.status !== "published" ? <p className="mb-6 border-l-2 border-black/20 pl-3 text-sm text-black/60">{procedure.status === "archived" ? "This SOP is archived and hidden from the operator library." : "This draft is visible to administrators. Publish it when it is ready for the team."}</p> : null}
-        {procedure.bodyText.trim() ? <OperatorSopBody body={procedure.bodyText} /> : <p className="text-sm text-black/55">{sourceUrl ? "The full procedure is in the linked document." : "No procedure added yet."}</p>}
+        {procedure.status !== "published" ? <p className="mb-6 border-l-2 border-black/20 pl-3 text-sm text-black/70">{procedure.status === "archived" ? "This SOP is archived and hidden from the operator library." : "This draft is visible to administrators. Publish it when it is ready for the team."}</p> : null}
+        {procedure.bodyText.trim() ? <OperatorSopBody body={procedure.bodyText} /> : <p className="text-sm text-black/70">{sourceUrl ? "The full procedure is in the linked document." : "No procedure added yet."}</p>}
         {sourceUrl ? <div className="mt-7 border-t border-black/10 pt-4"><a className="inline-flex min-h-11 items-center gap-2 break-words text-sm font-semibold underline underline-offset-4" href={sourceUrl} rel="noopener noreferrer" target="_blank">Open procedure document <span aria-hidden="true">↗</span><span className="sr-only"> (opens in a new tab)</span></a></div> : null}
       </article>
       <aside className="min-w-0 space-y-6" aria-label="SOP details">
@@ -147,17 +147,17 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
           <h3 className="operator-compact-label mb-4">Publication</h3>
           <StateLabel state={procedure.status} />
           <dl className="mt-5 grid grid-cols-2 gap-4 text-sm lg:grid-cols-1">
-            <div><dt className="text-xs text-black/50">Revision</dt><dd className="mt-1">{procedure.revision}</dd></div>
-            <div><dt className="text-xs text-black/50">Last updated</dt><dd className="mt-1"><time dateTime={procedure.updatedAt}>{updatedDate(procedure.updatedAt)}</time></dd></div>
+            <div><dt className="text-xs text-black/70">Revision</dt><dd className="mt-1">{procedure.revision}</dd></div>
+            <div><dt className="text-xs text-black/70">Last updated</dt><dd className="mt-1"><time dateTime={procedure.updatedAt}>{updatedDate(procedure.updatedAt)}</time></dd></div>
           </dl>
-          {canManage && procedure.status !== "archived" ? <button className="mt-4 min-h-11 text-sm text-black/60 underline underline-offset-4 hover:text-black" id="archive-sop" onClick={() => { setError(""); setConflict(false); setArchiveOpen(true); }} type="button">Archive SOP</button> : null}
+          {canManage && procedure.status !== "archived" ? <button className="mt-4 min-h-11 text-sm text-black/70 underline underline-offset-4 hover:text-black" id="archive-sop" onClick={() => { setError(""); setConflict(false); setArchiveOpen(true); }} type="button">Archive SOP</button> : null}
         </section>
-        {canManage && history.length > 0 ? <details className="rounded-[8px] border border-black/10 px-4">
-          <summary className="cursor-pointer py-4 text-sm font-medium">Revision history <span className="ml-1 text-black/40">{history.length}</span></summary>
+        {canManage && history.length > 0 ? <details className="rounded-none border border-black/10 bg-[var(--operator-surface-muted)] px-4">
+          <summary className="cursor-pointer py-4 text-sm font-medium">Revision history <span className="ml-1 text-black/70">{history.length}</span></summary>
           <ol className="max-h-80 space-y-4 overflow-y-auto pb-4">{history.map((revision) => <li className="border-t border-black/10 pt-3" key={revision.revision}>
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Revision {revision.revision}</span><StateLabel state={revision.status} /></div>
-            <p className="mt-2 break-words text-xs text-black/60">{revision.title}</p>
-            <time className="mt-1 block text-xs text-black/45" dateTime={revision.updatedAt}>{updatedDate(revision.updatedAt)}</time>
+            <p className="mt-2 break-words text-xs text-black/70">{revision.title}</p>
+            <time className="mt-1 block text-xs text-black/70" dateTime={revision.updatedAt}>{updatedDate(revision.updatedAt)}</time>
             <button aria-label={`Read revision ${revision.revision}`} className="mt-1 min-h-11 text-xs font-medium underline underline-offset-4" id={`read-sop-revision-${revision.revision}`} onClick={() => setReadingRevision(revision)} type="button">Read revision</button>
           </li>)}</ol>
         </details> : null}
@@ -169,10 +169,10 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
         <header className="border-b border-black/10 pb-5">
           <p className="operator-compact-label mb-2">{readingRevision.category || "General"}</p>
           <h3 className="operator-section-heading">{readingRevision.title}</h3>
-          <time className="mt-2 block text-xs text-black/50" dateTime={readingRevision.updatedAt}>Saved {updatedDate(readingRevision.updatedAt)}</time>
+          <time className="mt-2 block text-xs text-black/70" dateTime={readingRevision.updatedAt}>Saved {updatedDate(readingRevision.updatedAt)}</time>
           {readingRevision.summary ? <p className="mt-3 whitespace-pre-line break-words text-sm leading-relaxed text-black/65">{readingRevision.summary}</p> : null}
         </header>
-        {readingRevision.bodyText.trim() ? <OperatorSopBody body={readingRevision.bodyText} /> : <p className="text-sm text-black/55">{revisionSourceUrl ? "The procedure for this revision is in the linked document." : "No procedure was added in this revision."}</p>}
+        {readingRevision.bodyText.trim() ? <OperatorSopBody body={readingRevision.bodyText} /> : <p className="text-sm text-black/70">{revisionSourceUrl ? "The procedure for this revision is in the linked document." : "No procedure was added in this revision."}</p>}
         {revisionSourceUrl ? <div className="border-t border-black/10 pt-4"><a className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold underline underline-offset-4" href={revisionSourceUrl} rel="noopener noreferrer" target="_blank">Open saved document <span aria-hidden="true">↗</span><span className="sr-only"> (opens in a new tab)</span></a></div> : null}
       </article>
     </OperatorDialog> : null}
@@ -186,13 +186,13 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
           </div>
           <datalist id="sop-categories">{["Member support", "Circle operations", "Experiences", "Communications", "Creative production", "General operations"].map((category) => <option key={category} value={category} />)}</datalist>
           <label className="block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Summary</span><textarea className={`${OPERATOR_FIELD_CLASS} min-h-20 resize-y`} maxLength={2000} name="summary" onChange={(event) => changeField("summary", event.target.value)} placeholder="What this procedure covers and when to use it." rows={2} value={draft.summary} /></label>
-          <label className="block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Procedure</span><textarea aria-describedby="sop-format-help" className={`${OPERATOR_FIELD_CLASS} min-h-64 resize-y leading-7`} maxLength={100000} name="bodyText" onChange={(event) => changeField("bodyText", event.target.value)} placeholder={"# Purpose\nExplain when to use this procedure.\n\n# Steps\n1. Start here.\n2. Describe the next action."} rows={12} value={draft.bodyText} /><span className="mt-2 block text-xs leading-relaxed text-black/55" id="sop-format-help">Use plain text, # section headings, numbered steps, or - bullet points.</span></label>
-          <label className="block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Document link <span className="text-sm">(optional)</span></span><input aria-describedby="sop-document-help" className={OPERATOR_FIELD_CLASS} maxLength={2048} name="externalUrl" onChange={(event) => changeField("externalUrl", event.target.value)} placeholder="https://" type="url" value={draft.externalUrl} /><span className="mt-2 block text-xs leading-relaxed text-black/55" id="sop-document-help">Link an existing document, PDF, or reference. Make sure your team can access it.</span></label>
-          {error ? <div className="rounded-[4px] bg-[var(--color-poster)]/10 p-3 text-sm text-[var(--color-poster)]" role="alert"><p>{error}</p>{conflict && procedure && !preview ? <a className="mt-2 inline-flex min-h-11 items-center underline underline-offset-4" href={`/ops/sops/${procedure.id}`} target="_blank" rel="noopener noreferrer">Open latest version ↗</a> : null}</div> : null}
+          <label className="block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Procedure</span><textarea aria-describedby="sop-format-help" className={`${OPERATOR_FIELD_CLASS} min-h-64 resize-y leading-7`} maxLength={100000} name="bodyText" onChange={(event) => changeField("bodyText", event.target.value)} placeholder={"# Purpose\nExplain when to use this procedure.\n\n# Steps\n1. Start here.\n2. Describe the next action."} rows={12} value={draft.bodyText} /><span className="mt-2 block text-xs leading-relaxed text-black/70" id="sop-format-help">Use plain text, # section headings, numbered steps, or - bullet points.</span></label>
+          <label className="block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Document link <span className="text-sm">(optional)</span></span><input aria-describedby="sop-document-help" className={OPERATOR_FIELD_CLASS} maxLength={2048} name="externalUrl" onChange={(event) => changeField("externalUrl", event.target.value)} placeholder="https://" type="url" value={draft.externalUrl} /><span className="mt-2 block text-xs leading-relaxed text-black/70" id="sop-document-help">Link an existing document, PDF, or reference. Make sure your team can access it.</span></label>
+          {error ? <div className="rounded-none bg-[var(--operator-error)] p-3 text-sm text-[var(--operator-danger)]" role="alert"><p>{error}</p>{conflict && procedure && !preview ? <a className="mt-2 inline-flex min-h-11 items-center underline underline-offset-4" href={`/ops/sops/${procedure.id}`} target="_blank" rel="noopener noreferrer">Open latest version ↗</a> : null}</div> : null}
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-black/10 pt-4">
-            <p className="max-w-sm text-xs leading-relaxed text-black/55">{procedure?.status === "published" ? "Saving updates the procedure the operator team can see." : "Drafts are visible to administrators. Publishing makes this SOP available to all operators."}</p>
+            <p className="max-w-sm text-xs leading-relaxed text-black/70">{procedure?.status === "published" ? "Saving updates the procedure the operator team can see." : "Drafts are visible to administrators. Publishing makes this SOP available to all operators."}</p>
             <div className="flex flex-wrap gap-2">
-              {procedure?.status !== "published" ? <button className="min-h-11 rounded-[8px] border border-black/25 px-4 text-sm font-medium disabled:opacity-50" disabled={pending !== null} name="status" type="submit" value="draft">{pending === "draft" ? "Saving…" : procedure?.status === "archived" ? "Restore as draft" : "Save draft"}</button> : null}
+              {procedure?.status !== "published" ? <button className="min-h-11 rounded-none border border-black/25 px-4 text-sm font-medium disabled:opacity-50" disabled={pending !== null} name="status" type="submit" value="draft">{pending === "draft" ? "Saving…" : procedure?.status === "archived" ? "Restore as draft" : "Save draft"}</button> : null}
               <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} name="status" type="submit" value="published">{pending === "published" ? "Publishing…" : procedure?.status === "published" ? "Save & publish" : procedure?.status === "archived" ? "Restore & publish" : "Publish SOP"}</button>
             </div>
           </div>
@@ -203,8 +203,8 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
     {archiveOpen && canManage && procedure ? <OperatorDialog open title="Archive SOP" onClose={() => setArchiveOpen(false)} pending={pending !== null} returnFocusId="archive-sop">
       <div className="max-w-2xl space-y-4 pt-2" data-operator-pending={pending !== null}>
         <p className="text-sm leading-relaxed">Archive “{procedure.title}”? It will be removed from the operator library. Administrators can still find it in Archived and restore it later.</p>
-        {error ? <p role="alert" className="text-sm text-[var(--color-poster)]">{error}</p> : null}
-        <div className="flex flex-wrap gap-2"><button className="min-h-11 rounded-[8px] border border-black/25 px-4 text-sm" disabled={pending !== null} onClick={() => setArchiveOpen(false)} type="button">Keep SOP</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => void save("archived", fieldsFor(procedure))} type="button">{pending ? "Archiving…" : "Archive SOP"}</button></div>
+        {error ? <p role="alert" className="text-sm text-[var(--operator-danger)]">{error}</p> : null}
+        <div className="flex flex-wrap gap-2"><button className="min-h-11 rounded-none border border-black/25 px-4 text-sm" disabled={pending !== null} onClick={() => setArchiveOpen(false)} type="button">Keep SOP</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => void save("archived", fieldsFor(procedure))} type="button">{pending ? "Archiving…" : "Archive SOP"}</button></div>
       </div>
     </OperatorDialog> : null}
   </OperatorPageFrame>;

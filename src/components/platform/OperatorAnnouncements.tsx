@@ -62,14 +62,14 @@ export default function OperatorAnnouncements({
     <OperatorPageFrame title="Messages">
       <OperatorMessagesTabs active="posts" />
       <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="operator-page-heading">Board posts</h2><p className="mt-1 text-xs text-black/60">Visible in the app. No email or text is sent.</p></div>
+        <div><h2 className="operator-page-heading">Board posts</h2><p className="mt-1 text-xs text-black/70">Visible in the app. No email or text is sent.</p></div>
         {canManage ? <button className={OPERATOR_PRIMARY_ACTION_CLASS} id="open-new-announcement" onClick={() => { setComposing(true); setNotice(""); window.history.replaceState(window.history.state, "", "#new-announcement"); }} type="button">Write announcement</button> : null}
       </header>
-      {preview ? <p className="mb-4 text-sm text-black/60" role="status">Preview — drafts are not saved and announcements are not published.</p> : null}
+      {preview ? <p className="mb-4 text-sm text-black/70" role="status">Preview — drafts are not saved and announcements are not published.</p> : null}
       {notice ? <p role="status" className="mb-4 text-sm">{notice}</p> : null}
       <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
         <label className={OPERATOR_LABEL_CLASS}><span className="operator-compact-label">Find a post</span><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, message, or audience" type="search" value={query} /></label>
-        <label className="flex min-h-12 items-center gap-2 text-sm text-black/60"><input checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} type="checkbox" />Include discarded and retracted</label>
+        <label className="flex min-h-12 items-center gap-2 text-sm text-black/70"><input checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} type="checkbox" />Include discarded and retracted</label>
       </div>
       <section className="space-y-3" aria-label="Recent announcements" id="announcements">
         {visible.map((announcement) => (
@@ -79,7 +79,7 @@ export default function OperatorAnnouncements({
           >
             <div>
               <h3 className="break-words text-base font-semibold leading-snug">{announcement.title}</h3>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/55">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/70">
                 {announcement.state === "archived" ? <span>Retracted</span> : announcement.state === "cancelled" ? <span>Discarded</span> : <StateLabel state={announcement.state} />}
                 <span>{formatDate(announcement.publishedAt)}</span><span>{announcement.targetLabel}</span>
               </div>
@@ -89,7 +89,7 @@ export default function OperatorAnnouncements({
               {canManage && announcement.state === "draft" && editingId !== announcement.announcementId ? (
                 <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
                   {reviewingId === `${announcement.announcementId}:${announcement.version}` ? (
-                    <div className="rounded-[4px] bg-[var(--color-highlight)]/30 p-3" role="group" aria-label={`Review publishing ${announcement.title}`}>
+                    <div className="rounded-none bg-[var(--operator-wait)] p-3" role="group" aria-label={`Review publishing ${announcement.title}`}>
                       <p className="mb-3 text-sm leading-relaxed">Publish to <strong>{announcement.targetLabel}</strong>? Members will see this exact draft. You can retract it later.</p>
                       <OperatorAnnouncementPublishAction announcementId={announcement.announcementId} expectedVersion={announcement.version} preview={preview} />
                       <button className="mt-2 min-h-11 text-sm underline underline-offset-4" onClick={() => setReviewingId(null)} type="button">Cancel review</button>
@@ -119,7 +119,7 @@ export default function OperatorAnnouncements({
           aria-label="Write announcement draft"
           id="new-announcement"
         >
-          <p className="mb-5 text-sm text-black/60">Save a draft first. Nothing appears for members until you review and publish it.</p>
+          <p className="mb-5 text-sm text-black/70">Save a draft first. Nothing appears for members until you review and publish it.</p>
           <OperatorAnnouncementCreateAction audienceOptions={audienceOptions} compact onSaved={() => { closeComposer(); setNotice("Draft created. Review it before publishing."); }} preview={preview} />
         </section>
       </OperatorDialog> : null}

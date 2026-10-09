@@ -146,12 +146,12 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
   }
 
   const tone = kind === "chat"
-    ? "bg-[var(--color-shop)]/55"
-    : "bg-[var(--color-verdigris)]/[0.12]";
+    ? "bg-[var(--operator-info)]"
+    : "bg-[var(--operator-success)]";
 
   return (
     <div
-      className={`rounded-[4px] px-4 py-3 ${tone}`}
+      className={`rounded-none px-4 py-3 ${tone}`}
       data-google-communication={kind}
       data-operator-dirty={editing && (draft !== url || confirmRemoval) ? "true" : undefined}
       data-operator-pending={pending ? "true" : undefined}
@@ -160,7 +160,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
         <p className="[font-family:var(--font-cadehandy2)] text-[1.2rem] leading-none text-black/72">
           {name}
         </p>
-        {!configured || !connected ? <p className="flex items-center gap-2 text-[0.66rem] font-medium text-black/58">
+        {!configured || !connected ? <p className="flex items-center gap-2 text-[0.66rem] font-medium text-black/70">
           <span
             aria-hidden="true"
             className={`size-1.5 rounded-full ${
@@ -188,12 +188,12 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
       </div> : null}
 
       {!configured ? (
-        <p className="mt-2 text-xs leading-relaxed text-black/52">
+        <p className="mt-2 text-xs leading-relaxed text-black/70">
           Choose test or live Google mode before adding links.
         </p>
       ) : editable && editing ? (
         <div className="mt-2">
-          <p className="text-sm leading-relaxed text-black/60">
+          <p className="text-sm leading-relaxed text-black/70">
             {kind === "chat"
               ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
               : "Paste an existing Google Meet link here. Saving does not send invitations or change Google access. Calendar invitations will use this link."}
@@ -240,7 +240,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
               >Cancel</button> : null}
               {connected ? (
                 <button
-                  className="min-h-10 rounded-[4px] px-3 py-2 text-xs text-black/52 underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="min-h-10 rounded-none px-3 py-2 text-xs text-black/70 underline decoration-black/25 underline-offset-4 hover:text-[var(--operator-danger)] disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={pending}
                   onClick={() => { if (!pending) setConfirmRemoval(true); }}
                   type="button"
@@ -250,7 +250,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
               ) : null}
             </div>
           </form>
-          {confirmRemoval ? <div className="mt-3 rounded-[4px] bg-[var(--color-bone)]/70 p-3" role="group" aria-label={`Confirm ${linkName} removal`}>
+          {confirmRemoval ? <div className="mt-3 rounded-none bg-[var(--operator-surface-muted)] p-3" role="group" aria-label={`Confirm ${linkName} removal`}>
             <p className="text-sm leading-relaxed">Remove this {linkName} from Ruined? {kind === "chat" ? "The Google Chat space and its members stay unchanged. Manage membership in Google Chat." : "The Google meeting stays unchanged. This does not cancel it or send cancellation notices."}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => request("DELETE")} type="button">Confirm remove link</button>
@@ -262,7 +262,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
 
       <p
         aria-live="polite"
-        className={`${notice ? "mt-2" : ""} text-xs leading-relaxed ${error ? "text-[var(--color-poster)]" : "text-black/48"}`}
+        className={`${notice ? "mt-2" : ""} text-xs leading-relaxed ${error ? "text-[var(--operator-danger)]" : "text-black/70"}`}
         role={error ? "alert" : "status"}
       >
         {notice}

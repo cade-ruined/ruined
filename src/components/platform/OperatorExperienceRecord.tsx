@@ -26,7 +26,7 @@ import type {
   OpsExperienceRosterItem,
 } from "@/lib/platform/ops-experience-model";
 
-const quietButton = "min-h-11 rounded-[4px] bg-black/[0.06] px-4 text-xs font-bold text-black/65 transition hover:bg-black/10 disabled:opacity-40";
+const quietButton = "min-h-11 rounded-none bg-[var(--operator-surface-muted)] px-4 text-xs font-bold text-black/65 transition hover:bg-[var(--operator-surface-hover)] disabled:opacity-40";
 
 function FormField({
   children,
@@ -140,18 +140,18 @@ function RosterRow({
   }
 
   return (
-    <li className="rounded-[4px] bg-black/[0.035] px-4 py-4 sm:px-5">
+    <li className="rounded-none bg-[var(--operator-surface-muted)] px-4 py-4 sm:px-5">
       <div className="grid gap-4 xl:grid-cols-[minmax(12rem,1fr)_9rem_minmax(13rem,0.7fr)] xl:items-end">
         <div>
           <p className="font-semibold text-black/80">{item.preferredName}</p>
-          <p className="mt-1 text-xs text-black/45">
+          <p className="mt-1 text-xs text-black/70">
             {item.status.replaceAll("_", " ")}
             {item.waitlistPosition ? ` · waitlist ${item.waitlistPosition}` : ""}
             {` · ${formatDate(item.registeredAt)}`}
           </p>
         </div>
         <div>
-          <p className="text-xs text-black/40">Attendance</p>
+          <p className="text-xs text-black/70">Attendance</p>
           <p className="mt-1 text-sm capitalize text-black/68">{item.attendanceState?.replaceAll("_", " ") ?? "Not marked"}</p>
         </div>
         {item.status === "registered" && canManageAttendance ? (
@@ -181,10 +181,10 @@ function RosterRow({
       </div>
       {canManageRoster && item.status !== "cancelled" ? (
         <details className="mt-3" open={item.status === "waitlisted"}>
-          <summary className="min-h-11 w-fit cursor-pointer py-3 text-xs font-bold text-black/55 hover:text-black">
+          <summary className="min-h-11 w-fit cursor-pointer py-3 text-xs font-bold text-black/70 hover:text-black">
             {item.status === "waitlisted" ? "Confirm a place or remove from waitlist" : "Change registration"}
           </summary>
-          <div className="grid gap-3 rounded-[4px] bg-black/[0.035] p-3 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-end">
+          <div className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] p-3 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-end">
             <FormField label="Reason when needed">
               <input
                 className={OPERATOR_FIELD_CLASS}
@@ -211,7 +211,7 @@ function RosterRow({
           </div>
         </details>
       ) : null}
-      {error ? <p aria-live="assertive" className="mt-3 text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
+      {error ? <p aria-live="assertive" className="mt-3 text-sm text-[var(--operator-danger)]" role="alert">{error}</p> : null}
     </li>
   );
 }
@@ -399,7 +399,7 @@ export default function OperatorExperienceRecord({
   return (
     <OperatorPageFrame title={experience.title}>
       <div className="mx-auto max-w-6xl pb-6">
-      <Link className="mb-2 inline-flex min-h-11 items-center text-sm text-black/55 hover:text-black" href="/ops/experiences">← Events</Link>
+      <Link className="mb-2 inline-flex min-h-11 items-center text-sm text-black/70 hover:text-black" href="/ops/experiences">← Events</Link>
       <header className="operator-record-header">
         <div className="min-w-0 flex-1">
           <h2 className="operator-record-title">{experience.title}</h2>
@@ -412,16 +412,16 @@ export default function OperatorExperienceRecord({
         </div>
       </header>
 
-      <div className="inline-flex max-w-full gap-1 rounded-[8px] bg-black/[0.055] p-1" role="group" aria-label="Experience views">
-        {(["overview", "people", "activity"] as const).map((view) => <button key={view} aria-pressed={section === view} aria-controls={`experience-view-${view}`} className={`min-h-11 rounded-[4px] px-4 text-sm font-semibold capitalize transition ${section === view ? "bg-[var(--color-bone)] text-black shadow-sm" : "text-black/55 hover:text-black"}`} onClick={() => selectView(view)} type="button">{view}</button>)}
+      <div className="inline-flex max-w-full gap-1 rounded-none bg-[var(--operator-surface-muted)] p-1" role="group" aria-label="Experience views">
+        {(["overview", "people", "activity"] as const).map((view) => <button key={view} aria-pressed={section === view} aria-controls={`experience-view-${view}`} className={`min-h-11 rounded-none px-4 text-sm font-semibold capitalize transition ${section === view ? "bg-[var(--color-bone)] text-black shadow-none" : "text-black/70 hover:text-black"}`} onClick={() => selectView(view)} type="button">{view}</button>)}
       </div>
-      {error && !editingDetails && !reviewingPublish && !eventOptionsOpen ? <p aria-live="assertive" className="mt-4 text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
+      {error && !editingDetails && !reviewingPublish && !eventOptionsOpen ? <p aria-live="assertive" className="mt-4 text-sm text-[var(--operator-danger)]" role="alert">{error}</p> : null}
 
       <div className="mt-4">
         <div id="experience-view-people" hidden={section !== "people"}>
         <section className="scroll-mt-28" id="experience-roster" aria-labelledby="roster-title">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <div><h2 className="operator-section-heading" id="roster-title">People</h2><p className="mt-1 text-sm text-black/55">{experience.registeredCount} confirmed · {experience.waitlistedCount} waiting{experience.capacity ? ` · ${experience.capacity} places` : ""}</p></div>
+            <div><h2 className="operator-section-heading" id="roster-title">People</h2><p className="mt-1 text-sm text-black/70">{experience.registeredCount} confirmed · {experience.waitlistedCount} waiting{experience.capacity ? ` · ${experience.capacity} places` : ""}</p></div>
             {experience.canManageRoster && experience.registrationMode === "internal" && availableMembers.length > 0 ? (
               <form className="flex flex-wrap gap-2" onSubmit={addMember}>
                 <label className="sr-only" htmlFor="experience-member">Member</label>
@@ -446,7 +446,7 @@ export default function OperatorExperienceRecord({
               />
             ))}
           </ul>
-          {experience.roster.length === 0 ? <p className="mt-5 rounded-[4px] bg-white/50 px-4 py-5 text-sm text-black/55">{experience.registrationMode !== "internal" ? "Registration is not managed here for this Experience." : availableMembers.length && experience.canManageRoster ? "No reservations yet. Choose a member above to add a place." : "No reservations yet. Eligible members can register once this Experience is published and registration opens."}</p> : null}
+          {experience.roster.length === 0 ? <p className="mt-5 rounded-none bg-[var(--operator-surface)] px-4 py-5 text-sm text-black/70">{experience.registrationMode !== "internal" ? "Registration is not managed here for this Experience." : availableMembers.length && experience.canManageRoster ? "No reservations yet. Choose a member above to add a place." : "No reservations yet. Eligible members can register once this Experience is published and registration opens."}</p> : null}
         </section>
         </div>
 
@@ -455,13 +455,13 @@ export default function OperatorExperienceRecord({
             <section className="operator-bento-card col-span-2 lg:col-span-2" aria-label="Schedule">
               <span className="operator-compact-label">Schedule</span>
               <p className="mt-2 text-base font-semibold">{formatDate(experience.startsAt, experience.timezone)}</p>
-              {experience.endsAt ? <p className="mt-1 text-xs text-black/60">Until {formatDate(experience.endsAt, experience.timezone)}</p> : null}
-              <p className="mt-2 text-xs text-black/50">{experience.timezone}</p>
+              {experience.endsAt ? <p className="mt-1 text-xs text-black/70">Until {formatDate(experience.endsAt, experience.timezone)}</p> : null}
+              <p className="mt-2 text-xs text-black/70">{experience.timezone}</p>
             </section>
             <section className="operator-bento-card lg:col-span-2" aria-label="Audience">
               <span className="operator-compact-label">Audience</span>
               <p className="mt-2 break-words text-sm font-semibold">{experience.circleId ? <Link className="underline underline-offset-4" href={`/ops/circles?circleId=${encodeURIComponent(experience.circleId)}`}>{experience.scope}</Link> : experience.scope}</p>
-              <button className="mt-1 inline-flex min-h-11 items-center text-left text-xs text-black/60 underline underline-offset-4" onClick={() => selectView("people")} type="button">{experience.registeredCount} confirmed{experience.waitlistedCount ? ` · ${experience.waitlistedCount} waiting` : ""} →</button>
+              <button className="mt-1 inline-flex min-h-11 items-center text-left text-xs text-black/70 underline underline-offset-4" onClick={() => selectView("people")} type="button">{experience.registeredCount} confirmed{experience.waitlistedCount ? ` · ${experience.waitlistedCount} waiting` : ""} →</button>
             </section>
             <section className="operator-bento-card lg:col-span-2" aria-label="Location">
               <span className="operator-compact-label">Location</span>
@@ -481,8 +481,8 @@ export default function OperatorExperienceRecord({
             audienceReviewHref={experience.circleId ? `/ops/circles?circleId=${encodeURIComponent(experience.circleId)}` : "#experience-roster"}
             audienceReviewLabel={experience.circleId ? "Review Circle" : "Review people"}
           >
-            {calendarManaged ? <p className="text-sm text-black/60">{experience.calendar.preservesMeetingUrl ? "Calendar invitations use the Google Meet link you supplied." : "Google Calendar manages this meeting link."}</p> : <>
-              <p className="mb-3 text-sm text-black/60">Use a Meet link you already have. Saving does not send invitations. Calendar invitations will use the link you save here.</p>
+            {calendarManaged ? <p className="text-sm text-black/70">{experience.calendar.preservesMeetingUrl ? "Calendar invitations use the Google Meet link you supplied." : "Google Calendar manages this meeting link."}</p> : <>
+              <p className="mb-3 text-sm text-black/70">Use a Meet link you already have. Saving does not send invitations. Calendar invitations will use the link you save here.</p>
               <OperatorGoogleCommunicationField configured={experience.googleCommunicationsConfigured} editable={experience.canManageCommunication && !["cancelled", "archived", "completed"].includes(experience.state)} entityId={experience.experienceId} entityType="experience" initialUrl={experience.meetingUrl} kind="meet" inline preview={preview} />
             </>}
           </OperatorExperienceCalendar>
@@ -491,8 +491,8 @@ export default function OperatorExperienceRecord({
             <h2 className="operator-section-heading">Event details</h2>
             {experience.summary ? <p className="mt-2 text-sm leading-relaxed text-black/65">{experience.summary}</p> : null}
             {experience.details ? <details className="mt-1"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">Read description</summary><p className="whitespace-pre-line pb-2 text-sm leading-relaxed text-black/65">{experience.details}</p></details> : null}
-            <p className="mt-2 text-xs text-black/60">{experience.registrationMode === "internal" ? `Reservations managed here${experience.waitlistEnabled ? " · Waitlist enabled" : ""}` : experience.registrationMode === "external" ? "Registration with an external provider" : "No reservation required"}</p>
-            {experience.registrationOpensAt || experience.registrationClosesAt ? <details><summary className="min-h-11 cursor-pointer py-3 text-xs font-medium text-black/60">Registration window</summary><p className="text-xs leading-relaxed text-black/60">{experience.registrationOpensAt ? `Opens ${formatDate(experience.registrationOpensAt, experience.timezone)}` : "Open now"}{experience.registrationClosesAt ? ` · Closes ${formatDate(experience.registrationClosesAt, experience.timezone)}` : ""}</p></details> : null}
+            <p className="mt-2 text-xs text-black/70">{experience.registrationMode === "internal" ? `Reservations managed here${experience.waitlistEnabled ? " · Waitlist enabled" : ""}` : experience.registrationMode === "external" ? "Registration with an external provider" : "No reservation required"}</p>
+            {experience.registrationOpensAt || experience.registrationClosesAt ? <details><summary className="min-h-11 cursor-pointer py-3 text-xs font-medium text-black/70">Registration window</summary><p className="text-xs leading-relaxed text-black/70">{experience.registrationOpensAt ? `Opens ${formatDate(experience.registrationOpensAt, experience.timezone)}` : "Open now"}{experience.registrationClosesAt ? ` · Closes ${formatDate(experience.registrationClosesAt, experience.timezone)}` : ""}</p></details> : null}
           </section>
           </div>
         </div>
@@ -506,7 +506,7 @@ export default function OperatorExperienceRecord({
                 {experience.state === "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("complete")} type="button">Complete</button> : null}
                 {["draft", "cancelled", "completed"].includes(experience.state) ? <button className={quietButton} disabled={pending} onClick={() => lifecycle("archive")} type="button">Archive</button> : null}
               </div>
-              {experience.state === "published" && !reviewingCancellation ? <button className="mt-3 min-h-11 px-2 text-sm text-[var(--color-poster)] underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(true)} type="button">Cancel Experience</button> : null}
+              {experience.state === "published" && !reviewingCancellation ? <button className="mt-3 min-h-11 px-2 text-sm text-[var(--operator-danger)] underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(true)} type="button">Cancel Experience</button> : null}
               {experience.state === "published" && reviewingCancellation ? (
                 <form className="mt-4 grid gap-2" data-operator-dirty={cancellationDirty ? "true" : "false"} onChange={() => setCancellationDirty(true)} onSubmit={(event) => {
                   event.preventDefault();
@@ -521,8 +521,8 @@ export default function OperatorExperienceRecord({
                   <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setReviewingCancellation(false); setCancellationDirty(false); }} type="button">Keep Experience</button>
                 </form>
               ) : null}
-              {!['draft', 'published', 'cancelled', 'completed'].includes(experience.state) ? <p className="mt-3 text-sm text-black/55">This event is archived.</p> : null}
-              {error ? <p role="alert" className="mt-3 text-sm text-[var(--color-poster)]">{error}</p> : null}
+              {!['draft', 'published', 'cancelled', 'completed'].includes(experience.state) ? <p className="mt-3 text-sm text-black/70">This event is archived.</p> : null}
+              {error ? <p role="alert" className="mt-3 text-sm text-[var(--operator-danger)]">{error}</p> : null}
               </div>
             </OperatorDialog>
           ) : null}
@@ -612,7 +612,7 @@ export default function OperatorExperienceRecord({
                 <FormField label="Registration closes">
                   <input className={OPERATOR_FIELD_CLASS} defaultValue={zonedDateTimeLocalValue(experience.registrationClosesAt, experience.timezone)} name="registrationClosesAt" type="datetime-local" />
                 </FormField>
-                <label className="flex min-h-12 items-center gap-3 self-end text-sm text-black/60">
+                <label className="flex min-h-12 items-center gap-3 self-end text-sm text-black/70">
                   <input defaultChecked={experience.waitlistEnabled} name="waitlistEnabled" type="checkbox" />
                   Start a waitlist when full
                 </label>
@@ -631,7 +631,7 @@ export default function OperatorExperienceRecord({
             </FormField>
             <button className={`${OPERATOR_BUTTON_CLASS} sm:col-span-2`} disabled={pending} type="submit">{pending ? "Saving" : "Save changes"}</button>
           </form>
-          {error ? <p role="alert" className="mt-3 text-sm text-[var(--color-poster)]">{error}</p> : null}
+          {error ? <p role="alert" className="mt-3 text-sm text-[var(--operator-danger)]">{error}</p> : null}
         </OperatorDialog>
       ) : null}
 
@@ -640,10 +640,10 @@ export default function OperatorExperienceRecord({
           <p className="font-semibold">{experience.title}</p>
           <p>{formatDate(experience.startsAt, experience.timezone)} · {experience.scope}</p>
           <p>{willQueue ? `Publishing makes this Experience visible and queues Google Calendar invitations for ${experience.calendar.attendeeCount} ${experience.calendar.attendeeCount === 1 ? "person" : "people"}. Delivery status appears in Meeting; queued does not mean sent.` : eventEnded ? "This event has ended. Publishing makes it visible but will not automatically send Google invitations." : "Publishing makes this Experience visible. Google invitations will not be sent automatically while Calendar setup needs attention."}</p>
-          {experience.calendar.attendeeCount === 0 && willQueue ? <p className="rounded-[4px] bg-[var(--color-highlight)]/35 p-3">No one is currently eligible for an invitation. Review the audience before publishing; a Google event can still be created for the organizer.</p> : null}
-          {experience.meetingUrl && willQueue && !calendarManaged && !experience.calendar.preservesMeetingUrl ? <p className="text-[var(--color-poster)]">Google will replace your saved meeting link with a new Meet link.</p> : null}
+          {experience.calendar.attendeeCount === 0 && willQueue ? <p className="rounded-none bg-[var(--operator-wait)] p-3">No one is currently eligible for an invitation. Review the audience before publishing; a Google event can still be created for the organizer.</p> : null}
+          {experience.meetingUrl && willQueue && !calendarManaged && !experience.calendar.preservesMeetingUrl ? <p className="text-[var(--operator-danger)]">Google will replace your saved meeting link with a new Meet link.</p> : null}
           <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("publish")} type="button">{pending ? "Publishing" : willQueue ? "Publish + queue invitations" : "Publish Experience"}</button>
-          {error ? <p role="alert" className="text-[var(--color-poster)]">{error}</p> : null}
+          {error ? <p role="alert" className="text-[var(--operator-danger)]">{error}</p> : null}
         </div>
       </OperatorDialog> : null}
 
@@ -651,9 +651,9 @@ export default function OperatorExperienceRecord({
         <h2 className="operator-section-heading" id="history-title">Activity</h2>
         <span id="experience-activity" />
         <ol className="mt-4 grid gap-2">
-          {experience.history.map((item) => <li className="grid gap-1 rounded-[4px] bg-white/55 px-4 py-3 text-sm sm:grid-cols-[10rem_1fr_12rem]" key={`${item.occurredAt}-${item.eventType}`}><time className="text-black/42">{formatDate(item.occurredAt, experience.timezone)}</time><span className="capitalize text-black/70">{item.eventType.replaceAll("_", " ")}{item.reason ? ` · ${item.reason}` : ""}</span><span className="text-black/42">{item.actor ?? "System"}</span></li>)}
+          {experience.history.map((item) => <li className="grid gap-1 rounded-none bg-[var(--operator-surface)] px-4 py-3 text-sm sm:grid-cols-[10rem_1fr_12rem]" key={`${item.occurredAt}-${item.eventType}`}><time className="text-black/70">{formatDate(item.occurredAt, experience.timezone)}</time><span className="capitalize text-black/70">{item.eventType.replaceAll("_", " ")}{item.reason ? ` · ${item.reason}` : ""}</span><span className="text-black/70">{item.actor ?? "System"}</span></li>)}
         </ol>
-        {experience.history.length === 0 ? <p className="mt-4 text-sm text-black/55">No activity yet.</p> : null}
+        {experience.history.length === 0 ? <p className="mt-4 text-sm text-black/70">No activity yet.</p> : null}
       </section>
       </div>
     </OperatorPageFrame>

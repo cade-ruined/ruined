@@ -58,7 +58,7 @@ function SectionHeading({ title }: { title: string }) {
 }
 
 function EmptyRow({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-lg bg-black/[0.025] px-3 py-3 text-sm leading-relaxed text-black/42">{children}</p>;
+  return <p className="rounded-none bg-[var(--operator-surface-muted)] px-3 py-3 text-sm leading-relaxed text-black/70">{children}</p>;
 }
 
 export default function OperatorMemberRecord({
@@ -111,7 +111,7 @@ export default function OperatorMemberRecord({
   return (
     <OperatorPageFrame title={header.preferredName}>
       <div className="mx-auto max-w-6xl">
-          <Link className="inline-flex min-h-11 items-center text-sm text-black/55 transition-colors hover:text-black" href={operatorMemberReturnLocation(returnTo)}>
+          <Link className="inline-flex min-h-11 items-center text-sm text-black/70 transition-colors hover:text-black" href={operatorMemberReturnLocation(returnTo)}>
             ← Back to members
           </Link>
       <header className="mb-3 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] lg:items-start">
@@ -121,22 +121,22 @@ export default function OperatorMemberRecord({
           <h2 className="operator-record-title break-words">
             {header.preferredName}
           </h2>
-          <p className="mt-2 text-sm text-black/60">
+          <p className="mt-2 text-sm text-black/70">
             {header.circleName ?? "No Circle"}{header.blockName ? ` · ${header.blockName}` : ""}
           </p>
-          {header.primaryEmail ? <p className="mt-1 break-all text-sm text-black/55">{header.primaryEmail}</p> : null}
-          {publicProfileHref ? <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={publicProfileHref} target="_blank" rel="noopener noreferrer">View public profile ↗</Link> : <p className="mt-2 text-xs text-black/50">{preview ? "Public profile links appear when sharing is enabled." : "Public profile is not available yet."}</p>}
-          <p className="mt-2 text-xs text-black/50">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
+          {header.primaryEmail ? <p className="mt-1 break-all text-sm text-black/70">{header.primaryEmail}</p> : null}
+          {publicProfileHref ? <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={publicProfileHref} target="_blank" rel="noopener noreferrer">View public profile ↗</Link> : <p className="mt-2 text-xs text-black/70">{preview ? "Public profile links appear when sharing is enabled." : "Public profile is not available yet."}</p>}
+          <p className="mt-2 text-xs text-black/70">{header.openWorkCount} open work item{header.openWorkCount === 1 ? "" : "s"}</p>
           </div>
         </div>
-        <section aria-label="Next member step" className="operator-bento-card bg-black/[0.04]">
-          <p className="operator-compact-label text-[var(--color-poster)]">{next.status} · {next.actor}</p>
+        <section aria-label="Next member step" className="operator-bento-card bg-[var(--operator-surface-muted)]">
+          <p className="operator-compact-label text-[var(--operator-danger)]">{next.status} · {next.actor}</p>
           <h3 className="ui-heading mt-1 text-base font-semibold leading-tight">{next.title}</h3>
           <div className="mt-1 flex flex-wrap items-start gap-x-4">
           <NextActionLink className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={nextAction.href}>
             {nextAction.label} →
           </NextActionLink>
-          <details aria-labelledby="member-next-step-guidance" className="text-sm text-black/60 open:basis-full">
+          <details aria-labelledby="member-next-step-guidance" className="text-sm text-black/70 open:basis-full">
             <summary className="min-h-11 cursor-pointer content-center text-xs font-medium" id="member-next-step-guidance">Why this step?</summary>
             <p className="pb-1 leading-relaxed">{next.detail}</p>
           </details>
@@ -165,28 +165,28 @@ export default function OperatorMemberRecord({
         <OperatorMemberSetup record={record} guidance={next} />
         {canManageSetup ? <CirclePlacementRecommendations key={header.memberId} display="member" memberId={header.memberId} preview={preview} previewCircles={previewCircles} /> : null}
         {canManageSetup ? <OperatorMemberReferrals memberId={header.memberId} preview={preview} /> : null}
-        {!canManageSetup ? <p className="mt-4 text-sm text-black/60">Review this member’s joining, progress, and Circle below. An Administrator manages Circle placement and operator access.</p> : null}
+        {!canManageSetup ? <p className="mt-4 text-sm text-black/70">Review this member’s joining, progress, and Circle below. An Administrator manages Circle placement and operator access.</p> : null}
       </section>
 
       <section className="scroll-mt-36" id="membership">
         <SectionHeading title="Membership" />
-<p className="mt-2 text-sm text-black/60">Sign-in address to share: <a className="inline-flex min-h-11 items-center break-all underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a></p>
+<p className="mt-2 text-sm text-black/70">Sign-in address to share: <a className="inline-flex min-h-11 items-center break-all underline underline-offset-4" href="https://members.theruinedproject.com/access">members.theruinedproject.com/access</a></p>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <details className="operator-bento-card" aria-labelledby="member-service-details" open={!registration}>
             <summary className="min-h-11 cursor-pointer content-center text-base font-semibold" id="member-service-details">{registration ? "Membership service setup" : "Joining progress"}</summary>
             <div className="flex items-center justify-between gap-4">
-              <span className="text-xs text-black/50">Service status</span>
+              <span className="text-xs text-black/70">Service status</span>
               <StateLabel state={membership.onboarding.state} />
             </div>
-            {registration ? <p className="mt-3 text-sm leading-relaxed text-black/60">The five registration checkpoints are shown above. Service setup can remain pending until membership begins.</p> : null}
-            <p className="mt-3 text-sm leading-relaxed text-black/60">The member completes these steps in their own account. This record is for review, not accepting an agreement or making a payment for them.</p>
+            {registration ? <p className="mt-3 text-sm leading-relaxed text-black/70">The five registration checkpoints are shown above. Service setup can remain pending until membership begins.</p> : null}
+            <p className="mt-3 text-sm leading-relaxed text-black/70">The member completes these steps in their own account. This record is for review, not accepting an agreement or making a payment for them.</p>
             <div className="mt-3 grid gap-2">
               {membership.onboarding.requirements.map((requirement) => (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/25 px-3 py-2" key={requirement.key}>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-none bg-[var(--operator-surface)] px-3 py-2" key={requirement.key}>
                   <div>
                     <p className="text-sm text-black/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? requirement.label : registration ? "Membership billing active" : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
-                    <p className="mt-1 text-xs text-black/38">
+                    <p className="mt-1 text-xs text-black/70">
                       {requirement.state === "not_required" ? "Not required" : requirement.required ? "Required" : "Collected when needed"}
                     </p>
                   </div>
@@ -194,7 +194,7 @@ export default function OperatorMemberRecord({
                 </div>
               ))}
             </div>
-            <p className="mt-5 text-xs text-black/42">
+            <p className="mt-5 text-xs text-black/70">
               Completed {formatDate(membership.onboarding.completedAt)}
             </p>
           </details>
@@ -209,7 +209,7 @@ export default function OperatorMemberRecord({
                 ["Mobile", membership.contact.phone ?? "Restricted or not recorded"],
               ].map(([label, value]) => (
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2" key={label}>
-                  <dt className="text-sm text-black/42">{label}</dt>
+                  <dt className="text-sm text-black/70">{label}</dt>
                   <dd className="min-w-0 break-words text-sm text-black/68">{value}</dd>
                 </div>
               ))}
@@ -224,22 +224,22 @@ export default function OperatorMemberRecord({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="ui-heading text-base font-semibold">Agreement</h3>
-                <p className="mt-2 text-sm text-black/42">Version {membership.agreement.version ?? "not recorded"}</p>
+                <p className="mt-2 text-sm text-black/70">Version {membership.agreement.version ?? "not recorded"}</p>
               </div>
               <StateLabel state={membership.agreement.acceptedAt ? "completed" : "pending"} />
             </div>
             <dl className="mt-3 grid gap-2">
               <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                <dt className="text-xs text-black/42">Accepted</dt>
+                <dt className="text-xs text-black/70">Accepted</dt>
                 <dd className="text-sm">{formatDate(membership.agreement.acceptedAt)}</dd>
               </div>
               <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                <dt className="text-xs text-black/42">Receipt</dt>
+                <dt className="text-xs text-black/70">Receipt</dt>
                 <dd className="text-sm capitalize">{membership.agreement.receiptState.replaceAll("_", " ")}</dd>
               </div>
               <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                <dt className="text-xs text-black/42">Content proof</dt>
-                <dd className="truncate font-mono text-xs text-black/52">{membership.agreement.contentSha256 ?? "Not recorded"}</dd>
+                <dt className="text-xs text-black/70">Content proof</dt>
+                <dd className="truncate font-mono text-xs text-black/70">{membership.agreement.contentSha256 ?? "Not recorded"}</dd>
               </div>
             </dl>
           </div>
@@ -249,23 +249,23 @@ export default function OperatorMemberRecord({
               <h3 className="ui-heading text-base font-semibold">Membership billing</h3>
               <StateLabel state={header.states.billing} />
             </div>
-            {paymentCheckpoint ? <p className="mt-2 text-sm leading-relaxed text-black/60">Initial payment: {paymentCheckpoint.state === "complete" ? "Received" : paymentCheckpoint.state === "not_required" ? "Not required" : paymentCheckpoint.state === "review" ? "Needs review" : "Not received"}.</p> : null}
+            {paymentCheckpoint ? <p className="mt-2 text-sm leading-relaxed text-black/70">Initial payment: {paymentCheckpoint.state === "complete" ? "Received" : paymentCheckpoint.state === "not_required" ? "Not required" : paymentCheckpoint.state === "review" ? "Needs review" : "Not received"}.</p> : null}
             {membership.billing ? (
               <dl className="mt-3 grid gap-2">
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                  <dt className="text-xs text-black/42">Stripe state</dt>
+                  <dt className="text-xs text-black/70">Stripe state</dt>
                   <dd className="text-sm capitalize">{membership.billing.stripeState?.replaceAll("_", " ") ?? "Not recorded"}</dd>
                 </div>
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                  <dt className="text-xs text-black/42">Paid through</dt>
+                  <dt className="text-xs text-black/70">Paid through</dt>
                   <dd className="text-sm">{formatDate(membership.billing.currentPeriodEnd)}</dd>
                 </div>
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                  <dt className="text-xs text-black/42">Period end</dt>
+                  <dt className="text-xs text-black/70">Period end</dt>
                   <dd className="text-sm">{membership.billing.cancelAtPeriodEnd ? "Cancellation scheduled" : "Continues"}</dd>
                 </div>
                 <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
-                  <dt className="text-xs text-black/42">Latest payment</dt>
+                  <dt className="text-xs text-black/70">Latest payment</dt>
                   <dd className="text-sm">{formatMoney(membership.billing.latestInvoiceAmountPaid, membership.billing.latestInvoiceCurrency)}</dd>
                 </div>
               </dl>
@@ -273,8 +273,8 @@ export default function OperatorMemberRecord({
               <EmptyRow>{access.capabilities.includes("member.billing_detail.read") ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? "Complimentary membership. No subscription is required." : "No billing record yet.") : "Financial detail is restricted for this operator role."}</EmptyRow>
             )}
             {membership.cancellation ? (
-              <div className="mt-5 bg-[var(--color-poster)]/[0.07] px-4 py-4 text-sm leading-relaxed text-black/58">
-                <p className="font-medium capitalize text-[var(--color-poster)]">
+              <div className="mt-5 bg-[var(--operator-error)] px-4 py-4 text-sm leading-relaxed text-black/70">
+                <p className="font-medium capitalize text-[var(--operator-danger)]">
                   Cancellation {membership.cancellation.state.replaceAll("_", " ")}
                 </p>
                 <p className="mt-2">
@@ -288,8 +288,8 @@ export default function OperatorMemberRecord({
           <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold" id="member-state-details">Detailed account states</summary>
           <dl className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {stateRows.map(([label, state]) => (
-              <div className="rounded-[4px] bg-black/[0.025] px-4 py-3" key={label}>
-                <dt className="mb-2 text-sm text-black/55">{label}</dt>
+              <div className="rounded-none bg-[var(--operator-surface-muted)] px-4 py-3" key={label}>
+                <dt className="mb-2 text-sm text-black/70">{label}</dt>
                 <dd><StateLabel state={state} /></dd>
               </div>
             ))}
@@ -302,7 +302,7 @@ export default function OperatorMemberRecord({
         <div className="mt-3 operator-bento-card">
           <div className="flex flex-wrap items-end justify-between gap-5">
             <div>
-              <p className="text-sm text-black/42">Foundations</p>
+              <p className="text-sm text-black/70">Foundations</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums tracking-[-0.03em]">{journey.foundations.progressPercent}%</p>
             </div>
             <StateLabel state={journey.foundations.state} />
@@ -310,13 +310,13 @@ export default function OperatorMemberRecord({
           <div className="mt-3"><OperatorProgress label={`${header.preferredName} Foundations`} value={journey.foundations.progressPercent} /></div>
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {journey.foundations.stages.map((stage) => (
-              <div className="rounded-md bg-white/25 px-3 py-3" key={stage.key}>
-                <p className="text-sm text-black/42">{stage.label}</p>
+              <div className="rounded-none bg-[var(--operator-surface)] px-3 py-3" key={stage.key}>
+                <p className="text-sm text-black/70">{stage.label}</p>
                 <p className="mt-1 text-base font-semibold tabular-nums">{stage.completed} / {stage.total}</p>
               </div>
             ))}
           </div>
-          <div className="mt-3 grid gap-2 text-xs text-black/56 sm:grid-cols-3">
+          <div className="mt-3 grid gap-2 text-xs text-black/70 sm:grid-cols-3">
             <p>Timeline proof · {formatDate(journey.foundations.timelineCompletedAt)}</p>
             <p>Future Letter proof · {formatDate(journey.foundations.futureLetterCompletedAt)}</p>
             <p>Completed · {formatDate(journey.foundations.completedAt)}</p>
@@ -332,13 +332,13 @@ export default function OperatorMemberRecord({
             <div className="mt-3 grid gap-2">
               {journey.artifacts.map((artifact) => (
                 <Link
-                  className="grid gap-3 rounded-lg bg-black/[0.025] px-3 py-3 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
+                  className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] px-3 py-3 transition-colors hover:bg-[var(--operator-surface-hover)] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
                   href={`/ops/artifacts?focus=${encodeURIComponent(artifact.artifactJobId ?? artifact.artifactAwardId)}#artifact-${artifact.artifactJobId ?? artifact.artifactAwardId}`}
                   key={artifact.artifactAwardId}
                 >
                   <div>
                     <p className="ui-heading font-semibold">{artifact.name}</p>
-                    <p className="mt-2 text-sm text-black/48">{artifact.reason} · Earned {formatDate(artifact.earnedAt)}</p>
+                    <p className="mt-2 text-sm text-black/70">{artifact.reason} · Earned {formatDate(artifact.earnedAt)}</p>
                   </div>
                   <StateLabel state={artifact.state} />
                 </Link>
@@ -355,13 +355,13 @@ export default function OperatorMemberRecord({
             <div className="mt-3 grid gap-2">
               {journey.experiences.map((experience) => (
                 <Link
-                  className="grid gap-3 rounded-lg bg-black/[0.025] px-3 py-3 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
+                  className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] px-3 py-3 transition-colors hover:bg-[var(--operator-surface-hover)] sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center"
                   href={`/ops/experiences/${experience.experienceId}`}
                   key={experience.experienceId}
                 >
                   <div>
                     <p className="ui-heading font-semibold">{experience.title}</p>
-                    <p className="mt-2 text-sm capitalize text-black/48">{experience.kind.replaceAll("_", " ")} · {formatDate(experience.occurredAt)}</p>
+                    <p className="mt-2 text-sm capitalize text-black/70">{experience.kind.replaceAll("_", " ")} · {formatDate(experience.occurredAt)}</p>
                   </div>
                   <StateLabel state={experience.state} />
                 </Link>
@@ -376,13 +376,13 @@ export default function OperatorMemberRecord({
         <SectionHeading title="Community" />
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="operator-bento-card">
-            <p className="text-sm text-black/42">Circle</p>
+            <p className="text-sm text-black/70">Circle</p>
             {community.circle ? (
               <>
                 <Link className="mt-1 inline-flex min-h-11 items-center text-xl font-semibold" href={`/ops/circles?circleId=${encodeURIComponent(community.circle.circleId)}#circle-${community.circle.circleId}`}>
                   {community.circle.name}
                 </Link>
-                <div className="mt-3 grid gap-2 text-sm text-black/58 sm:grid-cols-2">
+                <div className="mt-3 grid gap-2 text-sm text-black/70 sm:grid-cols-2">
                   <p>Circle Supporter · {community.circle.shaperName ?? "Not assigned"}</p>
                   <p>Members · {community.circle.members.length}</p>
                   <p>Block · {community.block?.name ?? "Not assigned"}</p>
@@ -396,7 +396,7 @@ export default function OperatorMemberRecord({
                   <CirclePlacementLink className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={circlePlacementHref}>
                     {next.key === "ongoing-review" ? "Review ongoing participation" : next.placement === "blocked" ? "Review joining & billing" : "Review Circle placement"} →
                   </CirclePlacementLink>
-                ) : <p className="mt-3 text-sm text-black/50">An Administrator can place this member in a Circle.</p>}
+                ) : <p className="mt-3 text-sm text-black/70">An Administrator can place this member in a Circle.</p>}
               </>
             )}
           </div>
@@ -408,13 +408,13 @@ export default function OperatorMemberRecord({
             <div className="mt-3 grid gap-2">
               {community.meetings.map((meeting) => (
                 <Link
-                  className="grid gap-3 rounded-lg bg-black/[0.025] px-3 py-3 transition-colors hover:bg-black/[0.045] sm:grid-cols-[minmax(0,1fr)_9rem]"
+                  className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] px-3 py-3 transition-colors hover:bg-[var(--operator-surface-hover)] sm:grid-cols-[minmax(0,1fr)_9rem]"
                   href={`/ops/experiences/${meeting.experienceId}`}
                   key={meeting.experienceId}
                 >
                   <div>
                     <p className="font-medium">{meeting.title}</p>
-                    <p className="mt-2 text-sm text-black/45">{formatDate(meeting.occurredAt)}</p>
+                    <p className="mt-2 text-sm text-black/70">{formatDate(meeting.occurredAt)}</p>
                   </div>
                   <StateLabel state={meeting.state} />
                 </Link>
@@ -426,7 +426,7 @@ export default function OperatorMemberRecord({
             <h3 className="ui-heading text-base font-semibold">Resources</h3>
             <div className="mt-3 grid gap-2">
               {community.resources.map((resource) => (
-                <a className="block rounded-lg bg-black/[0.025] px-3 py-3 text-sm underline decoration-black/25 underline-offset-5 transition-colors hover:bg-black/[0.045]" href={resource.url} key={resource.resourceId}>
+                <a className="block rounded-none bg-[var(--operator-surface-muted)] px-3 py-3 text-sm underline decoration-black/25 underline-offset-5 transition-colors hover:bg-[var(--operator-surface-hover)]" href={resource.url} key={resource.resourceId}>
                   {resource.label}
                 </a>
               ))}
@@ -439,22 +439,22 @@ export default function OperatorMemberRecord({
       {canReadNotes ? <section className="scroll-mt-36" id="operator-notes">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <SectionHeading title="Operator notes" />
-          <span className="text-xs text-black/45">{operational.notes.length} note{operational.notes.length === 1 ? "" : "s"}</span>
+          <span className="text-xs text-black/70">{operational.notes.length} note{operational.notes.length === 1 ? "" : "s"}</span>
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-black/60">Private context for administrators. Never shown on the member profile.</p>
+        <p className="mt-2 text-sm leading-relaxed text-black/70">Private context for administrators. Never shown on the member profile.</p>
         <div className={`mt-4 grid gap-4 ${canWriteNote ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]" : ""}`}>
           <div aria-label="Saved operator notes" className="min-w-0 space-y-3">
             {operational.notes.map((note) => (
               <article className="operator-bento-card" key={note.noteId}>
-                <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-black/50">
-                  <span className="rounded-[4px] bg-black/[0.055] px-2 py-1 font-medium capitalize">{note.category.replaceAll("_", " ")}</span>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-black/70">
+                  <span className="rounded-none bg-[var(--operator-surface-muted)] px-2 py-1 font-medium capitalize">{note.category.replaceAll("_", " ")}</span>
                   <time dateTime={note.createdAt}>{formatNoteTimestamp(note.createdAt)}</time>
                 </div>
                 <p className="mt-3 break-words whitespace-pre-wrap text-sm leading-relaxed text-black/75">{note.body}</p>
-                <p className="mt-4 break-words text-xs text-black/50">By {note.createdBy || "Operator"}</p>
+                <p className="mt-4 break-words text-xs text-black/70">By {note.createdBy || "Operator"}</p>
               </article>
             ))}
-            {operational.notes.length === 0 ? <div className="operator-bento-card !py-6"><h3 className="text-sm font-medium">No operator notes yet</h3><p className="mt-2 text-sm leading-relaxed text-black/55">Keep useful context, support history, and follow-up details together here.</p></div> : null}
+            {operational.notes.length === 0 ? <div className="operator-bento-card !py-6"><h3 className="text-sm font-medium">No operator notes yet</h3><p className="mt-2 text-sm leading-relaxed text-black/70">Keep useful context, support history, and follow-up details together here.</p></div> : null}
           </div>
           {canWriteNote ? <div className="operator-bento-card scroll-mt-36 self-start" id="new-member-note"><OperatorNoteAction memberId={header.memberId} preview={preview} /></div> : null}
         </div>
@@ -467,10 +467,10 @@ export default function OperatorMemberRecord({
             <h3 className="ui-heading text-base font-semibold">Tasks</h3>
             <div className="mt-3 grid gap-2">
               {operational.tasks.map((task) => (
-                <div className="grid gap-3 rounded-lg bg-black/[0.025] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center" key={task.taskId}>
+                <div className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center" key={task.taskId}>
                   <div>
                     <p className="font-medium">{task.title}</p>
-                    <p className="mt-2 text-sm text-black/45">Due {formatDate(task.dueAt)} · {task.assignedTo ? `Claimed by ${task.assignedTo}` : "Unclaimed"}</p>
+                    <p className="mt-2 text-sm text-black/70">Due {formatDate(task.dueAt)} · {task.assignedTo ? `Claimed by ${task.assignedTo}` : "Unclaimed"}</p>
                   </div>
                   <StateLabel state={task.state} />
                 </div>
@@ -492,10 +492,10 @@ export default function OperatorMemberRecord({
           <h3 className="ui-heading text-base font-semibold">History</h3>
           <div className="mt-3 grid gap-2">
             {operational.history.map((event) => (
-              <div className="grid gap-3 rounded-[4px] bg-black/[0.025] px-4 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_12rem]" key={`${event.occurredAt}:${event.source}:${event.summary}`}>
-                <time className="text-xs text-black/42">{formatDate(event.occurredAt)}</time>
+              <div className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] px-4 py-4 sm:grid-cols-[9rem_minmax(0,1fr)_12rem]" key={`${event.occurredAt}:${event.source}:${event.summary}`}>
+                <time className="text-xs text-black/70">{formatDate(event.occurredAt)}</time>
                 <p className="text-sm text-black/68">{event.summary}</p>
-                <p className="text-xs text-black/40">{event.actor ?? event.source}</p>
+                <p className="text-xs text-black/70">{event.actor ?? event.source}</p>
               </div>
             ))}
             {operational.history.length === 0 ? <EmptyRow>No durable history is available.</EmptyRow> : null}

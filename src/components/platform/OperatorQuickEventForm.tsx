@@ -126,20 +126,20 @@ export default function OperatorQuickEventForm({
         </select>
       </label>
     </div>
-    <p className="!mt-2 text-xs text-black/50">Times in {timezone || "your selected time zone"}.</p>
+    <p className="!mt-2 text-xs text-black/70">Times in {timezone || "your selected time zone"}.</p>
     <details className="text-sm">
-      <summary className="min-h-11 cursor-pointer py-3 text-black/60">Time zone & description</summary>
+      <summary className="min-h-11 cursor-pointer py-3 text-black/70">Time zone & description</summary>
       <div className="space-y-4 pb-2 pt-2">
         <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Time zone</span><input className={OPERATOR_FIELD_CLASS} name="timezone" onChange={(event) => setTimezone(event.target.value)} required value={timezone} /></label>
         <label className={OPERATOR_LABEL_CLASS}><span className={OPERATOR_LABEL_TEXT_CLASS}>Description (optional)</span><textarea className={`${OPERATOR_FIELD_CLASS} min-h-20 resize-y`} maxLength={2000} name="summary" /></label>
       </div>
     </details>
-    {error ? <p className="text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
+    {error ? <p className="text-sm text-[var(--operator-danger)]" role="alert">{error}</p> : null}
     <div className="space-y-3 border-t border-black/10 pt-5">
-      <p className="text-sm text-black/60">Creates the event and sends calendar invitations to this audience. No registration needed.</p>
+      <p className="text-sm text-black/70">Creates the event and sends calendar invitations to this audience. No registration needed.</p>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} w-full sm:w-auto`} disabled={pending} type="submit">{pending ? "Creating event…" : "Create event"}</button>
-        <button className="min-h-11 text-sm text-black/55 underline underline-offset-4" disabled={pending} onClick={() => {
+        <button className="min-h-11 text-sm text-black/70 underline underline-offset-4" disabled={pending} onClick={() => {
           if (!dirty || window.confirm("Switch to advanced setup and discard these details?")) onAdvanced();
         }} type="button">Advanced event setup</button>
       </div>

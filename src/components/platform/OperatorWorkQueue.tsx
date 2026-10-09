@@ -45,12 +45,12 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
   return (
     <OperatorPageFrame title="Work">
       <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="operator-page-heading">Work queue</h2><p className="mt-1 text-xs text-black/55" aria-label="Open work totals">{queue.totals.tasks} tasks · {queue.totals.artifacts} Artifacts · {queue.totals.failures} failed actions</p></div>
+        <div><h2 className="operator-page-heading">Work queue</h2><p className="mt-1 text-xs text-black/70" aria-label="Open work totals">{queue.totals.tasks} tasks · {queue.totals.artifacts} Artifacts · {queue.totals.failures} failed actions</p></div>
         <Link className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4" href="/ops/members">Create a member task →</Link>
       </header>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter work">
-          {[["all", "All work"], ["task", "Tasks"], ["artifact", "Artifacts"], ["workflow_failure", "Failed actions"]].map(([value, label]) => <button className={`min-h-11 rounded-[4px] px-4 text-sm ${kind === value ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "bg-black/5 text-black/65"}`} aria-pressed={kind === value} key={value} onClick={() => setKind(value)} type="button">{label}</button>)}
+          {[["all", "All work"], ["task", "Tasks"], ["artifact", "Artifacts"], ["workflow_failure", "Failed actions"]].map(([value, label]) => <button className={`min-h-11 rounded-none px-4 text-sm ${kind === value ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "bg-[var(--operator-surface-muted)] text-black/65"}`} aria-pressed={kind === value} key={value} onClick={() => setKind(value)} type="button">{label}</button>)}
         </div>
       </div>
 
@@ -62,7 +62,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
           >
             <div className="min-w-0">
               <h2 className="break-words text-base font-semibold leading-snug">{item.label}</h2>
-              <p className="mt-1 break-words text-sm text-black/55">
+              <p className="mt-1 break-words text-sm text-black/70">
                 {item.memberId ? (
                   <Link className="underline decoration-black/25 underline-offset-4 hover:text-black" href={`/ops/members/${item.memberId}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}`}>
                     {item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || "View member"}
@@ -70,11 +70,11 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
                 ) : "System work"}
               </p>
               {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-black/75">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</p> : null}
-              {item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-black/60">{item.description}</p> : null}
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/55">
+              {item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-black/70">{item.description}</p> : null}
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/70">
                 <span className="capitalize">{item.kind.replaceAll("_", " ")}</span>
                 <StateLabel state={item.state} />
-                <span className={['Overdue', 'Urgent'].includes(urgencyLabel(item)) ? 'text-[var(--color-poster)]' : ''}>{urgencyLabel(item)}</span>
+                <span className={['Overdue', 'Urgent'].includes(urgencyLabel(item)) ? 'text-[var(--operator-danger)]' : ''}>{urgencyLabel(item)}</span>
                 <span>{formatDate(item.dueAt)}</span>
               </div>
             </div>
@@ -84,7 +84,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
               item.state === "failed" ? (
                 <OperatorWorkflowRetryAction workflowActionId={item.workId} preview={preview} />
               ) : (
-                <p className="max-w-sm text-sm text-black/60">Retry limit reached. Review the failure with an Administrator before taking further action.</p>
+                <p className="max-w-sm text-sm text-black/70">Retry limit reached. Review the failure with an Administrator before taking further action.</p>
               )
             ) : (
               <Link
@@ -96,7 +96,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
             )}
           </article>
         ))}
-        {queue.items.length > 0 && items.length === 0 ? <p className="rounded-[4px] bg-black/[0.025] p-5 text-sm text-black/55" role="status">No work in this category. Choose All work to see the remaining items.</p> : null}
+        {queue.items.length > 0 && items.length === 0 ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-5 text-sm text-black/70" role="status">No work in this category. Choose All work to see the remaining items.</p> : null}
         {queue.items.length === 0 ? (
           <div className="grid gap-3">
             <OperatorEmptyState
@@ -112,7 +112,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
                 ["Experiences", "Check the upcoming calendar", "/ops/experiences"],
                 ["System", "Verify connected services", "/ops/system"],
               ].map(([label, detail, href]) => (
-                <Link className="inline-flex min-h-11 items-center gap-2 rounded-[6px] bg-black/[0.035] px-4 text-sm transition-colors hover:bg-black/[0.07]" href={href} key={href}>
+                <Link className="inline-flex min-h-11 items-center gap-2 rounded-none bg-[var(--operator-surface-muted)] px-4 text-sm transition-colors hover:bg-[var(--operator-surface-hover)]" href={href} key={href}>
                   <span>{label} →</span>
                   <span className="sr-only">{detail}</span>
                 </Link>

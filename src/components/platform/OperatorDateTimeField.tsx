@@ -80,7 +80,7 @@ export default function OperatorDateTimeField({
       {!required && (date || time) ? (
         <button
           aria-label={`Clear ${label.toLowerCase()}`}
-          className="inline-flex min-h-11 items-center text-xs font-semibold text-black/60 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+          className="inline-flex min-h-11 items-center text-xs font-semibold text-black/70 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           onClick={() => { setDate(""); setTime(""); onChange?.(); }}
           type="button"
         >Clear</button>
