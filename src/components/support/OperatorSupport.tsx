@@ -23,9 +23,9 @@ export default function OperatorSupport({ tickets, writable, emailReady = false 
   return (
     <OperatorPageFrame title="Support">
       <div className="mx-auto max-w-[78rem] [font-family:var(--font-body)]">
-        <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="operator-page-heading">Support</h2><p aria-live="polite" className="text-sm text-black/70">{filtered.length} shown</p></header>
+        <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="operator-page-heading">Support</h2><p aria-live="polite" className="text-sm text-[color:var(--operator-muted)]">{filtered.length} shown</p></header>
         {!writable ? <SupportPreviewNotice operator /> : null}
-        {writable && !emailReady ? <p className="mb-6 rounded-none border border-[var(--operator-line)] bg-[var(--operator-wait)] px-4 py-3 text-sm text-black/80" role="status">Requests are saved here. Email notifications to connect@ are not enabled yet. <Link className="underline underline-offset-4" href="/ops/system">Check email setup</Link></p> : null}
+        {writable && !emailReady ? <p className="operator-emphasis mb-6 rounded-none border border-[var(--operator-line)] bg-[var(--operator-wait)] px-4 py-3 text-sm text-[color:var(--operator-ink)]/80" data-operator-tone="wait" role="status">Requests are saved here. Email notifications to connect@ are not enabled yet. <Link className="underline underline-offset-4" href="/ops/system">Check email setup</Link></p> : null}
         {tickets.some((ticket) => ticket.emailAttentionCount) ? <button className="mt-4 text-sm text-[var(--operator-danger)] underline underline-offset-4" onClick={() => { setStatus("email_attention"); setCategory("all"); setQuery(""); }} type="button">Review email notifications · {tickets.reduce((count, ticket) => count + (ticket.emailAttentionCount ?? 0), 0)}</button> : null}
         <div className="mb-4 grid grid-cols-2 items-end gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <label className="col-span-2 lg:col-span-1"><span className="operator-compact-label">Find a request</span><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Name, email, subject, or request number" type="search" value={query} /></label>
@@ -34,7 +34,7 @@ export default function OperatorSupport({ tickets, writable, emailReady = false 
         </div>
         {query || category !== "all" || status !== "unresolved" ? <button className="mb-2 min-h-11 text-sm underline underline-offset-4" onClick={() => { setQuery(""); setCategory("all"); setStatus("unresolved"); }} type="button">Clear filters</button> : null}
         <SupportTicketList emptyMessage="No requests match these filters." operator tickets={filtered} />
-        {tickets.length >= 200 ? <p className="mt-3 text-xs text-black/70">Showing the 200 most recently updated requests. Counts and filters apply to these requests.</p> : null}
+        {tickets.length >= 200 ? <p className="mt-3 text-xs text-[color:var(--operator-muted)]">Showing the 200 most recently updated requests. Counts and filters apply to these requests.</p> : null}
       </div>
     </OperatorPageFrame>
   );

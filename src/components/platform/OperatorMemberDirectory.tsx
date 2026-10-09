@@ -101,7 +101,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             name="filter"
           >
             {FILTERS.map((option) => (
-              <option className="bg-[var(--color-bone)]" key={option.value} value={option.value}>
+              <option className="bg-[var(--operator-surface)]" key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
@@ -109,7 +109,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
         </label>
       </form>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs text-black/70">
+      <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs text-[color:var(--operator-muted)]">
         <h2 className="sr-only" id="member-directory-heading">Member directory</h2>
         <div className="flex items-center gap-5">
           <span>
@@ -118,7 +118,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
               : `${firstResult}–${lastResult} of ${directory.totalResults}`}
           </span>
           {hasRefinement ? (
-            <Link className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-black" href="/ops/members">
+            <Link className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-[color:var(--operator-ink)]" href="/ops/members">
               Clear search
             </Link>
           ) : null}
@@ -133,7 +133,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
             && !["membership-ended", "paused", "cancellation", "admission-review", "state-review"].includes(next.key);
           return (
           <Link
-            className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-[var(--operator-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-[var(--operator-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--operator-focus)]"
             href={`/ops/members/${member.memberId}?returnTo=${encodeURIComponent(directoryHref(directory, directory.page))}`}
             aria-label={`Open ${member.name}’s member record`}
             key={member.memberId}
@@ -144,32 +144,32 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
                 <h3 className="truncate text-base font-semibold leading-tight">
                   {member.name}
                 </h3>
-                {member.email ? <p className="mt-1 truncate text-xs text-black/70">{member.email}</p> : null}
+                {member.email ? <p className="mt-1 truncate text-xs text-[color:var(--operator-muted)]">{member.email}</p> : null}
               </div>
             </div>
-            <div className="text-sm leading-relaxed text-black/70">
-              <span className="operator-compact-label mb-1 block text-black/70">Circle + Block</span>
+            <div className="text-sm leading-relaxed text-[color:var(--operator-muted)]">
+              <span className="operator-compact-label mb-1 block text-[color:var(--operator-muted)]">Circle + Block</span>
               <p>{member.circleName ?? "No Circle"}</p>
-              {member.blockName ? <p className="text-black/70">{member.blockName}</p> : null}
+              {member.blockName ? <p className="text-[color:var(--operator-muted)]">{member.blockName}</p> : null}
             </div>
             <div>
-              <span className="operator-compact-label mb-1 block text-black/70">{registration ? "Membership" : "Billing"}</span>
+              <span className="operator-compact-label mb-1 block text-[color:var(--operator-muted)]">{registration ? "Membership" : "Billing"}</span>
               {!registration ? <StateLabel state={member.billingState} /> : null}
-              <p className="mt-2 text-xs tabular-nums text-black/70">Foundations {member.foundationsProgress}%</p>
+              <p className="mt-2 text-xs tabular-nums text-[color:var(--operator-muted)]">Foundations {member.foundationsProgress}%</p>
               <div className="mt-2"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
             </div>
-            <div className="col-span-2 border-t border-black/10 pt-3"><OperatorMemberCheckpoints journey={registration} compact /></div>
-            <p className="col-span-2 text-xs leading-relaxed text-black/70">
-              <span className="mb-1 block text-xs font-semibold text-black/70">{registrationNext ? `Next · ${registration.next.actor}` : `${next.status} · ${next.actor}`}</span>
+            <div className="col-span-2 border-t border-[color:var(--operator-ink)]/10 pt-3"><OperatorMemberCheckpoints journey={registration} compact /></div>
+            <p className="col-span-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">
+              <span className="mb-1 block text-xs font-semibold text-[color:var(--operator-muted)]">{registrationNext ? `Next · ${registration.next.actor}` : `${next.status} · ${next.actor}`}</span>
               {registrationNext ? registration.next.label : next.title}
               {registration?.attention ? <span className="mt-2 block text-[var(--operator-danger)]">Attention: {registration.attention}</span> : null}
-              <span className="mt-2 flex min-h-11 items-center font-semibold text-black">Open member record <span aria-hidden="true">→</span></span>
+              <span className="mt-2 flex min-h-11 items-center font-semibold text-[color:var(--operator-ink)]">Open member record <span aria-hidden="true">→</span></span>
             </p>
           </Link>
           );
         })}
         {directory.members.length === 0 ? (
-          <p className="col-span-full py-5 text-sm text-black/70">
+          <p className="col-span-full py-5 text-sm text-[color:var(--operator-muted)]">
             No members match this search. Try a name, email, Circle, or Block.
           </p>
         ) : null}
@@ -182,18 +182,18 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
         >
           {directory.page > 1 ? (
             <Link
-              className="inline-flex min-h-11 items-center underline decoration-black/35 underline-offset-4 hover:decoration-black"
+              className="inline-flex min-h-11 items-center underline decoration-[color:var(--operator-ink)]/35 underline-offset-4 hover:decoration-[color:var(--operator-ink)]"
               href={directoryHref(directory, directory.page - 1)}
             >
               ← Previous members
             </Link>
           ) : <span />}
-          <span className="text-black/70">
+          <span className="text-[color:var(--operator-muted)]">
             Page {directory.page} of {directory.pageCount}
           </span>
           {directory.page < directory.pageCount ? (
             <Link
-              className="inline-flex min-h-11 items-center underline decoration-black/35 underline-offset-4 hover:decoration-black"
+              className="inline-flex min-h-11 items-center underline decoration-[color:var(--operator-ink)]/35 underline-offset-4 hover:decoration-[color:var(--operator-ink)]"
               href={directoryHref(directory, directory.page + 1)}
             >
               Next members →

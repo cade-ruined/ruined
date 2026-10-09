@@ -84,10 +84,10 @@ export default function OperatorMemberWorkspace({ children }: { children: ReactN
     if (event.target instanceof HTMLFormElement) dirtyForms.current.delete(event.target);
   }}>
     <nav aria-label="Member record sections" className="no-scrollbar mt-3 flex max-w-full gap-1 overflow-x-auto rounded-none bg-[var(--operator-surface-muted)] p-1">
-      {availableViews.map((view) => <button aria-pressed={active === view.id} aria-controls={`member-view-${view.id}`} key={view.id} className={`min-h-11 shrink-0 rounded-none px-4 text-sm font-semibold transition ${active === view.id ? "bg-[var(--color-bone)] text-black shadow-none" : "text-black/70 hover:text-black"}`} onClick={() => requestDestination({ view: view.id, hash: `#${view.id}`, scroll: false })} type="button">{view.label}</button>)}
+      {availableViews.map((view) => <button aria-pressed={active === view.id} aria-controls={`member-view-${view.id}`} key={view.id} className={`min-h-11 shrink-0 rounded-none px-4 text-sm font-semibold transition ${active === view.id ? "bg-[var(--operator-surface)] text-[color:var(--operator-ink)] shadow-none" : "text-[color:var(--operator-muted)] hover:text-[color:var(--operator-ink)]"}`} onClick={() => requestDestination({ view: view.id, hash: `#${view.id}`, scroll: false })} type="button">{view.label}</button>)}
     </nav>
     {notice ? <p className="mt-3 text-sm text-[var(--operator-danger)]" role="status">{notice}</p> : null}
-    {review ? <div className="mt-3 rounded-none bg-[var(--operator-wait)] p-3 text-sm" role="group" aria-live="polite" aria-label="Keep unsaved edits?">
+    {review ? <div className="operator-emphasis mt-3 rounded-none bg-[var(--operator-wait)] p-3 text-sm" data-operator-tone="wait" role="group" aria-live="polite" aria-label="Keep unsaved edits?">
       <p>Your edits in {views.find((view) => view.id === active)?.label} are not saved. They will stay here if you switch.</p>
       <div className="mt-2 flex flex-wrap gap-3">
         <button className="min-h-11 px-2 font-semibold" type="button" onClick={() => setReview(null)}>Keep editing</button>

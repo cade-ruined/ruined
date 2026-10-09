@@ -69,7 +69,7 @@ export default async function OperationsExperiencePage({
         <h1 id="experience-load-error" className="font-[var(--font-display)] text-4xl leading-tight sm:text-5xl">
           This Experience couldn’t load.
         </h1>
-        <p className="max-w-xl text-base text-black/65">
+        <p className="max-w-xl text-base text-[color:var(--operator-muted)]">
           Try loading it again, or return to Experiences. You don’t need to create another event.
         </p>
         <div className="flex flex-wrap items-center gap-4">

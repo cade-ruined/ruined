@@ -106,7 +106,7 @@ async function requestJson<T>(
 
 function OperatorStatus({ status }: { status: OperatorAccessEntry["status"] }) {
   return (
-    <span className={`inline-flex items-center gap-2 border border-[var(--operator-line)] px-2 py-1 text-sm font-medium text-[var(--color-faded)] ${statusTone(status)}`}>
+    <span data-operator-tone={status === "active" ? "success" : status === "invited" ? "wait" : "error"} className={`operator-emphasis inline-flex items-center gap-2 border border-[var(--operator-line)] px-2 py-1 text-sm font-medium text-[color:var(--operator-ink)] ${statusTone(status)}`}>
       <span aria-hidden="true" className="size-2 rounded-full bg-current" />
       {statusLabel(status)}
     </span>
@@ -433,16 +433,16 @@ export default function OperatorAccessManager({
             </label>
             <button className={OPERATOR_BUTTON_CLASS} type="submit">Find member</button>
           </form>
-          <p aria-live="polite" className="mt-4 text-sm text-black/70">{memberSearch.totalResults} {memberSearch.totalResults === 1 ? "member" : "members"} found. Choosing someone only opens a review; it does not send an invitation.</p>
+          <p aria-live="polite" className="mt-4 text-sm text-[color:var(--operator-muted)]">{memberSearch.totalResults} {memberSearch.totalResults === 1 ? "member" : "members"} found. Choosing someone only opens a review; it does not send an invitation.</p>
           <ul className="mt-3 space-y-2">
             {memberSearch.members.map((member) => {
               const existing = matchingOperator(operators, member);
               return (
-                <li className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 rounded-none border border-[var(--operator-line)] bg-[var(--operator-surface)] px-4 py-3" key={member.memberId}>
+                <li className="operator-glass flex flex-wrap items-center justify-between gap-x-5 gap-y-2 rounded-none border border-[var(--operator-line)] px-4 py-3" key={member.memberId}>
                   <div className="min-w-0">
                     <p className="ui-heading font-semibold">{member.displayName}</p>
-                    <p className="break-all text-sm text-black/70">{member.email ?? "No email saved"}</p>
-                    {existing ? <div className="mt-1"><OperatorStatus status={existing.status} /> <span className="text-sm text-black/70">· {roleLabel(existing.role)}</span></div> : null}
+                    <p className="break-all text-sm text-[color:var(--operator-muted)]">{member.email ?? "No email saved"}</p>
+                    {existing ? <div className="mt-1"><OperatorStatus status={existing.status} /> <span className="text-sm text-[color:var(--operator-muted)]">· {roleLabel(existing.role)}</span></div> : null}
                   </div>
                   {existing ? (
                     <button aria-label={`View operator record for ${member.displayName}`} className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={() => findOperator(existing)} type="button">View operator record</button>
@@ -458,7 +458,7 @@ export default function OperatorAccessManager({
               );
             })}
           </ul>
-          {memberSearch.totalResults === 0 ? <p className="mt-4 text-sm text-black/70">No members match. Try another name or email, or use Add operator to invite someone new.</p> : null}
+          {memberSearch.totalResults === 0 ? <p className="mt-4 text-sm text-[color:var(--operator-muted)]">No members match. Try another name or email, or use Add operator to invite someone new.</p> : null}
           {memberSearch.pageCount > 1 ? (
             <nav aria-label="Member search pages" className="mt-4 flex flex-wrap items-center gap-5 text-sm">
               {memberSearch.page > 1 ? <Link className="inline-flex min-h-11 items-center underline underline-offset-4" href={memberSearchHref(memberSearch.query, memberSearch.page - 1)}>Previous members</Link> : null}
@@ -470,12 +470,12 @@ export default function OperatorAccessManager({
       ) : null}
 
       {selectedMember ? (
-        <section aria-labelledby="selected-operator-member" className="mt-3 operator-bento-card bg-[var(--operator-info)]">
+        <section aria-labelledby="selected-operator-member" className="mt-3 operator-bento-card">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className={OPERATOR_LABEL_TEXT_CLASS}>From member record</p>
               <h3 className="ui-heading mt-2 text-xl font-semibold" id="selected-operator-member">{selectedMember.displayName}</h3>
-              <p className="mt-1 break-all text-sm text-black/70">{selectedMember.email ?? "No email saved"}</p>
+              <p className="mt-1 break-all text-sm text-[color:var(--operator-muted)]">{selectedMember.email ?? "No email saved"}</p>
             </div>
             <Link className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={`/ops/members/${encodeURIComponent(selectedMember.memberId)}`}>
               Back to member
@@ -486,7 +486,7 @@ export default function OperatorAccessManager({
               <OperatorStatus status={selectedOperator.status} />
               <span className="text-sm">{roleLabel(selectedOperator.role)}</span>
               <button className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={() => findOperator(selectedOperator)} type="button">Find operator record</button>
-              <p className="basis-full text-sm text-black/70">
+              <p className="basis-full text-sm text-[color:var(--operator-muted)]">
                 {selectedOperator.status === "active"
                   ? "This member already has operator access. Their member Circle placement is separate."
                   : selectedOperator.authUserId
@@ -500,7 +500,7 @@ export default function OperatorAccessManager({
                 addTriggerRef.current = event.currentTarget;
                 openAddOperator(undefined, selectedMember);
               }} type="button">Review operator access</button>
-              <p className="max-w-xl text-sm text-black/70">Choose a responsibility, then send an invitation. Operator access starts only after you send it and they accept.</p>
+              <p className="max-w-xl text-sm text-[color:var(--operator-muted)]">Choose a responsibility, then send an invitation. Operator access starts only after you send it and they accept.</p>
             </div>
           ) : (
             <p className="mt-4 text-sm text-[var(--operator-danger)]">Add an email on this member’s record before inviting them as an operator.</p>
@@ -514,12 +514,12 @@ export default function OperatorAccessManager({
           ["Invited", counts.invited],
           ["Needs attention", counts.attention],
           ["Total", counts.total],
-        ].map(([label, value], index) => (
+        ].map(([label, value]) => (
           <div
-            className={`rounded-none border border-[var(--operator-line)] px-4 py-3 text-[var(--color-faded)] ${index === 0 ? "bg-[var(--operator-success)]" : index === 1 ? "bg-[var(--operator-wait)]" : index === 2 ? "bg-[var(--operator-error)]" : "bg-[var(--operator-surface-muted)]"}`}
+            className="operator-glass rounded-none px-4 py-3 text-[color:var(--operator-ink)]"
             key={label}
           >
-            <dt className="text-xs text-black/70">{label}</dt>
+            <dt className="text-xs text-[color:var(--operator-muted)]">{label}</dt>
             <dd className="mt-1 text-2xl font-semibold leading-none tabular-nums">{value}</dd>
           </div>
         ))}
@@ -543,17 +543,18 @@ export default function OperatorAccessManager({
             onChange={(event) => setRoleFilter(event.target.value as "all" | OperatorAccessRole)}
             value={roleFilter}
           >
-            <option value="all">Every responsibility</option>
-            <option value="ops_admin">Administrators</option>
-            <option value="circle_leader">Circle Supporters</option>
-            <option value="guide">Legacy Circle support</option>
+            <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="all">Every responsibility</option>
+            <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="ops_admin">Administrators</option>
+            <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="circle_leader">Circle Supporters</option>
+            <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="guide">Legacy Circle support</option>
           </select>
         </label>
       </div>
 
       <p
         aria-live="polite"
-        className={`mt-4 min-h-5 text-sm ${pageNotice ? `border border-[var(--operator-line)] px-4 py-3 text-[var(--color-faded)] ${pageNotice.kind === "error" ? "bg-[var(--operator-error)]" : "bg-[var(--operator-success)]"}` : "text-black/70"}`}
+        className={`mt-4 min-h-5 text-sm ${pageNotice ? "operator-emphasis border border-[var(--operator-line)] px-4 py-3 text-[color:var(--operator-ink)]" : "text-[color:var(--operator-muted)]"}`}
+        data-operator-tone={pageNotice ? pageNotice.kind === "error" ? "error" : "success" : undefined}
         role={pageNotice?.kind === "error" ? "alert" : "status"}
       >
         {pageNotice?.text ?? " "}
@@ -571,27 +572,27 @@ export default function OperatorAccessManager({
             >
               <div className="col-span-2 min-w-0">
                 <h2 className="ui-heading truncate text-base font-semibold">{entry.displayName}</h2>
-                <p className="mt-1 truncate text-sm text-black/70">{entry.email}</p>
+                <p className="mt-1 truncate text-sm text-[color:var(--operator-muted)]">{entry.email}</p>
               </div>
               <div>
-                <p className="operator-compact-label text-black/70">Responsibility</p>
+                <p className="operator-compact-label text-[color:var(--operator-muted)]">Responsibility</p>
                 <p className="mt-1 text-sm font-medium">{roleLabel(entry.role)}</p>
               </div>
               <div>
-                <p className="operator-compact-label text-black/70">Areas they manage</p>
-                <p className="mt-1 text-sm text-black/70"><OperatorScope circles={entry.circles} role={entry.role} /></p>
+                <p className="operator-compact-label text-[color:var(--operator-muted)]">Areas they manage</p>
+                <p className="mt-1 text-sm text-[color:var(--operator-muted)]"><OperatorScope circles={entry.circles} role={entry.role} /></p>
               </div>
               <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <OperatorStatus status={entry.status} />
-                <p className="mt-1 text-xs text-black/70">
+                <p className="mt-1 text-xs text-[color:var(--operator-muted)]">
                   {entry.status === "active" ? `Last active ${formatDate(entry.lastSignedInAt)}` : `Invitation created ${formatDate(entry.invitedAt)}`}
                 </p>
               </div>
               <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-1">
-                {entry.authUserId && entry.authUserId !== currentViewerAuthUserId ? <button className="min-h-11 text-sm font-semibold underline decoration-black/25 underline-offset-4" onClick={() => setEditing(entry)} type="button">Edit access</button> : null}
+                {entry.authUserId && entry.authUserId !== currentViewerAuthUserId ? <button className="min-h-11 text-sm font-semibold underline decoration-[color:var(--operator-ink)]/25 underline-offset-4" onClick={() => setEditing(entry)} type="button">Edit access</button> : null}
                 {!entry.authUserId ? (
                   <button
-                    className="min-h-11 text-sm font-medium underline decoration-black/25 underline-offset-4 hover:text-[var(--operator-danger)]"
+                    className="min-h-11 text-sm font-medium underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[var(--operator-danger)]"
                     onClick={(event) => {
                       addTriggerRef.current = event.currentTarget;
                       openAddOperator(entry);
@@ -603,7 +604,7 @@ export default function OperatorAccessManager({
                 ) : null}
                 {entry.authUserId !== currentViewerAuthUserId ? (
                   <button
-                    className="min-h-11 text-sm text-black/70 underline decoration-black/20 underline-offset-4 hover:text-[var(--operator-danger)]"
+                    className="min-h-11 text-sm text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/20 underline-offset-4 hover:text-[var(--operator-danger)]"
                     onClick={(event) => {
                       confirmationTriggerRef.current = event.currentTarget;
                       setConfirming(entry);
@@ -613,13 +614,13 @@ export default function OperatorAccessManager({
                     {entry.authUserId ? "Remove" : "Revoke"}
                   </button>
                 ) : (
-                  <span className="text-xs text-black/70">You</span>
+                  <span className="text-xs text-[color:var(--operator-muted)]">You</span>
                 )}
               </div>
             </article>
           ))}
           {filteredOperators.length === 0 ? (
-            <p className="operator-bento-card col-span-full py-5 text-center text-sm text-black/70">
+            <p className="operator-bento-card col-span-full py-5 text-center text-sm text-[color:var(--operator-muted)]">
               No operators match those filters.
             </p>
           ) : null}
@@ -651,7 +652,7 @@ export default function OperatorAccessManager({
               </div>
               <button
                 aria-label="Close add operator"
-                className="inline-flex size-12 items-center justify-center rounded-none border border-[var(--operator-line)] text-2xl hover:border-black"
+                className="inline-flex size-12 items-center justify-center rounded-none border border-[var(--operator-line)] text-2xl hover:border-[color:var(--operator-ink)]"
                 disabled={pending}
                 onClick={closeAddOperator}
                 type="button"
@@ -660,7 +661,7 @@ export default function OperatorAccessManager({
               </button>
             </div>
 
-            <p className="mt-5 text-sm leading-relaxed text-black/70">
+            <p className="mt-5 text-sm leading-relaxed text-[color:var(--operator-muted)]">
               Choose their responsibility, then send the invitation. They open member sign-in to accept and, if asked, verify the newest email code.
             </p>
             {!reviewedMember && !resendEmail && memberSearch ? <button className="mt-3 min-h-11 text-sm underline underline-offset-4" disabled={pending} onClick={openMemberPicker} type="button">Already a member? Find their account</button> : null}
@@ -699,12 +700,12 @@ export default function OperatorAccessManager({
                   type="email"
                 />
                 {resendEmail ? (
-                  <span className="mt-2 block text-xs leading-relaxed text-black/70" id="operator-email-resend-note">
+                  <span className="mt-2 block text-xs leading-relaxed text-[color:var(--operator-muted)]" id="operator-email-resend-note">
                     The address is locked so the original invitation cannot stay active. Revoke it first to use a different email.
                   </span>
                 ) : null}
                 {reviewedMember ? (
-                  <span className="mt-2 block text-xs leading-relaxed text-black/70" id="operator-member-note">
+                  <span className="mt-2 block text-xs leading-relaxed text-[color:var(--operator-muted)]" id="operator-member-note">
                     Using this member’s existing account. Their profile and member Circle stay unchanged.
                   </span>
                 ) : null}
@@ -715,7 +716,8 @@ export default function OperatorAccessManager({
                 <div className="mt-3 space-y-2">
                   {(Object.entries(ROLE_COPY) as Array<[OperatorAccessRole, (typeof ROLE_COPY)[OperatorAccessRole]]>).filter(([value]) => value === "ops_admin" || (Boolean(resendEmail) && value === role)).map(([value, copy]) => (
                     <label
-                      className={`block cursor-pointer rounded-none border px-3 py-3 transition-colors ${role === value ? "border-black bg-[var(--operator-info)]" : "border-[var(--operator-line)] bg-[var(--operator-surface-muted)] hover:border-black/45"}`}
+                      className={`block cursor-pointer rounded-none border px-3 py-3 transition-colors ${role === value ? "operator-emphasis border-[color:var(--operator-ink)]" : "border-[var(--operator-line)] bg-[var(--operator-surface-muted)] hover:border-[color:var(--operator-ink)]/45"}`}
+                      data-operator-tone={role === value ? "info" : undefined}
                       key={value}
                     >
                       <span className="flex items-start gap-3">
@@ -736,7 +738,7 @@ export default function OperatorAccessManager({
                         />
                         <span>
                           <span className="ui-heading block text-base font-semibold">{copy.label}</span>
-                          <span className="mt-1 block text-sm leading-relaxed text-black/70">{copy.summary}</span>
+                          <span className="mt-1 block text-sm leading-relaxed text-[color:var(--operator-muted)]">{copy.summary}</span>
                         </span>
                       </span>
                     </label>
@@ -744,21 +746,22 @@ export default function OperatorAccessManager({
                 </div>
               </fieldset>
 
-              <p className="text-sm leading-relaxed text-black/70">
+              <p className="text-sm leading-relaxed text-[color:var(--operator-muted)]">
                 Circle Supporters are appointed from existing members after preparation. <Link className="underline underline-offset-4" href="/ops/leadership">Review Supporter readiness</Link>, then assign them in their Circle.
               </p>
 
               {role !== "ops_admin" ? (
                 <fieldset>
                   <legend className={OPERATOR_LABEL_TEXT_CLASS}>Circles they help manage</legend>
-                  <p className="mt-2 text-sm text-black/70">Choose the Circles they will help run. This does not place them in a Circle as a member.</p>
-                  {role === "circle_leader" ? <p className="mt-2 text-sm text-black/70">Each Circle can have one active or invited Circle Supporter.</p> : null}
+                  <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Choose the Circles they will help run. This does not place them in a Circle as a member.</p>
+                  {role === "circle_leader" ? <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Each Circle can have one active or invited Circle Supporter.</p> : null}
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {circles.map((circle) => {
                       const checked = selectedCircleIds.includes(circle.id);
                       return (
                         <label
-                          className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-none border px-4 py-3 text-sm ${checked ? "border-black bg-[var(--operator-info)]" : "border-[var(--operator-line)] bg-[var(--operator-surface-muted)]"}`}
+                          className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-none border px-4 py-3 text-sm ${checked ? "operator-emphasis border-[color:var(--operator-ink)]" : "border-[var(--operator-line)] bg-[var(--operator-surface-muted)]"}`}
+                          data-operator-tone={checked ? "info" : undefined}
                           key={circle.id}
                         >
                           <input
@@ -776,13 +779,13 @@ export default function OperatorAccessManager({
                     })}
                   </div>
                   {circles.length === 0 ? (
-                    <p className="mt-3 rounded-none border border-[var(--operator-line)] bg-[var(--operator-error)] px-4 py-4 text-sm text-[var(--color-faded)]">
+                    <p data-operator-tone="error" className="operator-emphasis mt-3 rounded-none border border-[var(--operator-line)] px-4 py-4 text-sm text-[color:var(--operator-ink)]">
                       Circle Supporters need a forming or active Circle. <Link className="underline underline-offset-4" href="/ops/circles">Open Circles</Link> to create one. Administrators do not need a Circle.
                     </p>
                   ) : null}
                 </fieldset>
               ) : (
-                <label className="flex cursor-pointer gap-3 rounded-none border border-[var(--operator-line)] bg-[var(--operator-wait)] px-4 py-4 text-sm leading-relaxed">
+                <label data-operator-tone="wait" className="operator-emphasis flex cursor-pointer gap-3 rounded-none border border-[var(--operator-line)] px-4 py-4 text-sm leading-relaxed">
                   <input
                     checked={adminConfirmed}
                     className="mt-0.5 size-5 shrink-0 accent-[var(--color-poster)]"
@@ -796,7 +799,8 @@ export default function OperatorAccessManager({
 
               <p
                 aria-live="polite"
-                className={`min-h-5 text-sm ${notice ? `border border-[var(--operator-line)] px-4 py-3 text-[var(--color-faded)] ${notice.kind === "error" ? "bg-[var(--operator-error)]" : "bg-[var(--operator-success)]"}` : "text-black/70"}`}
+                className={`min-h-5 text-sm ${notice ? "operator-emphasis border border-[var(--operator-line)] px-4 py-3 text-[color:var(--operator-ink)]" : "text-[color:var(--operator-muted)]"}`}
+                data-operator-tone={notice ? notice.kind === "error" ? "error" : "success" : undefined}
                 role={notice?.kind === "error" ? "alert" : "status"}
               >
                 {notice?.text ?? " "}
@@ -804,7 +808,7 @@ export default function OperatorAccessManager({
 
               <div className="flex flex-col-reverse gap-3 border-t border-[var(--operator-line)] pt-5 sm:flex-row sm:justify-end">
                 <button
-                  className="min-h-12 px-5 text-sm font-medium text-black/70 hover:text-black"
+                  className="min-h-12 px-5 text-sm font-medium text-[color:var(--operator-muted)] hover:text-[color:var(--operator-ink)]"
                   disabled={pending}
                   onClick={closeAddOperator}
                   type="button"
@@ -836,14 +840,14 @@ export default function OperatorAccessManager({
             <h2 className="operator-record-title" id="operator-removal-title">
               {confirming.authUserId ? "Remove operator access?" : "Revoke invitation?"}
             </h2>
-            <p className="mt-4 text-sm leading-relaxed text-black/70">
+            <p className="mt-4 text-sm leading-relaxed text-[color:var(--operator-muted)]">
               {confirming.authUserId
                 ? `${confirming.displayName} will immediately lose access to Ruined operations. Their member access, if any, stays intact.`
                 : `${confirming.displayName} will no longer be able to claim this invitation.`}
             </p>
             <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
-                className="min-h-12 px-5 text-sm font-medium text-black/70 hover:text-black"
+                className="min-h-12 px-5 text-sm font-medium text-[color:var(--operator-muted)] hover:text-[color:var(--operator-ink)]"
                 disabled={pending}
                 onClick={() => {
                   setConfirming(null);
@@ -855,7 +859,7 @@ export default function OperatorAccessManager({
                 Cancel
               </button>
               <button
-                className="ui-heading min-h-12 rounded-none border border-[var(--operator-line)] bg-[var(--operator-error)] px-5 text-sm font-semibold text-[var(--color-faded)] hover:bg-[var(--operator-error-hover)] disabled:opacity-50"
+                data-operator-tone="error" className="operator-emphasis ui-heading min-h-12 rounded-none border border-[var(--operator-line)] px-5 text-sm font-semibold text-[color:var(--operator-ink)] hover:bg-[var(--operator-error-hover)] disabled:opacity-50"
                 disabled={pending}
                 onClick={() => void removeEntry(confirming)}
                 type="button"

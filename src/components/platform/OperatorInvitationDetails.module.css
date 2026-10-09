@@ -5,20 +5,20 @@
   height: 44px;
   align-items: center;
   justify-content: center;
-  color: #484239;
+  color: var(--operator-muted, #484239);
   cursor: pointer;
   border-radius: 0;
 }
 
 .trigger:hover,
 .trigger[aria-expanded="true"] {
-  color: var(--color-faded);
+  color: var(--operator-ink, var(--color-faded));
   background: var(--operator-surface-hover);
 }
 
 .trigger:focus-visible,
 .close:focus-visible {
-  outline: 2px solid var(--color-faded);
+  outline: 2px solid var(--operator-focus, var(--color-faded));
   outline-offset: -3px;
 }
 
@@ -35,9 +35,10 @@
   padding: 12px 20px 20px;
   border: 1px solid var(--operator-line);
   border-radius: 0;
-  background: var(--operator-surface, #f3efe6);
-  box-shadow: 6px 6px 0 var(--operator-workwear);
-  color: var(--color-faded);
+  background-color: var(--operator-surface, #f3efe6);
+  background-image: var(--operator-grain);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  color: var(--operator-ink, var(--color-faded));
   font-family: var(--font-body);
   text-align: left;
 }
@@ -79,7 +80,7 @@
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.5;
-  color: #484239;
+  color: var(--operator-muted, #484239);
 }
 
 .details {
@@ -99,7 +100,7 @@
 }
 
 .details dt {
-  color: #484239;
+  color: var(--operator-muted, #484239);
 }
 
 .details dd {
@@ -109,12 +110,12 @@
 .subline {
   display: block;
   margin-top: 2px;
-  color: #484239;
+  color: var(--operator-muted, #484239);
 }
 
 .empty {
   margin-top: 2px;
   font-size: 13px;
   line-height: 1.65;
-  color: #484239;
+  color: var(--operator-muted, #484239);
 }

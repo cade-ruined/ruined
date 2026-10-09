@@ -85,10 +85,10 @@ export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurr
 
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" aria-busy={submitting}>
-      {message && messageVersion === expectedVersion ? <p role="status" className="w-full max-w-md text-sm leading-relaxed text-black/70 sm:text-right">{message}</p> : null}
+      {message && messageVersion === expectedVersion ? <p role="status" className="w-full max-w-md text-sm leading-relaxed text-[color:var(--operator-muted)] sm:text-right">{message}</p> : null}
       {canClaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("claim")} type="button">Claim</button> : null}
       {canComplete ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("complete")} type="button">Complete</button> : null}
-      {canUnclaim ? <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
+      {canUnclaim ? <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[color:var(--operator-ink)]`} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
       {state === "completed" ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("reopen")} type="button">Reopen</button> : null}
       {conflicted ? <button className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" onClick={() => router.refresh()} type="button">Refresh queue</button> : null}
     </div>
@@ -117,7 +117,7 @@ export function OperatorWorkflowRetryAction({ workflowActionId, preview = false 
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <span aria-live="polite" className="text-xs text-black/70">{message}</span>
+      <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>
       <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={retry} type="button">
         {submitting ? "Queuing" : "Queue retry"}
       </button>
@@ -177,7 +177,7 @@ export function OperatorArtifactAction({ artifactJobId, state, preview = false }
         <input className={OPERATOR_FIELD_CLASS} id={`artifact-reason-${artifactJobId}`} maxLength={500} minLength={3} name="reason" required />
       </label>
       <button className={`${OPERATOR_BUTTON_CLASS} self-end`} disabled={submitting} type="submit">Update</button>
-      <span aria-live="polite" className="text-xs text-black/70 sm:col-span-3">{message}</span>
+      <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)] sm:col-span-3">{message}</span>
     </form>
   );
 }
@@ -264,7 +264,7 @@ export function OperatorAnnouncementCreateAction({
         <textarea className={`${OPERATOR_FIELD_CLASS} min-h-32 resize-y`} defaultValue={announcement?.body} maxLength={10000} minLength={3} name="body" required />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <span aria-live="polite" className="text-xs text-black/70">{message}</span>
+        <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>
         {onCancel ? <button className="min-h-11 text-sm underline" disabled={submitting} onClick={onCancel} type="button">Cancel editing</button> : null}
         <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Saving" : announcement ? "Save draft" : "Create draft"}</button>
       </div>
@@ -295,7 +295,7 @@ export function OperatorAnnouncementPublishAction({ announcementId, expectedVers
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <span aria-live="polite" className="text-xs text-black/70">{message}</span>
+      <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>
       <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} onClick={publish} type="button">{submitting ? "Publishing" : "Publish"}</button>
     </div>
   );

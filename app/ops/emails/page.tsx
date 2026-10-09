@@ -17,7 +17,7 @@ export default async function OperationsEmailsPage() {
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
   if (context.state === "preview") return <OperatorEmailComposer preview previewCatalog={await getResendEmailPreviewCatalog()} />;
   if (context.state !== "authenticated" || !context.viewer) return <PlatformUnavailable accessHref="/ops/access" />;
-  if (context.role !== "ops_admin") return <OperatorPageFrame title="Emails"><OperatorMessagesTabs active="emails" /><section className="operator-bento-card"><h2 className="operator-page-heading">Admin access required.</h2><p className="mt-3 text-sm leading-relaxed text-black/60">Email creation and sending are available to Ruined admins. Your other operations tools are still available.</p></section></OperatorPageFrame>;
+  if (context.role !== "ops_admin") return <OperatorPageFrame title="Emails"><OperatorMessagesTabs active="emails" /><section className="operator-bento-card"><h2 className="operator-page-heading">Admin access required.</h2><p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">Email creation and sending are available to Ruined admins. Your other operations tools are still available.</p></section></OperatorPageFrame>;
 
   return <OperatorEmailComposer />;
 }

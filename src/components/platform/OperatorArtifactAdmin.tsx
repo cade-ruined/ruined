@@ -32,7 +32,7 @@ async function actionRequest<Result = unknown>(url: string, body: unknown, metho
 }
 
 function Notice({ message }: { message: string }) {
-  return <span aria-live="polite" className="text-xs text-black/70">{message}</span>;
+  return <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>;
 }
 
 function TemplateCreateForm({ onSuccess }: { onSuccess?: (message: string) => void } = {}) {
@@ -85,8 +85,8 @@ function TemplateCreateForm({ onSuccess }: { onSuccess?: (message: string) => vo
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Description</span>
         <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} maxLength={2000} name="description" />
       </label>
-      <label className="flex min-h-12 items-center gap-3 text-sm text-black/65">
-        <input className="size-4 accent-black" defaultChecked name="livemode" type="checkbox" />
+      <label className="flex min-h-12 items-center gap-3 text-sm text-[color:var(--operator-muted)]">
+        <input className="size-4 accent-[var(--operator-focus)]" defaultChecked name="livemode" type="checkbox" />
         Live Shopify product
       </label>
       <div className="flex flex-wrap items-center justify-end gap-3">
@@ -143,7 +143,7 @@ function ShopifyBindingForm({
   }
 
   if (!editing) return <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-    <div><p className="text-sm text-black/65">{productGid && productHandle ? `Shopify · ${productHandle.replaceAll("-", " ")}` : "No Shopify product connected"}</p>{message ? <Notice message={message} /> : null}</div>
+    <div><p className="text-sm text-[color:var(--operator-muted)]">{productGid && productHandle ? `Shopify · ${productHandle.replaceAll("-", " ")}` : "No Shopify product connected"}</p>{message ? <Notice message={message} /> : null}</div>
     <button id={`edit-artifact-product-${templateId}`} className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setDirty(false); setMessage(""); setProduct(productGid && productHandle ? { id: productGid, handle: productHandle, title: productHandle.replaceAll("-", " ") } : null); }} type="button">{productGid && productHandle ? "Edit product" : "Connect product"}</button>
   </div>;
   return (
@@ -151,8 +151,8 @@ function ShopifyBindingForm({
     <form className="grid gap-4 sm:grid-cols-2" data-operator-dirty={dirty ? "true" : undefined} data-operator-pending={submitting ? "true" : undefined} onChange={() => setDirty(true)} onSubmit={submit}>
       <OperatorArtifactProductPicker selected={product} onSelect={(value) => { setProduct(value); setDirty(true); }} disabled={submitting} preview={preview} />
       <div className="grid gap-2">
-        <label className="flex items-center gap-2 text-xs text-black/70">
-          <input className="size-4 accent-black" defaultChecked={livemode ?? true} name="livemode" type="checkbox" /> Live
+        <label className="flex items-center gap-2 text-xs text-[color:var(--operator-muted)]">
+          <input className="size-4 accent-[var(--operator-focus)]" defaultChecked={livemode ?? true} name="livemode" type="checkbox" /> Live
         </label>
         <button className={OPERATOR_BUTTON_CLASS} disabled={submitting || !product} type="submit">Save product</button>
       </div>
@@ -465,44 +465,44 @@ export default function OperatorArtifactAdmin({
     <section className="space-y-3" aria-label="Artifact controls">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Artifact views" className="flex flex-wrap items-center gap-1 rounded-none bg-[var(--operator-surface-muted)] p-1">
-          {(["production", "templates", "shipping"] as const).map((item) => <a className={`inline-flex min-h-11 items-center rounded-none px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${view === item ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "text-black/65 hover:bg-[var(--operator-surface-hover)]"}`} href={`#${viewHash(item)}`} aria-current={view === item ? "page" : undefined} key={item} onClick={(event) => { event.preventDefault(); changeView(item); }}>{item === "production" ? "Production" : item === "templates" ? "Templates" : "Shipping"}</a>)}
+          {(["production", "templates", "shipping"] as const).map((item) => <a className={`inline-flex min-h-11 items-center rounded-none px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${view === item ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} href={`#${viewHash(item)}`} aria-current={view === item ? "page" : undefined} key={item} onClick={(event) => { event.preventDefault(); changeView(item); }}>{item === "production" ? "Production" : item === "templates" ? "Templates" : "Shipping"}</a>)}
         </nav>
         <button id="open-award-artifact" className={OPERATOR_PRIMARY_ACTION_CLASS} onClick={() => openTask("award")} type="button">Award an Artifact</button>
       </div>
-      {notice ? <p className="text-sm text-[var(--color-verdigris)]" role="status">{notice}</p> : null}
+      {notice ? <p className="text-sm text-[color:var(--operator-success-text)]" role="status">{notice}</p> : null}
       {counts.exceptions || counts.unbound ? <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--operator-danger)]" aria-label="Artifact attention">
         {counts.exceptions ? <a className="min-h-11 content-center underline underline-offset-4" href="#artifact-fulfillment" onClick={(event) => { event.preventDefault(); changeView("shipping"); }}>{counts.exceptions} {counts.exceptions === 1 ? "shipment needs" : "shipments need"} attention →</a> : null}
         {counts.unbound ? <a className="min-h-11 content-center underline underline-offset-4" href="#artifact-templates" onClick={(event) => { event.preventDefault(); changeView("templates"); }}>{counts.unbound} {counts.unbound === 1 ? "template is" : "templates are"} not ready to award →</a> : null}
       </div> : null}
-      <div hidden={view !== "production"}>{production ?? <p className="text-sm text-black/70">Choose Templates to connect a product, or Shipping to manage deliveries.</p>}</div>
+      <div hidden={view !== "production"}>{production ?? <p className="text-sm text-[color:var(--operator-muted)]">Choose Templates to connect a product, or Shipping to manage deliveries.</p>}</div>
       <section hidden={view !== "templates"} className="scroll-mt-28 space-y-4" id="artifact-templates" aria-label="Artifact templates">
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-black/70">{data.templates.length} {data.templates.length === 1 ? "template" : "templates"}</p><button id="open-new-artifact-template" className={OPERATOR_BUTTON_CLASS} onClick={() => openTask("template")} type="button">+ New template</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[color:var(--operator-muted)]">{data.templates.length} {data.templates.length === 1 ? "template" : "templates"}</p><button id="open-new-artifact-template" className={OPERATOR_BUTTON_CLASS} onClick={() => openTask("template")} type="button">+ New template</button></div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {data.templates.map((template) => (
             <article className="operator-bento-card min-w-0" key={template.templateId}>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h3 className="text-lg font-semibold leading-tight">{template.name}</h3><p className="mt-1 text-xs text-black/70">v{template.version ?? "—"} · {template.versionStatus ?? "no version"}</p></div>
-                <span className={`rounded-none px-2 py-1 text-xs ${template.bindingVerified && template.livemode ? "bg-[var(--color-verdigris)] text-white" : template.bindingVerified ? "bg-[var(--color-shop)] text-black" : "bg-[var(--color-poster)] text-white"}`}>{template.bindingVerified ? template.livemode ? "Live product" : "Test only" : "Product needs attention"}</span>
+                <div><h3 className="text-lg font-semibold leading-tight">{template.name}</h3><p className="mt-1 text-xs text-[color:var(--operator-muted)]">v{template.version ?? "—"} · {template.versionStatus ?? "no version"}</p></div>
+                <span data-operator-tone={template.bindingVerified && !template.livemode ? "info" : undefined} className={`rounded-none px-2 py-1 text-xs ${template.bindingVerified && template.livemode ? "bg-[var(--color-verdigris)] text-white" : template.bindingVerified ? "operator-emphasis bg-[var(--color-shop)] text-[color:var(--operator-ink)]" : "bg-[var(--color-poster)] text-white"}`}>{template.bindingVerified ? template.livemode ? "Live product" : "Test only" : "Product needs attention"}</span>
               </div>
               <ShopifyBindingForm livemode={template.livemode} productGid={template.productGid} productHandle={template.productHandle} templateId={template.templateId} />
             </article>
           ))}
-          {!data.templates.length ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-6 text-sm text-black/70">No templates yet. Create one and connect the Shopify product members will receive.</p> : null}
+          {!data.templates.length ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-6 text-sm text-[color:var(--operator-muted)]">No templates yet. Create one and connect the Shopify product members will receive.</p> : null}
         </div>
       </section>
       <section hidden={view !== "shipping"} className="scroll-mt-28 space-y-4" id="artifact-fulfillment" aria-label="Artifact shipping">
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-black/70">{counts.shipments} active {counts.shipments === 1 ? "shipment" : "shipments"}</p><button id="open-new-artifact-shipment" className={OPERATOR_BUTTON_CLASS} onClick={() => openTask("shipment")} type="button">+ Add tracking</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[color:var(--operator-muted)]">{counts.shipments} active {counts.shipments === 1 ? "shipment" : "shipments"}</p><button id="open-new-artifact-shipment" className={OPERATOR_BUTTON_CLASS} onClick={() => openTask("shipment")} type="button">+ Add tracking</button></div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {data.shipments.map((shipment) => (
             <article className="operator-bento-card min-w-0" key={shipment.shipmentId}>
-              <div className="flex flex-wrap items-start justify-between gap-2"><strong className="text-base font-semibold">{shipment.memberName}</strong><span className={`rounded-none px-2 py-1 text-xs capitalize ${shipment.status === "exception" ? "bg-[var(--color-poster)] text-white" : "bg-[var(--operator-surface-muted)] text-black/65"}`}>{shipment.status.replaceAll("_", " ")}</span></div>
-              <p className="mt-2 text-xs text-black/70">{shipment.carrier}{shipment.serviceLevel ? ` · ${shipment.serviceLevel}` : ""}</p>
+              <div className="flex flex-wrap items-start justify-between gap-2"><strong className="text-base font-semibold">{shipment.memberName}</strong><span className={`rounded-none px-2 py-1 text-xs capitalize ${shipment.status === "exception" ? "bg-[var(--color-poster)] text-white" : "bg-[var(--operator-surface-muted)] text-[color:var(--operator-muted)]"}`}>{shipment.status.replaceAll("_", " ")}</span></div>
+              <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{shipment.carrier}{shipment.serviceLevel ? ` · ${shipment.serviceLevel}` : ""}</p>
               <p className="mt-1 break-all text-sm">{shipment.trackingNumber}</p>
-              {shipment.trackingUrl ? <a className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={shipment.trackingUrl} rel="noreferrer" target="_blank">Open tracking ↗</a> : <p className="mt-2 text-xs text-black/70">No tracking link</p>}
+              {shipment.trackingUrl ? <a className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={shipment.trackingUrl} rel="noreferrer" target="_blank">Open tracking ↗</a> : <p className="mt-2 text-xs text-[color:var(--operator-muted)]">No tracking link</p>}
               <ShipmentUpdateForm shipment={shipment} />
             </article>
           ))}
-          {!data.shipments.length ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-6 text-sm text-black/70">No shipments recorded yet. Add tracking when an Artifact is ready to send.</p> : null}
+          {!data.shipments.length ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-6 text-sm text-[color:var(--operator-muted)]">No shipments recorded yet. Add tracking when an Artifact is ready to send.</p> : null}
         </div>
       </section>
       {task ? <OperatorDialog open title={task === "award" ? "Award an Artifact" : task === "template" ? "New template" : "Add tracking"} onClose={closeTask} returnFocusId={task === "award" ? "open-award-artifact" : task === "template" ? "open-new-artifact-template" : "open-new-artifact-shipment"}>
