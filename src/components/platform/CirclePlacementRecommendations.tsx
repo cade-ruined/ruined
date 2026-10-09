@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { OPERATOR_BUTTON_CLASS } from "./operatorStyles";
 import {
   CIRCLE_TARGET,
   scoreCirclePlacement,
@@ -86,7 +87,7 @@ export default function CirclePlacementRecommendations({ memberId, display = "in
     {preview ? <p className="mb-4 text-xs leading-relaxed text-[color:var(--operator-muted)]">Preview — capacity examples from these preview Circles. Inviter and partner details appear with a connected member record.</p> : null}
     {current?.error ? <div className="space-y-2">
       <p className="text-sm text-[color:var(--operator-muted)]" role="alert">{current.error}</p>
-      <button className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={() => setAttempt(value => value + 1)} type="button">Try again</button>
+      <button className={OPERATOR_BUTTON_CLASS} onClick={() => setAttempt(value => value + 1)} type="button">Try again</button>
     </div> : snapshot && context ? <>
       {!preview ? <div className="mb-4 space-y-4 border-l-2 border-[var(--color-poster)] pl-4">
         {context.inviter ? <ConnectionContext label="Invited by" connection={context.inviter} /> : <p className="text-xs text-[color:var(--operator-muted)]">No inviter is recorded for this member.</p>}

@@ -144,7 +144,7 @@ function ShopifyBindingForm({
 
   if (!editing) return <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
     <div><p className="text-sm text-[color:var(--operator-muted)]">{productGid && productHandle ? `Shopify · ${productHandle.replaceAll("-", " ")}` : "No Shopify product connected"}</p>{message ? <Notice message={message} /> : null}</div>
-    <button id={`edit-artifact-product-${templateId}`} className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setDirty(false); setMessage(""); setProduct(productGid && productHandle ? { id: productGid, handle: productHandle, title: productHandle.replaceAll("-", " ") } : null); }} type="button">{productGid && productHandle ? "Edit product" : "Connect product"}</button>
+    <button id={`edit-artifact-product-${templateId}`} className={OPERATOR_BUTTON_CLASS} onClick={() => { setEditing(true); setDirty(false); setMessage(""); setProduct(productGid && productHandle ? { id: productGid, handle: productHandle, title: productHandle.replaceAll("-", " ") } : null); }} type="button">{productGid && productHandle ? "Edit product" : "Connect product"}</button>
   </div>;
   return (
     <OperatorDialog open title="Shopify product" onClose={() => { setEditing(false); setMessage(""); }} pending={submitting} returnFocusId={`edit-artifact-product-${templateId}`}>
@@ -367,7 +367,7 @@ function ShipmentUpdateForm({ shipment }: { shipment: OpsArtifactControlData["sh
   }
   const statusOptions = SHIPMENT_STATUS_OPTIONS[shipment.status]
     ?? [{ label: shipment.status.replaceAll("_", " "), value: shipment.status }];
-  if (!editing) return <div className="flex flex-wrap items-center justify-between gap-3"><Notice message={message} /><button id={`edit-artifact-shipment-${shipment.shipmentId}`} className="min-h-11 px-2 text-sm underline underline-offset-4" onClick={() => { setEditing(true); setDirty(false); setMessage(""); }} type="button">Edit shipment</button></div>;
+  if (!editing) return <div className="flex flex-wrap items-center justify-between gap-3"><Notice message={message} /><button id={`edit-artifact-shipment-${shipment.shipmentId}`} className={OPERATOR_BUTTON_CLASS} onClick={() => { setEditing(true); setDirty(false); setMessage(""); }} type="button">Edit shipment</button></div>;
   return (
     <OperatorDialog open title="Edit shipment" onClose={() => { setEditing(false); setMessage(""); }} pending={submitting} returnFocusId={`edit-artifact-shipment-${shipment.shipmentId}`}>
     <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-operator-dirty={dirty ? "true" : undefined} data-operator-pending={submitting ? "true" : undefined} onChange={() => setDirty(true)} onSubmit={update}>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import {
+  OPERATOR_BUTTON_CLASS,
   OPERATOR_FIELD_CLASS,
   OPERATOR_LABEL_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
@@ -137,7 +138,7 @@ export default function OperatorProfileSupport({
         <h3 className="ui-heading text-base font-semibold" id="profile-support-heading">Profile support</h3>
         {preview ? <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Preview — profile details are not changed.</p> : null}
         </div>
-        {!editing ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" aria-expanded={false} aria-controls="profile-correction-form" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }} type="button">Edit profile detail</button> : null}
+        {!editing ? <button className={OPERATOR_BUTTON_CLASS} aria-expanded={false} aria-controls="profile-correction-form" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }} type="button">Edit profile detail</button> : null}
       </header>
       <div className="mt-2">
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -204,9 +205,9 @@ export default function OperatorProfileSupport({
           <div className="flex flex-wrap items-center justify-between gap-4 sm:col-span-2">
             <div className={`text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={failed ? "alert" : "status"}>
               <p>{message}</p>
-              {failed ? <button className="mt-2 min-h-11 underline underline-offset-4" onClick={() => router.refresh()} type="button">Reload saved profile before retrying</button> : null}
+              {failed ? <button className={`${OPERATOR_BUTTON_CLASS} mt-2`} onClick={() => router.refresh()} type="button">Reload saved profile before retrying</button> : null}
             </div>
-            <div className="flex flex-wrap gap-3"><button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={submitting} onClick={() => { setEditing(false); setMessage(""); setFailed(false); }} type="button">Cancel</button><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} type="submit">
+            <div className="flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => { setEditing(false); setMessage(""); setFailed(false); }} type="button">Cancel</button><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} type="submit">
               {submitting ? "Saving" : `Correct ${fieldLabel}`}
             </button></div>
           </div>

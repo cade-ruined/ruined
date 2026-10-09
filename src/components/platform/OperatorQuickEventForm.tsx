@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
 import {
+  OPERATOR_BUTTON_CLASS,
   OPERATOR_FIELD_CLASS,
   OPERATOR_LABEL_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
@@ -139,7 +140,7 @@ export default function OperatorQuickEventForm({
       <p className="text-sm text-[color:var(--operator-muted)]">Creates the event and sends calendar invitations to this audience. No registration needed.</p>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} w-full sm:w-auto`} disabled={pending} type="submit">{pending ? "Creating event…" : "Create event"}</button>
-        <button className="min-h-11 text-sm text-[color:var(--operator-muted)] underline underline-offset-4" disabled={pending} onClick={() => {
+        <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => {
           if (!dirty || window.confirm("Switch to advanced setup and discard these details?")) onAdvanced();
         }} type="button">Advanced event setup</button>
       </div>

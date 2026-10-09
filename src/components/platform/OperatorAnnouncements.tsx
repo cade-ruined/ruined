@@ -5,7 +5,7 @@ import OperatorEmptyState from "@/components/platform/OperatorEmptyState";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorDialog from "@/components/platform/OperatorDialog";
-import { OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import {
   OperatorAnnouncementCreateAction,
   OperatorAnnouncementCloseAction,
@@ -92,10 +92,10 @@ export default function OperatorAnnouncements({
                     <div className="operator-emphasis rounded-none bg-[var(--operator-wait)] p-3" data-operator-tone="wait" role="group" aria-label={`Review publishing ${announcement.title}`}>
                       <p className="mb-3 text-sm leading-relaxed">Publish to <strong>{announcement.targetLabel}</strong>? Members will see this exact draft. You can retract it later.</p>
                       <OperatorAnnouncementPublishAction announcementId={announcement.announcementId} expectedVersion={announcement.version} preview={preview} />
-                      <button className="mt-2 min-h-11 text-sm underline underline-offset-4" onClick={() => setReviewingId(null)} type="button">Cancel review</button>
+                      <button className={`${OPERATOR_BUTTON_CLASS} mt-2`} onClick={() => setReviewingId(null)} type="button">Cancel review</button>
                     </div>
-                  ) : <button className="min-h-11 text-sm font-semibold underline underline-offset-4" onClick={() => setReviewingId(`${announcement.announcementId}:${announcement.version}`)} type="button">Review & publish</button>}
-                  <button className="min-h-11 text-sm underline underline-offset-4" onClick={() => { setEditingId(announcement.announcementId); setReviewingId(null); }} type="button">Edit draft</button>
+                  ) : <button className={OPERATOR_BUTTON_CLASS} onClick={() => setReviewingId(`${announcement.announcementId}:${announcement.version}`)} type="button">Review & publish</button>}
+                  <button className={OPERATOR_BUTTON_CLASS} onClick={() => { setEditingId(announcement.announcementId); setReviewingId(null); }} type="button">Edit draft</button>
                 </div>
               ) : null}
               {canManage && ["draft", "published"].includes(announcement.state) && editingId !== announcement.announcementId ? <OperatorAnnouncementCloseAction key={`${announcement.announcementId}:${announcement.version}`} announcement={announcement} preview={preview} /> : null}

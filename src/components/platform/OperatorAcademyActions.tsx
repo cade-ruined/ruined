@@ -342,12 +342,12 @@ export function OperatorAcademyResourceStateActions({
         <summary className="min-h-11 cursor-pointer content-center text-sm font-medium text-[color:var(--operator-muted)]">More actions</summary>
         <div className="flex flex-wrap gap-2">
         {status === "published" ? (
-          <button className="min-h-11 rounded-none bg-[var(--operator-surface-muted)] px-3 text-sm font-medium" disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
+          <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("unpublish")} type="button">Unpublish</button>
         ) : null}
-        <button className="min-h-11 rounded-none px-3 text-sm font-medium text-[var(--operator-danger)]" disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{status === "draft" ? "Discard draft" : "Retire"}</button>
+        <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{status === "draft" ? "Discard draft" : "Retire"}</button>
         </div>
       </details>
-      {confirmRetirement ? <div className="basis-full rounded-none bg-white p-4 text-[color:var(--operator-ink)]" role="group" aria-label="Confirm lesson retirement"><p className="text-sm">{status === "draft" ? "Discard this unused lesson draft?" : "Retire this lesson and remove it from the Academy?"} Its history is retained. This cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">{status === "draft" ? "Confirm discard" : "Confirm retirement"}</button><button className="min-h-11 text-sm underline" disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep lesson</button></div></div> : null}
+      {confirmRetirement ? <div className="basis-full rounded-none bg-white p-4 text-[color:var(--operator-ink)]" role="group" aria-label="Confirm lesson retirement"><p className="text-sm">{status === "draft" ? "Discard this unused lesson draft?" : "Retire this lesson and remove it from the Academy?"} Its history is retained. This cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">{status === "draft" ? "Confirm discard" : "Confirm retirement"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep lesson</button></div></div> : null}
       <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>
     </div>
   );
@@ -498,7 +498,7 @@ export function OperatorAcademyCollectionActions({ collection, preview = false, 
           )}
           <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setConfirmRetirement(true)} type="button">{collection.status === "draft" ? "Discard draft" : "Retire"}</button>
         </div>
-        {confirmRetirement ? <div className="rounded-none bg-white p-3" role="group" aria-label="Confirm collection retirement"><p className="text-sm">Retire this collection? Move its remaining lessons first. Its history is retained and this cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">Confirm retirement</button><button className="min-h-11 text-sm underline" disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep collection</button></div></div> : null}
+        {confirmRetirement ? <div className="rounded-none bg-white p-3" role="group" aria-label="Confirm collection retirement"><p className="text-sm">Retire this collection? Move its remaining lessons first. Its history is retained and this cannot be undone.</p><div className="mt-3 flex gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => change("retire")} type="button">Confirm retirement</button><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setConfirmRetirement(false)} type="button">Keep collection</button></div></div> : null}
         <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>
         </fieldset>
       </form>

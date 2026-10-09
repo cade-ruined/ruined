@@ -67,8 +67,6 @@ function ActionNotice({ notice }: { notice: Notice }) {
   );
 }
 
-const SECONDARY_BUTTON_CLASS =
-  "min-h-12 rounded-none border border-[color:var(--operator-ink)]/35 bg-transparent px-5 font-[var(--font-body)] text-sm font-medium text-[color:var(--operator-muted)] hover:border-[color:var(--operator-ink)] hover:text-[color:var(--operator-ink)] disabled:cursor-not-allowed disabled:border-[color:var(--operator-ink)]/15 disabled:text-[color:var(--operator-ink)]/25";
 
 export default function OpsCircleManagementActions({
   initialCircles,
@@ -380,13 +378,13 @@ export default function OpsCircleManagementActions({
     >
       {section === "shaper" ? <>
         <p className="text-sm text-[color:var(--operator-muted)]">Approve readiness and arrange temporary coverage in <Link className="underline underline-offset-4" href="/ops/leadership">Leadership</Link>. Only current members of this Circle can serve.</p>
-        <header className="flex items-start justify-between gap-4">
+        <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h3 className="operator-compact-label">Circle Supporter</h3>
             <p className="mt-1 text-base font-semibold">{contextCircle.shaper?.name ?? "Not assigned"}</p>
           </div>
           {!editingShaper ? <button
-            className="min-h-11 px-2 text-sm underline underline-offset-4"
+            className={OPERATOR_BUTTON_CLASS}
             disabled={pending !== null}
             onClick={() => {
               setEditingShaper(true);
@@ -401,12 +399,12 @@ export default function OpsCircleManagementActions({
             <input name="assignmentId" type="hidden" value={selectedShaperAssignment} />
             <p className="text-sm text-[color:var(--operator-muted)]">Remove {contextCircle.shaper.name} as Circle Supporter? This Circle will have no Circle Supporter until another is assigned. Assignment history is kept.</p>
             <div className="flex flex-wrap gap-3">
-              <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} type="submit">{pending === "shaper-end" ? "Removing…" : "Confirm removal"}</button>
-              <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => setShaperAssignmentId("")} type="button">Cancel</button>
+              <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} type="submit">{pending === "shaper-end" ? "Removing…" : "Confirm removal"}</button>
+              <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => setShaperAssignmentId("")} type="button">Cancel</button>
             </div>
           </form> : <>
             <p className="text-sm text-[color:var(--operator-muted)]">To change the Circle Supporter, remove the current assignment first, then choose someone new.</p>
-            <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} onClick={() => setShaperAssignmentId(contextCircle.shaper?.assignmentId ?? "")} type="button">Remove Circle Supporter</button>
+            <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => setShaperAssignmentId(contextCircle.shaper?.assignmentId ?? "")} type="button">Remove Circle Supporter</button>
           </> : <form className="grid gap-3" onSubmit={assignShaper}>
             <input name="circleId" type="hidden" value={selectedShaperCircle} />
             {shaperPicker}
@@ -414,24 +412,24 @@ export default function OpsCircleManagementActions({
             {!currentCircleMembers.length && !otherShapers.length ? <p className="text-sm text-[color:var(--operator-muted)]">Add a member to this Circle, then choose them here. To bring in someone else, <Link className="underline underline-offset-4" href="/ops/operators?add=1">invite a Circle Supporter</Link> and choose this Circle in the invitation.</p> : null}
             <button className={`${OPERATOR_BUTTON_CLASS} w-fit`} disabled={pending !== null || !selectedShaperCircle || !selectedShaper || !memberAccessConfirmed} type="submit">{pending === "shaper-assign" ? "Assigning…" : "Save Circle Supporter"}</button>
           </form>}
-          {!selectedShaperAssignment ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => { setEditingShaper(false); setShaperId(""); }} type="button">Cancel</button> : null}
+          {!selectedShaperAssignment ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => { setEditingShaper(false); setShaperId(""); }} type="button">Cancel</button> : null}
         </div> : null}
         <ActionNotice notice={shaperNotice} />
       </> : <>
         <header className="flex items-center justify-between gap-4">
           <h3 className="ui-heading text-base font-semibold">Resources</h3>
-          {!addingResource ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => { setAddingResource(true); setResourceCircleId(contextCircle.id); setResourceNotice(null); }} type="button">Add resource</button> : null}
+          {!addingResource ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => { setAddingResource(true); setResourceCircleId(contextCircle.id); setResourceNotice(null); }} type="button">Add resource</button> : null}
         </header>
         {contextCircle.resources.length ? <ul className="space-y-2">
           {contextCircle.resources.map((resource) => <li className="flex flex-wrap items-center justify-between gap-3 rounded-none bg-[var(--operator-surface-muted)] px-4 py-2" key={resource.assignmentId}>
             <div><p className="text-sm font-semibold">{resource.title}</p><p className="mt-1 text-xs text-[color:var(--operator-muted)]">v{resource.version}{resource.isPinned ? " · Pinned" : ""}</p></div>
-            <button aria-label={`Remove ${resource.title}`} className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null || Boolean(selectedResourceAssignment)} onClick={() => { setResourceAssignmentId(resource.assignmentId); setResourceNotice(null); }} type="button">Remove</button>
+            <button aria-label={`Remove ${resource.title}`} className={OPERATOR_BUTTON_CLASS} disabled={pending !== null || Boolean(selectedResourceAssignment)} onClick={() => { setResourceAssignmentId(resource.assignmentId); setResourceNotice(null); }} type="button">Remove</button>
           </li>)}
         </ul> : <p className="text-sm text-[color:var(--operator-muted)]">No resources shared yet.</p>}
         {selectedResourceAssignment ? <form className="space-y-3 rounded-none bg-[var(--operator-surface-muted)] p-4" onSubmit={endResource}>
           <input name="assignmentId" type="hidden" value={selectedResourceAssignment} />
           <p className="text-sm text-[color:var(--operator-muted)]">Remove {currentResourceAssignments.find((resource) => resource.assignmentId === selectedResourceAssignment)?.title} from this Circle? Members will no longer see it here. Its version history is kept.</p>
-          <div className="flex flex-wrap gap-3"><button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null} type="submit">{pending === "resource-end" ? "Removing…" : "Confirm removal"}</button><button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => setResourceAssignmentId("")} type="button">Cancel</button></div>
+          <div className="flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} type="submit">{pending === "resource-end" ? "Removing…" : "Confirm removal"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => setResourceAssignmentId("")} type="button">Cancel</button></div>
         </form> : null}
         {addingResource ? <form className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] p-4" onSubmit={assignResource}>
           <input name="circleId" type="hidden" value={selectedResourceCircle} />
@@ -444,7 +442,7 @@ export default function OpsCircleManagementActions({
           </label>
           {!resources.length ? <p className="text-sm text-[color:var(--operator-muted)]">No published resources yet. <Link className="underline underline-offset-4" href="/ops/academy">Open Academy</Link> to publish one.</p> : null}
           <label className="flex items-center gap-3 text-sm text-[color:var(--operator-muted)]"><input className="size-4 accent-[var(--color-poster)]" checked={selectedPinned} onChange={(event) => setPinned(event.target.checked)} name="isPinned" type="checkbox" />Pin this resource first</label>
-          <div className="flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null || !selectedResourceCircle || !selectedResource} type="submit">{pending === "resource-assign" ? "Adding…" : "Share resource"}</button><button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending !== null} onClick={() => { setAddingResource(false); setResourceId(""); setResourceVersionId(""); setPinned(false); }} type="button">Cancel</button></div>
+          <div className="flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null || !selectedResourceCircle || !selectedResource} type="submit">{pending === "resource-assign" ? "Adding…" : "Share resource"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => { setAddingResource(false); setResourceId(""); setResourceVersionId(""); setPinned(false); }} type="button">Cancel</button></div>
         </form> : null}
         <ActionNotice notice={resourceNotice} />
       </>}
@@ -491,7 +489,7 @@ export default function OpsCircleManagementActions({
               ))}
             </select>
           </label>
-          <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || !selectedShaperAssignment} type="submit">
+          <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null || !selectedShaperAssignment} type="submit">
             {pending === "shaper-end" ? "Removing" : "Remove Circle Supporter"}
           </button>
         </form> : <p className="mt-4 text-sm text-[color:var(--operator-muted)]">No Circle Supporter assigned yet.</p>}
@@ -543,7 +541,7 @@ export default function OpsCircleManagementActions({
               ))}
             </select>
           </label>
-          <button className={SECONDARY_BUTTON_CLASS} disabled={pending !== null || !selectedResourceAssignment} type="submit">
+          <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null || !selectedResourceAssignment} type="submit">
             {pending === "resource-end" ? "Removing" : "Remove resource"}
           </button>
         </form> : <p className="mt-4 text-sm text-[color:var(--operator-muted)]">No resources shared yet.</p>}

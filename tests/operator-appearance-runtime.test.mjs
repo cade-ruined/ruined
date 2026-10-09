@@ -27,6 +27,7 @@ const dependencies = (react, pathname) => ({
   "next/link": { __esModule: true, default: "a" },
   "next/image": { __esModule: true, default: "img" },
   "@/components/platform/MemberNavigationFab": { __esModule: true, default: "member-navigation" },
+  "@/components/platform/operatorStyles": compile("src/components/platform/operatorStyles.ts", {}),
   "@/lib/platform/operations-navigation": navigation,
   "@/lib/site": { publicWebsiteHref: (path) => `https://theruinedproject.com${path}` },
 });

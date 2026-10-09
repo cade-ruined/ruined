@@ -22,7 +22,7 @@ export default function OperatorDirectInvitations({ data, directoryParams = {}, 
     return `/ops/members?${params.toString()}#direct-invitations`;
   }
   return <section id="direct-invitations" className="scroll-mt-32" aria-labelledby="direct-invitations-title">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="direct-invitations-title" className="ui-heading text-base font-semibold">Ruined Direct invitations</h3><button className="min-h-11 text-sm underline underline-offset-4" type="button" onClick={() => router.refresh()}>Refresh list</button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="direct-invitations-title" className="ui-heading text-base font-semibold">Ruined Direct invitations</h3><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => router.refresh()}>Refresh list</button></div>
     <p className="mt-2 max-w-3xl text-sm text-[color:var(--operator-muted)]">Personal invitations requested through online signup. These are tracked separately from member referrals. Accepted means email verified; Joined means membership activated.</p>
     {preview ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Example records. No invitations were sent.</p> : null}
     {data ? <>

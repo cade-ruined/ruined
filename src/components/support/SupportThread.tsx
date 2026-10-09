@@ -6,7 +6,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorDialog from "@/components/platform/OperatorDialog";
-import { OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import SupportDeliveryStatus from "@/components/support/SupportDeliveryStatus";
 import { SupportPreviewNotice, SupportStatusBadge, supportDate } from "@/components/support/SupportShared";
 import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
@@ -138,7 +138,7 @@ export default function SupportThread({ initialTicket, writable, operator = fals
         <Title className={operator ? "operator-record-title break-words [overflow-wrap:anywhere]" : "ui-heading max-w-4xl break-words text-[clamp(2rem,4vw,3.4rem)] font-bold uppercase leading-[0.98] tracking-[-0.04em] [overflow-wrap:anywhere]"}>{ticket.subject}</Title>
         {operator ? <p className="mt-2 break-all text-sm text-[color:var(--operator-muted)]">{ticket.requesterName} · {ticket.requesterEmail}</p> : null}
         </div>
-        {operator ? <nav aria-label="Request actions" className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm"><a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#support-reply">Reply to member</a><button className={SUPPORT_LINK_CLASS} id="support-status-trigger" onClick={() => setEditingStatus(true)} type="button">Update status</button><Link className={SUPPORT_LINK_CLASS} href={`/ops/members?q=${encodeURIComponent(ticket.requesterEmail)}`}>Find member record</Link></nav> : null}
+        {operator ? <nav aria-label="Request actions" className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm"><a className={OPERATOR_PRIMARY_ACTION_CLASS} href="#support-reply">Reply to member</a><button className={OPERATOR_BUTTON_CLASS} id="support-status-trigger" onClick={() => setEditingStatus(true)} type="button">Update status</button><Link className={SUPPORT_LINK_CLASS} href={`/ops/members?q=${encodeURIComponent(ticket.requesterEmail)}`}>Find member record</Link></nav> : null}
       </header>
       {operator ? <dl className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[color:var(--operator-muted)]"><div className="flex gap-2"><dt>Opened</dt><dd><time dateTime={ticket.createdAt}>{supportDate(ticket.createdAt, true)} MT</time></dd></div><div className="flex gap-2"><dt>Last activity</dt><dd><time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt, true)} MT</time></dd></div></dl> : null}
       <div>
@@ -154,13 +154,13 @@ export default function SupportThread({ initialTicket, writable, operator = fals
           {operator && ticket.emailDeliveries ? <SupportDeliveryStatus deliveries={ticket.emailDeliveries} writable={writable} pending={pending !== null} onRetry={retryEmail} onRefresh={() => router.refresh()} /> : null}
         </div>
       </div>
-      {error && !editingStatus ? <div data-operator-tone={operator ? "error" : undefined} className={`mt-5 max-w-xl text-sm leading-relaxed ${operator ? "operator-emphasis border border-[var(--operator-line)] bg-[var(--operator-error)] px-4 py-3 text-[color:var(--operator-ink)]" : "text-[var(--color-poster)]"}`} role="alert"><p>{error}</p>{conflict ? <button className={SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
+      {error && !editingStatus ? <div data-operator-tone={operator ? "error" : undefined} className={`mt-5 max-w-xl text-sm leading-relaxed ${operator ? "operator-emphasis border border-[var(--operator-line)] bg-[var(--operator-error)] px-4 py-3 text-[color:var(--operator-ink)]" : "text-[var(--color-poster)]"}`} role="alert"><p>{error}</p>{conflict ? <button className={operator ? OPERATOR_BUTTON_CLASS : SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
       {notice ? <p data-operator-tone={operator ? "success" : undefined} className={`mt-5 text-sm ${operator ? "operator-emphasis border border-[var(--operator-line)] bg-[var(--operator-success)] px-4 py-3 text-[color:var(--operator-ink)]" : "text-[var(--color-verdigris)]"}`} role="status">{notice}</p> : null}
       {operator && editingStatus ? <OperatorDialog open title="Update request status" onClose={closeStatusEditor} pending={pending !== null} returnFocusId="support-status-trigger">
         <form id="support-request-status" data-operator-dirty={status !== ticket.status} data-operator-pending={pending !== null} onSubmit={updateStatus}>
           <label><span className="operator-compact-label">Status</span><select aria-describedby="support-status-help" className={OPERATOR_FIELD_CLASS} disabled={!writable || pending !== null} onChange={(event) => setStatus(event.target.value as SupportStatus)} value={status}>{SUPPORT_STATUSES.map((item) => <option key={item.value} value={item.value}>{supportStatusLabel(item.value, true)}</option>)}</select></label>
           <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]" id="support-status-help">{status === "waiting_on_member" ? "Use after asking the member for information. Send your reply separately." : status === "resolved" ? "Use when the request is handled. This does not send a closing reply." : status === "in_progress" ? "Use while Ruined is working on the request." : "A new request waiting for an operator to review."}</p>
-          {error ? <div className="operator-emphasis mt-3 border border-[var(--operator-line)] bg-[var(--operator-error)] px-4 py-3 text-sm text-[color:var(--operator-ink)]" data-operator-tone="error" role="alert"><p>{error}</p>{conflict ? <button className={SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
+          {error ? <div className="operator-emphasis mt-3 border border-[var(--operator-line)] bg-[var(--operator-error)] px-4 py-3 text-sm text-[color:var(--operator-ink)]" data-operator-tone="error" role="alert"><p>{error}</p>{conflict ? <button className={operator ? OPERATOR_BUTTON_CLASS : SUPPORT_LINK_CLASS} onClick={() => router.refresh()} type="button">Reload request</button> : null}</div> : null}
           <button className={`${operator ? OPERATOR_PRIMARY_ACTION_CLASS : SUPPORT_ACTION_CLASS} mt-4`} disabled={!writable || pending !== null || status === ticket.status || conflict} type="submit">{pending === "status" ? "Saving…" : "Save status"}</button>
         </form>
       </OperatorDialog> : null}

@@ -82,8 +82,6 @@ function Notice({ notice }: { notice: ActionNotice }) {
 
 const INPUT_CLASS = OPERATOR_FIELD_CLASS;
 const BUTTON_CLASS = OPERATOR_BUTTON_CLASS;
-const SECONDARY_BUTTON_CLASS =
-  "min-h-12 rounded-none border border-[color:var(--operator-ink)]/35 bg-[var(--operator-surface)] px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-[color:var(--operator-muted)] hover:border-[color:var(--operator-ink)] hover:text-[color:var(--operator-ink)] disabled:cursor-not-allowed disabled:border-[color:var(--operator-ink)]/15 disabled:text-[color:var(--operator-ink)]/25";
 
 export function OpsInvitationActions({ preview = false, onSaved }: { preview?: boolean; onSaved?: () => void } = {}) {
   const sampleEmail = "sample.member@example.com";
@@ -310,7 +308,7 @@ export function OpsInvitationActions({ preview = false, onSaved }: { preview?: b
                 : <p role="status" className="text-[var(--operator-danger)]">Allow this email again before sharing. An expired allowance cannot start a new member account.</p>}
               <div className="flex flex-wrap gap-3">
                 <button className={BUTTON_CLASS} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("message")} type="button">{copying === "message" ? "Copying…" : "Copy message"}</button>
-                <button className={`${BUTTON_CLASS} !bg-[var(--operator-surface)] !text-[color:var(--operator-ink)]`} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("link")} type="button">{copying === "link" ? "Copying…" : "Copy link"}</button>
+                <button className={OPERATOR_BUTTON_CLASS} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("link")} type="button">{copying === "link" ? "Copying…" : "Copy link"}</button>
               </div>
               <Notice notice={copyNotice} />
               {canShare ? <><label className="block" htmlFor="member-share-message"><span className="font-semibold">Message to share</span>
@@ -325,13 +323,13 @@ export function OpsInvitationActions({ preview = false, onSaved }: { preview?: b
         </li>
       </ol>
       <div className="mt-8">
-        <button aria-expanded={Boolean(revokeEmail)} className="min-h-11 text-sm text-[color:var(--operator-muted)] underline underline-offset-4 disabled:opacity-40" disabled={Boolean(pending)} onClick={reviewRevocation} type="button">Remove a pending allowance</button>
+        <button aria-expanded={Boolean(revokeEmail)} className={OPERATOR_BUTTON_CLASS} disabled={Boolean(pending)} onClick={reviewRevocation} type="button">Remove a pending allowance</button>
         {revokeEmail ? <section aria-label="Confirm pending allowance removal" className="mt-3 space-y-3 rounded-none bg-[var(--operator-surface-muted)] p-4 text-sm">
           <p className="break-words">Remove pending joining access for <strong>{revokeEmail}</strong>?</p>
           <p className="text-[color:var(--operator-muted)]">This does not delete a member account, end a membership, or change operator access.</p>
           <div className="flex flex-wrap gap-3">
             <button className={BUTTON_CLASS} disabled={Boolean(pending)} onClick={() => void confirmRevocation()} type="button">{pending === "revoke" ? "Removing…" : "Confirm removal"}</button>
-            <button className={`${BUTTON_CLASS} !bg-[var(--operator-surface)] !text-[color:var(--operator-ink)]`} disabled={Boolean(pending)} onClick={() => { revokeEmailRef.current = null; setRevokeEmail(null); }} type="button">Keep allowance</button>
+            <button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(pending)} onClick={() => { revokeEmailRef.current = null; setRevokeEmail(null); }} type="button">Keep allowance</button>
           </div>
         </section> : null}
       </div>
@@ -761,7 +759,7 @@ export function OpsCircleActions({
               </select>
             </label>
             <button
-              className={SECONDARY_BUTTON_CLASS}
+              className={OPERATOR_BUTTON_CLASS}
               disabled={endingAssignment || assignedMembers.length === 0}
               type="submit"
             >
@@ -1039,7 +1037,7 @@ export function OpsBlockActions({
         <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm capitalize text-[color:var(--operator-muted)]">{selectedBlock.status} · {selectedBlock.currentCircles} {selectedBlock.currentCircles === 1 ? "Circle" : "Circles"}</p>{acceptingBlocks.some((block) => block.id === selectedBlock.id) ? <button className={BUTTON_CLASS} onClick={() => setTask("assign")} type="button">Add a Circle</button> : null}</div>
         <div className="space-y-2">{selectedBlock.circles.length ? selectedBlock.circles.map((circle) => <Link className="operator-glass flex min-h-14 items-center justify-between gap-4 rounded-none px-4 text-sm font-semibold" href={`/ops/circles?circleId=${circle.id}`} key={circle.id}>{circle.name}<span aria-hidden="true">→</span></Link>) : <p className="operator-glass rounded-none p-5 text-sm text-[color:var(--operator-muted)]">No Circles assigned yet.</p>}</div>
         {selectedBlock.status === "forming" ? <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[color:var(--operator-muted)]">{selectedBlock.currentCircles < 2 ? `Add ${2 - selectedBlock.currentCircles} more ${selectedBlock.currentCircles === 1 ? "Circle" : "Circles"} before activating.` : "Two or more Circles are assigned. Activate when the group is ready."}</p><button className={BUTTON_CLASS} disabled={selectedBlock.currentCircles < 2} onClick={() => setTask("activate")} type="button">Activate Block</button></div> : null}
-        {assignedCircles.length ? <button className="min-h-11 text-sm text-[var(--operator-danger)] underline underline-offset-4" onClick={() => setTask("end")} type="button">Remove a Circle</button> : null}
+        {assignedCircles.length ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => setTask("end")} type="button">Remove a Circle</button> : null}
       </> : null}
       {task === "create" ? <section id="create-block" aria-label="Create Block">
         <p className="mb-4 text-sm text-[color:var(--operator-muted)]">Name the Block. You can add its Circles next.</p>

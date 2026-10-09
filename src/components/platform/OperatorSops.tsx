@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import OperatorPageFrame from "./OperatorPageFrame";
 import StateLabel from "./StateLabel";
-import { OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "./operatorStyles";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "./operatorStyles";
 import type { OpsSopSnapshot } from "@/lib/platform/ops-sop-model";
 
 function updatedLabel(iso: string) {
@@ -41,7 +41,7 @@ export default function OperatorSops({ library, preview = false }: { library: Op
       </div>
       <div className="my-4 flex min-h-7 flex-wrap items-center justify-between gap-3">
         <p aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{procedures.length} {procedures.length === 1 ? "procedure" : "procedures"}{category ? ` · ${category}` : ""}</p>
-        {filtering ? <button className="min-h-11 text-sm underline underline-offset-4" onClick={() => { setQuery(""); setCategory(""); setStatus("current"); }} type="button">Clear filters</button> : null}
+        {filtering ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => { setQuery(""); setCategory(""); setStatus("current"); }} type="button">Clear filters</button> : null}
       </div>
       {procedures.length ? <ul className="grid list-none gap-3 p-0 md:grid-cols-2 xl:grid-cols-3">
         {procedures.map((procedure) => <li className="min-w-0" key={procedure.id}>
@@ -54,7 +54,7 @@ export default function OperatorSops({ library, preview = false }: { library: Op
       </ul> : <div className="rounded-none border border-dashed border-[color:var(--operator-ink)]/20 bg-[var(--operator-surface)] px-6 py-12 text-center">
         <h2 className="text-xl font-semibold">{filtering ? "No matching procedures." : "A place for the way we work."}</h2>
         <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[color:var(--operator-muted)]">{filtering ? "Try another search or clear your filters." : library.canManage ? "Create your first SOP. Write the steps here or link an existing document, then publish it for the team." : "Published procedures will appear here when an administrator adds them."}</p>
-        {!filtering && library.canManage ? <Link className="mt-5 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href="/ops/sops/new">Create the first SOP ↗</Link> : null}
+        {!filtering && library.canManage ? <Link className={`${OPERATOR_BUTTON_CLASS} mt-5`} href="/ops/sops/new">Create the first SOP ↗</Link> : null}
       </div>}
     </section>
   </OperatorPageFrame>;

@@ -26,7 +26,7 @@ import type {
   OpsExperienceRosterItem,
 } from "@/lib/platform/ops-experience-model";
 
-const quietButton = "min-h-11 rounded-none bg-[var(--operator-surface-muted)] px-4 text-xs font-bold text-[color:var(--operator-muted)] transition hover:bg-[var(--operator-surface-hover)] disabled:opacity-40";
+const iconButton = "min-h-11 rounded-none bg-[var(--operator-surface-muted)] px-4 text-xs font-bold text-[color:var(--operator-muted)] transition hover:bg-[var(--operator-surface-hover)] disabled:opacity-40";
 
 function FormField({
   children,
@@ -169,7 +169,7 @@ function RosterRow({
               </select>
             </FormField>
             <button
-              className={quietButton}
+              className={OPERATOR_BUTTON_CLASS}
               disabled={pending || attendanceChoice === (item.attendanceState ?? "revoked")}
               onClick={() => attendance(attendanceChoice)}
               type="button"
@@ -197,10 +197,10 @@ function RosterRow({
                 <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => roster("promote")} type="button">Confirm place</button>
               ) : null}
               {item.status === "registered" ? (
-                <button className={quietButton} disabled={pending} onClick={() => roster("waitlist")} type="button">Move to waitlist</button>
+                <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => roster("waitlist")} type="button">Move to waitlist</button>
               ) : null}
               <button
-                className={`${OPERATOR_BUTTON_CLASS} !border-[var(--color-poster)] !bg-[var(--color-poster)]`}
+                className={OPERATOR_BUTTON_CLASS}
                 disabled={pending}
                 onClick={() => roster("cancel")}
                 type="button"
@@ -406,9 +406,9 @@ export default function OperatorExperienceRecord({
           <div className="mt-2"><StateLabel state={experience.state} /></div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canEditDetails ? <button id="edit-experience-trigger" className={quietButton} disabled={pending} onClick={openDetails} type="button">Edit</button> : null}
+          {canEditDetails ? <button id="edit-experience-trigger" className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={openDetails} type="button">Edit</button> : null}
           {experience.canEdit && experience.state === "draft" ? <button id="publish-experience-trigger" className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => { setError(null); setReviewingPublish(true); }} type="button">Review & publish</button> : null}
-          {experience.canEdit ? <button id="event-options-trigger" aria-label="Event actions" className={`${quietButton} !px-3`} disabled={pending} onClick={() => { setError(null); setEventOptionsOpen(true); }} type="button"><span aria-hidden="true">•••</span></button> : null}
+          {experience.canEdit ? <button id="event-options-trigger" aria-label="Event actions" className={`${iconButton} !px-3`} disabled={pending} onClick={() => { setError(null); setEventOptionsOpen(true); }} type="button"><span aria-hidden="true">•••</span></button> : null}
         </div>
       </header>
 
@@ -504,9 +504,9 @@ export default function OperatorExperienceRecord({
               <p className="text-sm font-medium">{experience.title}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {experience.state === "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("complete")} type="button">Complete</button> : null}
-                {["draft", "cancelled", "completed"].includes(experience.state) ? <button className={quietButton} disabled={pending} onClick={() => lifecycle("archive")} type="button">Archive</button> : null}
+                {["draft", "cancelled", "completed"].includes(experience.state) ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => lifecycle("archive")} type="button">Archive</button> : null}
               </div>
-              {experience.state === "published" && !reviewingCancellation ? <button className="mt-3 min-h-11 px-2 text-sm text-[var(--operator-danger)] underline underline-offset-4" disabled={pending} onClick={() => setReviewingCancellation(true)} type="button">Cancel Experience</button> : null}
+              {experience.state === "published" && !reviewingCancellation ? <button className={`${OPERATOR_BUTTON_CLASS} mt-3`} disabled={pending} onClick={() => setReviewingCancellation(true)} type="button">Cancel Experience</button> : null}
               {experience.state === "published" && reviewingCancellation ? (
                 <form className="mt-4 grid gap-2" data-operator-dirty={cancellationDirty ? "true" : "false"} onChange={() => setCancellationDirty(true)} onSubmit={(event) => {
                   event.preventDefault();
@@ -517,8 +517,8 @@ export default function OperatorExperienceRecord({
                   <FormField label="Cancellation reason">
                     <input className={OPERATOR_FIELD_CLASS} minLength={3} name="reason" required />
                   </FormField>
-                  <button className={`${OPERATOR_BUTTON_CLASS} !border-[var(--color-poster)] !bg-[var(--color-poster)]`} disabled={pending} type="submit">Confirm cancellation</button>
-                  <button className="min-h-11 px-2 text-sm underline underline-offset-4" disabled={pending} onClick={() => { setReviewingCancellation(false); setCancellationDirty(false); }} type="button">Keep Experience</button>
+                  <button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="submit">Confirm cancellation</button>
+                  <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => { setReviewingCancellation(false); setCancellationDirty(false); }} type="button">Keep Experience</button>
                 </form>
               ) : null}
               {!['draft', 'published', 'cancelled', 'completed'].includes(experience.state) ? <p className="mt-3 text-sm text-[color:var(--operator-muted)]">This event is archived.</p> : null}
