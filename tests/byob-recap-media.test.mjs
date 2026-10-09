@@ -7,23 +7,32 @@ import ts from 'typescript';
 import sharp from 'sharp';
 const root=path.resolve(import.meta.dirname,'..');
 
-test('October BYOB has its own signup after the two recap events',async()=>{
+test('completed BYOB dates retain their history while November is announced without registration',async()=>{
  const source=await readFile(path.join(root,'src/data/events.ts'),'utf8');
  const {outputText}=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}});
  const exports={};
  vm.runInNewContext(outputText,{exports,require:()=>({BYOB_01_GALLERY:[{src:'/events/byob-01/gallery/01-img-8059.webp?v=1'}]})});
  const events=JSON.parse(JSON.stringify(exports.EVENTS));
- assert.deepEqual(events.map(e=>[e.id,e.status]),[['byob-01','Ended'],['byob-02','Ended'],['byob-03','Upcoming']]);
+ assert.deepEqual(events.map(e=>[e.id,e.status]),[['byob-01','Ended'],['byob-02','Ended'],['byob-03','Ended'],['byob-04','Upcoming']]);
+ assert.deepEqual(events.slice(0,3).map(e=>e.dateTime),[
+  '2026-08-14T14:00:00.000Z','2026-09-11T14:00:00.000Z','2026-10-09T14:00:00.000Z',
+ ]);
  const recap=events.find(e=>e.id==='byob-02');
  assert.equal(recap.video,'/events/byob-02-recap.mp4');
  assert.equal(recap.videoPoster,'/events/byob-02-recap-poster.webp');
  assert.equal(recap.image,recap.videoPoster);
  assert.equal(recap.registration.status,'Closed');
- const upcoming=events.find(e=>e.id==='byob-03');
+ const october=events.find(e=>e.id==='byob-03');
+ assert.equal(october.time,'8:00 AM MDT');
+ assert.equal(october.location,'Tibble Fork Reservoir · Hill south of the parking lot');
+ assert.deepEqual(october.registration,{href:'/community/byob-03/register',label:'Register',status:'Closed'});
+ const upcoming=events.find(e=>e.id==='byob-04');
  assert.equal(upcoming.image,'/events/byob-key-art.png');
- assert.equal(upcoming.dateTime,'2026-10-09T14:00:00.000Z');
+ assert.equal(upcoming.date,'13 November 2026');
+ assert.equal(upcoming.dateOnly,true);
+ assert.equal(upcoming.time,'Details to come');
  assert.equal(upcoming.timezone,'America/Denver');
- assert.deepEqual(upcoming.registration,{href:'/community/byob-03/register',label:'Register',status:'Open'});
+ assert.equal(upcoming.registration,undefined);
 });
 
 test('BYOB02 recap has web-sized media with playback metadata at the front',async()=>{

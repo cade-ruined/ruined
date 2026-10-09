@@ -99,6 +99,29 @@ test("canonical listings retain exact legacy labels/gallery while filtering priv
   assert.doesNotMatch(JSON.stringify(publicEvents), /never expose|private_note|version|email_normalized/);
 });
 
+test("November's date announcement follows the completed October gathering without claiming a start time", async (t) => {
+  const f = await fixture(t);
+  const events = await f.repository.getPublicCommunityEvents();
+  assert.deepEqual(events.filter((event) => event.status !== "Ended").map((event) => event.id), ["byob-04"]);
+  const october = events.find((event) => event.id === "byob-03");
+  assert.equal(october.status, "Ended");
+  assert.equal(october.registration.status, "Closed");
+  const november = events.find((event) => event.id === "byob-04");
+  assert.equal(november.date, "13 November 2026");
+  assert.equal(new Date(november.dateTime).getUTCDay(), 5);
+  assert.equal(november.dateOnly, true);
+  assert.equal(november.time, "Details to come");
+  assert.equal(november.location, "Details to come");
+  assert.equal(november.registration, undefined);
+  assert.match(november.summary, /Time, location, and registration details coming soon/);
+  await assert.rejects(f.repository.assertCommunityEventRegistrationOpen(f.sql, "byob-03"),
+    (error) => error instanceof f.repository.CommunityEventRegistrationClosedError);
+  await f.db.exec("update community_event_listings set starts_at='2026-11-13T15:00:00Z' where event_key='byob-04'");
+  const scheduled = (await f.repository.getPublicCommunityEvents()).find((event) => event.id === "byob-04");
+  assert.equal(scheduled.dateOnly, undefined, "An operator's confirmed time replaces the date-only announcement");
+  assert.equal(scheduled.time, "8:00 AM MST");
+});
+
 test("draft/archived and intentionally empty published sets never revive static defaults", async (t) => {
   const f = await fixture(t);
   await f.db.exec("update community_event_listings set publication_state='draft' where event_key='byob-02'");

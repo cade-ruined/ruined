@@ -35,6 +35,7 @@ export function studioEventFromCommunityEvent(record: CommunityEventInput): Stud
     ...base,
     id: record.eventKey, title: record.title, eyebrow: record.eyebrow,
     dateTime: date.toISOString(), timezone: record.timezone,
+    dateOnly: unchangedDate ? base.dateOnly : undefined,
     date: unchangedDate ? base.date : new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: record.timezone }).format(date),
     time: unchangedDate ? base.time : new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: record.timezone }).format(date),
     location: record.location, admission: record.admission, summary: record.summary,

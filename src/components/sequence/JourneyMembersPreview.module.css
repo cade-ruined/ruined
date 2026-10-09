@@ -1,52 +1,21 @@
-.shell { display: grid; justify-items: end; width: 100%; }
-.preview {
-  position: relative;
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, .85fr) minmax(0, 1fr);
-  align-items: center;
-  gap: clamp(32px, 5vw, 64px);
-  max-height: var(--members-panel-max-height, calc(100dvh - var(--ruined-header-height, 4.5rem) - var(--bottom-menu-h, 0px) - 2.5rem));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  touch-action: pan-y pinch-zoom;
-  padding: 8px 10px 12px;
-  color: var(--color-bone);
-  scrollbar-width: thin;
-  scrollbar-color: rgb(229 224 213 / .45) transparent;
-}
-.preview[hidden], .reopen[hidden] { display: none; }
-.close { position: absolute; top: 6px; right: 6px; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--color-bone); color: var(--color-faded); cursor: pointer; }
-.close:hover { background: var(--color-signal); }
-.close:focus-visible { outline: 2px solid var(--color-verdigris); outline-offset: -4px; }
-.reopen { display: inline-flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 48px; border: 0; border-radius: 4px; padding: 12px 18px; background: var(--color-bone); color: var(--color-faded); box-shadow: 4px 4px 0 rgb(0 0 0 / .6); font: 750 13px/1.25 var(--font-body); cursor: pointer; }
-.reopen span { font-size: 20px; font-weight: 400; }
-.reopen:hover { background: var(--color-signal); }
-.reopen:focus-visible { outline: 3px solid var(--color-signal); outline-offset: 5px; }
-.film { width: min(100%, 17rem); margin: 0 auto; }
-.video { display: block; width: 100%; height: auto; aspect-ratio: 9 / 16; object-fit: cover; object-position: center 68%; background: #111; border-radius: 3px; }
-.video:fullscreen { object-fit: contain; }
-.video:focus-visible { outline: 2px solid var(--color-verdigris); outline-offset: 4px; }
-.copy { min-width: 0; width: 100%; max-width: 27rem; justify-self: end; padding: clamp(22px, 2.2vw, 28px); border-radius: 5px; background: var(--color-bone) url('/textures/member-paper.svg') center / 512px; color: var(--color-faded); box-shadow: 7px 8px 0 rgb(0 0 0 / .6); }
-.copy h2 { margin: 0; max-width: 18ch; font: 800 clamp(28px, 3vw, 40px)/.98 var(--font-header); letter-spacing: -.055em; text-transform: uppercase; text-wrap: balance; }
-.signup { display: grid; gap: 16px; min-width: 0; margin-top: 20px; }
-.invitation { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 12px 14px; background: var(--color-faded); color: var(--color-bone); font: 650 13px/1.35 var(--font-body); text-decoration: none; }
-.invitation span { flex-shrink: 0; font-size: 20px; font-weight: 400; }
-.invitation:hover { background: var(--color-signal); color: var(--color-faded); }
-.invitation:focus-visible { outline: 3px solid var(--color-verdigris); outline-offset: 4px; }
-.signup form { margin-top: 0; max-width: none; gap: 0; }
-.copy .signup fieldset { gap: 12px; }
-.signup [role='status']:not(:empty), .signup [role='alert'] { margin-top: 12px; }
+.shell { container-type: inline-size; width: min(100%, 56rem); margin-left: auto; }
+.preview { display: block; width: 100%; padding: 0; border: 1px solid rgb(238 231 215 / .35); border-radius: 2px; overflow: hidden; text-align: left; color: #fff9ed; background: #171816; box-shadow: 9px 10px 0 rgb(0 0 0 / .35); cursor: pointer; }
+.hero { position: relative; display: flex; width: 100%; align-items: center; min-height: min(15rem, calc(var(--members-panel-max-height, 75dvh) - 3.25rem)); aspect-ratio: 3.1; max-height: calc(var(--members-panel-max-height, 75dvh) - 3.25rem); background: linear-gradient(90deg, rgb(16 24 24 / .46), transparent 68%), url('/membership/hero-couch-wide.jpg') center 76% / cover; }
+.copy { display: flex; flex-direction: column; align-items: flex-start; width: 54%; padding: clamp(16px, 4cqw, 36px); text-shadow: 0 1px 16px rgb(0 0 0 / .2); }
+.title { display: block; font: 800 clamp(24px, 5.3cqw, 50px)/.98 var(--font-header); letter-spacing: -.06em; }
+.handwritten { display: block; margin-top: .3em; color: #ffd52b; font: 400 clamp(22px, 3.9cqw, 35px)/1.05 var(--font-handwritten); }
+.description { display: block; margin-top: 20px; font: 500 clamp(11px, 1.6cqw, 14px)/1.5 var(--font-body); }
+.caption { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 3.25rem; padding: 10px clamp(16px, 4cqw, 36px); background: #e8e2d6 url('/textures/member-paper.svg') center / 512px; color: #242722; font: 700 14px/1.2 var(--font-body); }
+.arrow { font-size: 27px; font-weight: 400; transition: transform 180ms ease; }
+.preview:hover .arrow { transform: translate(3px, -3px); }
+.preview:focus-visible { outline: 3px solid #ffd52b; outline-offset: 6px; }
 @media (max-width: 640px) {
-  .preview { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 4px 8px 12px; }
-  .copy { max-width: none; padding: 18px 16px 16px; }
-  .copy h2 { max-width: 18ch; font-size: clamp(23px, 6.5vw, 30px); }
-  .signup { margin-top: 14px; }
-  .copy .signup fieldset { gap: 6px; }
-  .signup fieldset > div { grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 8px; }
-  .signup label { font-size: 9px; letter-spacing: .05em; }
-  .signup input { min-height: 36px; padding: 4px 0; font-size: 16px; }
-  .signup button[type='submit'] { width: 100%; min-height: 40px; padding: 8px 12px; margin-top: 4px; font-size: 11px; }
-  .signup button[type='submit'] span { font-size: 18px; }
-  .film { width: min(calc(100% - 88px), 13rem); }
+  .shell { width: 100%; }
+  .hero { min-height: min(14rem, calc(var(--members-panel-max-height, 75dvh) - 3.25rem)); aspect-ratio: 1.5; background-position: 58% 76%; }
+  .copy { width: 58%; padding: 18px 12px; }
+  .title { font-size: clamp(22px, 6.3cqw, 29px); }
+  .handwritten { max-width: 10ch; font-size: clamp(22px, 6.3cqw, 29px); }
+  .description { margin-top: 14px; font-size: 10.5px; }
+  .caption { padding: 10px 16px; }
 }
+@media (prefers-reduced-motion: reduce) { .arrow { transition: none; } }

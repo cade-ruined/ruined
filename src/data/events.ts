@@ -16,6 +16,8 @@ export type StudioEvent = {
   date: string;
   /** Absolute RFC 3339 instant. Timed events must include Z or a UTC offset. */
   dateTime: string;
+  /** The instant is only a date boundary for sorting; no start time is announced. */
+  dateOnly?: boolean;
   time: string;
   location: string;
   admission: string;
@@ -38,7 +40,7 @@ function secondFriday(year: number, month: number) {
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY[0]?.src ?? "/events/byob-key-art.png";
 
-export const EVENTS: StudioEvent[] = Array.from({ length: 3 }, (_, index) => {
+export const EVENTS: StudioEvent[] = Array.from({ length: 4 }, (_, index) => {
   const monthIndex = 7 + index;
   const year = 2026 + Math.floor(monthIndex / 12);
   const month = monthIndex % 12;
@@ -48,15 +50,16 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 3 }, (_, index) => {
   const isFirstEvent = index === 0;
   const id = `byob-${number}`;
   const isSecondEvent = index === 1;
-  const isRegistrationEvent = index > 0;
+  const isRegistrationEvent = index === 1 || index === 2;
+  const isDateAnnouncement = index === 3;
   return {
     id,
     title: `BYOB Nº ${number}`,
     eyebrow: "Monthly gathering",
     date: `${day} ${MONTHS[month]} ${year}`,
-    dateTime: isFirstEvent || isRegistrationEvent
-      ? `${isoDate}T14:00:00.000Z`
-      : `${isoDate}T18:00:00.000Z`,
+    // November's Denver date boundary is storage for ordering, not a call time.
+    dateTime: isDateAnnouncement ? `${isoDate}T07:00:00.000Z` : `${isoDate}T14:00:00.000Z`,
+    dateOnly: isDateAnnouncement || undefined,
     time: isFirstEvent
       ? "8:00 AM"
       : isRegistrationEvent
@@ -68,7 +71,9 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 3 }, (_, index) => {
         ? "Tibble Fork Reservoir · Hill south of the parking lot"
         : "Details to come",
     admission: "",
-    summary: "Bring Your Own (Bell or bodyweight).",
+    summary: isDateAnnouncement
+      ? "Bring Your Own (Bell or bodyweight). Time, location, and registration details coming soon."
+      : "Bring Your Own (Bell or bodyweight).",
     timezone: "America/Denver",
     image: isFirstEvent
       ? BYOB_01_FEATURE_IMAGE
@@ -82,9 +87,9 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 3 }, (_, index) => {
       ? {
           href: `/community/${id}/register`,
           label: "Register",
-          status: isSecondEvent ? "Closed" : "Open",
+          status: "Closed",
         }
       : undefined,
-    status: index < 2 ? "Ended" : "Upcoming",
+    status: index < 3 ? "Ended" : "Upcoming",
   };
 });
