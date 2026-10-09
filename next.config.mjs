@@ -137,7 +137,14 @@ const nextConfig = {
         // Email previews have an opaque sandbox origin; inboxes fetch these publicly.
         headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
       })),
-      { source: "/(.*)", headers: securityHeaders },
+      // Only the public landing embed may be framed by the main Ruined site.
+      // Authenticated pages, APIs, checkout, and the regular landing keep DENY.
+      { source: "/((?!membership/embed/?$).*)", headers: securityHeaders },
+      { source: "/membership/embed", headers: [
+        ...securityHeaders.filter(({ key }) => key !== "Content-Security-Policy" && key !== "X-Frame-Options"),
+        { key: "Content-Security-Policy", value: csp.replace("frame-ancestors 'none'", `frame-ancestors https://theruinedproject.com https://www.theruinedproject.com${isDev ? " http://localhost:3300 http://127.0.0.1:3300" : ""}`) },
+        { key: "X-Robots-Tag", value: "noindex, nofollow" },
+      ] },
       // Sandboxed Resend design previews inherit the parent image policy. Permit
       // template HTTPS assets only on the administrator email workspace.
       ...[

@@ -32,7 +32,7 @@ const MENU_ID = "site-navigation-menu";
 export default function SiteHeader() {
   const pathname = useBackgroundPathname();
   const menuTitleId = useId();
-  const isLanding = pathname.startsWith("/lp");
+  const isLanding = pathname.startsWith("/lp") || pathname === "/membership/embed";
   const isFoundations = pathname === "/foundations";
   const isPlatform =
     pathname === "/access" || pathname.startsWith("/my") || pathname.startsWith("/ops");

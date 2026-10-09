@@ -20,7 +20,7 @@ function memberDestination(value: unknown): string | null {
   } catch { return null; }
 }
 
-export default function DirectInvitationRequestForm({ billingPlan, onRequestStateChange, onRecipientNameChange, preview = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, compact = false }: {
+export default function DirectInvitationRequestForm({ billingPlan, onRequestStateChange, onRecipientNameChange, preview = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, compact = false, onVerified }: {
   billingPlan: MembershipBillingPlan;
   preview?: boolean;
   paymentSetupOnly?: boolean;
@@ -28,6 +28,7 @@ export default function DirectInvitationRequestForm({ billingPlan, onRequestStat
   compact?: boolean;
   onRequestStateChange: (locked: boolean) => void;
   onRecipientNameChange?: (name: string) => void;
+  onVerified?: (destination: string) => void;
 }) {
   const id = useId();
   const [name, setName] = useState(""), [email, setEmail] = useState("");
@@ -122,7 +123,8 @@ export default function DirectInvitationRequestForm({ billingPlan, onRequestStat
       if (attempt.signal.aborted) return;
       const destination = response.ok ? memberDestination(result?.redirectTo) : null;
       if (!destination) throw new Error(typeof result?.error === "string" ? result.error : "That code could not be verified. Try again or request a new code.");
-      window.location.assign(destination);
+      if (onVerified) onVerified(destination);
+      else window.location.assign(destination);
       navigating = true;
     } catch (failure) {
       if (!attempt.signal.aborted) setError(failure instanceof Error ? failure.message : "That code could not be verified. Please try again.");
