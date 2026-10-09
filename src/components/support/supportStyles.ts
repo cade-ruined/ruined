@@ -8,4 +8,4 @@ export const SUPPORT_ACTION_CLASS =
   "member-action inline-flex min-h-12 items-center justify-center gap-3 rounded-[4px] bg-[var(--color-faded)] px-5 py-3 [font-family:var(--font-body)] text-sm font-semibold text-[var(--color-bone)] shadow-[4px_4px_0_var(--color-poster)] transition-transform hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none";
 
 export const SUPPORT_LINK_CLASS =
-  "member-link inline-flex min-h-11 items-center gap-2 text-sm font-medium underline decoration-black/30 underline-offset-4 hover:decoration-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black";
+  "member-link inline-flex min-h-11 items-center gap-2 text-sm font-medium underline decoration-[color:var(--operator-ink,#000)]/30 underline-offset-4 hover:decoration-[color:var(--operator-ink,#000)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[color:var(--operator-focus,#000)]";

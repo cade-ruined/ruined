@@ -16,6 +16,11 @@ import {
 import { publicWebsiteHref } from "@/lib/site";
 
 type PlatformSurface = "member" | "ops";
+type OperatorAppearance = "system" | "paper" | "ink";
+const OPERATOR_APPEARANCE_KEY = "ruined-operator-appearance";
+function operatorAppearanceValue(value: string | null): OperatorAppearance {
+  return value === "paper" || value === "ink" ? value : "system";
+}
 
 function ConnectionMark({
   label,
@@ -129,14 +134,20 @@ function PlatformUtilityRail({
 }
 
 export function OperationsNavigation({
+  appearance = "system",
   configuration,
+  onAppearanceChange,
   operatorRole,
   pathname,
+  theme = "paper",
   viewerLabel,
 }: {
+  appearance?: OperatorAppearance;
   configuration: PlatformConfiguration;
+  onAppearanceChange?: (value: OperatorAppearance) => void;
   operatorRole?: OperatorNavigationRole | null;
   pathname: string;
+  theme?: "paper" | "ink";
   viewerLabel?: string | null;
 }) {
   const [accountOpen, setAccountOpen] = useState(false);
@@ -233,7 +244,7 @@ export function OperationsNavigation({
               {workspaceOpen ? (
                 <nav
                   aria-label="Operator workspaces"
-                  className="fixed inset-x-4 top-[calc(var(--ruined-header-height)+0.5rem)] max-h-[calc(100dvh-var(--ruined-header-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-none bg-[var(--color-bone)] p-2 text-[var(--color-faded)] shadow-[3px_3px_0_var(--color-faded)] sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.75rem)] sm:w-64"
+                  className="operator-workspaces-panel fixed inset-x-4 top-[calc(var(--ruined-header-height)+0.5rem)] max-h-[calc(100dvh-var(--ruined-header-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-none bg-[var(--color-bone)] p-2 text-[var(--color-faded)] shadow-[3px_3px_0_var(--color-faded)] sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.75rem)] sm:w-64"
                   id="ops-workspaces"
                 >
                   {groups.flatMap((group) => group.items.map((item) => ({ ...item, area: item.href === "/ops/work" ? "work" : group.id }))).map((item) => {
@@ -255,7 +266,22 @@ export function OperationsNavigation({
               ) : null}
             </div>
           ) : null}
-          <div className="relative ml-auto shrink-0" ref={accountRef}>
+          {onAppearanceChange ? <button
+            aria-checked={theme === "ink"}
+            aria-label="Dark mode"
+            className="operator-appearance-toggle ml-auto grid min-h-11 w-14 shrink-0 place-items-center p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-signal)]"
+            onClick={() => onAppearanceChange(theme === "paper" ? "ink" : "paper")}
+            role="switch"
+            title={`Switch to ${theme === "paper" ? "dark" : "light"} mode`}
+            type="button"
+          >
+            <span aria-hidden="true" className="operator-appearance-track">
+              <span className="operator-appearance-thumb" />
+              <svg className="operator-appearance-sun" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>
+              <svg className="operator-appearance-moon" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M20.5 13.4A8.6 8.6 0 0 1 10.6 3.5a8.6 8.6 0 1 0 9.9 9.9Z" /></svg>
+            </span>
+          </button> : null}
+          <div className={`relative shrink-0 ${onAppearanceChange ? "" : "ml-auto"}`} ref={accountRef}>
             <button
               aria-controls="ops-account"
               aria-expanded={accountOpen}
@@ -274,9 +300,10 @@ export function OperationsNavigation({
               <span aria-hidden="true" className={`hidden sm:inline ${accountOpen ? "rotate-180" : ""}`}>⌄</span>
             </button>
             {accountOpen ? (
-              <div aria-label="Operator account" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-2rem)] rounded-none bg-[var(--color-bone)] p-3 text-[var(--color-faded)] shadow-[4px_4px_0_var(--color-poster)]" id="ops-account" role="region">
+              <div aria-label="Operator account" className="operator-account-panel absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-2rem)] rounded-none bg-[var(--color-bone)] p-3 text-[var(--color-faded)] shadow-[4px_4px_0_var(--color-poster)]" id="ops-account" role="region">
                 <p className="break-words px-2 py-1 text-sm font-medium">{viewerLabel ?? "Operator"}</p>
-                <p className="px-2 pb-3 text-xs text-black/55">{preview ? "Preview workspace" : configuration.mode === "connected" ? "Signed in" : "Services unavailable"}</p>
+                <p className="px-2 pb-3 text-xs text-[color:var(--operator-muted)]">{preview ? "Preview workspace" : configuration.mode === "connected" ? "Signed in" : "Services unavailable"}</p>
+                {onAppearanceChange ? <label className="mb-2 block px-2 text-xs" htmlFor="operator-appearance">Appearance<select className="mt-2 min-h-11 w-full border border-[var(--operator-line)] bg-[var(--operator-surface)] px-2 text-sm text-[var(--operator-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--operator-focus)]" id="operator-appearance" onChange={(event) => onAppearanceChange(operatorAppearanceValue(event.target.value))} value={appearance}><option value="system">System</option><option value="paper">Light</option><option value="ink">Dark</option></select></label> : null}
                 <Link className="flex min-h-11 items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" href="/my">My profile</Link>
                 <Link className="flex min-h-11 items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" href={publicWebsiteHref("/")}>Return to website ↗</Link>
                 {viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post">
@@ -320,6 +347,38 @@ export default function PlatformShell({
   const pathname = usePathname();
   const preview = configuration.mode === "preview";
   const member = surface === "member";
+  const [operatorAppearance, setOperatorAppearance] = useState<OperatorAppearance>("system");
+  const [operatorSystemDark, setOperatorSystemDark] = useState(false);
+  const operatorTheme = operatorAppearance === "system" ? operatorSystemDark ? "ink" : "paper" : operatorAppearance;
+
+  useEffect(() => {
+    if (member) return;
+    try { setOperatorAppearance(operatorAppearanceValue(window.localStorage.getItem(OPERATOR_APPEARANCE_KEY))); }
+    catch { /* The theme still works for this visit when storage is unavailable. */ }
+    let media: MediaQueryList | null = null;
+    try { media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null; }
+    catch { /* Use the light system fallback if browser preferences are unavailable. */ }
+    const synchronize = () => setOperatorSystemDark(media?.matches ?? false);
+    synchronize();
+    if (typeof media?.addEventListener === "function") media.addEventListener("change", synchronize);
+    else media?.addListener?.(synchronize);
+    const storedAppearanceChanged = (event: StorageEvent) => {
+      if (event.key === OPERATOR_APPEARANCE_KEY || event.key === null) setOperatorAppearance(operatorAppearanceValue(event.newValue));
+    };
+    window.addEventListener("storage", storedAppearanceChanged);
+    return () => {
+      if (typeof media?.removeEventListener === "function") media.removeEventListener("change", synchronize);
+      else media?.removeListener?.(synchronize);
+      window.removeEventListener("storage", storedAppearanceChanged);
+    };
+  }, [member]);
+
+  function changeOperatorAppearance(value: OperatorAppearance) {
+    setOperatorAppearance(value);
+    try { window.localStorage.setItem(OPERATOR_APPEARANCE_KEY, value); }
+    catch { /* Keep the selected appearance in memory when storage is unavailable. */ }
+  }
+
   const operatorArea = member ? undefined : pathname === "/ops/work" ? "work" :
     getOperationsLocation(pathname, getOperationsNavigation(operatorRole))?.group.id ?? "workspace";
   const threshold = member && isMemberThreshold(pathname);
@@ -339,7 +398,7 @@ export default function PlatformShell({
     : memberHome || memberCircle || memberExperiences || memberLearning || memberSupport || memberSettings
       ? "member-profile-paper"
       : "";
-  const dark = !member || threshold || (foundations && !timeline);
+  const dark = member ? threshold || (foundations && !timeline) : operatorTheme === "ink";
 
   return (
     <div
@@ -351,6 +410,7 @@ export default function PlatformShell({
       data-platform-member-home={memberHome ? "true" : undefined}
       data-platform-surface={surface}
       data-operator-area={operatorArea}
+      data-operator-theme={member ? undefined : operatorTheme}
       data-platform-threshold={threshold ? "true" : undefined}
     >
       {member ? (
@@ -365,8 +425,11 @@ export default function PlatformShell({
       ) : (
         <OperationsNavigation
           configuration={configuration}
+          appearance={operatorAppearance}
+          onAppearanceChange={changeOperatorAppearance}
           operatorRole={operatorRole}
           pathname={pathname}
+          theme={operatorTheme}
           viewerLabel={viewerLabel}
         />
       )}

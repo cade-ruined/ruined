@@ -16,7 +16,7 @@ function ActionNotice({ notice }: { notice: Notice }) {
     <p
       aria-live="polite"
       className={`min-h-5 text-xs leading-relaxed ${
-        notice?.kind === "error" ? "text-[var(--operator-danger)]" : "text-black/70"
+        notice?.kind === "error" ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"
       }`}
       role={notice?.kind === "error" ? "alert" : "status"}
     >
@@ -80,10 +80,10 @@ export function OperatorNoteAction({ memberId, preview = false }: { memberId: st
       <fieldset className="grid min-w-0 gap-4" disabled={submitting}>
       <div className="flex items-baseline justify-between gap-4">
         <h3 className="ui-heading text-base font-semibold">Add note</h3>
-        <span className="text-xs text-black/70">Private</span>
+        <span className="text-xs text-[color:var(--operator-muted)]">Private</span>
       </div>
-      <p className="text-xs leading-relaxed text-black/70">Never shown on the member profile.</p>
-      {preview ? <p className="text-sm text-black/70">Preview — notes are not saved.</p> : null}
+      <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Never shown on the member profile.</p>
+      {preview ? <p className="text-sm text-[color:var(--operator-muted)]">Preview — notes are not saved.</p> : null}
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Category</span>
         <select className={OPERATOR_FIELD_CLASS} defaultValue="general" name="category">
@@ -153,7 +153,7 @@ export function OperatorTaskCreateAction({ memberId, preview = false }: { member
   return (
     <form className="grid gap-4" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
       <h3 className="ui-heading text-base font-semibold">Create a task</h3>
-      {preview ? <p className="text-sm text-black/70">Preview — tasks are not created.</p> : null}
+      {preview ? <p className="text-sm text-[color:var(--operator-muted)]">Preview — tasks are not created.</p> : null}
       <label className={OPERATOR_LABEL_CLASS}>
         <span className={OPERATOR_LABEL_TEXT_CLASS}>Title</span>
         <input className={OPERATOR_FIELD_CLASS} maxLength={200} minLength={3} name="title" required />
@@ -271,8 +271,8 @@ export function OperatorOverrideAction({
     <form className="grid gap-4" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
       <div>
         <h3 className="ui-heading text-base font-semibold">Record a state correction</h3>
-        {preview ? <p className="mt-2 text-sm text-black/70">Preview — member states are not changed.</p> : null}
-        <p className="mt-2 max-w-xl text-sm leading-relaxed text-black/70">
+        {preview ? <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Preview — member states are not changed.</p> : null}
+        <p className="mt-2 max-w-xl text-sm leading-relaxed text-[color:var(--operator-muted)]">
           Payment, agreements, and Foundations completion cannot be overridden here. Every correction keeps its actor, reason, and prior state.
         </p>
       </div>

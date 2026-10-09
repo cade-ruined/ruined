@@ -26,8 +26,8 @@ export default function OperatorSopBody({ body }: { body: string }) {
         index += 1;
       }
       blocks.push(ordered
-        ? <ol className="list-decimal space-y-2 pl-6 marker:text-black/45" key={start} start={Number(list[1])}>{items}</ol>
-        : <ul className="list-disc space-y-2 pl-6 marker:text-black/45" key={start}>{items}</ul>);
+        ? <ol className="list-decimal space-y-2 pl-6 marker:text-[color:var(--operator-muted)]" key={start} start={Number(list[1])}>{items}</ol>
+        : <ul className="list-disc space-y-2 pl-6 marker:text-[color:var(--operator-muted)]" key={start}>{items}</ul>);
       continue;
     }
     const start = index;

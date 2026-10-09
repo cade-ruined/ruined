@@ -23,7 +23,7 @@ export default function OperatorEmptyState({
         <h2 className="operator-section-heading max-w-2xl">
           {title}
         </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/70">{detail}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[color:var(--operator-muted)]">{detail}</p>
       </div>
       {actionHref && actionLabel ? (
         <Link

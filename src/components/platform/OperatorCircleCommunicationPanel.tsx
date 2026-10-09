@@ -28,8 +28,8 @@ export default function OperatorCircleCommunicationPanel({ circle, communication
       {chat ? <OperatorGoogleCommunicationField
         key={`chat-${circle.id}`} configured={chat.googleCommunicationsConfigured} editable={current} inline
         entityId={circle.id} entityType="circle" initialUrl={chat.chatUrl} kind="chat" preview={preview}
-        setupHelp={<details className="mt-2 text-sm text-black/65">
-          <summary className="min-h-11 cursor-pointer py-3 font-medium underline decoration-black/25 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2">Where do I find the link?</summary>
+        setupHelp={<details className="mt-2 text-sm text-[color:var(--operator-muted)]">
+          <summary className="min-h-11 cursor-pointer py-3 font-medium underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2">Where do I find the link?</summary>
           <ol className="ml-5 list-decimal space-y-1 pb-2 leading-relaxed">
             <li>Open your private space in Google Chat.</li>
             <li>Click the space name at the top.</li>
@@ -38,7 +38,7 @@ export default function OperatorCircleCommunicationPanel({ circle, communication
           <p className="leading-relaxed">Keep the space private. Add or invite the Circle’s participants in Google Chat separately.</p>
           <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="https://support.google.com/chat/answer/11971020?hl=en" rel="noreferrer" target="_blank">Google’s instructions ↗</a>
         </details>}
-      /> : <p className="rounded-none bg-[var(--operator-surface)] p-3 text-sm text-black/65" role="status">The saved chat link could not be loaded. Refresh this Circle before making changes.</p>}
+      /> : <p className="rounded-none bg-[var(--operator-surface)] p-3 text-sm text-[color:var(--operator-muted)]" role="status">The saved chat link could not be loaded. Refresh this Circle before making changes.</p>}
     </section>
     <section aria-label={`${circle.name} meetings`} className="operator-bento-card min-w-0">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -46,17 +46,17 @@ export default function OperatorCircleCommunicationPanel({ circle, communication
         {canSchedule ? <Link className={OPERATOR_PRIMARY_ACTION_CLASS} href={`${circleDirectory}#new-experience`}>Schedule a meeting</Link> : null}
       </div>
       {!directory ? <p role="status" className="mb-3 text-sm text-[var(--operator-danger)]">Meetings could not be loaded. Open Experiences to retry.</p> : visible.length ? <>
-        <p className="mb-2 text-xs font-semibold text-black/70">{upcoming.length ? "Upcoming & drafts" : "Most recent"}</p>
+        <p className="mb-2 text-xs font-semibold text-[color:var(--operator-muted)]">{upcoming.length ? "Upcoming & drafts" : "Most recent"}</p>
         <ul className="grid gap-2">{visible.map((meeting) => <li key={meeting.experienceId} className="rounded-none bg-[var(--operator-surface)] p-3">
-          <p className="text-xs text-black/70">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Denver" }).format(new Date(meeting.startsAt))} MT · {meeting.state === "draft" ? "Draft — not published" : meeting.state === "published" ? "Published" : "Completed"}</p>
+          <p className="text-xs text-[color:var(--operator-muted)]">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Denver" }).format(new Date(meeting.startsAt))} MT · {meeting.state === "draft" ? "Draft — not published" : meeting.state === "published" ? "Published" : "Completed"}</p>
           <h4 className="mt-1 text-base font-semibold">{meeting.title}</h4>
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold">
             <Link className="inline-flex min-h-11 items-center underline underline-offset-4" href={`/ops/experiences/${encodeURIComponent(meeting.experienceId)}#meeting-setup`}>Manage meeting →</Link>
           </div>
         </li>)}</ul>
-      </> : <p className="rounded-none bg-[var(--operator-surface)] p-3 text-sm text-black/65">No meetings scheduled for {circle.name} yet.</p>}
+      </> : <p className="rounded-none bg-[var(--operator-surface)] p-3 text-sm text-[color:var(--operator-muted)]">No meetings scheduled for {circle.name} yet.</p>}
       <Link className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={directory ? circleDirectory : "/ops/experiences"}>{directory ? "View all Circle meetings →" : "Open Experiences →"}</Link>
-      {!current ? <p className="mt-2 text-xs text-black/70">This Circle is closed. Existing meetings remain available for review.</p> : null}
+      {!current ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">This Circle is closed. Existing meetings remain available for review.</p> : null}
     </section>
   </div>;
 }

@@ -71,7 +71,7 @@ function Notice({ notice }: { notice: ActionNotice }) {
     <p
       aria-live="polite"
       className={`min-h-5 text-xs leading-relaxed ${
-        notice?.kind === "error" ? "text-[var(--operator-danger)]" : "text-black/70"
+        notice?.kind === "error" ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"
       }`}
       role={notice?.kind === "error" ? "alert" : "status"}
     >
@@ -83,7 +83,7 @@ function Notice({ notice }: { notice: ActionNotice }) {
 const INPUT_CLASS = OPERATOR_FIELD_CLASS;
 const BUTTON_CLASS = OPERATOR_BUTTON_CLASS;
 const SECONDARY_BUTTON_CLASS =
-  "min-h-12 rounded-none border border-black/35 bg-transparent px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-black/65 hover:border-black hover:text-black disabled:cursor-not-allowed disabled:border-black/15 disabled:text-black/25";
+  "min-h-12 rounded-none border border-[color:var(--operator-ink)]/35 bg-[var(--operator-surface)] px-5 font-[var(--font-body)] text-[0.62rem] font-medium uppercase tracking-[0.15em] text-[color:var(--operator-muted)] hover:border-[color:var(--operator-ink)] hover:text-[color:var(--operator-ink)] disabled:cursor-not-allowed disabled:border-[color:var(--operator-ink)]/15 disabled:text-[color:var(--operator-ink)]/25";
 
 export function OpsInvitationActions({ preview = false, onSaved }: { preview?: boolean; onSaved?: () => void } = {}) {
   const sampleEmail = "sample.member@example.com";
@@ -285,11 +285,11 @@ export function OpsInvitationActions({ preview = false, onSaved }: { preview?: b
 
   return (
     <div aria-label="Add member steps" data-operator-pending={pending || copying ? "true" : undefined} data-operator-dirty={email.trim() !== (preview ? sampleEmail : "") && !allowance || revokeEmail ? "true" : undefined}>
-      {preview ? <p className="mb-4 text-sm text-black/70">Preview — sample only. Email allowances are not changed and no email is sent.</p> : null}
+      {preview ? <p className="mb-4 text-sm text-[color:var(--operator-muted)]">Preview — sample only. Email allowances are not changed and no email is sent.</p> : null}
       <ol className="grid list-none gap-6 p-0">
         <li>
           <h3 className="ui-heading mb-2 text-lg font-semibold" id="member-allow-step">1. Allow email to join</h3>
-          <p className="mb-4 text-sm leading-relaxed text-black/70">This allows sign-in for their email. They can open the shared members link and request their own code—no invitation link needed. This step does not send a message or grant operator access.</p>
+          <p className="mb-4 text-sm leading-relaxed text-[color:var(--operator-muted)]">This allows sign-in for their email. They can open the shared members link and request their own code—no invitation link needed. This step does not send a message or grant operator access.</p>
           <form aria-labelledby="member-allow-step" className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submitInvitation}>
             <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-invitation-email">
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Member email</span>
@@ -306,32 +306,32 @@ export function OpsInvitationActions({ preview = false, onSaved }: { preview?: b
             <div className="space-y-3 text-sm leading-relaxed">
               <p className="break-words"><strong>{allowance.email}</strong><br />{allowanceUncertain ? "Last confirmed expiry:" : `${allowance.sample ? "Sample allowance" : "Joining allowance"} ${canShare ? "expires" : "expired"}`} <time dateTime={allowance.expiresAt}>{formatExpiration(allowance.expiresAt)}</time>.</p>
               {allowanceUncertain ? <p role="status" className="text-[var(--operator-danger)]">Check this allowance before sharing. Use Add member again to confirm it.</p>
-                : canShare ? <p className="text-black/65">Your next action: send them the message below. They request their own code and complete their profile, agreement, and payment instructions. Then you place them in a Circle.</p>
+                : canShare ? <p className="text-[color:var(--operator-muted)]">Your next action: send them the message below. They request their own code and complete their profile, agreement, and payment instructions. Then you place them in a Circle.</p>
                 : <p role="status" className="text-[var(--operator-danger)]">Allow this email again before sharing. An expired allowance cannot start a new member account.</p>}
               <div className="flex flex-wrap gap-3">
                 <button className={BUTTON_CLASS} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("message")} type="button">{copying === "message" ? "Copying…" : "Copy message"}</button>
-                <button className={`${BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("link")} type="button">{copying === "link" ? "Copying…" : "Copy link"}</button>
+                <button className={`${BUTTON_CLASS} !bg-[var(--operator-surface)] !text-[color:var(--operator-ink)]`} disabled={!canShare || Boolean(pending) || Boolean(copying)} onClick={() => void copyInstructions("link")} type="button">{copying === "link" ? "Copying…" : "Copy link"}</button>
               </div>
               <Notice notice={copyNotice} />
               {canShare ? <><label className="block" htmlFor="member-share-message"><span className="font-semibold">Message to share</span>
-                <textarea className={`${INPUT_CLASS} min-h-40 !bg-[var(--color-bone)] text-sm`} id="member-share-message" readOnly ref={messageRef} rows={6} value={message} />
+                <textarea className={`${INPUT_CLASS} min-h-40 !bg-[var(--operator-surface)] text-sm`} id="member-share-message" readOnly ref={messageRef} rows={6} value={message} />
               </label>
               <label className="block" htmlFor="member-share-link"><span className="font-semibold">Sign-in link</span>
-                <input className={`${INPUT_CLASS} !bg-[var(--color-bone)] text-sm`} id="member-share-link" readOnly ref={linkRef} type="url" value={signInUrl} />
+                <input className={`${INPUT_CLASS} !bg-[var(--operator-surface)] text-sm`} id="member-share-link" readOnly ref={linkRef} type="url" value={signInUrl} />
               </label>
-              <p className="text-xs text-black/70">You can select either field and copy it manually. Copying does not send anything.</p></> : null}
+              <p className="text-xs text-[color:var(--operator-muted)]">You can select either field and copy it manually. Copying does not send anything.</p></> : null}
             </div>
-          ) : <p className="text-sm text-black/70">Allow their email first. Their message and sign-in link will appear here.</p>}
+          ) : <p className="text-sm text-[color:var(--operator-muted)]">Allow their email first. Their message and sign-in link will appear here.</p>}
         </li>
       </ol>
       <div className="mt-8">
-        <button aria-expanded={Boolean(revokeEmail)} className="min-h-11 text-sm text-black/70 underline underline-offset-4 disabled:opacity-40" disabled={Boolean(pending)} onClick={reviewRevocation} type="button">Remove a pending allowance</button>
+        <button aria-expanded={Boolean(revokeEmail)} className="min-h-11 text-sm text-[color:var(--operator-muted)] underline underline-offset-4 disabled:opacity-40" disabled={Boolean(pending)} onClick={reviewRevocation} type="button">Remove a pending allowance</button>
         {revokeEmail ? <section aria-label="Confirm pending allowance removal" className="mt-3 space-y-3 rounded-none bg-[var(--operator-surface-muted)] p-4 text-sm">
           <p className="break-words">Remove pending joining access for <strong>{revokeEmail}</strong>?</p>
-          <p className="text-black/65">This does not delete a member account, end a membership, or change operator access.</p>
+          <p className="text-[color:var(--operator-muted)]">This does not delete a member account, end a membership, or change operator access.</p>
           <div className="flex flex-wrap gap-3">
             <button className={BUTTON_CLASS} disabled={Boolean(pending)} onClick={() => void confirmRevocation()} type="button">{pending === "revoke" ? "Removing…" : "Confirm removal"}</button>
-            <button className={`${BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={Boolean(pending)} onClick={() => { revokeEmailRef.current = null; setRevokeEmail(null); }} type="button">Keep allowance</button>
+            <button className={`${BUTTON_CLASS} !bg-[var(--operator-surface)] !text-[color:var(--operator-ink)]`} disabled={Boolean(pending)} onClick={() => { revokeEmailRef.current = null; setRevokeEmail(null); }} type="button">Keep allowance</button>
           </div>
         </section> : null}
       </div>
@@ -597,9 +597,9 @@ export function OpsCircleActions({
 
   return (
     <section className="grid gap-4" aria-label="Circle administration">
-      <section className="scroll-mt-40 rounded-none bg-[var(--operator-info)] p-5 sm:p-6" id="assign-member" aria-labelledby="assign-member-title">
+      <section className="operator-glass scroll-mt-40 rounded-none p-5 sm:p-6" id="assign-member" aria-labelledby="assign-member-title">
         <h2 className="font-[var(--font-display)] text-2xl" id="assign-member-title">Assign a member</h2>
-        <p className="mt-2 text-sm leading-relaxed text-black/70">
+        <p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">
           Assign members first. A forming Circle can accept them now; activate it afterward when it is ready. Shared-membership partners are placed together. Both must meet placement requirements.
         </p>
         <form className="mt-5 grid gap-4" onSubmit={submitAssignment} ref={assignmentFormRef}>
@@ -615,9 +615,9 @@ export function OpsCircleActions({
                 required
                 value={selectedMember?.memberId ?? ""}
               >
-                <option className="bg-[var(--color-bone)]" disabled value="">Choose member</option>
-                {selectedMember && selectedMemberIssue ? <option disabled value={selectedMember.memberId}>{selectedMember.name} · not ready for placement</option> : null}
-                {eligibleMembers.map((member) => <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>{member.name}</option>)}
+                <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose member</option>
+                {selectedMember && selectedMemberIssue ? <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value={selectedMember.memberId}>{selectedMember.name} · not ready for placement</option> : null}
+                {eligibleMembers.map((member) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={member.memberId} value={member.memberId}>{member.name}</option>)}
               </select>
             </label>
             <label className={OPERATOR_LABEL_CLASS}>
@@ -631,12 +631,12 @@ export function OpsCircleActions({
                 required
                 value={selectedCircle?.id ?? ""}
               >
-                <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
-                {acceptingCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.status} · {circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · target 10</option>)}
+                <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose Circle</option>
+                {acceptingCircles.map((circle) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={circle.id} value={circle.id}>{circle.name} · {circle.status} · {circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · target 10</option>)}
               </select>
             </label>
           </div>
-          <div className="grid gap-3 text-sm leading-relaxed text-black/70 sm:grid-cols-2">
+          <div className="grid gap-3 text-sm leading-relaxed text-[color:var(--operator-muted)] sm:grid-cols-2">
             <div aria-live="polite" id="circle-member-help">
               <p className={selectedMemberIssue ? "text-[var(--operator-danger)]" : undefined}>
                 {selectedMemberIssue ?? (eligibleMembers.length ? "Members need an active account, active billing, and an onboarding or active program." : "No members are ready for placement. Members need an active account, active billing, and an onboarding or active program, with no current Circle assignment.")}
@@ -654,7 +654,7 @@ export function OpsCircleActions({
             </div>
           </div>
           {selectedMember && !selectedMemberIssue ? <CirclePlacementRecommendations memberId={selectedMember.memberId} /> : null}
-          {selectedCircle && selectedCircle.activeMembers >= 11 ? <label className="block text-sm">{selectedCircle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={selectedCircle.activeMembers >= 12} />{selectedCircle.activeMembers === 11 ? <span className="mt-2 block text-xs text-black/70">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
+          {selectedCircle && selectedCircle.activeMembers >= 11 ? <label className="block text-sm">{selectedCircle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={selectedCircle.activeMembers >= 12} />{selectedCircle.activeMembers === 11 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
           <button
             className={`${BUTTON_CLASS} w-fit`}
             disabled={assigning || !selectedMember || Boolean(selectedMemberIssue) || !selectedCircle}
@@ -666,13 +666,13 @@ export function OpsCircleActions({
         </form>
       </section>
 
-      <details className="group scroll-mt-40 rounded-none bg-[var(--operator-surface-muted)]" id="create-circle" open={createOpen} onToggle={(event) => setCreateOpen(event.currentTarget.open)}>
+      <details className="operator-glass group scroll-mt-40 rounded-none" id="create-circle" open={createOpen} onToggle={(event) => setCreateOpen(event.currentTarget.open)}>
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 marker:content-none">
           <span className="ui-heading text-lg font-semibold">Create a Circle</span>
           <span aria-hidden="true" className="text-2xl group-open:rotate-45">+</span>
         </summary>
         <div className="px-5 pb-5">
-          <p className="text-sm text-black/70">A new Circle starts in forming. Target 10 people; normal range 8–12, including the Circle Supporter.</p>
+          <p className="text-sm text-[color:var(--operator-muted)]">A new Circle starts in forming. Target 10 people; normal range 8–12, including the Circle Supporter.</p>
           <form className="mt-4 grid gap-3" onSubmit={submitCircle} ref={createFormRef}>
             <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-name">
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span>
@@ -686,15 +686,15 @@ export function OpsCircleActions({
         </div>
       </details>
 
-      <section className="scroll-mt-40 rounded-none bg-[var(--operator-surface-muted)]" id="activate-circle" aria-labelledby="activate-circle-title">
-        <h2 className="px-5 py-4 ui-heading text-lg font-semibold" id="activate-circle-title">Activate a Circle <span className="ml-2 text-sm font-normal text-black/70">After placement</span></h2>
+      <section className="operator-glass scroll-mt-40 rounded-none" id="activate-circle" aria-labelledby="activate-circle-title">
+        <h2 className="px-5 py-4 ui-heading text-lg font-semibold" id="activate-circle-title">Activate a Circle <span className="ml-2 text-sm font-normal text-[color:var(--operator-muted)]">After placement</span></h2>
         <div className="px-5 pb-5">
         <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
           <div>
-            <p className="max-w-md text-sm leading-relaxed text-black/70">
+            <p className="max-w-md text-sm leading-relaxed text-[color:var(--operator-muted)]">
               At least one member must be assigned first. Activation then allows those members to complete Foundations.
             </p>
-            {!activatableCircles.length ? <p className="mt-2 text-sm text-black/70">No forming Circle is ready yet. Place its first member above.</p> : null}
+            {!activatableCircles.length ? <p className="mt-2 text-sm text-[color:var(--operator-muted)]">No forming Circle is ready yet. Place its first member above.</p> : null}
           </div>
           <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={submitActivation} ref={activationFormRef}>
             <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-activation">
@@ -708,9 +708,9 @@ export function OpsCircleActions({
                 required
                 value={activatableCircles.some((circle) => circle.id === selectedActivationCircleId) ? selectedActivationCircleId : ""}
               >
-                <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Circle</option>
+                <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose forming Circle</option>
                 {activatableCircles.map((circle) => (
-                  <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>
+                  <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={circle.id} value={circle.id}>
                     {circle.name} · {circle.activeMembers}/{circle.capacity}
                   </option>
                 ))}
@@ -729,7 +729,7 @@ export function OpsCircleActions({
         </div>
       </section>
 
-      <details className="group rounded-none bg-[var(--operator-surface-muted)]">
+      <details className="operator-glass group rounded-none">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 marker:content-none">
           <span className="ui-heading text-lg font-semibold">End an assignment</span>
           <span aria-hidden="true" className="text-2xl group-open:rotate-45">+</span>
@@ -737,7 +737,7 @@ export function OpsCircleActions({
         <div className="px-5 pb-5">
         <div className="grid gap-8 lg:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1fr)] lg:items-end">
           <div>
-            <p className="max-w-md text-sm leading-relaxed text-black/70">
+            <p className="max-w-md text-sm leading-relaxed text-[color:var(--operator-muted)]">
               Remove a mistaken or obsolete active assignment. Completed Foundations keeps its historical Circle proof; an active Circle is archived if its last member leaves.
             </p>
           </div>
@@ -752,9 +752,9 @@ export function OpsCircleActions({
                 name="memberId"
                 required
               >
-                <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned member</option>
+                <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose assigned member</option>
                 {assignedMembers.map((member) => (
-                  <option className="bg-[var(--color-bone)]" key={member.memberId} value={member.memberId}>
+                  <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={member.memberId} value={member.memberId}>
                     {member.name} · {member.circleName}
                   </option>
                 ))}
@@ -1036,13 +1036,13 @@ export function OpsBlockActions({
       {selectedBlockId && !selectedBlock ? <p role="alert" className="text-sm text-[var(--operator-danger)]">This Block is no longer available. Close this window and choose a current Block.</p> : <>
       {selectedBlock && task !== "overview" ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" type="button" disabled={dirty || pendingAction !== null} onClick={() => setTask("overview")}>← Back to Block</button> : null}
       {task === "overview" && selectedBlock ? <>
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm capitalize text-black/70">{selectedBlock.status} · {selectedBlock.currentCircles} {selectedBlock.currentCircles === 1 ? "Circle" : "Circles"}</p>{acceptingBlocks.some((block) => block.id === selectedBlock.id) ? <button className={BUTTON_CLASS} onClick={() => setTask("assign")} type="button">Add a Circle</button> : null}</div>
-        <div className="space-y-2">{selectedBlock.circles.length ? selectedBlock.circles.map((circle) => <Link className="flex min-h-14 items-center justify-between gap-4 rounded-none bg-[var(--operator-surface-muted)] px-4 text-sm font-semibold" href={`/ops/circles?circleId=${circle.id}`} key={circle.id}>{circle.name}<span aria-hidden="true">→</span></Link>) : <p className="rounded-none bg-[var(--operator-surface-muted)] p-5 text-sm text-black/70">No Circles assigned yet.</p>}</div>
-        {selectedBlock.status === "forming" ? <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-black/70">{selectedBlock.currentCircles < 2 ? `Add ${2 - selectedBlock.currentCircles} more ${selectedBlock.currentCircles === 1 ? "Circle" : "Circles"} before activating.` : "Two or more Circles are assigned. Activate when the group is ready."}</p><button className={BUTTON_CLASS} disabled={selectedBlock.currentCircles < 2} onClick={() => setTask("activate")} type="button">Activate Block</button></div> : null}
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm capitalize text-[color:var(--operator-muted)]">{selectedBlock.status} · {selectedBlock.currentCircles} {selectedBlock.currentCircles === 1 ? "Circle" : "Circles"}</p>{acceptingBlocks.some((block) => block.id === selectedBlock.id) ? <button className={BUTTON_CLASS} onClick={() => setTask("assign")} type="button">Add a Circle</button> : null}</div>
+        <div className="space-y-2">{selectedBlock.circles.length ? selectedBlock.circles.map((circle) => <Link className="operator-glass flex min-h-14 items-center justify-between gap-4 rounded-none px-4 text-sm font-semibold" href={`/ops/circles?circleId=${circle.id}`} key={circle.id}>{circle.name}<span aria-hidden="true">→</span></Link>) : <p className="operator-glass rounded-none p-5 text-sm text-[color:var(--operator-muted)]">No Circles assigned yet.</p>}</div>
+        {selectedBlock.status === "forming" ? <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[color:var(--operator-muted)]">{selectedBlock.currentCircles < 2 ? `Add ${2 - selectedBlock.currentCircles} more ${selectedBlock.currentCircles === 1 ? "Circle" : "Circles"} before activating.` : "Two or more Circles are assigned. Activate when the group is ready."}</p><button className={BUTTON_CLASS} disabled={selectedBlock.currentCircles < 2} onClick={() => setTask("activate")} type="button">Activate Block</button></div> : null}
         {assignedCircles.length ? <button className="min-h-11 text-sm text-[var(--operator-danger)] underline underline-offset-4" onClick={() => setTask("end")} type="button">Remove a Circle</button> : null}
       </> : null}
       {task === "create" ? <section id="create-block" aria-label="Create Block">
-        <p className="mb-4 text-sm text-black/70">Name the Block. You can add its Circles next.</p>
+        <p className="mb-4 text-sm text-[color:var(--operator-muted)]">Name the Block. You can add its Circles next.</p>
         <form className="grid gap-3" onSubmit={submitBlock}>
           <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-block-name">
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Block name</span>
@@ -1067,22 +1067,22 @@ export function OpsBlockActions({
       </section> : null}
 
       {task === "assign" ? <section id="assign-block-circle" aria-label="Assign a Circle">
-        <p className="mb-4 text-sm text-black/70">Choose a Circle that is not already in a Block.</p>
+        <p className="mb-4 text-sm text-[color:var(--operator-muted)]">Choose a Circle that is not already in a Block.</p>
         {!acceptingBlocks.length ? <p className="mb-4 text-sm text-[var(--operator-danger)]">Create a Block before assigning a Circle.</p> : !availableCircles.length ? <p className="mb-4 text-sm text-[var(--operator-danger)]">No available Circles. Create one, or remove a Circle from its current Block first.</p> : null}
         <form className="grid gap-3" onSubmit={submitAssignment}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle</span>
               <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || availableCircles.length === 0} name="circleId" required>
-                <option className="bg-[var(--color-bone)]" disabled value="">Choose Circle</option>
-                {availableCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name}</option>)}
+                <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose Circle</option>
+                {availableCircles.map((circle) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={circle.id} value={circle.id}>{circle.name}</option>)}
               </select>
             </label>
             {selectedBlock ? <input name="blockId" type="hidden" value={selectedBlock.id} /> : <label className={OPERATOR_LABEL_CLASS}>
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Block</span>
               <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "assign" || acceptingBlocks.length === 0} name="blockId" required>
-                <option className="bg-[var(--color-bone)]" disabled value="">Choose Block</option>
-                {acceptingBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
+                <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose Block</option>
+                {acceptingBlocks.map((block) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
               </select>
             </label>}
           </div>
@@ -1094,13 +1094,13 @@ export function OpsBlockActions({
       </section> : null}
 
       {task === "activate" ? <section aria-label="Activate Block">
-        <p className="mb-4 text-sm text-black/70">Activate {selectedBlock?.name ?? "this Block"}? At least two current Circles are required. Foundations requirements stay the same.</p>
+        <p className="mb-4 text-sm text-[color:var(--operator-muted)]">Activate {selectedBlock?.name ?? "this Block"}? At least two current Circles are required. Foundations requirements stay the same.</p>
         <form className="grid gap-3" onSubmit={submitActivation}>
           {selectedBlock ? <input name="blockId" type="hidden" value={selectedBlock.id} /> : <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Forming Block</span>
             <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "activate" || activatableBlocks.length === 0} name="blockId" required>
-              <option className="bg-[var(--color-bone)]" disabled value="">Choose forming Block</option>
-              {activatableBlocks.map((block) => <option className="bg-[var(--color-bone)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
+              <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose forming Block</option>
+              {activatableBlocks.map((block) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={block.id} value={block.id}>{block.name} · {block.currentCircles} Circles</option>)}
             </select>
           </label>}
           <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "activate" || activatableBlocks.length === 0} type="submit">
@@ -1111,15 +1111,15 @@ export function OpsBlockActions({
       </section> : null}
 
       {task === "end" ? <section aria-label="Remove a Circle">
-        <p className="mb-4 max-w-md text-sm leading-relaxed text-black/70">
+        <p className="mb-4 max-w-md text-sm leading-relaxed text-[color:var(--operator-muted)]">
           End only the current relationship. If fewer than two current Circles remain, the Block closes while its full history stays intact.
         </p>
         <form className="grid gap-3" onSubmit={submitEndAssignment}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Assigned Circle</span>
             <select className={INPUT_CLASS} defaultValue="" disabled={pendingAction === "end" || assignedCircles.length === 0} name="circleId" required>
-              <option className="bg-[var(--color-bone)]" disabled value="">Choose assigned Circle</option>
-              {assignedCircles.map((circle) => <option className="bg-[var(--color-bone)]" key={circle.id} value={circle.id}>{circle.name} · {circle.blockName}</option>)}
+              <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose assigned Circle</option>
+              {assignedCircles.map((circle) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={circle.id} value={circle.id}>{circle.name} · {circle.blockName}</option>)}
             </select>
           </label>
           <button className={`${BUTTON_CLASS} w-fit`} disabled={pendingAction === "end" || assignedCircles.length === 0} type="submit">

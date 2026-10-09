@@ -166,9 +166,9 @@ export default async function OperationsCirclesPage({
   if (!communicationCircles) return <PlatformUnavailable accessHref="/ops/access" />;
   const visibleCircles = initialCircleId ? communicationCircles.filter((circle) => circle.id === initialCircleId) : communicationCircles;
   return <OperatorPageFrame title="Circles">
-    {!visibleCircles.length ? <p className="text-sm text-black/65">{initialCircleId ? "This Circle is not available to your account. Ask an Administrator to check your Circle access." : "No Circles are assigned to you yet. Ask an Administrator to assign the Circles you help manage."}</p> : null}
+    {!visibleCircles.length ? <p className="text-sm text-[color:var(--operator-muted)]">{initialCircleId ? "This Circle is not available to your account. Ask an Administrator to check your Circle access." : "No Circles are assigned to you yet. Ask an Administrator to assign the Circles you help manage."}</p> : null}
     <div className="grid gap-6">{visibleCircles.map((circle) => <article key={circle.id} id={`circle-${circle.id}`} className="operator-bento-card p-5 sm:p-6">
-      <header className="mb-5 flex flex-wrap items-center gap-4"><h2 className="font-[var(--font-display)] text-3xl">{circle.name}</h2><StateLabel state={circle.status} /><p className="text-sm text-black/60">{circle.activeMembers} people · target {circle.capacity}</p></header>
+      <header className="mb-5 flex flex-wrap items-center gap-4"><h2 className="font-[var(--font-display)] text-3xl">{circle.name}</h2><StateLabel state={circle.status} /><p className="text-sm text-[color:var(--operator-muted)]">{circle.activeMembers} people · target {circle.capacity}</p></header>
       <section id={initialCircleId ? "circle-communications" : `circle-communications-${circle.id}`} aria-label={`${circle.name} chat and meetings`} className="scroll-mt-28">
         <OperatorCircleCommunicationPanel circle={circle} communication={circle} directory={meetingDirectory} />
       </section>

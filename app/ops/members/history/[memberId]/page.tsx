@@ -43,13 +43,13 @@ export default async function HistoricalMemberRecordPage({ params }: {
     <article className="mx-auto grid max-w-[88rem] gap-4">
       <header className="operator-record-header grid gap-3">
         <Link className="inline-flex min-h-11 w-fit items-center text-sm underline underline-offset-4" href="/ops/members/history">← Historical members</Link>
-        <p className="operator-compact-label text-black/70">Historical membership · Account deleted</p>
+        <p className="operator-compact-label text-[color:var(--operator-muted)]">Historical membership · Account deleted</p>
         <h2 className="operator-page-heading break-words">{record.displayName}</h2>
         {record.memberTag && record.displayName.toLowerCase() !== `@${record.memberTag}`.toLowerCase() ? <p className="break-all text-sm text-[var(--operator-danger)]">@{record.memberTag}</p> : null}
-        {tier ? <p className="text-sm text-black/70">{tier.label} · No. {tier.displayNumber}</p> : null}
-        <p className="max-w-2xl text-sm leading-relaxed text-black/70">This account was deleted and is excluded from current member counts. Membership, financial and audit history remain. This record is read-only.</p>
+        {tier ? <p className="text-sm text-[color:var(--operator-muted)]">{tier.label} · No. {tier.displayNumber}</p> : null}
+        <p className="max-w-2xl text-sm leading-relaxed text-[color:var(--operator-muted)]">This account was deleted and is excluded from current member counts. Membership, financial and audit history remain. This record is read-only.</p>
       </header>
-      <p className="rounded-none border border-[var(--operator-line)] bg-[var(--operator-info)] px-4 py-3 text-sm leading-relaxed text-black/70" role="status">
+      <p className="operator-emphasis rounded-none border border-[var(--operator-line)] bg-[var(--operator-info)] px-4 py-3 text-sm leading-relaxed text-[color:var(--operator-muted)]" data-operator-tone="info" role="status">
         {record.cleanupStatus === "completed" ? "Sign-in and uploaded-file cleanup is complete."
           : record.cleanupStatus === "processing" ? "Remaining sign-in and uploaded-file cleanup is in progress."
             : record.cleanupStatus === "pending" ? "Remaining sign-in and uploaded-file cleanup is pending. Automatic retries continue."
@@ -62,30 +62,30 @@ export default async function HistoricalMemberRecordPage({ params }: {
             ["Joined", historicalDate(record.joinedAt)], ["Account deleted", historicalDate(record.deletedAt)],
             ["Reason", deletionReasonLabel(record.reason)], ["Account", stateLabel(record.accountState)],
             ["Billing", stateLabel(record.billingState)], ["Standing", stateLabel(record.standingState)],
-          ].map(([label, value]) => <div key={label}><dt className="text-xs text-black/70">{label}</dt><dd className="mt-1 text-sm">{value}</dd></div>)}
-          <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-black/70">Deleted by</dt><dd className="mt-1 break-words text-sm text-black/70">{record.deletedByName}</dd></div>
+          ].map(([label, value]) => <div key={label}><dt className="text-xs text-[color:var(--operator-muted)]">{label}</dt><dd className="mt-1 text-sm">{value}</dd></div>)}
+          <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-[color:var(--operator-muted)]">Deleted by</dt><dd className="mt-1 break-words text-sm text-[color:var(--operator-muted)]">{record.deletedByName}</dd></div>
         </dl>
       </section>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <section aria-labelledby="historical-state-history" className="operator-bento-card">
           <h3 className="ui-heading text-base font-semibold" id="historical-state-history">Membership history</h3>
-          <p className="mt-1 text-xs text-black/70">Most recent 50 recorded changes.</p>
-          <ol className="mt-4 grid gap-3">{record.membershipHistory.map((event) => <li className="border-t border-black/10 pt-3" key={event.id}>
+          <p className="mt-1 text-xs text-[color:var(--operator-muted)]">Most recent 50 recorded changes.</p>
+          <ol className="mt-4 grid gap-3">{record.membershipHistory.map((event) => <li className="border-t border-[color:var(--operator-ink)]/10 pt-3" key={event.id}>
             <p className="text-sm leading-relaxed">{stateLabel(event.dimension)}{event.previousState ? `: ${stateLabel(event.previousState)} → ` : ": "}{stateLabel(event.nextState)}</p>
-            <p className="mt-1 text-xs text-black/70"><time dateTime={event.occurredAt}>{historicalDate(event.occurredAt)}</time> · {stateLabel(event.source)}</p>
-            <p className="mt-1 break-words text-xs text-black/70">{event.actorName}</p>
+            <p className="mt-1 text-xs text-[color:var(--operator-muted)]"><time dateTime={event.occurredAt}>{historicalDate(event.occurredAt)}</time> · {stateLabel(event.source)}</p>
+            <p className="mt-1 break-words text-xs text-[color:var(--operator-muted)]">{event.actorName}</p>
           </li>)}</ol>
-          {record.membershipHistory.length === 0 ? <p className="mt-4 text-sm text-black/70">No membership changes recorded.</p> : null}
+          {record.membershipHistory.length === 0 ? <p className="mt-4 text-sm text-[color:var(--operator-muted)]">No membership changes recorded.</p> : null}
         </section>
         <section aria-labelledby="historical-audit-history" className="operator-bento-card">
           <h3 className="ui-heading text-base font-semibold" id="historical-audit-history">Audit history</h3>
-          <p className="mt-1 text-xs text-black/70">Most recent 50 actions. Private snapshots are not shown.</p>
-          <ol className="mt-4 grid gap-3">{record.auditHistory.map((event) => <li className="border-t border-black/10 pt-3" key={event.id}>
+          <p className="mt-1 text-xs text-[color:var(--operator-muted)]">Most recent 50 actions. Private snapshots are not shown.</p>
+          <ol className="mt-4 grid gap-3">{record.auditHistory.map((event) => <li className="border-t border-[color:var(--operator-ink)]/10 pt-3" key={event.id}>
             <p className="break-words text-sm leading-relaxed">{event.action.replaceAll("_", " ").replaceAll(".", " · ")}</p>
-            <p className="mt-1 text-xs text-black/70"><time dateTime={event.occurredAt}>{historicalDate(event.occurredAt)}</time></p>
-            <p className="mt-1 break-words text-xs text-black/70">{event.actorName}</p>
+            <p className="mt-1 text-xs text-[color:var(--operator-muted)]"><time dateTime={event.occurredAt}>{historicalDate(event.occurredAt)}</time></p>
+            <p className="mt-1 break-words text-xs text-[color:var(--operator-muted)]">{event.actorName}</p>
           </li>)}</ol>
-          {record.auditHistory.length === 0 ? <p className="mt-4 text-sm text-black/70">No audit actions recorded.</p> : null}
+          {record.auditHistory.length === 0 ? <p className="mt-4 text-sm text-[color:var(--operator-muted)]">No audit actions recorded.</p> : null}
         </section>
       </div>
     </article>

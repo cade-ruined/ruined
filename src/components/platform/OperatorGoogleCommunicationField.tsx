@@ -145,28 +145,24 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
     }
   }
 
-  const tone = kind === "chat"
-    ? "bg-[var(--operator-info)]"
-    : "bg-[var(--operator-success)]";
-
   return (
     <div
-      className={`rounded-none px-4 py-3 ${tone}`}
+      className="operator-glass rounded-none px-4 py-3"
       data-google-communication={kind}
       data-operator-dirty={editing && (draft !== url || confirmRemoval) ? "true" : undefined}
       data-operator-pending={pending ? "true" : undefined}
     >
       <div className="flex items-center justify-between gap-3">
-        <p className="[font-family:var(--font-cadehandy2)] text-[1.2rem] leading-none text-black/72">
+        <p className="[font-family:var(--font-cadehandy2)] text-[1.2rem] leading-none text-[color:var(--operator-ink)]/72">
           {name}
         </p>
-        {!configured || !connected ? <p className="flex items-center gap-2 text-[0.66rem] font-medium text-black/70">
+        {!configured || !connected ? <p className="flex items-center gap-2 text-[0.66rem] font-medium text-[color:var(--operator-muted)]">
           <span
             aria-hidden="true"
             className={`size-1.5 rounded-full ${
               !configured
                 ? "bg-[var(--color-poster)]"
-                : "bg-black/28"
+                : "bg-[color:var(--operator-ink)]/28"
             }`}
           />
           {!configured ? "Setup needed" : "Not linked"}
@@ -174,7 +170,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
       </div>
 
       {configured && connected ? <div className="mt-2">
-        <a className="block break-all text-sm text-black/65 underline decoration-black/25 underline-offset-4" href={url} rel="noreferrer" target="_blank">{url}</a>
+        <a className="block break-all text-sm text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/25 underline-offset-4" href={url} rel="noreferrer" target="_blank">{url}</a>
         <div className="flex flex-wrap items-center gap-2">
           <a className="inline-flex min-h-11 items-center px-2 text-sm font-semibold underline underline-offset-4" href={url} rel="noreferrer" target="_blank">{kind === "chat" ? "Open chat ↗" : "Open meeting ↗"}</a>
           <button className="min-h-11 px-2 text-sm underline underline-offset-4 disabled:opacity-45" disabled={copying} onClick={copyLink} type="button">{copying ? "Copying…" : "Copy link"}</button>
@@ -188,12 +184,12 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
       </div> : null}
 
       {!configured ? (
-        <p className="mt-2 text-xs leading-relaxed text-black/70">
+        <p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">
           Choose test or live Google mode before adding links.
         </p>
       ) : editable && editing ? (
         <div className="mt-2">
-          <p className="text-sm leading-relaxed text-black/70">
+          <p className="text-sm leading-relaxed text-[color:var(--operator-muted)]">
             {kind === "chat"
               ? "Create a private space in Google Chat, add its members there, then paste its link here. Saving a link does not grant Google access."
               : "Paste an existing Google Meet link here. Saving does not send invitations or change Google access. Calendar invitations will use this link."}
@@ -240,7 +236,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
               >Cancel</button> : null}
               {connected ? (
                 <button
-                  className="min-h-10 rounded-none px-3 py-2 text-xs text-black/70 underline decoration-black/25 underline-offset-4 hover:text-[var(--operator-danger)] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="min-h-10 rounded-none px-3 py-2 text-xs text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[var(--operator-danger)] disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={pending}
                   onClick={() => { if (!pending) setConfirmRemoval(true); }}
                   type="button"
@@ -262,7 +258,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
 
       <p
         aria-live="polite"
-        className={`${notice ? "mt-2" : ""} text-xs leading-relaxed ${error ? "text-[var(--operator-danger)]" : "text-black/70"}`}
+        className={`${notice ? "mt-2" : ""} text-xs leading-relaxed ${error ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`}
         role={error ? "alert" : "status"}
       >
         {notice}

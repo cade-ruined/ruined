@@ -57,7 +57,7 @@ export default function OpsBlocks({
               <h2 className="text-xl font-semibold leading-tight">
                 {block.name}
               </h2>
-              <p className="mt-3 text-sm text-black/70">
+              <p className="mt-3 text-sm text-[color:var(--operator-muted)]">
                 {block.currentCircles} current {block.currentCircles === 1 ? "Circle" : "Circles"}
                 {block.status === "forming" && block.currentCircles < 2
                   ? ` · ${2 - block.currentCircles} more needed`
@@ -66,7 +66,7 @@ export default function OpsBlocks({
               {actions ? <a id={`manage-block-trigger-${block.id}`} className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={`#manage-block-${block.id}`}>Manage Block →</a> : null}
             </div>
             <StateLabel state={block.status} />
-            <div className="flex flex-wrap gap-2 text-sm text-black/65">
+            <div className="flex flex-wrap gap-2 text-sm text-[color:var(--operator-muted)]">
               {block.circles.length > 0
                 ? block.circles.map((circle) => (
                     <Link
@@ -77,7 +77,7 @@ export default function OpsBlocks({
                       {circle.name}
                     </Link>
                   ))
-                : <span className="text-black/70">No Circles assigned</span>}
+                : <span className="text-[color:var(--operator-muted)]">No Circles assigned</span>}
             </div>
           </article>
         ))}

@@ -203,5 +203,5 @@ test("operator Block controls are admin-only and the control room avoids data-to
   assert.doesNotMatch(operatorComponents, /font-mono/);
   assert.doesNotMatch(operatorComponents, /tooltip|hover card|AI hint/i);
   assert.match(operatorComponents, /font-\[var\(--font-body\)\]/);
-  assert.match(operatorComponents, /bg-\[var\(--color-bone\)\]/);
+  assert.match(operatorComponents, /bg-\[var\(--operator-surface\)\]/);
 });

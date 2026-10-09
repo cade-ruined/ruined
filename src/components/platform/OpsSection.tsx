@@ -24,13 +24,13 @@ function FoundationMemberRow({
       <div className="col-span-2 lg:col-span-1">
         <h3 className="text-base font-semibold leading-snug">
           <Link
-            className="inline-flex min-h-11 items-center transition-colors hover:text-[var(--operator-danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            className="inline-flex min-h-11 items-center transition-colors hover:text-[var(--operator-danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--operator-focus)]"
             href={`/ops/members/${member.memberId}#journey`}
           >
             {member.name}
           </Link>
         </h3>
-        <p className={`text-sm ${member.circleName ? "text-black/70" : "text-[var(--operator-danger)]"}`}>
+        <p className={`text-sm ${member.circleName ? "text-[color:var(--operator-muted)]" : "text-[var(--operator-danger)]"}`}>
           {member.circleName ?? (canPlaceMembers ? (
             <Link className="underline underline-offset-4" href={`/ops/circles?memberId=${encodeURIComponent(member.memberId)}#assign-member`}>
               Choose a Circle before completion →
@@ -39,7 +39,7 @@ function FoundationMemberRow({
         </p>
       </div>
       <StateLabel state={member.foundationsState} />
-      <p className="text-sm tabular-nums text-black/70">{member.foundationsProgress}%</p>
+      <p className="text-sm tabular-nums text-[color:var(--operator-muted)]">{member.foundationsProgress}%</p>
       <div className="col-span-2 lg:col-span-1"><OperatorProgress label={`${member.name} Foundations`} value={member.foundationsProgress} /></div>
     </article>
   );
@@ -128,10 +128,10 @@ export default function OpsSection({
               <section aria-labelledby={`foundations-${group.label.replaceAll(" ", "-").toLowerCase()}`} key={group.label}>
                 <div className="mb-2 flex items-center justify-between gap-4">
                   <h2 className="operator-section-heading flex items-baseline gap-2" id={`foundations-${group.label.replaceAll(" ", "-").toLowerCase()}`}>
-                    {group.label} <span className="text-sm text-black/70">{group.members.length}</span>
+                    {group.label} <span className="text-sm text-[color:var(--operator-muted)]">{group.members.length}</span>
                   </h2>
                   {group.action && canPlaceMembers ? (
-                    <Link className="inline-flex min-h-11 items-center text-sm underline decoration-black/25 underline-offset-4 hover:text-[var(--operator-danger)]" href="/ops/circles#assign-member">
+                    <Link className="inline-flex min-h-11 items-center text-sm underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[var(--operator-danger)]" href="/ops/circles#assign-member">
                       Place members →
                     </Link>
                   ) : null}
@@ -151,9 +151,9 @@ export default function OpsSection({
               />
             ) : null}
             {completedFoundations.length ? (
-              <details className="group rounded-none bg-[var(--operator-surface-muted)]">
+              <details className="operator-glass group rounded-none">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 marker:content-none">
-                  <span className="flex items-baseline gap-2 text-base font-semibold">Complete <span className="text-sm text-black/70">{completedFoundations.length}</span></span>
+                  <span className="flex items-baseline gap-2 text-base font-semibold">Complete <span className="text-sm text-[color:var(--operator-muted)]">{completedFoundations.length}</span></span>
                   <span aria-hidden="true" className="text-xl transition-transform group-open:rotate-45">+</span>
                 </summary>
                 <div className="grid gap-2 px-3 pb-3">
@@ -178,7 +178,7 @@ export default function OpsSection({
           ) : null}
           {circleRows.map((circle) => (
             <article
-              className="grid gap-4 rounded-none bg-[var(--operator-surface-muted)] px-4 py-5 transition-colors hover:bg-[var(--operator-surface-hover)] xl:grid-cols-[minmax(12rem,1fr)_8rem_minmax(9rem,0.7fr)_minmax(7rem,0.55fr)_minmax(14rem,0.9fr)] xl:items-center xl:px-5"
+              className="operator-glass grid gap-4 rounded-none px-4 py-5 transition-colors hover:bg-[var(--operator-surface-hover)] xl:grid-cols-[minmax(12rem,1fr)_8rem_minmax(9rem,0.7fr)_minmax(7rem,0.55fr)_minmax(14rem,0.9fr)] xl:items-center xl:px-5"
               id={`circle-${circle.id}`}
               key={circle.id}
             >
@@ -186,13 +186,13 @@ export default function OpsSection({
                 <h2 className="font-[var(--font-display)] text-2xl leading-none">
                   {circle.name}
                 </h2>
-                <p className="mt-2 text-sm text-black/70">{circle.blockName ?? "No Block"}</p>
+                <p className="mt-2 text-sm text-[color:var(--operator-muted)]">{circle.blockName ?? "No Block"}</p>
               </div>
               <StateLabel state={circle.status} />
-              <p className="text-sm tabular-nums text-black/70">
+              <p className="text-sm tabular-nums text-[color:var(--operator-muted)]">
                 {circle.activeMembers} / {circle.capacity} members
               </p>
-              <p className="text-sm leading-relaxed text-black/70">
+              <p className="text-sm leading-relaxed text-[color:var(--operator-muted)]">
                 {Math.max(0, circle.capacity - circle.activeMembers)} open
               </p>
               {circle.googleCommunicationsConfigured !== undefined ? (
@@ -209,14 +209,14 @@ export default function OpsSection({
               ) : null}
             </article>
           ))}
-          <article className="grid gap-4 rounded-none bg-[var(--operator-error)] px-4 py-5 xl:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] xl:items-center xl:px-5">
+          <article className="operator-emphasis grid gap-4 rounded-none bg-[var(--operator-error)] px-4 py-5 xl:grid-cols-[minmax(12rem,1fr)_9rem_minmax(10rem,0.8fr)_minmax(12rem,1fr)] xl:items-center xl:px-5" data-operator-tone="error">
             <h2 className="font-[var(--font-display)] text-2xl leading-none">Without a Circle</h2>
             <StateLabel state="pending" />
             <p className="text-sm tabular-nums text-[var(--operator-danger)]">{dashboard.unassignedMembers} members</p>
             {actions ? (
-              <Link className="text-sm underline decoration-black/25 underline-offset-4" href="#assign-member">Place members</Link>
+              <Link className="text-sm underline decoration-[color:var(--operator-ink)]/25 underline-offset-4" href="#assign-member">Place members</Link>
             ) : (
-              <p className="text-sm text-black/70">An Administrator can place members.</p>
+              <p className="text-sm text-[color:var(--operator-muted)]">An Administrator can place members.</p>
             )}
           </article>
         </section>
@@ -226,7 +226,7 @@ export default function OpsSection({
         <section className="grid gap-3" aria-label="Access and billing snapshot">
           <header className="operator-record-header">
             <h2 className="operator-page-heading">Access &amp; Billing</h2>
-            <p className="text-sm text-black/70">
+            <p className="text-sm text-[color:var(--operator-muted)]">
               <span className="font-semibold tabular-nums text-[var(--operator-danger)]">{dashboard.attentionRequired}</span> need billing attention
             </p>
           </header>
@@ -242,7 +242,7 @@ export default function OpsSection({
               >
                 <h2 className="ui-heading text-base font-semibold">{name}</h2>
                 <StateLabel state={state} />
-                <p className="text-sm leading-relaxed text-black/70">{description}</p>
+                <p className="text-sm leading-relaxed text-[color:var(--operator-muted)]">{description}</p>
               </div>
             ))}
           </div>
@@ -253,7 +253,7 @@ export default function OpsSection({
         <div className="mt-4 scroll-mt-40" id="manage-circles">{actions}</div>
       ) : actions ? (
         <details
-          className="group mt-4 rounded-none bg-[var(--color-surface)]"
+          className="operator-glass group mt-4 rounded-none"
         >
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium marker:content-none">
             <span>{`Manage ${title}`}</span>

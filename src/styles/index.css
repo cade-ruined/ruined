@@ -235,11 +235,12 @@ html {
 /* Operations belongs to the same physical Ruined world as the member record,
    but the quieter grain keeps dense working screens legible. */
 .operator-paper {
-  background-color: var(--color-bone) !important;
+  background-color: var(--operator-canvas, var(--color-bone)) !important;
   background-image:
-    linear-gradient(112deg, rgb(255 255 255 / 0.1), transparent 34%, rgb(74 57 36 / 0.02) 76%, transparent),
+    linear-gradient(112deg, var(--operator-canvas-wash, rgb(255 255 255 / 0.1)), transparent 66%),
     url("/textures/member-paper.svg");
   background-size: 100% 100%, 640px 640px;
+  color: var(--operator-ink, var(--color-faded));
 }
 
 /* Operator records are working surfaces, not editorial landing pages.
@@ -276,7 +277,7 @@ html {
   font-size: 0.75rem;
   font-weight: 550;
   line-height: 1.4;
-  color: #484239;
+  color: var(--operator-muted, #484239);
   letter-spacing: normal;
 }
 

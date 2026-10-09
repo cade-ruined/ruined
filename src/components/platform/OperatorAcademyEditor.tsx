@@ -21,21 +21,21 @@ export default function OperatorAcademyEditor({ editor, preview = false }: { edi
   const sourceUrl = resource.videoUrl || resource.externalUrl;
   return (
     <OperatorPageFrame title={`Academy / ${resource.title}`}>
-      <Link className="inline-flex min-h-11 items-center gap-2 text-sm text-black/70 hover:text-black" href="/ops/academy">
+      <Link className="inline-flex min-h-11 items-center gap-2 text-sm text-[color:var(--operator-muted)] hover:text-[color:var(--operator-ink)]" href="/ops/academy">
         <span aria-hidden="true">←</span> Academy
       </Link>
 
       <header className="operator-record-header">
-        <div className="min-w-0"><h1 className="operator-record-title">{resource.title}</h1><p className="mt-1 text-sm text-black/70">{resource.collectionName ?? "No collection"} · <span className="capitalize">{resource.contentType}</span>{resource.durationLabel ? ` · ${resource.durationLabel}` : ""}</p></div>
+        <div className="min-w-0"><h1 className="operator-record-title">{resource.title}</h1><p className="mt-1 text-sm text-[color:var(--operator-muted)]">{resource.collectionName ?? "No collection"} · <span className="capitalize">{resource.contentType}</span>{resource.durationLabel ? ` · ${resource.durationLabel}` : ""}</p></div>
         {editor.canManage && resource.status !== "retired" ? <button id="edit-academy-lesson" className={OPERATOR_BUTTON_CLASS} onClick={() => setWorkspace("edit")} type="button">Edit lesson</button> : null}
       </header>
-      {notice ? <p role="status" className="mb-3 text-sm text-[var(--color-verdigris)]">{notice}</p> : null}
+      {notice ? <p role="status" className="mb-3 text-sm text-[color:var(--operator-success-text)]">{notice}</p> : null}
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Lesson overview">
         <article className="operator-bento-card md:col-span-2 xl:col-span-1">
           <h2 className="operator-compact-label">Content</h2>
           <OperatorAcademyThumbnail src={resource.thumbnailUrl} format={resource.contentType} detail />
-          {resource.summary ? <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-black/65">{resource.summary}</p> : <p className="mt-2 text-sm text-black/70">No summary added.</p>}
-          {resource.presenter ? <p className="mt-2 text-xs text-black/70">With {resource.presenter}</p> : null}
+          {resource.summary ? <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">{resource.summary}</p> : <p className="mt-2 text-sm text-[color:var(--operator-muted)]">No summary added.</p>}
+          {resource.presenter ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">With {resource.presenter}</p> : null}
           <div className="mt-2 flex flex-wrap gap-x-5">
             {sourceUrl ? <a className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a> : null}
             {resource.bodyText ? <button id="read-academy-notes" className="min-h-11 text-sm font-semibold underline underline-offset-4" onClick={() => setWorkspace("notes")} type="button">Read lesson notes</button> : null}
@@ -44,11 +44,11 @@ export default function OperatorAcademyEditor({ editor, preview = false }: { edi
         <article className="operator-bento-card">
           <h2 className="operator-compact-label">Audience</h2>
           {resource.audiences.length ? <ul className="mt-3 space-y-2">{resource.audiences.map((audience) => <li className="text-sm" key={`${audience.kind}-${audience.id}`}>{audience.label}</li>)}</ul> : <p className="mt-2 text-sm text-[var(--operator-danger)]">Choose an audience before publishing.</p>}
-          {resource.featured ? <span className="mt-3 inline-block rounded-none bg-[var(--color-highlight)] px-2 py-1 text-xs font-semibold">Featured lesson</span> : null}
+          {resource.featured ? <span className="operator-emphasis mt-3 inline-block rounded-none bg-[var(--color-highlight)] px-2 py-1 text-xs font-semibold" data-operator-tone="wait">Featured lesson</span> : null}
         </article>
         <article className="operator-bento-card">
           <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="operator-compact-label">Publication</h2><StateLabel state={resource.status} /></div>
-          <dl className="my-3 grid grid-cols-2 gap-2 text-sm"><div><dt className="text-xs text-black/70">Live version</dt><dd className="mt-1 font-semibold">{resource.currentVersion === null ? "Not published" : `v${resource.currentVersion}`}</dd></div><div><dt className="text-xs text-black/70">Latest version</dt><dd className="mt-1 font-semibold">v{resource.latestVersion}</dd></div></dl>
+          <dl className="my-3 grid grid-cols-2 gap-2 text-sm"><div><dt className="text-xs text-[color:var(--operator-muted)]">Live version</dt><dd className="mt-1 font-semibold">{resource.currentVersion === null ? "Not published" : `v${resource.currentVersion}`}</dd></div><div><dt className="text-xs text-[color:var(--operator-muted)]">Latest version</dt><dd className="mt-1 font-semibold">v{resource.latestVersion}</dd></div></dl>
           {resource.hasUnpublishedChanges ? <p className="mb-3 text-xs text-[var(--operator-danger)]">Changes not published</p> : null}
           {editor.canManage ? <OperatorAcademyResourceStateActions resourceId={resource.resourceId} revision={resource.revision} status={resource.status} hasUnpublishedChanges={resource.hasUnpublishedChanges} preview={preview} /> : null}
         </article>

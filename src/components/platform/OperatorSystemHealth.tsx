@@ -27,7 +27,7 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
 
   return (
     <OperatorPageFrame title="Settings">
-      <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="operator-page-heading">Settings</h2><p className="mt-1 text-xs text-black/70" aria-label="System snapshot">{verifiedChecks} verified · <span className={servicesNeedingAttention ? "text-[var(--operator-danger)]" : ""}>{servicesNeedingAttention} need attention</span> · {awaitingVerification} not live-checked</p></div><Link href="/ops/operators" className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4">Operator access →</Link></header>
+      <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="operator-page-heading">Settings</h2><p className="mt-1 text-xs text-[color:var(--operator-muted)]" aria-label="System snapshot">{verifiedChecks} verified · <span className={servicesNeedingAttention ? "text-[var(--operator-danger)]" : ""}>{servicesNeedingAttention} need attention</span> · {awaitingVerification} not live-checked</p></div><Link href="/ops/operators" className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4">Operator access →</Link></header>
 
       <nav aria-label="System tasks" className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href="#service-checks">Review services</a>
@@ -42,18 +42,18 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
             key={service.label}
           >
             <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-3">
-              <span className="flex flex-wrap items-center gap-2 font-semibold">{service.label}{service.mode ? <span className={`rounded-none px-2 py-1 text-xs font-medium ${service.mode === 'test' ? 'bg-[#FFCA2C] text-black' : 'bg-[var(--operator-surface-muted)]'}`}>{service.mode === 'test' ? 'Test mode' : 'Live mode'}</span> : null}</span>
-              <span className={`text-sm ${service.state === 'verified' ? 'text-[var(--color-verdigris)]' : service.state === 'configured' ? 'text-black/70' : 'text-[var(--operator-danger)]'}`}>{{ configured: "Configured", verified: "Verified", delayed: "Delayed", failed: "Needs review", unavailable: "Not configured" }[service.state]} <span aria-hidden="true">⌄</span></span>
+              <span className="flex flex-wrap items-center gap-2 font-semibold">{service.label}{service.mode ? <span data-operator-tone={service.mode === "test" ? "wait" : undefined} className={`rounded-none px-2 py-1 text-xs font-medium ${service.mode === 'test' ? 'operator-emphasis bg-[#FFCA2C] text-[color:var(--operator-ink)]' : 'bg-[var(--operator-surface-muted)]'}`}>{service.mode === 'test' ? 'Test mode' : 'Live mode'}</span> : null}</span>
+              <span className={`text-sm ${service.state === 'verified' ? 'text-[color:var(--operator-success-text)]' : service.state === 'configured' ? 'text-[color:var(--operator-muted)]' : 'text-[var(--operator-danger)]'}`}>{{ configured: "Configured", verified: "Verified", delayed: "Delayed", failed: "Needs review", unavailable: "Not configured" }[service.state]} <span aria-hidden="true">⌄</span></span>
             </summary>
             <div className="mt-2 grid gap-3 text-sm">
             <div>
-              <p className="text-sm text-black/65">{service.detail}</p>
+              <p className="text-sm text-[color:var(--operator-muted)]">{service.detail}</p>
             </div>
-            <div className="space-y-2 text-sm text-black/70">
+            <div className="space-y-2 text-sm text-[color:var(--operator-muted)]">
               <p>{service.evidenceLabel} · {formatDate(service.lastSucceededAt)}</p>
               {service.pendingCount || service.failureCount ? <p>{service.pendingCount} pending · {service.failureCount} need review</p> : null}
               {service.oldestPendingAt ? <p>Oldest due · {formatDate(service.oldestPendingAt)}</p> : null}
-              {service.href ? <Link className="inline-block py-2 underline underline-offset-4 hover:text-black" href={service.href}>Open {service.label === "Support email" ? "support queue" : service.label === "Google Calendar" ? "Experiences" : "controls"} →</Link> : null}
+              {service.href ? <Link className="inline-block py-2 underline underline-offset-4 hover:text-[color:var(--operator-ink)]" href={service.href}>Open {service.label === "Support email" ? "support queue" : service.label === "Google Calendar" ? "Experiences" : "controls"} →</Link> : null}
             </div>
             </div>
           </details>
@@ -63,7 +63,7 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
       <section className="mt-5 scroll-mt-28" id="failed-actions" aria-label="Failed automation actions">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <h2 className="text-lg font-semibold">Failed actions</h2>
-          <Link className="text-sm text-black/70 underline decoration-black/25 underline-offset-5 hover:text-black" href="/ops/work">
+          <Link className="text-sm text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/25 underline-offset-5 hover:text-[color:var(--operator-ink)]" href="/ops/work">
             Open all work
           </Link>
         </div>
@@ -75,22 +75,22 @@ export default function OperatorSystemHealth({ health, canRetry, preview = false
             >
               <div>
                 <h3 className="ui-heading text-base font-semibold">{failure.actionType.replaceAll("_", " ")}</h3>
-                <p className="mt-2 text-xs text-black/70">{failure.errorCode}</p>
+                <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{failure.errorCode}</p>
               </div>
-              <p className="text-sm tabular-nums text-black/70">{failure.attempts} attempts</p>
+              <p className="text-sm tabular-nums text-[color:var(--operator-muted)]">{failure.attempts} attempts</p>
               <div className="text-[var(--operator-danger)]">
                 <StateLabel state={failure.state} />
-                <p className="mt-2 text-xs text-black/70">{formatDate(failure.failedAt)}</p>
+                <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{formatDate(failure.failedAt)}</p>
               </div>
               {canRetry && failure.state === "failed" ? (
                 <OperatorWorkflowRetryAction workflowActionId={failure.actionId} preview={preview} />
               ) : (
-                <p className="text-sm text-black/70 lg:text-right">{canRetry ? "Retry limit reached. Review the failure before taking further action." : "Ask an Administrator to review this failure."}</p>
+                <p className="text-sm text-[color:var(--operator-muted)] lg:text-right">{canRetry ? "Retry limit reached. Review the failure before taking further action." : "Ask an Administrator to review this failure."}</p>
               )}
             </article>
           ))}
           {health.workflowFailures.length === 0 ? (
-            <p className="operator-bento-card text-sm text-black/70">
+            <p className="operator-bento-card text-sm text-[color:var(--operator-muted)]">
               No failed automation actions.
             </p>
           ) : null}

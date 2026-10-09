@@ -228,21 +228,21 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="ui-heading text-base font-semibold">Delete member</h3>
-          <p className="mt-1 text-sm leading-relaxed text-black/70">Closes and deletes the account. The historical membership record stays.</p>
+          <p className="mt-1 text-sm leading-relaxed text-[color:var(--operator-muted)]">Closes and deletes the account. The historical membership record stays.</p>
         </div>
         <button aria-controls={panelId} aria-expanded={open} className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy) || deleted || open} onClick={openConfirmation} ref={trigger} type="button">Delete member</button>
       </div>
       {open ? (
-        <div className="grid gap-4 border-t border-black/15 pt-4" id={panelId}>
+        <div className="grid gap-4 border-t border-[color:var(--operator-ink)]/15 pt-4" id={panelId}>
           <div>
             <h4 className="ui-heading text-base font-semibold">Permanently delete member</h4>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/68">This closes the account and removes sign-in access, the private profile, card, invitation, journal and uploads. It cannot be undone. Deletion does not cancel billing. Membership, financial and audit history are retained; this person will no longer appear in current member counts.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[color:var(--operator-ink)]/68">This closes the account and removes sign-in access, the private profile, card, invitation, journal and uploads. It cannot be undone. Deletion does not cancel billing. Membership, financial and audit history are retained; this person will no longer appear in current member counts.</p>
           </div>
-          {busy === "checking" ? <p role="status" className="text-sm text-black/70">Checking eligibility…</p> : null}
+          {busy === "checking" ? <p role="status" className="text-sm text-[color:var(--operator-muted)]">Checking eligibility…</p> : null}
           {eligibility && !allowed ? (
             <div className="grid gap-2 rounded-none bg-[var(--operator-surface-muted)] p-4">
               <p className="text-sm font-semibold">This member cannot be deleted.</p>
-              {eligibility.blockers.length ? <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-black/68">{eligibility.blockers.map((blocker, index) => <li key={`${index}:${blocker}`}>{blocker}</li>)}</ul> : <p className="text-sm text-black/68">The account is not eligible for deletion.</p>}
+              {eligibility.blockers.length ? <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-[color:var(--operator-ink)]/68">{eligibility.blockers.map((blocker, index) => <li key={`${index}:${blocker}`}>{blocker}</li>)}</ul> : <p className="text-sm text-[color:var(--operator-ink)]/68">The account is not eligible for deletion.</p>}
             </div>
           ) : null}
           {allowed && eligibility ? (
@@ -272,7 +272,7 @@ export default function OperatorMemberDeleteAction({ memberId, preview = false }
               ) : <div><button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy) || !matches || !reason} type="submit">Review deletion</button></div>}
             </form>
           ) : null}
-          {message ? <p aria-live="polite" className={`text-sm leading-relaxed ${message.error ? "text-[var(--operator-danger)]" : "text-black/70"}`} role={message.error ? "alert" : "status"}>{message.text}</p> : null}
+          {message ? <p aria-live="polite" className={`text-sm leading-relaxed ${message.error ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={message.error ? "alert" : "status"}>{message.text}</p> : null}
           {!deleted ? <div className="flex flex-wrap gap-2">
             {!preview && !allowed && !busy ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => checkEligibility()} type="button">Check eligibility again</button> : null}
             <button className={OPERATOR_BUTTON_CLASS} disabled={Boolean(busy)} onClick={cancel} type="button">Cancel</button>

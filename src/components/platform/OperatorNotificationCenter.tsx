@@ -44,8 +44,8 @@ function statusLabel(status: OpsNotificationDeliveryStatus): string {
 function statusClass(status: OpsNotificationDeliveryStatus): string {
   if (status === "delivered") return "bg-[var(--color-verdigris)] text-white";
   if (status === "failed" || status === "cancelled") return "bg-[var(--color-poster)] text-white";
-  if (status === "sent") return "bg-[var(--color-shop)] text-black";
-  return "bg-[var(--operator-surface-muted)] text-black/70";
+  if (status === "sent") return "operator-emphasis bg-[var(--color-shop)] text-[color:var(--operator-ink)]";
+  return "bg-[var(--operator-surface-muted)] text-[color:var(--operator-muted)]";
 }
 
 type NotificationDraft = {
@@ -168,10 +168,10 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
     <OperatorPageFrame title="Messages">
       <OperatorMessagesTabs active="alerts" />
       <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="operator-page-heading">Notifications</h2><p className="mt-1 text-xs text-black/70">Visible in the app. No email or text is sent.</p></div>
+        <div><h2 className="operator-page-heading">Notifications</h2><p className="mt-1 text-xs text-[color:var(--operator-muted)]">Visible in the app. No email or text is sent.</p></div>
         <button className={OPERATOR_PRIMARY_ACTION_CLASS} id="open-write-notification" onClick={openComposer} type="button">Write notification</button>
       </header>
-      {preview ? <p className="mb-4 text-sm text-black/70" role="status">Preview — review is available; notifications are not sent.</p> : null}
+      {preview ? <p className="mb-4 text-sm text-[color:var(--operator-muted)]" role="status">Preview — review is available; notifications are not sent.</p> : null}
       {!composing && message ? <p role={failed ? "alert" : "status"} className="mt-4 text-sm">{message}</p> : null}
 
       <section aria-labelledby="notification-history-heading" id="notification-history">
@@ -180,25 +180,25 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
           <label className={OPERATOR_LABEL_CLASS}><span className="operator-compact-label">Find a notification</span><input className={OPERATOR_FIELD_CLASS} onChange={(event) => setQuery(event.target.value)} placeholder="Search message or member" type="search" value={query} /></label>
           <label className={OPERATOR_LABEL_CLASS}><span className="operator-compact-label">Status</span><select className={OPERATOR_FIELD_CLASS} onChange={(event) => setDeliveryStatus(event.target.value)} value={deliveryStatus}><option value="all">All delivery</option>{[...new Set(data.history.map((item) => item.status))].sort().map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></label>
         </div>
-        <div className="mb-3 flex flex-wrap justify-between gap-2 text-xs text-black/70"><p aria-label="Notification snapshot">{stats.recent} recent · {stats.delivered} delivered · {stats.read} read</p>{query || deliveryStatus !== "all" ? <p aria-live="polite">{history.length} match</p> : null}</div>
+        <div className="mb-3 flex flex-wrap justify-between gap-2 text-xs text-[color:var(--operator-muted)]"><p aria-label="Notification snapshot">{stats.recent} recent · {stats.delivered} delivered · {stats.read} read</p>{query || deliveryStatus !== "all" ? <p aria-live="polite">{history.length} match</p> : null}</div>
         <div className="grid gap-2">
           {history.map((item) => (
             <article className="operator-bento-card grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_auto] sm:items-center" key={item.notificationId}>
-              <div><strong className="ui-heading text-sm font-semibold">{item.title}</strong><p className="mt-1 text-xs text-black/70">{item.type} · {formatDate(item.statusAt)}</p></div>
-              <Link className="inline-flex min-h-11 items-center break-words text-sm underline decoration-black/20 underline-offset-4" href={`/ops/members/${item.memberId}`}>{item.memberName}</Link>
+              <div><strong className="ui-heading text-sm font-semibold">{item.title}</strong><p className="mt-1 text-xs text-[color:var(--operator-muted)]">{item.type} · {formatDate(item.statusAt)}</p></div>
+              <Link className="inline-flex min-h-11 items-center break-words text-sm underline decoration-[color:var(--operator-ink)]/20 underline-offset-4" href={`/ops/members/${item.memberId}`}>{item.memberName}</Link>
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`w-fit rounded-none px-2 py-1 text-xs ${statusClass(item.status)}`}>{statusLabel(item.status)}</span>
-                {opsNotificationReadState(item.status, item.readAt) ? <span className="text-xs text-black/70">{opsNotificationReadState(item.status, item.readAt)}</span> : null}
+                <span data-operator-tone={item.status === "sent" ? "info" : undefined} className={`w-fit rounded-none px-2 py-1 text-xs ${statusClass(item.status)}`}>{statusLabel(item.status)}</span>
+                {opsNotificationReadState(item.status, item.readAt) ? <span className="text-xs text-[color:var(--operator-muted)]">{opsNotificationReadState(item.status, item.readAt)}</span> : null}
               </div>
             </article>
           ))}
-          {history.length === 0 ? <p className="operator-bento-card text-sm text-black/70">{data.history.length ? "No matching notifications. Try another message, member, or status." : "No notifications yet. Choose Write notification when there is something to share."}</p> : null}
+          {history.length === 0 ? <p className="operator-bento-card text-sm text-[color:var(--operator-muted)]">{data.history.length ? "No matching notifications. Try another message, member, or status." : "No notifications yet. Choose Write notification when there is something to share."}</p> : null}
         </div>
       </section>
 
       {composing ? <OperatorDialog open title={review ? "Review notification" : "Write notification"} onClose={closeComposer} pending={submitting} returnFocusId="open-write-notification">
       <section id="write-notification" data-operator-dirty={dirty || Boolean(review)} data-operator-pending={submitting}>
-      <p className="mb-5 text-sm text-black/70">{review ? "Check the message and audience before sending." : "Choose the audience, write your message, then review. No email or text is sent."}</p>
+      <p className="mb-5 text-sm text-[color:var(--operator-muted)]">{review ? "Check the message and audience before sending." : "Choose the audience, write your message, then review. No email or text is sent."}</p>
       <form hidden={Boolean(review)} onSubmit={reviewNotification} onChange={() => { setReview(null); setDirty(true); }} ref={formRef}>
       <fieldset className="grid gap-5 sm:grid-cols-2" disabled={submitting}>
         <label className={OPERATOR_LABEL_CLASS}>
@@ -246,20 +246,20 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
           <input className={OPERATOR_FIELD_CLASS} name="actionUrl" placeholder="/my/circle" />
         </label>
         <div className="flex flex-wrap items-center justify-between gap-4 sm:col-span-2">
-          <p className="text-sm text-black/70">Review the exact message and audience next. Nothing is sent yet.</p>
+          <p className="text-sm text-[color:var(--operator-muted)]">Review the exact message and audience next. Nothing is sent yet.</p>
           <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={submitting} type="submit">Review notification</button>
         </div>
       </fieldset>
       </form>
-      {review ? <section aria-label="Review notification before sending" className="mt-5 rounded-none bg-[var(--operator-wait)] p-4">
+      {review ? <section aria-label="Review notification before sending" className="operator-emphasis mt-5 rounded-none bg-[var(--operator-wait)] p-4" data-operator-tone="wait">
         <p className="text-sm">Send to <strong>{review.audience}</strong></p>
         <h3 className="ui-heading mt-3 break-words text-xl font-semibold">{review.draft.title}</h3>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{review.draft.body}</p>
         {review.draft.actionUrl ? <p className="mt-3 break-all text-xs">{review.draft.actionLabel || "Open"} · {review.draft.actionUrl}</p> : null}
-        <p className="mt-3 text-sm text-black/65">This sends immediately to the selected audience. It cannot be retracted here.</p>
+        <p className="mt-3 text-sm text-[color:var(--operator-muted)]">This sends immediately to the selected audience. It cannot be retracted here.</p>
         <div className="mt-4 flex flex-wrap gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} onClick={sendNotification} type="button">{submitting ? "Sending" : "Send notification"}</button><button className="min-h-11 text-sm underline underline-offset-4" disabled={submitting} onClick={() => setReview(null)} type="button">Back to editing</button></div>
       </section> : null}
-      <div role={failed ? "alert" : "status"} className={`mt-4 text-sm ${failed ? "text-[var(--operator-danger)]" : "text-black/70"}`}><p>{message}</p>{failed ? <button className="mt-2 min-h-11 underline underline-offset-4" onClick={() => router.refresh()} type="button">Refresh recent delivery</button> : null}</div>
+      <div role={failed ? "alert" : "status"} className={`mt-4 text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`}><p>{message}</p>{failed ? <button className="mt-2 min-h-11 underline underline-offset-4" onClick={() => router.refresh()} type="button">Refresh recent delivery</button> : null}</div>
       </section>
       </OperatorDialog> : null}
     </OperatorPageFrame>

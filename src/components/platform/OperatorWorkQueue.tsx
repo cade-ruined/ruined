@@ -45,12 +45,12 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
   return (
     <OperatorPageFrame title="Work">
       <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="operator-page-heading">Work queue</h2><p className="mt-1 text-xs text-black/70" aria-label="Open work totals">{queue.totals.tasks} tasks · {queue.totals.artifacts} Artifacts · {queue.totals.failures} failed actions</p></div>
+        <div><h2 className="operator-page-heading">Work queue</h2><p className="mt-1 text-xs text-[color:var(--operator-muted)]" aria-label="Open work totals">{queue.totals.tasks} tasks · {queue.totals.artifacts} Artifacts · {queue.totals.failures} failed actions</p></div>
         <Link className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4" href="/ops/members">Create a member task →</Link>
       </header>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter work">
-          {[["all", "All work"], ["task", "Tasks"], ["artifact", "Artifacts"], ["workflow_failure", "Failed actions"]].map(([value, label]) => <button className={`min-h-11 rounded-none px-4 text-sm ${kind === value ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "bg-[var(--operator-surface-muted)] text-black/65"}`} aria-pressed={kind === value} key={value} onClick={() => setKind(value)} type="button">{label}</button>)}
+          {[["all", "All work"], ["task", "Tasks"], ["artifact", "Artifacts"], ["workflow_failure", "Failed actions"]].map(([value, label]) => <button className={`min-h-11 rounded-none px-4 text-sm ${kind === value ? "bg-[var(--color-faded)] text-[var(--color-bone)]" : "bg-[var(--operator-surface-muted)] text-[color:var(--operator-muted)]"}`} aria-pressed={kind === value} key={value} onClick={() => setKind(value)} type="button">{label}</button>)}
         </div>
       </div>
 
@@ -62,16 +62,16 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
           >
             <div className="min-w-0">
               <h2 className="break-words text-base font-semibold leading-snug">{item.label}</h2>
-              <p className="mt-1 break-words text-sm text-black/70">
+              <p className="mt-1 break-words text-sm text-[color:var(--operator-muted)]">
                 {item.memberId ? (
-                  <Link className="underline decoration-black/25 underline-offset-4 hover:text-black" href={`/ops/members/${item.memberId}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}`}>
+                  <Link className="underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[color:var(--operator-ink)]" href={`/ops/members/${item.memberId}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}`}>
                     {item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || "View member"}
                   </Link>
                 ) : "System work"}
               </p>
-              {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-black/75">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</p> : null}
-              {item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-black/70">{item.description}</p> : null}
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/70">
+              {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-[color:var(--operator-muted)]">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</p> : null}
+              {item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-[color:var(--operator-muted)]">{item.description}</p> : null}
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--operator-muted)]">
                 <span className="capitalize">{item.kind.replaceAll("_", " ")}</span>
                 <StateLabel state={item.state} />
                 <span className={['Overdue', 'Urgent'].includes(urgencyLabel(item)) ? 'text-[var(--operator-danger)]' : ''}>{urgencyLabel(item)}</span>
@@ -84,11 +84,11 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
               item.state === "failed" ? (
                 <OperatorWorkflowRetryAction workflowActionId={item.workId} preview={preview} />
               ) : (
-                <p className="max-w-sm text-sm text-black/70">Retry limit reached. Review the failure with an Administrator before taking further action.</p>
+                <p className="max-w-sm text-sm text-[color:var(--operator-muted)]">Retry limit reached. Review the failure with an Administrator before taking further action.</p>
               )
             ) : (
               <Link
-                className="inline-flex min-h-11 items-center justify-self-start text-sm font-medium underline decoration-black/30 underline-offset-4 hover:text-black lg:justify-self-end"
+                className="inline-flex min-h-11 items-center justify-self-start text-sm font-medium underline decoration-[color:var(--operator-ink)]/30 underline-offset-4 hover:text-[color:var(--operator-ink)] lg:justify-self-end"
                 href={`/ops/artifacts?focus=${encodeURIComponent(item.workId)}#artifact-${item.workId}`}
               >
                 Open production record
@@ -96,7 +96,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
             )}
           </article>
         ))}
-        {queue.items.length > 0 && items.length === 0 ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-5 text-sm text-black/70" role="status">No work in this category. Choose All work to see the remaining items.</p> : null}
+        {queue.items.length > 0 && items.length === 0 ? <p className="rounded-none bg-[var(--operator-surface-muted)] p-5 text-sm text-[color:var(--operator-muted)]" role="status">No work in this category. Choose All work to see the remaining items.</p> : null}
         {queue.items.length === 0 ? (
           <div className="grid gap-3">
             <OperatorEmptyState

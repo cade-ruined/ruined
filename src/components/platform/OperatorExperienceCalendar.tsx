@@ -10,7 +10,7 @@ import type {
 } from "@/lib/platform/ops-experience-model";
 
 const actionButton = "inline-flex min-h-11 items-center justify-center rounded-none bg-[var(--color-faded)] px-4 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-40";
-const quietButton = "inline-flex min-h-11 items-center justify-center rounded-none bg-[var(--operator-surface-muted)] px-4 text-sm font-medium text-black/65 transition hover:bg-[var(--operator-surface-hover)] disabled:opacity-40";
+const quietButton = "inline-flex min-h-11 items-center justify-center rounded-none bg-[var(--operator-surface-muted)] px-4 text-sm font-medium text-[color:var(--operator-muted)] transition hover:bg-[var(--operator-surface-hover)] disabled:opacity-40";
 
 function formatDate(value: string | null) {
   if (!value) return null;
@@ -136,26 +136,26 @@ export default function OperatorExperienceCalendar({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="operator-section-heading" id="experience-calendar-title">Meeting</h2>
-          <p className="mt-1 text-xs text-black/70">{assignedCopy}</p>
+          <p className="mt-1 text-xs text-[color:var(--operator-muted)]">{assignedCopy}</p>
         </div>
-        <span className="text-xs font-medium text-black/65">
+        <span className="text-xs font-medium text-[color:var(--operator-muted)]">
           {statusCopy(calendar)}
         </span>
       </div>
 
       {calendar.lastError ? <p className="mt-3 text-sm text-[var(--operator-danger)]">{calendar.lastError}</p> : null}
 
-      {calendar.attendeeCount === 0 && ["draft", "published"].includes(experienceState) ? <div className="mt-3 text-sm text-black/65">
+      {calendar.attendeeCount === 0 && ["draft", "published"].includes(experienceState) ? <div className="mt-3 text-sm text-[color:var(--operator-muted)]">
         <p>No one is currently eligible for an invitation. Check the audience and member access before sending.</p>
         {audienceReviewHref ? <a className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={audienceReviewHref}>{audienceReviewLabel}</a> : null}
       </div> : null}
 
       {!calendar.configured && !calendar.bindingRequired ? (
-        <p className="mt-3 text-sm text-black/70">
+        <p className="mt-3 text-sm text-[color:var(--operator-muted)]">
           Google Calendar setup needs attention before invitations can be sent.
         </p>
       ) : experienceState === "draft" ? (
-        <p className="mt-3 text-sm text-black/70">
+        <p className="mt-3 text-sm text-[color:var(--operator-muted)]">
           Review & publish to make this Experience available. {calendar.preservesMeetingUrl ? "Invitations will include your saved Google Meet link" : "Google creates the Meet link when its invitation is processed"}; publishing alone does not confirm delivery.
         </p>
       ) : null}
@@ -168,7 +168,7 @@ export default function OperatorExperienceCalendar({
       <OperatorDialog open={optionsOpen} title="Manage meeting" pending={pending} returnFocusId="meeting-options-trigger" onClose={() => setOptionsOpen(false)}>
         <div className="space-y-3 pb-2" data-operator-pending={pending ? "true" : "false"}>
           <p className="text-sm font-medium">{scope} · {assignedCopy}</p>
-          <p className="text-xs text-black/70">{statusCopy(calendar)}</p>
+          <p className="text-xs text-[color:var(--operator-muted)]">{statusCopy(calendar)}</p>
           {calendar.lastError ? <p className="text-sm text-[var(--operator-danger)]">{calendar.lastError}</p> : null}
           {calendar.attendeeCount === 0 ? <p className="text-sm text-[var(--operator-danger)]">No one is currently eligible for an invitation. Check the audience before sending.</p> : null}
         <div className="flex flex-wrap gap-2">
@@ -199,17 +199,17 @@ export default function OperatorExperienceCalendar({
         <div className="space-y-3 pt-2">
           {children}
           {experienceState === "published" && isQueued && !calendar.automaticDeliveryPaused ? <button className={quietButton} disabled={!canSend || pending} onClick={() => sync(intentFor(calendar))} type="button">{pending ? "Sending" : "Retry invitations"}</button> : null}
-          <p className="text-xs leading-relaxed text-black/70">Google Calendar invites eligible people in the selected audience. Waitlisted and cancelled places are excluded.</p>
-          {calendar.organizerEmail ? <p className="text-xs text-black/70">Organizer: {calendar.organizerEmail}</p> : null}
-          {lastSynced ? <p className="text-xs text-black/70">Last sent {lastSynced}</p> : null}
+          <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Google Calendar invites eligible people in the selected audience. Waitlisted and cancelled places are excluded.</p>
+          {calendar.organizerEmail ? <p className="text-xs text-[color:var(--operator-muted)]">Organizer: {calendar.organizerEmail}</p> : null}
+          {lastSynced ? <p className="text-xs text-[color:var(--operator-muted)]">Last sent {lastSynced}</p> : null}
         </div>
-          {message ? <p className={`text-sm ${messageIsError ? "text-[var(--operator-danger)]" : "text-black/65"}`} role={messageIsError ? "alert" : "status"}>{message}</p> : null}
+          {message ? <p className={`text-sm ${messageIsError ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={messageIsError ? "alert" : "status"}>{message}</p> : null}
         </div>
       </OperatorDialog>
       {message ? (
         <p
           aria-live={messageIsError ? "assertive" : "polite"}
-          className={`mt-3 text-sm ${messageIsError ? "text-[var(--operator-danger)]" : "text-black/65"}`}
+          className={`mt-3 text-sm ${messageIsError ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`}
           role={messageIsError ? "alert" : "status"}
         >
           {message}

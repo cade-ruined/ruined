@@ -18,12 +18,12 @@ export default function OperatorMemberReferrals({ memberId, preview = false }: {
     }).catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Invitation records could not be loaded."); });
     return () => controller.abort();
   }, [memberId, open, preview, retry]);
-  return <details className="mt-5 rounded-none border border-black/10 bg-[var(--operator-surface-muted)] p-4" onToggle={event => setOpen(event.currentTarget.open)}>
+  return <details className="mt-5 rounded-none border border-[color:var(--operator-ink)]/10 bg-[var(--operator-surface-muted)] p-4" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary className="min-h-11 cursor-pointer content-center text-sm font-medium">People joined through this member’s invitation</summary>
-    {preview ? <p className="py-3 text-sm text-black/70">Invitation records appear here after members complete joining.</p> : error ? <div role="alert"><p className="text-sm text-red-800">{error}</p><button className="min-h-11 text-sm underline" onClick={() => setRetry(value => value + 1)}>Try again</button></div> : !report ? <p role="status" className="py-3 text-sm text-black/70">Loading invitation records…</p> : <>
-      <p className="py-3 text-sm text-black/70">{report.joinedCount} completed {report.joinedCount === 1 ? "membership" : "memberships"}</p>
-      {report.joins.length ? <ul className="divide-y divide-black/10">{report.joins.map(join => <li key={join.memberId} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><Link className="min-h-11 max-w-full content-center break-words underline underline-offset-4" href={`/ops/members/${encodeURIComponent(join.memberId)}`}>{join.name} ↗</Link><time dateTime={join.joinedAt} className="text-xs text-black/70">{new Date(join.joinedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}</time></li>)}</ul> : null}
-      {report.joinedCount > report.joins.length ? <p className="text-xs text-black/70">Showing the {report.joins.length} most recent joined members.</p> : null}
+    {preview ? <p className="py-3 text-sm text-[color:var(--operator-muted)]">Invitation records appear here after members complete joining.</p> : error ? <div role="alert"><p className="text-sm text-red-800">{error}</p><button className="min-h-11 text-sm underline" onClick={() => setRetry(value => value + 1)}>Try again</button></div> : !report ? <p role="status" className="py-3 text-sm text-[color:var(--operator-muted)]">Loading invitation records…</p> : <>
+      <p className="py-3 text-sm text-[color:var(--operator-muted)]">{report.joinedCount} completed {report.joinedCount === 1 ? "membership" : "memberships"}</p>
+      {report.joins.length ? <ul className="divide-y divide-black/10">{report.joins.map(join => <li key={join.memberId} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><Link className="min-h-11 max-w-full content-center break-words underline underline-offset-4" href={`/ops/members/${encodeURIComponent(join.memberId)}`}>{join.name} ↗</Link><time dateTime={join.joinedAt} className="text-xs text-[color:var(--operator-muted)]">{new Date(join.joinedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}</time></li>)}</ul> : null}
+      {report.joinedCount > report.joins.length ? <p className="text-xs text-[color:var(--operator-muted)]">Showing the {report.joins.length} most recent joined members.</p> : null}
     </>}
   </details>;
 }

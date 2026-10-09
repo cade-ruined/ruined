@@ -1,9 +1,21 @@
-/* Opaque working surfaces. Category colors are shared by navigation and cards;
-   status colors keep their meaning inside every workspace. */
+/* Neutral grainy glass is the working surface. Solid color belongs to an
+   action, a selected state, or something that needs attention. */
 [data-platform-surface="ops"] {
-  --operator-surface: #f3efe6;
-  --operator-surface-muted: #e1d8c9;
-  --operator-surface-hover: #d6cbb9;
+  color-scheme: light;
+  --operator-canvas: #ded8cd;
+  --operator-canvas-wash: rgb(255 255 255 / 0.12);
+  --operator-ink: #25231f;
+  --operator-muted: #504b43;
+  --operator-focus: #25231f;
+  --operator-surface: #f5f1e9;
+  --operator-surface-muted: rgb(255 253 248 / 0.5);
+  --operator-surface-hover: rgb(255 253 248 / 0.86);
+  --operator-glass-fill: rgb(255 253 248 / 0.68);
+  --operator-glass-edge: rgb(255 255 255 / 0.82);
+  --operator-glass-sheen: rgb(255 255 255 / 0.3);
+  --operator-glass-shadow: rgb(45 37 23 / 0.09);
+  --operator-glass-inset: rgb(255 255 255 / 0.72);
+  --operator-grain: url("/textures/member-paper.svg");
   --operator-info: #b1cae0;
   --operator-info-hover: #9abbd6;
   --operator-wait: #ffca2c;
@@ -13,65 +25,97 @@
   --operator-success: #c7d8ce;
   --operator-success-hover: #b5cabf;
   --operator-workwear: #c8b49a;
-  --operator-line: #a79c8a;
+  --operator-line: rgb(57 48 34 / 0.26);
   --operator-danger: #84201d;
-  --operator-card: var(--operator-surface);
+  --operator-success-text: #315b46;
+  --operator-card: var(--operator-glass-fill);
+  --operator-accent: var(--operator-surface);
 }
 
-[data-platform-surface="ops"] [data-operator-area] {
-  --operator-card: var(--operator-surface);
+[data-platform-surface="ops"][data-operator-theme="ink"] {
+  color-scheme: dark;
+  --operator-canvas: #171815;
+  --operator-canvas-wash: rgb(255 255 255 / 0.025);
+  --operator-ink: #f1ede4;
+  --operator-muted: #c1bbae;
+  --operator-focus: #ffca2c;
+  --operator-surface: #30312c;
+  --operator-surface-muted: rgb(232 226 210 / 0.065);
+  --operator-surface-hover: rgb(232 226 210 / 0.14);
+  --operator-glass-fill: rgb(53 54 48 / 0.72);
+  --operator-glass-edge: rgb(235 228 211 / 0.23);
+  --operator-glass-sheen: rgb(255 255 255 / 0.045);
+  --operator-glass-shadow: rgb(0 0 0 / 0.22);
+  --operator-glass-inset: rgb(255 255 255 / 0.07);
+  --operator-line: rgb(235 228 211 / 0.24);
+  --operator-danger: #f4a79b;
+  --operator-success-text: #a9d4b9;
 }
 
-[data-platform-surface="ops"][data-operator-area="people"],
+/* Workspace markers retain their category, without tinting every card. */
+[data-platform-surface="ops"] [data-operator-area] { --operator-accent: var(--operator-surface); }
 [data-platform-surface="ops"] [data-operator-area="people"],
-[data-platform-surface="ops"][data-operator-area="circles"],
 [data-platform-surface="ops"] [data-operator-area="circles"],
-[data-platform-surface="ops"][data-operator-area="communication"],
-[data-platform-surface="ops"] [data-operator-area="communication"] {
-  --operator-card: var(--operator-info);
-}
-
-[data-platform-surface="ops"][data-operator-area="programme"],
+[data-platform-surface="ops"] [data-operator-area="communication"] { --operator-accent: var(--operator-info); }
 [data-platform-surface="ops"] [data-operator-area="programme"],
-[data-platform-surface="ops"][data-operator-area="sops"],
 [data-platform-surface="ops"] [data-operator-area="sops"],
-[data-platform-surface="ops"][data-operator-area="artifacts"],
-[data-platform-surface="ops"] [data-operator-area="artifacts"] {
-  --operator-card: var(--operator-workwear);
-}
-
-[data-platform-surface="ops"][data-operator-area="events"],
-[data-platform-surface="ops"] [data-operator-area="events"] {
-  --operator-card: var(--operator-success);
-}
-
-[data-platform-surface="ops"][data-operator-area="work"],
-[data-platform-surface="ops"] [data-operator-area="work"] {
-  --operator-card: var(--operator-wait);
-}
+[data-platform-surface="ops"] [data-operator-area="artifacts"] { --operator-accent: var(--operator-workwear); }
+[data-platform-surface="ops"] [data-operator-area="events"] { --operator-accent: var(--operator-success); }
+[data-platform-surface="ops"] [data-operator-area="work"] { --operator-accent: var(--operator-wait); }
 
 @layer components {
-  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card) {
+  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card, .operator-glass) {
     min-width: 0;
-    border: 1px solid var(--operator-line);
+    border: 1px solid var(--operator-glass-edge);
     border-radius: 0;
-    background-color: var(--operator-card);
+    background-color: var(--operator-glass-fill);
+    background-image: var(--operator-grain), linear-gradient(125deg, var(--operator-glass-sheen), transparent 70%);
+    background-size: 512px 512px, 100% 100%;
+    box-shadow: inset 0 1px 0 var(--operator-glass-inset), 0 3px 10px var(--operator-glass-shadow);
+    -webkit-backdrop-filter: blur(14px) saturate(0.85);
+    backdrop-filter: blur(14px) saturate(0.85);
+    color: var(--operator-ink);
+  }
+
+  [data-platform-surface="ops"] .operator-bento-card { padding: 1rem; }
+
+  /* A filtered ancestor would contain a fixed drawer. Suspend its filter while
+     an inline dialog is open; the layered glass still supplies separation. */
+  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card, .operator-glass):has([role="dialog"], dialog[open]) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  [data-platform-surface="ops"] .operator-emphasis {
+    color-scheme: light;
+    --operator-ink: #25231f;
+    --operator-muted: #504b43;
+    --operator-focus: #25231f;
+    --operator-danger: #84201d;
+    --operator-success-text: #315b46;
+    --operator-line: rgb(57 48 34 / 0.3);
+    --operator-surface: #f5f1e9;
+    --operator-surface-muted: rgb(255 253 248 / 0.5);
+    --operator-surface-hover: rgb(255 253 248 / 0.86);
+    --operator-glass-fill: rgb(255 253 248 / 0.68);
+    --operator-glass-edge: rgb(255 255 255 / 0.82);
+    --operator-glass-sheen: rgb(255 255 255 / 0.3);
+    --operator-glass-inset: rgb(255 255 255 / 0.72);
+    background-color: var(--operator-emphasis-fill, var(--operator-surface));
     background-image: none;
+    border-color: var(--operator-line);
     box-shadow: none;
-  }
-
-  [data-platform-surface="ops"] .operator-bento-card {
-    padding: 1rem;
-  }
-
-  [data-platform-surface="ops"] .operator-disclosure {
-    background-color: var(--operator-surface-muted);
-  }
-
-  [data-platform-surface="ops"] .operator-disclosure[open] {
-    background-color: var(--operator-card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    color: var(--operator-ink);
   }
 }
+
+[data-platform-surface="ops"] [data-operator-tone="info"] { --operator-emphasis-fill: var(--operator-info); }
+[data-platform-surface="ops"] [data-operator-tone="wait"] { --operator-emphasis-fill: var(--operator-wait); }
+[data-platform-surface="ops"] [data-operator-tone="error"] { --operator-emphasis-fill: var(--operator-error); }
+[data-platform-surface="ops"] [data-operator-tone="success"] { --operator-emphasis-fill: var(--operator-success); }
+[data-platform-surface="ops"] [data-operator-tone="workwear"] { --operator-emphasis-fill: var(--operator-workwear); }
 
 [data-platform-surface="ops"] .operator-workspace-option::before {
   content: "";
@@ -80,55 +124,75 @@
   width: 0.625rem;
   height: 0.625rem;
   border: 1px solid var(--operator-line);
-  background: var(--operator-card);
+  background: var(--operator-accent);
 }
 
+/* Overlays need a denser surface so the content behind cannot compete. */
 [data-platform-surface="ops"] dialog.operator-paper {
   background-color: var(--operator-surface) !important;
-  background-image: none;
+  background-image: var(--operator-grain);
+  color: var(--operator-ink);
+  border-color: var(--operator-glass-edge);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.25);
 }
 
-/* This component is shared with member pages. Only the operations surface
-   turns its existing text labels into solid, readable status chips. */
+[data-platform-surface="ops"] :is(.operator-workspaces-panel, .operator-account-panel) {
+  background-color: var(--operator-surface);
+  background-image: var(--operator-grain);
+  color: var(--operator-ink);
+  border: 1px solid var(--operator-glass-edge);
+}
+
+/* The shared status component remains unchanged on member pages. */
 [data-platform-surface="ops"] .operator-state-label {
   width: fit-content;
   padding: 0.4rem 0.55rem;
   border: 1px solid var(--operator-line);
   background: var(--operator-surface-muted);
-  color: #2a2a2a;
+  color: var(--operator-ink);
   opacity: 1;
   font-size: 0.75rem;
   line-height: 1.25;
 }
-
 [data-platform-surface="ops"] .operator-state-label[data-state-tone="attention"] {
   background: var(--operator-error);
   border-color: #bb675b;
   color: #81251f;
 }
-
 [data-platform-surface="ops"] .operator-state-label[data-state-tone="complete"] {
   background: #3b5d4f;
   border-color: #3b5d4f;
   color: #fff;
 }
-
-[data-platform-surface="ops"] .operator-state-label[data-state-tone="complete"] > span {
-  background: currentColor;
-}
-
 [data-platform-surface="ops"] .operator-state-label[data-state-tone="in-motion"] {
   background: var(--operator-info);
+  color: #25231f;
 }
+[data-platform-surface="ops"] .operator-state-label:is([data-state-tone="complete"], [data-state-tone="in-motion"]) > span { background: currentColor; }
 
-[data-platform-surface="ops"] .operator-state-label[data-state-tone="in-motion"] > span {
-  background: currentColor;
+/* A compact, familiar light/dark switch, with a full touch target. */
+.operator-appearance-toggle { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; }
+.operator-appearance-toggle:focus-visible { outline: 2px solid #ffca2c; outline-offset: 2px; }
+.operator-appearance-track { position: relative; display: inline-flex; width: 48px; height: 26px; align-items: center; justify-content: space-between; padding: 4px; border: 1px solid #777268; background: #282521; border-radius: 20px; }
+.operator-appearance-thumb { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #f3efe6; transition: transform 160ms ease, background-color 160ms ease; }
+.operator-appearance-toggle[aria-checked="true"] .operator-appearance-thumb { transform: translateX(22px); background: #ffca2c; }
+.operator-appearance-sun, .operator-appearance-moon { z-index: 1; width: 14px; height: 14px; color: #d6cfc0; }
+.operator-appearance-toggle[aria-checked="false"] .operator-appearance-sun, .operator-appearance-toggle[aria-checked="true"] .operator-appearance-moon { color: #25231f; }
+@media (prefers-reduced-motion: reduce) { .operator-appearance-thumb { transition: none; } }
+@media (prefers-reduced-transparency: reduce) {
+  [data-platform-surface="ops"],
+  [data-platform-surface="ops"][data-operator-theme="ink"],
+  [data-platform-surface="ops"] .operator-emphasis { --operator-glass-fill: var(--operator-surface); --operator-grain: none; }
+  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card, .operator-glass) { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
-
 @media (forced-colors: active) {
-  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card, .operator-state-label) {
-    border-color: CanvasText;
-    background: Canvas;
-    color: CanvasText;
+  [data-platform-surface="ops"] :is(.operator-bento-card, .operator-panel, .operator-disclosure, .operator-overview-card, .operator-glass, .operator-emphasis, .operator-state-label) {
+    border-color: CanvasText !important;
+    background: Canvas !important;
+    color: CanvasText !important;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
+  .operator-appearance-thumb { background: ButtonText; }
 }

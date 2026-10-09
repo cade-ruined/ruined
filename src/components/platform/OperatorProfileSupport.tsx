@@ -135,7 +135,7 @@ export default function OperatorProfileSupport({
       <header className="flex items-center justify-between gap-3">
         <div>
         <h3 className="ui-heading text-base font-semibold" id="profile-support-heading">Profile support</h3>
-        {preview ? <p className="mt-2 text-sm text-black/70">Preview — profile details are not changed.</p> : null}
+        {preview ? <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Preview — profile details are not changed.</p> : null}
         </div>
         {!editing ? <button className="min-h-11 px-2 text-sm underline underline-offset-4" aria-expanded={false} aria-controls="profile-correction-form" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }} type="button">Edit profile detail</button> : null}
       </header>
@@ -147,15 +147,15 @@ export default function OperatorProfileSupport({
             ["Shipping", profileAddress(profile)],
           ].map(([label, value]) => (
             <div key={label}>
-              <dt className="text-xs text-black/70">{label}</dt>
-              <dd className="mt-1 break-words text-black/68">{value}</dd>
+              <dt className="text-xs text-[color:var(--operator-muted)]">{label}</dt>
+              <dd className="mt-1 break-words text-[color:var(--operator-ink)]/68">{value}</dd>
             </div>
           ))}
         </dl>
 
-        {!editing && message ? <p className="mt-3 text-sm text-black/70" role="status">{message}</p> : null}
+        {!editing && message ? <p className="mt-3 text-sm text-[color:var(--operator-muted)]" role="status">{message}</p> : null}
         {editing ? <form className="mt-5" id="profile-correction-form" data-operator-pending={submitting ? "true" : "false"} onSubmit={submit}>
-          <p className="mb-4 text-sm text-black/70">Correct one verified detail and record why. The member still controls directory sharing.</p>
+          <p className="mb-4 text-sm text-[color:var(--operator-muted)]">Correct one verified detail and record why. The member still controls directory sharing.</p>
           <fieldset className="grid gap-3 sm:grid-cols-2" disabled={submitting}>
           <label className={OPERATOR_LABEL_CLASS}>
             <span className={OPERATOR_LABEL_TEXT_CLASS}>Detail to correct</span>
@@ -202,7 +202,7 @@ export default function OperatorProfileSupport({
             <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} maxLength={1000} minLength={3} name="reason" required />
           </label>
           <div className="flex flex-wrap items-center justify-between gap-4 sm:col-span-2">
-            <div className={`text-sm ${failed ? "text-[var(--operator-danger)]" : "text-black/70"}`} role={failed ? "alert" : "status"}>
+            <div className={`text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={failed ? "alert" : "status"}>
               <p>{message}</p>
               {failed ? <button className="mt-2 min-h-11 underline underline-offset-4" onClick={() => router.refresh()} type="button">Reload saved profile before retrying</button> : null}
             </div>

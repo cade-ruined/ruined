@@ -29,7 +29,7 @@ export default function OperatorArtifactQueue({
 }) {
   const production = (
       <section className="space-y-3" aria-label="Artifact production queue" id="artifact-production">
-        {artifacts.length ? <p className="text-sm text-black/70">{artifacts.length} {artifacts.length === 1 ? "Artifact" : "Artifacts"} in production</p> : null}
+        {artifacts.length ? <p className="text-sm text-[color:var(--operator-muted)]">{artifacts.length} {artifacts.length === 1 ? "Artifact" : "Artifacts"} in production</p> : null}
         <div className="grid gap-3 xl:grid-cols-2">
         {artifacts.map((artifact) => (
           <article
@@ -40,14 +40,14 @@ export default function OperatorArtifactQueue({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-lg font-semibold leading-tight">{artifact.name}</h2>
-                <Link className="inline-flex min-h-11 items-center text-sm underline decoration-black/25 underline-offset-4 hover:text-black" href={`/ops/members/${artifact.memberId}#journey`}>
+                <Link className="inline-flex min-h-11 items-center text-sm underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[color:var(--operator-ink)]" href={`/ops/members/${artifact.memberId}#journey`}>
                   {artifact.memberName}
                 </Link>
               </div>
               <StateLabel state={artifact.state} />
             </div>
-            <p className="text-sm text-black/70">{artifact.reason}</p>
-            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-black/70">Earned</dt><dd className="mt-1">{formatDate(artifact.earnedAt)}</dd></div><div><dt className="text-xs text-black/70">Due</dt><dd className="mt-1">{formatDate(artifact.dueAt)}</dd></div></dl>
+            <p className="text-sm text-[color:var(--operator-muted)]">{artifact.reason}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-[color:var(--operator-muted)]">Earned</dt><dd className="mt-1">{formatDate(artifact.earnedAt)}</dd></div><div><dt className="text-xs text-[color:var(--operator-muted)]">Due</dt><dd className="mt-1">{formatDate(artifact.dueAt)}</dd></div></dl>
             {artifact.artifactJobId ? (
               <details className="mt-2">
                 <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">Update production</summary>
@@ -56,7 +56,7 @@ export default function OperatorArtifactQueue({
                 </div>
               </details>
             ) : (
-              <p className="mt-3 text-xs text-black/70">
+              <p className="mt-3 text-xs text-[color:var(--operator-muted)]">
                 Award recorded. Production work has not been created.
               </p>
             )}
