@@ -12,6 +12,7 @@ const csp = [
   "img-src 'self' data: blob: https://cdn.shopify.com https://www.facebook.com",
   "media-src 'self' blob:",
   "font-src 'self' data:",
+  `frame-src 'self' https://members.theruinedproject.com${isDev ? " http://127.0.0.1:3301 http://localhost:3301" : ""}`,
   `connect-src 'self' https://*.myshopify.com https://cdn.shopify.com https://www.facebook.com${checkoutOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",

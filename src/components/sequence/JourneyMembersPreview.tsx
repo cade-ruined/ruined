@@ -1,115 +1,42 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import MembershipWaitlistForm from "@/components/public-members/MembershipWaitlistForm";
-import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import MembershipLandingModal from "./MembershipLandingModal";
 import styles from "./JourneyMembersPreview.module.css";
 
 export default function JourneyMembersPreview({ headingId }: { headingId: string }) {
-  const signupEnabled = process.env.NEXT_PUBLIC_MEMBERSHIP_SIGNUP_ENABLED?.trim().toLowerCase() === "true";
-  const [open, setOpen] = useState(true);
-  const film = useRef<HTMLVideoElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const reopenButton = useRef<HTMLButtonElement>(null);
-  const moveFocus = useRef(false);
-  const panelId = `${headingId}-registration`;
-
-  useEffect(() => {
-    if (!moveFocus.current) return;
-    (open ? closeButton : reopenButton).current?.focus({ preventScroll: true });
-    moveFocus.current = false;
-  }, [open]);
-
-  useEffect(() => {
-    const video = film.current;
-    if (!video) return;
-    const pauseWhenHidden = () => {
-      if (document.hidden || video.closest('[hidden], [inert], [aria-hidden="true"], [data-walking]')) video.pause();
-    };
-    // The walk keeps its rooms mounted. Stop the film as its room leaves view.
-    const visibility = new MutationObserver(pauseWhenHidden);
-    for (let parent = video.parentElement; parent; parent = parent.parentElement) {
-      visibility.observe(parent, { attributes: true, attributeFilter: ["hidden", "inert", "aria-hidden", "data-walking"] });
-    }
-    const intersection = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) video.pause();
-    });
-    intersection.observe(video);
-    document.addEventListener("visibilitychange", pauseWhenHidden);
-    return () => {
-      visibility.disconnect();
-      intersection.disconnect();
-      document.removeEventListener("visibilitychange", pauseWhenHidden);
-      video.pause();
-    };
-  }, []);
-
-  function changeOpen(next: boolean) {
-    if (!next) film.current?.pause();
-    moveFocus.current = true;
-    setOpen(next);
-  }
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className={styles.shell} onKeyDown={(event) => {
-      if (event.key !== "Escape" || !open) return;
-      event.preventDefault();
-      event.stopPropagation();
-      changeOpen(false);
-    }}>
+    <section className={styles.shell} aria-labelledby={headingId} data-journey-members-preview>
+      <h2 id={headingId} className="sr-only">After the fear</h2>
       <button
-        ref={reopenButton}
-        className={styles.reopen}
+        ref={trigger}
         type="button"
-        hidden={open}
+        className={styles.preview}
+        aria-haspopup="dialog"
         aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => changeOpen(true)}
+        aria-label="Explore Ruined membership"
+        onClick={() => setOpen(true)}
       >
-        Open membership preview <span aria-hidden="true">↗</span>
+        <span className={styles.hero}>
+          <span className={styles.copy}>
+            <span className={styles.title} aria-hidden="true">After the fear</span>
+            <span className={styles.handwritten}>You become the author</span>
+            <span className={styles.description}>Honest conversations. Meaningful work.<br />People who follow through.</span>
+          </span>
+        </span>
+        <span className={styles.caption}>
+          <span>Explore membership</span>
+          <span className={styles.arrow} aria-hidden="true">↗</span>
+        </span>
       </button>
-      {/* Keep the form mounted so dismissing it never clears a draft or resets a submission. */}
-      <section id={panelId} hidden={!open} className={styles.preview} aria-labelledby={headingId} data-journey-members-preview data-mobile-internal-scroll>
-        <button
-          ref={closeButton}
-          className={styles.close}
-          type="button"
-          aria-label="Close membership preview"
-          onClick={() => changeOpen(false)}
-        >
-          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
-            <path d="m6 6 12 12M18 6 6 18" />
-          </svg>
-        </button>
-        <figure className={styles.film}>
-          <video
-            ref={film}
-            className={styles.video}
-            aria-label="Inside Ruined — membership film"
-            controls
-            playsInline
-            data-cursor-native
-            preload="none"
-            poster="/membership/foundations/beginning.webp"
-            width={720}
-            height={1280}
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <source src="/media/membership-introduction.mp4" type="video/mp4" />
-            <a href="/media/membership-introduction.mp4">Watch the membership film</a>
-          </video>
-        </figure>
-        <div className={styles.copy}>
-          <h2 id={headingId} className="ui-heading">{MEMBERSHIP_INTRO.headline}</h2>
-          <div className={styles.signup}>
-            <a className={styles.invitation} href={MEMBERSHIP_LINKS.signUp}>
-              Explore membership <span aria-hidden="true">↗</span>
-            </a>
-            {!signupEnabled && <MembershipWaitlistForm tone="paper" />}
-          </div>
-        </div>
-      </section>
-    </div>
+      {open && createPortal(
+        <MembershipLandingModal onClose={() => setOpen(false)} returnFocus={trigger} />,
+        document.body,
+      )}
+    </section>
   );
 }

@@ -443,7 +443,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(bootstrap, /ruined-desktop-sequence-bootstrap__index/);
   assert.match(bootstrap, /<JourneyLobbyIndex/);
   assert.match(indexes, /events\.find\(\(candidate\) => candidate\.id === "byob-01"\)/);
-  assert.match(indexes, /candidate\.registration\?\.status === "Open" && candidate\.status !== "Ended"/);
+  assert.match(indexes, /candidate\.id\.startsWith\("byob-"\) && candidate\.status !== "Ended"/);
   const lobbyIndex = indexes.slice(
     indexes.indexOf("export function JourneyLobbyIndex"),
     indexes.indexOf("export function JourneyStoreIndex")
@@ -451,9 +451,9 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /priority=\{index === 0\}/);
   assert.match(lobbyIndex, /fetchPriority=\{index === 0 \? "high" : "low"\}/);
   assert.match(lobbyIndex, /key: `events-\$\{nextByob\.id\}`/);
-  assert.match(lobbyIndex, /href: nextByob\.registration\.href/);
+  assert.match(lobbyIndex, /href: byobRegistrationOpen \? nextByob\.registration!\.href : `\/community#\$\{nextByob\.id\}`/);
   assert.match(lobbyIndex, /title: nextByob\.title/);
-  assert.match(lobbyIndex, /meta: `Register now · \$\{nextByob\.date\}`/);
+  assert.match(lobbyIndex, /byobRegistrationOpen \? "Register now" : "Save the date"/);
   assert.doesNotMatch(lobbyIndex, /key: "what-is-this"/);
   assert.match(lobbyIndex, /href: "#members"/);
   assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
@@ -957,7 +957,7 @@ test("BYOB explains what guests should bring", async () => {
     fs.readFile(path.join(root, "src", "components", "events", "EventsIndex.tsx"), "utf8"),
   ]);
 
-  assert.match(events, /summary: "Bring Your Own \(Bell or bodyweight\)\."/);
+  assert.match(events, /summary: isDateAnnouncement[\s\S]*?"Bring Your Own \(Bell or bodyweight\)\."/);
   assert.match(eventsIndex, /\{selected\.summary\}/);
 });
 
@@ -997,10 +997,10 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
       ).metadata(),
     ]);
 
-  assert.match(events, /Array\.from\(\{ length: 3 \}/);
+  assert.match(events, /Array\.from\(\{ length: 4 \}/);
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
   assert.match(events, /image: isFirstEvent\s*\? BYOB_01_FEATURE_IMAGE\s*: isSecondEvent \? "\/events\/byob-02-recap-poster\.webp" : "\/events\/byob-key-art\.png"/);
-  assert.match(events, /status: index < 2 \? "Ended" : "Upcoming"/);
+  assert.match(events, /status: index < 3 \? "Ended" : "Upcoming"/);
   assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);

@@ -89,6 +89,18 @@ test("an open event can lead with its own image even without the archive event",
   assert.equal(attr(nodes(cards[0]).find((node) => node.tagName === "img"), "src"), "/byob-03.webp");
 });
 
+test("a date announcement leads the lobby without reopening the previous gathering", () => {
+  const announcement = {
+    id: "byob-04", title: "BYOB Nº 04", date: "13 November 2026", status: "Upcoming",
+    image: "/events/byob-key-art.png",
+  };
+  const { cards } = render({ events: [...events.map((event) => ({ ...event, status: "Ended" })), announcement] });
+  assert.equal(attr(cards[0], "href"), "/community#byob-04");
+  assert.match(text(cards[0]), /BYOB Nº 04/);
+  assert.match(text(cards[0]), /Save the date · 13 November 2026/);
+  assert.doesNotMatch(text(cards[0]), /Register now|October 9/);
+});
+
 test("missing products and closed events never resurrect obsolete promotions", () => {
   const { cards } = render({ products: [], events: events.slice(0, 2) });
   assert.deepEqual(cards.map((card) => attr(card, "href")), ["#members", "https://www.instagram.com/theruinedproject/"]);

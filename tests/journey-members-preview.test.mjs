@@ -13,14 +13,14 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 } }).outputText;
 const nodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node)
   ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
-const text = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node)
-  ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
-const WaitlistForm = () => null;
+const MembershipLandingModal = () => null;
 
-function fixture(headingId = "test-members-heading", signupEnabled = false) {
+function fixture(headingId = "test-members-heading") {
   const slots = [];
-  const focus = [];
-  const effects = [];
+  const portalCalls = [];
+  const focusCalls = [];
+  const body = { name: "document body" };
+  const triggerElement = { focus: (...args) => focusCalls.push(args) };
   let cursor = 0;
   const hooks = {
     ...React,
@@ -33,142 +33,80 @@ function fixture(headingId = "test-members-heading", signupEnabled = false) {
       const index = cursor++;
       return slots[index] ??= { current: initial };
     },
-    useEffect(callback, dependencies) {
-      const index = cursor++;
-      const previous = slots[index];
-      if (!previous || !dependencies || dependencies.some((value, i) => !Object.is(value, previous[i]))) {
-        effects.push(callback);
-      }
-      slots[index] = dependencies;
-    },
   };
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)((name) => {
+  new Function("require", "module", "exports", "document", compiled)((name) => {
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return require(name);
-    if (name === "@/components/public-members/MembershipWaitlistForm") return { __esModule: true, default: WaitlistForm };
-    if (name === "@/data/public-membership") return {
-      MEMBERSHIP_INTRO: { headline: "A place for what matters." },
-      MEMBERSHIP_LINKS: { signIn: "https://members.theruinedproject.com/access", signUp: "https://members.theruinedproject.com/membership" },
-    };
+    if (name === "react-dom") return { createPortal: (child, host) => {
+      portalCalls.push({ child, host });
+      return child;
+    } };
+    if (name === "./MembershipLandingModal") return { __esModule: true, default: MembershipLandingModal };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_target, property) => property }) };
-    throw new Error(`Unexpected public signup dependency: ${name}`);
-  }, loaded, loaded.exports, { env: { NEXT_PUBLIC_MEMBERSHIP_SIGNUP_ENABLED: signupEnabled ? "true" : undefined } });
+    throw new Error(`Unexpected preview dependency: ${name}`);
+  }, loaded, loaded.exports, { body });
 
   function draw() {
     cursor = 0;
     const tree = loaded.exports.default({ headingId });
     for (const node of nodes(tree)) {
-      if (node.props?.ref && node.type === "button") {
-        node.props.ref.current = { focus: (options) => focus.push({ label: node.props["aria-label"] ?? text(node).trim(), options }) };
-      }
+      if (node.type === "button" && node.props.ref) node.props.ref.current = triggerElement;
     }
-    for (const effect of effects.splice(0)) effect();
     return tree;
   }
-  const panel = (tree) => nodes(tree).find((node) => node.type === "section");
-  const close = (tree) => nodes(tree).find((node) => node.type === "button" && node.props["aria-label"] === "Close membership preview");
-  const reopen = (tree) => nodes(tree).find((node) => node.type === "button" && text(node).startsWith("Open membership preview"));
-  return { draw, panel, close, reopen, focus };
+  const trigger = (tree) => nodes(tree).find((node) => node.type === "button" && node.props["aria-haspopup"] === "dialog");
+  const modal = (tree) => nodes(tree).find((node) => node.type === MembershipLandingModal);
+  return { draw, trigger, modal, portalCalls, focusCalls, body, triggerElement };
 }
 
-function childPath(tree, type, path = []) {
-  if (!tree || typeof tree !== "object") return null;
-  if (tree.type === type) return { path, key: tree.key, props: tree.props };
-  const children = Array.isArray(tree) ? tree : React.Children.toArray(tree.props?.children);
-  for (let index = 0; index < children.length; index += 1) {
-    const found = childPath(children[index], type, [...path, index]);
-    if (found) return found;
-  }
-  return null;
-}
-
-test("registration starts open with an accessible close button and no focus change", () => {
+test("arriving in Members shows a preview without opening or loading the landing page", () => {
   const f = fixture();
   const tree = f.draw();
-  assert.equal(f.panel(tree).props.hidden, false);
-  assert.equal(f.reopen(tree).props.hidden, true);
-  assert.equal(f.reopen(tree).props["aria-expanded"], true);
-  assert.equal(f.reopen(tree).props["aria-controls"], f.panel(tree).props.id);
-  assert.equal(f.close(tree).props.type, "button");
-  assert.equal(f.reopen(tree).props.type, "button");
-  assert.deepEqual(f.focus, [], "arriving in Members must not take keyboard focus");
+  assert.equal(f.trigger(tree).props.type, "button");
+  assert.equal(f.trigger(tree).props["aria-expanded"], false);
+  assert.ok(f.trigger(tree).props["aria-label"].trim());
+  assert.equal(f.modal(tree), undefined);
+  assert.equal(nodes(tree).some((node) => node.type === "iframe" || node.type === "form" || node.type === "video"), false);
+  assert.deepEqual(f.portalCalls, [], "The landing page is not mounted before activation");
+  assert.deepEqual(f.focusCalls, [], "Arriving in the room does not move keyboard focus");
 });
 
-test("closing hides the paper, preserves the form position, and focuses the reopen control", () => {
+test("activating the preview opens one modal outside the walk and provides its return-focus target", () => {
   const f = fixture();
-  const initial = f.draw();
-  const originalForm = childPath(initial, WaitlistForm);
-  assert.ok(originalForm);
-  f.close(initial).props.onClick();
-  const closed = f.draw();
-  assert.equal(f.panel(closed).props.hidden, true);
-  assert.equal(f.reopen(closed).props.hidden, false);
-  assert.equal(f.reopen(closed).props["aria-expanded"], false);
-  assert.deepEqual(childPath(closed, WaitlistForm), originalForm, "the same child type, key, and position preserve the mounted form and its state");
-  assert.deepEqual(f.focus, [{ label: "Open membership preview ↗", options: { preventScroll: true } }]);
-  f.draw();
-  assert.equal(f.focus.length, 1, "ordinary rerenders do not repeatedly move focus");
+  f.trigger(f.draw()).props.onClick();
+  const open = f.draw();
+  assert.equal(f.trigger(open).props["aria-expanded"], true);
+  assert.equal(nodes(open).filter((node) => node.type === MembershipLandingModal).length, 1);
+  assert.equal(f.portalCalls.at(-1).host, f.body, "A body portal escapes the transformed walk container");
+  assert.equal(f.modal(open).props.returnFocus.current, f.triggerElement);
+  assert.equal(typeof f.modal(open).props.onClose, "function");
+  f.trigger(open).props.onClick();
+  assert.equal(nodes(f.draw()).filter((node) => node.type === MembershipLandingModal).length, 1);
 });
 
-test("reopening restores the same form and focuses its close control without scrolling", () => {
+test("the modal close callback returns to the snippet and allows reopening", () => {
   const f = fixture();
-  const initial = f.draw();
-  f.close(initial).props.onClick();
+  f.trigger(f.draw()).props.onClick();
+  f.modal(f.draw()).props.onClose();
   const closed = f.draw();
-  f.reopen(closed).props.onClick();
+  assert.equal(f.trigger(closed).props["aria-expanded"], false);
+  assert.equal(f.modal(closed), undefined, "The full landing page unmounts when dismissed");
+  f.trigger(closed).props.onClick();
   const reopened = f.draw();
-  assert.equal(f.panel(reopened).props.hidden, false);
-  assert.equal(f.reopen(reopened).props.hidden, true);
-  assert.equal(f.reopen(reopened).props["aria-expanded"], true);
-  assert.deepEqual(childPath(reopened, WaitlistForm), childPath(initial, WaitlistForm));
-  assert.deepEqual(f.focus.at(-1), { label: "Close membership preview", options: { preventScroll: true } });
+  assert.equal(f.trigger(reopened).props["aria-expanded"], true);
+  assert.equal(f.modal(reopened).props.returnFocus.current, f.triggerElement);
 });
 
-test("Escape closes the focused registration area without consuming other keys or closed-state Escape", () => {
-  const f = fixture();
-  let prevented = 0;
-  let stopped = 0;
-  const event = (key) => ({ key, preventDefault: () => { prevented += 1; }, stopPropagation: () => { stopped += 1; } });
-  let tree = f.draw();
-  tree.props.onKeyDown(event("Enter"));
-  tree = f.draw();
-  assert.equal(f.panel(tree).props.hidden, false);
-  assert.equal(prevented, 0);
-  tree.props.onKeyDown(event("Escape"));
-  tree = f.draw();
-  assert.equal(f.panel(tree).props.hidden, true);
-  assert.equal(prevented, 1);
-  assert.equal(stopped, 1, "handled Escape must not reach another page control");
-  tree.props.onKeyDown(event("Escape"));
-  assert.equal(prevented, 1);
-  assert.equal(stopped, 1);
-});
-
-test("desktop and mobile controls own distinct panel IDs and independent dismissal state", () => {
+test("desktop and mobile snippets own independent launch state and return-focus targets", () => {
   const desktop = fixture("desktop-members-heading");
   const mobile = fixture("mobile-members-heading");
-  let desktopTree = desktop.draw();
-  const mobileTree = mobile.draw();
-  assert.notEqual(desktop.panel(desktopTree).props.id, mobile.panel(mobileTree).props.id);
-  assert.equal(mobile.reopen(mobileTree).props["aria-controls"], mobile.panel(mobileTree).props.id);
-  desktop.close(desktopTree).props.onClick();
-  desktopTree = desktop.draw();
-  assert.equal(desktop.panel(desktopTree).props.hidden, true);
-  assert.equal(mobile.panel(mobile.draw()).props.hidden, false);
-  assert.deepEqual(mobile.focus, []);
-});
-
-test("the invitation release retains close and reopen keyboard focus behavior", () => {
-  const f = fixture("invitation-heading", true);
-  const initial = f.draw();
-  assert.equal(nodes(initial).some(node => node.type === WaitlistForm), false);
-  assert.equal(nodes(initial).find(node => node.type === "a" && text(node).startsWith("Explore membership")).props.href, "https://members.theruinedproject.com/membership");
-  f.close(initial).props.onClick();
-  const closed = f.draw();
-  assert.equal(f.panel(closed).props.hidden, true);
-  assert.deepEqual(f.focus.at(-1), { label: "Open membership preview ↗", options: { preventScroll: true } });
-  f.reopen(closed).props.onClick();
-  assert.equal(f.panel(f.draw()).props.hidden, false);
-  assert.deepEqual(f.focus.at(-1), { label: "Close membership preview", options: { preventScroll: true } });
+  desktop.trigger(desktop.draw()).props.onClick();
+  const desktopOpen = desktop.draw();
+  const mobileClosed = mobile.draw();
+  assert.equal(desktop.trigger(desktopOpen).props["aria-expanded"], true);
+  assert.equal(mobile.trigger(mobileClosed).props["aria-expanded"], false);
+  assert.equal(mobile.modal(mobileClosed), undefined);
+  mobile.trigger(mobileClosed).props.onClick();
+  assert.notEqual(desktop.modal(desktopOpen).props.returnFocus.current, mobile.modal(mobile.draw()).props.returnFocus.current);
 });

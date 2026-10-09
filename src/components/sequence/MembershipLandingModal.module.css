@@ -1,0 +1,25 @@
+.dialog { position:fixed; inset:0; width:100%; max-width:none; height:100dvh; max-height:none; margin:0; padding:clamp(12px,2vw,28px); border:0; background:transparent; color:#ece7dc; overflow:hidden; overscroll-behavior:contain; }
+.dialog::backdrop { background:rgb(0 0 0 / .78); backdrop-filter:blur(7px); }
+.dialog[open] { display:grid; place-items:center; }
+.panel { display:grid; grid-template-rows:auto minmax(0,1fr); width:100%; max-width:1400px; height:100%; min-height:0; background:#151714; border:1px solid rgb(236 231 220 / .25); box-shadow:0 20px 80px rgb(0 0 0 / .5); }
+.toolbar { display:flex; align-items:center; gap:24px; min-height:60px; padding:8px 12px 8px 24px; border-bottom:1px solid rgb(236 231 220 / .2); }
+.toolbar h2 { margin:0 auto 0 0; font:500 13px/1.2 var(--font-body); font-family:var(--font-body) !important; }
+.external { color:inherit; font:400 12px/1.3 var(--font-body); text-decoration:underline; text-underline-offset:4px; }
+.external span { margin-left:6px; }
+.close { display:grid; place-items:center; width:44px; height:44px; flex-shrink:0; border:1px solid rgb(236 231 220 / .35); color:inherit; background:transparent; cursor:pointer; }
+.close svg { width:24px; height:24px; }
+.close:hover { background:#ece7dc; color:#151714; }
+.toolbar a:focus-visible, .close:focus-visible { outline:2px solid #ffd52b; outline-offset:3px; }
+.content { position:relative; min-height:0; }
+.frame { width:100%; height:100%; display:block; border:0; visibility:hidden; }
+.ready { visibility:visible; }
+.loading { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; text-align:center; font:400 15px/1.5 var(--font-body); }
+.loading p { margin:0; }
+.loading a { color:#ffd52b; text-decoration:underline; text-underline-offset:4px; }
+@media(max-width:640px) {
+  .dialog { padding:0; }
+  .panel { border:0; }
+  .toolbar { gap:12px; padding:calc(8px + env(safe-area-inset-top)) 12px 8px 16px; }
+  .toolbar h2 { font-size:12px; }
+  .external { font-size:11px; }
+}

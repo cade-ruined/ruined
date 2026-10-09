@@ -231,7 +231,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
                       Date
                     </dt>
                     <dd className="mt-1 text-sm leading-tight sm:text-base">
-                      <time dateTime={selected.dateTime}>{selected.date}</time>
+                      <time dateTime={selected.dateOnly ? selected.dateTime.slice(0, 10) : selected.dateTime}>{selected.date}</time>
                     </dd>
                   </div>
                   <div>
@@ -447,7 +447,7 @@ function EventCard({
           {event.title}
         </h4>
         <div className="mt-2 flex items-center justify-between gap-2 font-sans text-[0.44rem] uppercase tracking-[0.12em] text-black/45 sm:text-[0.5rem]">
-          <time dateTime={event.dateTime}>{event.date}</time>
+          <time dateTime={event.dateOnly ? event.dateTime.slice(0, 10) : event.dateTime}>{event.date}</time>
           <span className="shrink-0 text-[var(--color-poster)]">View event</span>
         </div>
       </div>

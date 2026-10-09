@@ -139,18 +139,19 @@ export function JourneyLobbyIndex({
   products: Product[];
 }) {
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
-  const nextByob = events.find((candidate) => candidate.id.startsWith("byob-") && candidate.registration?.status === "Open" && candidate.status !== "Ended");
+  const nextByob = events.find((candidate) => candidate.id.startsWith("byob-") && candidate.status !== "Ended");
+  const byobRegistrationOpen = nextByob?.registration?.status === "Open";
   const newProducts = products
     .filter((product) => product.image)
     .slice(0, 9);
   const selections: LobbySelection[] = [
-    ...(nextByob?.registration
+    ...(nextByob
       ? [{
           key: `events-${nextByob.id}`,
-          href: nextByob.registration.href,
+          href: byobRegistrationOpen ? nextByob.registration!.href : `/community#${nextByob.id}`,
           realm: "Community" as const,
           title: nextByob.title,
-          meta: `Register now · ${nextByob.date}`,
+          meta: `${byobRegistrationOpen ? "Register now" : "Save the date"} · ${nextByob.date}`,
           image: nextByob.image ?? byobOne?.image,
           alt: `${nextByob.title} community gathering in the mountains.`,
         }]
