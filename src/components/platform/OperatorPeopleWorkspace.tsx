@@ -57,7 +57,7 @@ export default function OperatorPeopleWorkspace({ children, pendingJoining, dire
       </div>
     </header>
     {pendingJoining || directInvitations ? <nav className="mb-3 flex flex-wrap gap-1" aria-label="Member directory views">
-      {([['members', 'Members'], ...(pendingJoining ? [['pending', 'Pending joining']] : []), ...(directInvitations ? [['direct', 'Ruined Direct']] : [])] as Array<['members' | 'pending' | 'direct', string]>).map(([key, label]) => <button type="button" key={key} aria-controls={key === "members" ? "member-directory-panel" : key === "pending" ? "pending-joining-panel" : "direct-invitations-panel"} aria-pressed={view === key} onClick={() => switchView(key)} className={`min-h-11 rounded-[4px] px-4 text-sm font-medium ${view === key ? 'bg-black/[0.08] text-black' : 'text-black/60 hover:bg-black/[0.04]'}`}>{label}</button>)}
+      {([['members', 'Members'], ...(pendingJoining ? [['pending', 'Pending joining']] : []), ...(directInvitations ? [['direct', 'Ruined Direct']] : [])] as Array<['members' | 'pending' | 'direct', string]>).map(([key, label]) => <button type="button" key={key} aria-controls={key === "members" ? "member-directory-panel" : key === "pending" ? "pending-joining-panel" : "direct-invitations-panel"} aria-pressed={view === key} onClick={() => switchView(key)} className={`min-h-11 rounded-none px-4 text-sm font-medium ${view === key ? 'bg-[var(--operator-surface-muted)] text-black' : 'text-black/70 hover:bg-[var(--operator-surface-hover)]'}`}>{label}</button>)}
     </nav> : null}
     {navigationNotice ? <p className="mb-4 text-sm" role="status">{navigationNotice}</p> : null}
     <div hidden={view !== "members"} id="member-directory-panel">{children}</div>

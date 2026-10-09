@@ -27,18 +27,18 @@ export default function OperatorRegistrationNextStep({ action, onReviewProfile, 
       linkField.current?.focus(); linkField.current?.select();
     } finally { busy.current = false; setCopying(false); }
   }
-  return <section aria-label="Operator next step" className="mt-4 rounded border border-black/10 bg-white/35 p-4 text-sm">
-    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-black/50">Operator next step</p>
+  return <section aria-label="Operator next step" className="mt-4 rounded-none border border-black/10 bg-[var(--operator-surface)] p-4 text-sm">
+    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-black/70">Operator next step</p>
     <h3 className="font-semibold">{action.title}</h3>
     <p className="mt-1 text-xs leading-relaxed text-black/65">{action.detail}</p>
     {action.memberUrl ? <>
-      <p className="mt-3 break-words text-xs"><span className="text-black/55">Send to </span><strong>{action.recipient}</strong></p>
-      <input ref={linkField} readOnly aria-label="Member follow-up link" value={action.memberUrl} className="mt-2 min-h-11 w-full min-w-0 rounded border border-black/15 bg-white/45 px-3 text-xs" onFocus={event => event.currentTarget.select()} />
+      <p className="mt-3 break-words text-xs"><span className="text-black/70">Send to </span><strong>{action.recipient}</strong></p>
+      <input ref={linkField} readOnly aria-label="Member follow-up link" value={action.memberUrl} className="mt-2 min-h-11 w-full min-w-0 rounded-none border border-black/15 bg-[var(--operator-surface)] px-3 text-xs" onFocus={event => event.currentTarget.select()} />
       <div className="mt-2 flex flex-wrap gap-2">
         <button className={OPERATOR_BUTTON_CLASS} type="button" disabled={disabled || copying} onClick={() => void copy("link")}>Copy link</button>
         <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} type="button" disabled={disabled || copying} onClick={() => void copy("message")}>Copy message</button>
       </div>
-      {notice ? <p className="mt-2 break-words text-xs text-black/60" role="status">{notice}</p> : null}
+      {notice ? <p className="mt-2 break-words text-xs text-black/70" role="status">{notice}</p> : null}
     </> : action.kind === "release" ? <button className={`${OPERATOR_BUTTON_CLASS} mt-3`} type="button" disabled={disabled} onClick={onReviewProfile}>Review profile access</button>
       : action.kind === "review" ? <Link className="mt-2 inline-flex min-h-11 items-center text-xs font-semibold underline underline-offset-4" href={action.operatorHref}>Review member record →</Link> : null}
   </section>;

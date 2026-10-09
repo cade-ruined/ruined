@@ -7,7 +7,7 @@ import { insertResendEmailBanner, normalizeResendEmailBanner } from "@/lib/commu
 export type LocalEmailBanner = { dataUrl: string; filename: string; width: number; height: number };
 const MAX_BYTES = 3 * 1024 * 1024;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-[4px] border border-black/25 px-4 py-2 text-sm font-medium hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40";
+const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-none border border-black/25 px-4 py-2 text-sm font-medium hover:bg-[var(--operator-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40";
 
 function aborted() { return new DOMException("Photo selection cancelled", "AbortError"); }
 
@@ -136,9 +136,9 @@ export default function OperatorEmailBannerUpload({
   return <div className="space-y-2" aria-busy={pending}>
     <input accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-label="Choose banner photo from device" className="sr-only" disabled={disabled || pending} id="resend-banner-file" onChange={(event) => void selectPhoto(event)} ref={inputRef} tabIndex={-1} type="file" />
     <div className="flex flex-wrap items-center gap-3"><button className={BUTTON} disabled={disabled || pending} id="resend-upload-banner" onClick={() => inputRef.current?.click()} type="button">{pending ? preview ? "Preparing photo…" : "Uploading photo…" : local ? "Choose another photo" : "Upload photo"}</button>{pending ? <button className="min-h-11 text-sm underline underline-offset-4" id="resend-cancel-banner-upload" onClick={() => requestRef.current?.abort("cancelled")} type="button">Cancel upload</button> : null}{local && !pending ? <button className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40" disabled={disabled} id="resend-clear-local-banner" onClick={() => { onCancelLocal(); setError(""); setNotice(""); }} type="button">Use previous image</button> : null}</div>
-    <p className="text-xs leading-relaxed text-black/55">JPG, PNG, or WebP · Up to 3 MB.{preview ? " Files stay on this device in preview." : " Uploaded images are hosted publicly for email recipients."}</p>
+    <p className="text-xs leading-relaxed text-black/70">JPG, PNG, or WebP · Up to 3 MB.{preview ? " Files stay on this device in preview." : " Uploaded images are hosted publicly for email recipients."}</p>
     {local ? <p className="break-words text-xs leading-relaxed text-black/65" id="resend-local-banner-notice" role="status"><strong>Local preview — not uploaded.</strong> {local.filename}</p> : null}
-    {error ? <p className="text-sm leading-relaxed text-[var(--color-poster)]" role="alert">{error}</p> : null}
-    {notice ? <p className="text-xs leading-relaxed text-black/60" role="status">{notice}</p> : null}
+    {error ? <p className="text-sm leading-relaxed text-[var(--operator-danger)]" role="alert">{error}</p> : null}
+    {notice ? <p className="text-xs leading-relaxed text-black/70" role="status">{notice}</p> : null}
   </div>;
 }

@@ -4,18 +4,18 @@ import { SupportStatusBadge, supportDate } from "@/components/support/SupportSha
 import { supportCategoryLabel, type SupportTicketSummary } from "@/lib/support/model";
 
 export default function SupportTicketList({ tickets, operator = false, emptyMessage = "No requests yet." }: { tickets: SupportTicketSummary[]; operator?: boolean; emptyMessage?: string }) {
-  if (!tickets.length) return <p className="rounded-[4px] bg-black/[0.035] px-4 py-7 text-sm text-black/60">{emptyMessage}</p>;
+  if (!tickets.length) return <p className={`px-4 py-7 text-sm ${operator ? "rounded-none border border-[var(--operator-line)] bg-[var(--operator-surface-muted)] text-black/70" : "rounded-[4px] bg-black/[0.035] text-black/60"}`}>{emptyMessage}</p>;
   return (
     <ul className="grid gap-2">
       {tickets.map((ticket) => (
         <li key={ticket.id}>
-          <Link className={`group grid min-w-0 gap-3 transition-colors hover:bg-black/[0.065] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${operator ? "operator-bento-card" : "rounded-[4px] bg-black/[0.035] px-4 py-4 sm:px-5"}`} href={`${operator ? "/ops" : "/my"}/support/${ticket.id}`}>
+          <Link className={`group grid min-w-0 gap-3 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${operator ? "operator-bento-card hover:bg-[var(--operator-surface-hover)]" : "rounded-[4px] bg-black/[0.035] px-4 py-4 hover:bg-black/[0.065] sm:px-5"}`} href={`${operator ? "/ops" : "/my"}/support/${ticket.id}`}>
             <div className="min-w-0">
-              <p className="mb-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-black/60"><span>{ticket.number}</span><span>{supportCategoryLabel(ticket.category)}</span></p>
+              <p className={`mb-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs ${operator ? "text-black/70" : "text-black/60"}`}><span>{ticket.number}</span><span>{supportCategoryLabel(ticket.category)}</span></p>
               <h3 className={`ui-heading break-words text-base font-semibold leading-snug tracking-[-0.025em] [overflow-wrap:anywhere] ${operator ? "" : "sm:text-lg"}`}>{ticket.subject}</h3>
-              {operator ? <p className="mt-1 break-all text-xs text-black/60">{ticket.requesterName} · {ticket.requesterEmail}</p> : null}
-              {operator && (ticket.emailAttentionCount ?? 0) > 0 ? <p className="mt-2 text-xs text-[var(--color-poster)]">Email needs attention · {ticket.emailAttentionCount}</p> : null}
-              <p className="mt-2 text-xs text-black/55">Updated <time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt)}</time></p>
+              {operator ? <p className="mt-1 break-all text-xs text-black/70">{ticket.requesterName} · {ticket.requesterEmail}</p> : null}
+              {operator && (ticket.emailAttentionCount ?? 0) > 0 ? <p className="mt-2 w-fit border border-[var(--operator-line)] bg-[var(--operator-error)] px-2 py-1 text-xs text-[var(--color-faded)]">Email needs attention · {ticket.emailAttentionCount}</p> : null}
+              <p className={`mt-2 text-xs ${operator ? "text-black/70" : "text-black/55"}`}>Updated <time dateTime={ticket.updatedAt}>{supportDate(ticket.updatedAt)}</time></p>
             </div>
             <div className="flex items-center justify-between gap-4 sm:justify-end"><SupportStatusBadge operator={operator} status={ticket.status} /><span aria-hidden="true" className="text-xl transition-transform group-hover:translate-x-1">→</span></div>
           </Link>

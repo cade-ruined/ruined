@@ -201,7 +201,7 @@ export function OperationsNavigation({
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-[90] bg-[#080605] font-[var(--font-body)] text-white" data-operator-navigation>
-        <a className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-10 focus:rounded-[4px] focus:bg-[var(--color-signal)] focus:px-4 focus:py-3 focus:text-black" href="#operator-content">Skip to page content</a>
+        <a className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-10 focus:rounded-none focus:bg-[var(--color-signal)] focus:px-4 focus:py-3 focus:text-black" href="#operator-content">Skip to page content</a>
         <div className="mx-auto flex min-h-[var(--ruined-header-height)] max-w-[100rem] items-center gap-2 px-4 pt-[env(safe-area-inset-top,0px)] sm:gap-4 sm:px-6 lg:px-10">
           <Link aria-label="Ruined Operations overview" className="flex shrink-0 items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]" href="/ops" scroll={false} onNavigate={showNavigation}>
             <Image alt="Ruined" className="h-6 w-auto brightness-0 invert sm:h-7" draggable={false} height={300} priority src="/ruined-wordmark.svg" width={1000} />
@@ -219,7 +219,7 @@ export function OperationsNavigation({
                 aria-controls="ops-workspaces"
                 aria-expanded={workspaceOpen}
                 aria-label={`Workspace: ${currentWorkspace}`}
-                className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-[8px] bg-white/10 px-3 text-sm font-medium hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-signal)] sm:min-w-40 sm:justify-between"
+                className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-none bg-[#282521] px-3 text-sm font-medium hover:bg-[#36322c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-signal)] sm:min-w-40 sm:justify-between"
                 onClick={() => {
                   setAccountOpen(false);
                   setWorkspaceOpen((open) => !open);
@@ -233,14 +233,15 @@ export function OperationsNavigation({
               {workspaceOpen ? (
                 <nav
                   aria-label="Operator workspaces"
-                  className="fixed inset-x-4 top-[calc(var(--ruined-header-height)+0.5rem)] max-h-[calc(100dvh-var(--ruined-header-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-[8px] bg-[var(--color-bone)] p-2 text-[var(--color-faded)] shadow-[3px_3px_0_var(--color-faded)] sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.75rem)] sm:w-64"
+                  className="fixed inset-x-4 top-[calc(var(--ruined-header-height)+0.5rem)] max-h-[calc(100dvh-var(--ruined-header-height)-1.5rem)] overflow-y-auto overscroll-contain rounded-none bg-[var(--color-bone)] p-2 text-[var(--color-faded)] shadow-[3px_3px_0_var(--color-faded)] sm:absolute sm:inset-x-auto sm:left-0 sm:top-[calc(100%+0.75rem)] sm:w-64"
                   id="ops-workspaces"
                 >
-                  {groups.flatMap((group) => group.items).map((item) => {
+                  {groups.flatMap((group) => group.items.map((item) => ({ ...item, area: item.href === "/ops/work" ? "work" : group.id }))).map((item) => {
                     const current = isOperationsPathCurrent(pathname, item.href);
                     return <Link
                       aria-current={current ? "page" : undefined}
-                      className={`flex min-h-11 items-center justify-between gap-3 rounded-[6px] px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] ${current ? "bg-[var(--color-faded)] font-semibold text-[var(--color-bone)]" : "hover:bg-black/[0.06]"}`}
+                      data-operator-area={item.area}
+                      className={`operator-workspace-option relative flex min-h-11 items-center justify-between gap-3 rounded-none pr-3 pl-8 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-poster)] ${current ? "bg-[var(--color-faded)] font-semibold text-[var(--color-bone)]" : "hover:bg-[var(--operator-surface-hover)]"}`}
                       href={item.href}
                       key={item.href}
                       onNavigate={showNavigation}
@@ -259,7 +260,7 @@ export function OperationsNavigation({
               aria-controls="ops-account"
               aria-expanded={accountOpen}
               aria-label="Account"
-              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-[8px] px-2 text-sm text-white/75 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-none px-2 text-sm text-white/75 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
               onClick={() => {
                 setWorkspaceOpen(false);
                 setAccountOpen((open) => !open);
@@ -273,13 +274,13 @@ export function OperationsNavigation({
               <span aria-hidden="true" className={`hidden sm:inline ${accountOpen ? "rotate-180" : ""}`}>⌄</span>
             </button>
             {accountOpen ? (
-              <div aria-label="Operator account" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-2rem)] rounded-[4px] bg-[var(--color-bone)] p-3 text-[var(--color-faded)] shadow-[4px_4px_0_var(--color-poster)]" id="ops-account" role="region">
+              <div aria-label="Operator account" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-2rem)] rounded-none bg-[var(--color-bone)] p-3 text-[var(--color-faded)] shadow-[4px_4px_0_var(--color-poster)]" id="ops-account" role="region">
                 <p className="break-words px-2 py-1 text-sm font-medium">{viewerLabel ?? "Operator"}</p>
                 <p className="px-2 pb-3 text-xs text-black/55">{preview ? "Preview workspace" : configuration.mode === "connected" ? "Signed in" : "Services unavailable"}</p>
-                <Link className="flex min-h-11 items-center rounded-[4px] px-2 text-sm hover:bg-black/[0.06]" href="/my">My profile</Link>
-                <Link className="flex min-h-11 items-center rounded-[4px] px-2 text-sm hover:bg-black/[0.06]" href={publicWebsiteHref("/")}>Return to website ↗</Link>
+                <Link className="flex min-h-11 items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" href="/my">My profile</Link>
+                <Link className="flex min-h-11 items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" href={publicWebsiteHref("/")}>Return to website ↗</Link>
                 {viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post">
-                  <button className="flex min-h-11 w-full items-center rounded-[4px] px-2 text-sm hover:bg-black/[0.06]" type="submit">Sign out</button>
+                  <button className="flex min-h-11 w-full items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" type="submit">Sign out</button>
                 </form> : null}
               </div>
             ) : null}
@@ -319,6 +320,8 @@ export default function PlatformShell({
   const pathname = usePathname();
   const preview = configuration.mode === "preview";
   const member = surface === "member";
+  const operatorArea = member ? undefined : pathname === "/ops/work" ? "work" :
+    getOperationsLocation(pathname, getOperationsNavigation(operatorRole))?.group.id ?? "workspace";
   const threshold = member && isMemberThreshold(pathname);
   const membershipEntry = member && pathname === "/my/join";
   const memberHome = member && pathname === "/my";
@@ -347,6 +350,7 @@ export default function PlatformShell({
       }`}
       data-platform-member-home={memberHome ? "true" : undefined}
       data-platform-surface={surface}
+      data-operator-area={operatorArea}
       data-platform-threshold={threshold ? "true" : undefined}
     >
       {member ? (
@@ -374,7 +378,7 @@ export default function PlatformShell({
               memberHome ? "py-2 text-[0.6rem] leading-snug" : "py-3 text-[0.67rem] leading-relaxed"
             } ${
               !member
-                ? "bg-[var(--color-poster)]/[0.07] text-black/60"
+                ? "bg-[var(--operator-wait)] text-black/70"
               : dark
                 ? "bg-[var(--color-poster)]/10 text-white/60"
                 : "bg-[var(--color-poster)]/[0.07] text-black/65"

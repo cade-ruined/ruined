@@ -66,7 +66,8 @@ export default function StateLabel({ state }: { state: string }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-2 font-[var(--font-body)] text-sm leading-none ${
+      data-state-tone={attention ? "attention" : complete ? "complete" : inMotion ? "in-motion" : "neutral"}
+      className={`operator-state-label inline-flex items-center gap-2 font-[var(--font-body)] text-sm leading-none ${
         attention ? "text-[var(--color-poster)]" : "text-current opacity-60"
       }`}
     >

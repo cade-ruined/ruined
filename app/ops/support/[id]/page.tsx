@@ -21,14 +21,14 @@ export default async function OperationsSupportRequestPage({ params }: { params:
     if (!ticket) notFound();
     return <SupportThread initialTicket={ticket} key={ticket.id} operator writable={false} />;
   }
-  if (context.state !== "authenticated") return <SupportUnavailable denied={context.state === "denied"} />;
+  if (context.state !== "authenticated") return <SupportUnavailable operator denied={context.state === "denied"} />;
   let ticket;
   try {
     ticket = await getSupportTicket(context.viewer, id, true);
   } catch (error) {
     if (error instanceof SupportError && (error.status === 404 || error.status === 400)) notFound();
     console.error("Operator support request could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
-    return <SupportUnavailable denied={error instanceof SupportError && error.status === 403} />;
+    return <SupportUnavailable operator denied={error instanceof SupportError && error.status === 403} />;
   }
   return <SupportThread initialTicket={ticket} key={ticket.id} operator writable />;
 }

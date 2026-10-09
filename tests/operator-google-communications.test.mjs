@@ -96,7 +96,7 @@ test("the JSON boundary and compact operator controls are wired into both existi
   assert.match(field, /Google Chat/);
   assert.match(field, /Google Meet/);
   assert.match(field, /Setup needed/);
-  assert.match(field, /rounded-\[4px\]/);
+  assert.match(field, /rounded-none/);
   assert.doesNotMatch(field, /iframe|dangerouslySetInnerHTML|title=/);
 
   assert.match(circlesPage, /getOpsCircleCommunicationDirectory/);

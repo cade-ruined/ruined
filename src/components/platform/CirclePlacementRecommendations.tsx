@@ -27,14 +27,14 @@ type RequestState = {
 
 function ConnectionContext({ label, connection }: { label: string; connection: CirclePlacementConnection }) {
   return <div className="min-w-0">
-    <p className="text-xs text-black/50">{label}</p>
+    <p className="text-xs text-black/70">{label}</p>
     <p className="mt-1 break-words text-sm font-semibold">{connection.name}</p>
     {connection.status === "available" || connection.status === "multiple_circles" ? <>
       <ul className="mt-1 space-y-1 text-xs leading-relaxed text-black/65">
         {connection.circles.map(circle => <li className="break-words" key={circle.circleId}>{circle.relationship === "supporter" ? "Circle Supporter" : "Member"} · {circle.name}</li>)}
       </ul>
-      {connection.status === "multiple_circles" ? <p className="mt-1 text-xs leading-relaxed text-black/55">More than one current Circle is recorded. Review the fit before choosing.</p> : null}
-    </> : <p className="mt-1 text-xs leading-relaxed text-black/55">{connection.status === "inactive"
+      {connection.status === "multiple_circles" ? <p className="mt-1 text-xs leading-relaxed text-black/70">More than one current Circle is recorded. Review the fit before choosing.</p> : null}
+    </> : <p className="mt-1 text-xs leading-relaxed text-black/70">{connection.status === "inactive"
       ? "This connection is not currently active."
       : connection.status === "circle_unavailable"
         ? "Their current Circle is not available for placement."
@@ -82,32 +82,32 @@ export default function CirclePlacementRecommendations({ memberId, display = "in
   const context = snapshot?.context;
   const items = snapshot?.recommendations.filter((item, index) => index < 5 || item.inviterPresent || item.preferredConnectionPresent || item.circleId === context?.requiredPartnerCircle?.circleId) ?? [];
   const content = enabled ? <div className={display === "member" ? "mt-4" : "pt-2"}>
-    <p className="mb-4 text-xs leading-relaxed text-black/60">Review the connection, meeting schedule, and available space before placing a member. Suggestions do not assign anyone.</p>
-    {preview ? <p className="mb-4 text-xs leading-relaxed text-black/55">Preview — capacity examples from these preview Circles. Inviter and partner details appear with a connected member record.</p> : null}
+    <p className="mb-4 text-xs leading-relaxed text-black/70">Review the connection, meeting schedule, and available space before placing a member. Suggestions do not assign anyone.</p>
+    {preview ? <p className="mb-4 text-xs leading-relaxed text-black/70">Preview — capacity examples from these preview Circles. Inviter and partner details appear with a connected member record.</p> : null}
     {current?.error ? <div className="space-y-2">
       <p className="text-sm text-black/65" role="alert">{current.error}</p>
       <button className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={() => setAttempt(value => value + 1)} type="button">Try again</button>
     </div> : snapshot && context ? <>
       {!preview ? <div className="mb-4 space-y-4 border-l-2 border-[var(--color-poster)] pl-4">
-        {context.inviter ? <ConnectionContext label="Invited by" connection={context.inviter} /> : <p className="text-xs text-black/55">No inviter is recorded for this member.</p>}
+        {context.inviter ? <ConnectionContext label="Invited by" connection={context.inviter} /> : <p className="text-xs text-black/70">No inviter is recorded for this member.</p>}
         {context.preferredConnection ? <ConnectionContext label="Preferred connection" connection={context.preferredConnection} /> : null}
       </div> : null}
-      {context.requiredPartnerCircle ? <div className="mb-4 rounded-[4px] bg-black/[0.035] p-3">
-        <p className="text-xs font-medium text-black/60">Required partner Circle</p>
+      {context.requiredPartnerCircle ? <div className="mb-4 rounded-none bg-[var(--operator-surface-muted)] p-3">
+        <p className="text-xs font-medium text-black/70">Required partner Circle</p>
         <p className="mt-1 break-words text-sm font-semibold">{context.requiredPartnerCircle.name}</p>
-        <p className="mt-1 text-xs leading-relaxed text-black/60">Shared memberships stay together. This member must join their partner’s Circle; an inviter or preferred connection does not change that requirement.</p>
+        <p className="mt-1 text-xs leading-relaxed text-black/70">Shared memberships stay together. This member must join their partner’s Circle; an inviter or preferred connection does not change that requirement.</p>
       </div> : null}
-      {items.length ? <ul className="space-y-3">{items.map(item => <li className="min-w-0 break-words rounded-[4px] bg-black/[0.035] p-3 [overflow-wrap:anywhere]" key={item.circleId}>
+      {items.length ? <ul className="space-y-3">{items.map(item => <li className="min-w-0 break-words rounded-none bg-[var(--operator-surface-muted)] p-3 [overflow-wrap:anywhere]" key={item.circleId}>
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
           <p className="min-w-0 break-words text-sm font-semibold">{item.name}</p>
-          <p className="text-xs leading-5 text-black/55">{item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target {CIRCLE_TARGET}</p>
+          <p className="text-xs leading-5 text-black/70">{item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target {CIRCLE_TARGET}</p>
         </div>
         {item.inviterPresent || item.preferredConnectionPresent ? <p className="mt-1 text-xs font-medium text-black/70">{[item.inviterPresent ? "Inviter’s Circle" : null, item.preferredConnectionPresent ? "Preferred connection here" : null].filter(Boolean).join(" · ")}</p> : null}
-        {item.exceptionRequired ? <p className="mt-2 text-xs font-semibold text-[var(--color-poster)]">Capacity exception required — Administrator review before placement.</p> : null}
-        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed text-black/60">{item.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
+        {item.exceptionRequired ? <p className="mt-2 text-xs font-semibold text-[var(--operator-danger)]">Capacity exception required — Administrator review before placement.</p> : null}
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed text-black/70">{item.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
         <Link className="mt-1 inline-flex min-h-11 max-w-full items-center text-xs font-semibold underline underline-offset-4" href={`/ops/circles?circleId=${encodeURIComponent(item.circleId)}&memberId=${encodeURIComponent(memberId)}`}>Review {item.name}</Link>
-      </li>)}</ul> : <p className="text-sm leading-relaxed text-black/60" role="status">{context.requiredPartnerCircle ? "No placement suggestion is currently available for the required partner Circle. Review its status and capacity before proceeding." : "No eligible Circles are available for this member yet."}</p>}
-    </> : <p className="text-sm text-black/55" role="status">Loading placement suggestions…</p>}
+      </li>)}</ul> : <p className="text-sm leading-relaxed text-black/70" role="status">{context.requiredPartnerCircle ? "No placement suggestion is currently available for the required partner Circle. Review its status and capacity before proceeding." : "No eligible Circles are available for this member yet."}</p>}
+    </> : <p className="text-sm text-black/70" role="status">Loading placement suggestions…</p>}
   </div> : null;
 
   if (display === "member") return <section aria-label="Circle placement" className="operator-bento-card mt-3 min-w-0">

@@ -49,7 +49,7 @@ export default function OpsBlocks({
       <section className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Block hierarchy">
         {visibleBlocks.map((block) => (
           <article
-            className="operator-bento-card flex flex-col gap-3 transition-colors hover:bg-black/[0.05]"
+            className="operator-bento-card flex flex-col gap-3 transition-colors hover:bg-[var(--operator-surface-hover)]"
             id={`block-${block.id}`}
             key={block.id}
           >
@@ -57,7 +57,7 @@ export default function OpsBlocks({
               <h2 className="text-xl font-semibold leading-tight">
                 {block.name}
               </h2>
-              <p className="mt-3 text-sm text-black/42">
+              <p className="mt-3 text-sm text-black/70">
                 {block.currentCircles} current {block.currentCircles === 1 ? "Circle" : "Circles"}
                 {block.status === "forming" && block.currentCircles < 2
                   ? ` · ${2 - block.currentCircles} more needed`
@@ -70,14 +70,14 @@ export default function OpsBlocks({
               {block.circles.length > 0
                 ? block.circles.map((circle) => (
                     <Link
-                      className="inline-flex min-h-11 items-center rounded-md bg-white/25 px-3 text-xs font-medium hover:bg-white/50"
+                      className="inline-flex min-h-11 items-center rounded-none bg-[var(--operator-surface)] px-3 text-xs font-medium hover:bg-[var(--operator-surface-hover)]"
                       href={`/ops/circles#circle-${circle.id}`}
                       key={circle.id}
                     >
                       {circle.name}
                     </Link>
                   ))
-                : <span className="text-black/40">No Circles assigned</span>}
+                : <span className="text-black/70">No Circles assigned</span>}
             </div>
           </article>
         ))}

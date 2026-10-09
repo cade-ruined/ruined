@@ -32,6 +32,7 @@ function fixture({ operator = true, writable = true, hash = "", respond = async 
     react: hooks, "next/link": { __esModule: true, default: "a" }, "next/navigation": { useRouter: () => ({ refresh() { refreshes++; } }) },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
     "@/components/platform/OperatorDialog": { __esModule: true, default: "operator-dialog" },
+    "@/components/platform/operatorStyles": compile("src/components/platform/operatorStyles.ts", noDependency),
     "@/components/support/SupportDeliveryStatus": { __esModule: true, default: "delivery-status" },
     "@/components/support/SupportShared": { SupportPreviewNotice: "preview-notice", SupportStatusBadge: "status-badge", supportDate: (value) => value },
     "@/components/support/supportStyles": new Proxy({}, { get: () => "control" }),

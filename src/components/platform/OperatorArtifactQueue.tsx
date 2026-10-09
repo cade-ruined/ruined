@@ -29,7 +29,7 @@ export default function OperatorArtifactQueue({
 }) {
   const production = (
       <section className="space-y-3" aria-label="Artifact production queue" id="artifact-production">
-        {artifacts.length ? <p className="text-sm text-black/55">{artifacts.length} {artifacts.length === 1 ? "Artifact" : "Artifacts"} in production</p> : null}
+        {artifacts.length ? <p className="text-sm text-black/70">{artifacts.length} {artifacts.length === 1 ? "Artifact" : "Artifacts"} in production</p> : null}
         <div className="grid gap-3 xl:grid-cols-2">
         {artifacts.map((artifact) => (
           <article
@@ -46,8 +46,8 @@ export default function OperatorArtifactQueue({
               </div>
               <StateLabel state={artifact.state} />
             </div>
-            <p className="text-sm text-black/60">{artifact.reason}</p>
-            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-black/45">Earned</dt><dd className="mt-1">{formatDate(artifact.earnedAt)}</dd></div><div><dt className="text-xs text-black/45">Due</dt><dd className="mt-1">{formatDate(artifact.dueAt)}</dd></div></dl>
+            <p className="text-sm text-black/70">{artifact.reason}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-black/70">Earned</dt><dd className="mt-1">{formatDate(artifact.earnedAt)}</dd></div><div><dt className="text-xs text-black/70">Due</dt><dd className="mt-1">{formatDate(artifact.dueAt)}</dd></div></dl>
             {artifact.artifactJobId ? (
               <details className="mt-2">
                 <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">Update production</summary>
@@ -56,7 +56,7 @@ export default function OperatorArtifactQueue({
                 </div>
               </details>
             ) : (
-              <p className="mt-3 text-xs text-black/55">
+              <p className="mt-3 text-xs text-black/70">
                 Award recorded. Production work has not been created.
               </p>
             )}

@@ -85,7 +85,7 @@ export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurr
 
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" aria-busy={submitting}>
-      {message && messageVersion === expectedVersion ? <p role="status" className="w-full max-w-md text-sm leading-relaxed text-black/60 sm:text-right">{message}</p> : null}
+      {message && messageVersion === expectedVersion ? <p role="status" className="w-full max-w-md text-sm leading-relaxed text-black/70 sm:text-right">{message}</p> : null}
       {canClaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("claim")} type="button">Claim</button> : null}
       {canComplete ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("complete")} type="button">Complete</button> : null}
       {canUnclaim ? <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[var(--color-faded)]`} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
@@ -117,7 +117,7 @@ export function OperatorWorkflowRetryAction({ workflowActionId, preview = false 
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <span aria-live="polite" className="text-xs text-black/42">{message}</span>
+      <span aria-live="polite" className="text-xs text-black/70">{message}</span>
       <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={retry} type="button">
         {submitting ? "Queuing" : "Queue retry"}
       </button>
@@ -177,7 +177,7 @@ export function OperatorArtifactAction({ artifactJobId, state, preview = false }
         <input className={OPERATOR_FIELD_CLASS} id={`artifact-reason-${artifactJobId}`} maxLength={500} minLength={3} name="reason" required />
       </label>
       <button className={`${OPERATOR_BUTTON_CLASS} self-end`} disabled={submitting} type="submit">Update</button>
-      <span aria-live="polite" className="text-xs text-black/42 sm:col-span-3">{message}</span>
+      <span aria-live="polite" className="text-xs text-black/70 sm:col-span-3">{message}</span>
     </form>
   );
 }
@@ -264,7 +264,7 @@ export function OperatorAnnouncementCreateAction({
         <textarea className={`${OPERATOR_FIELD_CLASS} min-h-32 resize-y`} defaultValue={announcement?.body} maxLength={10000} minLength={3} name="body" required />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <span aria-live="polite" className="text-xs text-black/42">{message}</span>
+        <span aria-live="polite" className="text-xs text-black/70">{message}</span>
         {onCancel ? <button className="min-h-11 text-sm underline" disabled={submitting} onClick={onCancel} type="button">Cancel editing</button> : null}
         <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Saving" : announcement ? "Save draft" : "Create draft"}</button>
       </div>
@@ -295,7 +295,7 @@ export function OperatorAnnouncementPublishAction({ announcementId, expectedVers
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <span aria-live="polite" className="text-xs text-black/42">{message}</span>
+      <span aria-live="polite" className="text-xs text-black/70">{message}</span>
       <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} onClick={publish} type="button">{submitting ? "Publishing" : "Publish"}</button>
     </div>
   );
@@ -318,11 +318,11 @@ export function OperatorAnnouncementCloseAction({ announcement, preview = false 
     finally { setPending(false); }
   }
   return <div className="mt-3">
-    {reviewing ? <div className="rounded-[4px] bg-black/5 p-3" role="group" aria-label={retract ? "Confirm retraction" : "Confirm discard"}>
+    {reviewing ? <div className="rounded-none bg-[var(--operator-surface-muted)] p-3" role="group" aria-label={retract ? "Confirm retraction" : "Confirm discard"}>
       <p className="text-sm">{retract ? "Remove this post and its related alerts from the member app? Members may already have read it." : "Discard this draft? It will remain in history and cannot be published."}</p>
       {retract ? <label className={`${OPERATOR_LABEL_CLASS} mt-3`}><span className={OPERATOR_LABEL_TEXT_CLASS}>Reason</span><textarea className={OPERATOR_FIELD_CLASS} maxLength={1000} minLength={3} onChange={(event) => setReason(event.target.value)} value={reason} /></label> : null}
       <div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={preview || pending || (retract && reason.trim().length < 3)} onClick={close} type="button">{pending ? "Saving" : retract ? "Confirm retraction" : "Confirm discard"}</button><button className="min-h-11 text-sm underline" disabled={pending} onClick={() => setReviewing(false)} type="button">Keep {retract ? "post" : "draft"}</button></div>
-    </div> : <button className="min-h-11 text-sm text-[var(--color-poster)] underline underline-offset-4" onClick={() => setReviewing(true)} type="button">{retract ? "Retract post" : "Discard draft"}</button>}
-    <p className="mt-2 text-sm text-[var(--color-poster)]" role="status">{message}</p>
+    </div> : <button className="min-h-11 text-sm text-[var(--operator-danger)] underline underline-offset-4" onClick={() => setReviewing(true)} type="button">{retract ? "Retract post" : "Discard draft"}</button>}
+    <p className="mt-2 text-sm text-[var(--operator-danger)]" role="status">{message}</p>
   </div>;
 }

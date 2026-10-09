@@ -16,8 +16,8 @@ export default function OperatorProgress({
       aria-valuenow={progress}
       className={`h-1.5 w-full overflow-hidden ${
         complete
-          ? "bg-[var(--color-verdigris)]/15"
-          : "bg-[var(--color-poster)]/15"
+          ? "bg-[var(--operator-success)]"
+          : "bg-[var(--operator-error)]"
       }`}
       role="progressbar"
     >

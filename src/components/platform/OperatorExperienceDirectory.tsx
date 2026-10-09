@@ -187,7 +187,7 @@ export default function OperatorExperienceDirectory({
   if (invalidCircle) return (
     <OperatorPageFrame title="Circle meetings">
       {navigation}
-      <p role="alert" className="mb-4 text-[var(--color-poster)]">This Circle is unavailable or you do not have permission to schedule for it. No other audience has been selected.</p>
+      <p role="alert" className="mb-4 text-[var(--operator-danger)]">This Circle is unavailable or you do not have permission to schedule for it. No other audience has been selected.</p>
       <div className="flex flex-wrap gap-4 text-sm font-semibold"><Link href="/ops/circles">Choose a Circle →</Link><Link href="/ops/experiences">All member experiences →</Link></div>
     </OperatorPageFrame>
   );
@@ -214,39 +214,39 @@ export default function OperatorExperienceDirectory({
           </label>
           {directory.canCreate ? <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} w-full sm:w-auto`} id="new-experience-trigger" onClick={openCreate} type="button">{selectedCircle ? "+ Schedule a meeting" : "+ New event"}</button> : null}
         </div>
-        <p className="pb-1 text-sm text-black/50" aria-live="polite">{visibleExperiences.length} {visibleExperiences.length === 1 ? "experience" : "experiences"}{stateFilter !== "all" || query.trim() ? ` of ${experiences.length}` : ""}</p>
+        <p className="pb-1 text-sm text-black/70" aria-live="polite">{visibleExperiences.length} {visibleExperiences.length === 1 ? "experience" : "experiences"}{stateFilter !== "all" || query.trim() ? ` of ${experiences.length}` : ""}</p>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visibleExperiences.map((experience) => (
           <article
             id={`experience-${experience.experienceId}`}
             key={experience.experienceId}
           >
-            <Link className="operator-bento-card group flex h-full flex-col gap-3 transition-colors hover:!bg-white/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black" href={`/ops/experiences/${experience.experienceId}`}>
+            <Link className="operator-bento-card group flex h-full flex-col gap-3 transition-colors hover:bg-[var(--operator-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black" href={`/ops/experiences/${experience.experienceId}`}>
               <div className="min-w-0">
-                <p className="text-sm text-black/55">{formatDate(experience.startsAt)}</p>
+                <p className="text-sm text-black/70">{formatDate(experience.startsAt)}</p>
                 <h2 className="operator-section-heading mt-2 break-words">{experience.title}</h2>
-                <p className="mt-2 text-xs text-black/55">{experience.scope}</p>
+                <p className="mt-2 text-xs text-black/70">{experience.scope}</p>
               </div>
               <span className="self-start"><StateLabel state={experience.state} /></span>
-              <div className="mt-auto flex items-center justify-between gap-3 text-xs text-black/55">
+              <div className="mt-auto flex items-center justify-between gap-3 text-xs text-black/70">
                 <p><span className="tabular-nums">{experience.registeredCount}{experience.capacity ? ` / ${experience.capacity}` : ""}</span> confirmed{experience.waitlistedCount ? <span className="block sm:mt-1">{experience.waitlistedCount} waiting</span> : null}</p>
-                <span aria-hidden="true" className="text-xl text-black/55 transition-transform group-hover:translate-x-0.5">→</span>
+                <span aria-hidden="true" className="text-xl text-black/70 transition-transform group-hover:translate-x-0.5">→</span>
               </div>
             </Link>
           </article>
         ))}
         </div>
         {visibleExperiences.length === 0 ? (
-          <p className="rounded-[4px] bg-black/[0.035] px-5 py-10 text-sm text-black/50">
+          <p className="rounded-none bg-[var(--operator-surface-muted)] px-5 py-10 text-sm text-black/70">
             {experiences.length ? "No matches. Try another search or choose All statuses." : !directory.canCreate ? "No experiences are available in your assigned scope." : selectedCircle ? "No meetings yet. Choose Schedule a meeting to get started." : "No experiences yet. Choose New experience to get started."}
           </p>
         ) : null}
       </section>
 
       {directory.canCreate ? (
-        <OperatorDialog key={formVersion} open={createOpen} title={advancedCreate ? "Advanced event setup" : selectedCircle ? "Schedule a meeting" : "New event"} context={selectedCircle ? <span className="text-sm text-black/60">{selectedCircle.name}</span> : undefined} onClose={closeCreate} pending={pending} returnFocusId="new-experience-trigger">
+        <OperatorDialog key={formVersion} open={createOpen} title={advancedCreate ? "Advanced event setup" : selectedCircle ? "Schedule a meeting" : "New event"} context={selectedCircle ? <span className="text-sm text-black/70">{selectedCircle.name}</span> : undefined} onClose={closeCreate} pending={pending} returnFocusId="new-experience-trigger">
           {!advancedCreate ? <OperatorQuickEventForm key={formVersion} directory={directory} selectedCircle={selectedCircle} preview={preview} onPendingChange={setPending} onAdvanced={() => setAdvancedCreate(true)} onCreated={(experienceId) => { router.push(`/ops/experiences/${experienceId}`); router.refresh(); }} /> : <>
-          <p className="mb-5 text-sm text-black/55">For registration, public events, or a draft to finish later.</p>
+          <p className="mb-5 text-sm text-black/70">For registration, public events, or a draft to finish later.</p>
           <form key={formVersion} id="new-experience" className="space-y-6" data-operator-dirty={dirty ? "true" : undefined} data-operator-pending={pending ? "true" : undefined} onChange={() => setDirty(true)} onInvalidCapture={(event) => { if (event.target instanceof Element) { const details = event.target.closest("details"); if (details) details.open = true; } }} onSubmit={createExperience}>
             <FormField label={selectedCircle ? "Meeting title" : "Title"}>
               <input className={OPERATOR_FIELD_CLASS} maxLength={200} name="title" defaultValue={selectedCircle ? `${selectedCircle.name} meeting` : undefined} required />
@@ -263,7 +263,7 @@ export default function OperatorExperienceDirectory({
             </fieldset>
             <fieldset className="min-w-0">
               <legend className="mb-3 font-[var(--font-display)] text-2xl">Who</legend>
-              {selectedCircle ? <><p className="font-semibold">{selectedCircle.name}</p><p className="mt-1 text-sm text-black/55">Eligible Circle members are invited. No reservation needed.</p><input name="kind" type="hidden" value="circle_meeting" /><input name="visibility" type="hidden" value="circle" /><input name="circleId" type="hidden" value={selectedCircle.id} /></> : <div className="grid gap-4 sm:grid-cols-2">
+              {selectedCircle ? <><p className="font-semibold">{selectedCircle.name}</p><p className="mt-1 text-sm text-black/70">Eligible Circle members are invited. No reservation needed.</p><input name="kind" type="hidden" value="circle_meeting" /><input name="visibility" type="hidden" value="circle" /><input name="circleId" type="hidden" value={selectedCircle.id} /></> : <div className="grid gap-4 sm:grid-cols-2">
                 {directory.canManageGlobal ? <FormField label="Audience">
                   <select className={OPERATOR_FIELD_CLASS} name="visibility" onChange={(event) => setNewVisibility(event.target.value as typeof newVisibility)} value={newVisibility}>
                     <option value="all_members">All active members</option>
@@ -285,7 +285,7 @@ export default function OperatorExperienceDirectory({
               <input className={OPERATOR_FIELD_CLASS} maxLength={500} name="locationLabel" placeholder="Online or a place name" />
             </FormField>
             <details className="group">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[4px] bg-black/[0.035] px-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"><span>Description & options</span><span className="group-open:rotate-45" aria-hidden="true">+</span></summary>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-none bg-[var(--operator-surface-muted)] px-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"><span>Description & options</span><span className="group-open:rotate-45" aria-hidden="true">+</span></summary>
               <div className="grid gap-4 pt-5 sm:grid-cols-2">
                 <FormField className="sm:col-span-2" label="Short summary"><textarea className={`${OPERATOR_FIELD_CLASS} min-h-20 resize-y`} maxLength={2000} name="summary" /></FormField>
                 <FormField className="sm:col-span-2" label="Full details"><textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} maxLength={20000} name="details" /></FormField>
@@ -301,20 +301,20 @@ export default function OperatorExperienceDirectory({
                 </FormField>}
                 {newRegistrationMode === "internal" ? <>
                   <FormField label="Capacity"><input className={OPERATOR_FIELD_CLASS} min={1} name="capacity" placeholder="Unlimited" type="number" /></FormField>
-                  <label className="flex min-h-12 items-center gap-3 self-end text-sm text-black/60"><input defaultChecked name="waitlistEnabled" type="checkbox" />Start a waitlist when full</label>
+                  <label className="flex min-h-12 items-center gap-3 self-end text-sm text-black/70"><input defaultChecked name="waitlistEnabled" type="checkbox" />Start a waitlist when full</label>
                   <FormField label="Registration opens"><input className={`${OPERATOR_FIELD_CLASS} min-w-0`} name="registrationOpensAt" type="datetime-local" /></FormField>
                   <FormField label="Registration closes"><input className={`${OPERATOR_FIELD_CLASS} min-w-0`} name="registrationClosesAt" type="datetime-local" /></FormField>
                 </> : null}
                 {newRegistrationMode === "external" ? <FormField className="sm:col-span-2" label="Registration website"><input className={OPERATOR_FIELD_CLASS} name="externalRegistrationUrl" placeholder="https://" required type="url" /></FormField> : null}
               </div>
             </details>
-            {!selectedCircle ? <p className="text-sm text-black/55">{newRegistrationMode === "internal" ? "Members will reserve a place before receiving a Calendar invitation." : newRegistrationMode === "external" ? "Members register on the website you provide." : "Eligible members in this audience can receive Calendar invitations without reserving a place."}</p> : null}
-            {error ? <p aria-live="assertive" className="text-sm text-[var(--color-poster)]" role="alert">{error}</p> : null}
+            {!selectedCircle ? <p className="text-sm text-black/70">{newRegistrationMode === "internal" ? "Members will reserve a place before receiving a Calendar invitation." : newRegistrationMode === "external" ? "Members register on the website you provide." : "Eligible members in this audience can receive Calendar invitations without reserving a place."}</p> : null}
+            {error ? <p aria-live="assertive" className="text-sm text-[var(--operator-danger)]" role="alert">{error}</p> : null}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
               <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={pending} type="submit">
                 {pending ? "Saving…" : "Save draft & continue"}
               </button>
-              <p className="text-sm text-black/55">Nothing is published or sent yet.</p>
+              <p className="text-sm text-black/70">Nothing is published or sent yet.</p>
             </div>
           </form>
           </>}

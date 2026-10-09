@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { guidanceForMemberRecord, type OperatorMemberGuidance } from "@/lib/platform/operator-member-guidance";
 
-const ACTION_CLASS = "ui-heading mt-2 inline-flex min-h-11 items-center gap-3 text-sm font-semibold underline decoration-black/25 underline-offset-4 hover:text-[var(--color-poster)]";
+const ACTION_CLASS = "ui-heading mt-2 inline-flex min-h-11 items-center gap-3 text-sm font-semibold underline decoration-black/25 underline-offset-4 hover:text-[var(--operator-danger)]";
 
 export default function OperatorMemberSetup({ record, guidance }: { record: OpsMemberRecord; guidance?: OperatorMemberGuidance }) {
   if (!record.access.roles.includes("ops_admin")) return null;
@@ -18,15 +18,15 @@ export default function OperatorMemberSetup({ record, guidance }: { record: OpsM
 
   return (
     <section aria-label="Circle placement and operator access" className="mt-3 grid gap-3 lg:grid-cols-2">
-      <article className="operator-bento-card bg-[var(--color-shop)]/25">
+      <article className="operator-bento-card bg-[var(--operator-info)]">
         <h3 className="ui-heading text-base font-semibold">Circle placement</h3>
-        <p className="mt-2 text-sm leading-relaxed text-black/60">
+        <p className="mt-2 text-sm leading-relaxed text-black/70">
           {circle
             ? `${circle.name} · ${circle.state === "active" ? "Active" : circle.state === "forming" ? participationReview ? "Forming" : "Forming — activate when ready" : circle.state}`
             : "No Circle assigned. Operator access is not required to join one."}
         </p>
         <details className="mt-1">
-          <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-black/55">Placement guidance</summary>
+          <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-black/70">Placement guidance</summary>
         {participationReview ? (
           <p className="mt-3 text-sm leading-relaxed text-black/65">
             {next.detail} {circle ? "The existing Circle assignment is still saved." : "No new placement is made here."} Review participation with an Administrator before any Circle change.
@@ -57,11 +57,11 @@ export default function OperatorMemberSetup({ record, guidance }: { record: OpsM
 
       <article className="operator-bento-card">
         <h3 className="ui-heading text-base font-semibold">Operator access</h3>
-        <p className="mt-2 text-sm leading-relaxed text-black/60">
+        <p className="mt-2 text-sm leading-relaxed text-black/70">
           A separate permission on this same account. Administrator access does not require a Circle.
         </p>
         <details className="mt-1">
-          <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-black/55">How operator access works</summary>
+          <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-black/70">How operator access works</summary>
         <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm leading-relaxed text-black/65">
           <li>Choose Administrator, Circle Supporter, or Guide.</li>
           <li>Choose Circle access for a Circle Supporter or Guide, then send the invitation.</li>
