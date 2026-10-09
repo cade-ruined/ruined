@@ -273,7 +273,8 @@ test("invitation failures render a generic retry boundary without leaking databa
 test("public invitation tokens are protected from caching, indexing and outgoing referrers", async () => {
   const rules = await nextConfig.headers();
   const index = rules.findIndex(rule => rule.source === "/invitation/:path*");
-  assert.ok(index > rules.findIndex(rule => rule.source === "/(.*)"));
+  const securityIndex = rules.findIndex(rule => rule.headers.some(header => header.key === "X-Frame-Options" && header.value === "DENY"));
+  assert.ok(securityIndex >= 0 && index > securityIndex);
   const headers = Object.fromEntries(rules[index].headers.map(header => [header.key, header.value]));
   assert.match(headers["Cache-Control"], /private, no-store/);
   assert.equal(headers["X-Robots-Tag"], "noindex, nofollow"); assert.equal(headers["Referrer-Policy"], "no-referrer");

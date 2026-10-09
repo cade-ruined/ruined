@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import config from '../next.config.mjs';
+import { unstable_getResponseFromNextConfig } from 'next/experimental/testing/server.js';
 test('only the email workspace permits template images and the Ruined font origin without changing active-content policy', async () => {
   const headers = await config.headers();
-  const base = headers.find(route => route.source === '/(.*)').headers.find(header => header.key === 'Content-Security-Policy').value;
+  const response = await unstable_getResponseFromNextConfig({ url: 'https://members.theruinedproject.com/my', nextConfig: config });
+  const base = response.headers.get('Content-Security-Policy');
+  assert.ok(base);
+  assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
   const email = headers.filter(route => ['/ops/emails', '/ops/messages'].includes(route.source));
   assert.equal(email.length, 2);
   assert.deepEqual(email.find(route => route.source === '/ops/messages').has, [{ type: 'query', key: 'mode', value: 'emails' }]);
