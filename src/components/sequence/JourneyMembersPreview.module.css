@@ -1,29 +1,21 @@
-.shell { width: min(100%, 56rem); margin-left: auto; }
+.shell { container-type: inline-size; width: min(100%, 56rem); margin-left: auto; }
 .preview { display: block; width: 100%; padding: 0; border: 1px solid rgb(238 231 215 / .35); border-radius: 2px; overflow: hidden; text-align: left; color: #fff9ed; background: #171816; box-shadow: 9px 10px 0 rgb(0 0 0 / .35); cursor: pointer; }
-.hero { position: relative; display: flex; align-items: flex-start; min-height: min(18rem, calc(var(--members-panel-max-height, 75dvh) - 3.75rem)); aspect-ratio: 1.95; max-height: calc(var(--members-panel-max-height, 75dvh) - 3.75rem); background: linear-gradient(90deg, rgb(16 24 24 / .3), transparent 80%), url('/membership/hero-couch-wide.jpg') center 58% / cover; }
-.copy { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: clamp(24px, 3.6vw, 48px); text-shadow: 0 1px 16px rgb(0 0 0 / .2); }
-.title { display: block; font: 800 clamp(36px, 4.7vw, 68px)/.98 var(--font-header); letter-spacing: -.06em; }
-.handwritten { display: block; margin-top: .3em; color: #ffd52b; font: 400 clamp(27px, 3.5vw, 50px)/1.05 var(--font-handwritten); }
-.description { display: block; margin-top: clamp(20px, 3vw, 36px); font: 500 clamp(12px, 1.2vw, 16px)/1.5 var(--font-body); }
-.caption { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 3.75rem; padding: 12px clamp(20px, 3.6vw, 48px); background: #e8e2d6 url('/textures/member-paper.svg') center / 512px; color: #242722; font: 700 14px/1.2 var(--font-body); }
+.hero { position: relative; display: flex; width: 100%; align-items: center; min-height: min(15rem, calc(var(--members-panel-max-height, 75dvh) - 3.25rem)); aspect-ratio: 3.1; max-height: calc(var(--members-panel-max-height, 75dvh) - 3.25rem); background: linear-gradient(90deg, rgb(16 24 24 / .46), transparent 68%), url('/membership/hero-couch-wide.jpg') center 76% / cover; }
+.copy { display: flex; flex-direction: column; align-items: flex-start; width: 54%; padding: clamp(16px, 4cqw, 36px); text-shadow: 0 1px 16px rgb(0 0 0 / .2); }
+.title { display: block; font: 800 clamp(24px, 5.3cqw, 50px)/.98 var(--font-header); letter-spacing: -.06em; }
+.handwritten { display: block; margin-top: .3em; color: #ffd52b; font: 400 clamp(22px, 3.9cqw, 35px)/1.05 var(--font-handwritten); }
+.description { display: block; margin-top: 20px; font: 500 clamp(11px, 1.6cqw, 14px)/1.5 var(--font-body); }
+.caption { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 3.25rem; padding: 10px clamp(16px, 4cqw, 36px); background: #e8e2d6 url('/textures/member-paper.svg') center / 512px; color: #242722; font: 700 14px/1.2 var(--font-body); }
 .arrow { font-size: 27px; font-weight: 400; transition: transform 180ms ease; }
 .preview:hover .arrow { transform: translate(3px, -3px); }
 .preview:focus-visible { outline: 3px solid #ffd52b; outline-offset: 6px; }
 @media (max-width: 640px) {
   .shell { width: 100%; }
-  .hero { min-height: min(20rem, calc(var(--members-panel-max-height, 75dvh) - 3.5rem)); aspect-ratio: .95; background-position: 62% center; }
-  .copy { padding: 24px 20px; }
-  .title { font-size: clamp(30px, 8vw, 44px); }
-  .handwritten { max-width: 12ch; font-size: clamp(29px, 7.5vw, 38px); }
-  .description { margin-top: 22px; font-size: 12px; }
-  .caption { min-height: 3.5rem; padding: 10px 20px; }
+  .hero { min-height: min(14rem, calc(var(--members-panel-max-height, 75dvh) - 3.25rem)); aspect-ratio: 1.5; background-position: 58% 76%; }
+  .copy { width: 58%; padding: 18px 12px; }
+  .title { font-size: clamp(22px, 6.3cqw, 29px); }
+  .handwritten { max-width: 10ch; font-size: clamp(22px, 6.3cqw, 29px); }
+  .description { margin-top: 14px; font-size: 10.5px; }
+  .caption { padding: 10px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .arrow { transition: none; } }
-
-@media (max-width:640px) and (max-height:650px) {
-  .hero { aspect-ratio:1.65; }
-  .copy { padding:18px; }
-  .title { font-size:29px; }
-  .handwritten { max-width:none; font-size:25px; }
-  .description { margin-top:14px; font-size:11px; }
-}
