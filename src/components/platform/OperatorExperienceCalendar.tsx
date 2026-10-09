@@ -3,13 +3,13 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import OperatorDialog from "@/components/platform/OperatorDialog";
+import { OPERATOR_BUTTON_CLASS } from "@/components/platform/operatorStyles";
 
 import type {
   OpsExperienceCalendarState,
   OpsExperienceLifecycleState,
 } from "@/lib/platform/ops-experience-model";
 
-const actionButton = "inline-flex min-h-11 items-center justify-center rounded-none bg-[var(--color-faded)] px-4 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-40";
 const quietButton = "inline-flex min-h-11 items-center justify-center rounded-none bg-[var(--operator-surface-muted)] px-4 text-sm font-medium text-[color:var(--operator-muted)] transition hover:bg-[var(--operator-surface-hover)] disabled:opacity-40";
 
 function formatDate(value: string | null) {
@@ -162,8 +162,8 @@ export default function OperatorExperienceCalendar({
 
       <div className="mt-3 flex flex-wrap gap-2">
         {linksEnabled && joinUrl && !["cancelled", "archived"].includes(experienceState) && calendar.status !== "cancelled" ? <a className="inline-flex min-h-11 items-center rounded-none bg-[var(--color-faded)] px-4 text-sm font-semibold text-[var(--color-bone)]" href={joinUrl} rel="noreferrer" target="_blank">Open Google Meet ↗</a> : null}
-        <button className={quietButton} id="meeting-options-trigger" onClick={() => setOptionsOpen(true)} type="button">{canManage ? "Manage meeting" : "Meeting details"}</button>
-        {isQueued ? <button className={quietButton} type="button" disabled={pending} onClick={() => router.refresh()}>Refresh status</button> : null}
+        <button className={OPERATOR_BUTTON_CLASS} id="meeting-options-trigger" onClick={() => setOptionsOpen(true)} type="button">{canManage ? "Manage meeting" : "Meeting details"}</button>
+        {isQueued ? <button className={OPERATOR_BUTTON_CLASS} type="button" disabled={pending} onClick={() => router.refresh()}>Refresh status</button> : null}
       </div>
       <OperatorDialog open={optionsOpen} title="Manage meeting" pending={pending} returnFocusId="meeting-options-trigger" onClose={() => setOptionsOpen(false)}>
         <div className="space-y-3 pb-2" data-operator-pending={pending ? "true" : "false"}>
@@ -173,13 +173,13 @@ export default function OperatorExperienceCalendar({
           {calendar.attendeeCount === 0 ? <p className="text-sm text-[var(--operator-danger)]">No one is currently eligible for an invitation. Check the audience before sending.</p> : null}
         <div className="flex flex-wrap gap-2">
         {calendar.bindingRequired && canBind && calendar.bindingMode ? (
-          <button className={actionButton} disabled={pending} onClick={verifyBinding} type="button">
+          <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={verifyBinding} type="button">
             {pending ? "Verifying" : `Verify & bind to ${calendar.bindingMode}`}
           </button>
         ) : null}
         {experienceState === "published" && calendar.status !== "cancelled" && (!isQueued || calendar.automaticDeliveryPaused) ? (
           <button
-            className={actionButton}
+            className={OPERATOR_BUTTON_CLASS}
             disabled={!canSend || pending}
             onClick={() => sync(intentFor(calendar))}
             type="button"
@@ -191,14 +191,14 @@ export default function OperatorExperienceCalendar({
           <a className={quietButton} href={calendar.googleEventUrl} rel="noreferrer" target="_blank">Open calendar</a>
         ) : null}
         {(experienceState === "cancelled" || calendar.canSendCancellation) && calendar.googleEventId && calendar.status !== "cancelled" ? (
-          <button className={actionButton} disabled={!canManage || !calendar.configured || pending} onClick={() => sync("cancel")} type="button">
+          <button className={OPERATOR_BUTTON_CLASS} disabled={!canManage || !calendar.configured || pending} onClick={() => sync("cancel")} type="button">
             {pending ? "Sending" : "Send cancellation"}
           </button>
         ) : null}
         </div>
         <div className="space-y-3 pt-2">
           {children}
-          {experienceState === "published" && isQueued && !calendar.automaticDeliveryPaused ? <button className={quietButton} disabled={!canSend || pending} onClick={() => sync(intentFor(calendar))} type="button">{pending ? "Sending" : "Retry invitations"}</button> : null}
+          {experienceState === "published" && isQueued && !calendar.automaticDeliveryPaused ? <button className={OPERATOR_BUTTON_CLASS} disabled={!canSend || pending} onClick={() => sync(intentFor(calendar))} type="button">{pending ? "Sending" : "Retry invitations"}</button> : null}
           <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Google Calendar invites eligible people in the selected audience. Waitlisted and cancelled places are excluded.</p>
           {calendar.organizerEmail ? <p className="text-xs text-[color:var(--operator-muted)]">Organizer: {calendar.organizerEmail}</p> : null}
           {lastSynced ? <p className="text-xs text-[color:var(--operator-muted)]">Last sent {lastSynced}</p> : null}

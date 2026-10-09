@@ -61,6 +61,7 @@ function fixture(overrides = {}) {
   const window = { location: new URL("https://members.example.test/ops/circles?circleId=one") };
   new Function("require", "module", "exports", "document", "HTMLElement", "Element", "HTMLFormElement", "window", "requestAnimationFrame", compiled)((name) => {
     if (name === "react") return mockedReact;
+    if (name === "@/components/platform/operatorStyles") return { OPERATOR_BUTTON_CLASS: "operator-button" };
     if (name === "react/jsx-runtime") return require(name);
     throw Error(`Unexpected dialog dependency: ${name}`);
   }, cjsModule, cjsModule.exports, document, Element, Element, FormElement, window, (callback) => { frames.push(callback); });

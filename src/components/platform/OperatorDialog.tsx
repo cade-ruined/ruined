@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { OPERATOR_BUTTON_CLASS } from "@/components/platform/operatorStyles";
 
 /** A focused operator workspace. Native dialog keeps the underlying page inert. */
 export default function OperatorDialog({ open, title, context, children, onClose, pending = false, returnFocusId }: {
@@ -105,7 +106,7 @@ export default function OperatorDialog({ open, title, context, children, onClose
       {savingNotice ? <p role="status" className="px-5 pb-3 text-sm sm:px-7">Wait for the current save to finish before closing.</p> : null}
       {confirmDiscard ? <div role="alertdialog" aria-label="Discard unsaved changes?" aria-describedby={`${titleId}-discard`} className="operator-emphasis mx-5 mb-4 rounded-none border border-[var(--operator-line)] bg-[var(--operator-wait)] p-4 sm:mx-7" data-operator-tone="wait">
         <p id={`${titleId}-discard`} className="text-sm">Discard unsaved changes?</p>
-        <div className="mt-2 flex flex-wrap gap-2"><button ref={keepEditingRef} type="button" onClick={() => { setConfirmDiscard(false); navigationRef.current = null; requestAnimationFrame(() => { const target = editFocusRef.current; if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true }); }); }} className="min-h-11 rounded-none bg-[var(--color-faded)] px-3 text-sm text-[var(--color-bone)]">Keep editing</button><button type="button" onClick={finishClose} className="min-h-11 px-3 text-sm underline underline-offset-4">Discard changes</button></div>
+        <div className="mt-2 flex flex-wrap gap-2"><button ref={keepEditingRef} type="button" onClick={() => { setConfirmDiscard(false); navigationRef.current = null; requestAnimationFrame(() => { const target = editFocusRef.current; if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true }); }); }} className={OPERATOR_BUTTON_CLASS}>Keep editing</button><button type="button" onClick={finishClose} className={OPERATOR_BUTTON_CLASS}>Discard changes</button></div>
       </div> : null}
       <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-5 sm:px-5" inert={confirmDiscard ? true : undefined}>{children}</div>
     </div>

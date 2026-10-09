@@ -36,7 +36,7 @@ export default function OperatorRegistrationNextStep({ action, onReviewProfile, 
       <input ref={linkField} readOnly aria-label="Member follow-up link" value={action.memberUrl} className="mt-2 min-h-11 w-full min-w-0 rounded-none border border-[color:var(--operator-ink)]/15 bg-[var(--operator-surface)] px-3 text-xs" onFocus={event => event.currentTarget.select()} />
       <div className="mt-2 flex flex-wrap gap-2">
         <button className={OPERATOR_BUTTON_CLASS} type="button" disabled={disabled || copying} onClick={() => void copy("link")}>Copy link</button>
-        <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[color:var(--operator-ink)]`} type="button" disabled={disabled || copying} onClick={() => void copy("message")}>Copy message</button>
+        <button className={OPERATOR_BUTTON_CLASS} type="button" disabled={disabled || copying} onClick={() => void copy("message")}>Copy message</button>
       </div>
       {notice ? <p className="mt-2 break-words text-xs text-[color:var(--operator-muted)]" role="status">{notice}</p> : null}
     </> : action.kind === "release" ? <button className={`${OPERATOR_BUTTON_CLASS} mt-3`} type="button" disabled={disabled} onClick={onReviewProfile}>Review profile access</button>

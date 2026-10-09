@@ -150,7 +150,7 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
             <div><dt className="text-xs text-[color:var(--operator-muted)]">Revision</dt><dd className="mt-1">{procedure.revision}</dd></div>
             <div><dt className="text-xs text-[color:var(--operator-muted)]">Last updated</dt><dd className="mt-1"><time dateTime={procedure.updatedAt}>{updatedDate(procedure.updatedAt)}</time></dd></div>
           </dl>
-          {canManage && procedure.status !== "archived" ? <button className="mt-4 min-h-11 text-sm text-[color:var(--operator-muted)] underline underline-offset-4 hover:text-[color:var(--operator-ink)]" id="archive-sop" onClick={() => { setError(""); setConflict(false); setArchiveOpen(true); }} type="button">Archive SOP</button> : null}
+          {canManage && procedure.status !== "archived" ? <button className={`${OPERATOR_BUTTON_CLASS} mt-4`} id="archive-sop" onClick={() => { setError(""); setConflict(false); setArchiveOpen(true); }} type="button">Archive SOP</button> : null}
         </section>
         {canManage && history.length > 0 ? <details className="rounded-none border border-[color:var(--operator-ink)]/10 bg-[var(--operator-surface-muted)] px-4">
           <summary className="cursor-pointer py-4 text-sm font-medium">Revision history <span className="ml-1 text-[color:var(--operator-muted)]">{history.length}</span></summary>
@@ -158,7 +158,7 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Revision {revision.revision}</span><StateLabel state={revision.status} /></div>
             <p className="mt-2 break-words text-xs text-[color:var(--operator-muted)]">{revision.title}</p>
             <time className="mt-1 block text-xs text-[color:var(--operator-muted)]" dateTime={revision.updatedAt}>{updatedDate(revision.updatedAt)}</time>
-            <button aria-label={`Read revision ${revision.revision}`} className="mt-1 min-h-11 text-xs font-medium underline underline-offset-4" id={`read-sop-revision-${revision.revision}`} onClick={() => setReadingRevision(revision)} type="button">Read revision</button>
+            <button aria-label={`Read revision ${revision.revision}`} className={`${OPERATOR_BUTTON_CLASS} mt-1`} id={`read-sop-revision-${revision.revision}`} onClick={() => setReadingRevision(revision)} type="button">Read revision</button>
           </li>)}</ol>
         </details> : null}
       </aside>
@@ -192,7 +192,7 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-[color:var(--operator-ink)]/10 pt-4">
             <p className="max-w-sm text-xs leading-relaxed text-[color:var(--operator-muted)]">{procedure?.status === "published" ? "Saving updates the procedure the operator team can see." : "Drafts are visible to administrators. Publishing makes this SOP available to all operators."}</p>
             <div className="flex flex-wrap gap-2">
-              {procedure?.status !== "published" ? <button className="min-h-11 rounded-none border border-[color:var(--operator-ink)]/25 px-4 text-sm font-medium disabled:opacity-50" disabled={pending !== null} name="status" type="submit" value="draft">{pending === "draft" ? "Saving…" : procedure?.status === "archived" ? "Restore as draft" : "Save draft"}</button> : null}
+              {procedure?.status !== "published" ? <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} name="status" type="submit" value="draft">{pending === "draft" ? "Saving…" : procedure?.status === "archived" ? "Restore as draft" : "Save draft"}</button> : null}
               <button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} name="status" type="submit" value="published">{pending === "published" ? "Publishing…" : procedure?.status === "published" ? "Save & publish" : procedure?.status === "archived" ? "Restore & publish" : "Publish SOP"}</button>
             </div>
           </div>
@@ -204,7 +204,7 @@ export default function OperatorSopEditor({ editor = null, preview = false }: { 
       <div className="max-w-2xl space-y-4 pt-2" data-operator-pending={pending !== null}>
         <p className="text-sm leading-relaxed">Archive “{procedure.title}”? It will be removed from the operator library. Administrators can still find it in Archived and restore it later.</p>
         {error ? <p role="alert" className="text-sm text-[var(--operator-danger)]">{error}</p> : null}
-        <div className="flex flex-wrap gap-2"><button className="min-h-11 rounded-none border border-[color:var(--operator-ink)]/25 px-4 text-sm" disabled={pending !== null} onClick={() => setArchiveOpen(false)} type="button">Keep SOP</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => void save("archived", fieldsFor(procedure))} type="button">{pending ? "Archiving…" : "Archive SOP"}</button></div>
+        <div className="flex flex-wrap gap-2"><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => setArchiveOpen(false)} type="button">Keep SOP</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending !== null} onClick={() => void save("archived", fieldsFor(procedure))} type="button">{pending ? "Archiving…" : "Archive SOP"}</button></div>
       </div>
     </OperatorDialog> : null}
   </OperatorPageFrame>;

@@ -401,7 +401,7 @@ export default function OperatorAccessManager({
       <header className="operator-record-header flex flex-wrap items-center justify-between gap-3">
         <h2 className="operator-page-heading">Operators</h2>
         <div className="flex flex-wrap items-center gap-4">
-          <button aria-controls="choose-operator-member" aria-expanded={memberPickerOpen} className="inline-flex min-h-11 items-center text-sm underline underline-offset-4" onClick={openMemberPicker} ref={memberPickerTriggerRef} type="button">Choose existing member</button>
+          <button aria-controls="choose-operator-member" aria-expanded={memberPickerOpen} className={OPERATOR_BUTTON_CLASS} onClick={openMemberPicker} ref={memberPickerTriggerRef} type="button">Choose existing member</button>
         <button
           className={OPERATOR_BUTTON_CLASS}
           onClick={(event) => {
@@ -420,7 +420,7 @@ export default function OperatorAccessManager({
         <section aria-labelledby="choose-operator-member-title" className="mt-3 operator-bento-card" id="choose-operator-member">
           <div className="flex items-center justify-between gap-4">
             <h2 className="ui-heading text-xl font-semibold" id="choose-operator-member-title">Choose a member</h2>
-            <button className="min-h-11 text-sm underline underline-offset-4" onClick={() => {
+            <button className={OPERATOR_BUTTON_CLASS} onClick={() => {
               setMemberPickerOpen(false);
               memberPickerTriggerRef.current?.focus();
             }} type="button">Close member search</button>
@@ -447,7 +447,7 @@ export default function OperatorAccessManager({
                   {existing ? (
                     <button aria-label={`View operator record for ${member.displayName}`} className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={() => findOperator(existing)} type="button">View operator record</button>
                   ) : member.email ? (
-                    <button aria-label={`Review access for ${member.displayName}`} className="min-h-11 text-sm font-medium underline underline-offset-4" onClick={(event) => {
+                    <button aria-label={`Review access for ${member.displayName}`} className={OPERATOR_BUTTON_CLASS} onClick={(event) => {
                       addTriggerRef.current = event.currentTarget;
                       openAddOperator(undefined, member);
                     }} type="button">Review access</button>
@@ -589,10 +589,10 @@ export default function OperatorAccessManager({
                 </p>
               </div>
               <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-1">
-                {entry.authUserId && entry.authUserId !== currentViewerAuthUserId ? <button className="min-h-11 text-sm font-semibold underline decoration-[color:var(--operator-ink)]/25 underline-offset-4" onClick={() => setEditing(entry)} type="button">Edit access</button> : null}
+                {entry.authUserId && entry.authUserId !== currentViewerAuthUserId ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => setEditing(entry)} type="button">Edit access</button> : null}
                 {!entry.authUserId ? (
                   <button
-                    className="min-h-11 text-sm font-medium underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[var(--operator-danger)]"
+                    className={OPERATOR_BUTTON_CLASS}
                     onClick={(event) => {
                       addTriggerRef.current = event.currentTarget;
                       openAddOperator(entry);
@@ -604,7 +604,7 @@ export default function OperatorAccessManager({
                 ) : null}
                 {entry.authUserId !== currentViewerAuthUserId ? (
                   <button
-                    className="min-h-11 text-sm text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/20 underline-offset-4 hover:text-[var(--operator-danger)]"
+                    className={OPERATOR_BUTTON_CLASS}
                     onClick={(event) => {
                       confirmationTriggerRef.current = event.currentTarget;
                       setConfirming(entry);
@@ -664,7 +664,7 @@ export default function OperatorAccessManager({
             <p className="mt-5 text-sm leading-relaxed text-[color:var(--operator-muted)]">
               Choose their responsibility, then send the invitation. They open member sign-in to accept and, if asked, verify the newest email code.
             </p>
-            {!reviewedMember && !resendEmail && memberSearch ? <button className="mt-3 min-h-11 text-sm underline underline-offset-4" disabled={pending} onClick={openMemberPicker} type="button">Already a member? Find their account</button> : null}
+            {!reviewedMember && !resendEmail && memberSearch ? <button className={`${OPERATOR_BUTTON_CLASS} mt-3`} disabled={pending} onClick={openMemberPicker} type="button">Already a member? Find their account</button> : null}
 
             <form className="mt-4 space-y-4" onSubmit={submitOperator} ref={formRef}>
               <label className={OPERATOR_LABEL_CLASS} htmlFor="operator-display-name">
@@ -808,7 +808,7 @@ export default function OperatorAccessManager({
 
               <div className="flex flex-col-reverse gap-3 border-t border-[var(--operator-line)] pt-5 sm:flex-row sm:justify-end">
                 <button
-                  className="min-h-12 px-5 text-sm font-medium text-[color:var(--operator-muted)] hover:text-[color:var(--operator-ink)]"
+                  className={OPERATOR_BUTTON_CLASS}
                   disabled={pending}
                   onClick={closeAddOperator}
                   type="button"
@@ -847,7 +847,7 @@ export default function OperatorAccessManager({
             </p>
             <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
-                className="min-h-12 px-5 text-sm font-medium text-[color:var(--operator-muted)] hover:text-[color:var(--operator-ink)]"
+                className={OPERATOR_BUTTON_CLASS}
                 disabled={pending}
                 onClick={() => {
                   setConfirming(null);
@@ -859,7 +859,7 @@ export default function OperatorAccessManager({
                 Cancel
               </button>
               <button
-                data-operator-tone="error" className="operator-emphasis ui-heading min-h-12 rounded-none border border-[var(--operator-line)] px-5 text-sm font-semibold text-[color:var(--operator-ink)] hover:bg-[var(--operator-error-hover)] disabled:opacity-50"
+                className={OPERATOR_BUTTON_CLASS}
                 disabled={pending}
                 onClick={() => void removeEntry(confirming)}
                 type="button"

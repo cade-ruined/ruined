@@ -88,9 +88,9 @@ export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurr
       {message && messageVersion === expectedVersion ? <p role="status" className="w-full max-w-md text-sm leading-relaxed text-[color:var(--operator-muted)] sm:text-right">{message}</p> : null}
       {canClaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("claim")} type="button">Claim</button> : null}
       {canComplete ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("complete")} type="button">Complete</button> : null}
-      {canUnclaim ? <button className={`${OPERATOR_BUTTON_CLASS} !bg-transparent !text-[color:var(--operator-ink)]`} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
+      {canUnclaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
       {state === "completed" ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("reopen")} type="button">Reopen</button> : null}
-      {conflicted ? <button className="inline-flex min-h-11 items-center px-3 text-sm underline underline-offset-4" onClick={() => router.refresh()} type="button">Refresh queue</button> : null}
+      {conflicted ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => router.refresh()} type="button">Refresh queue</button> : null}
     </div>
   );
 }
@@ -265,7 +265,7 @@ export function OperatorAnnouncementCreateAction({
       </label>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <span aria-live="polite" className="text-xs text-[color:var(--operator-muted)]">{message}</span>
-        {onCancel ? <button className="min-h-11 text-sm underline" disabled={submitting} onClick={onCancel} type="button">Cancel editing</button> : null}
+        {onCancel ? <button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={onCancel} type="button">Cancel editing</button> : null}
         <button className={OPERATOR_BUTTON_CLASS} disabled={preview || submitting} type="submit">{submitting ? "Saving" : announcement ? "Save draft" : "Create draft"}</button>
       </div>
       </fieldset>
@@ -321,8 +321,8 @@ export function OperatorAnnouncementCloseAction({ announcement, preview = false 
     {reviewing ? <div className="rounded-none bg-[var(--operator-surface-muted)] p-3" role="group" aria-label={retract ? "Confirm retraction" : "Confirm discard"}>
       <p className="text-sm">{retract ? "Remove this post and its related alerts from the member app? Members may already have read it." : "Discard this draft? It will remain in history and cannot be published."}</p>
       {retract ? <label className={`${OPERATOR_LABEL_CLASS} mt-3`}><span className={OPERATOR_LABEL_TEXT_CLASS}>Reason</span><textarea className={OPERATOR_FIELD_CLASS} maxLength={1000} minLength={3} onChange={(event) => setReason(event.target.value)} value={reason} /></label> : null}
-      <div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={preview || pending || (retract && reason.trim().length < 3)} onClick={close} type="button">{pending ? "Saving" : retract ? "Confirm retraction" : "Confirm discard"}</button><button className="min-h-11 text-sm underline" disabled={pending} onClick={() => setReviewing(false)} type="button">Keep {retract ? "post" : "draft"}</button></div>
-    </div> : <button className="min-h-11 text-sm text-[var(--operator-danger)] underline underline-offset-4" onClick={() => setReviewing(true)} type="button">{retract ? "Retract post" : "Discard draft"}</button>}
+      <div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={preview || pending || (retract && reason.trim().length < 3)} onClick={close} type="button">{pending ? "Saving" : retract ? "Confirm retraction" : "Confirm discard"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => setReviewing(false)} type="button">Keep {retract ? "post" : "draft"}</button></div>
+    </div> : <button className={OPERATOR_BUTTON_CLASS} onClick={() => setReviewing(true)} type="button">{retract ? "Retract post" : "Discard draft"}</button>}
     <p className="mt-2 text-sm text-[var(--operator-danger)]" role="status">{message}</p>
   </div>;
 }

@@ -8,6 +8,7 @@ import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import {
+  OPERATOR_BUTTON_CLASS,
   OPERATOR_FIELD_CLASS,
   OPERATOR_LABEL_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
@@ -257,9 +258,9 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{review.draft.body}</p>
         {review.draft.actionUrl ? <p className="mt-3 break-all text-xs">{review.draft.actionLabel || "Open"} · {review.draft.actionUrl}</p> : null}
         <p className="mt-3 text-sm text-[color:var(--operator-muted)]">This sends immediately to the selected audience. It cannot be retracted here.</p>
-        <div className="mt-4 flex flex-wrap gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} onClick={sendNotification} type="button">{submitting ? "Sending" : "Send notification"}</button><button className="min-h-11 text-sm underline underline-offset-4" disabled={submitting} onClick={() => setReview(null)} type="button">Back to editing</button></div>
+        <div className="mt-4 flex flex-wrap gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} onClick={sendNotification} type="button">{submitting ? "Sending" : "Send notification"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setReview(null)} type="button">Back to editing</button></div>
       </section> : null}
-      <div role={failed ? "alert" : "status"} className={`mt-4 text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`}><p>{message}</p>{failed ? <button className="mt-2 min-h-11 underline underline-offset-4" onClick={() => router.refresh()} type="button">Refresh recent delivery</button> : null}</div>
+      <div role={failed ? "alert" : "status"} className={`mt-4 text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`}><p>{message}</p>{failed ? <button className={`${OPERATOR_BUTTON_CLASS} mt-2`} onClick={() => router.refresh()} type="button">Refresh recent delivery</button> : null}</div>
       </section>
       </OperatorDialog> : null}
     </OperatorPageFrame>

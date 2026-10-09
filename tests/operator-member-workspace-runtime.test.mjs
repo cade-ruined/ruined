@@ -10,6 +10,8 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("../src/components/platform/OperatorMemberWorkspace.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
+const operatorStyles = { exports: {} };
+new Function("module", "exports", ts.transpileModule(readFileSync(new URL("../src/components/platform/operatorStyles.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(operatorStyles, operatorStyles.exports);
 const views = ["overview", "membership", "journey", "community", "operator-notes", "record"];
 const nodes = (node) => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = (node) => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
@@ -44,7 +46,7 @@ function fixture({ queuedFrames = false, includeNotes = true } = {}) {
     useEffect(callback) { effects.push(callback); },
   };
   const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", "window", "document", "requestAnimationFrame", "Element", "HTMLFormElement", compiled)((name) => name === "react" ? hooks : require(name), loadedModule, loadedModule.exports, window, { getElementById: (id) => targets[id] }, (callback) => queuedFrames ? frames.push(callback) : callback(), Element, Form);
+  new Function("require", "module", "exports", "window", "document", "requestAnimationFrame", "Element", "HTMLFormElement", compiled)((name) => name === "react" ? hooks : name === "@/components/platform/operatorStyles" ? operatorStyles.exports : require(name), loadedModule, loadedModule.exports, window, { getElementById: (id) => targets[id] }, (callback) => queuedFrames ? frames.push(callback) : callback(), Element, Form);
   const children = views.filter((id) => includeNotes || id !== "operator-notes").map((id) => React.createElement("section", { id, key: id }, React.createElement("input", { name: `${id}-preserved-field`, defaultValue: `saved-${id}` })));
   function draw() { cursor = 0; const result = loadedModule.exports.default({ children }); result.props.ref.current = root; return result; }
   const button = (label) => nodes(draw()).find((node) => node.type === "button" && text(node) === label);

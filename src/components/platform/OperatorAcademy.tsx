@@ -13,7 +13,7 @@ import OperatorAcademyThumbnail from "@/components/platform/OperatorAcademyThumb
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import StateLabel from "@/components/platform/StateLabel";
-import { OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import type {
   OpsAcademyReferenceOptions,
   OpsAcademySnapshot,
@@ -132,7 +132,7 @@ export default function OperatorAcademy({
                 <StateLabel state={collection.status} />
               </div>
               {collection.summary ? <p className="mt-2 line-clamp-2 text-sm text-[color:var(--operator-muted)]">{collection.summary}</p> : null}
-              {academy.canManage && collection.status !== "retired" ? <button className="mt-2 min-h-11 text-sm font-semibold underline underline-offset-4" id={`open-collection-${collection.collectionId}`} onClick={() => openWorkspace(`collection-${collection.collectionId}`)} type="button">Manage collection</button> : null}
+              {academy.canManage && collection.status !== "retired" ? <button className={`${OPERATOR_BUTTON_CLASS} mt-2`} id={`open-collection-${collection.collectionId}`} onClick={() => openWorkspace(`collection-${collection.collectionId}`)} type="button">Manage collection</button> : null}
             </article>
           ))}
         </div>

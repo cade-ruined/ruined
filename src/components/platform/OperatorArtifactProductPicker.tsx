@@ -50,7 +50,7 @@ export default function OperatorArtifactProductPicker({ selected, onSelect, disa
     <input type="hidden" name="productHandle" value={selected?.handle ?? ""} />
     {selected ? <div className="operator-glass mt-2 flex flex-wrap items-center justify-between gap-2 rounded-none px-3 py-1">
       <p className="min-w-0 break-words text-sm font-semibold">{selected.title}</p>
-      <button className="min-h-11 px-2 text-sm font-semibold underline underline-offset-4" type="button" onClick={() => onSelect(null)}>Change product</button>
+      <button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => onSelect(null)}>Change product</button>
     </div> : <>
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <label className="min-w-0 flex-1"><span className="sr-only">Search Shopify product names</span><input className={OPERATOR_FIELD_CLASS} type="search" maxLength={100} placeholder="Search by product name" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void search(); } }} /></label>

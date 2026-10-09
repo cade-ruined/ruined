@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import MemberNavigationFab from "@/components/platform/MemberNavigationFab";
+import { OPERATOR_BUTTON_CLASS } from "@/components/platform/operatorStyles";
 import type { PlatformConfiguration } from "@/lib/platform/config";
 import {
   getOperationsLocation,
@@ -306,8 +307,8 @@ export function OperationsNavigation({
                 {onAppearanceChange ? <label className="mb-2 block px-2 text-xs" htmlFor="operator-appearance">Appearance<select className="mt-2 min-h-11 w-full border border-[var(--operator-line)] bg-[var(--operator-surface)] px-2 text-sm text-[var(--operator-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--operator-focus)]" id="operator-appearance" onChange={(event) => onAppearanceChange(operatorAppearanceValue(event.target.value))} value={appearance}><option value="system">System</option><option value="paper">Light</option><option value="ink">Dark</option></select></label> : null}
                 <Link className="flex min-h-11 items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" href="/my">My profile</Link>
                 <Link className="flex min-h-11 items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" href={publicWebsiteHref("/")}>Return to website ↗</Link>
-                {viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post">
-                  <button className="flex min-h-11 w-full items-center rounded-none px-2 text-sm hover:bg-[var(--operator-surface-hover)]" type="submit">Sign out</button>
+                {viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" className="mt-3 pr-1 pb-1" method="post">
+                  <button className={`${OPERATOR_BUTTON_CLASS} w-full`} type="submit">Sign out</button>
                 </form> : null}
               </div>
             ) : null}

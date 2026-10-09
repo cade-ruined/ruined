@@ -1,5 +1,7 @@
 "use client";
 
+import { OPERATOR_BUTTON_CLASS } from "@/components/platform/operatorStyles";
+
 import { Children, isValidElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 const views = [
@@ -90,8 +92,8 @@ export default function OperatorMemberWorkspace({ children }: { children: ReactN
     {review ? <div className="operator-emphasis mt-3 rounded-none bg-[var(--operator-wait)] p-3 text-sm" data-operator-tone="wait" role="group" aria-live="polite" aria-label="Keep unsaved edits?">
       <p>Your edits in {views.find((view) => view.id === active)?.label} are not saved. They will stay here if you switch.</p>
       <div className="mt-2 flex flex-wrap gap-3">
-        <button className="min-h-11 px-2 font-semibold" type="button" onClick={() => setReview(null)}>Keep editing</button>
-        <button className="min-h-11 px-2 underline underline-offset-4" type="button" onClick={() => {
+        <button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => setReview(null)}>Keep editing</button>
+        <button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => {
           if (root.current?.querySelector('[data-operator-pending="true"]')) { setNotice("Wait for the current save to finish before switching views."); return; }
           applyDestination(review);
         }}>Switch view — keep edits</button>

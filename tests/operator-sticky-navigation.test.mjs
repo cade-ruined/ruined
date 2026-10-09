@@ -22,6 +22,7 @@ function load(path, overrides = {}, environment = {}) {
     if (name === "@/lib/platform/operations-navigation") return load("src/lib/platform/operations-navigation.ts");
     if (name === "@/lib/site") return { publicWebsiteHref: (path) => "https://theruinedproject.com" + path };
     if (name === "@/components/platform/MemberNavigationFab") return { __esModule: true, default: () => null };
+    if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");
     throw new Error("Unexpected navigation dependency: " + name);
   }, cjsModule, cjsModule.exports, environment.document, environment.window,
   () => { throw new Error("Navigation must not make a request"); });

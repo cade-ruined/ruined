@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import {
+  OPERATOR_BUTTON_CLASS,
   OPERATOR_FIELD_CLASS,
   OPERATOR_LABEL_TEXT_CLASS,
 } from "@/components/platform/operatorStyles";
@@ -80,7 +81,7 @@ export default function OperatorDateTimeField({
       {!required && (date || time) ? (
         <button
           aria-label={`Clear ${label.toLowerCase()}`}
-          className="inline-flex min-h-11 items-center text-xs font-semibold text-[color:var(--operator-muted)] underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--operator-focus)]"
+          className={OPERATOR_BUTTON_CLASS}
           onClick={() => { setDate(""); setTime(""); onChange?.(); }}
           type="button"
         >Clear</button>

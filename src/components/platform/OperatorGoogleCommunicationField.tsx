@@ -173,10 +173,10 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
         <a className="block break-all text-sm text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/25 underline-offset-4" href={url} rel="noreferrer" target="_blank">{url}</a>
         <div className="flex flex-wrap items-center gap-2">
           <a className="inline-flex min-h-11 items-center px-2 text-sm font-semibold underline underline-offset-4" href={url} rel="noreferrer" target="_blank">{kind === "chat" ? "Open chat ↗" : "Open meeting ↗"}</a>
-          <button className="min-h-11 px-2 text-sm underline underline-offset-4 disabled:opacity-45" disabled={copying} onClick={copyLink} type="button">{copying ? "Copying…" : "Copy link"}</button>
+          <button className={OPERATOR_BUTTON_CLASS} disabled={copying} onClick={copyLink} type="button">{copying ? "Copying…" : "Copy link"}</button>
           {editable && !editing ? <button
             aria-label={`Edit ${linkName}`}
-            className="min-h-11 px-2 text-sm underline underline-offset-4"
+            className={OPERATOR_BUTTON_CLASS}
             onClick={() => { setDraft(url); setNotice(null); setError(false); setConfirmRemoval(false); setEditing(true); }}
             type="button"
           >Edit</button> : null}
@@ -222,7 +222,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
                 {pending ? "Saving…" : kind === "chat" ? connected ? "Save chat link" : "Set chat link" : "Save meeting link"}
               </button>
               {connected ? <button
-                className="min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-45"
+                className={OPERATOR_BUTTON_CLASS}
                 disabled={pending}
                 onClick={() => {
                   if (requestInFlight.current) return;
@@ -236,7 +236,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
               >Cancel</button> : null}
               {connected ? (
                 <button
-                  className="min-h-10 rounded-none px-3 py-2 text-xs text-[color:var(--operator-muted)] underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[var(--operator-danger)] disabled:cursor-not-allowed disabled:opacity-45"
+                  className={OPERATOR_BUTTON_CLASS}
                   disabled={pending}
                   onClick={() => { if (!pending) setConfirmRemoval(true); }}
                   type="button"
@@ -250,7 +250,7 @@ function GoogleCommunicationEditor({ configured, editable, entityId, entityType,
             <p className="text-sm leading-relaxed">Remove this {linkName} from Ruined? {kind === "chat" ? "The Google Chat space and its members stay unchanged. Manage membership in Google Chat." : "The Google meeting stays unchanged. This does not cancel it or send cancellation notices."}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => request("DELETE")} type="button">Confirm remove link</button>
-              <button className="min-h-11 px-3 text-sm underline underline-offset-4" disabled={pending} onClick={() => setConfirmRemoval(false)} type="button">Keep link</button>
+              <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => setConfirmRemoval(false)} type="button">Keep link</button>
             </div>
           </div> : null}
         </div>

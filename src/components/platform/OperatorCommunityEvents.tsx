@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorDialog from "@/components/platform/OperatorDialog";
-import { OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_LABEL_TEXT_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
+import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS, OPERATOR_LABEL_CLASS, OPERATOR_LABEL_TEXT_CLASS, OPERATOR_PRIMARY_ACTION_CLASS } from "@/components/platform/operatorStyles";
 import { zonedDateTimeLocalToIso, zonedDateTimeLocalValue } from "@/lib/datetime/zoned-date-time";
 import type { CommunityEventRecord, CommunityEventRegistrant } from "@/lib/events/community-event-model";
 import { getByobRegistrationConfig } from "@/lib/events/byob-registration-model";
@@ -57,7 +57,7 @@ export function CommunityEventEditor({ event, preview = false }: { event?: Commu
   const savedSummary = event ? <section aria-label="Event details">
     <header className="operator-record-header">
       <div><h2 className="operator-record-title">{event.title}</h2><p className="mt-2 text-xs text-[color:var(--operator-muted)]">{event.publicationState === "published" ? "Published on website" : event.publicationState === "archived" ? "Archived — hidden from website" : "Draft — hidden from website"} · {event.eventState}</p></div>
-      <button id="edit-public-event" className="min-h-11 rounded-none bg-[var(--operator-surface-muted)] px-4 text-sm font-medium" onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(nativeRegistration ? "byob" : event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
+      <button id="edit-public-event" className={OPERATOR_BUTTON_CLASS} onClick={() => { setEditing(true); setMessage(""); setFailed(false); setMode(nativeRegistration ? "byob" : event.registrationMode); setTimezone(event.timezone); }} type="button">Edit event</button>
     </header>
     <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
       <div className="operator-bento-card col-span-2 sm:col-span-1"><dt className="operator-compact-label">Schedule</dt><dd className="mt-2 font-medium">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timezone }).format(new Date(event.startsAt))}<span className="mt-1 block text-xs font-normal text-[color:var(--operator-muted)]">{event.timezone}</span></dd></div>
