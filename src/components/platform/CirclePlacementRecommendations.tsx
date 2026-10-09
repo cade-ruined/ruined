@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { OPERATOR_BUTTON_CLASS } from "./operatorStyles";
+import { OPERATOR_BUTTON_CLASS } from "@/components/platform/operatorStyles";
 import {
   CIRCLE_TARGET,
   scoreCirclePlacement,

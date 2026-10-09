@@ -19,7 +19,7 @@ function load(path, dependencies = {}, request = () => { throw new Error("Unexpe
   new Function("require", "module", "exports", "fetch", compiled.get(path))(name => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react" || name === "react/jsx-runtime") return require(name);
-    if (name === "./operatorStyles") return load("src/components/platform/operatorStyles.ts");
+    if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (name === "@/components/platform/OperatorPageFrame" || name === "@/components/platform/OperatorMemberWorkspace") return { __esModule: true, default: ({ children }) => React.createElement("div", null, children) };
     if (name === "@/components/platform/OperatorMemberActions") return { OperatorNoteAction: blank, OperatorTaskCreateAction: blank, OperatorOverrideAction: blank };
