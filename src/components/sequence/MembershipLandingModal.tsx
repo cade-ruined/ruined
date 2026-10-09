@@ -83,7 +83,7 @@ export default function MembershipLandingModal({ onClose, returnFocus }: {
             className={`${styles.frame} ${ready ? styles.ready : ""}`}
             src={`${origin}/membership/embed`}
             title="Explore Ruined Membership"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
             allow="autoplay; fullscreen"
             referrerPolicy="strict-origin-when-cross-origin"
           />
