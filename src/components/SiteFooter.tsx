@@ -9,8 +9,14 @@ import {
 import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 import { publicWebsiteHref } from "@/lib/site";
 
+const MEMBER_SERVICE_LINKS = [
+  ...SERVICE_NAV_ITEMS.map(item => item.href === "/privacy" ? { ...item, label: "Privacy Policy", local: true } : item),
+  { label: "SMS Terms", href: "/membership/text-messages", local: true },
+] as const;
+
 export default function SiteFooter() {
   const pathname = useBackgroundPathname();
+  const memberDeployment = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") === "https://members.theruinedproject.com";
   if (
     pathname === "/" ||
     pathname.startsWith("/dive") ||
@@ -38,7 +44,7 @@ export default function SiteFooter() {
           <p className="mt-2 max-w-xs text-xs leading-relaxed opacity-60">The Ruined Project · Alpine, Utah.</p>
         </div>
         <FooterColumn title="Index" links={FOOTER_INDEX_ITEMS} />
-        <FooterColumn title="Service" links={SERVICE_NAV_ITEMS} />
+        <FooterColumn title="Service" links={memberDeployment ? MEMBER_SERVICE_LINKS : SERVICE_NAV_ITEMS} />
         <div className="min-w-0">
           <p className="font-sans text-[0.58rem] uppercase tracking-[0.3em] opacity-45">Studio</p>
           <Link className="mt-4 block text-[clamp(0.65rem,1.2vw,0.875rem)] underline underline-offset-4 [overflow-wrap:anywhere]" href={publicWebsiteHref("/contact")}>connect@theruinedproject.com</Link>
@@ -57,7 +63,7 @@ function FooterColumn({
   links,
 }: {
   title: string;
-  links: ReadonlyArray<{ label: string; href: string }>;
+  links: ReadonlyArray<{ label: string; href: string; local?: boolean }>;
 }) {
-  return <div><p className="font-sans text-[0.58rem] uppercase tracking-[0.3em] opacity-45">{title}</p><ul className="mt-4 space-y-2 text-sm">{links.map(({ label, href }) => <li key={href}><Link className="hover:text-[var(--color-poster)]" href={publicWebsiteHref(href)}>{label}</Link></li>)}</ul></div>;
+  return <div><p className="font-sans text-[0.58rem] uppercase tracking-[0.3em] opacity-45">{title}</p><ul className="mt-4 space-y-2 text-sm">{links.map(({ label, href, local }) => <li key={href}><Link className="hover:text-[var(--color-poster)]" href={local ? href : publicWebsiteHref(href)}>{label}</Link></li>)}</ul></div>;
 }
