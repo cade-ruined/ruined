@@ -15,6 +15,11 @@ export const SITE_ROUTES = {
   },
   terms: { id: "terms", label: "Terms", href: "/terms" },
   privacy: { id: "privacy", label: "Privacy", href: "/privacy" },
+  smsTerms: {
+    id: "sms-terms",
+    label: "SMS Terms",
+    href: "https://members.theruinedproject.com/membership/text-messages",
+  },
 } as const;
 
 export const GLOBAL_NAV_ITEMS = [
@@ -33,6 +38,7 @@ export const GLOBAL_MENU_ITEMS = [
 export const SERVICE_NAV_ITEMS = [
   SITE_ROUTES.shippingReturns,
   SITE_ROUTES.privacy,
+  SITE_ROUTES.smsTerms,
 ] as const;
 
 export const EXPLORE_ROOM_IDS = [
