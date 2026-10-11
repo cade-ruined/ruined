@@ -20,6 +20,7 @@ function load(path, overrides = {}) {
     if (name === "@/lib/sharing") return { sharingMetadata: () => ({}) };
     if (name.startsWith("@/components/")) return load(`src/${name.slice(2)}.tsx`, overrides);
     if (name.startsWith("@/lib/")) return load(`src/${name.slice(2)}.ts`, overrides);
+    if (name.startsWith("@/data/")) return load(`src/${name.slice(2)}.ts`, overrides);
     return require(name);
   };
   new Function("require", "module", "exports", "fetch", "window", js)(dependency, loaded, loaded.exports,
@@ -40,7 +41,9 @@ test("public SMS terms render consent evidence without an account or enrollment 
   assert.match(html, /href="\/membership\/text-messages"/);
   assert.match(html, /mailto:connect@theruinedproject.com/);
   assert.doesNotMatch(html, /<form\b|type="submit"|action="/);
-  assert.equal(page.metadata.alternates.canonical, "/membership/text-messages");
+  assert.equal(page.metadata.alternates.canonical, "https://members.theruinedproject.com/membership/text-messages");
+  assert.match(html, /START alone does not restore Ruined membership texts/);
+  assert.match(html, /collect fresh text-message consent before messages can resume/);
   const checkbox = html.match(/<input[^>]*name="example-text-updates"[^>]*>/)?.[0];
   assert.ok(checkbox);
   assert.doesNotMatch(checkbox, /checked|required/);
@@ -82,4 +85,35 @@ test("privacy revision is current and protects mobile data and SMS consent from 
   assert.match(html, /service providers only as needed to operate and deliver the text-message program/);
   assert.match(html, /Those providers may not use it for their own marketing or promotional purposes/);
   assert.match(html, /href="\/membership\/text-messages"/);
+});
+
+test("member footer keeps SMS terms and privacy on the member site while public navigation stays unchanged", () => {
+  const previous = process.env.NEXT_PUBLIC_SITE_URL;
+  const navigation = load("src/data/navigation.ts");
+  const Footer = load("src/components/SiteFooter.tsx", {
+    "next/image": () => null,
+    "@/hooks/useBackgroundPathname": { useBackgroundPathname: () => "/membership/text-messages" },
+    "@/data/navigation": { ...navigation, SERVICE_NAV_ITEMS: [...navigation.SERVICE_NAV_ITEMS, { label: "Future service", href: "/future-service" }] },
+  }).default;
+  try {
+    for (const origin of ["https://members.theruinedproject.com", "https://members.theruinedproject.com/"]) {
+      process.env.NEXT_PUBLIC_SITE_URL = origin;
+      const html = renderToStaticMarkup(React.createElement(Footer));
+      assert.match(html, /href="\/privacy">Privacy Policy<\/a>/);
+      assert.match(html, /href="\/membership\/text-messages">SMS Terms<\/a>/);
+      assert.doesNotMatch(html, /href="https:\/\/theruinedproject.com\/privacy"/);
+      assert.match(html, /href="https:\/\/theruinedproject.com\/store"/);
+      assert.match(html, /href="https:\/\/theruinedproject.com\/contact"/);
+      assert.match(html, /href="https:\/\/theruinedproject.com\/future-service">Future service<\/a>/);
+    }
+    process.env.NEXT_PUBLIC_SITE_URL = "https://theruinedproject.com";
+    const publicHtml = renderToStaticMarkup(React.createElement(Footer));
+    assert.match(publicHtml, /href="\/privacy">Privacy<\/a>/);
+    assert.doesNotMatch(publicHtml, /SMS Terms/);
+    assert.match(publicHtml, /href="\/store"/);
+    assert.match(publicHtml, /href="\/future-service">Future service<\/a>/);
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previous;
+  }
 });

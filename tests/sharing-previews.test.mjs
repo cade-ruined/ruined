@@ -53,6 +53,25 @@ const { sharingMetadata, sharingImage, privateSharingMetadata } = load("src/lib/
 const previews = JSON.parse(readFileSync(resolve(root, "src/lib/sharing-previews.json"), "utf8"));
 const imageUrls = (images) => images.map((image) => typeof image === "string" ? image : String(image.url));
 
+test("membership legal pages point canonical and Open Graph URLs to their actual member policy pages", () => {
+  const component = { __esModule: true, default: () => null };
+  for (const [file, path] of [
+    ["app/membership/text-messages/page.tsx", "/membership/text-messages"],
+    ["app/privacy/page.tsx", "/privacy"],
+  ]) {
+    const { metadata } = load(file, {}, {
+      "react/jsx-runtime": { jsx: () => null },
+      "next/link": component,
+      "@/components/EditorialPage": component,
+      "@/components/membership/MemberSmsOptInExample": component,
+    });
+    const expected = `https://members.theruinedproject.com${path}`;
+    assert.equal(metadata.alternates.canonical, expected);
+    assert.equal(metadata.openGraph.url, expected);
+    assert.deepEqual(imageUrls(metadata.openGraph.images), [cassetteUrl]);
+  }
+});
+
 test("every public page shares the same cassette image with matching Open Graph and Twitter content", () => {
   for (const page of legacyKeys) {
     const path = page === "home" ? "/" : `/${page}`;

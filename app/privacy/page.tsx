@@ -4,11 +4,12 @@ import EditorialPage from "@/components/EditorialPage";
 import { sharingMetadata } from "@/lib/sharing";
 const contact = <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a>;
 const description = "How Ruined collects, uses, and protects personal information.";
+const canonicalUrl = "https://members.theruinedproject.com/privacy";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description,
-  alternates: { canonical: "/privacy" },
-  ...sharingMetadata({ title: "Privacy Policy", description, path: "/privacy" }),
+  alternates: { canonical: canonicalUrl },
+  ...sharingMetadata({ title: "Privacy Policy", description, path: canonicalUrl }),
 };
 export default function Page() { return <EditorialPage eyebrow="Effective October 8, 2026" title="Privacy Policy" intro="The Ruined Project respects your privacy and collects only the information needed to operate this site, communicate with you, and fulfill future orders." sections={[
   { title: "Information we collect", body: <p>We may collect contact details you submit, your communication preferences and consent history, form and correspondence content, account and membership information, order and fulfillment information, and limited technical data needed for security and site performance. Event registration may also include an optional Instagram handle when you want to be tagged and a record of your liability-waiver acknowledgment.</p> },

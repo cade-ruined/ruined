@@ -5,13 +5,14 @@ import MemberSmsOptInExample from "@/components/membership/MemberSmsOptInExample
 import { sharingMetadata } from "@/lib/sharing";
 
 const description = "Ruined membership text-message terms, privacy, and an example of our optional registration opt-in.";
+const canonicalUrl = "https://members.theruinedproject.com/membership/text-messages";
 const contact = <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a>;
 
 export const metadata: Metadata = {
   title: "Terms & Conditions",
   description,
-  alternates: { canonical: "/membership/text-messages" },
-  ...sharingMetadata({ title: "Terms & Conditions", description, path: "/membership/text-messages" }),
+  alternates: { canonical: canonicalUrl },
+  ...sharingMetadata({ title: "Terms & Conditions", description, path: canonicalUrl }),
 };
 
 export default function MembershipTextMessagesPage() {
@@ -30,6 +31,7 @@ export default function MembershipTextMessagesPage() {
       </> },
       { title: "Stop or get help", body: <>
         <p>Once messaging is available, reply STOP to unsubscribe from membership texts or HELP for help. After a STOP request, you may receive one confirmation of your opt-out; no further membership texts will be sent unless you opt in again.</p>
+        <p>Replying START alone does not restore Ruined membership texts. To restart after opting out, contact {contact}. Our support team will review your request and collect fresh text-message consent before messages can resume.</p>
         <p>You can also contact {contact} for help or to change your communication preferences. Security, account, and registration emails are separate from optional membership reminders.</p>
         <p>Delivery depends on your mobile carrier and is not guaranteed. Carriers are not liable for delayed or undelivered messages.</p>
       </> },
