@@ -146,8 +146,8 @@ export default function MemberProfileEditor({
             </label>
             <label className={SUPPORT_LABEL_CLASS} htmlFor="profile-member-tag">
               Member tag
-              <span className="relative mt-2 block">
-                <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center [font-family:var(--font-body)] text-base text-[var(--member-muted)]">@</span>
+              <span className="relative isolate mt-2 block">
+                <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center [font-family:var(--font-body)] text-base text-[var(--member-muted)]">@</span>
                 <input
                   aria-describedby="profile-member-tag-help profile-member-tag-error"
                   aria-invalid={Boolean(memberTagError)}
