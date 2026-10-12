@@ -88,7 +88,7 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
       </div> : null}
       {schedule ? <section className="mt-8 border-t border-[var(--member-rule)] pt-6" aria-labelledby="foundations-call-dates"><h2 id="foundations-call-dates" className="text-xl font-semibold">Your Foundations calls</h2><ol className="mt-4 grid gap-3 text-sm sm:grid-cols-2">{schedule.callStartsAt.map(call => <li key={call}><time dateTime={call}>{callDate(call)}</time></li>)}</ol><p className="mt-3 text-sm text-[var(--member-muted)]">Four live virtual sessions, 90 minutes each. We’ll email your access details before you begin.</p></section> : null}
       {!initialPayment ? <RegistrationCouplePreference preview={preview} /> : null}
-      <div className="mt-8 border-t border-[var(--member-rule)] pt-6"><InstallRuined variant="profile" /></div>
+      <InstallRuined variant="profile" className="mt-8" />
       <a className="mt-5 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="mailto:connect@theruinedproject.com">Need a hand? Contact Ruined</a>
     </section>
   </main>;

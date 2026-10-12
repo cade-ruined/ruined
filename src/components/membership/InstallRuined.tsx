@@ -9,16 +9,28 @@ type InstallPrompt = Event & {
   prompt: () => Promise<InstallChoice | void>;
   userChoice?: Promise<InstallChoice>;
 };
-type Device = "ios" | "android" | "mac" | "other";
+type Device = "ios" | "android" | "other";
 
+const HANDLED_KEY = "ruined-member-install-handled";
 const DISMISSAL_KEY = "ruined-member-install-dismissed-until";
 const DISMISSAL_DURATION = 30 * 24 * 60 * 60 * 1000;
+// A blocked storage write must still survive component remounts in this visit.
+let handledThisVisit = false;
+
+function rememberHandled() {
+  handledThisVisit = true;
+  try {
+    window.localStorage.setItem(HANDLED_KEY, "true");
+  } catch {
+    // The browser may prevent persistence; keep the visit-level fallback above.
+  }
+}
 
 function rememberDismissal() {
   try {
     window.localStorage.setItem(DISMISSAL_KEY, String(Date.now() + DISMISSAL_DURATION));
   } catch {
-    // The control still dismisses for this visit when storage is unavailable.
+    // Not now still dismisses the current control when storage is unavailable.
   }
 }
 
@@ -27,42 +39,55 @@ export default function InstallRuined({ className, variant = "suggestion" }: { c
   const [ready, setReady] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [handled, setHandled] = useState(false);
   const [device, setDevice] = useState<Device>("other");
   const [showInstructions, setShowInstructions] = useState(false);
-  const [openingPrompt, setOpeningPrompt] = useState(false);
+  const instructions = useRef<HTMLDivElement>(null);
   const installPrompt = useRef<InstallPrompt | null>(null);
   const promptPending = useRef(false);
+  const alreadyHandled = useRef(false);
 
   useEffect(() => {
+    const agent = navigator.userAgent;
+    const desktop = /Windows|CrOS|X11/.test(agent);
+    const ios = /iPad|iPhone|iPod/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1);
+    const detected = desktop ? "other" : ios ? "ios" : /Android/.test(agent) ? "android" : "other";
+    setDevice(detected);
+    setReady(true);
+    if (detected === "other") return;
+
     const standalone = window.matchMedia("(display-mode: standalone)");
     const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true;
     const updateInstalled = () => setInstalled(standalone.matches || iosStandalone);
     updateInstalled();
 
-    const agent = navigator.userAgent;
-    const ios = /iPad|iPhone|iPod/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1);
-    setDevice(ios ? "ios" : /Android/.test(agent) ? "android" : /Macintosh/.test(agent) ? "mac" : "other");
+    let savedHandled = handledThisVisit;
     try {
+      savedHandled ||= window.localStorage.getItem(HANDLED_KEY) === "true";
       setDismissed(Number(window.localStorage.getItem(DISMISSAL_KEY)) > Date.now());
     } catch {
-      // Private browsing can restrict storage without preventing installation.
+      // Installation and manual steps remain usable when storage is blocked.
     }
+    alreadyHandled.current = savedHandled;
+    setHandled(savedHandled);
 
     const capturePrompt = (event: Event) => {
       const prompt = event as InstallPrompt;
       if (typeof prompt.prompt !== "function") return;
       event.preventDefault();
-      installPrompt.current = prompt;
+      if (!alreadyHandled.current && !handledThisVisit) installPrompt.current = prompt;
     };
     const finishInstall = () => {
       installPrompt.current = null;
+      alreadyHandled.current = true;
       setInstalled(true);
-      rememberDismissal();
+      setHandled(true);
+      setShowInstructions(false);
+      rememberHandled();
     };
     standalone.addEventListener("change", updateInstalled);
     window.addEventListener("beforeinstallprompt", capturePrompt);
     window.addEventListener("appinstalled", finishInstall);
-    setReady(true);
 
     return () => {
       standalone.removeEventListener("change", updateInstalled);
@@ -72,78 +97,75 @@ export default function InstallRuined({ className, variant = "suggestion" }: { c
     };
   }, []);
 
+  useEffect(() => {
+    if (showInstructions) instructions.current?.focus();
+  }, [showInstructions]);
+
   async function install() {
-    if (promptPending.current) return;
+    if (promptPending.current || alreadyHandled.current || device === "other") return;
+    // The first deliberate click handles the suggestion, regardless of whether
+    // the browser accepts, dismisses, or fails to open its native installer.
+    alreadyHandled.current = true;
+    setHandled(true);
+    rememberHandled();
     const prompt = installPrompt.current;
+    installPrompt.current = null;
     if (!prompt) {
-      setShowInstructions(current => !current);
+      setShowInstructions(true);
       return;
     }
 
     // Browsers permit each saved prompt to be used only once, on a user gesture.
-    installPrompt.current = null;
     promptPending.current = true;
-    setOpeningPrompt(true);
     try {
       const result = await prompt.prompt();
       const choice = prompt.userChoice ? await prompt.userChoice : result;
-      if (choice?.outcome === "accepted") {
-        setInstalled(true);
-        setDismissed(true);
-        rememberDismissal();
-      } else {
-        setShowInstructions(true);
-      }
+      if (choice?.outcome === "accepted") setInstalled(true);
+      else setShowInstructions(true);
     } catch {
       setShowInstructions(true);
     } finally {
       promptPending.current = false;
-      setOpeningPrompt(false);
     }
   }
 
-  if (!ready || installed || (dismissed && variant !== "profile")) return null;
+  if (!ready || device === "other" || installed || dismissed || (handled && !showInstructions)) return null;
 
   return (
     <section className={[styles.install, variant === "profile" ? styles.profile : null, className].filter(Boolean).join(" ")} aria-label="Install Ruined">
-      <div className={styles.summary}>
-        <div className={styles.copy}>
-          <p className={styles.title}>{variant === "profile" ? "Ruined, on your home screen." : "Keep Ruined close."}</p>
-          {variant !== "profile" ? <p>Open your membership from your home screen.</p> : null}
-        </div>
-        <div className={styles.actions}>
-          <button type="button" className={styles.installButton} onClick={install} disabled={openingPrompt} aria-expanded={showInstructions} aria-controls={instructionsId}>
-            {openingPrompt ? "Opening…" : "Install Ruined"}
-          </button>
-          {variant !== "profile" ? <button type="button" className={styles.dismissButton} onClick={() => { setDismissed(true); rememberDismissal(); }} aria-label="Dismiss install suggestion">
-            Not now
-          </button> : null}
-        </div>
-      </div>
       {showInstructions ? (
-        <div className={styles.instructions} id={instructionsId}>
+        <div className={styles.instructions} id={instructionsId} ref={instructions} tabIndex={-1} aria-labelledby={`${instructionsId}-title`}>
+          <div className={styles.instructionsHeader}>
+            <h2 id={`${instructionsId}-title`}>Add Ruined to your home screen.</h2>
+            <button type="button" className={styles.dismissButton} onClick={() => setShowInstructions(false)}>Done</button>
+          </div>
           {device === "ios" ? (
             <ol>
               <li>Sign in to Ruined in Safari first.</li>
               <li>Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</li>
               <li>Keep <strong>Open as Web App</strong> on if shown, then tap <strong>Add</strong>.</li>
             </ol>
-          ) : device === "android" ? (
+          ) : (
             <ol>
               <li>Sign in to Ruined in your browser first.</li>
               <li>Open the browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
               <li>Confirm, then open Ruined from its icon.</li>
             </ol>
-          ) : (
-            <ol>
-              <li>Sign in to Ruined in your browser first.</li>
-              <li>{device === "mac" ? <>In Safari, choose <strong>File → Add to Dock</strong>. In Chrome or Edge, use the install icon in the address bar.</> : <>In Chrome or Edge, use the install icon in the address bar or choose <strong>Install</strong> from the browser menu.</>}</li>
-              <li>If your browser has no install option, open Ruined in Chrome, Edge{device === "mac" ? ", or Safari" : ""}.</li>
-            </ol>
           )}
           <p>You may be asked to sign in once when you first open the app.</p>
         </div>
-      ) : null}
+      ) : (
+        <div className={styles.summary}>
+          <div className={styles.copy}>
+            <p className={styles.title}>{variant === "profile" ? "Ruined, on your home screen." : "Keep Ruined close."}</p>
+            {variant !== "profile" ? <p>Open your membership from your home screen.</p> : null}
+          </div>
+          <div className={styles.actions}>
+            <button type="button" className={styles.installButton} onClick={install} aria-expanded={false} aria-controls={instructionsId}>Install Ruined</button>
+            {variant !== "profile" ? <button type="button" className={styles.dismissButton} onClick={() => { setDismissed(true); rememberDismissal(); }} aria-label="Dismiss install suggestion">Not now</button> : null}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

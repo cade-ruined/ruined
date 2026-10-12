@@ -36,12 +36,17 @@ function wearSeed(memberId: string) { return createHash("sha256").update(`ruined
 function sourceRevision(source: MemberCardSource): string {
   return createHash("sha256").update(JSON.stringify(source)).digest("hex");
 }
-/** Entry, paused, suspended, inactive and ended accounts cannot publish. */
-export function canPublishMemberCard(identity: MemberAccessIdentity, activation: string | null): boolean {
-  if (!activation || !Number.isFinite(Date.parse(activation)) || Date.parse(activation) > Date.now() || identity.accountState !== "active" ||
+/** Released, participating members can share their profile regardless of card activation history. */
+export function canPublishMemberProfile(identity: MemberAccessIdentity): boolean {
+  if (identity.accountState !== "active" ||
       !["onboarding", "active"].includes(identity.programState) || !["active", "cancellation_requested"].includes(identity.standingState)) return false;
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   return ["onboarding", "full"].includes(access.mode) && memberCan(access, "profile.write");
+}
+/** Collectible cards retain their separate activation-date requirement. */
+export function canPublishMemberCard(identity: MemberAccessIdentity, activation: string | null): boolean {
+  return Boolean(activation && Number.isFinite(Date.parse(activation)) && Date.parse(activation) <= Date.now()) &&
+    canPublishMemberProfile(identity);
 }
 function rowSettings(row: CardRow): MemberCardSettings {
   return { ...defaultMemberCardSettings(), publicEnabled: row.public_enabled };
@@ -217,13 +222,13 @@ type ProfileRow = Pick<PublicRow, "account_state" | "billing_state" | "program_s
   "administrative_onboarding_state" | "cancellation_effective_at" | "registration_held" | "operator_funded" |
   "complimentary_funded" | "shared_billing_state"> & {
   member_id: string; public_token: string | null; display_name: string | null; preferred_name: string | null;
-  member_tag: string | null; bio: string | null; member_number: number | null; membership_activated_at: Date | string | null;
+  member_tag: string | null; bio: string | null; member_number: number | null;
 };
 async function publicProfileRow(identifier: string, sql: CardSql = getApplicationDatabase()): Promise<ProfileRow | null> {
   if (!MEMBER_PROFILE_IDENTIFIER.test(identifier)) return null;
   const [row] = await sql<ProfileRow[]>`
     select member.id as member_id, card.public_token, profile.display_name, profile.preferred_name,
-      profile.member_tag, profile.bio, member.member_number, member.membership_activated_at,
+      profile.member_tag, profile.bio, member.member_number,
       lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
       lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
@@ -247,7 +252,7 @@ async function publicProfileRow(identifier: string, sql: CardSql = getApplicatio
     registrationHeld: row.registration_held === true, cancellationEffectiveAt: iso(row.cancellation_effective_at),
     membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
   };
-  return canPublishMemberCard(identity, iso(row.membership_activated_at)) ? row : null;
+  return canPublishMemberProfile(identity) ? row : null;
 }
 function profileProjection(row: ProfileRow): PublicMemberProfile {
   return { name: row.display_name?.trim() || row.preferred_name?.trim() || "Member", memberTag: row.member_tag,

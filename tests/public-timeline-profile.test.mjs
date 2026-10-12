@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -49,6 +50,96 @@ test("profile identity excludes inactive members and never falls back to private
   assert.equal((await f.cardRepository.getPublicMemberProfile("shared_tag")).name,"Member");
   await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1",[timelineIds.auth]);
   assert.equal(await f.cardRepository.getPublicMemberProfile("shared_tag"),null);
+});
+
+test("released completed members can publish their profile and Timeline without a collectible-card activation date", async t => {
+  const f = await publicJournalFixture(t);
+  await f.enable();
+  await f.db.query("update ruined_members set membership_activated_at=null where id=$1", [timelineIds.member]);
+  await f.db.query("insert into member_registration_access(member_id,profile_activated_at) values($1,now())", [timelineIds.member]);
+  const privateEntry = await f.journal.createJournalEntry(timelineIds.auth, {
+    id: randomUUID(), kind: "text", title: "PRIVATE JOURNAL", body: "PRIVATE BODY", mediaIds: [],
+    visibility: "private", includeOnTimeline: true, eventYear: 2002,
+  });
+  for (const scenario of [
+    { name: "released funded onboarding member", program: "onboarding", billing: "pending", operator: true, complimentary: true },
+    { name: "complimentary member", program: "active", billing: "pending", operator: false, complimentary: true },
+    { name: "self-paid member", program: "active", billing: "active", operator: false, complimentary: false },
+  ]) {
+    await f.db.query("update member_lifecycle set program_state=$2,billing_state=$3 where member_id=$1", [timelineIds.member, scenario.program, scenario.billing]);
+    await f.db.query("delete from platform_role_grants where auth_user_id=$1 and role_slug='ops_admin'", [timelineIds.auth]);
+    await f.db.query("delete from member_complimentary_grants where member_id=$1", [timelineIds.member]);
+    if (scenario.operator) await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [timelineIds.auth]);
+    if (scenario.complimentary) await f.db.query("insert into member_complimentary_grants(member_id) values($1)", [timelineIds.member]);
+    assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), {
+      name: "Shared name", memberTag: "shared_tag", bio: "PUBLIC BIO", memberNumber: null,
+    }, scenario.name);
+    const entry = await f.journal.createJournalEntry(timelineIds.auth, {
+      id: randomUUID(), kind: "text", title: "", body: scenario.name, mediaIds: [], visibility: "public", includeOnTimeline: true,
+    });
+    const feed = await f.visitor.getPublicJournal("shared_tag");
+    assert.ok(feed.entries.some(item => item.id === entry.id), scenario.name);
+    assert.equal(feed.entries.some(item => item.id === privateEntry.id), false);
+    assert.doesNotMatch(JSON.stringify(feed), /PRIVATE/);
+    assert.equal((await f.journal.getJournal(timelineIds.auth)).publicUrl, "/profile/shared_tag");
+    assert.equal(await f.cardRepository.getPublicMemberCard(f.token), null, "Collectible cards still require an activation date.");
+  }
+  const before = await f.cardRepository.getPublicMemberProfile("shared_tag");
+  await f.db.query("update ruined_members set membership_activated_at='2200-01-01' where id=$1", [timelineIds.member]);
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), before, "A future card date cannot hide an otherwise eligible profile.");
+  assert.ok((await f.visitor.getPublicJournal("shared_tag")).entries.length);
+  assert.equal(await f.cardRepository.getPublicMemberCard(f.token), null, "A future activation date still cannot publish a collectible card.");
+});
+
+test("profile eligibility keeps incomplete, suspended, ended, unreleased and removed members private", async t => {
+  const f = await publicJournalFixture(t);
+  await f.db.query("update ruined_members set membership_activated_at=null where id=$1", [timelineIds.member]);
+  const denied = async message => {
+    assert.equal(await f.cardRepository.getPublicMemberProfile("shared_tag"), null, message);
+    assert.equal(await f.cardRepository.getOwnMemberProfilePublicScope(timelineIds.member), null, message);
+    assert.equal(await f.visitor.getPublicJournal("shared_tag"), null, message);
+  };
+  for (const assignment of [
+    "account_state='provisional'", "account_state='invited'", "account_state='suspended'", "account_state='closed'",
+    "administrative_onboarding_state='not_started'", "administrative_onboarding_state='in_progress'",
+    "billing_state='pending'", "billing_state='attention_required'", "billing_state='ended'",
+    "program_state='offboarded'", "standing_state='pre_active'", "standing_state='paused'",
+    "standing_state='inactive'", "standing_state='alumni'",
+    "standing_state='cancellation_requested',cancellation_effective_at=null",
+    "standing_state='cancellation_requested',cancellation_effective_at='2000-01-01'",
+  ]) {
+    await f.db.query(`update member_lifecycle set ${assignment} where member_id=$1`, [timelineIds.member]);
+    await denied(assignment);
+    await f.db.query("update member_lifecycle set account_state='active',administrative_onboarding_state='completed',billing_state='active',program_state='active',standing_state='active',cancellation_effective_at=null where member_id=$1", [timelineIds.member]);
+  }
+  await f.db.query("insert into member_registration_access(member_id,profile_activated_at) values($1,null)", [timelineIds.member]);
+  await denied("registration hold");
+  await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1", [timelineIds.member]);
+  await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [timelineIds.auth]);
+  await denied("revoked member role");
+  await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [timelineIds.auth]);
+  await f.db.query("update platform_users set status='inactive' where auth_user_id=$1", [timelineIds.auth]);
+  await denied("inactive platform user");
+  await f.db.query("update platform_users set status='active' where auth_user_id=$1", [timelineIds.auth]);
+  await f.db.query("update ruined_members set deleted_at=now() where id=$1", [timelineIds.member]);
+  await denied("removed member");
+});
+
+test("profile media without card activation still requires public Timeline consent and current membership", async t => {
+  const f = await publicJournalFixture(t);
+  await f.db.query("update ruined_members set membership_activated_at=null where id=$1", [timelineIds.member]);
+  const entry = randomUUID(), media = randomUUID(), path = `${timelineIds.member}/verified/${media}.webp`;
+  await f.db.query("insert into member_journal_entries(id,member_id,kind,title,event_year,visibility,include_on_timeline) values($1,$2,'images','Photo',2024,'public',true)", [entry, timelineIds.member]);
+  await f.db.query("insert into member_journal_media(id,member_id,entry_id,storage_path,mime_type,byte_size,verified_at,state) values($1,$2,$3,$4,'image/webp',8,now(),'ready')", [media, timelineIds.member, entry, path]);
+  f.blobs.set(path, new Blob(["photo123"], { type: "image/webp" }));
+  assert.equal((await f.visitor.getPublicJournalMedia("shared_tag", media)).mimeType, "image/webp");
+  await f.db.query("update member_journal_entries set visibility='private' where id=$1", [entry]);
+  assert.equal(await f.visitor.getPublicJournalMedia("shared_tag", media), null);
+  await f.db.query("update member_journal_entries set visibility='public',include_on_timeline=false where id=$1", [entry]);
+  assert.equal(await f.visitor.getPublicJournalMedia("shared_tag", media), null);
+  await f.db.query("update member_journal_entries set include_on_timeline=true where id=$1", [entry]);
+  f.setStorageHook(() => f.db.query("insert into member_registration_access(member_id,profile_activated_at) values($1,null)", [timelineIds.member]));
+  assert.equal(await f.visitor.getPublicJournalMedia("shared_tag", media), null, "A registration hold during download discards media bytes.");
 });
 
 const Image = ({ src, alt }) => React.createElement("img", { src, alt });
