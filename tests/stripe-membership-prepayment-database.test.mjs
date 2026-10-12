@@ -58,29 +58,31 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
     if(persist)await tx(sql=>billing.recordMembershipPrepayment(sql,input));
     return {quote,input,member,sub,invoice,reservationId,customer,acceptance};
   }
-  for(const [month,finalCall] of [['2026-11','2026-11-30T22:00:00.000Z'],['2026-12','2026-12-31T22:00:00.000Z']]){
+  for(const [month,finalCall] of [['2026-11','2026-11-30T22:00:00.000Z'],['2026-12','2026-12-30T22:00:00.000Z']]){
     const holiday=schedules.foundationsBillingScheduleForMonth(month,'monthly');
     assert.equal(holiday.callStartsAt[3],finalCall);
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(holiday)])).rows[0].valid,true);
     const incorrect={...holiday,callStartsAt:[...holiday.callStartsAt.slice(0,3),new Date(Date.parse(holiday.callStartsAt[2])+7*86400000).toISOString()]};
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(incorrect)])).rows[0].valid,false);
   }
-  for(const plan of ['monthly','annual']) for(const version of ['foundations-prepaid-v1','foundations-prepaid-v2']){
+  for(const plan of ['monthly','annual']) for(const version of ['foundations-prepaid-v1','foundations-prepaid-v2','foundations-prepaid-v3']){
     const december=schedules.foundationsBillingScheduleForMonth('2026-12',plan,version);
     assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(december),plan])).rows[0].valid,true);
-    const mislabeled={...december,version:version==='foundations-prepaid-v1'?'foundations-prepaid-v2':'foundations-prepaid-v1'};
+    const mislabeled={...december,version:version==='foundations-prepaid-v2'?'foundations-prepaid-v1':'foundations-prepaid-v2'};
     assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(mislabeled),plan])).rows[0].valid,false);
   }
   for(const invalid of [{...schedule,version:undefined},{...schedule,callStartsAt:[schedule.callStartsAt[1],...schedule.callStartsAt.slice(1)]},{...schedule,nextChargeAt:schedule.initialTermEndsAt},{...schedule,extra:true}]){
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(invalid)])).rows[0].valid,false);
   }
   const active=await seed(10),refunded=await seed(30),late=await seed(50,{persist:false}),missed=await seed(70);
-  const oldDecember=schedules.foundationsBillingScheduleForMonth('2026-12','monthly','foundations-prepaid-v1');
-  const legacy=await seed(110,{acceptedSchedule:oldDecember});
   const newDecember=schedules.foundationsBillingScheduleForMonth('2026-12','monthly');
-  await assert.rejects(db.query('update membership_commercial_reservations set billing_schedule=$2::jsonb where id=$1',[legacy.reservationId,JSON.stringify(newDecember)]),/immutable/);
-  await assert.rejects(db.query('update stripe_checkout_attempts set billing_schedule=$2::jsonb where id=$1',[legacy.reservationId,JSON.stringify(newDecember)]),/immutable/);
-  assert.deepEqual((await db.query('select billing_schedule from membership_commercial_reservations where id=$1',[legacy.reservationId])).rows[0].billing_schedule,oldDecember);
+  for(const [index,version] of ['foundations-prepaid-v1','foundations-prepaid-v2'].entries()){
+    const oldDecember=schedules.foundationsBillingScheduleForMonth('2026-12','monthly',version);
+    const legacy=await seed(110+index*20,{acceptedSchedule:oldDecember});
+    await assert.rejects(db.query('update membership_commercial_reservations set billing_schedule=$2::jsonb where id=$1',[legacy.reservationId,JSON.stringify(newDecember)]),/immutable/);
+    await assert.rejects(db.query('update stripe_checkout_attempts set billing_schedule=$2::jsonb where id=$1',[legacy.reservationId,JSON.stringify(newDecember)]),/immutable/);
+    assert.deepEqual((await db.query('select billing_schedule from membership_commercial_reservations where id=$1',[legacy.reservationId])).rows[0].billing_schedule,oldDecember);
+  }
   const consent={memberId:active.member,attemptId:active.reservationId,acceptanceId:active.acceptance,plan:'monthly',priceId:'price_prepaid',subscriptionId:active.sub,billingTermsVersion:'membership-billing-v2',offerId:active.quote.offerId,commercialReservationId:active.reservationId,billingSchedule:schedule};
   assert.equal(await billing.hasMembershipCheckoutConsent(sql,consent),true);
   assert.equal(await billing.hasMembershipCheckoutConsent(sql,{...consent,billingSchedule:null}),false);

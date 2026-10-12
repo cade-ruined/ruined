@@ -532,7 +532,7 @@ async function selfTestPrepaid() {
       const quote = (await quoted.json()).quote;
       expectedSchedule = quote.billingSchedule;
       assert.equal(quote.firstChargeAt, null);
-      assert.equal(expectedSchedule.version, "foundations-prepaid-v2");
+      assert.equal(expectedSchedule.version, "foundations-prepaid-v3");
       assert.equal(expectedSchedule.callStartsAt.length, 4);
       assert.equal(expectedSchedule.serviceStartsAt, expectedSchedule.callStartsAt[0]);
       const nativeConsent = process.argv.includes("--native-consent");
