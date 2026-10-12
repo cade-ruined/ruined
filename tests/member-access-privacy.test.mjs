@@ -85,16 +85,20 @@ test("Home removes private highlights for entry and limited access", () => {
   assert.match(home, /const latestAnnouncement = suppressPrivateHighlights/);
 });
 
-test("Circle directory visibility is an explicit hidden-by-default member choice", () => {
-  assert.match(profileEditor, /name="circle-directory-enabled"/);
-  assert.match(profileEditor, /Off by default/);
-  assert.match(profileEditor, /directoryStatus:[\s\S]*\? "circle_visible"[\s\S]*: "hidden"/);
-  assert.match(profileApi, /\["hidden", "circle_visible"\]\.includes\(String\(candidate\.directoryStatus\)\)/);
-  assert.match(repository, /directoryStatus: row\.directory_status \?\? "hidden"/);
-  assert.match(repository, /const directoryStatus = input\.directory\.directoryStatus/);
-  assert.doesNotMatch(repository, /const directoryStatus = "circle_visible"/);
-  assert.match(repository, /directory_status: directoryStatus/);
-  assert.doesNotMatch(profileEditor, /accountability_partner|Accountability partner/);
+test("Circle identity is visible by default while email and phone remain explicitly scoped", () => {
+  assert.doesNotMatch(profileEditor, /name="circle-directory-enabled"/);
+  assert.match(profileEditor, /name="email-scope"/);
+  assert.match(profileEditor, /name="phone-scope"/);
+  const contactValidator = section(profileApi, "function isDirectory", "function isProfileInput");
+  assert.match(contactValidator, /emailScope/);
+  assert.match(contactValidator, /phoneScope/);
+  assert.doesNotMatch(contactValidator, /directoryStatus/);
+  assert.match(repository, /directoryStatus: "circle_visible"/);
+  assert.match(repository, /const directoryStatus = "circle_visible"/);
+  const circle = section(repository, "export async function getMemberCircle", "export async function getMemberExperiences");
+  assert.match(circle, /preference\.email_scope = 'circle'/);
+  assert.match(circle, /preference\.phone_scope = 'circle'/);
+  assert.doesNotMatch(circle, /preference\.directory_status = 'circle_visible'/);
   assert.doesNotMatch(profileApi, /accountability_partner/);
 });
 

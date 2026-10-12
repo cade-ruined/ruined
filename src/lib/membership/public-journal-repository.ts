@@ -1,9 +1,9 @@
 import "server-only";
 import { getApplicationDatabase } from "@/lib/database/server";
-import { getPublicMemberCardScope } from "./public-card-repository";
+import { getPublicMemberProfileScope } from "./public-card-repository";
 import { journalStore } from "./journal-storage";
 import { JournalError, JOURNAL_UUID, journalFilePolicy, type JournalKind } from "./journal-model";
-import { MEMBER_CARD_TOKEN } from "./public-card-model";
+import { MEMBER_PROFILE_IDENTIFIER } from "./public-card-model";
 
 /** Explicit visitor projection: no dates from Timeline, saved flags, versions, or owner identity. */
 export type PublicJournalEntry = {
@@ -15,9 +15,9 @@ type EntryRow = { id: string; kind: JournalKind; title: string | null; body: str
 type MediaRow = { id: string; entry_id: string; mime_type: string };
 
 export async function getPublicJournal(token: string, cursor: string | null = null): Promise<PublicJournalPage | null> {
-  if (!MEMBER_CARD_TOKEN.test(token)) return null;
+  if (!MEMBER_PROFILE_IDENTIFIER.test(token)) return null;
   if (cursor !== null && !JOURNAL_UUID.test(cursor)) throw new JournalError(400, "Invalid journal page.");
-  const scope = await getPublicMemberCardScope(token);
+  const scope = await getPublicMemberProfileScope(token);
   if (!scope) return null;
   const sql = getApplicationDatabase();
   // Both choices are required. Legacy private Timeline entries never acquire
@@ -50,7 +50,7 @@ export async function getPublicJournal(token: string, cursor: string | null = nu
     `;
     if (page.some(row => !current.some(latest => latest.id === row.id && latest.current_version === row.current_version))) return null;
   }
-  const latestScope = await getPublicMemberCardScope(token);
+  const latestScope = await getPublicMemberProfileScope(token);
   if (!latestScope || latestScope.memberId !== scope.memberId || latestScope.version !== scope.version) return null;
   return {
     entries: page.map(row => ({
@@ -79,15 +79,15 @@ async function publicMedia(memberId: string, id: string): Promise<PublicMediaRow
 }
 
 export async function getPublicJournalMedia(token: string, id: string): Promise<{ data: Blob; mimeType: string } | null> {
-  if (!MEMBER_CARD_TOKEN.test(token) || !JOURNAL_UUID.test(id)) return null;
-  const scope = await getPublicMemberCardScope(token);
+  if (!MEMBER_PROFILE_IDENTIFIER.test(token) || !JOURNAL_UUID.test(id)) return null;
+  const scope = await getPublicMemberProfileScope(token);
   if (!scope) return null;
   const row = await publicMedia(scope.memberId, id);
   if (!row) return null;
   const { data, error } = await journalStore().download(row.storage_path);
   if (error || !data) throw new JournalError(503, "This media is temporarily unavailable.");
   // Never expose a signed URL: repeat both consent checks after the slow storage read.
-  const latestScope = await getPublicMemberCardScope(token);
+  const latestScope = await getPublicMemberProfileScope(token);
   if (!latestScope || latestScope.memberId !== scope.memberId || latestScope.version !== scope.version) return null;
   const current = await publicMedia(scope.memberId, id);
   if (!current || current.entry_id !== row.entry_id || current.current_version !== row.current_version

@@ -91,7 +91,7 @@ async function fixture() {
   return { pg, sql, repository, queries, input, milestone, downloaded, setStorageHook: value => { storageHook = value; }, setAfterQuery: value => { afterQuery = value; } };
 }
 
-test("public settings start private with every optional field off; publication projects only chosen fields", async () => {
+test("public settings start private and every card projection contains only the full name", async () => {
   const f = await fixture();
   try {
     const snapshot = await f.repository.getOwnMemberCard(self.auth);
@@ -99,11 +99,11 @@ test("public settings start private with every optional field off; publication p
     assert.deepEqual(snapshot.card, { name: "Cade", memberTag: null, avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [], wearSeed: snapshot.card.wearSeed });
     assert.equal(snapshot.settings.publicEnabled, false);
     await f.pg.query("update person_profiles set display_name='Public Cade',bio='Approved words' where person_id=$1", [self.person]);
-    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, showBio: true }));
+    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop(); assert.match(token, model.MEMBER_CARD_TOKEN);
     assert.equal(saved.card.wearSeed, snapshot.card.wearSeed);
     const card = await f.repository.getPublicMemberCard(token);
-    assert.equal(card.name, "Public Cade"); assert.equal(card.bio, "Approved words");
+    assert.equal(card.name, "Public Cade"); assert.equal(card.bio, null);
     assert.deepEqual(Object.keys(card).sort(), ["name", "memberTag", "avatarUrl", "memberSince", "location", "bio", "buildingNow", "websiteUrl", "labels", "wearSeed"].sort());
     assert.doesNotMatch(JSON.stringify(card), /PRIVATE|memberId|personId|email|version|settings|00000000-0000/);
     assert.equal((await f.repository.getOwnMemberCard(other.auth)).publicUrl, null);
@@ -112,7 +112,7 @@ test("public settings start private with every optional field off; publication p
   } finally { await f.pg.close(); }
 });
 
-test("chosen member tags follow the profile without changing names, sharing scope or card links", async () => {
+test("cards remain name-only when a public profile tag exists", async () => {
   const f = await fixture();
   try {
     const initial = await f.repository.getOwnMemberCard(self.auth);
@@ -120,47 +120,47 @@ test("chosen member tags follow the profile without changing names, sharing scop
     await f.pg.query("update person_profiles set member_tag='cade' where person_id=$1", [self.person]);
     const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop();
-    assert.equal((await f.repository.getPublicMemberCard(token)).memberTag, "cade");
+    assert.equal((await f.repository.getPublicMemberCard(token)).memberTag, null);
     await f.pg.query("update person_profiles set member_tag='cade_studio' where person_id=$1", [self.person]);
     const current = await f.repository.getOwnMemberCard(self.auth);
     const card = await f.repository.getPublicMemberCard(token);
-    assert.equal(current.source.memberTag, "cade_studio"); assert.equal(card.memberTag, "cade_studio");
+    assert.equal(current.source.memberTag, null); assert.equal(card.memberTag, null);
     assert.equal(card.name, "Cade"); assert.equal(current.publicUrl, saved.publicUrl); assert.equal(current.version, saved.version);
     assert.deepEqual(current.settings, saved.settings); assert.equal(card.wearSeed, saved.card.wearSeed);
-    assert.notEqual(current.sourceRevision, saved.sourceRevision, "tag changes participate in stale-source protection");
-    assert.deepEqual({ ...card, memberTag: "cade" }, saved.card);
+    assert.equal(current.sourceRevision, saved.sourceRevision, "public profile tags never participate in the name-only card");
+    assert.deepEqual(card, saved.card);
     assert.doesNotMatch(JSON.stringify(card), /PRIVATE|email|preferred|personId|memberId/);
     await f.repository.saveOwnMemberCard(self.auth, { ...current.settings, publicEnabled: false, version: current.version });
     assert.equal(await f.repository.getPublicMemberCard(token), null, "a chosen tag never enables sharing");
   } finally { await f.pg.close(); }
 });
 
-test("a tag changed during public projection does not return a stale public identity", async () => {
+test("a name changed during public projection does not return a stale public identity", async () => {
   const f = await fixture();
   try {
     await f.pg.query("update person_profiles set member_tag='before' where person_id=$1", [self.person]);
     const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop();
     f.setAfterQuery(async query => {
-      if (!query.includes("from member_milestones milestone")) return;
+      if (!query.includes("from member_public_cards card")) return;
       f.setAfterQuery(null);
-      await f.pg.query("update person_profiles set member_tag='after' where person_id=$1", [self.person]);
+      await f.pg.query("update person_profiles set display_name='Updated Name' where person_id=$1", [self.person]);
     });
     assert.equal(await f.repository.getPublicMemberCard(token), null);
-    assert.equal((await f.repository.getPublicMemberCard(token)).memberTag, "after");
+    assert.equal((await f.repository.getPublicMemberCard(token)).name, "Updated Name");
   } finally { await f.pg.close(); }
 });
 
-test("public identity formatting keeps tags exact and avoids repeated tag names", () => {
+test("card identity formatting ignores even raw legacy member tags", () => {
   assert.equal(model.publicMemberCardIdentity({ name: "Cade", memberTag: null }), "Cade");
-  assert.equal(model.publicMemberCardIdentity({ name: "Cade", memberTag: "cade_studio" }), "Cade (@cade_studio)");
+  assert.equal(model.publicMemberCardIdentity({ name: "Cade", memberTag: "cade_studio" }), "Cade");
   assert.equal(model.publicMemberCardIdentity({ name: "@cade_studio", memberTag: "cade_studio" }), "@cade_studio");
 });
 
 test("revocation, membership changes and auth-role withdrawal close card and portrait access", async () => {
   const f = await fixture();
   try {
-    let saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, showPortrait: true }));
+    let saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop();
     saved = await f.repository.saveOwnMemberCard(self.auth, { ...saved.settings, publicEnabled: false, version: saved.version });
     assert.equal(await f.repository.getPublicMemberCard(token), null);
@@ -184,54 +184,43 @@ test("revocation, membership changes and auth-role withdrawal close card and por
   } finally { await f.pg.close(); }
 });
 
-test("selected portrait and location follow the current profile; revocation during download still discards bytes", async () => {
+test("legacy optional fields never enter cards or return portrait bytes", async () => {
   const f = await fixture();
-  const oldURL = process.env.NEXT_PUBLIC_SUPABASE_URL; const oldKey = process.env.SUPABASE_SECRET_KEY;
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://storage.example.test"; process.env.SUPABASE_SECRET_KEY = "test-key";
   try {
-    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, showPortrait: true, showLocation: true, showMemberSince: true }));
+    await f.milestone(20);
+    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop();
-    let card = await f.repository.getPublicMemberCard(token);
-    assert.match(card.avatarUrl, new RegExp(`^/api/cards/${token}/portrait\\?v=[0-9a-f]{20}$`)); assert.equal(card.memberSince, "2020-09-17T00:00:00.000Z");
-    assert.equal(await (await f.repository.getPublicMemberCardPortrait(token)).text(), "portrait");
-    assert.deepEqual(f.downloaded, [{ bucket: "member-portraits", path: `${self.member}/${uuid(90)}.webp` }]);
-    await f.pg.query("update person_profiles set avatar_storage_path=$1,location_label='NEW PRIVATE LOCATION' where person_id=$2", [`/api/member-photos/${self.member}/${uuid(91)}.webp`, self.person]);
-    card = await f.repository.getPublicMemberCard(token); assert.ok(card.avatarUrl); assert.equal(card.location, "NEW PRIVATE LOCATION");
-    assert.equal(await (await f.repository.getPublicMemberCardPortrait(token)).text(), "portrait");
-    assert.equal(f.downloaded.at(-1).path, `${self.member}/${uuid(91)}.webp`);
-    const updated = await f.repository.saveOwnMemberCard(self.auth, await f.input());
-    assert.equal(updated.card.location, "NEW PRIVATE LOCATION");
-    f.setStorageHook(() => f.pg.query("update member_public_cards set public_enabled=false,version=version+1 where member_id=$1", [self.member]));
-    assert.equal(await f.repository.getPublicMemberCardPortrait(token), null, "revocation during download must discard bytes");
-  } finally {
-    if (oldURL === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = oldURL;
-    if (oldKey === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldKey;
-    await f.pg.close();
-  }
+    await f.pg.query("update member_public_cards set show_portrait=true,show_member_since=true,show_location=true,show_bio=true,show_building=true,show_website=true,label_ids=$1::jsonb where member_id=$2", [JSON.stringify([uuid(20)]), self.member]);
+    const expected = saved.card;
+    const owner = await f.repository.getOwnMemberCard(self.auth);
+    assert.deepEqual(owner.card, expected);
+    assert.deepEqual(await f.repository.getPublicMemberCard(token), expected);
+    assert.deepEqual(await f.repository.getInvitationMemberCard(self.member), expected);
+    assert.deepEqual(owner.settings, { ...model.defaultMemberCardSettings(), publicEnabled: true });
+    assert.deepEqual(owner.availableLabels, []);
+    assert.doesNotMatch(JSON.stringify(owner.source), /PRIVATE|\/api\/member-photos|2020-09-17/);
+    assert.equal(await f.repository.getPublicMemberCardPortrait(token), null);
+    assert.deepEqual(f.downloaded, [], "retired portrait requests never reach storage");
+  } finally { await f.pg.close(); }
 });
 
-test("only selected verified milestone labels survive, including award revocation; version conflicts never overwrite", async () => {
+
+test("selected labels are rejected and legacy labels stay absent; stale versions never overwrite", async () => {
   const f = await fixture();
   try {
-    await f.milestone(20); await f.milestone(21, { person: other, title: "OTHER MEMBER" });
-    await f.milestone(22, { visibility: "ops", title: "OPS" }); await f.milestone(23, { visibility: "private", title: "PRIVATE" });
-    await f.milestone(24, { future: true });
-    await f.pg.query("insert into artifact_awards values($1,$2,$3,'awarded',null,'2020-01-01')", [uuid(30), self.member, self.person]);
-    await f.milestone(25, { award: 30, title: "The First Coin" });
-    const snapshot = await f.repository.getOwnMemberCard(self.auth);
-    assert.deepEqual(snapshot.availableLabels.map(label => label.id).sort(), [uuid(20), uuid(25)]);
-    await assert.rejects(f.repository.saveOwnMemberCard(self.auth, await f.input({ labelIds: [uuid(21)] })), { status: 400 });
-    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, labelIds: [uuid(20), uuid(25)] }));
+    await f.milestone(20);
+    assert.deepEqual((await f.repository.getOwnMemberCard(self.auth)).availableLabels, []);
+    await assert.rejects(f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, labelIds: [uuid(20)] })), { status: 400 });
+    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop();
-    assert.deepEqual((await f.repository.getPublicMemberCard(token)).labels, ["Foundations completed", "The First Coin"]);
-    await f.pg.query("update artifact_awards set status='revoked',revoked_at=now() where id=$1", [uuid(30)]);
-    assert.deepEqual((await f.repository.getPublicMemberCard(token)).labels, ["Foundations completed"]);
+    await f.pg.query("update member_public_cards set label_ids=$1::jsonb where member_id=$2", [JSON.stringify([uuid(20)]), self.member]);
+    assert.deepEqual((await f.repository.getPublicMemberCard(token)).labels, []);
     await assert.rejects(f.repository.saveOwnMemberCard(self.auth, { ...saved.settings, version: 0 }), { status: 409 });
-    assert.equal((await f.repository.getPublicMemberCard(token)).name, "Cade");
     const grants = await f.pg.query("select has_table_privilege('anon','member_public_cards','SELECT') as anon,has_table_privilege('authenticated','member_public_cards','SELECT') as authenticated");
     assert.deepEqual(grants.rows, [{ anon: false, authenticated: false }]);
   } finally { await f.pg.close(); }
 });
+
 
 test("validation rejects excess public fields, non-boolean consent, unsafe URLs, oversize streamed requests", async () => {
   const base = { ...model.defaultMemberCardSettings({ name: "Cade", bio: "", buildingNow: "", avatarUrl: null, memberSince: null, location: null }), version: 0 };
@@ -249,10 +238,10 @@ test("concurrent first saves cannot replace each other, and revoked labels never
   const f = await fixture();
   try {
     await f.milestone(20);
-    const initial = await f.input({ publicEnabled: true, labelIds: [uuid(20)] });
+    const initial = await f.input({ publicEnabled: true });
     const outcomes = await Promise.allSettled([
-      f.repository.saveOwnMemberCard(self.auth, { ...initial, showLocation: true }),
-      f.repository.saveOwnMemberCard(self.auth, { ...initial, showBio: true }),
+      f.repository.saveOwnMemberCard(self.auth, initial),
+      f.repository.saveOwnMemberCard(self.auth, initial),
     ]);
     assert.equal(outcomes.filter(result => result.status === "fulfilled").length, 1);
     assert.equal(outcomes.find(result => result.status === "rejected").reason.status, 409);
@@ -261,7 +250,7 @@ test("concurrent first saves cannot replace each other, and revoked labels never
     await f.pg.query("update person_profiles set location_label='A new city' where person_id=$1", [self.person]);
     await f.pg.query("update member_lifecycle set standing_state='paused' where member_id=$1", [self.member]);
     assert.equal((await f.repository.getOwnMemberCard(self.auth)).writable, false);
-    const withdrawn = await f.repository.saveOwnMemberCard(self.auth, { ...current.settings, publicEnabled: false, version: current.version });
+    const withdrawn = await f.repository.saveOwnMemberCard(self.auth, { ...current.settings, publicEnabled: false, showBio: true, labelIds: [uuid(20)], version: current.version });
     await assert.rejects(f.repository.saveOwnMemberCard(self.auth, { ...withdrawn.settings, publicEnabled: true, labelIds: [], version: withdrawn.version }), { status: 403 });
     assert.equal(withdrawn.publicUrl, null); assert.equal(await f.repository.getPublicMemberCard(token), null);
   } finally { await f.pg.close(); }
@@ -298,40 +287,38 @@ test("owner routes enforce session, trusted origin and bounded input without rev
   assert.equal((await route.POST(request(base))).status, 503); assert.equal(saveCalls, 1);
 });
 
-test("selected earned labels follow current titles and disappear when their visibility is withdrawn", async () => {
+test("optional customization requests cannot re-enable fields through the owner API", async () => {
   const f = await fixture();
   try {
-    await f.milestone(20, { title: "Original label" });
-    const choices = await f.input({ publicEnabled: true, labelIds: [uuid(20)] });
-    await f.pg.query("update member_milestones set title='Changed label' where id=$1", [uuid(20)]);
-    const saved = await f.repository.saveOwnMemberCard(self.auth, choices);
-    const token = saved.publicUrl.split("/").pop();
-    assert.deepEqual((await f.repository.getPublicMemberCard(token)).labels, ["Changed label"]);
-    await f.pg.query("update member_milestones set title='Current earned label' where id=$1", [uuid(20)]);
-    assert.deepEqual((await f.repository.getPublicMemberCard(token)).labels, ["Current earned label"]);
-    await f.pg.query("update member_milestones set visibility='private' where id=$1", [uuid(20)]);
-    assert.deepEqual((await f.repository.getPublicMemberCard(token)).labels, []);
+    for (const key of ["showPortrait", "showMemberSince", "showLocation", "showBio", "showBuilding", "showWebsite"]) {
+      await assert.rejects(f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, [key]: true })), { status: 400 });
+    }
+    await assert.rejects(f.repository.saveOwnMemberCard(self.auth, await f.input({ customizeInvitation: true })), { status: 400 });
+    assert.equal((await f.repository.getOwnMemberCard(self.auth)).version, 0, "rejected requests never create or modify a card");
+    const normalized = await f.repository.saveOwnMemberCard(self.auth, await f.input({ showBio: true }));
+    assert.equal(normalized.settings.showBio, false, "a legacy disabled save cannot store optional choices either");
   } finally { await f.pg.close(); }
 });
 
-test("full selected profile fields sync without another card save; unselected fields stay private", async () => {
+
+test("name changes sync without another card save and other profile fields remain excluded", async () => {
   const f = await fixture();
   try {
-    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true, showBio: true, showBuilding: true, showWebsite: true }));
+    const saved = await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled: true }));
     const token = saved.publicUrl.split("/").pop();
     await f.pg.query("update person_profiles set display_name=$1,bio=$2,building_now=$3,website_url=$4,location_label='HIDDEN LOCATION' where person_id=$5", ["N".repeat(120), "B".repeat(1200), "W".repeat(500), "https://example.test/", self.person]);
     const card = await f.repository.getPublicMemberCard(token);
-    assert.equal(card.name.length, 120); assert.equal(card.bio.length, 1200); assert.equal(card.buildingNow.length, 500);
-    assert.equal(card.websiteUrl, "https://example.test/"); assert.equal(card.location, null); assert.equal(card.avatarUrl, null);
+    assert.equal(card.name.length, 120); assert.equal(card.bio, null); assert.equal(card.buildingNow, null);
+    assert.equal(card.websiteUrl, null); assert.equal(card.location, null); assert.equal(card.avatarUrl, null);
     const owner = await f.repository.getOwnMemberCard(self.auth);
-    assert.equal(owner.version, saved.version, "A profile save does not overwrite public scope.");
-    assert.equal(owner.card.bio, card.bio);
-    assert.equal(model.memberCardExcerpt(card.bio, 180).length, 180); assert.ok(model.memberCardExcerpt(card.bio, 180).endsWith("…"));
+    assert.equal(owner.version, saved.version);
+    assert.deepEqual(owner.card, card);
     assert.equal(model.memberCardExcerpt("🫶".repeat(100), 4), "🫶🫶🫶…");
   } finally { await f.pg.close(); }
 });
 
-test("normal profile API accepts sharing scope atomically, rejects duplicate card text and returns safe conflicts", async () => {
+
+test("profile API accepts full name and contact sharing, rejects removed controls, and returns safe conflicts", async () => {
   class MembershipInputError extends Error {}
   class MembershipAccessDeniedError extends Error {}
   class MembershipConflictError extends Error {}
@@ -346,16 +333,43 @@ test("normal profile API accepts sharing scope atomically, rejects duplicate car
     "@/lib/membership/public-card-model": model,
     "@/lib/membership/public-card-repository": { getOwnMemberCard: async () => card },
     "@/lib/membership/repository": { MembershipInputError, MembershipAccessDeniedError, MembershipConflictError,
-      saveMemberProfile: async (_auth, input) => { calls++; if (failConflict) throw new MembershipConflictError("Reload before saving."); assert.equal(input.bio.length, 1200); assert.equal(input.card.showBio, false); return profile; } },
+      saveMemberProfile: async (_auth, input) => { calls++; if (failConflict) throw new MembershipConflictError("Reload before saving."); assert.equal(input.bio.length, 1200); assert.equal(input.fullName, "Cade Mangelson"); assert.equal(input.city, "Alpine"); assert.equal(input.state, "Utah"); assert.deepEqual(input.directory, { emailScope: "circle", phoneScope: "none" }); assert.equal("card" in input, false); return profile; } },
   });
-  const input = { revision: "0".repeat(64), displayName: "Cade", memberTag: "cade", bio: "B".repeat(1200), buildingNow: "W".repeat(500), websiteUrl: "https://example.test", accessibilityNotes: "Private", timezone: "UTC", location: "Utah",
-    directory: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" },
-    card: { ...model.defaultMemberCardSettings(), version: 0 } };
+  const input = { revision: "0".repeat(64), fullName: "Cade Mangelson", memberTag: "cade", bio: "B".repeat(1200), buildingNow: "W".repeat(500), timezone: "UTC", city: "Alpine", state: "Utah",
+    directory: { emailScope: "circle", phoneScope: "none" } };
   const request = body => new Request("https://ruined.test/api/my/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  for (const change of [{ revision: undefined }, { privateContact: "unexpected" }, { card: { ...input.card, publicName: "Second name editor" } }]) assert.equal((await route.POST(request({ ...input, ...change }))).status, 400);
+  for (const change of [{ revision: undefined }, { fullName: undefined }, { city: undefined }, { state: undefined }, { privateContact: "unexpected" }, { card: { ...model.defaultMemberCardSettings(), version: 0 } }, { websiteUrl: "https://example.test" }, { accessibilityNotes: "Old private note control" }, { directory: { ...input.directory, directoryStatus: "hidden" } }]) assert.equal((await route.POST(request({ ...input, ...change }))).status, 400);
   assert.equal(calls, 0);
   const result = await route.POST(request(input)); assert.equal(result.status, 200); assert.match(result.headers.get("Cache-Control"), /no-store/); assert.deepEqual(await result.json(), { profile, card });
   failConflict = true; const conflict = await route.POST(request(input)); assert.equal(conflict.status, 409); assert.deepEqual(await conflict.json(), { error: "Reload before saving." });
   const oversized = new Request("https://ruined.test/api/my/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("x".repeat(24001))); controller.close(); } }), duplex: "half" });
   assert.equal((await route.POST(oversized)).status, 413);
+});
+
+
+test("invitation cards are name-only for both legacy published and withdrawn cards", async () => {
+  const f = await fixture();
+  try {
+    const initial = await f.repository.getInvitationMemberCard(self.member);
+    assert.equal(initial.name, "Cade");
+    for (const publicEnabled of [false, true]) {
+      await f.repository.saveOwnMemberCard(self.auth, await f.input({ publicEnabled }));
+      await f.pg.query("update member_public_cards set show_bio=true,show_location=true,show_building=true where member_id=$1", [self.member]);
+      assert.deepEqual(await f.repository.getInvitationMemberCard(self.member), initial);
+    }
+  } finally { await f.pg.close(); }
+});
+
+test("invitation projection discards a changed name during its read", async () => {
+  const f = await fixture();
+  try {
+    f.setAfterQuery(async query => {
+      if (!query.includes("select profile.display_name")) return;
+      f.setAfterQuery(null);
+      await f.pg.query("update person_profiles set display_name='Updated Name' where person_id=$1", [self.person]);
+    });
+    assert.equal(await f.repository.getInvitationMemberCard(self.member), null);
+    const card = await f.repository.getInvitationMemberCard(self.member);
+    assert.equal(card.name, "Updated Name"); assert.equal(card.bio, null);
+  } finally { await f.pg.close(); }
 });

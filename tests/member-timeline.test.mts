@@ -183,7 +183,7 @@ test("Foundations exercise navigation is distinct from the public Timeline", asy
   ]);
 
   assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "Foundations timeline"/);
-  assert.match(home, /"journal","timeline"/);
+  assert.match(home, /"timeline","journal"/);
   assert.doesNotMatch(page, /redirect\("\/my#timeline"\)/);
   assert.match(repository, /title: "Build your Foundations timeline\."/);
 });

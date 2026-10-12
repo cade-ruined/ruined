@@ -6,7 +6,7 @@ import { getMemberIdentity, requireLockedMemberWriteAccess, MembershipAccessDeni
 import type { MemberIdentity } from "./model";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { JournalError, journalFilePolicy, validateJournalInput, validateJournalVersion, type JournalCreateInput, type JournalEditInput, type JournalEntry, type JournalSnapshot, type JournalListOptions, JOURNAL_UUID } from "./journal-model";
-import { getOwnMemberCardPublicScope } from "./public-card-repository";
+import { getOwnMemberProfilePublicScope } from "./public-card-repository";
 import { journalStore, journalStorageConfigured, validateJournalMedia } from "./journal-storage";
 
 type Sql = ReturnType<typeof getApplicationDatabase> | postgres.TransactionSql;
@@ -56,7 +56,7 @@ export async function getJournal(authUserId:string, cursor:string|null=null, sav
     from member_journal_entries where member_id=${owner.id}::uuid and deleted_at is null
   ), filtered as (
     select * from dated where (${!saved} or saved) and (${!timeline && collection!=="public"} or include_on_timeline)
-      and (${collection===null} or visibility=${collection})
+      and (${collection===null} or (${collection==="private"} and not (visibility='public' and include_on_timeline)) or (${collection==="public"} and visibility='public'))
       and (${year===null} or timeline_year=${year}::integer)
       and (${!search} or strpos(lower(coalesce(title,'') || ' ' || coalesce(body,'')),lower(${search}))>0)
   ), ordered as (
@@ -80,7 +80,7 @@ export async function getJournal(authUserId:string, cursor:string|null=null, sav
     count(*) filter(where (${year===null} or timeline_year=${year}::integer))::integer as total,
     coalesce(array_agg(distinct timeline_year order by timeline_year desc) filter(where timeline_year is not null),'{}'::integer[]) as years
     from dated where (${!saved} or saved) and (${!timeline && collection!=="public"} or include_on_timeline)
-      and (${collection===null} or visibility=${collection})
+      and (${collection===null} or (${collection==="private"} and not (visibility='public' and include_on_timeline)) or (${collection==="public"} and visibility='public'))
       and (${!search} or strpos(lower(coalesce(title,'') || ' ' || coalesce(body,'')),lower(${search}))>0)`;
   const page=rows.slice(0,30);
   return {entries:await entriesWithMedia(owner.id,page),hasMore:rows.length>30,nextCursor:rows.length>30 ? page.at(-1)!.id : null,
@@ -148,14 +148,13 @@ async function prepareEntryMedia(memberId:string, input:JournalCreateInput) {
   }
 }
 async function ownPublicJournalUrl(memberId:string, sql:Sql=getApplicationDatabase()) {
-  const scope=await getOwnMemberCardPublicScope(memberId,sql);
-  return scope ? `/journal/${scope.token}` : null;
+  const scope=await getOwnMemberProfilePublicScope(memberId,sql);
+  return scope ? `/profile/${scope.token}` : null;
 }
 async function requireJournalPublication(memberId:string, input:JournalCreateInput, tx:postgres.TransactionSql) {
   if(input.visibility!=="public") return;
-  // Scope changes lock this same row. Recheck account eligibility inside the owner write transaction.
-  await tx`select member_id from member_public_cards where member_id=${memberId}::uuid for share`;
-  if(!await ownPublicJournalUrl(memberId,tx)) throw new JournalError(403,"Enable sharing on your member card before publishing.");
+  // Publication depends on current member eligibility, never card sharing controls.
+  if(!await ownPublicJournalUrl(memberId,tx)) throw new JournalError(403,"Your profile is not available for public Timeline posts.");
 }
 function inputMatches(entry:JournalEntry,input:JournalCreateInput) {
   return entry.kind===input.kind && entry.title===(input.title||null) && entry.body===(input.body||null)

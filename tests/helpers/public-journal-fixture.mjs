@@ -19,6 +19,8 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   const base = await timelineFixture(t, { visibilityMigration: false }), db = base.db;
   await db.exec(`
     alter table ruined_members add column membership_activated_at timestamptz default '2020-01-01';
+    alter table ruined_members add column member_number integer;
+    alter table ruined_members add column if not exists deleted_at timestamptz;
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text,
       avatar_storage_path text, location_label text, bio text, building_now text);
     create table member_milestones(id uuid primary key, member_id uuid, person_id uuid, title text, visibility text,
@@ -37,7 +39,7 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   if (applyPrivacy) await migratePrivacy();
   const token = "a".repeat(43), otherToken = "b".repeat(43);
   for (const [member, person, shareToken] of [[timelineIds.member, timelineIds.person, token], [timelineIds.otherMember, timelineIds.otherMember, otherToken]]) {
-    await db.query("insert into person_profiles(person_id,display_name,member_tag,bio,location_label,building_now,website_url) values($1,'Shared name','shared-tag','PRIVATE BIO','PRIVATE LOCATION','PRIVATE BUILDING','https://private.example.test')", [person]);
+    await db.query("insert into person_profiles(person_id,display_name,member_tag,bio,location_label,building_now,website_url) values($1,'Shared name',$2,'PUBLIC BIO','PRIVATE LOCATION','PRIVATE BUILDING','https://private.example.test')", [person, member === timelineIds.member ? "shared_tag" : "other_tag"]);
     await db.query("insert into member_public_cards(member_id,public_token,wear_seed) values($1,$2,$3)", [member,shareToken,"c".repeat(24)]);
   }
   let afterQuery = null;

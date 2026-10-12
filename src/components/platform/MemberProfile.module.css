@@ -19,7 +19,7 @@
 .surname { display:block; font-family:var(--font-display); font-weight:500; font-style:italic; font-size:clamp(30px,3.2vw,42px); line-height:.95; letter-spacing:-.035em; }
 .memberTag { margin-top:12px; font-family:var(--font-body); font-size:14px; line-height:1.5; color:var(--member-red); overflow-wrap:anywhere; }
 .bio { min-width:0; overflow-wrap:anywhere; grid-column:1/-1; max-width:65ch; white-space:pre-wrap; font-size:15px; line-height:1.65; }
-.identityActions { grid-column:1/-1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; min-width:0; }
+.identityActions { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; min-width:0; }
 .identityActions :global(.member-button) { min-width:0; min-height:44px; padding:10px 12px; gap:6px; white-space:nowrap; }
 .identityActions svg { flex-shrink:0; }
 .memberSince { margin-top:12px; font-size:11px; line-height:1.5; color:var(--member-muted); }
@@ -46,7 +46,7 @@
   .memberTag { margin-top:10px; font-size:13px; }
 
   .bio { font-size:15px; margin-top:1px; }
-  .identityActions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .identityActions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .identityActions :global(.member-button) { width:100%; min-height:44px; padding:10px 6px; gap:5px; font-size:12px; }
   .identityActions svg { width:13px; height:13px; }
   .memberSince { margin-top:8px; font-size:10px; }

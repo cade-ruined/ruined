@@ -2,22 +2,22 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import MemberBadges from "./MemberBadges";
-import type { MemberBadge } from "@/lib/membership/badge-model";
-import type { PublicMemberCard } from "@/lib/membership/public-card-model";
+import { memberTier } from "@/lib/membership/member-number";
+import type { PublicMemberProfile } from "@/lib/membership/public-card-model";
 import type { PublicJournalEntry, PublicJournalPage } from "@/lib/membership/public-journal-repository";
 import styles from "./PublicJournal.module.css";
 
-export default function PublicJournal({ token, identity, badges }: {
-  token: string; identity: Pick<PublicMemberCard, "name" | "memberTag" | "avatarUrl" | "bio" | "labels">;
-  badges: readonly MemberBadge[];
+export default function PublicJournal({ token, identity, previewEntries }: {
+  token: string; identity: PublicMemberProfile; previewEntries?: PublicJournalEntry[];
 }) {
-  const [entries, setEntries] = useState<PublicJournalEntry[]>([]);
-  const [loading, setLoading] = useState(true), [error, setError] = useState(false), [unavailable, setUnavailable] = useState(false);
+  const tier = memberTier(identity.memberNumber);
+  const [entries, setEntries] = useState<PublicJournalEntry[]>(previewEntries ?? []);
+  const [loading, setLoading] = useState(previewEntries === undefined), [error, setError] = useState(false), [unavailable, setUnavailable] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null), [next, setNext] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const generation = useRef(0);
   useEffect(() => {
+    if (previewEntries !== undefined) return;
     const controller = new AbortController(), request = ++generation.current;
     setLoading(true); setError(false);
     fetch(`/api/cards/${token}/journal${cursor ? `?before=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store", signal: controller.signal })
@@ -33,28 +33,27 @@ export default function PublicJournal({ token, identity, badges }: {
       }).catch(() => { if (!controller.signal.aborted) setError(true); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [token, cursor, attempt]);
+  }, [token, cursor, attempt, previewEntries]);
   return <main className={styles.page}><div className={styles.content}>
-    <Link href={`/card/${token}`} className={styles.back}>Member card</Link>
+    <Link href="/" className={styles.back}>The Ruined Project</Link>
+    {previewEntries && <p className={styles.preview}>Preview · Example profile and posts</p>}
     {!unavailable && <header className={styles.identity}>
-      {identity.avatarUrl && <Image className={styles.portrait} src={identity.avatarUrl} alt="" width={144} height={180} unoptimized />}
       <div className={styles.identityCopy}><h1>{identity.name}</h1>{identity.memberTag && <p className={styles.tag}>@{identity.memberTag}</p>}
         {identity.bio && <p className={styles.bio}>{identity.bio}</p>}
-        {identity.labels.length > 0 && <ul className={styles.labels} aria-label="Shared earned labels">{identity.labels.map(label => <li key={label}>{label}</li>)}</ul>}
-        {badges.length > 0 && <div className={styles.badges}><MemberBadges badges={badges} /></div>}
+        {tier && <p className={styles.membership}><span>{tier.label}</span><span aria-label={`Member number ${identity.memberNumber}`}>№ {tier.displayNumber}</span></p>}
       </div>
     </header>}
     <section className={styles.journal} aria-labelledby="public-journal-title">
       <h2 id="public-journal-title" className={styles.journalTitle}>Timeline</h2>
       <div aria-live="polite">
-        {unavailable ? <p className={styles.empty}>This Timeline is not being shared.</p> : <>
-          {!loading && !error && entries.length === 0 && <p className={styles.empty}>No shared moments yet.</p>}
+        {unavailable ? <p className={styles.empty}>This profile is unavailable.</p> : <>
+          {!loading && !error && entries.length === 0 && <p className={styles.empty}>No Timeline posts yet.</p>}
           <div className={styles.entries}>{entries.map(entry => <article className={styles.entry} key={entry.id}>
-            <time dateTime={entry.createdAt}>{new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(entry.createdAt))}</time>
+            <header className={styles.postHeading}><div className={styles.postIdentity}><span className={styles.monogram} aria-hidden="true">{identity.name.trim().charAt(0)}</span><div><strong>{identity.name}</strong>{identity.memberTag && <span>@{identity.memberTag}</span>}</div></div><time dateTime={entry.createdAt}>{new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(entry.createdAt))}</time></header>
             {entry.title && <h3>{entry.title}</h3>}{entry.body && <p className={styles.body}>{entry.body}</p>}
             {!!entry.media.length && <div className={styles.media}>{entry.media.map((media, index) => media.mimeType.startsWith("video/")
               ? <video key={media.url} src={media.url} controls playsInline preload="metadata" aria-label={`${entry.title || "Timeline moment"} — video ${index + 1}`} />
-              : <Image key={media.url} src={media.url} alt={`${entry.title || "Timeline moment"} — photograph ${index + 1}`} width={960} height={720} unoptimized />)}</div>}
+              : <Image key={media.url} src={media.url} alt={`${entry.title || "Timeline moment"} — photograph ${index + 1}`} width={960} height={720} style={{ width: "100%", height: "auto" }} unoptimized />)}</div>}
           </article>)}</div>
           {loading && <p className={styles.status}>Loading Timeline…</p>}
           {error && <div className={styles.status}><p>The Timeline couldn’t load.</p><button type="button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>}

@@ -8,12 +8,12 @@ export default function WebVitals() {
   const pathname = usePathname();
   const hasShownMemberCard = useRef(false);
   useEffect(() => {
-    if (pathname.startsWith("/card/") || pathname === "/my/card" || pathname.startsWith("/invitation/") || pathname === "/my/invitation") hasShownMemberCard.current = true;
+    if (pathname.startsWith("/card/") || pathname.startsWith("/profile/") || pathname.startsWith("/journal/") || pathname === "/my/card" || pathname.startsWith("/invitation/") || pathname === "/my/invitation") hasShownMemberCard.current = true;
   }, [pathname]);
   useReportWebVitals((metric) => {
     // Performance entries can contain complete capability and portrait URLs.
     // Once a card has been opened, also suppress delayed navigation metrics.
-    if (hasShownMemberCard.current || window.location.pathname.startsWith("/card/") || window.location.pathname === "/my/card" || window.location.pathname.startsWith("/invitation/") || window.location.pathname === "/my/invitation") return;
+    if (hasShownMemberCard.current || window.location.pathname.startsWith("/card/") || window.location.pathname.startsWith("/profile/") || window.location.pathname.startsWith("/journal/") || window.location.pathname === "/my/card" || window.location.pathname.startsWith("/invitation/") || window.location.pathname === "/my/invitation") return;
     const endpoint = process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT;
     if (!endpoint) return;
     const payload = JSON.stringify(metric);

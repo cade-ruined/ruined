@@ -151,7 +151,7 @@ const nextConfig = {
         { source: "/ops/emails" },
         { source: "/ops/messages", has: [{ type: "query", key: "mode", value: "emails" }] },
       ].map(route => ({ ...route, headers: [{ key: "Content-Security-Policy", value: csp.replace(/img-src [^;]+/, "img-src 'self' data: blob: https:").replace(/font-src [^;]+/, "font-src 'self' data: https://members.theruinedproject.com") }] })),
-      ...["/card/:path*", "/invitation/:path*", "/journal/:path*"].map(source => ({ source, headers: [
+      ...["/card/:path*", "/invitation/:path*", "/journal/:path*", "/profile/:path*"].map(source => ({ source, headers: [
         { key: "Cache-Control", value: "private, no-store, max-age=0" },
         { key: "Referrer-Policy", value: "no-referrer" },
         { key: "X-Robots-Tag", value: "noindex, nofollow" },

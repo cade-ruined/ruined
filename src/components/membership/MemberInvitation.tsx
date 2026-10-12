@@ -197,7 +197,7 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
 
   return <PublicMemberCardPage card={snapshot.card} variant="invitation" invitationExpiresAt={selected?.expiresAt ?? null} invitationRecipientName={selected?.recipientName ?? (draftName || null)} title={preview ? "MY INVITATIONS / PREVIEW" : "MY INVITATIONS"}
     headerActions={<><Link href="/my">My profile ↗</Link><a href="#create-invitation">Create invitation ↓</a></>}
-    footerNote={preview ? "Preview only. Nothing is sent or published." : "Personal invitations. Your name and member tag stay synced with your profile."}
+    footerNote={preview ? "Preview only. Nothing is sent or published." : "Personal invitations. Your full name stays synced with your profile."}
     footerActions={<Link href="/my/card">My Card ↗</Link>}>
     <div className={styles.dashboard}>
       <p className={styles.previewCaption}>{selected ? <>Showing the invitation for <strong>{selected.recipientName}</strong><button type="button" onClick={() => setSelectedId(null)}>Back to new invitation</button></> : <>Your next invitation{recipientName.trim() ? <>, for <strong>{recipientName.trim()}</strong></> : " starts here."}</>}</p>

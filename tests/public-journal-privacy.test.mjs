@@ -136,11 +136,10 @@ test("owner public Timeline dates and full export fall back to UTC creation date
   assert.equal(exported[1].eventYear,null); assert.equal(exported[1].createdAt,"2025-12-31T23:30:00.000Z");
 });
 
-test("owner publication requires card sharing and stays versioned, owner-scoped and backward compatible", async t => {
+test("owner publication is independent of card sharing and stays versioned, owner-scoped and backward compatible", async t => {
   const f = await publicJournalFixture(t);
   const privateEntry = await f.journal.createJournalEntry(timelineIds.auth,draft({eventYear:2024,eventMonth:2,eventDay:29,includeOnTimeline:true}));
-  assert.equal((await f.journal.getJournal(timelineIds.auth,null,false,{collection:"private"})).publicUrl,null);
-  await assert.rejects(f.journal.createJournalEntry(timelineIds.auth,draft({visibility:"public",includeOnTimeline:true})),{status:403});
+  assert.equal((await f.journal.getJournal(timelineIds.auth,null,false,{collection:"private"})).publicUrl,"/profile/shared_tag");
   await assert.rejects(f.journal.editJournalEntry(timelineIds.otherAuth,privateEntry.id,edit(privateEntry,{visibility:"public"})),{status:404});
   await f.enable();
   const published = await f.journal.editJournalEntry(timelineIds.auth,privateEntry.id,edit(privateEntry,{visibility:"public"}));
@@ -156,14 +155,14 @@ test("owner publication requires card sharing and stays versioned, owner-scoped 
   assert.equal(oldPrivateEdit.visibility,"private");
   assert.deepEqual((await f.journal.getJournal(timelineIds.auth,null,false,{collection:"public"})).entries.map(e=>e.id),[published.id]);
   const privateTimeline = await f.journal.getJournal(timelineIds.auth,null,false,{collection:"private",view:"timeline"});
-  assert.deepEqual(privateTimeline.entries,[]); assert.equal(privateTimeline.publicUrl,`/journal/${f.token}`);
+  assert.deepEqual(privateTimeline.entries,[]); assert.equal(privateTimeline.publicUrl,"/profile/shared_tag");
   const journal = await f.journal.getJournal(timelineIds.auth);
   assert.deepEqual(new Set(journal.entries.map(e=>e.id)),new Set([published.id,another.id]));
-  assert.equal(journal.publicUrl,`/journal/${f.token}`);
+  assert.equal(journal.publicUrl,"/profile/shared_tag");
   assert.deepEqual(await f.journal.exportJournalTimeline(timelineIds.auth,"private"),[]);
   assert.equal((await f.journal.exportJournalTimeline(timelineIds.auth)).length,1,"legacy export semantics stay intact");
   await f.enable(false);
-  assert.equal(await f.visitor.getPublicJournal(f.token),null);
+  assert.equal((await f.visitor.getPublicJournal(f.token)).entries[0].id,published.id);
   const unpublished = await f.journal.editJournalEntry(timelineIds.auth,legacy.id,edit(legacy,{visibility:"private"}));
   assert.equal(unpublished.visibility,"private");
   const versions = (await f.db.query("select visibility from member_journal_entry_versions where journal_entry_id=$1 order by version",[legacy.id])).rows;
@@ -185,7 +184,7 @@ test("public feed only projects explicit opt-ins and cannot use private or forei
   assert.equal(await f.visitor.getPublicJournal(f.token),null);
 });
 
-test("card consent and live membership/auth changes close public feed without publishing private entries", async t => {
+test("live membership/auth changes close public feed without publishing private entries", async t => {
   const f = await publicJournalFixture(t); await f.enable();
   await f.journal.createJournalEntry(timelineIds.auth,draft({visibility:"public",includeOnTimeline:true}));
   for (const assignment of ["standing_state='paused'","standing_state='inactive'","standing_state='alumni'","account_state='suspended'","account_state='closed'","billing_state='ended'","program_state='offboarded'","standing_state='cancellation_requested',cancellation_effective_at='2000-01-01'"]) {
@@ -229,9 +228,9 @@ test("visitor media rejects private, removed, pending, deleted and foreign files
 test("withdrawal during slow media download or feed projection discards stale content", async t => {
   const f = await publicJournalFixture(t); await f.enable();
   const shared = await addMedia(f);
-  f.setStorageHook(() => f.enable(false));
+  f.setStorageHook(() => f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[timelineIds.member]));
   assert.equal(await f.visitor.getPublicJournalMedia(f.token,shared.id),null);
-  await f.enable();
+  await f.db.query("update member_lifecycle set standing_state='active' where member_id=$1",[timelineIds.member]);
   f.setStorageHook(() => f.db.query("update member_journal_entries set visibility='private' where id=$1",[shared.entry]));
   assert.equal(await f.visitor.getPublicJournalMedia(f.token,shared.id),null);
   await f.db.query("update member_journal_entries set visibility='public' where id=$1",[shared.entry]);
@@ -257,7 +256,7 @@ test("withdrawal during slow media download or feed projection discards stale co
   await f.db.query("update member_journal_entries set include_on_timeline=true where id=$1",[shared.entry]);
   f.setAfterQuery(async query => {
     if (!query.includes("select media.id, media.entry_id")) return;
-    f.setAfterQuery(null); await f.enable(false);
+    f.setAfterQuery(null); await f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[timelineIds.member]);
   });
   assert.equal(await f.visitor.getPublicJournal(f.token),null);
 });
@@ -309,7 +308,7 @@ test("public pagination visits the full opted-in feed without gaps and consent i
   assert.equal(next.entries.length,3); assert.equal(next.hasMore,false);
   assert.equal(new Set([...first.entries,...next.entries].map(entry=>entry.id)).size,33);
   const input = draft({visibility:"public",includeOnTimeline:true});
-  f.beforeNextTransaction(() => f.enable(false));
+  f.beforeNextTransaction(() => f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[timelineIds.member]));
   await assert.rejects(f.journal.createJournalEntry(timelineIds.auth,input),{status:403});
   assert.equal((await f.db.query("select count(*)::int n from member_journal_entries where id=$1",[input.id])).rows[0].n,0);
 });

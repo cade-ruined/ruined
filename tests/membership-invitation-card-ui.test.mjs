@@ -103,6 +103,22 @@ test("server fallback is a readable brand invitation with no fabricated sender o
   assert.doesNotMatch(html, /VALID UNTIL|Cade|Cherry Hill|Read invitation|Save image/);
 });
 
+test("card text remains name-only for legacy detail payloads while invitations preserve the recipient", async () => {
+  const model = await load("src/lib/membership/public-card-model.ts");
+  const component = (await load("src/components/membership/card/MemberCard.tsx", {
+    react: React, "next/dynamic": () => Card, "@/lib/membership/public-card-model": model,
+    "./card-artwork": {}, "@/lib/membership/invitation-expiry": { memberInvitationDeadline: () => null }, "./AmbientParticles": Card,
+  })).default;
+  const card = { name: "Alex Morgan", memberTag: "legacy_tag", avatarUrl: "/private-portrait.png", memberSince: "2026-01-01",
+    bio: "PRIVATE BIO", location: "PRIVATE LOCATION", buildingNow: "PRIVATE BUILDING", websiteUrl: "https://private.example", labels: ["PRIVATE LABEL"] };
+  for (const variant of ["member", "invitation"]) {
+    const html = renderToStaticMarkup(React.createElement(component, { card, variant, invitationRecipientName: "Taylor Reed" }));
+    assert.match(html, /Alex Morgan/);
+    assert.doesNotMatch(html, /PRIVATE|legacy_tag|private\.example|private-portrait|Member since|Based in|Currently building|Along the way/);
+    if (variant === "invitation") assert.match(html, /This is for Taylor Reed/);
+  }
+});
+
 
 test("a room-bound invitation uses the original archive lights and projects onto its containing room", async () => {
   const updateShadow = () => {};

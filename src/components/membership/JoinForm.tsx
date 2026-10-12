@@ -334,6 +334,7 @@ export default function JoinForm({
   }
 
   function changeMemberTag(value: string) {
+    if (onboarding.profile.memberTag) return;
     setMemberTag(value.trim().replace(/^@/, "").toLowerCase());
     setMemberTagError(null);
     setError(null);
@@ -360,7 +361,7 @@ export default function JoinForm({
       setSubmitting(false);
       return;
     }
-    const tag = String(form.get("member-tag") ?? "").trim().replace(/^@/, "").toLowerCase();
+    const tag = onboarding.profile.memberTag ?? String(form.get("member-tag") ?? "").trim().replace(/^@/, "").toLowerCase();
     if (!/^[a-z0-9_]{3,24}$/.test(tag)) {
       setMemberTagError("Use 3–24 letters, numbers, or underscores.");
       memberTagRef.current?.focus();
@@ -706,7 +707,7 @@ export default function JoinForm({
                 required
                 spellCheck={false}
               />
-              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-legal-name-visibility">Private · For your membership records.</span>
+              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-legal-name-visibility">Your name appears on your public profile and member card.</span>
             </label>
             <label className={fieldLabelClass} htmlFor="member-tag">
               <span className={fieldLabelTextClass}>Member tag</span>
@@ -728,13 +729,14 @@ export default function JoinForm({
                   onInvalid={() => setMemberTagError("Use 3–24 letters, numbers, or underscores.")}
                   pattern="[a-z0-9_]{3,24}"
                   ref={memberTagRef}
+                  readOnly={Boolean(onboarding.profile.memberTag)}
                   required
                   spellCheck={false}
                   title="Use 3–24 letters, numbers, or underscores."
-                  value={memberTag}
+                  value={onboarding.profile.memberTag ?? memberTag}
                 />
               </span>
-              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-tag-help">{registrationOnly ? "Reserve your unique @tag for Ruined. Use 3–24 letters, numbers, or underscores." : "Your unique @tag. Use 3–24 letters, numbers, or underscores. It appears alongside your display name when you share your card or invitation."}</span>
+              <span className="text-xs leading-relaxed text-[var(--member-muted)]" id="member-tag-help">{onboarding.profile.memberTag ? "Your member tag is permanent and cannot be changed." : "Choose your permanent @tag. Use 3–24 letters, numbers, or underscores. It appears alongside your full name on your public profile."}</span>
               <span className="text-xs leading-relaxed text-[var(--member-red)]" id="member-tag-error" role="status">{memberTagError}</span>
             </label>
             <label className={fieldLabelClass} htmlFor="member-email">

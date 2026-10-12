@@ -1,17 +1,15 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import type { MemberAccessIdentity } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
-import { MEMBER_PHOTO_BUCKET, ownedMemberPhotoPath } from "@/lib/membership/photo-policy";
 import {
-  defaultMemberCardSettings, MEMBER_CARD_TOKEN, projectMemberCard, PublicCardError,
-  validateMemberCardInput, type MemberCardInput, type MemberCardLabel, type MemberCardSettings,
-  type MemberCardSnapshot, type MemberCardSource, type PublicMemberCard,
+  defaultMemberCardSettings, MEMBER_CARD_TOKEN, MEMBER_PROFILE_IDENTIFIER, projectMemberCard, PublicCardError,
+  validateMemberCardInput, type MemberCardInput, type MemberCardSettings,
+  type MemberCardSnapshot, type MemberCardSource, type PublicMemberCard, type PublicMemberProfile,
 } from "./public-card-model";
 
 type CardSql = TransactionSql | ReturnType<typeof getApplicationDatabase>;
@@ -22,8 +20,8 @@ type CardRow = {
   show_bio: boolean; show_building: boolean; show_website: boolean; label_ids: string[]; version: number;
 };
 type SourceRow = {
-  display_name: string | null; preferred_name: string | null; member_tag: string | null; avatar_storage_path: string | null;
-  membership_activated_at: Date | string | null; location_label: string | null; bio: string | null; building_now: string | null; website_url: string | null;
+  display_name: string | null; preferred_name: string | null;
+  membership_activated_at: Date | string | null;
 };
 type PublicRow = CardRow & SourceRow & {
   person_id: string;
@@ -35,8 +33,8 @@ type PublicRow = CardRow & SourceRow & {
 };
 const iso = (value: Date | string | null) => value ? new Date(value).toISOString() : null;
 function wearSeed(memberId: string) { return createHash("sha256").update(`ruined-member-card:${memberId}`).digest("hex").slice(0, 24); }
-function sourceRevision(source: MemberCardSource, labels: MemberCardLabel[]): string {
-  return createHash("sha256").update(JSON.stringify([source, labels])).digest("hex");
+function sourceRevision(source: MemberCardSource): string {
+  return createHash("sha256").update(JSON.stringify(source)).digest("hex");
 }
 /** Entry, paused, suspended, inactive and ended accounts cannot publish. */
 export function canPublishMemberCard(identity: MemberAccessIdentity, activation: string | null): boolean {
@@ -46,11 +44,7 @@ export function canPublishMemberCard(identity: MemberAccessIdentity, activation:
   return ["onboarding", "full"].includes(access.mode) && memberCan(access, "profile.write");
 }
 function rowSettings(row: CardRow): MemberCardSettings {
-  return {
-    publicEnabled: row.public_enabled, showPortrait: row.show_portrait,
-    showMemberSince: row.show_member_since, showLocation: row.show_location, showBio: row.show_bio,
-    showBuilding: row.show_building, showWebsite: row.show_website, labelIds: row.label_ids,
-  };
+  return { ...defaultMemberCardSettings(), publicEnabled: row.public_enabled };
 }
 async function owner(authUserId: string, write = false) {
   const identity = await getMemberIdentity(authUserId);
@@ -61,52 +55,33 @@ async function owner(authUserId: string, write = false) {
 }
 async function cardSource(memberId: string, sql: CardSql = getApplicationDatabase()): Promise<MemberCardSource> {
   const [row] = await sql<SourceRow[]>`
-    select profile.display_name, profile.preferred_name, profile.member_tag, profile.avatar_storage_path,
-      member.membership_activated_at, profile.location_label, profile.bio, profile.building_now, profile.website_url
+    select profile.display_name, profile.preferred_name, member.membership_activated_at
     from ruined_members member left join person_profiles profile on profile.person_id = member.person_id
     where member.id = ${memberId}::uuid limit 1
   `;
   if (!row) throw new PublicCardError(404, "Member card not found.");
-  return rowSource(row, memberId);
+  return rowSource(row);
 }
-function rowSource(row: SourceRow, memberId: string): MemberCardSource {
+function rowSource(row: SourceRow): MemberCardSource {
   return {
     name: row.display_name?.trim() || row.preferred_name?.trim() || "Member",
-    memberTag: row.member_tag,
-    avatarUrl: ownedMemberPhotoPath(memberId, row.avatar_storage_path) ? row.avatar_storage_path : null,
-    memberSince: iso(row.membership_activated_at), location: row.location_label,
-    bio: row.bio ?? "", buildingNow: row.building_now ?? "", websiteUrl: row.website_url ?? "",
+    memberTag: null, avatarUrl: null, memberSince: iso(row.membership_activated_at),
+    location: null, bio: "", buildingNow: "", websiteUrl: "",
   };
-}
-/** Only existing member-visible milestone records; private evidence never leaves SQL. */
-async function cardLabels(memberId: string, personId: string, sql: CardSql = getApplicationDatabase(), lock = false): Promise<MemberCardLabel[]> {
-  if (lock) await sql`select id from member_milestones where member_id = ${memberId}::uuid and person_id = ${personId}::uuid for share`;
-  const rows = await sql<Array<{ id: string; title: string }>>`
-    select milestone.id, milestone.title from member_milestones milestone
-    where milestone.member_id = ${memberId}::uuid and milestone.person_id = ${personId}::uuid
-      and milestone.visibility in ('member', 'circle') and milestone.occurred_at <= statement_timestamp()
-      and (milestone.source_entity_type is distinct from 'artifact_award' or exists (
-        select 1 from artifact_awards award where award.id::text = milestone.source_entity_id
-          and award.member_id = ${memberId}::uuid and award.person_id = ${personId}::uuid
-          and award.status in ('awarded', 'in_fulfillment', 'fulfilled') and award.revoked_at is null
-          and award.awarded_at <= statement_timestamp()
-      ))
-    order by milestone.occurred_at desc, milestone.id desc limit 100
-  `;
-  return rows.map(row => ({ id: row.id, label: row.title }));
 }
 export async function getOwnMemberCard(authUserId: string): Promise<MemberCardSnapshot> {
   const { identity, writable } = await owner(authUserId);
-  const [source, availableLabels, rows] = await Promise.all([
-    cardSource(identity.memberId), cardLabels(identity.memberId, identity.personId),
+  const [source, rows] = await Promise.all([
+    cardSource(identity.memberId),
     getApplicationDatabase()<CardRow[]>`select * from member_public_cards where member_id = ${identity.memberId}::uuid limit 1`,
   ]);
   const row = rows[0];
   const settings = row ? rowSettings(row) : defaultMemberCardSettings();
   const eligible = canPublishMemberCard(identity, source.memberSince);
   return {
-    card: projectMemberCard(settings, source, availableLabels, row?.wear_seed ?? wearSeed(identity.memberId)),
-    settings, version: row?.version ?? 0, writable, eligible, source, sourceRevision: sourceRevision(source, availableLabels), availableLabels,
+    card: projectMemberCard(settings, source, [], row?.wear_seed ?? wearSeed(identity.memberId)),
+    settings, version: row?.version ?? 0, writable, eligible, source: { ...source, memberSince: null },
+    sourceRevision: sourceRevision(source), availableLabels: [],
     publicUrl: row?.public_enabled && eligible ? `/card/${row.public_token}` : null,
   };
 }
@@ -130,15 +105,17 @@ export async function saveProfileCardSettings(
     if ((current?.version ?? 0) !== input.version) throw new PublicCardError(409, "This card changed in another tab. Reload before saving.");
     // Publication can always be withdrawn without re-approving stale profile details or labels.
     if (current?.public_enabled && !input.publicEnabled && (withdrawalOnly || !writable)) {
-      await tx`update member_public_cards set public_enabled = false, version = version + 1,
+      await tx`update member_public_cards set public_enabled = false,
+        show_portrait = false, show_member_since = false, show_location = false, show_bio = false,
+        show_building = false, show_website = false, label_ids = '[]'::jsonb, version = version + 1,
         updated_at = statement_timestamp() where member_id = ${identity.memberId}::uuid`;
       return;
     }
     if (!writable) throw new PublicCardError(403, "This account cannot change its member card.");
-    // Selected fields deliberately follow the current profile; only scope changes use this version.
+    // The name follows the current profile; only publication changes use this version.
     await tx`select person_id from person_profiles where person_id = ${identity.personId}::uuid for share`;
-    const [source, labels, liveRows] = await Promise.all([
-      cardSource(identity.memberId, tx), cardLabels(identity.memberId, identity.personId, tx, true),
+    const [source, liveRows] = await Promise.all([
+      cardSource(identity.memberId, tx),
       tx<PublicRow[]>`select lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state,
         lifecycle.standing_state, lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
@@ -162,7 +139,6 @@ export async function saveProfileCardSettings(
       throw new PublicCardError(403, "This account cannot change its member card.");
     }
     if (input.publicEnabled && !canPublishMemberCard(latestIdentity, source.memberSince)) throw new PublicCardError(403, "An active membership is required to share this card.");
-    if (input.labelIds.some(id => !labels.some(label => label.id === id))) throw new PublicCardError(400, "One of those labels is no longer available. Choose a current milestone.");
     const token = current?.public_token ?? randomBytes(32).toString("base64url");
     await tx`
       insert into member_public_cards (member_id, public_token, wear_seed, public_enabled,
@@ -179,8 +155,7 @@ async function publicCardRow(token: string, sql: CardSql = getApplicationDatabas
   if (!MEMBER_CARD_TOKEN.test(token)) return null;
   const [row] = await sql<PublicRow[]>`
     select card.*, member.person_id, member.membership_activated_at,
-      profile.display_name, profile.preferred_name, profile.member_tag, profile.avatar_storage_path,
-      profile.location_label, profile.bio, profile.building_now, profile.website_url,
+      profile.display_name, profile.preferred_name,
       lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
       lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
@@ -217,41 +192,86 @@ export async function getOwnMemberCardPublicScope(memberId: string, sql: CardSql
   const scope = await getPublicMemberCardScope(card.public_token, sql);
   return scope?.memberId === memberId ? scope : null;
 }
-function publicPortraitPath(row: PublicRow): string | null {
-  return row.show_portrait ? ownedMemberPhotoPath(row.member_id, row.avatar_storage_path) : null;
-}
 export async function getPublicMemberCard(token: string): Promise<PublicMemberCard | null> {
   const row = await publicCardRow(token);
   if (!row) return null;
-  const labels = await cardLabels(row.member_id, row.person_id);
-  const source = rowSource(row, row.member_id);
-  const revision = sourceRevision(source, labels);
-  const portraitRevision = createHash("sha256").update(publicPortraitPath(row) ?? "").digest("hex").slice(0, 20);
-  const card = projectMemberCard(rowSettings(row), {
-    ...source, avatarUrl: publicPortraitPath(row) ? `/api/cards/${token}/portrait?v=${portraitRevision}` : null,
-  }, labels, row.wear_seed);
-  // Recheck after projection: changed public scope or cleared profile data must not leak a stale response.
+  const source = rowSource(row);
+  const card = projectMemberCard(rowSettings(row), source, [], row.wear_seed);
+  // Recheck the name and publication gate after the initial read.
   const latest = await publicCardRow(token);
-  return latest?.version === row.version && sourceRevision(rowSource(latest, latest.member_id), labels) === revision ? card : null;
+  return latest?.version === row.version && sourceRevision(rowSource(latest)) === sourceRevision(source) ? card : null;
 }
-export async function getPublicMemberCardPortrait(token: string): Promise<Blob | null> {
-  const row = await publicCardRow(token);
+/** Invitation callers establish their own active invitation/owner gate before reading this projection. */
+export async function getInvitationMemberCard(memberId: string): Promise<PublicMemberCard | null> {
+  const sql = getApplicationDatabase();
+  const [member] = await sql<{ person_id: string }[]>`select person_id from ruined_members where id = ${memberId}::uuid`;
+  if (!member) return null;
+  const source = await cardSource(memberId, sql);
+  const card = projectMemberCard(defaultMemberCardSettings(), source, [], wearSeed(memberId));
+  const latest = await cardSource(memberId, sql);
+  return sourceRevision(latest) === sourceRevision(source) ? card : null;
+}
+
+/** Public profiles have a fixed field set and do not depend on card sharing. */
+type ProfileRow = Pick<PublicRow, "account_state" | "billing_state" | "program_state" | "standing_state" |
+  "administrative_onboarding_state" | "cancellation_effective_at" | "registration_held" | "operator_funded" |
+  "complimentary_funded" | "shared_billing_state"> & {
+  member_id: string; public_token: string | null; display_name: string | null; preferred_name: string | null;
+  member_tag: string | null; bio: string | null; member_number: number | null; membership_activated_at: Date | string | null;
+};
+async function publicProfileRow(identifier: string, sql: CardSql = getApplicationDatabase()): Promise<ProfileRow | null> {
+  if (!MEMBER_PROFILE_IDENTIFIER.test(identifier)) return null;
+  const [row] = await sql<ProfileRow[]>`
+    select member.id as member_id, card.public_token, profile.display_name, profile.preferred_name,
+      profile.member_tag, profile.bio, member.member_number, member.membership_activated_at,
+      lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
+      lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      not private.ruined_member_profile_released(member.id) as registration_held,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
+      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded
+    from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    left join person_profiles profile on profile.person_id = member.person_id
+    left join member_public_cards card on card.member_id = member.id
+    where member.deleted_at is null
+      and (member.id::text = ${identifier} or profile.member_tag = ${identifier.toLowerCase()} or card.public_token = ${identifier})
+      and exists (select 1 from platform_users viewer join platform_role_grants member_grant
+        on member_grant.auth_user_id = viewer.auth_user_id and member_grant.role_slug = 'member' and member_grant.revoked_at is null
+        where viewer.person_id = member.person_id and viewer.status = 'active')
+    limit 1
+  `;
   if (!row) return null;
-  const path = publicPortraitPath(row);
-  if (!path) return null;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const secret = process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !secret) throw new PublicCardError(503, "This portrait is temporarily unavailable.");
-  const store = createClient(url, secret, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(20_000) }) },
-  }).storage.from(MEMBER_PHOTO_BUCKET);
-  const { data, error } = await store.download(path);
-  if (error) {
-    if ("statusCode" in error && String(error.statusCode) === "404") return null;
-    throw new PublicCardError(503, "This portrait is temporarily unavailable.");
-  }
-  // No signed redirect: each byte response is guarded, including after slow storage.
-  const current = await publicCardRow(token);
-  return current?.version === row.version && publicPortraitPath(current) === path ? data : null;
+  const identity: MemberAccessIdentity = {
+    accountState: row.account_state, billingState: row.shared_billing_state ?? row.billing_state, programState: row.program_state,
+    standingState: row.standing_state, administrativeOnboardingState: row.administrative_onboarding_state,
+    registrationHeld: row.registration_held === true, cancellationEffectiveAt: iso(row.cancellation_effective_at),
+    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
+  };
+  return canPublishMemberCard(identity, iso(row.membership_activated_at)) ? row : null;
+}
+function profileProjection(row: ProfileRow): PublicMemberProfile {
+  return { name: row.display_name?.trim() || row.preferred_name?.trim() || "Member", memberTag: row.member_tag,
+    bio: row.bio?.trim() || null, memberNumber: row.member_number };
+}
+function profileScope(row: ProfileRow) {
+  return { memberId: row.member_id, token: row.member_tag || row.public_token || row.member_id,
+    version: createHash("sha256").update(JSON.stringify(profileProjection(row))).digest("hex") };
+}
+export async function getPublicMemberProfileScope(identifier: string, sql: CardSql = getApplicationDatabase()) {
+  const row = await publicProfileRow(identifier, sql);
+  return row ? profileScope(row) : null;
+}
+export async function getOwnMemberProfilePublicScope(memberId: string, sql: CardSql = getApplicationDatabase()) {
+  const row = await publicProfileRow(memberId, sql);
+  return row?.member_id === memberId ? profileScope(row) : null;
+}
+export async function getPublicMemberProfile(identifier: string): Promise<PublicMemberProfile | null> {
+  const row = await publicProfileRow(identifier);
+  return row ? profileProjection(row) : null;
+}
+
+/** Retired card portrait route: legacy selections never authorize image bytes. */
+export async function getPublicMemberCardPortrait(token: string): Promise<Blob | null> {
+  if (!MEMBER_CARD_TOKEN.test(token)) return null;
+  return null;
 }

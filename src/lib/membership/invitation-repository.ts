@@ -1,4 +1,5 @@
 import "server-only";
+import { getInvitationMemberCard } from "./public-card-repository";
 
 import { createHash, randomBytes } from "node:crypto";
 import { getPlatformConfiguration } from "@/lib/platform/config";
@@ -23,14 +24,15 @@ async function owner(authUserId: string) {
 export async function getOwnMemberInvitation(authUserId: string): Promise<MemberInvitationSnapshot> {
   const { identity, writable } = await owner(authUserId);
   const sql = getApplicationDatabase();
-  const [rows, names, counts, eligibility] = await Promise.all([
+  const [rows, counts, eligibility] = await Promise.all([
     sql<InvitationRow[]>`select member_id, public_token, enabled, version, expires_at, expires_at > clock_timestamp() as active from member_invitations where member_id = ${identity.memberId}::uuid`,
-    sql<Array<{ name: string; member_tag: string | null }>>`select coalesce(nullif(btrim(display_name), ''), nullif(btrim(preferred_name), ''), 'Member') as name, member_tag from person_profiles where person_id = ${identity.personId}::uuid`,
     sql<Array<{ total: number }>>`select count(*)::integer as total from member_referrals where inviter_member_id = ${identity.memberId}::uuid and joined_at is not null`,
     sql<Array<{ eligible: boolean }>>`select private.ruined_member_can_share_invitation(${identity.memberId}::uuid) as eligible`,
   ]);
   const row = rows[0], eligible = eligibility[0]?.eligible === true;
-  return { card: invitationCard(names[0]?.name ?? "Member", wearSeed(identity.memberId), names[0]?.member_tag ?? null), enabled: row?.enabled ?? false,
+  const card = await getInvitationMemberCard(identity.memberId);
+  if (!card) throw new MemberInvitationError(409, "Your card changed. Reload before continuing.");
+  return { card, enabled: row?.enabled ?? false,
     expiresAt: row ? expiresAt(row.expires_at) : null, eligible, writable, version: row?.version ?? 0, joinedCount: counts[0]?.total ?? 0,
     url: row?.enabled && row.active && eligible ? `/invitation/${row.public_token}` : null };
 }
@@ -70,7 +72,7 @@ export async function saveOwnMemberInvitation(authUserId: string, value: MemberI
 export async function getPublicMemberInvitation(token: string): Promise<PublicMemberInvitation | null> {
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
   return withFreshApplicationDatabaseRead("member-invitations", async () => {
-    const [row] = await getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string | null; recipient_name: string | null;
+    const readScope = () => getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string | null; recipient_name: string | null;
       membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null; recipient_email_required: boolean }>>`
       select invitation.member_id, invitation.origin, invitation.expires_at, invitation.recipient_name,
         invitation.membership_type, invitation.complimentary_ends_at, invitation.recipient_email_required,
@@ -92,12 +94,20 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
         or (member.deleted_at is null and private.ruined_member_can_share_invitation(invitation.member_id))
       limit 1
     `;
-    return row ? { card: invitationCard(row.name, wearSeed(row.member_id ?? "ruined-direct"), row.member_tag),
+    const [row] = await readScope();
+    if (!row) return null;
+    const card = row.origin === "member" && row.member_id ? await getInvitationMemberCard(row.member_id) : invitationCard(row.name, wearSeed("ruined-direct"));
+    if (!card) return null;
+    if (row.origin === "member") {
+      const [latest] = await readScope();
+      if (!latest || latest.member_id !== row.member_id || JSON.stringify(latest) !== JSON.stringify(row)) return null;
+    }
+    return { card,
       ...(row.origin === "ruined_direct" ? { invitationSource: "ruined_direct" as const,
         ...(!getPlatformConfiguration().stripeCheckoutReady ? { paymentSetupOnly: true } : {}) } : {}),
       expiresAt: row.expires_at === null ? null : expiresAt(row.expires_at),
       ...(row.recipient_name !== null ? { recipientName: row.recipient_name, membershipType: row.membership_type,
         recipientEmailRequired: row.recipient_email_required,
-        complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) } : null;
+        complimentaryEndsAt: row.complimentary_ends_at ? expiresAt(row.complimentary_ends_at) : null } : {}) };
   });
 }

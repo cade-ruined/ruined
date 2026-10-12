@@ -10,7 +10,7 @@ import {
   type MemberProfileInput,
 } from "@/lib/membership/repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { PublicCardError, validateMemberCardInput } from "@/lib/membership/public-card-model";
+import { PublicCardError } from "@/lib/membership/public-card-model";
 import { getOwnMemberCard } from "@/lib/membership/public-card-repository";
 
 export const runtime = "nodejs";
@@ -18,61 +18,19 @@ export const runtime = "nodejs";
 function isDirectory(value: unknown): value is MemberProfileInput["directory"] {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.avatarVisible === "boolean" &&
-    typeof candidate.bioVisible === "boolean" &&
-    typeof candidate.buildingVisible === "boolean" &&
-    ["hidden", "circle_visible"].includes(String(candidate.directoryStatus)) &&
-    typeof candidate.locationVisible === "boolean" &&
-    ["none", "circle"].includes(String(candidate.emailScope)) &&
+  return ["none", "circle"].includes(String(candidate.emailScope)) &&
     ["none", "circle"].includes(String(candidate.phoneScope)) &&
-    Object.keys(candidate).every((key) =>
-      [
-        "avatarVisible",
-        "bioVisible",
-        "buildingVisible",
-        "directoryStatus",
-        "emailScope",
-        "locationVisible",
-        "phoneScope",
-      ].includes(key),
-    )
-  );
+    Object.keys(candidate).every(key => ["emailScope", "phoneScope"].includes(key));
 }
 
 function isProfileInput(value: unknown): value is MemberProfileInput {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
-  if (candidate.card !== undefined) {
-    try { validateMemberCardInput(candidate.card); } catch { return false; }
-  }
-  return (
-    typeof candidate.revision === "string" && /^[0-9a-f]{64}$/.test(candidate.revision) &&
-    typeof candidate.websiteUrl === "string" &&
-    typeof candidate.accessibilityNotes === "string" &&
-    typeof candidate.bio === "string" &&
-    typeof candidate.buildingNow === "string" &&
+  const fields = ["fullName", "city", "state", "bio", "buildingNow", "memberTag", "timezone"];
+  return typeof candidate.revision === "string" && /^[0-9a-f]{64}$/.test(candidate.revision) &&
+    fields.every(key => typeof candidate[key] === "string") &&
     isDirectory(candidate.directory) &&
-    typeof candidate.displayName === "string" &&
-    typeof candidate.location === "string" &&
-    typeof candidate.memberTag === "string" &&
-    typeof candidate.timezone === "string" &&
-    Object.keys(candidate).every((key) =>
-      [
-        "accessibilityNotes",
-        "revision",
-        "websiteUrl",
-        "card",
-        "bio",
-        "buildingNow",
-        "directory",
-        "displayName",
-        "location",
-        "memberTag",
-        "timezone",
-      ].includes(key),
-    )
-  );
+    Object.keys(candidate).every(key => [...fields, "revision", "directory"].includes(key));
 }
 
 export async function POST(request: Request) {

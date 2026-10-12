@@ -262,7 +262,8 @@ test("direct card details are a brand invitation and never substitute a member i
   assert.match(html, /The Ruined Project/); assert.match(html, /Ruined Direct/); assert.match(html, /This is for Alex/);
   assert.doesNotMatch(html, /Private Member|private-tag|Private location|Private bio|Private project|Private label|private\.example|Member since/);
   const member = renderToStaticMarkup(React.createElement(component, { card: privateCard, variant: "invitation" }));
-  assert.match(member, /Private Member/); assert.match(member, /@private-tag/);
+  assert.match(member, /Private Member/);
+  assert.doesNotMatch(member, /private-tag|Private location|Private bio|Private project|Private label|private\.example|Member since/);
 });
 
 test("Ruined Direct history labels acquisition separately, carries search pagination, and links verified member records", async () => {

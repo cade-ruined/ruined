@@ -3,7 +3,6 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
-import sharp from "sharp";
 
 import { MEMBER_CARD_HEADERS, type PublicMemberCard } from "./public-card-model";
 
@@ -38,30 +37,16 @@ function assets() {
   return brandAssets;
 }
 
-function memberYear(value: string | null) {
-  if (!value) return null;
-  const year = new Date(value).getUTCFullYear();
-  return Number.isFinite(year) ? String(year) : null;
-}
-
 function nameSize(name: string, width: number, height: number, maximum: number) {
   // Allow the full chosen name to fit, including names without word separators.
   const units = Array.from(name).reduce((sum, character) => sum + (/[^\u0000-\u024f]/.test(character) || /[WMwm]/.test(character) ? 1 : 0.62), 0);
   return Math.min(maximum, Math.max(13, Math.floor(Math.sqrt(width * height / Math.max(1, units * 1.4)))));
 }
 
-/** Renders only the already-approved public projection and trusted portrait bytes. */
-export async function renderPublicMemberCardImage(card: PublicMemberCard, portrait: Blob | null): Promise<ArrayBuffer> {
+/** A card contains the member's name and the fixed Ruined artwork only. */
+export async function renderPublicMemberCardImage(card: PublicMemberCard): Promise<ArrayBuffer> {
   const brand = await assets();
-  // No URL from the profile is fetched. Normalizing owned bytes also prevents
-  // SVG/external image references from reaching the image renderer.
-  const portraitData = card.avatarUrl && portrait
-    ? dataUrl(await sharp(Buffer.from(await portrait.arrayBuffer()), { limitInputPixels: 40_000_000 })
-      .rotate().resize(700, 600, { fit: "cover" }).jpeg({ quality: 88 }).toBuffer(), "image/jpeg")
-    : null;
-  const year = memberYear(card.memberSince);
-  const tag = card.memberTag && card.name !== `@${card.memberTag}` ? `@${card.memberTag}` : null;
-  const cardNameSize = nameSize(card.name, 274, 86, 33);
+  const cardNameSize = nameSize(card.name, 274, 250, 38);
   const titleSize = nameSize(card.name, 490, 272, 72);
 
   const response = new ImageResponse(
@@ -84,19 +69,11 @@ export async function renderPublicMemberCardImage(card: PublicMemberCard, portra
           <img src={brand.wordmark} alt="Ruined" width={81} height={24.3} style={{ filter: "invert(0.88)" }} />
           <span style={{ fontSize: 8, letterSpacing: "2px", color: "#b8b3a9" }}>MEMBERSHIP</span>
         </div>
-        <div style={{ display: "flex", width: 296, height: tag ? 170 : 192, flexShrink: 0, overflow: "hidden", border: "1px solid #e5e0d533", background: "#20201e", alignItems: "center", justifyContent: "center" }}>
-          {portraitData
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={portraitData} alt="" width={296} height={tag ? 170 : 192} style={{ objectFit: "cover" }} />
-            : null}
-        </div>
-        <div style={{ display: "flex", fontFamily: "IvyOra", fontSize: cardNameSize, lineHeight: 1.08, letterSpacing: "-0.6px", marginTop: 14, height: 87, flexShrink: 0, alignItems: "center", wordBreak: "break-word" }}>
+        <div style={{ display: "flex", fontFamily: "IvyOra", fontSize: cardNameSize, lineHeight: 1.08, letterSpacing: "-0.6px", marginTop: 24, height: 265, flexShrink: 0, alignItems: "center", wordBreak: "break-word" }}>
           {card.name}
         </div>
-        {tag ? <div style={{ display: "flex", height: 22, flexShrink: 0, fontSize: 11, color: "#b8b3a9" }}>{tag}</div> : null}
         <div style={{ display: "flex", flexDirection: "column", width: 220, height: 58, paddingTop: 8, marginTop: "auto", borderTop: "1px solid #e5e0d533", fontSize: 8, letterSpacing: "1.5px", justifyContent: "center", gap: 6, color: "#b8b3a9" }}>
           <span>RUINED MEMBER</span>
-          {year ? <span>MEMBER SINCE {year}</span> : null}
         </div>
         {/* Static foil impression for link previews; the live card reacts to its angle. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -105,8 +82,6 @@ export async function renderPublicMemberCardImage(card: PublicMemberCard, portra
       <div style={{ position: "absolute", left: 615, top: 103, width: 492, height: 423, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", fontSize: 10, letterSpacing: "3px", color: "#a5ac98" }}>RUINED / MEMBER CARD</div>
         <div style={{ display: "flex", fontFamily: "IvyOra", fontSize: titleSize, lineHeight: 1.04, letterSpacing: "-1.7px", width: "100%", marginTop: 32, wordBreak: "break-word" }}>{card.name}</div>
-        {tag ? <div style={{ display: "flex", marginTop: 15, fontSize: 19, color: "#b8b3a9" }}>{tag}</div> : null}
-        {year ? <div style={{ display: "flex", marginTop: 28, fontSize: 10, letterSpacing: "2.5px", color: "#a5ac98" }}>MEMBER SINCE {year}</div> : null}
         <div style={{ display: "flex", alignItems: "center", gap: 15, marginTop: "auto", fontSize: 9, letterSpacing: "1.7px", color: "#a5ac98" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={brand.mark} width={14.2} height={20} alt="" />
@@ -121,6 +96,6 @@ export async function renderPublicMemberCardImage(card: PublicMemberCard, portra
     },
   );
   // Materialize before the route's final consent check; never stream an image
-  // whose data could have been withdrawn during portrait download/rendering.
+  // whose identity or eligibility could have changed during rendering.
   return response.arrayBuffer();
 }

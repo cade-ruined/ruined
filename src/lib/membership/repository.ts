@@ -91,6 +91,9 @@ function cleanMemberTag(value: unknown): string | null {
 }
 
 function rethrowMemberTagConflict(error: unknown): never {
+  if (error && typeof error === "object" && "code" in error && error.code === "P4210") {
+    throw new MembershipInputError("Your member tag is permanent and cannot be changed after creation.");
+  }
   if (isMemberTagConflict(error)) throw new MembershipConflictError(MEMBER_TAG_UNAVAILABLE, "member_tag_unavailable");
   throw error;
 }
@@ -430,17 +433,26 @@ export async function saveMemberOnboardingProfile(
         where member_id=${identity.memberId}::uuid and profile_activated_at is null`;
       if (eligibility?.error) throw new MembershipInputError(eligibility.error);
     }
+    const [existingProfile] = await tx<Array<{ member_tag: string | null; legal_name: string | null }>>`
+      select profile.member_tag, private_profile.legal_name
+      from person_profiles profile
+      left join person_private_profiles private_profile on private_profile.person_id = profile.person_id
+      where profile.person_id = ${identity.personId}::uuid for update of profile`;
+    if (existingProfile?.member_tag && existingProfile.member_tag !== clean.memberTag) {
+      throw new MembershipInputError("Your member tag is permanent and cannot be changed after creation.");
+    }
     await recordRegistrationLegalAcknowledgment(tx, identity.memberId, authUserId, input.legalAcknowledgment);
     await saveMemberCommunicationPreferences(tx, { memberId: identity.memberId, personId: identity.personId,
       authUserId, email: identity.email, phone: clean.mobile }, input.communicationPreferences);
     await tx`
       insert into person_profiles (person_id, display_name, member_tag)
-      values (${identity.personId}::uuid, ${`@${clean.memberTag}`}, ${clean.memberTag})
+      values (${identity.personId}::uuid, ${clean.legalName.slice(0, 120)}, ${clean.memberTag})
       on conflict (person_id) do update
       set
         display_name = case
           when nullif(btrim(person_profiles.display_name), '') is null
             or (person_profiles.member_tag is not null and person_profiles.display_name = '@' || person_profiles.member_tag)
+            or person_profiles.display_name = ${existingProfile?.legal_name?.trim().slice(0, 120) ?? null}
           then excluded.display_name else person_profiles.display_name end,
         member_tag = excluded.member_tag,
         updated_at = statement_timestamp()
@@ -1193,6 +1205,8 @@ type ProfileRow = {
   display_name: string | null;
   email_scope: MemberDirectoryPreferences["emailScope"] | null;
   legal_name: string | null;
+  city: string | null;
+  state: string | null;
   location_label: string | null;
   location_visible: boolean | null;
   mobile_e164: string | null;
@@ -1207,7 +1221,7 @@ type ProfileRow = {
 async function profileRevision(row: ProfileRow): Promise<string> {
   // Include only fields this form can overwrite. Immediate photo uploads do not
   // invalidate a form that never submits the portrait storage path.
-  const fields = [row.display_name, row.preferred_name, row.member_tag, row.timezone, row.location_label, row.bio,
+  const fields = [row.display_name, row.preferred_name, row.member_tag, row.timezone, row.city, row.state, row.location_label, row.bio,
     row.building_now, row.website_url, row.accessibility_notes, row.directory_status, row.avatar_visible,
     row.location_visible, row.bio_visible, row.building_visible, row.email_scope, row.phone_scope, row.preference_version];
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(fields)));
@@ -1228,6 +1242,8 @@ export async function getMemberProfile(
       profile.preferred_name,
       profile.avatar_storage_path,
       profile.timezone,
+      profile.city,
+      profile.state,
       profile.location_label,
       profile.bio,
       profile.building_now,
@@ -1255,7 +1271,11 @@ export async function getMemberProfile(
   `;
   const row = rows[0];
   if (!row) return null;
-  const displayName = row.display_name?.trim() || row.preferred_name?.trim() || "Member";
+  const storedName = row.display_name?.trim();
+  const fullName = (!storedName || storedName === `@${row.member_tag}`)
+    ? row.legal_name?.trim() || row.preferred_name?.trim() || "Member"
+    : storedName;
+  const displayName = fullName;
   return {
     revision: await profileRevision(row),
     access,
@@ -1264,6 +1284,9 @@ export async function getMemberProfile(
       bio: row.bio,
       buildingNow: row.building_now,
       displayName,
+      fullName,
+      city: row.city,
+      state: row.state,
       location: row.location_label,
       memberTag: row.member_tag ?? null,
       preferredName: row.preferred_name,
@@ -1275,9 +1298,9 @@ export async function getMemberProfile(
     memberId: identity.memberId,
     preferences: {
       avatarVisible: row.avatar_visible ?? true,
-      bioVisible: row.bio_visible ?? false,
+      bioVisible: true,
       buildingVisible: row.building_visible ?? false,
-      directoryStatus: row.directory_status ?? "hidden",
+      directoryStatus: "circle_visible",
       emailScope: row.email_scope ?? "none",
       locationVisible: row.location_visible ?? false,
       phoneScope: row.phone_scope ?? "none",
@@ -1296,14 +1319,17 @@ export async function getMemberProfile(
 
 export type MemberProfileInput = {
   revision: string;
-  websiteUrl: string;
+  websiteUrl?: string;
   card?: MemberCardInput;
-  accessibilityNotes: string;
+  accessibilityNotes?: string;
   bio: string;
   buildingNow: string;
-  directory: Omit<MemberDirectoryPreferences, "version">;
-  displayName: string;
-  location: string;
+  directory: Pick<MemberDirectoryPreferences, "emailScope" | "phoneScope"> & Partial<Omit<MemberDirectoryPreferences, "version">>;
+  fullName?: string;
+  displayName?: string;
+  city?: string;
+  state?: string;
+  location?: string;
   memberTag: string;
   timezone: string;
 };
@@ -1314,19 +1340,22 @@ export async function saveMemberProfile(
 ): Promise<MemberProfileSnapshot> {
   const identity = await requireMemberIdentity(authUserId);
   requireMemberCapability(identity, "profile.write");
-  const displayName = cleanRequired(input.displayName, "Display name", 120);
+  const displayName = cleanRequired(input.fullName ?? input.displayName ?? "", "Full name", 120);
   const memberTag = cleanMemberTag(input.memberTag);
-  const timezone = input.timezone.trim().slice(0, 100) || "America/Denver";
-  const location = input.location.trim().slice(0, 160) || null;
+  const timezone = input.timezone.trim() || "America/Denver";
+  try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(); }
+  catch { throw new MembershipInputError("Choose a valid timezone."); }
+  const city = input.city?.trim().slice(0, 100) || null;
+  const state = input.state?.trim().slice(0, 100) || null;
+  const location = input.city !== undefined || input.state !== undefined
+    ? [city, state].filter(Boolean).join(", ").slice(0, 160) || null
+    : input.location?.trim().slice(0, 160) || null;
   const bio = input.bio.trim().slice(0, 1200) || null;
   const buildingNow = input.buildingNow.trim().slice(0, 500) || null;
   const { normalizeCardWebsite } = await import("./public-card-model");
-  const websiteUrl = normalizeCardWebsite(input.websiteUrl) || null;
+  const websiteUrl = input.websiteUrl === undefined ? undefined : normalizeCardWebsite(input.websiteUrl) || null;
   if (!/^[0-9a-f]{64}$/.test(input.revision)) throw new MembershipInputError("Reload your profile before saving.");
-  const accessibilityNotes = input.accessibilityNotes.trim().slice(0, 2000) || null;
-  if (!['hidden', 'circle_visible'].includes(input.directory.directoryStatus)) {
-    throw new MembershipInputError("The Circle directory choice is not valid.");
-  }
+  const accessibilityNotes = input.accessibilityNotes === undefined ? undefined : input.accessibilityNotes.trim().slice(0, 2000) || null;
   if (!["none", "circle"].includes(input.directory.emailScope)) {
     throw new MembershipInputError("The email-sharing choice is not valid.");
   }
@@ -1347,9 +1376,9 @@ export async function saveMemberProfile(
     if (!memberTag && (!legacyName || current.directory.memberTag)) {
       throw new MembershipInputError(current.directory.memberTag ? "Choose a member tag. Your existing tag cannot be cleared." : "Choose your member tag.");
     }
-    const nextDisplayName = memberTag && current.directory.memberTag &&
-      current.directory.displayName === `@${current.directory.memberTag}` && displayName === current.directory.displayName
-      ? `@${memberTag}` : displayName;
+    if (current.directory.memberTag && memberTag !== current.directory.memberTag) {
+      throw new MembershipInputError("Your member tag is permanent and cannot be changed after creation.");
+    }
     await tx`
       insert into person_profiles (
         person_id,
@@ -1357,18 +1386,22 @@ export async function saveMemberProfile(
         member_tag,
         timezone,
         location_label,
+        city,
+        state,
         bio,
         building_now,
         website_url
       ) values (
         ${identity.personId}::uuid,
-        ${nextDisplayName},
+        ${displayName},
         ${memberTag},
         ${timezone},
         ${location},
+        ${input.city === undefined ? current.directory.city : city},
+        ${input.state === undefined ? current.directory.state : state},
         ${bio},
         ${buildingNow},
-        ${websiteUrl}
+        ${websiteUrl === undefined ? current.directory.websiteUrl : websiteUrl}
       )
       on conflict (person_id) do update
       set
@@ -1376,12 +1409,14 @@ export async function saveMemberProfile(
         member_tag = excluded.member_tag,
         timezone = excluded.timezone,
         location_label = excluded.location_label,
+        city = excluded.city,
+        state = excluded.state,
         bio = excluded.bio,
         building_now = excluded.building_now,
         website_url = excluded.website_url,
         updated_at = statement_timestamp()
     `;
-    await tx`
+    if (accessibilityNotes !== undefined) await tx`
       insert into person_private_profiles (person_id, accessibility_notes)
       values (${identity.personId}::uuid, ${accessibilityNotes})
       on conflict (person_id) do update
@@ -1415,14 +1450,14 @@ export async function saveMemberProfile(
       phone_scope: "none",
       version: 0,
     };
-    const directoryStatus = input.directory.directoryStatus;
+    const directoryStatus = "circle_visible";
     const nextPreferences = {
-      avatar_visible: input.directory.avatarVisible,
-      bio_visible: input.directory.bioVisible,
-      building_visible: input.directory.buildingVisible,
+      avatar_visible: (input.directory.avatarVisible ?? current.preferences.avatarVisible),
+      bio_visible: true,
+      building_visible: (input.directory.buildingVisible ?? current.preferences.buildingVisible),
       directory_status: directoryStatus,
       email_scope: input.directory.emailScope,
-      location_visible: input.directory.locationVisible,
+      location_visible: (input.directory.locationVisible ?? current.preferences.locationVisible),
       phone_scope: input.directory.phoneScope,
     };
     await tx`
@@ -1438,10 +1473,10 @@ export async function saveMemberProfile(
       ) values (
         ${identity.memberId}::uuid,
         ${directoryStatus},
-        ${input.directory.avatarVisible},
-        ${input.directory.locationVisible},
-        ${input.directory.bioVisible},
-        ${input.directory.buildingVisible},
+        ${(input.directory.avatarVisible ?? current.preferences.avatarVisible)},
+        ${(input.directory.locationVisible ?? current.preferences.locationVisible)},
+        ${true},
+        ${(input.directory.buildingVisible ?? current.preferences.buildingVisible)},
         ${input.directory.emailScope},
         ${input.directory.phoneScope}
       )
@@ -1664,42 +1699,34 @@ export async function getMemberCircle(
         'member:' || assignment.id::text as directory_id,
         target_member.id = ${identity.memberId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Member') as display_name,
-        case when target_member.id = ${identity.memberId}::uuid
-          or preference.directory_status = 'circle_visible'
-          then profile.member_tag end as member_tag,
+        profile.member_tag,
         case
           when target_member.id = ${identity.memberId}::uuid
-            or (preference.directory_status = 'circle_visible' and preference.avatar_visible)
+            or (preference.avatar_visible)
           then profile.avatar_storage_path
         end as avatar_storage_path,
         case
           when target_member.id = ${identity.memberId}::uuid
-            or (preference.directory_status = 'circle_visible' and preference.location_visible)
+            or (preference.location_visible)
           then profile.location_label
         end as location_label,
+        profile.bio,
         case
           when target_member.id = ${identity.memberId}::uuid
-            or (preference.directory_status = 'circle_visible' and preference.bio_visible)
-          then profile.bio
-        end as bio,
-        case
-          when target_member.id = ${identity.memberId}::uuid
-            or (preference.directory_status = 'circle_visible' and preference.building_visible)
+            or (preference.building_visible)
           then profile.building_now
         end as building_now,
         case
           when target_member.id = ${identity.memberId}::uuid
             or (
-              preference.directory_status = 'circle_visible'
-              and preference.email_scope = 'circle'
+              preference.email_scope = 'circle'
             )
           then primary_email.email
         end as email,
         case
           when target_member.id = ${identity.memberId}::uuid
             or (
-              preference.directory_status = 'circle_visible'
-              and preference.phone_scope = 'circle'
+              preference.phone_scope = 'circle'
             )
           then private_profile.mobile_e164
         end as phone
@@ -1728,26 +1755,22 @@ export async function getMemberCircle(
         'shaper:' || staff_assignment.id::text as directory_id,
         platform_user.auth_user_id = ${authUserId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Circle Supporter') as display_name,
+        profile.member_tag,
         case when platform_user.auth_user_id = ${authUserId}::uuid
-          or preference.directory_status = 'circle_visible'
-          then profile.member_tag end as member_tag,
-        case when platform_user.auth_user_id = ${authUserId}::uuid
-          or (preference.directory_status = 'circle_visible' and preference.avatar_visible)
+          or (preference.avatar_visible)
           then profile.avatar_storage_path end as avatar_storage_path,
         case when platform_user.auth_user_id = ${authUserId}::uuid
-          or (preference.directory_status = 'circle_visible' and preference.location_visible)
+          or (preference.location_visible)
           then profile.location_label end as location_label,
+        profile.bio,
         case when platform_user.auth_user_id = ${authUserId}::uuid
-          or (preference.directory_status = 'circle_visible' and preference.bio_visible)
-          then profile.bio end as bio,
-        case when platform_user.auth_user_id = ${authUserId}::uuid
-          or (preference.directory_status = 'circle_visible' and preference.building_visible)
+          or (preference.building_visible)
           then profile.building_now end as building_now,
         case when platform_user.auth_user_id = ${authUserId}::uuid
-          or (preference.directory_status = 'circle_visible' and preference.email_scope = 'circle')
+          or (preference.email_scope = 'circle')
           then primary_email.email end as email,
         case when platform_user.auth_user_id = ${authUserId}::uuid
-          or (preference.directory_status = 'circle_visible' and preference.phone_scope = 'circle')
+          or (preference.phone_scope = 'circle')
           then private_profile.mobile_e164 end as phone
       from circle_staff_assignments staff_assignment
       join platform_users platform_user
@@ -3202,7 +3225,7 @@ export async function getMemberHome(
       buildingNow: profile.directory.buildingNow,
       directoryStatus: profile.preferences.directoryStatus,
       displayName: profile.directory.displayName,
-      fullName: profile.privateProfile.legalName,
+      fullName: profile.directory.fullName,
       location: profile.directory.location,
       memberTag: profile.directory.memberTag,
       preferredName: profile.directory.preferredName?.trim() || null,

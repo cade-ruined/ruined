@@ -261,6 +261,9 @@ export type MemberProfileSnapshot = {
     bio: string | null;
     buildingNow: string | null;
     displayName: string;
+    fullName: string;
+    city: string | null;
+    state: string | null;
     location: string | null;
     memberTag: string | null;
     preferredName: string | null;

@@ -7,7 +7,7 @@ const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 import { fixture, first, second, newcomer, uuid, person, model, load } from "./helpers/personal-invitation-fixture.mjs";
 const waitlistModel = await load("src/lib/membership/waitlist-model.ts");
 
-test("an invitation is private by default, independent of card sharing, and publishes only the current display name and chosen tag", async t => {
+test("an invitation is private by default, independent of card sharing, and defaults to the current full name only", async t => {
   const f = await fixture(t);
   const initial = await f.repository.getOwnMemberInvitation(first.auth);
   assert.equal(initial.expiresAt, null); assert.equal(initial.enabled, false); assert.equal(initial.version, 0); assert.equal(initial.url, null); assert.equal(initial.joinedCount, 0);
@@ -23,7 +23,7 @@ test("an invitation is private by default, independent of card sharing, and publ
   await f.db.query("update person_profiles set display_name='Current Name',member_tag='current_tag' where person_id=$1", [first.person]);
   assert.deepEqual((await f.repository.getPublicMemberInvitation(token)).card, model.invitationCard("Current Name", publicInvite.card.wearSeed, "current_tag"));
   const updated = await f.repository.getOwnMemberInvitation(first.auth);
-  assert.equal(updated.card.memberTag, "current_tag"); assert.equal(updated.url, enabled.url);
+  assert.equal(updated.card.memberTag, null); assert.equal(updated.url, enabled.url);
   assert.equal(updated.enabled, enabled.enabled); assert.equal(updated.version, enabled.version);
   assert.equal((await f.repository.getOwnMemberInvitation(second.auth)).enabled, false);
   await assert.rejects(f.repository.getOwnMemberInvitation(uuid(999)), { status: 403 });
@@ -47,7 +47,7 @@ test("member tag changes keep invitation tokens and verified referral attributio
   const captured = (await f.db.query("select * from member_referrals")).rows[0];
   await f.db.query("update person_profiles set member_tag='renamed_tag' where person_id=$1", [first.person]);
   const publicInvite = await f.repository.getPublicMemberInvitation(token);
-  assert.equal(publicInvite.card.name, "Member 1"); assert.equal(publicInvite.card.memberTag, "renamed_tag");
+  assert.equal(publicInvite.card.name, "Member 1"); assert.equal(publicInvite.card.memberTag, null);
   assert.deepEqual(Object.keys(publicInvite.card).sort(), ["name", "memberTag", "avatarUrl", "memberSince", "location", "bio", "buildingNow", "websiteUrl", "labels", "wearSeed"].sort());
   assert.deepEqual((await f.db.query("select * from member_referrals")).rows[0], captured);
   await f.addMember(newcomer, false, true); await f.activate(newcomer);
@@ -357,4 +357,23 @@ test("capture rechecks expiry after waiting for the email attribution lock", asy
   assert.equal((await f.db.query("select * from membership_waitlist")).rows.length, 0);
   assert.equal((await f.db.query("select * from member_referrals")).rows.length, 0);
   assert.equal((await f.db.query("select * from integration_outbox")).rows.length, 0);
+});
+
+
+test("public invitations recheck revoked links and membership after slow card projection", async t => {
+  const f = await fixture(t);
+  const enabled = await f.enable(), token = enabled.url.split("/").pop();
+  f.setCardReadHook(() => f.db.query("update member_invitations set enabled=false where member_id=$1",[first.member]));
+  assert.equal(await f.repository.getPublicMemberInvitation(token),null);
+  await f.db.query("update member_invitations set enabled=true where member_id=$1",[first.member]);
+  f.setCardReadHook(() => f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[first.member]));
+  assert.equal(await f.repository.getPublicMemberInvitation(token),null);
+});
+
+
+test("public invitation final gate rejects a changed member name while the card is loading", async t => {
+  const f = await fixture(t);
+  const enabled = await f.enable(), token = enabled.url.split("/").pop();
+  f.setCardReadHook(() => f.db.query("update person_profiles set display_name='Changed Name' where person_id=$1",[first.person]));
+  assert.equal(await f.repository.getPublicMemberInvitation(token),null);
 });
