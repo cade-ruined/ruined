@@ -474,7 +474,7 @@ function assertUrlAttribute(element: Element, name: string, resolve: (key: strin
   if (!allowed.includes(url.protocol) || url.username || url.password) throw new AdminEmailError(400, "A link or image variable uses an unsupported URL.");
 }
 
-function plainTextFromHtml(html: string, includeSignOff = false): string {
+export function plainTextFromHtml(html: string, includeSignOff = false): string {
   const document = parse(html);
   const parts: string[] = [];
   function visit(node: Node) {

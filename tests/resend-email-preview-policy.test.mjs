@@ -8,9 +8,13 @@ test('only the email workspace permits template images and the Ruined font origi
   const base = response.headers.get('Content-Security-Policy');
   assert.ok(base);
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
-  const email = headers.filter(route => ['/ops/emails', '/ops/messages'].includes(route.source));
-  assert.equal(email.length, 2);
-  assert.deepEqual(email.find(route => route.source === '/ops/messages').has, [{ type: 'query', key: 'mode', value: 'emails' }]);
+  const email = headers.filter(route => route.headers.some(header => header.key === 'Content-Security-Policy' && /img-src 'self' data: blob: https:(?:;|$)/.test(header.value)));
+  assert.deepEqual(email.map(({ source, has }) => ({ source, ...(has ? { has } : {}) })), [
+    { source: '/ops/emails' },
+    { source: '/ops/messages', has: [{ type: 'query', key: 'mode', value: 'emails' }] },
+    { source: '/ops/email-automations' },
+    { source: '/ops/messages', has: [{ type: 'query', key: 'mode', value: 'automations' }] },
+  ]);
   for (const route of email) {
     const policy = route.headers[0].value;
     assert.match(policy, /img-src 'self' data: blob: https:/);
