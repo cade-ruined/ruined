@@ -179,7 +179,7 @@ test("connection states distinguish inactive, unavailable, absent and multiple c
 });
 
 test("preview only uses passed active/forming Circles and never invents invitation evidence or sends requests", () => {
-  const circles = [{ id: "actual-preview-one", name: "Actual preview Circle", activeMembers: 12, status: "active" }, { id: "forming", name: "Forming Circle", activeMembers: 4, status: "forming" }, { id: "retired", name: "Retired Circle", activeMembers: 1, status: "retired" }];
+  const circles = [{ id: "actual-preview-one", name: "Actual preview Circle", activeMembers: 12, capacity: 12, status: "active" }, { id: "forming", name: "Forming Circle", activeMembers: 4, status: "forming" }, { id: "retired", name: "Retired Circle", activeMembers: 1, status: "retired" }];
   const f = fixture({ props: { display: "member", preview: true, previewCircles: circles } });
   let tree = f.draw(), markup = renderToStaticMarkup(tree);
   assert.match(markup, /capacity examples from these preview Circles/);

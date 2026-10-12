@@ -553,7 +553,7 @@ test("work queue shows full claimant names and passes exact ownership and versio
   assert.match(reactText(f.draw()), /Claimed by Alex Morgan/);
   assert.match(reactText(f.draw()), /Unclaimed/);
   const controls = nodes(f.draw()).filter(node => node.type?.name === "OperatorTaskAction");
-  assert.equal(controls.length, 3);
+  assert.equal(controls.length, queue.items.filter(item => item.kind === "task").length);
   for (const control of controls) {
     const item = queue.items.find(item => item.workId === control.props.taskId);
     assert.equal(control.props.claimedByName, item.claimedByName);

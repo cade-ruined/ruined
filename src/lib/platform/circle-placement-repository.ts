@@ -144,8 +144,8 @@ export async function getCircleRecommendationSnapshot(actor: string, memberId: s
       from (select private.ruined_circle_couple_partner(${memberId}::uuid) as partner_id) pair
       left join circle_member_assignments partner_assignment on partner_assignment.member_id = pair.partner_id and partner_assignment.ended_at is null
       left join circles partner_circle on partner_circle.id = partner_assignment.circle_id`;
-    const circles = await tx<Array<{ id: string; name: string; active_members: number; incoming_seats: number }>>`
-      select circle.id, circle.name, private.ruined_circle_participant_count(circle.id) as active_members,
+    const circles = await tx<Array<{ id: string; name: string; capacity: number; active_members: number; incoming_seats: number }>>`
+      select circle.id, circle.name, circle.capacity, private.ruined_circle_participant_count(circle.id) as active_members,
         (select count(*)::integer from unnest(array_remove(array[${memberId}::uuid, ${couple?.partner_id ?? null}::uuid], null)) incoming(member_id)
           where not exists (select 1 from circle_member_assignments placement
             where placement.circle_id = circle.id and placement.member_id = incoming.member_id and placement.ended_at is null)
@@ -165,7 +165,7 @@ export async function getCircleRecommendationSnapshot(actor: string, memberId: s
       const inviterPlacement = inviter?.circles.find(placement => placement.circleId === circle.id);
       const preferredPlacement = preferredConnection?.circles.find(placement => placement.circleId === circle.id);
       return {
-        circleId: circle.id, name: circle.name, activeMembers: Number(circle.active_members), incomingSeats: Number(circle.incoming_seats),
+        circleId: circle.id, name: circle.name, activeMembers: Number(circle.active_members), capacity: Number(circle.capacity), incomingSeats: Number(circle.incoming_seats),
         inviter: inviter && inviterPlacement ? { memberId: inviter.memberId, name: inviter.name, relationship: inviterPlacement.relationship } : undefined,
         preferredConnection: preferredConnection && preferredPlacement ? { memberId: preferredConnection.memberId, name: preferredConnection.name, relationship: preferredPlacement.relationship } : undefined,
         participantPreferences: people.filter(person => person.circle_id === circle.id).map(person => ({ timezone: person.timezone ?? "", availability: person.availability ?? [], preferredConnectionId: null })),

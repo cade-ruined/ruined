@@ -18,11 +18,11 @@ test("availability comparison respects date crossing and current time-zone offse
   assert.match(results.find(item => item.circleId === "remote")!.reasons.join(" "), /overlaps with 0 of 1/);
   assert.match(results.find(item => item.circleId === "empty")!.reasons.join(" "), /not yet recorded/);
 });
-test("target 10 is soft, 12 needs review for the next arrival, connections never auto-assign", () => {
-  const results = scoreCirclePlacement(preferences, [10, 11, 12, 15].map(count => ({ circleId: String(count), name: `Circle ${count}`, activeMembers: count, connectionPresent: true, participantPreferences: [] })), now);
-  assert.equal(results.find(item => item.activeMembers === 11)!.exceptionRequired, false);
-  assert.equal(results.find(item => item.activeMembers === 12)!.exceptionRequired, true);
-  assert.equal(results.find(item => item.activeMembers === 15)!.exceptionRequired, true);
+test("recommended range stays separate from capacity review and connections never auto-assign", () => {
+  const results = scoreCirclePlacement(preferences, [10, 13, 19, 20].map(count => ({ circleId: String(count), name: `Circle ${count}`, activeMembers: count, connectionPresent: true, participantPreferences: [] })), now);
+  assert.equal(results.find(item => item.activeMembers === 13)!.exceptionRequired, false);
+  assert.equal(results.find(item => item.activeMembers === 19)!.exceptionRequired, false);
+  assert.equal(results.find(item => item.activeMembers === 20)!.exceptionRequired, true);
   assert.match(results[0].reasons.join(" "), /not guaranteed/);
   assert.equal(results.length, 4, "large Circles remain candidates for human review");
 });
@@ -43,20 +43,33 @@ test("an unplaced couple member must join their partner's Circle, regardless of 
 
 test("unplaced pairs and paired transfers budget for both seats", () => {
   for (const memberCircleId of [null, "old-circle"]) {
-    const results = scoreCirclePlacement(preferences, [10, 11].map(count => ({
+    const results = scoreCirclePlacement(preferences, [18, 19].map(count => ({
       circleId: String(count), name: `Circle ${count}`, activeMembers: count,
       incomingSeats: 2, connectionPresent: false, participantPreferences: [],
     })), now, { memberCircleId, partnerCircleId: memberCircleId });
     assert.equal(results.length, 2);
-    assert.equal(results.find(item => item.activeMembers === 10)!.exceptionRequired, false);
-    assert.equal(results.find(item => item.activeMembers === 11)!.exceptionRequired, true);
+    assert.equal(results.find(item => item.activeMembers === 18)!.exceptionRequired, false);
+    assert.equal(results.find(item => item.activeMembers === 19)!.exceptionRequired, true);
     assert.match(results[0].reasons.join(" "), /Both partners are placed together/);
   }
 });
 
 test("a coupled Circle Supporter does not consume the same seat twice", () => {
-  const [result] = scoreCirclePlacement(preferences, [{ circleId: "one", name: "One", activeMembers: 11,
+  const [result] = scoreCirclePlacement(preferences, [{ circleId: "one", name: "One", activeMembers: 19,
     incomingSeats: 1, connectionPresent: false, participantPreferences: [] }], now,
     { memberCircleId: null, partnerCircleId: null });
   assert.equal(result.exceptionRequired, false);
+});
+
+
+test("custom Circle capacities control review while both partners and Supporter deduplication remain respected", () => {
+  const results = scoreCirclePlacement(preferences, [
+    { circleId: "custom-single", name: "Custom single", activeMembers: 15, capacity: 16, incomingSeats: 1, participantPreferences: [] },
+    { circleId: "custom-pair", name: "Custom pair", activeMembers: 15, capacity: 16, incomingSeats: 2, participantPreferences: [] },
+    { circleId: "default-pair", name: "Default pair", activeMembers: 12, incomingSeats: 2, participantPreferences: [] },
+  ], now);
+  assert.equal(results.find(item => item.circleId === "custom-single")!.exceptionRequired, false);
+  assert.equal(results.find(item => item.circleId === "custom-pair")!.exceptionRequired, true);
+  assert.equal(results.find(item => item.circleId === "default-pair")!.exceptionRequired, false);
+  assert.match(results.find(item => item.circleId === "default-pair")!.reasons.join(" "), /Above the recommended range of 7–13/);
 });

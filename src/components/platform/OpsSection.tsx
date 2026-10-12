@@ -87,7 +87,7 @@ export default function OpsSection({
       blockId: null,
       blockName: member?.blockName ?? null,
       blockStatus: member?.blockStatus ?? null,
-      capacity: 10,
+      capacity: 20,
       chatUrl: null,
       googleCommunicationsConfigured: undefined,
       id: String(circleName),

@@ -409,8 +409,8 @@ export function OpsCircleActions({
     (member) => Boolean(member.circleName) && !endedMemberIds.has(member.memberId),
   );
   const selectedCircle = acceptingCircles.find((circle) => circle.id === selectedCircleId);
-  const requestsCapacityReview = Boolean(selectedCircle && (selectedCircle.activeMembers >= 12
-    || selectedCircle.activeMembers === 11 && exceptionReason.trim()));
+  const requestsCapacityReview = Boolean(selectedCircle && (selectedCircle.activeMembers >= selectedCircle.capacity
+    || selectedCircle.activeMembers === selectedCircle.capacity - 1 && exceptionReason.trim()));
 
   async function submitCircle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -424,7 +424,7 @@ export function OpsCircleActions({
       const result = await postJson<{ circle: OpsActionCircle }>("/api/ops/circles", { name });
       setCircles((current) => [...current, result.circle]);
       setSelectedCircleId(result.circle.id);
-      setCreateNotice({ kind: "success", text: `${result.circle.name} created with a target of ${result.circle.capacity} people. Choose a member above to make the first assignment.` });
+      setCreateNotice({ kind: "success", text: `${result.circle.name} created with capacity for ${result.circle.capacity} people. Choose a member above to make the first assignment.` });
       createFormRef.current?.reset();
       router.refresh();
     } catch (error) {
@@ -450,7 +450,7 @@ export function OpsCircleActions({
 
     try {
       if (!member || !circle) throw new Error("Choose an eligible member and a forming or active Circle with an open space.");
-      if (circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim()) {
+      if (circle.activeMembers >= circle.capacity || circle.activeMembers === circle.capacity - 1 && exceptionReason.trim()) {
         await postJson("/api/ops/circle-placement-reviews", { circleId, memberId, reason: exceptionReason });
         setAssignmentNotice({ kind: "success", text: "Exception requested. An Administrator must approve before placement." });
         setExceptionReason("");
@@ -630,7 +630,7 @@ export function OpsCircleActions({
                 value={selectedCircle?.id ?? ""}
               >
                 <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" disabled value="">Choose Circle</option>
-                {acceptingCircles.map((circle) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={circle.id} value={circle.id}>{circle.name} · {circle.status} · {circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · target 10</option>)}
+                {acceptingCircles.map((circle) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={circle.id} value={circle.id}>{circle.name} · {circle.status} · {circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · capacity {circle.capacity}</option>)}
               </select>
             </label>
           </div>
@@ -645,14 +645,14 @@ export function OpsCircleActions({
             </div>
             <div id="circle-space-help">
               {acceptingCircles.length ? (
-                <p>{selectedCircle?.status === "forming" ? `${selectedCircle.name} is forming. Assign the member now, then activate it when ready.` : "Forming and active Circles are listed. Above 12 people requires exception review."}</p>
+                <p>{selectedCircle?.status === "forming" ? `${selectedCircle.name} is forming. Assign the member now, then activate it when ready.` : "Forming and active Circles are listed. Placement above a Circle’s configured capacity requires exception review."}</p>
               ) : (
                 <p>No current Circles are available. <a className="underline underline-offset-4" href="#create-circle" onClick={() => setCreateOpen(true)}>Create a Circle</a> or review the existing assignments below.</p>
               )}
             </div>
           </div>
           {selectedMember && !selectedMemberIssue ? <CirclePlacementRecommendations memberId={selectedMember.memberId} /> : null}
-          {selectedCircle && selectedCircle.activeMembers >= 11 ? <label className="block text-sm">{selectedCircle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={selectedCircle.activeMembers >= 12} />{selectedCircle.activeMembers === 11 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
+          {selectedCircle && selectedCircle.activeMembers >= selectedCircle.capacity - 1 ? <label className="block text-sm">{selectedCircle.activeMembers === selectedCircle.capacity - 1 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={INPUT_CLASS} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={selectedCircle.activeMembers >= selectedCircle.capacity} />{selectedCircle.activeMembers === selectedCircle.capacity - 1 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would exceed this Circle’s capacity. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
           <button
             className={`${BUTTON_CLASS} w-fit`}
             disabled={assigning || !selectedMember || Boolean(selectedMemberIssue) || !selectedCircle}
@@ -670,7 +670,7 @@ export function OpsCircleActions({
           <span aria-hidden="true" className="text-2xl group-open:rotate-45">+</span>
         </summary>
         <div className="px-5 pb-5">
-          <p className="text-sm text-[color:var(--operator-muted)]">A new Circle starts in forming. Target 10 people; normal range 8–12, including the Circle Supporter.</p>
+          <p className="text-sm text-[color:var(--operator-muted)]">A new Circle starts in forming with capacity for 20 people. The recommended range is 7–13, including the Circle Supporter.</p>
           <form className="mt-4 grid gap-3" onSubmit={submitCircle} ref={createFormRef}>
             <label className={OPERATOR_LABEL_CLASS} htmlFor="ops-circle-name">
               <span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span>

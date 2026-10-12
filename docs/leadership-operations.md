@@ -2,7 +2,7 @@
 
 **Status:** operating guidance for Circle Supporters, placement, and Administrator access.
 
-**Reviewed:** 1 October 2026
+**Reviewed:** 12 October 2026
 
 This guide records the approved operating decisions and the corresponding app workflow. It supplements the [Operator SOP](operator-admin-sop.md). The supplied Foundations and Internal leadership PDFs are source references; this implementation does not replace or edit those PDFs.
 
@@ -12,7 +12,7 @@ This guide records the approved operating decisions and the corresponding app wo
 - Builder, Author, and Partner are retired leadership titles. Shaper and Guide are retired public role names. Historical role identifiers and records remain for compatibility; new Guide or direct Supporter operator invitations are not issued.
 - **Builders remains a signup cohort**, alongside Founders, Originals, Pillars, and Members. Signup cohort records are not leadership permissions.
 - **Administrator** is an internal access permission that includes routine Circle placement, capacity exceptions, Supporter readiness/coverage, and reimbursement approval/processing. No separate responsibility assignment is required.
-- A Circle targets **10 people including its Supporter**, normally **8–12**. A member who also serves as Supporter counts once. The range is a planning target; recorded exception approval allows a larger Circle.
+- A Circle targets **10 people including its Supporter**, with a recommended range of **7–13**. A member who also serves as Supporter counts once. Its default capacity is **20**; placements above the configured capacity require a recorded exception. Active Circles outside 7–13 create Work tasks assigned to Libby.
 - Supporter service creates **discretionary reimbursement eligibility**, never a guarantee or automatic complimentary membership. Libby both approves and processes reimbursements.
 - Place members before final Foundations completion. Completing the final Foundations moment reveals their Circle; welcome them immediately and include them in the next available WHY/BUILD meetings. There is no additional wait-until-next-month rule.
 
@@ -55,11 +55,11 @@ Preferences are private to the placement team. A known person's Circle is a pref
 4. Open the chosen forming or active Circle, review the member's joining and membership eligibility, and use **Approve placement**. An existing placement uses the **Move** workflow instead.
 5. Confirm the saved roster. A request, suggestion, or selected option alone is not a placement.
 
-The count uses distinct people across the Circle's membership and Supporter assignment, so its Supporter is not counted twice. Ten is the target; 8–12 is the normal operating range. Starting or changing service for a current member does not add another person.
+The count uses distinct people across the Circle's membership and Supporter assignment, so its Supporter is not counted twice. Ten is the target; 7–13 is the recommended operating range. Starting or changing service for a current member does not add another person. An active Circle below 7 or above 13 creates one assigned Work task per continuous size issue; recovery completes outstanding work, and a later breach creates a fresh task. Forming Circles are checked when activated. See the [Operator SOP](operator-admin-sop.md) for routing and recovery behavior.
 
 ### Review an exception
 
-If adding or transferring a person would take the destination above 12, the ordinary placement action does not silently bypass the target range.
+If adding or transferring a person would take the destination above its configured capacity (20 by default), the ordinary placement action requires exception review.
 
 1. An Administrator records why the larger placement is appropriate and requests review.
 2. An Administrator opens **Circles → Placement exceptions**. Tyler and Mitch coordinate exception reviews.
@@ -67,13 +67,13 @@ If adding or transferring a person would take the destination above 12, the ordi
 4. Select **Approve and place** or **Decline**.
 5. Approval rechecks the current source placement, member eligibility, Circle status, and projected count before saving. If the underlying record changed, reload and review it; do not assume the old request still applies.
 
-Approval and placement are recorded together. A pending or declined review never places or moves the person. A larger Circle has no arbitrary hard cap introduced by this policy; each placement exceeding the normal range needs the recorded review.
+Approval and placement are recorded together. A pending or declined review never places or moves the person. Each placement exceeding the configured capacity needs the recorded review. Crossing above 13 under that capacity is allowed and creates Libby's size-review task for an active Circle.
 
 ### Couples stay together
 
 Two people registered on the same confirmed couples membership are placed in the same Circle. Placement and transfers apply to both partners in one transaction; both must meet the existing entry and active-membership requirements. If either placement fails, neither is changed. When a partner is already placed, choose that Circle or move them together from the current Circle.
 
-Count room for both partners, including any existing Supporter seat. Adding a couple to a Circle with 11 people needs a capacity exception even though adding one individual would not. A shared membership awaiting payment stays linked until its checkout reservation is explicitly released. An ended membership no longer ties future placement to the former partner. Removing a person from a Circle is an explicit departure, not a transfer; it does not close or remove their partner's account.
+Count room for both partners, including any existing Supporter seat. Adding a couple to a Circle with 19 people and capacity 20 needs a capacity exception even though adding one individual would not. A shared membership awaiting payment stays linked until its checkout reservation is explicitly released. An ended membership no longer ties future placement to the former partner. Removing a person from a Circle is an explicit departure, not a transfer; it does not close or remove their partner's account.
 
 The database also rejects split placements and a new couples checkout for people already in different Circles. Resolve those placements before payment. The platform migration chain includes `20260930113000_couple_circle_placement.sql` for these protections; preserve it when deploying later changes.
 

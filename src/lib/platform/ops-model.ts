@@ -227,6 +227,8 @@ export type OpsWorkItem =
       version: number;
       taskType?: string;
       description?: string | null;
+      circleId?: string | null;
+      circleName?: string | null;
       label: string;
       memberId: string | null;
       memberName: string | null;

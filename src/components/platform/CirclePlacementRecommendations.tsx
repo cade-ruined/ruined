@@ -10,7 +10,7 @@ import {
   type CircleRecommendationSnapshot,
 } from "@/lib/platform/circle-placement-model";
 
-type PreviewCircle = { id: string; name: string; activeMembers: number; status: string };
+type PreviewCircle = { id: string; name: string; activeMembers: number; capacity?: number; status: string };
 type Props = {
   memberId: string;
   display?: "inline" | "member";
@@ -59,7 +59,7 @@ export default function CirclePlacementRecommendations({ memberId, display = "in
       setState({ ...current, snapshot: {
         recommendations: scoreCirclePlacement(preferences, (previewCircles ?? [])
           .filter(circle => circle.status === "active" || circle.status === "forming")
-          .map(circle => ({ circleId: circle.id, name: circle.name, activeMembers: circle.activeMembers, participantPreferences: [] }))),
+          .map(circle => ({ circleId: circle.id, name: circle.name, activeMembers: circle.activeMembers, capacity: circle.capacity, participantPreferences: [] }))),
         context: { memberId, inviter: null, preferredConnection: null, requiredPartnerCircle: null },
       } });
       return () => controller.abort();

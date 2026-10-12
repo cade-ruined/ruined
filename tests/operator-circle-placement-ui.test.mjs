@@ -41,7 +41,7 @@ const member = {
 };
 const circle = {
   id: "22222222-2222-4222-8222-222222222222", name: "Circle 01", slug: "circle-01",
-  status: "forming", capacity: 10, activeMembers: 0, blockId: null, blockName: null, blockStatus: null,
+  status: "forming", capacity: 20, activeMembers: 0, blockId: null, blockName: null, blockStatus: null,
 };
 const props = { initialCircles: [circle], members: [member], initialMemberId: member.memberId };
 const attr = (node, name) => node.attrs?.find((item) => item.name === name)?.value;
@@ -62,7 +62,7 @@ test("authorized member preselection exposes the numbered placement flow and acc
   const memberSelect = find(tree, "select", (node) => attr(node, "name") === "memberId");
   assert.equal(attr(find(memberSelect, "option", (node) => attr(node, "value") === member.memberId), "selected"), "");
   const circleSelect = find(tree, "select", (node) => attr(node, "name") === "circleId");
-  assert.match(text(circleSelect), /Circle 01 · forming · 0 people · target 10/);
+  assert.match(text(circleSelect), /Circle 01 · forming · 0 people · capacity 20/);
   assert.equal(attr(find(byId(tree, "assign-member"), "button"), "disabled"), "", "explicit Circle choice is required");
   assertNotCollapsed(byId(tree, "activate-circle"));
   assert.match(text(byId(tree, "activate-circle")), /Place its first member above/);
@@ -104,7 +104,7 @@ test("target-sized Circles remain available, while archived and completed Circle
     { ...circle, id: "completed", name: "Completed Circle", status: "completed" },
   ] });
   const select = find(byId(tree, "assign-member"), "select", (node) => attr(node, "name") === "circleId");
-  assert.match(text(select), /Active Circle · active · 9 people · target 10/);
+  assert.match(text(select), /Active Circle · active · 9 people · capacity 20/);
   assert.match(text(select), /Full Circle/);
   assert.doesNotMatch(text(select), /Archived Circle|Completed Circle/);
 });
@@ -181,13 +181,13 @@ test("mocked placement posts only the selected IDs, then offers activation witho
   assert.equal(harness.calls.length, 1, "activation requires a separate deliberate submission");
 });
 
-test("placement at eleven routes an explained couple exception to review while a single person remains routine", async () => {
+test("placement at nineteen routes an explained couple exception to review while a single person remains routine", async () => {
   for (const reason of ["", "   ", "Keep these shared-membership partners together"]) {
-    const harness = interactiveHarness(undefined, { initialCircles: [{ ...circle, activeMembers: 11 }] });
+    const harness = interactiveHarness(undefined, { initialCircles: [{ ...circle, activeMembers: 19 }] });
     reactNodes(harness.draw()).find(node => node.type === "select" && node.props.name === "circleId").props.onChange({ target: { value: circle.id } });
     const field = reactNodes(harness.draw()).find(node => node.type === "textarea" && node.props.maxLength === 1000);
     assert.ok(field); assert.equal(field.props.required, false);
-    assert.match(text(parseFragment(renderToStaticMarkup(harness.draw()))), /for placing a couple.*A couple would bring this Circle to 13 people/);
+    assert.match(text(parseFragment(renderToStaticMarkup(harness.draw()))), /for placing a couple.*A couple would exceed this Circle’s capacity/);
     field.props.onChange({ target: { value: reason } });
     const form = reactNodes(harness.draw()).find(node => node.type === "form");
     await form.props.onSubmit({ preventDefault() {}, currentTarget: { memberId: member.memberId, circleId: circle.id } });
@@ -199,15 +199,15 @@ test("placement at eleven routes an explained couple exception to review while a
   }
 });
 
-test("placement below eleven has no review field and twelve still requires the capacity review", async () => {
-  for (const count of [10, 12]) {
+test("placement below nineteen has no review field and twenty still requires the capacity review", async () => {
+  for (const count of [13, 20]) {
     const harness = interactiveHarness(undefined, { initialCircles: [{ ...circle, activeMembers: count }] });
     reactNodes(harness.draw()).find(node => node.type === "select" && node.props.name === "circleId").props.onChange({ target: { value: circle.id } });
     const field = reactNodes(harness.draw()).find(node => node.type === "textarea" && node.props.maxLength === 1000);
-    assert.equal(Boolean(field), count === 12);
+    assert.equal(Boolean(field), count === 20);
     if (field) { assert.equal(field.props.required, true); field.props.onChange({ target: { value: "Approved capacity review needed" } }); }
     await reactNodes(harness.draw()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { memberId: member.memberId, circleId: circle.id } });
-    assert.equal(harness.calls[0].url, count === 12 ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-assignments");
+    assert.equal(harness.calls[0].url, count === 20 ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-assignments");
     assert.match(text(parseFragment(renderToStaticMarkup(harness.draw()))), /Shared-membership partners are placed together\. Both must meet placement requirements/);
   }
 });
@@ -513,5 +513,19 @@ test("malformed exact member IDs fail closed rather than falling back to a full 
     assert.equal(await harness.lookup("admin-fixture", { memberId }), null);
     assert.equal(harness.queries.length, 0);
     assert.deepEqual(harness.progressReads, []);
+  }
+});
+
+
+test("placement review honors a custom capacity instead of the recommended range or default", async () => {
+  for (const activeMembers of [13, 15, 16]) {
+    const harness = interactiveHarness(undefined, { initialCircles: [{ ...circle, capacity: 16, activeMembers }] });
+    reactNodes(harness.draw()).find(node => node.type === "select" && node.props.name === "circleId").props.onChange({ target: { value: circle.id } });
+    const field = reactNodes(harness.draw()).find(node => node.type === "textarea" && node.props.maxLength === 1000);
+    assert.equal(Boolean(field), activeMembers >= 15);
+    if (field) assert.equal(field.props.required, activeMembers >= 16);
+    if (activeMembers === 16) field.props.onChange({ target: { value: "Approved custom capacity exception" } });
+    await reactNodes(harness.draw()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { memberId: member.memberId, circleId: circle.id } });
+    assert.equal(harness.calls[0].url, activeMembers === 16 ? "/api/ops/circle-placement-reviews" : "/api/ops/circle-assignments");
   }
 });

@@ -39,6 +39,10 @@ function urgencyLabel(item: OpsWorkQueue["items"][number]): string {
   return "Open";
 }
 
+function isCircleSizeTask(item: OpsWorkQueue["items"][number]): boolean {
+  return item.kind === "task" && (item.taskType === "circle.size_low" || item.taskType === "circle.size_high");
+}
+
 export default function OperatorWorkQueue({ queue, preview = false }: { queue: OpsWorkQueue; preview?: boolean }) {
   const [kind, setKind] = useState("all");
   const items = queue.items.filter((item) => kind === "all" || item.kind === kind);
@@ -63,14 +67,18 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
             <div className="min-w-0">
               <h2 className="break-words text-base font-semibold leading-snug">{item.label}</h2>
               <p className="mt-1 break-words text-sm text-[color:var(--operator-muted)]">
-                {item.memberId ? (
+                {item.kind === "task" && item.circleId && isCircleSizeTask(item) ? (
+                  <Link className="underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[color:var(--operator-ink)]" href={`/ops/circles?circleId=${encodeURIComponent(item.circleId)}#circle-${item.circleId}`}>
+                    {item.circleName?.trim() || "View Circle"}
+                  </Link>
+                ) : item.memberId ? (
                   <Link className="underline decoration-[color:var(--operator-ink)]/25 underline-offset-4 hover:text-[color:var(--operator-ink)]" href={`/ops/members/${item.memberId}${item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) ? "#membership" : "#record"}`}>
                     {item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || "View member"}
                   </Link>
                 ) : "System work"}
               </p>
-              {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-[color:var(--operator-muted)]">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</p> : null}
-              {item.kind === "task" && (item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-[color:var(--operator-muted)]">{item.description}</p> : null}
+              {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-[color:var(--operator-muted)]">{item.claimedByName ? `${isCircleSizeTask(item) ? "Assigned to" : "Claimed by"} ${item.claimedByName}` : "Unclaimed"}</p> : null}
+              {item.kind === "task" && (isCircleSizeTask(item) || item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-[color:var(--operator-muted)]">{item.description}</p> : null}
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--operator-muted)]">
                 <span className="capitalize">{item.kind.replaceAll("_", " ")}</span>
                 <StateLabel state={item.state} />

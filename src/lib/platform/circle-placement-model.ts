@@ -1,5 +1,7 @@
 export const CIRCLE_TARGET = 10;
-export const CIRCLE_NORMAL_MAXIMUM = 12;
+export const CIRCLE_NORMAL_MINIMUM = 7;
+export const CIRCLE_NORMAL_MAXIMUM = 13;
+export const CIRCLE_DEFAULT_CAPACITY = 20;
 export const CIRCLE_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 export const CIRCLE_PERIODS = [
   { key: "morning", label: "Morning · 9–12", start: 9, end: 12 },
@@ -31,6 +33,7 @@ export type CirclePlacementCandidate = {
   circleId: string;
   name: string;
   activeMembers: number;
+  capacity?: number;
   participantPreferences: CirclePreferences[];
   incomingSeats?: number;
   // Kept for callers that supply a generic preview connection.
@@ -75,11 +78,12 @@ export function scoreCirclePlacement(member: CirclePreferences, circles: CircleP
   return circles.filter(circle => !requiredCircleId || circle.circleId === requiredCircleId).map(circle => {
     const reasons: string[] = []; let score = 0;
     const incomingSeats = circle.incomingSeats ?? (couple ? Number(couple.memberCircleId !== circle.circleId) + Number(couple.partnerCircleId !== circle.circleId) : 1);
-    const exceptionRequired = circle.activeMembers + incomingSeats > CIRCLE_NORMAL_MAXIMUM;
+    const exceptionRequired = circle.activeMembers + incomingSeats > (circle.capacity ?? CIRCLE_DEFAULT_CAPACITY);
     if (couple) reasons.push(circle.circleId === couple.partnerCircleId ? "Your partner is in this Circle; shared memberships stay together" : "Both partners are placed together");
     if (exceptionRequired) { score -= 30; reasons.push(`Adding ${incomingSeats === 1 ? "a person" : "both partners"} needs Administrator exception review`); }
     else if (circle.activeMembers < CIRCLE_TARGET) { score += 30; reasons.push("Below the target of 10 people"); }
-    else if (circle.activeMembers < CIRCLE_NORMAL_MAXIMUM) { score += 10; reasons.push("Within the normal 8–12 range"); }
+    else if (circle.activeMembers + incomingSeats <= CIRCLE_NORMAL_MAXIMUM) { score += 10; reasons.push("Within the recommended 7–13 range"); }
+    else { score -= 15; reasons.push("Above the recommended range of 7–13 people"); }
 
     if (circle.inviter) {
       score += 25;

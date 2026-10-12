@@ -181,7 +181,7 @@ export default function OperatorCirclesManager({
     const member = eligibleMembers.find((candidate) => candidate.memberId === memberId);
     if (!member || !available(circle)) return;
     await change(circle.id, async () => {
-      if (circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim()) {
+      if (circle.activeMembers >= circle.capacity || circle.activeMembers === circle.capacity - 1 && exceptionReason.trim()) {
         await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: circle.id, reason: exceptionReason });
         return `Exception requested for ${member.name}. An Administrator must review before placement.`;
       }
@@ -218,7 +218,7 @@ export default function OperatorCirclesManager({
       const source = circles.find((item) => item.id === member?.circleId);
       if (!member || !source || !destination || source.id === destination.id || !available(destination) || transferIssue(member)) return;
       await change(circle.id, async () => {
-        if (destination.activeMembers >= 12 || destination.activeMembers === 11 && exceptionReason.trim()) {
+        if (destination.activeMembers >= destination.capacity || destination.activeMembers === destination.capacity - 1 && exceptionReason.trim()) {
           await request("/api/ops/circle-placement-reviews", "POST", { memberId: member.memberId, circleId: destination.id, reason: exceptionReason });
           return `Move requested for ${member.name}. An Administrator must review the capacity exception.`;
         }
@@ -295,16 +295,16 @@ export default function OperatorCirclesManager({
       const destination = circles.find((item) => item.id === confirmation.toCircleId);
       const destinations = circles.filter((item) => item.id !== member.circleId && available(item));
       const issue = transferIssue(member);
-      const requestsCapacityReview = Boolean(destination && (destination.activeMembers >= 12
-        || destination.activeMembers === 11 && exceptionReason.trim()));
+      const requestsCapacityReview = Boolean(destination && (destination.activeMembers >= destination.capacity
+        || destination.activeMembers === destination.capacity - 1 && exceptionReason.trim()));
       return <div className="operator-emphasis mt-3 rounded-none p-4" data-operator-tone="info" role="group" aria-label={`Move ${member.name} to another Circle`}>
         <p className="text-sm">Move <strong>{member.name}</strong> from <strong>{source?.name ?? "their Circle"}</strong>.</p>
         <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Shared-membership partners move together. Both must meet placement requirements.</p>
         {issue ? <p className="mt-2 text-sm text-[var(--operator-danger)]">{issue} <Link className="underline" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership</Link></p> : destinations.length ? <>
           <label className="mt-3 block"><span className={OPERATOR_LABEL_TEXT_CLASS}>Move to</span><select ref={destinationFieldRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} aria-label={`New Circle for ${member.name}`} value={confirmation.toCircleId} disabled={pending} onChange={(event) => { setExceptionReason(""); setConfirmation({ ...confirmation, toCircleId: event.target.value }); }}>
-            <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="">Choose a Circle</option>{destinations.map((item) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={item.id} value={item.id}>{item.name} · {item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · target 10 · {item.status}</option>)}
+            <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="">Choose a Circle</option>{destinations.map((item) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={item.id} value={item.id}>{item.name} · {item.activeMembers} {item.activeMembers === 1 ? "person" : "people"} · capacity {item.capacity} · {item.status}</option>)}
           </select></label>
-          <p className="mt-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">Their membership and history stay intact. Above 12 people, an Administrator reviews the exception before the move.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
+          <p className="mt-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">Their membership and history stay intact. Above a Circle’s configured capacity, an Administrator reviews the exception before the move.{destination?.status === "forming" ? " This Circle must be activated before they can finish Foundations." : ""}{source?.status === "active" && source.activeMembers === 1 ? " Moving the last member archives the old Circle; its Block may also be archived if too few Circles remain." : ""}</p>
         </> : <p className="mt-3 text-sm">No other Circles have an open place. <Link href="/ops/circles#create-circle" className="underline" onClick={(event) => {
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
@@ -313,7 +313,7 @@ export default function OperatorCirclesManager({
           setCreateOpen(true);
           router.replace("/ops/circles#create-circle", { scroll: false });
         }}>Create a Circle</Link> first.</p>}
-        {destination && destination.activeMembers >= 11 ? <label className="mt-3 block text-sm">{destination.activeMembers === 11 ? "Capacity review reason · for moving a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={destination.activeMembers >= 12} placeholder="Why is this placement appropriate above the normal range?" />{destination.activeMembers === 11 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when moving one person.</span> : null}</label> : null}
+        {destination && destination.activeMembers >= destination.capacity - 1 ? <label className="mt-3 block text-sm">{destination.activeMembers === destination.capacity - 1 ? "Capacity review reason · for moving a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={destination.activeMembers >= destination.capacity} placeholder="Why is this placement appropriate above the configured capacity?" />{destination.activeMembers === destination.capacity - 1 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would exceed this Circle’s capacity. Add a reason to request review; leave blank when moving one person.</span> : null}</label> : null}
         <div className="mt-3 flex flex-wrap gap-2"><button className={OPERATOR_BUTTON_CLASS} disabled={pending || !!issue || !destination || !available(destination) || destination.id === member.circleId} onClick={() => confirmChange(circle)} type="button">{pending ? "Saving…" : requestsCapacityReview ? "Request exception" : "Confirm move"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => setConfirmation(null)} type="button">Cancel</button></div>
       </div>;
     }
@@ -344,7 +344,7 @@ export default function OperatorCirclesManager({
       </div>
       <section id="create-circle" aria-labelledby="create-circle-heading" hidden={!createOpen} className="scroll-mt-28 operator-bento-card">
         <h2 id="create-circle-heading" className="operator-record-title">New Circle</h2>
-        <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Target 10 people, including the Circle Supporter. The normal range is 8–12; larger groups need an exception review.</p>
+        <p className="mt-2 text-sm text-[color:var(--operator-muted)]">The recommended range is 7–13 people, including the Circle Supporter. Libby receives a work task when an active Circle falls outside that range.</p>
         <form onSubmit={createCircle} className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1"><span className={OPERATOR_LABEL_TEXT_CLASS}>Circle name</span><input ref={createNameRef} className={`${OPERATOR_FIELD_CLASS} mt-2`} name="name" minLength={2} maxLength={80} required placeholder="Circle 02" value={circleName} onChange={(event) => setCircleName(event.target.value)} disabled={pending} /></label><button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="submit">Create Circle</button><button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="button" onClick={closeCreation}>Cancel</button></form>
       </section>
       {notice("create")}
@@ -365,8 +365,8 @@ export default function OperatorCirclesManager({
               <div className="flex flex-wrap items-center justify-between gap-2"><StateLabel state={circle.status} />{circle.blockName ? <p className="text-xs text-[color:var(--operator-muted)]">{circle.blockName}</p> : null}</div>
               <h2 className="mt-2 break-words text-xl font-semibold leading-tight">{circle.name}</h2>
               <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm text-[color:var(--operator-muted)]"><span className="text-2xl font-semibold tracking-tight text-[color:var(--operator-ink)]">{circle.activeMembers}</span> {circle.activeMembers === 1 ? "person" : "people"} · target {circle.capacity}</p>
-                <p className="text-xs text-[color:var(--operator-muted)]">{circle.activeMembers > 12 ? "Above normal range" : "Normal range 8–12"}</p>
+                <p className="text-sm text-[color:var(--operator-muted)]"><span className="text-2xl font-semibold tracking-tight text-[color:var(--operator-ink)]">{circle.activeMembers}</span> {circle.activeMembers === 1 ? "person" : "people"} · capacity {circle.capacity}</p>
+                <p className="text-xs text-[color:var(--operator-muted)]">{circle.activeMembers < 7 ? "Below recommended range" : circle.activeMembers > 13 ? "Above recommended range" : "Recommended range 7–13"}</p>
               </div>
               <p className="mt-2 break-words text-sm text-[color:var(--operator-muted)]">Circle Supporter: {circle.shaper?.name ?? "Not assigned"}</p>
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
@@ -389,7 +389,7 @@ export default function OperatorCirclesManager({
                   void change(circle.id, async () => { await request("/api/ops/circle-story", "POST", { circleId: circle.id, story }); setCircles(current => current.map(item => item.id === circle.id ? { ...item, story } : item)); return "Circle story saved."; });
                 }}><p className="text-xs text-[color:var(--operator-muted)]">A short introduction shown in the Circle home after its reveal.</p><textarea name="story" aria-label="Circle story" className={OPERATOR_FIELD_CLASS} defaultValue={circle.story ?? ""} maxLength={2000} rows={4} disabled={pending} /><button type="submit" className={OPERATOR_BUTTON_CLASS} disabled={pending}>Save story</button></form></details>
                 <div className="grid gap-3">
-                  <div><h3 className="mb-3 flex items-baseline gap-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Members</span><span className="text-sm text-[color:var(--operator-muted)]">{circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · target {circle.capacity}</span></h3>
+                  <div><h3 className="mb-3 flex items-baseline gap-3"><span className={OPERATOR_LABEL_TEXT_CLASS}>Members</span><span className="text-sm text-[color:var(--operator-muted)]">{circle.activeMembers} {circle.activeMembers === 1 ? "person" : "people"} · capacity {circle.capacity}</span></h3>
                     {roster.length ? <ul className="grid gap-x-5 gap-y-1 md:grid-cols-2">{roster.map((member) => <li key={member.assignmentId} className="min-w-0 py-2"><div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex min-w-0 flex-1 items-center gap-3"><OperatorMemberAvatar memberId={member.memberId} className="h-10 w-10" /><div className="min-w-0"><Link className="text-sm font-semibold underline decoration-[color:var(--operator-ink)]/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="truncate text-xs text-[color:var(--operator-muted)]">{member.email}</p></div></div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-3">
@@ -410,7 +410,7 @@ export default function OperatorCirclesManager({
                         <p role="status">{memberQuery ? `${candidateTotal} ${candidateTotal === 1 ? "match" : "matches"} for “${memberQuery}”` : "Members without a Circle"}{pinnedMemberId ? " · Selected member also shown" : ""}</p>
                         {memberQuery ? <Link className="underline underline-offset-4" href={searchHref(circle.id, 1, "")}>Clear search</Link> : null}
                       </div>
-                      {circle.activeMembers >= 11 ? <label className="mb-4 block text-sm">{circle.activeMembers === 11 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={circle.activeMembers >= 12} placeholder="Explain why this placement should exceed the normal range. An Administrator will review it." />{circle.activeMembers === 11 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would bring this Circle to 13 people. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
+                      {circle.activeMembers >= circle.capacity - 1 ? <label className="mb-4 block text-sm">{circle.activeMembers === circle.capacity - 1 ? "Capacity review reason · for placing a couple (optional for one person)" : "Exception reason"}<textarea className={`${OPERATOR_FIELD_CLASS} mt-2`} value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} minLength={10} maxLength={1000} required={circle.activeMembers >= circle.capacity} placeholder="Explain why this placement should exceed the configured capacity. An Administrator will review it." />{circle.activeMembers === circle.capacity - 1 ? <span className="mt-2 block text-xs text-[color:var(--operator-muted)]">A couple would exceed this Circle’s capacity. Add a reason to request review; leave blank when placing one person.</span> : null}</label> : null}
                       <ul aria-label={`Member results for ${circle.name}`} className="grid gap-3">
                         {candidates.map((member) => {
                           const issue = placementIssue(member);
@@ -419,7 +419,7 @@ export default function OperatorCirclesManager({
                             {member.memberId === pinnedMemberId ? <p className="mb-2 text-xs font-semibold text-[color:var(--operator-muted)]">Selected from member profile</p> : null}
                             <form aria-label={`Add ${member.name} to ${circle.name}`} data-member-id={member.memberId} onSubmit={(event) => addMember(event, circle, member.memberId)} className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
                               <div className="flex min-w-0 flex-1 items-center gap-3"><OperatorMemberAvatar memberId={member.memberId} className="h-10 w-10" /><div className="min-w-0"><Link className="text-sm font-semibold underline decoration-[color:var(--operator-ink)]/20 underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}`}>{member.name}</Link><p className="break-all text-xs text-[color:var(--operator-muted)]">{member.email}</p></div></div>
-                              {assignment && assignment.circleId !== circle.id ? <button className={`${OPERATOR_BUTTON_CLASS} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${OPERATOR_BUTTON_CLASS} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : circle.activeMembers >= 12 || circle.activeMembers === 11 && exceptionReason.trim() ? "Request exception" : "Approve placement"}</button>}
+                              {assignment && assignment.circleId !== circle.id ? <button className={`${OPERATOR_BUTTON_CLASS} shrink-0`} type="button" disabled={pending} aria-label={`Move ${member.name} to ${circle.name}`} onClick={() => beginMove(assignment, circle.id, circle.id)}>Move here</button> : <button className={`${OPERATOR_BUTTON_CLASS} shrink-0`} type="submit" disabled={pending || !!issue} aria-label={`Add ${member.name} to ${circle.name}`}>{pending ? "Saving…" : assignment?.circleId === circle.id ? "In this Circle" : circle.activeMembers >= circle.capacity || circle.activeMembers === circle.capacity - 1 && exceptionReason.trim() ? "Request exception" : "Approve placement"}</button>}
                             </form>
                             {!issue ? <CirclePlacementRecommendations memberId={member.memberId} preview={preview} previewCircles={circles} /> : null}
                             {issue ? <div className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]"><p>{issue}</p>{assignment ? assignment.circleId !== circle.id ? <Link className="mt-1 inline-flex min-h-11 items-center underline underline-offset-4" href={searchHref(assignment.circleId)}>Open their Circle →</Link> : null : <Link className="mt-1 inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={`/ops/members/${encodeURIComponent(member.memberId)}#membership`}>Review membership →</Link>}</div> : null}
