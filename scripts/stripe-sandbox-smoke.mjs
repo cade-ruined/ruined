@@ -479,7 +479,7 @@ async function selfTestPrepaid() {
       assert.equal(params.subscription_data.billing_cycle_anchor, undefined);
       assert.equal(params.subscription_data.proration_behavior, undefined);
       assert.equal(params.subscription_data.trial_settings.end_behavior.missing_payment_method, "cancel");
-      assert.equal(params.metadata.ruined_billing_schedule_version, "foundations-prepaid-v1");
+      assert.equal(params.metadata.ruined_billing_schedule_version, expectedSchedule.version);
       assert.equal(params.metadata.ruined_cohort_month, expectedSchedule.cohortMonth);
       assert.equal(params.metadata.ruined_service_starts_at, expectedSchedule.serviceStartsAt);
       assert.equal(params.metadata.ruined_first_charge_at, undefined);
@@ -532,7 +532,7 @@ async function selfTestPrepaid() {
       const quote = (await quoted.json()).quote;
       expectedSchedule = quote.billingSchedule;
       assert.equal(quote.firstChargeAt, null);
-      assert.equal(expectedSchedule.version, "foundations-prepaid-v1");
+      assert.equal(expectedSchedule.version, "foundations-prepaid-v2");
       assert.equal(expectedSchedule.callStartsAt.length, 4);
       assert.equal(expectedSchedule.serviceStartsAt, expectedSchedule.callStartsAt[0]);
       const nativeConsent = process.argv.includes("--native-consent");

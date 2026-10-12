@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash,randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
@@ -16,10 +17,19 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   for(const [,path] of (await source('scripts/migrate-platform.mjs')).matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g))await db.exec(await source(path));
   const sql=sqlFor(db),tx=callback=>db.transaction(engine=>callback(sqlFor(engine)));
   const commercial=await load('src/lib/membership/commercial-repository.ts',{'@/lib/database/server':{getApplicationDatabase:()=>sql}});
-  const billing=await load('src/lib/stripe/billing-repository.ts',{'@/lib/membership/commercial-repository':commercial,'@/lib/membership/pricing':pricing,'@/lib/stripe/database':{getBillingDatabase:()=>sql},'@/lib/stripe/membership-state':{normalizeEmail:v=>v.trim().toLowerCase()}});
+  const calendar=await load('src/lib/platform/ops-calendar-repository.ts',{
+    'node:crypto':{createHash,randomUUID},'@/lib/database/server':{getApplicationDatabase:()=>sql},
+    '@/lib/google/calendar':{getGoogleCalendarConfigurationStatus:()=>({ready:true,organizerEmail:'connect@example.test',calendarId:'primary'}),
+      createGoogleCalendarEvent:()=>assert.fail('Refund invalidation cannot call Google'),updateGoogleCalendarEvent:()=>assert.fail('Refund invalidation cannot call Google'),cancelGoogleCalendarEvent:()=>assert.fail('Refund invalidation cannot call Google')},
+    '@/lib/google/calendar-model':{},'@/lib/google/communications':{googleCommunicationLivemode:()=>false},
+    '@/lib/platform/ops-operating-repository':{},'@/lib/platform/experience-member-access':{},'@/lib/site':{SITE_URL:'https://example.test'},
+  });
+  const invalidation=await load('src/lib/platform/calendar-audience-invalidation.ts',{'@/lib/platform/ops-calendar-repository':calendar});
+  const billing=await load('src/lib/stripe/billing-repository.ts',{'@/lib/membership/commercial-repository':commercial,'@/lib/membership/pricing':pricing,'@/lib/stripe/database':{getBillingDatabase:()=>sql},'@/lib/stripe/membership-state':{normalizeEmail:v=>v.trim().toLowerCase()},'@/lib/platform/calendar-audience-invalidation':invalidation});
   const schedule=schedules.createFoundationsBillingSchedule(new Date(),'monthly');
   const clock=instant=>{Date.now=()=>Date.parse(instant);};
-  async function seed(n,{paidAt=new Date(),persist=true,quoteMinutes=60}={}){
+  async function seed(n,{paidAt=new Date(),persist=true,quoteMinutes=60,acceptedSchedule=schedule}={}){
+    const schedule=acceptedSchedule;
     const member=id(n),auth=id(n+1),agreement=id(2),acceptance=id(n+3),reservationId=id(n+4),email=`prepaid-${n}@example.test`;
     await db.query('insert into ruined_members(id,email,email_normalized) values($1,$2,$2)',[member,email]);
     const person=(await db.query('select person_id from ruined_members where id=$1',[member])).rows[0].person_id;
@@ -48,17 +58,29 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
     if(persist)await tx(sql=>billing.recordMembershipPrepayment(sql,input));
     return {quote,input,member,sub,invoice,reservationId,customer,acceptance};
   }
-  for(const [month,finalCall] of [['2026-11','2026-11-30T22:00:00.000Z'],['2026-12','2026-12-30T22:00:00.000Z']]){
+  for(const [month,finalCall] of [['2026-11','2026-11-30T22:00:00.000Z'],['2026-12','2026-12-31T22:00:00.000Z']]){
     const holiday=schedules.foundationsBillingScheduleForMonth(month,'monthly');
     assert.equal(holiday.callStartsAt[3],finalCall);
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(holiday)])).rows[0].valid,true);
     const incorrect={...holiday,callStartsAt:[...holiday.callStartsAt.slice(0,3),new Date(Date.parse(holiday.callStartsAt[2])+7*86400000).toISOString()]};
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(incorrect)])).rows[0].valid,false);
   }
+  for(const plan of ['monthly','annual']) for(const version of ['foundations-prepaid-v1','foundations-prepaid-v2']){
+    const december=schedules.foundationsBillingScheduleForMonth('2026-12',plan,version);
+    assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(december),plan])).rows[0].valid,true);
+    const mislabeled={...december,version:version==='foundations-prepaid-v1'?'foundations-prepaid-v2':'foundations-prepaid-v1'};
+    assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(mislabeled),plan])).rows[0].valid,false);
+  }
   for(const invalid of [{...schedule,version:undefined},{...schedule,callStartsAt:[schedule.callStartsAt[1],...schedule.callStartsAt.slice(1)]},{...schedule,nextChargeAt:schedule.initialTermEndsAt},{...schedule,extra:true}]){
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(invalid)])).rows[0].valid,false);
   }
   const active=await seed(10),refunded=await seed(30),late=await seed(50,{persist:false}),missed=await seed(70);
+  const oldDecember=schedules.foundationsBillingScheduleForMonth('2026-12','monthly','foundations-prepaid-v1');
+  const legacy=await seed(110,{acceptedSchedule:oldDecember});
+  const newDecember=schedules.foundationsBillingScheduleForMonth('2026-12','monthly');
+  await assert.rejects(db.query('update membership_commercial_reservations set billing_schedule=$2::jsonb where id=$1',[legacy.reservationId,JSON.stringify(newDecember)]),/immutable/);
+  await assert.rejects(db.query('update stripe_checkout_attempts set billing_schedule=$2::jsonb where id=$1',[legacy.reservationId,JSON.stringify(newDecember)]),/immutable/);
+  assert.deepEqual((await db.query('select billing_schedule from membership_commercial_reservations where id=$1',[legacy.reservationId])).rows[0].billing_schedule,oldDecember);
   const consent={memberId:active.member,attemptId:active.reservationId,acceptanceId:active.acceptance,plan:'monthly',priceId:'price_prepaid',subscriptionId:active.sub,billingTermsVersion:'membership-billing-v2',offerId:active.quote.offerId,commercialReservationId:active.reservationId,billingSchedule:schedule};
   assert.equal(await billing.hasMembershipCheckoutConsent(sql,consent),true);
   assert.equal(await billing.hasMembershipCheckoutConsent(sql,{...consent,billingSchedule:null}),false);
@@ -72,15 +94,39 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   assert.equal((await db.query("select has_table_privilege('authenticated','stripe_membership_prepaid_proofs','select') allowed")).rows[0].allowed,false);
   await assert.rejects(db.query('delete from stripe_membership_prepaid_proofs where reservation_id=$1',[active.reservationId]),/cannot be deleted/);
   const cancelId=id(1000),canceledAt=new Date(realNow()-1000);
+  const calendarId=id(9900),organizer=id(11);
+  await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[organizer]);
+  await db.query(`insert into experiences(id,slug,kind,title,starts_at,ends_at,visibility,registration_mode,status,published_at,created_by_auth_user_id)
+    values($1,'refund-calendar','weekly_call','Prepaid Foundations',now()+interval '10 days',now()+interval '10 days 90 minutes','invite_only','internal','published',now(),$2)`,[calendarId,organizer]);
+  await db.query(`insert into experience_registrations(experience_id,person_id,member_id,status,source)
+    select $1,person_id,id,'registered','ops' from ruined_members where id=$2`,[calendarId,refunded.member]);
+  await db.query(`insert into experience_calendar_links(experience_id,organizer_email,organizer_calendar_id,provider_event_id,livemode,status,
+    desired_experience_version,synced_experience_version,desired_attendee_revision,synced_attendee_revision,last_synced_at,created_by_auth_user_id,updated_by_auth_user_id)
+    values($1,'connect@example.test','primary','prepaid-refund-calendar',false,'active',1,1,1,1,now(),$2,$2)`,[calendarId,organizer]);
+  const calendarLink=async()=>(await db.query('select status,desired_attendee_revision,synced_attendee_revision,updated_by_auth_user_id,version from experience_calendar_links where experience_id=$1',[calendarId])).rows[0];
+  const assertCalendarPending=async revision=>{const link=await calendarLink();assert.equal(link.status,'pending_update');assert.equal(Number(link.desired_attendee_revision),revision);assert.equal(link.updated_by_auth_user_id,organizer);};
+  const calendarSynced=()=>db.query("update experience_calendar_links set status='active',synced_attendee_revision=desired_attendee_revision,last_synced_at=now(),version=version+1 where experience_id=$1",[calendarId]);
   await db.query("insert into stripe_membership_cancellations(id,contract_id,requested_by_member_id,intent,quote_snapshot,quote_sha256,ledger_revision,buyout_dues,effective_at,status,provider_idempotency_key,billing_stopped_at,billing_stop_evidence) values($1,$2,$3,'cancel_before_start','{}',$4,0,0,$5,'billing_stopped','prepaid-refund-test',$5,'{}')",[cancelId,refunded.reservationId,refunded.member,'c'.repeat(64),canceledAt]);
   await db.query("update stripe_subscriptions set stripe_status='canceled' where id=$1",[refunded.sub]);
   const refund={reservationId:refunded.reservationId,subscriptionId:refunded.sub,cancellationId:cancelId,invoiceId:refunded.invoice,paymentIntentId:refunded.input.paymentIntentId,chargeId:refunded.input.chargeId,refundId:'re_prepaid_test',status:'pending',amount:35900,currency:'usd',livemode:false,canceledAt,verifiedAt:new Date(realNow())};
   await tx(sql=>billing.recordPrepaidMembershipRefund(sql,refund));
+  await assertCalendarPending(2);await calendarSynced();
+  const pendingSynced=await calendarLink();
+  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,verifiedAt:new Date(realNow()+1)}));
+  assert.deepEqual(await calendarLink(),pendingSynced,'Refreshing the same verified refund cannot queue another Calendar sync');
+  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,status:'succeeded',verifiedAt:new Date(realNow()-60000)}));
+  assert.deepEqual(await calendarLink(),pendingSynced,'Older refund evidence cannot dirty Calendar');
   const release={reservationId:refunded.reservationId,stripeSubscriptionId:refunded.sub,canceledAt};
   await assert.rejects(commercial.releasePrepaidCommercialMembership(release),/refund/);
-  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,status:'succeeded',amount:34900}));
+  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,status:'succeeded',amount:34900,verifiedAt:new Date(realNow()+2)}));
+  await assertCalendarPending(3);await calendarSynced();
   await assert.rejects(commercial.releasePrepaidCommercialMembership(release),/refund/,'tax must also be refunded');
-  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,status:'succeeded'}));
+  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,status:'succeeded',verifiedAt:new Date(realNow()+3)}));
+  await assertCalendarPending(4);await calendarSynced();
+  const refundedSynced=await calendarLink();
+  await tx(sql=>billing.recordPrepaidMembershipRefund(sql,{...refund,status:'succeeded',verifiedAt:new Date(realNow()+4)}));
+  assert.deepEqual(await calendarLink(),refundedSynced,'Completed-refund replay does not dirty Calendar');
+  assert.equal((await db.query('select billing_state from member_lifecycle where member_id=$1',[refunded.member])).rows[0].billing_state,'pending','Pre-service refunds invalidate invitations without changing member lifecycle');
   await commercial.releasePrepaidCommercialMembership(release);await commercial.releasePrepaidCommercialMembership(release);
   assert.equal((await commercial.getCommercialMembershipReservation(refunded.reservationId)).status,'released');
   await tx(sql=>billing.recordMembershipPrepayment(sql,{...refunded.input,verifiedAt:new Date(realNow())}));

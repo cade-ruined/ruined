@@ -14,10 +14,11 @@ type Props = {
   initialPayment?: MemberRegistrationSnapshot["initialPayment"];
   preview?: boolean;
   activationAvailable?: boolean;
+  invitedCalendarAvailable?: boolean;
 };
 
 /** Registration is confirmed by the server before this receipt is rendered. */
-export default function MemberRegistrationReceipt({ email, registeredAt, requiresPaymentMethod, foundingPricing, initialPayment = null, preview = false, activationAvailable = false }: Props) {
+export default function MemberRegistrationReceipt({ email, registeredAt, requiresPaymentMethod, foundingPricing, initialPayment = null, preview = false, activationAvailable = false, invitedCalendarAvailable = false }: Props) {
   const founding = requiresPaymentMethod && !initialPayment ? registrationFoundingConfirmation(foundingPricing) : null;
   const schedule = initialPayment?.billingSchedule;
   const amountPaid = initialPayment ? new Intl.NumberFormat("en-US", {
@@ -42,6 +43,11 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
     </header>
     <section className="px-5 py-8 sm:px-10 sm:py-10" aria-label="What happens next">
       {preview ? <p className="mb-6 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">Preview only. No account, card, registration, or email has been created.</p> : null}
+      {invitedCalendarAvailable ? <section className="mb-8 border-b border-[var(--member-rule)] pb-6" aria-labelledby="invited-calls-ready">
+        <h2 id="invited-calls-ready" className="text-xl font-semibold">Your calls are on the calendar.</h2>
+        <p className="mt-3 text-sm leading-relaxed text-[var(--member-muted)]">See your scheduled calls and join from Calendar. Your profile will open separately when it’s ready.</p>
+        <Link href="/my/experiences" className="mt-4 inline-flex min-h-12 items-center border border-current px-5 py-3 text-sm font-semibold">Open Calendar</Link>
+      </section> : null}
       {founding ? <section className="mb-9 border border-[#23231f] bg-[#ffca2c] p-5 text-[#23231f] shadow-[5px_5px_0_#23231f] sm:p-7" aria-labelledby="founding-rate-confirmed">
         <h2 id="founding-rate-confirmed" className="text-lg font-semibold sm:text-xl">{founding.heading}</h2>
         <p className="mt-3 text-[clamp(2rem,8vw,3.25rem)] font-semibold leading-tight tracking-[-0.04em]">{founding.monthly}</p>

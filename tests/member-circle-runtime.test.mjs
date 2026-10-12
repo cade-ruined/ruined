@@ -135,6 +135,7 @@ async function fixture({ revealed = true } = {}) {
   };
   const policy = await loadModule("src/lib/membership/access-policy.ts", {});
   const experienceAccess = await loadModule("src/lib/platform/experience-member-access.ts", {
+    "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
     "@/lib/membership/access-policy": policy,
     "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
   });
@@ -278,6 +279,58 @@ test("revealed members with a legacy onboarding projection can still join their 
     await assert.rejects(() => repository.setMemberExperienceRegistration(ids.auth, ids.event, "register"), repository.MembershipAccessDeniedError);
     identity.billing_state = "pending";
     await assert.rejects(() => repository.getMemberExperienceMeetingDestination(ids.auth, ids.event), repository.MembershipAccessDeniedError);
+  } finally { await pg.close(); }
+});
+
+test("held funded members can view and join only an explicit operator invitation without opening their profile", async () => {
+  const { pg, identity, repository } = await fixture({ revealed: false });
+  const invitedId = uuid(18), uninvitedId = uuid(19), selfRegisteredId = uuid(20);
+  try {
+    identity.registration_held = true;
+    await pg.query("insert into member_registration_access(member_id,profile_activated_at) values($1,null)", [ids.member]);
+    await pg.query("insert into person_email_addresses(person_id,email,is_primary,verification_state) values($1,'member@example.test',true,'verified')", [ids.person]);
+    for (const id of [invitedId, uninvitedId, selfRegisteredId]) {
+      await pg.query("insert into experiences(id,slug,kind,title,starts_at,ends_at,timezone,registration_mode,visibility,status) values($1,$2,'membership_call','Foundations call',now()+interval '1 day',now()+interval '1 day 90 minutes','America/Denver','internal','invite_only','published')", [id, `invited-${id}`]);
+      await pg.query("insert into integration_entity_links values('google','experience',$1,'meet_space',false,$2)", [id, JSON.stringify({ url: "https://meet.google.com/abc-defg-hij" })]);
+    }
+    for (const [id, source] of [[invitedId, "ops"], [selfRegisteredId, "member"]]) {
+      await pg.query("insert into experience_registrations(experience_id,person_id,member_id,status,source,registered_at) values($1,$2,$3,'registered',$4,now())", [id, ids.person, ids.member, source]);
+    }
+    const before = (await pg.query("select * from member_lifecycle where member_id=$1", [ids.member])).rows;
+    const calendar = await repository.getMemberExperiences(ids.auth);
+    assert.deepEqual(calendar.upcoming.map(event => event.id), [invitedId]);
+    assert.equal(calendar.upcoming[0].registrationHref, null, "A directly invited member does not need to reserve a place");
+    assert.equal(calendar.upcoming[0].meetingUrl, `/api/my/experiences/${invitedId}/join`);
+    assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, invitedId), "https://meet.google.com/abc-defg-hij");
+    for (const id of [ids.event, ids.otherEvent, ids.allEvent, uninvitedId, selfRegisteredId]) {
+      await assert.rejects(() => repository.getMemberExperienceMeetingDestination(ids.auth, id), repository.MembershipAccessDeniedError);
+    }
+    for (const action of ["register", "cancel"]) {
+      await assert.rejects(() => repository.setMemberExperienceRegistration(ids.auth, invitedId, action), repository.MembershipAccessDeniedError);
+    }
+    await assert.rejects(() => repository.getMemberProfile(ids.auth), repository.MembershipAccessDeniedError);
+    const circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.revealStatus, "locked");
+    assert.equal(circle.circle, null);
+    assert.deepEqual(circle.members, []);
+    assert.deepEqual(circle.meetings, []);
+    assert.deepEqual((await pg.query("select * from member_lifecycle where member_id=$1", [ids.member])).rows, before);
+    assert.equal((await pg.query("select profile_activated_at from member_registration_access where member_id=$1", [ids.member])).rows[0].profile_activated_at, null);
+
+    for (const status of ["cancelled", "waitlisted", "external_pending"]) {
+      await pg.query("update experience_registrations set status=$1 where experience_id=$2", [status, invitedId]);
+      assert.deepEqual((await repository.getMemberExperiences(ids.auth)).upcoming, []);
+      await assert.rejects(() => repository.getMemberExperienceMeetingDestination(ids.auth, invitedId), repository.MembershipAccessDeniedError);
+    }
+    await pg.query("update experience_registrations set status='registered' where experience_id=$1", [invitedId]);
+    await pg.query("update experiences set status='draft' where id=$1", [invitedId]);
+    assert.deepEqual((await repository.getMemberExperiences(ids.auth)).upcoming, []);
+    await pg.query("update experiences set status='published' where id=$1", [invitedId]);
+    await pg.query("update person_email_addresses set verification_state='unverified' where person_id=$1", [ids.person]);
+    assert.deepEqual((await repository.getMemberExperiences(ids.auth)).upcoming, []);
+    await pg.query("update person_email_addresses set verification_state='verified' where person_id=$1", [ids.person]);
+    await pg.query("update platform_users set status='suspended' where auth_user_id=$1", [ids.auth]);
+    assert.deepEqual((await repository.getMemberExperiences(ids.auth)).upcoming, []);
   } finally { await pg.close(); }
 });
 

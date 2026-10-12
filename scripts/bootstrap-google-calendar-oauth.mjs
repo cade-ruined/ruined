@@ -11,9 +11,10 @@ import {
   GOOGLE_CALENDAR_CALLBACK_URL,
   GOOGLE_CALENDAR_EVENTS_SCOPE,
   GOOGLE_CALENDAR_OAUTH_SCOPES,
-  GOOGLE_CALENDAR_ORGANIZER_EMAIL,
+  GOOGLE_CALENDAR_ORGANIZER_DOMAIN,
   GoogleCalendarBootstrapError,
   assertFixedLoopbackCallback,
+  parseGoogleCalendarBootstrapArgs,
   readOAuthClientFile,
   validateCallbackRequestMetadata,
   validateGoogleIdTokenClaims,
@@ -29,10 +30,12 @@ const CALLBACK_TIMEOUT_MS = 10 * 60 * 1_000;
 
 function usage() {
   return [
-    "Authorize Ruined to create Google Calendar events as Cade.",
+    "Authorize Ruined to create Google Calendar events as a verified Workspace organizer.",
     "",
     "Usage:",
-    "  npm run google:calendar:authorize -- /path/to/google-oauth-client.json",
+    "  npm run google:calendar:authorize -- /path/to/google-oauth-client.json --organizer connect@theruinedproject.com",
+    "",
+    "The organizer defaults to cade@theruinedproject.com when omitted.",
     "",
     `The Web OAuth client must authorize ${GOOGLE_CALENDAR_CALLBACK_URL}.`,
   ].join("\n");
@@ -206,18 +209,16 @@ async function assertEnvLocalIsIgnored() {
 }
 
 async function main() {
-  const argument = process.argv[2];
-  if (argument === "--help" || argument === "-h") {
+  const options = parseGoogleCalendarBootstrapArgs(process.argv.slice(2));
+  if (options.help) {
     console.log(usage());
     return;
   }
-  if (!argument || process.argv.length !== 3 || argument.startsWith("-")) {
-    throw new GoogleCalendarBootstrapError(usage());
-  }
+  const { organizerEmail } = options;
 
   await assertEnvLocalIsIgnored();
   assertFixedLoopbackCallback();
-  const clientPath = resolve(process.cwd(), argument);
+  const clientPath = resolve(process.cwd(), options.clientPath);
   const { clientId, clientSecret } = await readOAuthClientFile(clientPath);
   const state = randomBytes(32).toString("base64url");
   const oauth = new OAuth2Client({
@@ -227,9 +228,9 @@ async function main() {
   });
   const authorizationUrl = oauth.generateAuthUrl({
     access_type: "offline",
-    hd: "theruinedproject.com",
+    hd: GOOGLE_CALENDAR_ORGANIZER_DOMAIN,
     include_granted_scopes: false,
-    login_hint: GOOGLE_CALENDAR_ORGANIZER_EMAIL,
+    login_hint: organizerEmail,
     prompt: "consent",
     scope: GOOGLE_CALENDAR_OAUTH_SCOPES,
     state,
@@ -238,7 +239,7 @@ async function main() {
   const listener = await startCallbackListener(state);
   try {
     console.log(
-      `Open this Google authorization link while signed in as ${GOOGLE_CALENDAR_ORGANIZER_EMAIL}:\n`,
+      `Open this Google authorization link while signed in as ${organizerEmail}:\n`,
     );
     console.log(authorizationUrl);
     console.log("\nWaiting for Google authorization (up to 10 minutes)…");
@@ -252,7 +253,7 @@ async function main() {
       audience: clientId,
       idToken,
     });
-    validateGoogleIdTokenClaims(ticket.getPayload(), clientId);
+    validateGoogleIdTokenClaims(ticket.getPayload(), clientId, organizerEmail);
 
     let grantedScopes = tokens.scope;
     if (!grantedScopes) {
@@ -267,11 +268,11 @@ async function main() {
       GOOGLE_CALENDAR_OAUTH_CLIENT_ID: clientId,
       GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET: clientSecret,
       GOOGLE_CALENDAR_OAUTH_REFRESH_TOKEN: refreshToken,
-      GOOGLE_CALENDAR_ORGANIZER_EMAIL: GOOGLE_CALENDAR_ORGANIZER_EMAIL,
+      GOOGLE_CALENDAR_ORGANIZER_EMAIL: organizerEmail,
     });
 
     console.log(
-      `\nVerified ${GOOGLE_CALENDAR_ORGANIZER_EMAIL} with ${GOOGLE_CALENDAR_EVENTS_SCOPE}.`,
+      `\nVerified ${organizerEmail} with ${GOOGLE_CALENDAR_EVENTS_SCOPE}.`,
     );
     console.log("The protected Google Calendar settings were saved to .env.local.");
     console.log("Restart the local Ruined server before testing invitations.");

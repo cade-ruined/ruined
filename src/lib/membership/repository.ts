@@ -31,7 +31,7 @@ import {
   syncMemberExperienceCalendar,
 } from "@/lib/platform/ops-calendar-repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
-import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
+import { getEligibleExplicitExperienceInvitationIds, memberEligibleForExperience } from "@/lib/platform/experience-member-access";
 import type {
   MemberAccountSnapshot,
   MemberArtifactsSnapshot,
@@ -1915,7 +1915,8 @@ export async function getMemberExperienceMeetingDestination(
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   const fullExperienceAccess = memberCan(access, "experiences.member");
-  if (!fullExperienceAccess && !memberCan(access, "circle.read")) throw new MembershipAccessDeniedError();
+  const invitedExperienceIds = fullExperienceAccess ? [] : await getEligibleExplicitExperienceInvitationIds(authUserId);
+  if (!fullExperienceAccess && !memberCan(access, "circle.read") && !invitedExperienceIds.includes(experienceId)) throw new MembershipAccessDeniedError();
   const sql = getApplicationDatabase();
   const googleLivemode = googleCommunicationLivemode();
   const rows = await sql<Array<{ metadata: unknown }>>`
@@ -1955,7 +1956,8 @@ export async function getMemberExperienceMeetingDestination(
     cross join membership_scope scope
     where experience.id = ${experienceId}::uuid
       and experience.status in ('published', 'completed')
-      and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id))
+      and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
+        or experience.id = any(${sql.array(invitedExperienceIds)}::uuid[]))
       and (
         experience.registration_mode = 'none'
         or registration.status = 'registered'
@@ -1985,8 +1987,9 @@ export async function getMemberExperiences(
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   const now = Date.now();
   const fullExperienceAccess = memberCan(access, "experiences.member");
+  const invitedExperienceIds = fullExperienceAccess ? [] : await getEligibleExplicitExperienceInvitationIds(authUserId);
   const publicEvents = await getPublicCommunityEvents();
-  if (!fullExperienceAccess && !memberCan(access, "circle.read")) {
+  if (!fullExperienceAccess && !memberCan(access, "circle.read") && !invitedExperienceIds.length) {
     return {
       access,
       past: [],
@@ -2040,6 +2043,7 @@ export async function getMemberExperiences(
         when 'block' then 'Your Block'
         when 'progression' then 'Selected members'
         when 'public' then 'Ruined community'
+        when 'invite_only' then 'Invited members'
         else 'All members'
       end as audience_label
     from experiences experience
@@ -2054,7 +2058,8 @@ export async function getMemberExperiences(
       and meet_link.livemode = ${googleLivemode}
     cross join membership_scope scope
     where experience.status in ('published', 'completed')
-      and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id))
+      and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
+        or experience.id = any(${sql.array(invitedExperienceIds)}::uuid[]))
       and (
         experience.visibility in ('public', 'all_members')
         or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
@@ -2070,7 +2075,14 @@ export async function getMemberExperiences(
       )
     order by experience.starts_at
   `;
-  const experiences = rows.map(experienceFromRow);
+  const experiences = rows.map(row => {
+    const experience = experienceFromRow(row);
+    // During onboarding, this is a direct operator invitation, not an open
+    // registration flow. Keep Join available without introducing a reserve step.
+    return !fullExperienceAccess && invitedExperienceIds.includes(row.id)
+      ? { ...experience, registrationHref: null }
+      : experience;
+  });
   return {
     access,
     past: experiences

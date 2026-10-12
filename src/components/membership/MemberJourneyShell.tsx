@@ -20,12 +20,13 @@ function appearanceValue(value: string | null): MemberAppearance {
   return value === "paper" || value === "ink" ? value : "system";
 }
 
-export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, registrationOnly: restrictedRegistration = false }: {
+export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, registrationOnly: restrictedRegistration = false, invitedCalendarAvailable = false }: {
   children: React.ReactNode;
   configuration: PlatformConfiguration;
   operatorRole?: OperatorNavigationRole | null;
   viewerLabel?: string | null;
   registrationOnly?: boolean;
+  invitedCalendarAvailable?: boolean;
 }) {
   const pathname = usePathname();
   const registrationOnly = restrictedRegistration || pathname === "/my/registered";
@@ -40,7 +41,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   const preview = configuration.mode === "preview";
   const current = currentMemberDestination(pathname);
   const currentPrimary = currentMemberPrimaryDestination(pathname);
-  const pageLabel = registrationOnly ? "Registration" : MEMBER_DESTINATIONS.find(({ href }) => href === current)?.label ?? "Membership";
+  const pageLabel = registrationOnly ? invitedCalendarAvailable && pathname === "/my/experiences" ? "Calendar" : "Registration" : MEMBER_DESTINATIONS.find(({ href }) => href === current)?.label ?? "Membership";
   const theme = appearance === "system" ? systemDark ? "ink" : "paper" : appearance;
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
         <Link href={threshold ? publicWebsiteHref("/") : "/my"} aria-label={threshold ? "Ruined home" : "My Ruined profile"} className={styles.mobileBrand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
         <div className={styles.breadcrumb}><span>My Ruined</span><span aria-hidden="true">/</span><strong>{pageLabel}</strong></div>
         <div className={styles.tools}>
+          {registrationOnly && invitedCalendarAvailable ? <Link className={styles.quietLink} href={pathname === "/my/experiences" ? "/my/registered" : "/my/experiences"}>{pathname === "/my/experiences" ? "Registration" : "Calendar"}</Link> : null}
           <button type="button" className={styles.appearanceToggle} role="switch" aria-checked={theme === "ink"} aria-label="Dark mode" title={`Switch to ${theme === "paper" ? "dark" : "light"} mode`} onClick={() => changeAppearance(theme === "paper" ? "ink" : "paper")}>
             <span className={styles.appearanceTrack} aria-hidden="true">
               <span className={styles.appearanceThumb} />

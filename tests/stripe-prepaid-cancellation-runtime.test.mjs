@@ -20,8 +20,9 @@ const schedule = await load("src/lib/membership/foundations-schedule.ts");
 const prepaid = await load("src/lib/stripe/prepaid-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing, "@/lib/membership/foundations-schedule": schedule });
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
 
-async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false, timeoutAfterRefund = false, missedCutoff = false } = {}) {
-  const now = new Date(), billingSchedule = schedule.createFoundationsBillingSchedule(now, "monthly");
+async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false, timeoutAfterRefund = false, missedCutoff = false, scheduleVersion } = {}) {
+  const now = new Date(), currentSchedule = schedule.createFoundationsBillingSchedule(now, "monthly");
+  const billingSchedule = scheduleVersion ? schedule.foundationsBillingScheduleForMonth(currentSchedule.cohortMonth, "monthly", scheduleVersion) : currentSchedule;
   const contract = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member",
     livemode: false, offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v3",
     agreementContentSha256: "a".repeat(64), acceptedAt: now.toISOString(), startsAt: billingSchedule.serviceStartsAt,
@@ -159,6 +160,19 @@ test("post-commit reconciliation resumes only a recorded execution, never a quot
   const result = await f.service.reconcilePrepaidMembershipCancellation(input);
   assert.equal(result.handled, true); assert.equal(result.cancellation.refundStatus, "succeeded"); assert.equal(f.calls.length, 2);
   assert.deepEqual(await f.service.reconcilePrepaidMembershipCancellation(input), { handled: false });
+});
+
+test("legacy v1 cancellations still resume and refund after v2 becomes the quote default", async () => {
+  const f = await fixture({ refundStatus: "pending", scheduleVersion: "foundations-prepaid-v1" });
+  const accepted = JSON.stringify(f.contract.billingSchedule);
+  const quote = await f.service.createMemberCancellationQuote(f.contract.memberId, "cancel_before_start");
+  await f.service.confirmMemberCancellation(f.contract.memberId, quote.id);
+  f.payment.refund.status = "succeeded";
+  const result = await f.service.reconcilePrepaidMembershipCancellation({ subscriptionId: f.contract.subscriptionId, livemode: false });
+  assert.equal(result.handled, true);
+  assert.equal(result.cancellation.refundStatus, "succeeded");
+  assert.equal(JSON.stringify(f.contract.billingSchedule), accepted);
+  assert.equal(f.calls.length, 2, "One subscription cancellation and one exact refund");
 });
 
 test("missed-cutoff restitution survives an outage past the first call without expanding normal cancellation", async () => {

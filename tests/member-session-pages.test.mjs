@@ -69,6 +69,7 @@ function contexts(session, { data = { private: "member snapshot" }, failure = nu
     "@/lib/platform/config": configuration,
     "@/lib/membership/preview-scenarios": {},
     "@/lib/membership/repository": { MembershipAccessDeniedError },
+    "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
     "./registration-repository": existingMemberRegistration,
     "next/navigation": { redirect },
   }, logs);

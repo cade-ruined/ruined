@@ -88,10 +88,11 @@ export async function markCalendarAudiencesPendingForBlock(
  */
 export async function markCalendarAudiencesPendingForMember(
   tx: postgres.TransactionSql,
-  input: CalendarAudienceInvalidationInput & { memberId: string },
+  input: { actorAuthUserId?: string; memberId: string },
 ): Promise<void> {
-  const rows = await tx<Array<{ experience_id: string }>>`
-    select distinct experience.id as experience_id
+  const rows = await tx<Array<{ experience_id: string; actor_auth_user_id: string }>>`
+    select distinct experience.id as experience_id,
+      coalesce(calendar_link.updated_by_auth_user_id, calendar_link.created_by_auth_user_id) as actor_auth_user_id
     from experiences experience
     join experience_calendar_links calendar_link
       on calendar_link.experience_id = experience.id
@@ -127,5 +128,9 @@ export async function markCalendarAudiencesPendingForMember(
     order by experience.id
   `;
 
-  await markExperienceRowsPending(tx, input.actorAuthUserId, rows);
+  // Provider-driven billing changes retain each link's original authorized
+  // actor; they do not impersonate a member or authorize a new invitation.
+  for (const row of rows) {
+    await markExperienceRowsPending(tx, input.actorAuthUserId ?? row.actor_auth_user_id, [row]);
+  }
 }

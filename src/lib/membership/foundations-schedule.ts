@@ -1,8 +1,9 @@
 /** The accepted calendar is immutable; later cutoff changes never move an accepted cohort. */
-export const FOUNDATIONS_BILLING_SCHEDULE_VERSION = "foundations-prepaid-v1" as const;
+export const FOUNDATIONS_BILLING_SCHEDULE_VERSION = "foundations-prepaid-v2" as const;
+export type FoundationsBillingScheduleVersion = "foundations-prepaid-v1" | typeof FOUNDATIONS_BILLING_SCHEDULE_VERSION;
 export const FOUNDATIONS_TIME_ZONE = "America/Denver" as const;
 export type FoundationsBillingSchedule = {
-  version: typeof FOUNDATIONS_BILLING_SCHEDULE_VERSION;
+  version: FoundationsBillingScheduleVersion;
   cohortMonth: string;
   timeZone: typeof FOUNDATIONS_TIME_ZONE;
   callStartsAt: [string, string, string, string];
@@ -43,17 +44,27 @@ function anniversary(startsAt: string, months: number): string {
   result.setUTCDate(Math.min(original.getUTCDate(), finalDay));
   return result.toISOString();
 }
-export function foundationsBillingScheduleForMonth(cohortMonth: string, plan: BillingPlan): FoundationsBillingSchedule {
+export function isFoundationsBillingScheduleVersion(value: unknown): value is FoundationsBillingScheduleVersion {
+  return value === "foundations-prepaid-v1" || value === FOUNDATIONS_BILLING_SCHEDULE_VERSION;
+}
+export function foundationsBillingScheduleForMonth(
+  cohortMonth: string,
+  plan: BillingPlan,
+  version: FoundationsBillingScheduleVersion = FOUNDATIONS_BILLING_SCHEDULE_VERSION,
+): FoundationsBillingSchedule {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(cohortMonth) || cohortMonth < MINIMUM_COHORT || cohortMonth > "9998-12") throw new RangeError("Invalid Foundations cohort month.");
   if (plan !== "monthly" && plan !== "annual") throw new RangeError("Invalid membership billing plan.");
+  if (!isFoundationsBillingScheduleVersion(version)) throw new RangeError("Invalid Foundations schedule version.");
   const [year, month] = cohortMonth.split("-").map(Number);
   const firstThursday = 1 + (4 - new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 7) % 7;
-  const days = cohortMonth === "2026-11" ? [5, 12, 19, 30] : cohortMonth === "2026-12" ? [3, 10, 17, 30] : [0, 1, 2, 3].map(week => firstThursday + week * 7);
+  // Preserve the originally accepted v1 calendar, including its December 30 call.
+  // Only new v2 quotes use the approved December 31 calendar; billing anchors stay fixed.
+  const days = cohortMonth === "2026-11" ? [5, 12, 19, 30] : cohortMonth === "2026-12" ? [3, 10, 17, version === "foundations-prepaid-v1" ? 30 : 31] : [0, 1, 2, 3].map(week => firstThursday + week * 7);
   const callStartsAt = days.map(day => denverCall(year, month, day)) as FoundationsBillingSchedule["callStartsAt"];
   const serviceStartsAt = callStartsAt[0];
   const nextChargeAt = anniversary(serviceStartsAt, plan === "monthly" ? 1 : 12);
   return {
-    version: FOUNDATIONS_BILLING_SCHEDULE_VERSION, cohortMonth, timeZone: FOUNDATIONS_TIME_ZONE,
+    version, cohortMonth, timeZone: FOUNDATIONS_TIME_ZONE,
     callStartsAt, cutoffAt: new Date(Date.parse(serviceStartsAt) - 24 * 60 * 60 * 1000).toISOString(),
     serviceStartsAt, prepaidThrough: nextChargeAt, nextChargeAt,
     initialTermEndsAt: anniversary(serviceStartsAt, 12),
@@ -75,9 +86,9 @@ export function createFoundationsBillingSchedule(now: Date, plan: BillingPlan): 
 export function parseFoundationsBillingSchedule(value: unknown, plan: BillingPlan): FoundationsBillingSchedule | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const input = value as Record<string, unknown>;
-  if (typeof input.cohortMonth !== "string") return null;
+  if (typeof input.cohortMonth !== "string" || !isFoundationsBillingScheduleVersion(input.version)) return null;
   try {
-    const expected = foundationsBillingScheduleForMonth(input.cohortMonth, plan);
+    const expected = foundationsBillingScheduleForMonth(input.cohortMonth, plan, input.version);
     if (Object.keys(input).length !== Object.keys(expected).length) return null;
     for (const key of Object.keys(expected) as Array<keyof FoundationsBillingSchedule>) {
       if (key === "callStartsAt") {

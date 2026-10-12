@@ -1341,13 +1341,16 @@ export async function updateMemberBillingState(
     `;
   }
 
-  await reconcileAdministrativeOnboardingAfterPaidMembership(tx, {
+  const onboardingChanged = await reconcileAdministrativeOnboardingAfterPaidMembership(tx, {
     eventCreated: input.eventCreated,
     memberId: input.memberId,
     sourceEventId: input.sourceEventId,
     state: updatedMember.membership_state,
   });
-
+  if (billingStateChanged || onboardingChanged) {
+    const { markCalendarAudiencesPendingForMember } = await import("@/lib/platform/calendar-audience-invalidation");
+    await markCalendarAudiencesPendingForMember(tx, { memberId: input.memberId });
+  }
 }
 
 /** Provider payment evidence is private and separate from membership access. */
@@ -1462,9 +1465,25 @@ export async function recordPrepaidMembershipRefund(tx: BillingTransaction, inpu
   if (proof.refundVerifiedAt && prepaymentDate(input.verifiedAt) < proof.refundVerifiedAt) return proof;
   const state = input.status === "succeeded" ? input.amount === proof.amountPaid ? "refunded" : "partial"
     : input.status === "pending" ? "pending" : "review_required";
+  const eligibilityChanged = proof.refundState !== state
+    || proof.amountRefunded !== Math.max(proof.amountRefunded, input.status === "succeeded" ? input.amount : 0)
+    || proof.canceledAt?.getTime() !== prepaymentDate(input.canceledAt).getTime();
   await tx`update stripe_membership_prepaid_proofs set refund_state=${state},stripe_refund_id=${input.refundId},
     cancellation_id=${input.cancellationId}::uuid,amount_refunded=greatest(amount_refunded,${input.status === "succeeded" ? input.amount : 0}),
     refund_verified_at=${input.verifiedAt}::timestamptz,provider_canceled_at=${input.canceledAt}::timestamptz
     where reservation_id=${input.reservationId}::uuid`;
+  if (eligibilityChanged) {
+    // A prepaid refund can remove a Foundations invitation before billing ever
+    // becomes active. A shared reservation covers both verified participants.
+    const participants = await tx<{ member_id: string }[]>`select participant.member_id
+      from membership_commercial_participants participant
+      join ruined_members member on member.id = participant.member_id and member.person_id = participant.person_id
+      where participant.reservation_id = ${input.reservationId}::uuid
+      order by participant.member_id`;
+    const { markCalendarAudiencesPendingForMember } = await import("@/lib/platform/calendar-audience-invalidation");
+    for (const participant of participants) {
+      await markCalendarAudiencesPendingForMember(tx, { memberId: participant.member_id });
+    }
+  }
   return (await getMembershipPrepayment(tx, { reservationId: input.reservationId }))!;
 }

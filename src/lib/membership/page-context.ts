@@ -12,6 +12,7 @@ import {
 import type { PlatformViewer } from "@/lib/platform/model";
 
 import { MembershipAccessDeniedError } from "@/lib/membership/repository";
+import { hasEligibleExplicitExperienceInvitations } from "@/lib/platform/experience-member-access";
 
 export type MembershipPageState =
   | "authenticated"
@@ -25,6 +26,7 @@ export type MembershipPageContext<T> = {
   data: T | null;
   state: MembershipPageState;
   viewer: PlatformViewer | null;
+  invitedCalendarOnly?: boolean;
 };
 
 function safeErrorDetails(error: unknown) {
@@ -69,8 +71,16 @@ export async function getMembershipPageContext<T>(
     return { configuration, data: null, state: "unavailable", viewer };
   }
   let destination: string | null = null;
+  let invitedCalendarOnly = false;
   if (!["entry", "payment-method", "registration", "activation"].includes(area)) {
-    try { destination = await getMemberRegistrationDestination(viewer.authUserId); }
+    try {
+      destination = await getMemberRegistrationDestination(viewer.authUserId);
+      // A scheduled invitation can open Calendar without releasing the profile.
+      if (area === "experiences" && destination === "/my/registered") {
+        invitedCalendarOnly = await hasEligibleExplicitExperienceInvitations(viewer.authUserId);
+        if (invitedCalendarOnly) destination = null;
+      }
+    }
     catch (error) {
       console.error(`Ruined Membership ${area} registration could not be loaded`, safeErrorDetails(error));
       return { configuration, data: null, state: "unavailable", viewer };
@@ -84,6 +94,7 @@ export async function getMembershipPageContext<T>(
       data,
       state: data ? "authenticated" : "denied",
       viewer,
+      invitedCalendarOnly,
     };
   } catch (error) {
     if (error instanceof MembershipAccessDeniedError) {

@@ -1,6 +1,6 @@
 # Google Calendar operator setup
 
-Ruined creates Calendar invitations directly as `cade@theruinedproject.com`.
+Ruined creates Calendar invitations directly as its configured Workspace organizer.
 The preferred production configuration uses that organizer's OAuth refresh
 grant. No member or operator signs in to Google through the Ruined app, and the
 app does not expose an OAuth callback.
@@ -16,26 +16,31 @@ app does not expose an OAuth callback.
    `http://127.0.0.1:53682/oauth2callback`
 
 4. From the repository root, start Ruined's one-time local authorization tool
-   with the path to that downloaded file:
+   with the path to that downloaded file and the intended organizer:
 
    ```sh
-   npm run google:calendar:authorize -- /path/to/google-oauth-client.json
+   npm run google:calendar:authorize -- /path/to/google-oauth-client.json --organizer connect@theruinedproject.com
    ```
 
-5. Open the URL printed by the tool and sign in specifically as
-   `cade@theruinedproject.com`. The tool requests offline access to identity
+   The organizer can also be the second positional argument. Omitting it retains
+   the legacy default, `cade@theruinedproject.com`. Only addresses in the
+   `theruinedproject.com` Workspace domain are accepted.
+
+5. Open the URL printed by the tool and sign in specifically as the requested
+   organizer (`connect@theruinedproject.com` in this example). The tool requests offline access to identity
    verification and exactly this Calendar scope:
 
    `https://www.googleapis.com/auth/calendar.events.owned`
 
 6. The temporary listener accepts only the fixed loopback callback, shuts down
-   after the attempt, verifies the OAuth audience, verified Workspace email,
+   after the attempt, verifies the OAuth audience, exact requested verified Workspace email,
    hosted domain, and granted Calendar scope, then securely updates only the
    six Google Calendar keys in the Git-ignored `.env.local`. It never prints the
    client secret, authorization code, access token, ID token, or refresh token.
    Existing unrelated `.env.local` settings are preserved.
-7. Confirm that `cade@theruinedproject.com` is an active Workspace user with
-   Calendar and Google Meet available before enabling invitations.
+7. Confirm that the requested organizer is an active Workspace user with
+   Calendar and Google Meet available before enabling invitations. An email alias
+   or group alone is not an independently authorizable Calendar account.
 
 The helper is intentionally local and one-time; the Ruined app does not expose
 an OAuth callback route. Copy the three OAuth values to each production secret
@@ -59,7 +64,7 @@ Set these independently in each environment:
 
 ```dotenv
 GOOGLE_CALENDAR_ENABLED=true
-GOOGLE_CALENDAR_ORGANIZER_EMAIL=cade@theruinedproject.com
+GOOGLE_CALENDAR_ORGANIZER_EMAIL=connect@theruinedproject.com
 GOOGLE_CALENDAR_CALENDAR_ID=primary
 GOOGLE_CALENDAR_OAUTH_CLIENT_ID=<OAuth client ID>
 GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET=<OAuth client secret>
@@ -150,11 +155,13 @@ verify the deterministic provider identity and reconcile current contents before
 reporting success. A cancelled Experience still delivers its cancellation if it
 is archived before the worker runs.
 
-New simple events attempt delivery immediately after creation. The Vercel
-schedule remains a daily recovery fallback on the current Hobby plan. Timely
-recovery from failed or interrupted delivery requires a supported frequent scheduler; see
-[`worker-recovery-activation.md`](worker-recovery-activation.md). This code change
-does not activate that scheduler or send a test invitation.
+New simple events attempt delivery immediately after creation. The production
+Vercel recovery schedule runs every five minutes on a plan supporting that cadence.
+Each invocation still processes at most one invitation, so a batch of changed
+audiences can take multiple runs to reconcile. Use the per-event sync action when
+a batch needs immediate delivery. Verify the deployed cron and protected worker;
+see [`worker-recovery-activation.md`](worker-recovery-activation.md). A checked-in
+schedule alone does not prove that a worker ran or that Google sent an invitation.
 
 ## Verify older invitations after the delivery-mode migration
 
