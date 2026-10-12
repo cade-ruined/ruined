@@ -138,7 +138,7 @@ export function buildMembershipCommitment(input: Omit<MembershipCommitment,
   }
   const offer = MEMBERSHIP_OFFERS[input.offerId];
   const schedule = input.billingSchedule;
-  if (schedule && ((schedule.version !== "foundations-prepaid-v1" && schedule.version !== "foundations-prepaid-v2") || schedule.timeZone !== "America/Denver"
+  if (schedule && ((schedule.version !== "foundations-prepaid-v1" && schedule.version !== "foundations-prepaid-v2" && schedule.version !== "foundations-prepaid-v3") || schedule.timeZone !== "America/Denver"
     || !/^\d{4}-\d{2}$/.test(schedule.cohortMonth) || schedule.callStartsAt.length !== 4
     || timestamp(schedule.serviceStartsAt) !== timestamp(input.startsAt)
     || schedule.callStartsAt[0] !== schedule.serviceStartsAt

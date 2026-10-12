@@ -110,6 +110,7 @@ const migrations = [
   "../db/migrations/20261008230000_member_sms_automation.sql",
   "../db/migrations/20261012160000_foundations_schedule_v2.sql",
   "../db/migrations/20261012185853_member_profile_identity.sql",
+  "../db/migrations/20261012200000_foundations_schedule_v3.sql",
 ];
 
 function migrationBody(migration, migrationName) {

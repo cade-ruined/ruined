@@ -71,8 +71,8 @@ test("prepaid inspection binds actual initial cash to immutable service coverage
   await assert.rejects(f.inspect({ requireOnlyInitialInvoice: true }), /requires_review/);
 });
 
-test("December v1 and v2 payments retain their exact schedule identity and refundable coverage", async () => {
-  for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2"]) {
+test("December v1, v2 and v3 payments retain their exact schedule identity and refundable coverage", async () => {
+  for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2", "foundations-prepaid-v3"]) {
     const f = fixture({ month: "2026-12", version });
     assert.deepEqual(prepaid.prepaidScheduleFromSubscription(f.subscription), f.contract.billingSchedule);
     const proof = await f.inspect({ requireOnlyInitialInvoice: true });
@@ -88,15 +88,28 @@ test("December v1 and v2 payments retain their exact schedule identity and refun
   }
 });
 
+test("previously accepted v1 and v2 schedule fingerprints remain byte-for-byte stable", () => {
+  const acceptedHashes = {
+    "foundations-prepaid-v1": { monthly: "fe4600d8084b2263a533d16dacde0d3670e48fe588462783a89a92cd735210e5", annual: "7bb1e9701f59a4a16d99c8184ea381a0338d028c6434242658e25aef8fc06e82" },
+    "foundations-prepaid-v2": { monthly: "6d08083a58b500de6253da6ab1bf0a83b877df2dbf317e16bf317abf614edcf2", annual: "1a0341ef4455927ddf8427955a47480865103150ba82e200336b1d19b3c10647" },
+  };
+  for (const [version, hashes] of Object.entries(acceptedHashes)) for (const plan of ["monthly", "annual"]) {
+    const accepted = schedules.foundationsBillingScheduleForMonth("2026-12", plan, version);
+    assert.equal(prepaid.prepaidScheduleFingerprint(accepted), hashes[plan]);
+    const current = schedules.foundationsBillingScheduleForMonth("2026-12", plan);
+    assert.notEqual(prepaid.prepaidScheduleFingerprint(current), hashes[plan], "Even identical v1/v3 dates retain distinct consent identity");
+  }
+});
+
 test("monthly and annual provider metadata must reconstruct the recorded schedule version", () => {
-  for (const plan of ["monthly", "annual"]) for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2"]) {
+  for (const plan of ["monthly", "annual"]) for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2", "foundations-prepaid-v3"]) {
     const schedule = schedules.foundationsBillingScheduleForMonth("2026-12", plan, version);
     const subscription = { metadata: { billing_terms_version: "membership-billing-v2", ruined_billing_plan: plan,
       ...prepaid.prepaidBillingMetadata(schedule) }, trial_end: Date.parse(schedule.prepaidThrough) / 1000,
       billing_cycle_anchor: Date.parse(schedule.prepaidThrough) / 1000 };
     assert.deepEqual(prepaid.prepaidScheduleFromSubscription(subscription), schedule);
     assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_sha256: "wrong" } }), null);
-    assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_version: "foundations-prepaid-v3" } }), null);
+    assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_version: "foundations-prepaid-v4" } }), null);
   }
 });
 

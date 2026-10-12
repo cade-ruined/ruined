@@ -687,7 +687,7 @@ test("email preview is fictional, inert, and not available in production",async(
     assert.match(response.headers.get("Content-Security-Policy"),/default-src 'none'/);
     const paid=await preview.GET(new Request("http://localhost/api/preview/registration-email?funding=paid&pricing=founding&cohort=december&format=text")).text();
     assert.match(paid,/\$349 USD paid/);
-    assert.match(paid,/December 31, 2026/);
+    assert.match(paid,/December 30, 2026/);
     assert.doesNotMatch(paid,/November 5|Nothing has been charged/);
     mode="connected";assert.equal(preview.GET(new Request("http://localhost/api/preview/registration-email")).status,404);
     mode="preview";process.env.NODE_ENV="production";assert.equal(preview.GET(new Request("http://localhost/api/preview/registration-email")).status,404);

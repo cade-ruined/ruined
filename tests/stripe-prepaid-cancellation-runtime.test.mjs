@@ -162,17 +162,19 @@ test("post-commit reconciliation resumes only a recorded execution, never a quot
   assert.deepEqual(await f.service.reconcilePrepaidMembershipCancellation(input), { handled: false });
 });
 
-test("legacy v1 cancellations still resume and refund after v2 becomes the quote default", async () => {
-  const f = await fixture({ refundStatus: "pending", scheduleVersion: "foundations-prepaid-v1" });
-  const accepted = JSON.stringify(f.contract.billingSchedule);
-  const quote = await f.service.createMemberCancellationQuote(f.contract.memberId, "cancel_before_start");
-  await f.service.confirmMemberCancellation(f.contract.memberId, quote.id);
-  f.payment.refund.status = "succeeded";
-  const result = await f.service.reconcilePrepaidMembershipCancellation({ subscriptionId: f.contract.subscriptionId, livemode: false });
-  assert.equal(result.handled, true);
-  assert.equal(result.cancellation.refundStatus, "succeeded");
-  assert.equal(JSON.stringify(f.contract.billingSchedule), accepted);
-  assert.equal(f.calls.length, 2, "One subscription cancellation and one exact refund");
+test("legacy v1 and v2 cancellations still resume and refund after v3 becomes the quote default", async () => {
+  for (const scheduleVersion of ["foundations-prepaid-v1", "foundations-prepaid-v2"]) {
+    const f = await fixture({ refundStatus: "pending", scheduleVersion });
+    const accepted = JSON.stringify(f.contract.billingSchedule);
+    const quote = await f.service.createMemberCancellationQuote(f.contract.memberId, "cancel_before_start");
+    await f.service.confirmMemberCancellation(f.contract.memberId, quote.id);
+    f.payment.refund.status = "succeeded";
+    const result = await f.service.reconcilePrepaidMembershipCancellation({ subscriptionId: f.contract.subscriptionId, livemode: false });
+    assert.equal(result.handled, true);
+    assert.equal(result.cancellation.refundStatus, "succeeded");
+    assert.equal(JSON.stringify(f.contract.billingSchedule), accepted);
+    assert.equal(f.calls.length, 2, "One subscription cancellation and one exact refund");
+  }
 });
 
 test("missed-cutoff restitution survives an outage past the first call without expanding normal cancellation", async () => {

@@ -50,7 +50,7 @@ test("every anniversary matches the existing UTC billing contract and annual pre
       assert.equal(Date.parse(result.serviceStartsAt) - Date.parse(result.cutoffAt), 86400000);
       const format = new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", weekday: "long", hour: "numeric", hour12: false });
       for (const [index, call] of result.callStartsAt.entries()) {
-        const weekday = index === 3 && cohort === "2026-11" ? "Monday" : "Thursday";
+        const weekday = index === 3 && cohort === "2026-11" ? "Monday" : index === 3 && cohort === "2026-12" ? "Wednesday" : "Thursday";
         assert.match(format.format(new Date(call)), new RegExp(`${weekday}.*15`));
       }
       assert.deepEqual(parse(result, plan), result);
@@ -74,21 +74,24 @@ test("strict parser rejects changed, missing, additional, wrong-plan, or noncano
 });
 
 
-test("new December quotes follow the approved December 31 call without moving billing dates", () => {
+test("new December quotes avoid New Year's Eve without moving billing dates", () => {
   const result = forMonth("2026-12", "monthly");
-  assert.equal(result.version, "foundations-prepaid-v2");
-  assert.deepEqual(result.callStartsAt, ["2026-12-03T22:00:00.000Z", "2026-12-10T22:00:00.000Z", "2026-12-17T22:00:00.000Z", "2026-12-31T22:00:00.000Z"]);
+  assert.equal(result.version, "foundations-prepaid-v3");
+  assert.deepEqual(result.callStartsAt, ["2026-12-03T22:00:00.000Z", "2026-12-10T22:00:00.000Z", "2026-12-17T22:00:00.000Z", "2026-12-30T22:00:00.000Z"]);
   assert.equal(result.cutoffAt, "2026-12-02T22:00:00.000Z");
   assert.equal(result.serviceStartsAt, "2026-12-03T22:00:00.000Z");
   assert.equal(result.nextChargeAt, "2027-01-03T22:00:00.000Z");
-  assert.equal(parse({ ...result, callStartsAt: [...result.callStartsAt.slice(0, 3), "2026-12-24T22:00:00.000Z"] }, "monthly"), null);
+  for (const day of [24, 31]) {
+    assert.equal(parse({ ...result, callStartsAt: [...result.callStartsAt.slice(0, 3), `2026-12-${day}T22:00:00.000Z`] }, "monthly"), null);
+  }
 });
 
-test("accepted v1 snapshots stay exact and cannot be relabeled or silently upgraded", () => {
-  for (const plan of ["monthly", "annual"]) {
+test("accepted v1 and v2 snapshots stay exact while new v3 offers keep the same billing anchors", () => {
+  for (const plan of ["monthly", "annual"]) for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2"]) {
+    const finalDay = version === "foundations-prepaid-v2" ? 31 : 30;
     const accepted = {
-      version: "foundations-prepaid-v1", cohortMonth: "2026-12", timeZone: "America/Denver",
-      callStartsAt: ["2026-12-03T22:00:00.000Z", "2026-12-10T22:00:00.000Z", "2026-12-17T22:00:00.000Z", "2026-12-30T22:00:00.000Z"],
+      version, cohortMonth: "2026-12", timeZone: "America/Denver",
+      callStartsAt: ["2026-12-03T22:00:00.000Z", "2026-12-10T22:00:00.000Z", "2026-12-17T22:00:00.000Z", `2026-12-${finalDay}T22:00:00.000Z`],
       cutoffAt: "2026-12-02T22:00:00.000Z", serviceStartsAt: "2026-12-03T22:00:00.000Z",
       prepaidThrough: plan === "monthly" ? "2027-01-03T22:00:00.000Z" : "2027-12-03T22:00:00.000Z",
       nextChargeAt: plan === "monthly" ? "2027-01-03T22:00:00.000Z" : "2027-12-03T22:00:00.000Z",
@@ -96,13 +99,14 @@ test("accepted v1 snapshots stay exact and cannot be relabeled or silently upgra
     };
     const serialized = JSON.stringify(accepted);
     assert.deepEqual(parse(accepted, plan), accepted);
-    assert.deepEqual(forMonth("2026-12", plan, "foundations-prepaid-v1"), accepted);
+    assert.deepEqual(forMonth("2026-12", plan, version), accepted);
     assert.equal(JSON.stringify(accepted), serialized, "Parsing must not mutate the accepted snapshot");
     const current = create(new Date("2026-11-15T19:00:00Z"), plan);
-    assert.deepEqual(current, { ...accepted, version: "foundations-prepaid-v2", callStartsAt: [...accepted.callStartsAt.slice(0, 3), "2026-12-31T22:00:00.000Z"] });
-    assert.equal(parse({ ...accepted, version: "foundations-prepaid-v2" }, plan), null);
-    assert.equal(parse({ ...current, version: "foundations-prepaid-v1" }, plan), null);
-    assert.equal(parse({ ...accepted, version: "foundations-prepaid-v3" }, plan), null);
+    assert.deepEqual(current, { ...accepted, version: "foundations-prepaid-v3", callStartsAt: [...accepted.callStartsAt.slice(0, 3), "2026-12-30T22:00:00.000Z"] });
+    const wrongVersion = version === "foundations-prepaid-v2" ? "foundations-prepaid-v1" : "foundations-prepaid-v2";
+    assert.equal(parse({ ...accepted, version: wrongVersion }, plan), null);
+    assert.equal(parse({ ...current, version: "foundations-prepaid-v2" }, plan), null);
+    assert.equal(parse({ ...accepted, version: "foundations-prepaid-v4" }, plan), null);
   }
-  assert.throws(() => forMonth("2026-12", "monthly", "foundations-prepaid-v3"), /version/);
+  assert.throws(() => forMonth("2026-12", "monthly", "foundations-prepaid-v4"), /version/);
 });
