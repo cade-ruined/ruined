@@ -128,19 +128,15 @@ export default function MemberProfileEditor({
         <fieldset className="m-0 min-w-0 space-y-8 border-0 p-0" disabled={!writable || pending || photoPending}>
         <legend className="sr-only">Profile details and contact sharing</legend>
         <section className="grid items-start gap-6 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10">
-          <div>
-            <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Profile</h2>
-            <div className="mt-4 max-w-64">
-              <p className="[font-family:var(--font-cadehandy2)] text-2xl text-[var(--member-red)]">Profile photo</p>
-              <MemberPhotoUpload
-                avatarUrl={profile.directory.avatarUrl}
-                available={photoStorageReady}
-                enabled={writable && !pending}
-                onBusyChange={setPhotoPending}
-                onDraftChange={setPhotoDraft}
-                onChange={(avatarUrl) => setProfile((current) => ({ ...current, directory: { ...current.directory, avatarUrl } }))}
-              />
-            </div>
+          <div className="max-w-64">
+            <MemberPhotoUpload
+              avatarUrl={profile.directory.avatarUrl}
+              available={photoStorageReady}
+              enabled={writable && !pending}
+              onBusyChange={setPhotoPending}
+              onDraftChange={setPhotoDraft}
+              onChange={(avatarUrl) => setProfile((current) => ({ ...current, directory: { ...current.directory, avatarUrl } }))}
+            />
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
