@@ -111,6 +111,7 @@ const migrations = [
   "../db/migrations/20261012160000_foundations_schedule_v2.sql",
   "../db/migrations/20261012185853_member_profile_identity.sql",
   "../db/migrations/20261012200000_foundations_schedule_v3.sql",
+  "../db/migrations/20261012211658_circle_size_work.sql",
 ];
 
 function migrationBody(migration, migrationName) {

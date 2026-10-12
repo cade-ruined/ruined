@@ -10,7 +10,7 @@ async function fixture(t, { bind = true } = {}) {
   const f = await invitationFixture(t);
   await f.db.exec(`
     alter table person_profiles add column timezone text;
-    create table circles(id uuid primary key, name text, status text default 'active');
+    create table circles(id uuid primary key, name text, status text default 'active', capacity integer not null default 20);
     create table circle_member_assignments(member_id uuid references ruined_members, circle_id uuid references circles,
       assigned_at timestamptz default statement_timestamp(), ended_at timestamptz);
     create table circle_staff_assignments(auth_user_id uuid, circle_id uuid references circles, role_slug text,
@@ -173,10 +173,13 @@ test("inviter context never overrides partner co-placement or capacity exception
   await f.db.query("update circle_member_assignments set ended_at=now() where member_id=$1", [second.member]);
   result = await f.snapshot();
   assert.equal(result.context.requiredPartnerCircle, null);
-  assert.equal(result.recommendations.find(item => item.circleId === circleB).exceptionRequired, false, "10 plus two partners fits the normal maximum");
+  assert.equal(result.recommendations.find(item => item.circleId === circleB).exceptionRequired, false, "10 plus two partners fits the configured capacity");
   await f.db.query("insert into circle_staff_assignments(auth_user_id,circle_id,role_slug) values($1,$2,'circle_leader')", [first.auth,circleB]);
   result = await f.snapshot();
-  assert.equal(result.recommendations.find(item => item.circleId === circleB).exceptionRequired, true, "11 plus both incoming partners requires review");
+  assert.equal(result.recommendations.find(item => item.circleId === circleB).exceptionRequired, false, "11 plus both incoming partners fits capacity twenty");
+  await f.db.query("update circles set capacity=12 where id=$1", [circleB]);
+  result = await f.snapshot();
+  assert.equal(result.recommendations.find(item => item.circleId === circleB).exceptionRequired, true, "11 plus both incoming partners requires review at custom capacity twelve");
 });
 
 test("recommendation API retains the array and exposes context only after a live administrator check", async t => {

@@ -68,7 +68,14 @@ function workHref(item: OpsWorkItem): string {
   if (item.kind === "artifact") {
     return `/ops/artifacts?focus=${encodeURIComponent(item.workId)}#artifact-${item.workId}`;
   }
+  if (item.circleId && isCircleSizeTask(item)) {
+    return `/ops/circles?circleId=${encodeURIComponent(item.circleId)}#circle-${item.circleId}`;
+  }
   return item.memberId ? `/ops/members/${item.memberId}#record` : "/ops/work";
+}
+
+function isCircleSizeTask(item: OpsWorkItem): boolean {
+  return item.kind === "task" && (item.taskType === "circle.size_low" || item.taskType === "circle.size_high");
 }
 
 export default function OpsOverview({ data }: { data: OpsOverviewData }) {
@@ -171,10 +178,10 @@ export default function OpsOverview({ data }: { data: OpsOverviewData }) {
                 <Link className="group grid gap-2 rounded-none py-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[color:var(--operator-focus)]" href={workHref(item)} key={`${item.kind}-${item.workId}`}>
                   <span className="font-medium leading-tight group-hover:text-[var(--operator-danger)]">{item.label}</span>
                   <span className="flex flex-wrap items-center justify-between gap-3 text-xs text-[color:var(--operator-muted)]">
-                    <span className="min-w-0 break-words">{item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || (item.memberId ? "View member" : item.kind === "workflow_failure" ? "System" : "Operations")}</span>
+                    <span className="min-w-0 break-words">{item.kind === "task" && isCircleSizeTask(item) && item.circleId ? item.circleName?.trim() || "View Circle" : item.memberName?.trim() || (item.kind === "task" ? item.memberEmail?.trim() : null) || (item.memberId ? "View member" : item.kind === "workflow_failure" ? "System" : "Operations")}</span>
                     <StateLabel state={item.state} />
                   </span>
-                  {item.kind === "task" ? <span className="break-words text-xs font-medium text-[color:var(--operator-muted)]">{item.claimedByName ? `Claimed by ${item.claimedByName}` : "Unclaimed"}</span> : null}
+                  {item.kind === "task" ? <span className="break-words text-xs font-medium text-[color:var(--operator-muted)]">{item.claimedByName ? `${isCircleSizeTask(item) ? "Assigned to" : "Claimed by"} ${item.claimedByName}` : "Unclaimed"}</span> : null}
                 </Link>
               ))}
               {data.priorityWork.length === 0 ? <p className="py-2 text-sm text-[color:var(--operator-muted)]">{openWork > 0 ? "Open the work queue to review pending items." : "No open work."}</p> : null}

@@ -50,6 +50,7 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
   const driver = postgres({ host: "127.0.0.1", port: 1, max: 1 });
   t.after(async () => { await db.close(); await driver.end(); });
   const placementPolicy = await source("db/migrations/20260930101000_circle_placement.sql");
+  const capacityPolicy = await source("db/migrations/20261012211658_circle_size_work.sql");
   const administratorLeadership = await source("db/migrations/20261001130000_administrator_leadership_access.sql");
   const gate = await source("db/migrations/20260825_membership_foundations_circle_gate.sql");
   const blocks = await source("db/migrations/20260826_membership_blocks_hardening.sql");
@@ -93,7 +94,7 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
     create table experience_calendar_links (experience_id uuid references experiences(id), provider text, status text);
     create table test_calendar_pending (experience_id uuid primary key, actor_auth_user_id uuid, reason text, marks integer default 1);
     ${shippedFunction(placementPolicy, "private.ruined_circle_participant_count")}
-    ${shippedFunction(placementPolicy, "public.ruined_enforce_circle_capacity")}
+    ${shippedFunction(capacityPolicy, "public.ruined_enforce_circle_capacity")}
     ${shippedFunction(funding, "private.ruined_member_has_operator_funding")}
     ${shippedFunction(funding, "private.ruined_lock_member_operator_funding")}
     ${shippedFunction(gate, "private.ruined_guard_circle_assignment_foundation_proof")}
@@ -129,7 +130,7 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
   await db.query("insert into platform_role_grants (auth_user_id,role_slug,revoked_at) values ($1,'ops_admin',null)", [ids.admin]);
   await db.query("insert into ruined_members (id,person_id,membership_state) values ($1,$1,'active'),($2,$2,'active')", [ids.member, ids.other]);
   await db.exec("insert into member_lifecycle (member_id,account_state,billing_state,program_state) select id,'active','active','onboarding' from ruined_members");
-  await db.query("insert into circles (id,status,capacity) values ($1,'forming',10),($2,'forming',10)", [ids.circleA, ids.circleB]);
+  await db.query("insert into circles (id,status,capacity) values ($1,'forming',12),($2,'forming',12)", [ids.circleA, ids.circleB]);
   const placement = (await db.query("insert into circle_member_assignments (member_id,circle_id,assigned_by_auth_user_id) values ($1,$2,$3) returning id::text", [ids.member, ids.circleA, ids.admin])).rows[0].id;
   if (sourceMembers === 2) await db.query("insert into circle_member_assignments (member_id,circle_id,assigned_by_auth_user_id) values ($1,$2,$3)", [ids.other, ids.circleA, ids.admin]);
   for (const [circle, status] of [[ids.circleA, sourceStatus], [ids.circleB, destinationStatus]]) {
@@ -607,4 +608,40 @@ test("deferred couple violations and serialization conflicts at commit map to re
     await assert.rejects(f.transfer(), error => error.code === "conflict" && /Refresh/.test(error.message));
     assert.deepEqual(await f.snapshot(), before);
   });
+});
+
+
+test("capacity twenty accepts the fourteenth person through both assignment and transfer without exception", async t => {
+  for (const action of ["assign", "transfer"]) {
+    const f = await fixture(t);
+    await f.db.query("update circles set capacity=20 where id=$1", [ids.circleB]);
+    await fillDestination(f, 13);
+    if (action === "assign") await f.repository.assignMemberToCircle({ actorAuthUserId: ids.admin, memberId: ids.other, circleId: ids.circleB });
+    else await f.transfer();
+    assert.equal((await f.db.query("select private.ruined_circle_participant_count($1) as count", [ids.circleB])).rows[0].count, 14);
+    assert.equal((await f.db.query("select count(*)::int as count from circle_placement_reviews")).rows[0].count, 0);
+    assert.equal((await f.db.query("select count(*)::int as count from operator_audit_events where action='circle.placement_approved'")).rows[0].count, 1);
+  }
+});
+
+test("a couple moves together from twelve to fourteen under capacity twenty without exception", async t => {
+  const f = await fixture(t, { sourceMembers: 2 });
+  await f.db.query("update circles set capacity=20 where id=$1", [ids.circleB]);
+  await couple(f); await fillDestination(f, 12);
+  await f.transfer();
+  assert.equal((await f.db.query("select private.ruined_circle_participant_count($1) as count", [ids.circleB])).rows[0].count, 14);
+  assert.equal((await f.db.query("select count(*)::int as count from circle_placement_reviews")).rows[0].count, 0);
+  assert.equal((await f.db.query("select count(*)::int as count from operator_audit_events where action='circle.placement_approved'")).rows[0].count, 2);
+});
+
+test("a Supporter who becomes a member at capacity keeps a single participant seat", async t => {
+  const f = await fixture(t);
+  await f.db.query("update circles set capacity=20 where id=$1", [ids.circleB]);
+  await fillDestination(f, 19);
+  const supporter = crypto.randomUUID();
+  await f.db.query("insert into platform_users(auth_user_id,status,member_id,person_id) values($1,'active',$2,$2)", [supporter, ids.member]);
+  await f.db.query("insert into circle_staff_assignments(circle_id,auth_user_id,role_slug) values($1,$2,'circle_leader')", [ids.circleB, supporter]);
+  await f.transfer();
+  assert.equal((await f.db.query("select private.ruined_circle_participant_count($1) as count", [ids.circleB])).rows[0].count, 20);
+  assert.equal((await f.db.query("select count(*)::int as count from circle_placement_reviews")).rows[0].count, 0);
 });

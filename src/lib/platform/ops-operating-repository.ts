@@ -1240,6 +1240,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       task_id: string;
       task_type: string;
       description: string | null;
+      circle_id: string | null;
+      circle_name: string | null;
       title: string;
     }>>`
       select
@@ -1254,6 +1256,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         ) end as claimed_by_name,
         task.task_type,
         task.description,
+        task.circle_id,
+        circle.name as circle_name,
         task.title,
         task.priority,
         task.status as state,
@@ -1262,6 +1266,7 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         coalesce(nullif(btrim(profile.preferred_name), ''), nullif(btrim(profile.display_name), '')) as member_name,
         nullif(btrim(member.email_normalized), '') as member_email
       from operator_tasks task
+      left join circles circle on circle.id = task.circle_id
       left join ruined_members member on member.id = task.member_id
       left join person_profiles profile on profile.person_id = member.person_id
       left join platform_users assignee on assignee.auth_user_id = task.assigned_to_auth_user_id
@@ -1370,6 +1375,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         version: Number(row.version),
         taskType: row.task_type,
         description: row.description,
+        circleId: row.circle_id,
+        circleName: row.circle_name,
         label: row.title,
         memberId: row.member_id,
         memberName: row.member_name,
@@ -1892,6 +1899,10 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           assigned_to_auth_user_id: string | null;
           claimed_by_name: string | null;
           task_version: number | string | null;
+          task_type: string | null;
+          description: string | null;
+          circle_id: string | null;
+          circle_name: string | null;
           due_at: Date | string | null;
           error_code: string | null;
           kind: "artifact" | "task" | "workflow_failure";
@@ -1925,8 +1936,13 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
                 nullif(btrim(assignee_profile.preferred_name), ''),
                 'Operator'
               ) end as claimed_by_name,
-              task.version as task_version
+              task.version as task_version,
+              task.task_type,
+              task.description,
+              task.circle_id,
+              circle.name as circle_name
             from operator_tasks task
+            left join circles circle on circle.id = task.circle_id
             left join ruined_members member on member.id = task.member_id
             left join person_profiles profile on profile.person_id = member.person_id
             left join platform_users assignee on assignee.auth_user_id = task.assigned_to_auth_user_id
@@ -1949,7 +1965,11 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               null::text,
               null::uuid,
               null::text,
-              null::bigint
+              null::bigint,
+              null::text,
+              null::text,
+              null::uuid,
+              null::text
             from artifact_jobs job
             join ruined_members member on member.id = job.member_id
             left join person_profiles profile on profile.person_id = member.person_id
@@ -1973,7 +1993,11 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
               latest_attempt.error_code,
               null::uuid,
               null::text,
-              null::bigint
+              null::bigint,
+              null::text,
+              null::text,
+              null::uuid,
+              null::text
             from workflow_actions action
             join domain_events domain_event on domain_event.id = action.domain_event_id
             left join ruined_members member on member.id = domain_event.member_id
@@ -2115,6 +2139,10 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           claimedByName: row.claimed_by_name,
           claimedByCurrentOperator: row.assigned_to_auth_user_id === access.authUserId,
           version: Number(row.task_version),
+          taskType: row.task_type ?? undefined,
+          description: row.description,
+          circleId: row.circle_id,
+          circleName: row.circle_name,
           label: row.label,
           memberId: row.member_id,
           memberName: row.member_name,

@@ -2084,8 +2084,8 @@ export async function endCircleBlockAssignment({
 }
 
 // Called only after member/assignment/Circle locks, with a fresh deduplicated count.
-async function approveCirclePlacement(tx: postgres.TransactionSql, input: { actor: string; memberId: string; circleId: string; projectedCount: number; exceptionReason?: string; reviewId?: string; previousAssignmentId?: string }) {
-  const exceptional = input.projectedCount > 12;
+async function approveCirclePlacement(tx: postgres.TransactionSql, input: { actor: string; memberId: string; circleId: string; capacity: number; projectedCount: number; exceptionReason?: string; reviewId?: string; previousAssignmentId?: string }) {
+  const exceptional = input.projectedCount > input.capacity;
   const capability = exceptional || input.reviewId ? "circle_exception" : "circle_placement";
   const [authority] = await tx<Array<{ allowed: boolean }>>`select private.ruined_has_leadership_responsibility(${input.actor}::uuid, ${capability}) as allowed`;
   if (!authority?.allowed) throw new OpsRepositoryError("forbidden", "Active Administrator access is required to approve Circle placement.");
@@ -2315,7 +2315,7 @@ async function assignMemberToCircleInTransaction(tx: postgres.TransactionSql, {
       join ruined_members member on member.person_id = viewer.person_id
       where staff.circle_id = ${circleId}::uuid and staff.role_slug = 'circle_leader' and staff.ended_at is null and member.id = ${memberId}::uuid
     ) then 0 else 1 end as projected_count`;
-  const approvedReviewId = await approveCirclePlacement(tx, { actor: actorAuthUserId, memberId, circleId, projectedCount: Number(count.projected_count), exceptionReason, reviewId });
+  const approvedReviewId = await approveCirclePlacement(tx, { actor: actorAuthUserId, memberId, circleId, capacity: Number(circle.capacity), projectedCount: Number(count.projected_count), exceptionReason, reviewId });
 
   const assignmentRows = await tx<
     Array<{ assigned_at: Date; circle_id: string; id: string; member_id: string }>
@@ -2442,7 +2442,7 @@ async function transferMemberToCircleInTransaction(tx: postgres.TransactionSql, 
       join ruined_members member on member.person_id = viewer.person_id
       where staff.circle_id = ${destinationId}::uuid and staff.role_slug = 'circle_leader' and staff.ended_at is null and member.id = ${normalizedMemberId}::uuid
     ) then 0 else 1 end as projected_count`;
-  const approvedReviewId = await approveCirclePlacement(tx, { actor: actorAuthUserId, memberId: normalizedMemberId, circleId: destinationId,
+  const approvedReviewId = await approveCirclePlacement(tx, { actor: actorAuthUserId, memberId: normalizedMemberId, circleId: destinationId, capacity: Number(destination.capacity),
     projectedCount: Number(count.projected_count), previousAssignmentId: assignmentId, exceptionReason, reviewId });
   const sourceCount = Number(countRows.find((row) => row.circle_id === sourceId)?.active_members ?? 0);
   const endedRows = await tx<Array<{ id: string }>>`
