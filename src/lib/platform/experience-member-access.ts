@@ -16,7 +16,7 @@ export type ExperienceMemberAudience = {
 
 /** An explicit operator invitation grants only its call, never general membership or Circle access. */
 async function explicitInvitationMember(
-  tx: postgres.TransactionSql,
+  tx: postgres.Sql | postgres.TransactionSql,
   memberId: string,
   lockEvidence: boolean,
 ): Promise<{ person_id: string } | null> {
@@ -120,22 +120,23 @@ export async function memberEligibleForOperatorInvitation(
 /** Read-only allowlist for Calendar/Meet while the rest of a member's profile remains held. */
 export async function getEligibleExplicitExperienceInvitationIds(authUserId: string): Promise<string[]> {
   const { getApplicationDatabase } = await import("@/lib/database/server");
-  return getApplicationDatabase().begin(async tx => {
-    const accounts = await tx<Array<{ member_id: string }>>`select member_id from platform_users
-      where auth_user_id = ${authUserId}::uuid and status = 'active' and member_id is not null`;
-    const memberId = accounts[0]?.member_id;
-    if (!memberId) return [];
-    const invitations = await tx<Array<{ id: string }>>`select experience.id
-      from experiences experience join experience_registrations registration on registration.experience_id = experience.id
-      join ruined_members member on member.id = registration.member_id and member.person_id = registration.person_id
-      where experience.visibility = 'invite_only' and experience.registration_mode = 'internal'
-        and experience.status in ('published', 'completed')
-        and registration.member_id = ${memberId}::uuid
-        and registration.status = 'registered' and registration.source = 'ops'
-      order by experience.starts_at, experience.id`;
-    if (!invitations.length || !await explicitInvitationMember(tx, memberId, false)) return [];
-    return invitations.map(invitation => invitation.id);
-  });
+  // This allowlist is read-only and does not lock evidence. Keep it on the
+  // caller's scoped read pool; READ COMMITTED adds no cross-query snapshot.
+  const tx = getApplicationDatabase();
+  const accounts = await tx<Array<{ member_id: string }>>`select member_id from platform_users
+    where auth_user_id = ${authUserId}::uuid and status = 'active' and member_id is not null`;
+  const memberId = accounts[0]?.member_id;
+  if (!memberId) return [];
+  const invitations = await tx<Array<{ id: string }>>`select experience.id
+    from experiences experience join experience_registrations registration on registration.experience_id = experience.id
+    join ruined_members member on member.id = registration.member_id and member.person_id = registration.person_id
+    where experience.visibility = 'invite_only' and experience.registration_mode = 'internal'
+      and experience.status in ('published', 'completed')
+      and registration.member_id = ${memberId}::uuid
+      and registration.status = 'registered' and registration.source = 'ops'
+    order by experience.starts_at, experience.id`;
+  if (!invitations.length || !await explicitInvitationMember(tx, memberId, false)) return [];
+  return invitations.map(invitation => invitation.id);
 }
 
 export async function hasEligibleExplicitExperienceInvitations(authUserId: string): Promise<boolean> {
