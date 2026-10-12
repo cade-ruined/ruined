@@ -69,7 +69,11 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
   const policy = await load("src/lib/membership/access-policy.ts");
   const eligibility = await load("src/lib/platform/experience-member-access.ts", {
     "@/lib/membership/access-policy": policy,
-    "@/lib/database/server": { getApplicationDatabase: () => bridge(db) },
+    "@/lib/database/server": { getApplicationDatabase: () => {
+      const sql = bridge(db);
+      sql.begin = () => { throw new Error("Read-only invitation allowlists must not reserve transactions"); };
+      return sql;
+    } },
   });
   const calendarModel = await load("src/lib/google/calendar-model.ts");
   const communications = await load("src/lib/google/communications.ts");
@@ -335,6 +339,19 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     await db.exec("update member_lifecycle set administrative_onboarding_state='in_progress',standing_state='pre_active',billing_state='pending',foundations_state='not_started',program_state='prospect'");
     if (complimentary) await db.query("insert into member_complimentary_grants(member_id) values($1)", [ids.member]);
   }
+
+  await t.test("explicit invitation allowlists run without transaction reservation or evidence locks", async () => {
+    await invitedFixture();
+    assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), []);
+    await inviteMember();
+    const before = await snapshot();
+    queries.length = 0;
+    assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), [ids.event]);
+    assert.equal(await eligibility.hasEligibleExplicitExperienceInvitations(ids.auth), true);
+    assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.admin), []);
+    assert.ok(queries.every(query => !/for (share|update)|ruined_lock_/i.test(query)), "display-only eligibility never locks evidence");
+    assert.deepEqual(await snapshot(), before, "allowlist reads never mutate membership or Calendar state");
+  });
 
   await t.test("administrator explicitly rosters a verified funded onboarding member without releasing other audiences", async () => {
     await invitedFixture();
