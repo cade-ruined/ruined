@@ -7,6 +7,7 @@ import ts from "typescript";
 import { Parameter, arraySerializer, types } from "../node_modules/postgres/src/types.js";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { clearPaidReservationFixture, installPaidReservationFunction, seedPaidReservationFixture } from "./helpers/paid-reservation-fixture.mjs";
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 async function load(path, dependencies = {}) {
@@ -66,7 +67,10 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     return sql;
   }
   const policy = await load("src/lib/membership/access-policy.ts");
-  const eligibility = await load("src/lib/platform/experience-member-access.ts", { "@/lib/membership/access-policy": policy });
+  const eligibility = await load("src/lib/platform/experience-member-access.ts", {
+    "@/lib/membership/access-policy": policy,
+    "@/lib/database/server": { getApplicationDatabase: () => bridge(db) },
+  });
   const calendarModel = await load("src/lib/google/calendar-model.ts");
   const communications = await load("src/lib/google/communications.ts");
   const googleCommunications = { ...communications, googleCommunicationLivemode: () => false };
@@ -101,6 +105,9 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError },
     "@/lib/platform/ops-calendar-repository": calendar,
   });
+  const invalidation = await load("src/lib/platform/calendar-audience-invalidation.ts", {
+    "@/lib/platform/ops-calendar-repository": calendar,
+  });
   const community = await source("db/migrations/20260826_membership_operating_spine_03_community_experiences.sql");
   const foundation = await source("db/migrations/20260819_platform_foundation.sql");
   const appendOnly = foundation.match(/create or replace function ruined_reject_append_only_mutation\(\)[\s\S]*?\$\$;/)?.[0];
@@ -130,10 +137,13 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     ${appendOnly}
   `);
   await installOperatorFundingFunctions(db);
+  await installPaidReservationFunction(db);
   for (const migration of ["20260828_operator_experience_management", "20260829_operator_google_calendar_sync", "20260829_operator_google_calendar_sync_hardening", "20260829_operator_google_calendar_meet_url_constraint", "20260904225258_calendar_durable_reconciliation"]) {
     await db.exec(await source(`db/migrations/${migration}.sql`));
   }
   async function reset() {
+    await clearPaidReservationFixture(db);
+    await db.exec("delete from member_complimentary_grants");
     await db.exec("truncate people,ruined_members,platform_users,member_lifecycle,person_profiles,person_email_addresses,circles,membership_blocks,circle_member_assignments,block_circle_assignments,circle_staff_assignments,experiences,operator_audit_events restart identity cascade");
     await db.query("insert into people values ($1,'active')", [ids.person]);
     await db.query("insert into ruined_members(id,person_id,email,email_normalized) values ($1,$2,'member@example.test','member@example.test')", [ids.member, ids.person]);
@@ -288,5 +298,125 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     await db.exec("update platform_role_grants set revoked_at=now() where role_slug='member'");
     await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `snapshot-changed-${crypto.randomUUID()}` });
     assert.equal(providerCalls.length, 1); assert.deepEqual(providerCalls[0].attendees, []);
+  });
+
+  await t.test("an empty membership calendar fills the same Google event after Foundations and removes lost eligibility", async () => {
+    await reset();
+    await db.exec("update experiences set visibility='all_members',circle_id=null,registration_mode='none'");
+    await db.exec("update member_lifecycle set program_state='onboarding',foundations_state='in_progress'");
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `empty-member-calendar-${crypto.randomUUID()}` });
+    assert.deepEqual(providerCalls[0].attendees, []);
+    const saved = (await db.query("select * from experience_calendar_links where experience_id=$1", [ids.event])).rows[0];
+    assert.ok(saved.provider_event_id);
+    await db.exec("update member_lifecycle set program_state='active',foundations_state='completed'");
+    await bridge(db).begin(tx => invalidation.markCalendarAudiencesPendingForMember(tx, { memberId: ids.member }));
+    const pending = (await db.query("select * from experience_calendar_links where experience_id=$1", [ids.event])).rows[0];
+    assert.equal(pending.status, "pending_update");
+    assert.equal(pending.updated_by_auth_user_id, ids.admin, "system changes preserve the authorizing operator");
+    assert.equal(pending.provider_event_id, saved.provider_event_id);
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "sync", requestKey: `foundations-completed-${crypto.randomUUID()}` });
+    assert.equal(providerCalls[1].eventId, saved.provider_event_id);
+    assert.deepEqual(providerCalls[1].attendees.map(attendee => attendee.email), ["member@example.test"]);
+    await db.exec("update member_lifecycle set billing_state='attention_required'");
+    await bridge(db).begin(tx => invalidation.markCalendarAudiencesPendingForMember(tx, { memberId: ids.member }));
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "sync", requestKey: `billing-lost-${crypto.randomUUID()}` });
+    assert.equal(providerCalls[2].eventId, saved.provider_event_id);
+    assert.deepEqual(providerCalls[2].attendees, []);
+    assert.equal((await db.query("select count(*)::integer as count from experience_calendar_links")).rows[0].count, 1);
+  });
+
+  const invitedAudience = { id: ids.event, visibility: "invite_only", registration_mode: "internal", circle_id: null, block_id: null };
+  const inviteMember = () => repository.setOpsExperienceRegistration({
+    actorAuthUserId: ids.admin, experienceId: ids.event, action: "register", memberId: ids.member,
+  });
+  async function invitedFixture({ complimentary = true } = {}) {
+    await reset();
+    await db.exec("update experiences set visibility='invite_only',circle_id=null");
+    await db.exec("update member_lifecycle set administrative_onboarding_state='in_progress',standing_state='pre_active',billing_state='pending',foundations_state='not_started',program_state='prospect'");
+    if (complimentary) await db.query("insert into member_complimentary_grants(member_id) values($1)", [ids.member]);
+  }
+
+  await t.test("administrator explicitly rosters a verified funded onboarding member without releasing other audiences", async () => {
+    await invitedFixture();
+    assert.equal((await record()).memberOptions[0].id, ids.member);
+    assert.equal((await record()).calendar.attendeeCount, 0);
+    assert.equal(await snapshotEligible(invitedAudience), false, "funding alone is not an invitation");
+    assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), []);
+    queries.length = 0;
+    await inviteMember();
+    assert.ok(queries.some(query => query.includes("for share of account, admin_grant")));
+    assert.equal(await snapshotEligible(invitedAudience), true);
+    assert.equal(await authorized(invitedAudience), true);
+    assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), [ids.event]);
+    assert.equal(await eligibility.hasEligibleExplicitExperienceInvitations(ids.admin), false);
+    assert.equal(await snapshotEligible(), false, "Circle access still requires completed Foundations");
+    assert.equal(await snapshotEligible({ visibility: "all_members", circle_id: null, block_id: null }), false);
+    const before = await snapshot(); queries.length = 0;
+    assert.equal((await record()).calendar.attendeeCount, 1);
+    assert.ok(queries.every(query => !/for (share|update)|ruined_lock_/i.test(query)), "operator page is read-only");
+    assert.deepEqual(await snapshot(), before);
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `invited-${crypto.randomUUID()}` });
+    assert.equal(providerCalls.length, 1);
+    assert.deepEqual(providerCalls[0].attendees.map(attendee => attendee.email), ["member@example.test"]);
+    assert.ok(queries.some(query => query.includes("for share of registration")), "provider audience rechecks the exact roster");
+    const lifecycle = (await db.query("select * from member_lifecycle")).rows[0];
+    assert.equal(lifecycle.program_state, "prospect"); assert.equal(lifecycle.administrative_onboarding_state, "in_progress");
+  });
+
+  await t.test("explicit onboarding invitations reject stale funding, identity, email, roster and operator authorization", async () => {
+    for (const change of [
+      "update member_complimentary_grants set revoked_at=now()",
+      "update member_complimentary_grants set ends_at=now()-interval '1 second'",
+      "update ruined_members set deleted_at=now()",
+      "update member_lifecycle set account_state='suspended'",
+      "update member_lifecycle set standing_state='paused'",
+      "update member_lifecycle set standing_state='cancellation_requested',cancellation_effective_at=now()-interval '1 second'",
+      "update platform_users set status='suspended' where member_id is not null",
+      "update platform_role_grants set revoked_at=now() where role_slug='member'",
+      "update people set status='erased'",
+      "update person_email_addresses set verification_state='unverified'",
+      "update person_email_addresses set retired_at=now()",
+      "update person_email_addresses set is_primary=false",
+      "update experience_registrations set source='member'",
+      "update experience_registrations set status='cancelled',cancelled_at=now(),cancellation_reason='Fixture cancellation'",
+    ]) {
+      await invitedFixture(); await inviteMember(); await db.exec(change);
+      assert.equal(await snapshotEligible(invitedAudience), false, change);
+      assert.equal(await authorized(invitedAudience), false, change);
+      assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), [], change);
+      assert.equal((await record()).calendar.attendeeCount, 0, change);
+    }
+    await invitedFixture();
+    await db.exec("update platform_role_grants set revoked_at=now() where role_slug='ops_admin'");
+    await assert.rejects(inviteMember(), error => error.code === "forbidden");
+    assert.equal((await db.query("select count(*)::integer as count from experience_registrations")).rows[0].count, 0);
+  });
+
+  await t.test("onboarding payment eligibility requires real matched paid evidence and rechecks refunds before Google sync", async () => {
+    await invitedFixture({ complimentary: false });
+    assert.deepEqual((await record()).memberOptions, []);
+    await assert.rejects(inviteMember(), error => error.code === "forbidden");
+    await seedPaidReservationFixture(db, { member: ids.member, person: ids.person, reservation: crypto.randomUUID(), contract: crypto.randomUUID() });
+    assert.equal((await record()).memberOptions[0].id, ids.member);
+    await inviteMember();
+    assert.equal(await snapshotEligible(invitedAudience), true);
+    assert.equal(await authorized(invitedAudience), true);
+    assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), [ids.event]);
+    for (const [change, restore] of [
+      ["update stripe_membership_prepaid_proofs set amount_refunded=1,refund_state='partial'", "update stripe_membership_prepaid_proofs set amount_refunded=0,refund_state='none'"],
+      ["update stripe_membership_prepaid_proofs set provider_canceled_at=now()", "update stripe_membership_prepaid_proofs set provider_canceled_at=null"],
+      ["update stripe_checkout_sessions set payment_status='unpaid'", "update stripe_checkout_sessions set payment_status='paid'"],
+      ["update stripe_checkout_attempts set payment_setup_account_id='acct_wrong'", "update stripe_checkout_attempts set payment_setup_account_id='acct_fixture'"],
+      ["update stripe_invoices set amount_paid=0", "update stripe_invoices set amount_paid=34900"],
+    ]) {
+      await db.exec(change);
+      assert.equal(await snapshotEligible(invitedAudience), false, change);
+      assert.equal(await authorized(invitedAudience), false, change);
+      assert.deepEqual(await eligibility.getEligibleExplicitExperienceInvitationIds(ids.auth), [], change);
+      await db.exec(restore);
+    }
+    await db.exec("update stripe_membership_prepaid_proofs set amount_refunded=34900,refund_state='full'");
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `refunded-${crypto.randomUUID()}` });
+    assert.deepEqual(providerCalls[0].attendees, []);
   });
 });

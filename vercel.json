@@ -27,7 +27,7 @@
     },
     {
       "path": "/api/internal/integrations/google-calendar/process",
-      "schedule": "45 12 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/internal/stripe/renewals/process",

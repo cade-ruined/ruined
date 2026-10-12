@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type Stripe from "stripe";
-import { foundationsBillingScheduleForMonth, parseFoundationsBillingSchedule, type FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
+import { foundationsBillingScheduleForMonth, isFoundationsBillingScheduleVersion, parseFoundationsBillingSchedule, type FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
 import { MEMBERSHIP_OFFERS, isMembershipBillingPlan, type MembershipOfferId } from "@/lib/membership/pricing";
 
 const id = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id ?? null;
@@ -19,10 +19,10 @@ export function prepaidBillingMetadata(schedule: FoundationsBillingSchedule): Re
 
 export function prepaidScheduleFromSubscription(subscription: Stripe.Subscription): FoundationsBillingSchedule | null {
   const metadata = subscription.metadata, plan = metadata.ruined_billing_plan;
-  if (metadata.ruined_billing_schedule_version !== "foundations-prepaid-v1" || !isMembershipBillingPlan(plan)
+  if (!isFoundationsBillingScheduleVersion(metadata.ruined_billing_schedule_version) || !isMembershipBillingPlan(plan)
     || metadata.billing_terms_version !== "membership-billing-v2" || metadata.ruined_first_charge_at) return null;
   try {
-    const schedule = foundationsBillingScheduleForMonth(metadata.ruined_cohort_month, plan);
+    const schedule = foundationsBillingScheduleForMonth(metadata.ruined_cohort_month, plan, metadata.ruined_billing_schedule_version);
     if (!parseFoundationsBillingSchedule(schedule, plan) || Object.entries(prepaidBillingMetadata(schedule)).some(([key, value]) => metadata[key] !== value)
       || subscription.trial_end !== Date.parse(schedule.prepaidThrough) / 1000
       || subscription.billing_cycle_anchor !== Date.parse(schedule.prepaidThrough) / 1000) return null;

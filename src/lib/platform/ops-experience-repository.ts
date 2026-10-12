@@ -10,7 +10,7 @@ import {
   googleCommunicationUrlFromMetadata,
   safeGoogleCommunicationUrl,
 } from "@/lib/google/communications";
-import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
+import { memberEligibleForExperience, memberEligibleForOperatorInvitation } from "@/lib/platform/experience-member-access";
 import {
   OpsOperatingRepositoryError,
 } from "@/lib/platform/ops-operating-repository";
@@ -67,6 +67,7 @@ type ExperienceAccessRow = {
   ends_at: Date | string | null;
   id: string;
   progression_level_slug: string | null;
+  registration_mode: string;
   starts_at: Date | string;
   status: OpsExperienceLifecycleState;
   title: string;
@@ -323,7 +324,7 @@ async function requireExperienceAccess(
   intent: "define" | "read" | "roster",
 ): Promise<ExperienceAccessRow> {
   const rows = await tx<ExperienceAccessRow[]>`
-    select id, title, circle_id, block_id, visibility, progression_level_slug, starts_at, ends_at, status
+    select id, title, circle_id, block_id, visibility, progression_level_slug, registration_mode, starts_at, ends_at, status
     from experiences
     where id = ${experienceId}::uuid
     for update
@@ -355,8 +356,12 @@ async function requireEligibleExperienceMember(
   tx: postgres.TransactionSql,
   experience: ExperienceAccessRow,
   memberId: string | null,
+  invitingOperatorAuthUserId?: string,
 ): Promise<void> {
-  if (!(await memberEligibleForExperience(tx, experience, memberId))) {
+  const eligible = invitingOperatorAuthUserId && experience.visibility === "invite_only" && experience.registration_mode === "internal"
+    ? await memberEligibleForOperatorInvitation(tx, experience, memberId, invitingOperatorAuthUserId)
+    : await memberEligibleForExperience(tx, experience, memberId);
+  if (!eligible) {
     throw new OpsOperatingRepositoryError(
       "forbidden",
       "This member does not currently have access to the Experience audience.",
@@ -905,7 +910,7 @@ export async function getOpsExperienceRecord(
       order by activity.occurred_at desc, activity.sequence desc
       limit 100
     `;
-    const memberOptions = await tx<Array<{ id: string; name: string }>>`
+    let memberOptions: Array<{ id: string; name: string }> = await tx<Array<{ id: string; name: string }>>`
       select
         member.id,
         coalesce(profile.preferred_name, profile.display_name, member.email_normalized) as name
@@ -914,7 +919,9 @@ export async function getOpsExperienceRecord(
       left join person_profiles profile on profile.person_id = member.person_id
       where lifecycle.account_state = 'active'
         and member.deleted_at is null
-        and lifecycle.standing_state in ('active', 'paused')
+        and (lifecycle.standing_state in ('active', 'paused')
+          or (${event.visibility} = 'invite_only' and ${event.registration_mode} = 'internal'
+            and lifecycle.standing_state in ('pre_active', 'cancellation_requested')))
         and (
           ${access.isAdmin}
           or exists (
@@ -928,6 +935,13 @@ export async function getOpsExperienceRecord(
       order by name
       limit 1000
     `;
+    if (event.visibility === "invite_only" && event.registration_mode === "internal") {
+      const eligibleOptions = [];
+      for (const member of memberOptions) {
+        if (await memberEligibleForOperatorInvitation(tx, event, member.id, access.authUserId, false)) eligibleOptions.push(member);
+      }
+      memberOptions = eligibleOptions;
+    }
     const calendar = await getOpsExperienceCalendarStateForTx(tx, experienceId);
 
     return {
@@ -1527,7 +1541,7 @@ export async function setOpsExperienceRegistration(input: {
     if (input.action === "register" || input.action === "promote" || (
       input.action === "waitlist" && !["registered", "waitlisted"].includes(current?.status ?? "")
     )) {
-      await requireEligibleExperienceMember(tx, experience, memberId ?? current?.member_id ?? null);
+      await requireEligibleExperienceMember(tx, experience, memberId ?? current?.member_id ?? null, access.isAdmin ? access.authUserId : undefined);
     }
 
     const countRows = await tx<Array<{ registered_count: number }>>`

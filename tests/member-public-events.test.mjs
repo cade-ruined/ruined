@@ -101,7 +101,7 @@ test("public events merge into member upcoming events without weakening entitlem
   assert.match(repository, /mergeUpcomingPublicMemberExperiences/);
   assert.match(loader, /mergeUpcomingPublicMemberExperiences\s*\(/);
 
-  const capabilityGuard = loader.indexOf('if (!fullExperienceAccess && !memberCan(access, "circle.read"))');
+  const capabilityGuard = loader.indexOf('if (!fullExperienceAccess && !memberCan(access, "circle.read") && !invitedExperienceIds.length)');
   const databaseRead = loader.indexOf("const sql = getApplicationDatabase()");
   assert.ok(capabilityGuard >= 0 && capabilityGuard < databaseRead);
   assert.match(
@@ -115,7 +115,11 @@ test("public events merge into member upcoming events without weakening entitlem
   // only after those rows have been authorized and adapted.
   assert.match(loader, /with membership_scope as\s*\(/);
   assert.match(loader, /const fullExperienceAccess = memberCan\(access, "experiences\.member"\)/);
-  assert.match(loader, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\)/);
+  assert.match(loader, /const invitedExperienceIds = fullExperienceAccess \? \[\] : await getEligibleExplicitExperienceInvitationIds\(authUserId\)/);
+  // Held profiles get only the exact IDs resolved from verified server-side
+  // invitations. This does not grant general invite-only or all-member access.
+  assert.match(loader, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\s+or experience\.id = any\(\$\{sql\.array\(invitedExperienceIds\)\}::uuid\[\]\)\)/);
+  assert.match(loader, /!fullExperienceAccess && invitedExperienceIds\.includes\(row\.id\)\s+\? \{ \.\.\.experience, registrationHref: null \}/);
   assert.match(loader, /active_circle\.status = 'active'/);
   assert.match(loader, /member_assignment\.assigned_at <= statement_timestamp\(\)/);
   assert.match(loader, /experience\.visibility in \('public', 'all_members'\)/);

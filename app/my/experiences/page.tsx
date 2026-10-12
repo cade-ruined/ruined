@@ -15,5 +15,5 @@ export default async function MyExperiencesPage() {
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  return <MemberExperiences initialExperiences={context.data} writable={context.state === "authenticated"} />;
+  return <MemberExperiences initialExperiences={context.data} writable={context.state === "authenticated" && !context.invitedCalendarOnly} />;
 }

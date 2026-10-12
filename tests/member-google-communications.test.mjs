@@ -6,13 +6,14 @@ async function source(relativePath) {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
-const [helper, model, repository, preview, chatRoute, meetRoute] = await Promise.all([
+const [helper, model, repository, preview, chatRoute, meetRoute, experienceAccess] = await Promise.all([
   source("src/lib/google/communications.ts"),
   source("src/lib/membership/model.ts"),
   source("src/lib/membership/repository.ts"),
   source("src/lib/membership/preview.ts"),
   source("app/api/my/circle/chat/route.ts"),
   source("app/api/my/experiences/[experienceId]/join/route.ts"),
+  source("src/lib/platform/experience-member-access.ts"),
 ]);
 
 test("member models expose protected communication routes without raw Google links", () => {
@@ -62,8 +63,9 @@ test("Chat and Meet redirects reauthorize members and never cache destinations",
   assert.match(repository, /requireMemberCapability\(identity, "circle\.read"\)/);
   const meetingAccess = repository.slice(repository.indexOf("export async function getMemberExperienceMeetingDestination"), repository.indexOf("export async function getMemberExperiences"));
   assert.match(meetingAccess, /const fullExperienceAccess = memberCan\(access, "experiences\.member"\)/);
-  assert.match(meetingAccess, /if \(!fullExperienceAccess && !memberCan\(access, "circle\.read"\)\) throw new MembershipAccessDeniedError/);
-  assert.match(meetingAccess, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\)/);
+  assert.match(meetingAccess, /const invitedExperienceIds = fullExperienceAccess \? \[\] : await getEligibleExplicitExperienceInvitationIds\(authUserId\)/);
+  assert.match(meetingAccess, /if \(!fullExperienceAccess && !memberCan\(access, "circle\.read"\) && !invitedExperienceIds\.includes\(experienceId\)\) throw new MembershipAccessDeniedError/);
+  assert.match(meetingAccess, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\s+or experience\.id = any\(\$\{sql\.array\(invitedExperienceIds\)\}::uuid\[\]\)\)/);
   assert.match(meetingAccess, /active_circle\.status = 'active'/);
   assert.match(meetingAccess, /member_assignment\.assigned_at <= statement_timestamp\(\)/);
   assert.match(meetingAccess, /active_circle\.activated_at <= statement_timestamp\(\)/);
@@ -72,4 +74,19 @@ test("Chat and Meet redirects reauthorize members and never cache destinations",
   assert.match(repository, /experience\.visibility = 'block' and experience\.block_id = scope\.block_id/);
   assert.match(repository, /experience\.registration_mode = 'none'[\s\S]*or registration\.status = 'registered'/);
   assert.match(repository, /experience\.visibility = 'invite_only'[\s\S]*registration\.status in \('external_pending', 'registered', 'waitlisted'\)/);
+});
+
+test("the held-profile Meet exception uses server-verified operator invitations, never a client supplied audience", () => {
+  const invitations = experienceAccess.slice(
+    experienceAccess.indexOf("export async function getEligibleExplicitExperienceInvitationIds"),
+    experienceAccess.indexOf("export async function hasEligibleExplicitExperienceInvitations"),
+  );
+  assert.match(invitations, /where auth_user_id = \$\{authUserId\}::uuid and status = 'active' and member_id is not null/);
+  assert.match(invitations, /member\.person_id = registration\.person_id/);
+  assert.match(invitations, /experience\.visibility = 'invite_only' and experience\.registration_mode = 'internal'/);
+  assert.match(invitations, /experience\.status in \('published', 'completed'\)/);
+  assert.match(invitations, /registration\.member_id = \$\{memberId\}::uuid/);
+  assert.match(invitations, /registration\.status = 'registered' and registration\.source = 'ops'/);
+  assert.match(invitations, /if \(!invitations\.length \|\| !await explicitInvitationMember\(tx, memberId, false\)\) return \[\]/);
+  assert.match(invitations, /return invitations\.map\(invitation => invitation\.id\)/);
 });

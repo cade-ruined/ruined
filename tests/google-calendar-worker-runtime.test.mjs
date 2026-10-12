@@ -135,7 +135,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       create table block_circle_assignments(circle_id uuid,block_id uuid,ended_at timestamptz);
       create table circle_staff_assignments(auth_user_id uuid,circle_id uuid,role_slug text,ended_at timestamptz);
       create table experiences(id uuid primary key,title text,details text,summary text,starts_at timestamptz,ends_at timestamptz,
-        timezone text default 'America/Denver',location_label text,visibility text,circle_id uuid,block_id uuid,status text,version bigint default 1,cancelled_at timestamptz);
+        timezone text default 'America/Denver',location_label text,visibility text,registration_mode text default 'none',circle_id uuid,block_id uuid,status text,version bigint default 1,cancelled_at timestamptz);
       create table experience_registrations(id uuid primary key,experience_id uuid references experiences(id),person_id uuid references people(id),member_id uuid,status text);
       create table operator_audit_events(id bigserial primary key,actor_auth_user_id uuid references platform_users(auth_user_id),action text,
         subject_type text,subject_id text,request_id text,after_snapshot jsonb,metadata jsonb,dedupe_key text unique);

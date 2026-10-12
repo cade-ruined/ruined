@@ -23,8 +23,8 @@ const provider = await load("src/lib/stripe/prepaid-provider.ts", { "@/lib/strip
   "@/lib/stripe/prepaid-policy": prepaid, "@/lib/stripe/price-policy": prices,
   "@/lib/stripe/server": { getMembershipPriceConfiguration: () => config } });
 
-function fixture() {
-  const billingSchedule = schedules.foundationsBillingScheduleForMonth("2026-11", "monthly");
+function fixture({ month = "2026-11", version } = {}) {
+  const billingSchedule = schedules.foundationsBillingScheduleForMonth(month, "monthly", version);
   const contract = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member",
     livemode: false, offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v3",
     agreementContentSha256: "a".repeat(64), acceptedAt: "2026-10-05T20:00:00.000Z", startsAt: billingSchedule.serviceStartsAt,
@@ -69,6 +69,35 @@ test("prepaid inspection binds actual initial cash to immutable service coverage
   assert.equal(proof.periodEnd, f.contract.billingSchedule.prepaidThrough); assert.equal(proof.refund, null);
   f.invoices.push({ id: "in_unexpected", billing_reason: "manual" });
   await assert.rejects(f.inspect({ requireOnlyInitialInvoice: true }), /requires_review/);
+});
+
+test("December v1 and v2 payments retain their exact schedule identity and refundable coverage", async () => {
+  for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2"]) {
+    const f = fixture({ month: "2026-12", version });
+    assert.deepEqual(prepaid.prepaidScheduleFromSubscription(f.subscription), f.contract.billingSchedule);
+    const proof = await f.inspect({ requireOnlyInitialInvoice: true });
+    assert.equal(proof.periodStart, "2026-12-03T22:00:00.000Z");
+    assert.equal(proof.periodEnd, "2027-01-03T22:00:00.000Z");
+    f.refunds.push({ id: "re_versioned", status: "succeeded", amount: f.invoice.total, currency: "usd", charge: f.charge.id,
+      payment_intent: "pi_first", metadata: { ruined_cancellation_id: "versioned-cancellation" } });
+    f.charge.amount_refunded = f.invoice.total; f.charge.refunded = true;
+    assert.equal((await f.inspect({ allowRefund: true })).refund.status, "succeeded");
+    f.subscription.metadata.ruined_billing_schedule_version = version === "foundations-prepaid-v1" ? "foundations-prepaid-v2" : "foundations-prepaid-v1";
+    assert.equal(prepaid.prepaidScheduleFromSubscription(f.subscription), null, "A version change cannot reuse the accepted hash");
+    await assert.rejects(f.inspect({ allowRefund: true }), /requires_review/);
+  }
+});
+
+test("monthly and annual provider metadata must reconstruct the recorded schedule version", () => {
+  for (const plan of ["monthly", "annual"]) for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2"]) {
+    const schedule = schedules.foundationsBillingScheduleForMonth("2026-12", plan, version);
+    const subscription = { metadata: { billing_terms_version: "membership-billing-v2", ruined_billing_plan: plan,
+      ...prepaid.prepaidBillingMetadata(schedule) }, trial_end: Date.parse(schedule.prepaidThrough) / 1000,
+      billing_cycle_anchor: Date.parse(schedule.prepaidThrough) / 1000 };
+    assert.deepEqual(prepaid.prepaidScheduleFromSubscription(subscription), schedule);
+    assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_sha256: "wrong" } }), null);
+    assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_version: "foundations-prepaid-v3" } }), null);
+  }
 });
 
 test("failed and pending full refunds remain visible for safe retries; succeeded requires matching cash readback", async () => {

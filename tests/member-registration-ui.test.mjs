@@ -44,6 +44,7 @@ async function pageFixture(path, initialRegistration, initialContext = context()
       if (area === "registration") return { ...currentContext, data: currentContext.state === "preview" ? preview : { registration: currentRegistration } };
       return currentContext;
     } },
+    "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
     "@/lib/membership/registration-repository": { getMemberRegistration: async () => currentRegistration },
     "@/lib/membership/registration-routing": await load("src/lib/membership/registration-routing.ts"),
     "@/lib/membership/registration-legal": { getMemberRegistrationLegalNotice: async () => currentLegalNotice },
@@ -462,6 +463,7 @@ test("layout withholds premature badge celebrations and fails navigation closed 
       "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: "new-member", email: "new@example.test" } }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
       "@/lib/platform/repository": { getOperatorRole: async () => null },
+      "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
       "@/lib/membership/registration-repository": { getMemberRegistration: async () => { if (value === "failure") throw Error("unavailable"); return value; } },
       "@/lib/platform/visibility": { isMyRuinedVisible: () => true }, "@/lib/sharing": { privateSharingMetadata: {} },
     }, { console: { error() {} } })).default;

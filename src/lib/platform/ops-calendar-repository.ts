@@ -40,6 +40,7 @@ type CalendarExperience = {
   experience_id: string;
   location_label: string | null;
   meeting_url?: string | null;
+  registration_mode: string;
   starts_at: Date | string;
   state: string;
   summary: string | null;
@@ -288,6 +289,7 @@ async function getCalendarExperience(
           timezone,
           location_label,
           visibility,
+          registration_mode,
           circle_id,
           block_id,
           status as state,
@@ -308,6 +310,7 @@ async function getCalendarExperience(
           timezone,
           location_label,
           visibility,
+          registration_mode,
           circle_id,
           block_id,
           status as state,
