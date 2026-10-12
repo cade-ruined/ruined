@@ -7,6 +7,7 @@ import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
 import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
 import type { MemberProfileSnapshot } from "@/lib/membership/model";
+import { MEMBER_TIMEZONES, memberTimezoneLabel } from "@/lib/membership/profile-fields";
 
 import styles from "./MemberProfileEditor.module.css";
 
@@ -23,7 +24,7 @@ export default function MemberProfileEditor({
   photoStorageReady,
   writable,
   preview = false,
-  timezoneOptions = ["UTC", "America/Denver"],
+  timezoneOptions = MEMBER_TIMEZONES,
 }: {
   initialProfile: MemberProfileSnapshot;
   photoStorageReady: boolean;
@@ -42,7 +43,7 @@ export default function MemberProfileEditor({
   const [photoPending, setPhotoPending] = useState(false);
   const [photoDraft, setPhotoDraft] = useState(false);
   const tagLocked = Boolean(profile.directory.memberTag);
-  const timezones = [...new Set([...timezoneOptions, profile.directory.timezone ?? "UTC"])].sort();
+  const timezones = [...new Set([...timezoneOptions, profile.directory.timezone ?? "America/Denver"])];
 
   function changeMemberTag(value: string) {
     if (tagLocked) return;
@@ -184,7 +185,7 @@ export default function MemberProfileEditor({
             </label>
             <label className={SUPPORT_LABEL_CLASS}>
               Timezone
-              <select className={fieldClass} defaultValue={profile.directory.timezone ?? "America/Denver"} name="timezone">{timezones.map(zone => <option key={zone} value={zone}>{zone.replaceAll("_", " ").replaceAll("/", " / ")}</option>)}</select>
+              <select className={fieldClass} defaultValue={profile.directory.timezone ?? "America/Denver"} name="timezone">{timezones.map(zone => <option key={zone} value={zone}>{memberTimezoneLabel(zone)}</option>)}</select>
             </label>
             <label className={SUPPORT_LABEL_CLASS + " sm:col-span-2"}>
               What are you building now?
