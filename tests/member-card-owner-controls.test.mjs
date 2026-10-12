@@ -4,6 +4,7 @@ import test from "node:test";
 import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
+import * as profileFields from "../src/lib/membership/profile-fields.ts";
 
 const same = (left, right) => left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
 function hooks() {
@@ -36,7 +37,6 @@ function elements(element) {
 const text = element => typeof element === "string" || typeof element === "number" ? String(element)
   : React.isValidElement(element) ? React.Children.toArray(element.props.children).map(text).join("") : "";
 const findButton = (tree, label) => elements(tree).find(element => element.type === "button" && text(element) === label);
-const tick = () => new Promise(resolve => setImmediate(resolve));
 const Link = () => null, Room = () => null, Photo = () => null, Sharing = () => null;
 const settings = { publicEnabled: false, showPortrait: true, showMemberSince: false, showLocation: false, showBio: true, showBuilding: false, showWebsite: false, labelIds: [] };
 const card = { name: "Saved Name", avatarUrl: null, memberSince: null, location: null, bio: "Saved biography", buildingNow: null, websiteUrl: null, labels: [], wearSeed: "saved-wear" };
@@ -60,36 +60,29 @@ async function ownerFixture(props = {}) {
   return { render, calls, copies, shares, savedUrl, listeners, cleanup: state.cleanup };
 }
 
-test("owner card room has one profile editor link and no editable profile fields or form", async () => {
+test("owner card room has one invitation customization link and no editable profile fields or form", async () => {
   const view = await ownerFixture();
   const tree = view.render(), nodes = elements(tree);
   assert.equal(tree.type, Room); assert.equal(tree.props.card, snapshot.card);
-  assert.equal(nodes.filter(node => node.type === Link && node.props.href === "/my/profile").length, 1);
+  assert.equal(nodes.filter(node => node.type === Link && node.props.href === "/my/invitation#card-customization").length, 1);
   assert.equal(nodes.some(node => node.type === "form" || node.type === "textarea" || node.type === "select" || node.type === "input" && !node.props.readOnly), false);
   assert.equal(view.calls.length, 0, "mounting a saved owner snapshot must not issue another request");
   view.cleanup(); assert.equal(view.listeners.size, 0);
 });
 
-test("publishing sends only saved sharing settings and version, then shares the actual returned public URL", async () => {
+test("owner card has no public sharing controls or publication writes", async () => {
   const view = await ownerFixture();
-  findButton(view.render(), "Make card public").props.onClick(); await tick();
-  assert.equal(view.calls.length, 1); assert.equal(view.calls[0].url, "/api/my/card"); assert.equal(view.calls[0].method, "POST");
-  assert.deepEqual(view.calls[0].body, { ...settings, publicEnabled: true, version: 27 });
-  assert.doesNotMatch(JSON.stringify(view.calls[0].body), /Saved Name|PRIVATE|cardBio|publicName|sourceRevision/);
-  const published = view.render();
-  findButton(published, "Copy link").props.onClick(); await tick();
-  findButton(published, "Share card ↗").props.onClick(); await tick();
-  const expected = `https://members.example.test${view.savedUrl}`;
-  assert.deepEqual(view.copies, [expected]); assert.deepEqual(view.shares, [{ title: "Saved Name / Ruined", url: expected }]);
-  assert.equal(elements(published).find(node => node.type === "input").props.value, expected);
-  assert.equal(elements(published).find(node => node.type === "a").props.href, expected);
+  const tree = view.render();
+  for (const label of ["Make card public", "Make private", "Copy link", "Share card ↗"]) assert.equal(findButton(tree, label), undefined);
+  assert.match(tree.props.footerNote, /full name.*Invitations/);
+  assert.equal(view.calls.length, 0);
+  assert.equal(elements(tree).some(node => node.type === "input"), false);
   view.cleanup();
 });
 
-test("preview card controls cannot publish even if an enabled click handler is invoked manually", async () => {
+test("preview card never loads or publishes remote data", async () => {
   const view = await ownerFixture({ preview: true });
-  const button = findButton(view.render(), "Make card public");
-  assert.equal(button.props.disabled, true); button.props.onClick(); await tick();
+  assert.equal(view.render().props.preview, true);
   assert.equal(view.calls.length, 0); assert.equal(view.listeners.size, 0);
   view.cleanup();
 });
@@ -101,38 +94,34 @@ async function profileFixture() {
   const editor = await load("src/components/membership/MemberProfileEditor.tsx", {
     react: state.react, "next/link": Link, "@/components/membership/MemberSettingsHeader": () => null,
     "@/components/membership/MemberPublicSharingSettings": Sharing, "@/components/membership/MemberPhotoUpload": Photo,
+    "@/lib/membership/profile-fields": profileFields,
+    "./MemberProfileEditor.module.css": {},
     "@/components/support/supportStyles": { SUPPORT_ACTION_CLASS: "", SUPPORT_FIELD_CLASS: "", SUPPORT_LABEL_CLASS: "", SUPPORT_LINK_CLASS: "" },
   });
   const render = () => state.render(editor, { initialProfile: profile, initialCard, photoStorageReady: true, writable: true });
   return { render, profile, initialCard };
 }
 
-test("the single profile form preserves full text limits and has one public sharing section", async () => {
+test("the profile form preserves full text limits and removes obsolete sharing controls", async () => {
   const view = await profileFixture(), nodes = elements(view.render());
   assert.equal(nodes.filter(node => node.type === "form").length, 1);
-  for (const [name, maximum, value] of [["display-name", 120, view.profile.directory.displayName], ["bio", 1200, view.profile.directory.bio], ["building-now", 500, view.profile.directory.buildingNow], ["website-url", 300, view.profile.directory.websiteUrl]]) {
+  for (const [name, maximum, value] of [["full-name", 120, view.profile.directory.displayName], ["bio", 1200, view.profile.directory.bio], ["building-now", 500, view.profile.directory.buildingNow]]) {
     const fields = nodes.filter(node => node.props.name === name);
     assert.equal(fields.length, 1); assert.equal(fields[0].props.maxLength, maximum); assert.equal(fields[0].props.defaultValue, value);
   }
-  const publicChoices = nodes.filter(node => node.type === Sharing);
-  assert.equal(publicChoices.length, 1); assert.equal(publicChoices[0].props.snapshot, view.initialCard);
-  assert.equal(publicChoices[0].props.value, view.initialCard.settings);
+  assert.equal(nodes.filter(node => node.type === Sharing).length, 0);
+  assert.equal(nodes.some(node => ["website-url", "accessibility-notes", "circle-directory-enabled"].includes(node.props.name)), false);
 });
 
-test("unsaved public or portrait scope changes block photo uploads until sharing is saved or restored", async () => {
-  for (const changed of ["publicEnabled", "showPortrait"]) {
-    const view = await profileFixture();
-    let nodes = elements(view.render());
-    assert.equal(nodes.find(node => node.type === Photo).props.enabled, true);
-    nodes.find(node => node.type === Sharing).props.onChange({ ...view.initialCard.settings, [changed]: false });
-    let tree = view.render(); nodes = elements(tree);
-    assert.equal(nodes.find(node => node.type === Photo).props.enabled, false);
-    assert.match(text(tree), /Save your sharing choices before changing your photo/);
-    nodes.find(node => node.type === Sharing).props.onChange(view.initialCard.settings);
-    nodes = elements(view.render()); assert.equal(nodes.find(node => node.type === Photo).props.enabled, true);
-    nodes.find(node => node.type === Photo).props.onBusyChange(true);
-    nodes = elements(view.render());
-    assert.equal(nodes.find(node => node.type === "fieldset").props.disabled, true);
-    assert.equal(nodes.find(node => node.type === "button" && node.props.type === "submit").props.disabled, true);
-  }
+test("photo work prevents profile saves and does not depend on removed sharing controls", async () => {
+  const view = await profileFixture();
+  let nodes = elements(view.render());
+  assert.equal(nodes.find(node => node.type === Photo).props.enabled, true);
+  nodes.find(node => node.type === Photo).props.onBusyChange(true);
+  nodes = elements(view.render());
+  assert.equal(nodes.find(node => node.type === "fieldset").props.disabled, true);
+  assert.equal(nodes.find(node => node.type === "button" && node.props.type === "submit").props.disabled, true);
+  nodes.find(node => node.type === Photo).props.onBusyChange(false);
+  nodes = elements(view.render());
+  assert.equal(nodes.find(node => node.type === "fieldset").props.disabled, false);
 });

@@ -6,6 +6,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as phone from "../src/lib/membership/phone.ts";
 import * as memberNumber from "../src/lib/membership/member-number.ts";
+import * as profileFields from "../src/lib/membership/profile-fields.ts";
 import * as pricing from "../src/lib/membership/pricing.ts";
 import * as entryStage from "../src/lib/membership/entry-stage.ts";
 import * as communicationPreferences from "../src/lib/membership/member-communication-preferences-model.ts";
@@ -49,6 +50,8 @@ async function fixture(kind, tag = null) {
     "@/components/membership/MemberPaymentMethod": Stub,
     "@/components/membership/MemberSmsConsentDisclosure": Stub,
     "@/components/membership/MemberSettingsHeader": Stub, "@/components/membership/MemberPublicSharingSettings": Stub,
+    "@/lib/membership/profile-fields": profileFields,
+    "./MemberProfileEditor.module.css": new Proxy({}, { get: (_, key) => key }),
     "@/components/support/supportStyles": {}, "@/lib/membership/entry-stage": entryStage, "@/lib/membership/pricing": pricing, "@/lib/membership/phone": phone,
     "@/lib/membership/member-communication-preferences-model": communicationPreferences,
   }, {
@@ -57,19 +60,19 @@ async function fixture(kind, tag = null) {
   });
   const props = kind === "join" ? { initialOnboarding: onboarding, minimumAge: 18, enabled: true, photoStorageReady: true } : { initialProfile, photoStorageReady: true, writable: true };
   const render = () => state.render(component, props);
-  async function submit(tagValue) { await elements(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { "member-tag": tagValue, "legal-name": "Private Legal Name", "display-name": "Public Name", "mobile-country": "US", "mobile-national": "8015550100" } }); }
+  async function submit(tagValue) { await elements(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { "member-tag": tagValue, "legal-name": "Private Legal Name", "full-name": "Public Name", "city": "Salt Lake City", "state": "Utah", "timezone": "America/Denver", "mobile-country": "US", "mobile-national": "8015550100" } }); }
   return { render, submit, calls, responses };
 }
 
-test("joining requires a tag, retains private legal name, and never asks for another public name", async () => {
+test("joining requires a permanent tag and explains the public full name", async () => {
   const view = await fixture("join"), tree = view.render(), input = field(tree);
   assert.equal(input.props.required, true); assert.equal(input.props.maxLength, 24);
   assert.equal(input.props.autoComplete, "username"); assert.equal(input.props.autoCapitalize, "none"); assert.equal(input.props.spellCheck, false);
   assert.equal(input.props.pattern, "[a-z0-9_]{3,24}");
   assert.ok(elements(tree).some(node => node.props.name === "legal-name"));
   assert.equal(elements(tree).some(node => ["preferred-name", "display-name"].includes(node.props.name)), false);
-  assert.match(text(tree), /Private · For your membership records/);
-  assert.match(text(tree), /alongside your display name when you share your card or invitation/);
+  assert.match(text(tree), /Your name appears on your public profile and member card/);
+  assert.match(text(tree), /Choose your permanent @tag/);
 });
 
 test("both profile forms protect unapplied photo drafts without disabling crop controls", async () => {
@@ -97,7 +100,13 @@ test("both forms normalize pasted @tags before maxlength can consume the prefix"
     await view.submit(" @New_Tag ");
     assert.equal(view.calls.length, 1); assert.equal(view.calls[0].body.memberTag, "new_tag");
     assert.equal("preferredName" in view.calls[0].body, false);
-    if (kind === "profile") assert.equal(view.calls[0].body.displayName, "Public Name");
+    if (kind === "profile") {
+      assert.equal(view.calls[0].body.fullName, "Public Name");
+      assert.equal(view.calls[0].body.city, "Salt Lake City");
+      assert.equal(view.calls[0].body.state, "Utah");
+      assert.equal("websiteUrl" in view.calls[0].body, false);
+      assert.equal("accessibilityNotes" in view.calls[0].body, false);
+    }
   }
 });
 
@@ -110,13 +119,16 @@ test("invalid tags cannot reach either endpoint even if native validation is byp
   }
 });
 
-test("profile legacy blank tags remain optional, but a successful claim becomes required", async () => {
+test("profile legacy blank tags remain optional, but a successful claim becomes locked", async () => {
   const legacy = await fixture("profile");
   assert.equal(field(legacy.render()).props.required, false); await legacy.submit(""); assert.equal(legacy.calls.length, 1);
   await legacy.submit("new_tag"); assert.equal(field(legacy.render()).props.required, true);
   assert.equal(field(legacy.render()).props.value, "new_tag");
   const claimed = await fixture("profile", "saved_tag");
-  assert.equal(field(claimed.render()).props.required, true); await claimed.submit(""); assert.equal(claimed.calls.length, 0);
+  assert.equal(field(claimed.render()).props.readOnly, true);
+  field(claimed.render()).props.onChange({ currentTarget: { value: "attempted_change" } });
+  assert.equal(field(claimed.render()).props.value, "saved_tag");
+  await claimed.submit("attempted_change"); assert.equal(claimed.calls[0].body.memberTag, "saved_tag");
   const joining = await fixture("join"); await joining.submit(""); assert.equal(joining.calls.length, 0);
 });
 
@@ -151,12 +163,25 @@ test("home shows the saved display name and only adds a distinct secondary @tag"
 });
 
 
-test("a saved default display name follows a changed tag in the uncontrolled field", async () => {
+test("full name reflects the canonical saved value while the member tag stays locked", async () => {
   const view = await fixture("profile", "old_tag");
-  const originalKey = elements(view.render()).find(node => node.props.name === "display-name").key;
-  view.responses.push({ ok: true, status: 200, json: async () => ({ profile: { ...profile, directory: { ...profile.directory, displayName: "@new_tag", memberTag: "new_tag" } } }) });
-  await view.submit("new_tag");
-  const display = elements(view.render()).find(node => node.props.name === "display-name");
-  assert.equal(display.props.defaultValue, "@new_tag");
-  assert.notEqual(display.key, originalKey, "React remounts the uncontrolled input when the canonical saved name changes");
+  const originalKey = elements(view.render()).find(node => node.props.name === "full-name").key;
+  view.responses.push({ ok: true, status: 200, json: async () => ({ profile: { ...profile, directory: { ...profile.directory, fullName: "New Full Name", displayName: "New Full Name", memberTag: "old_tag" } } }) });
+  await view.submit("old_tag");
+  const display = elements(view.render()).find(node => node.props.name === "full-name");
+  assert.equal(display.props.defaultValue, "New Full Name");
+  assert.notEqual(display.key, originalKey);
+  assert.equal(field(view.render()).props.readOnly, true);
+});
+
+test("profile editor exposes only the relevant identity and contact controls", async () => {
+  const view = await fixture("profile", "member_tag"), tree = view.render();
+  const names = elements(tree).map(node => node.props.name).filter(Boolean);
+  for (const name of ["full-name", "member-tag", "bio", "city", "state", "timezone", "email-scope", "phone-scope"]) assert.ok(names.includes(name), name);
+  for (const name of ["display-name", "website-url", "accessibility-notes", "circle-directory-enabled", "avatar-visible", "bio-visible"]) assert.equal(names.includes(name), false, name);
+  const timezone = elements(tree).find(node => node.props.name === "timezone");
+  assert.equal(timezone.type, "select");
+  assert.ok(elements(timezone).some(node => node.type === "option" && node.props.value === "America/Denver"));
+  assert.match(text(tree), /Your Journal is private/);
+  assert.doesNotMatch(text(tree), /Circle visibility|Private notes|Short biography|Website \/ Optional/);
 });

@@ -14,6 +14,6 @@ export function memberCardPreviewSnapshot(profile: MemberProfileSnapshot = PREVI
     buildingNow: profile.directory.buildingNow ?? "",
     websiteUrl: profile.directory.websiteUrl ?? "",
   };
-  const settings = { ...defaultMemberCardSettings(), showMemberSince: true, showLocation: true, showBio: true, showBuilding: true };
-  return { card: projectMemberCard(settings, source, [], "ruined-card-development-preview"), settings, source, sourceRevision: "0".repeat(64), availableLabels: [], version: 0, writable: false, eligible: false, publicUrl: null };
+  const settings = defaultMemberCardSettings();
+  return { card: projectMemberCard(settings, source, [], "ruined-card-development-preview"), settings, source, sourceRevision: "0".repeat(64), availableLabels: [], version: 0, writable: false, eligible: false, invitationCustomized: false, publicUrl: null };
 }

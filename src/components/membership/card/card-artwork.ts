@@ -78,6 +78,7 @@ type FoilPosition = { x: number; y: number; width: number; height: number };
 const foilPosition = { x: 779, y: 1106, width: 224 * 283.956 / 400, height: 224 } as const;
 const invitationFrontFoil = { x: 766, y: 1106, width: 240 * 283.956 / 400, height: 240 } as const;
 const invitationBackFoil = { x: 327, y: 454, width: 500 * 283.956 / 400, height: 500 } as const;
+const customizedInvitationBackFoil = { x: 433, y: 358, width: 200 * 283.956 / 400, height: 200 } as const;
 type FoilStamp = { print: HTMLCanvasElement; mask: HTMLCanvasElement; roughness: HTMLCanvasElement; bump: HTMLCanvasElement; position: FoilPosition };
 const foilCache = new WeakMap<HTMLImageElement, Map<FoilPosition, FoilStamp>>();
 const stampedMaterials = new WeakSet<HTMLCanvasElement>();
@@ -212,9 +213,9 @@ function stockMaterial(seed: string, dark: boolean, fibers: Float32Array, edgeWe
   return { wear, roughness, bump };
 }
 
-function cardMaterials(seed: string, photo: HTMLImageElement | null, variant: CardVariant) {
+function cardMaterials(seed: string, photo: HTMLImageElement | null, variant: CardVariant, customizedInvitation = false) {
   // Each layout stamps its own foil positions without changing the physical wear.
-  const key = `${variant}:${seed}`;
+  const key = `${variant}:${customizedInvitation}:${seed}`;
   const existing = materialCache.get(key);
   if (existing) return existing;
   const fibers = paperFibers(photo);
@@ -285,22 +286,32 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
 
   back.textAlign = "center";
   printText(back, textLayout(back, "You’re allowed", 880, 70, 50, 50, true), CARD_WIDTH / 2, 235, cream, true);
+  const details = [card.bio, card.buildingNow ? `Currently building: ${card.buildingNow}` : null,
+    card.location, card.memberSince ? `Member since ${new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince))}` : null,
+    ...card.labels].filter(Boolean).join(" · ");
+  if (details) {
+    const layout = textLayout(back, details, 790, 410, 32, 24, false, 1.45);
+    printText(back, abbreviateCardText(layout, 11, 790, measure(back)), CARD_WIDTH / 2, 626, cream);
+  }
   printText(back, textLayout(back, "to become someone new.", 880, 70, 50, 50, true), CARD_WIDTH / 2, 1134, cream, true);
   back.textAlign = "left";
 }
 
 async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null, invitationSource: "member" | "ruined_direct" = "member"): Promise<CardArtwork> {
   const invitation = variant === "invitation";
-  const card = invitation ? { ...source, ...(invitationSource === "ruined_direct" ? { name: "The Ruined Project", memberTag: null } : {}), avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null } : { ...source, bio: source.bio ? memberCardExcerpt(source.bio, 180) : null, buildingNow: source.buildingNow ? memberCardExcerpt(source.buildingNow, 100) : null };
+  const card = invitation && invitationSource === "ruined_direct"
+    ? { ...source, name: "The Ruined Project", memberTag: null, avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null }
+    : { ...source, ...(invitation ? { avatarUrl: null, websiteUrl: null } : {}), bio: memberCardExcerpt(source.bio, 180), buildingNow: memberCardExcerpt(source.buildingNow, 100) };
+  const customizedInvitation = invitation && Boolean(card.bio || card.buildingNow || card.location || card.memberSince || card.labels.length);
   const fonts = environment.loadFonts(cardArtworkFontRequests(variant));
   let fontTimer: ReturnType<typeof setTimeout> | undefined;
   const [, [portrait, leaf, wordmark, paperPhoto, inkPhoto, invitationPhoto]] = await Promise.all([
     Promise.race([fonts, new Promise<void>(resolve => { fontTimer = setTimeout(resolve, 1800); })]).finally(() => { if (fontTimer) clearTimeout(fontTimer); }),
     Promise.all([card.avatarUrl ? loadImage(card.avatarUrl) : Promise.resolve(null), referenceImage("/ruined-mark.svg"), referenceImage("/ruined-wordmark.svg"), referenceImage("/membership/design/distressed-paper.jpg"), referenceImage("/membership/design/printers-ink.jpg"), invitation ? referenceImage("/membership/foundations/beginning.webp") : Promise.resolve(null)]),
   ]);
-  const materials = cardMaterials(card.wearSeed, paperPhoto, variant);
+  const materials = cardMaterials(card.wearSeed, paperPhoto, variant, customizedInvitation);
   const foil = authenticityFoil(leaf, invitation ? invitationFrontFoil : foilPosition);
-  const backFoil = invitation ? authenticityFoil(leaf, invitationBackFoil) : foil;
+  const backFoil = invitation ? authenticityFoil(leaf, customizedInvitation ? customizedInvitationBackFoil : invitationBackFoil) : foil;
   stampMaterial(materials.front, foil); stampMaterial(materials.back, backFoil);
   const front = canvas(), back = canvas(); const f = front.getContext("2d")!, b = back.getContext("2d")!;
   for (const ctx of [f, b]) { rounded(ctx, 0, 0, CARD_WIDTH, CARD_HEIGHT, 43); ctx.clip(); }

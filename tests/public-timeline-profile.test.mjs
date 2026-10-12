@@ -5,11 +5,12 @@ import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import { publicJournalFixture, timelineIds } from "./helpers/public-journal-fixture.mjs";
 
 const require = createRequire(import.meta.url);
 const token = "x".repeat(43);
 const card = { name: "Shared name", memberTag: "member", avatarUrl: null, bio: null, labels: [], memberSince: null, location: null, buildingNow: null, websiteUrl: null, wearSeed: "fixture" };
-const badge = { key: "early-supporter", label: "I Was Here", description: "Activated an early membership.", earnedAt: "2026-09-30T12:00:00.000Z" };
+const profile = { name: "Shared name", memberTag: "member", bio: "A public bio.", memberNumber: 17 };
 function load(path, dependencies = {}, fetchOverride) {
   const output = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
@@ -23,76 +24,48 @@ function load(path, dependencies = {}, fetchOverride) {
   }, loaded, loaded.exports, fetchOverride);
   return loaded.exports;
 }
-function repository({ scopes = [{ memberId: "owner", version: 1 }, { memberId: "owner", version: 1 }], publicCard = card, awards = [badge] } = {}) {
-  const calls = [];
-  return { calls, ...load("src/lib/membership/public-badge-repository.ts", {
-    "./public-card-model": { MEMBER_CARD_TOKEN: /^[A-Za-z0-9_-]{43}$/ },
-    "./public-card-repository": {
-      getPublicMemberCardScope: async value => { assert.equal(value, token); calls.push("scope"); return scopes.shift() ?? null; },
-      getPublicMemberCard: async value => { assert.equal(value, token); calls.push("card"); return publicCard; },
-    },
-    "./badge-repository": { getMemberBadges: async id => { assert.equal(id, "owner"); calls.push("badges"); return awards; } },
-  }) };
-}
-
-test("public badge projection never reads awards before a current shared-profile scope", async () => {
-  const invalid = repository();
-  assert.equal(await invalid.getPublicMemberTimelineProfile("guess"), null);
-  assert.deepEqual(invalid.calls, []);
-  const hidden = repository({ scopes: [null] });
-  assert.equal(await hidden.getPublicMemberTimelineProfile(token), null);
-  assert.deepEqual(hidden.calls, ["scope"]);
+test("public profiles exist without card opt-in and expose exactly the fixed public fields", async t => {
+  const f = await publicJournalFixture(t);
+  await f.db.query("update ruined_members set member_number=17 where id=$1",[timelineIds.member]);
+  const expected = { name: "Shared name", memberTag: "shared_tag", bio: "PUBLIC BIO", memberNumber: 17 };
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfile(f.token), expected);
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), expected);
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfile(timelineIds.member), expected);
+  assert.doesNotMatch(JSON.stringify(expected), /PRIVATE|email|phone|website|location|building|avatar|personId|memberId/);
+  const scope = await f.cardRepository.getOwnMemberProfilePublicScope(timelineIds.member);
+  assert.equal(scope.token, "shared_tag");
+  assert.equal(await f.cardRepository.getPublicMemberCard(f.token), null, "card opt-in remains independent");
+  await f.db.query("delete from member_public_cards where member_id=$1",[timelineIds.member]);
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), expected);
+  await f.db.query("update person_profiles set member_tag=null where person_id=$1",[timelineIds.person]);
+  assert.equal((await f.cardRepository.getOwnMemberProfilePublicScope(timelineIds.member)).token,timelineIds.member);
+  assert.equal((await f.cardRepository.getPublicMemberProfile(timelineIds.member)).name,expected.name);
+  assert.equal((await f.db.query("select count(*)::int n from member_public_cards where member_id=$1",[timelineIds.member])).rows[0].n,0,"profile GET never creates cards");
 });
 
-test("public Timeline retains withheld profile fields and exposes badge display fields only", async () => {
-  const f = repository({ awards: [{ ...badge, sourceInvoiceId: "private-invoice", verifiedEmail: "private@example.test", memberId: "owner" }] });
-  const result = await f.getPublicMemberTimelineProfile(token);
-  assert.deepEqual(result, { card, badges: [badge] });
-  assert.equal(result.card.avatarUrl, null);
-  assert.equal(result.card.bio, null);
-  assert.deepEqual(f.calls, ["scope", "badges", "card", "scope"]);
-});
-
-test("consent-filtered profile reads wait until slow badge loading has finished", async () => {
-  let finishBadges;
-  const awards = new Promise(resolve => { finishBadges = resolve; });
-  const f = repository({ awards });
-  const pending = f.getPublicMemberTimelineProfile(token);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(f.calls, ["scope", "badges"]);
-  finishBadges([badge]);
-  assert.deepEqual(await pending, { card, badges: [badge] });
-  assert.deepEqual(f.calls, ["scope", "badges", "card", "scope"]);
-});
-
-test("withdrawal, changed sharing choices, or a changed member during badge reads discard the whole profile", async () => {
-  for (const current of [null, { memberId: "owner", version: 2 }, { memberId: "other", version: 1 }]) {
-    const f = repository({ scopes: [{ memberId: "owner", version: 1 }, current] });
-    assert.equal(await f.getPublicMemberTimelineProfile(token), null);
-  }
+test("profile identity excludes inactive members and never falls back to private contact details", async t => {
+  const f = await publicJournalFixture(t);
+  await f.db.query("update person_profiles set display_name=null,preferred_name=null where person_id=$1",[timelineIds.person]);
+  assert.equal((await f.cardRepository.getPublicMemberProfile("shared_tag")).name,"Member");
+  await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1",[timelineIds.auth]);
+  assert.equal(await f.cardRepository.getPublicMemberProfile("shared_tag"),null);
 });
 
 const Image = ({ src, alt }) => React.createElement("img", { src, alt });
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
-const Badges = ({ badges }) => React.createElement("div", { "data-badge-dock": true }, badges.map(item => React.createElement("span", { key: item.key }, item.label)));
 const css = new Proxy({}, { get: (_, key) => key });
-const dependencies = { "next/image": Image, "next/link": Link, "./MemberBadges": Badges, "./PublicJournal.module.css": css };
+const dependencies = { "next/image": Image, "next/link": Link, "@/lib/membership/member-number": load("src/lib/membership/member-number.ts"), "./PublicJournal.module.css": css };
 
-test("visitor Timeline displays only supplied public photo and bio, with the earned badge dock and no messaging invention", () => {
+test("visitor profile displays full name, tag, bio, join number and tier above Timeline", () => {
   const Component = load("src/components/membership/PublicJournal.tsx", dependencies).default;
-  const props = { token, identity: { ...card, avatarUrl: "/public-photo.webp", bio: "A shared bio." }, badges: [badge] };
-  const html = renderToStaticMarkup(React.createElement(Component, props));
+  const html = renderToStaticMarkup(React.createElement(Component, { token, identity: profile }));
   assert.match(html, />Timeline<\/h2>/);
-  assert.match(html, /public-photo.webp/);
-  assert.match(html, /A shared bio\./);
-  assert.match(html, /data-badge-dock/);
-  assert.match(html, /I Was Here/);
-  assert.doesNotMatch(html, /mailto:|chat.google|Message|>Journal<\/h2>/);
-  const withheld = renderToStaticMarkup(React.createElement(Component, { token, identity: card, badges: [] }));
-  assert.doesNotMatch(withheld, /<img|A shared bio|data-badge-dock/);
+  assert.match(html, /Shared name/); assert.match(html, /@member/); assert.match(html, /A public bio/);
+  assert.match(html, /Originals/); assert.match(html, /0017/);
+  assert.doesNotMatch(html, /mailto:|Message|>Journal<\/h2>|Member card|<img/);
 });
 
-test("visitor profile and badges disappear when the feed reports withdrawn sharing", async () => {
+test("visitor identity disappears when the feed reports unavailable membership", async () => {
   const slots = []; let cursor = 0, effects = [];
   const react = {
     ...React,
@@ -101,17 +74,17 @@ test("visitor profile and badges disappear when the feed reports withdrawn shari
     useEffect(effect, deps) { const index = cursor++; if (!slots[index] || deps.some((value, i) => value !== slots[index][i])) { slots[index] = deps; effects.push(effect); } },
   };
   const Component = load("src/components/membership/PublicJournal.tsx", { ...dependencies, react }, async () => ({ status: 404 })).default;
-  const props = { token, identity: { ...card, bio: "A shared bio." }, badges: [badge] };
+  const props = { token, identity: profile };
   const render = () => { cursor = 0; return Component(props); };
   render(); const cleanup = effects.map(effect => effect()); effects = [];
   await new Promise(resolve => setImmediate(resolve));
   const html = renderToStaticMarkup(render());
-  assert.match(html, /This Timeline is not being shared/);
-  assert.doesNotMatch(html, /Shared name|A shared bio|I Was Here|data-badge-dock/);
+  assert.match(html, /This profile is unavailable/);
+  assert.doesNotMatch(html, /Shared name|A public bio|Originals/);
   cleanup.forEach(fn => fn?.());
 });
 
-test("public card links to its token-scoped Timeline and the visitor route passes only public profile data", async () => {
+test("public card links to the profile and visitor route passes only fixed public identity", async () => {
   const Room = () => null;
   const notFound = () => { throw new Error("not found"); };
   const CardPage = load("app/card/[token]/page.tsx", {
@@ -121,18 +94,17 @@ test("public card links to its token-scoped Timeline and the visitor route passe
     "@/components/membership/card/PublicMemberCardPage": Room,
   }).default;
   const cardPage = await CardPage({ params: Promise.resolve({ token }) });
-  assert.equal(cardPage.props.footerActions.props.href, `/journal/${token}`);
-  assert.equal(cardPage.props.footerActions.props.children, "View Timeline ↗");
+  assert.equal(cardPage.props.footerActions.props.href, `/profile/${token}`);
+  assert.equal(cardPage.props.footerActions.props.children, "View profile ↗");
   const Timeline = () => null;
   const route = load("app/journal/[token]/page.tsx", {
     "next/navigation": { notFound }, "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
-    "@/lib/membership/public-card-model": { MEMBER_CARD_TOKEN: /^[A-Za-z0-9_-]{43}$/ },
-    "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => ({ card, badges: [badge] }) },
+    "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[A-Za-z0-9_-]{43}$/ },
+    "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => ({ profile }) },
     "@/components/membership/PublicJournal": Timeline,
   });
   const rendered = await route.default({ params: Promise.resolve({ token }) });
-  assert.deepEqual(rendered.props.identity, { name: card.name, memberTag: card.memberTag, avatarUrl: null, bio: null, labels: [] });
-  assert.deepEqual(rendered.props.badges, [badge]);
-  assert.equal(route.metadata.title, "Timeline / Ruined");
+  assert.deepEqual(rendered.props.identity, profile);
+  assert.equal(route.metadata.title, "Profile / Ruined");
   assert.deepEqual(route.metadata.robots, { index: false, follow: false });
 });

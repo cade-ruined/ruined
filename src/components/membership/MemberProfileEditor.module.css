@@ -1,0 +1,6 @@
+.intro { max-width: 43rem; margin: 0 0 2rem; color: var(--member-muted); font-size: .95rem; line-height: 1.65; }
+/* Override the member shell's high-specificity input background rule. */
+.editor .field { color: var(--member-ink); background: color-mix(in srgb, var(--member-paper) 74%, transparent) !important; border-color: color-mix(in srgb, var(--member-ink) 32%, transparent) !important; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--member-paper) 40%, transparent); }
+.editor .field:focus-visible { border-color: var(--member-ink); outline: 2px solid var(--member-ink); outline-offset: 3px; box-shadow: none; }
+.editor .field[readonly] { color: var(--member-muted); cursor: default; }
+.editor .field option { background: var(--member-paper); color: var(--member-ink); }

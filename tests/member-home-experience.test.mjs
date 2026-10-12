@@ -52,7 +52,7 @@ function memberFixture() {
     announcement: { id: "announcement-1", title: "A note for your Circle", body: "Private announcement body", href: "/my/updates", publishedAt: "2026-01-12T12:00:00.000Z" },
     artifact, artifacts: [artifact], avatarUrl: null, blockName: "Our Block", circleMembers: [{ id: "person-2", displayName: "Circle person", avatarUrl: null }], circleName: "Our Circle", displayName: "Alex",
     foundations: { state: "completed", progressPercent: 100, requirements: { activeCircle: { completed: true, name: "Our Circle" }, futureLetter: { completed: true, completedAt: "2026-01-09T12:00:00.000Z" }, timeline: { completed: true, completedAt: "2026-01-08T12:00:00.000Z", entryCount: 4 }, moments: { completed: 5, total: 5 } } },
-    memberNumber: null, identity: { standingState: "active", email: "alex@example.com" }, memberSince: "2026-01-01T12:00:00.000Z",
+    memberNumber: null, identity: { memberId: "11111111-1111-4111-8111-111111111111", standingState: "active", email: "alex@example.com" }, memberSince: "2026-01-01T12:00:00.000Z",
     nextAction: { kind: "circle", title: "Meet your Circle", body: "", href: "/my/circle" }, nextExperience: futureMeeting, nextMeeting: futureMeeting,
     profile: { preferredName: "Alex", fullName: "Alex Member", displayName: "Alex", bio: null, buildingNow: null, directoryStatus: "hidden", location: null, timezone: "America/Denver" },
     record: {
@@ -78,8 +78,8 @@ test("profile uses the actual name, portrait, and full editor link",()=>{
 });
 test("both profile tabs point to the shared accessible panel",()=>{
  const tree=render(memberFixture());const nodes=elements(tree);const tabs=nodes.filter(node=>attr(node,"role")==="tab");
- assert.deepEqual(tabs.map(text),["Journal","Timeline"]);
- assert.ok(elements(tabs[0]).some(node=>node.tagName==="svg"&&attr(node,"aria-label")==="Private"));
+ assert.deepEqual(tabs.map(text),["Timeline","Journal"]);
+ assert.ok(elements(tabs[1]).some(node=>node.tagName==="svg"&&attr(node,"aria-label")==="Private"));
  assert.equal(nodes.filter(node=>attr(node,"role")==="tabpanel").length,1);
  const tablist=nodes.find(node=>attr(node,"role")==="tablist");
  assert.equal(nodes.filter(node=>attr(node,"data-add-entry")==="true").length,1);
@@ -124,7 +124,7 @@ test("limited profile states keep Journal read-only and the existing profile con
  }
 });
 
-test("the owner header uses full name for a generated tag without changing public identity", () => {
+test("the owner header consistently prefers full name while retaining legacy fallbacks", () => {
   const member = memberFixture();
   member.displayName = member.profile.displayName = "@alex";
   member.profile.memberTag = "alex";
@@ -137,7 +137,7 @@ test("the owner header uses full name for a generated tag without changing publi
   assert.equal(elements(tree).filter(node => attr(node, "class") === "memberTag").map(text).join(), "@alex");
   assert.equal(JSON.stringify(member), before, "private header presentation must not mutate shared profile data");
   member.profile.displayName = member.displayName = "Authored Name";
-  assert.equal(attr(elements(render(member)).find(node => node.tagName === "h1"), "aria-label"), "Authored Name");
+  assert.equal(attr(elements(render(member)).find(node => node.tagName === "h1"), "aria-label"), "Alex de Morgan");
   member.profile.displayName = member.displayName = "@alex";
   member.profile.fullName = null;
   assert.equal(attr(elements(render(member)).find(node => node.tagName === "h1"), "aria-label"), "My profile");
@@ -153,7 +153,7 @@ test("profile badge uses the permanent number and leaves unassigned members unnu
   const rendered=renderToStaticMarkup(React.createElement(MemberHome,{member,preview:true}));
   assert.doesNotMatch(rendered,/No\. 0001|Founder/);
   const tree=render(member), actions=elements(tree).find(node=>attr(node,"class")==="identityActions");
-  assert.deepEqual(elements(actions).filter(node=>node.tagName==="a").map(node=>attr(node,"href")),["/my/profile","/my/card","/my/invitation"]);
+  assert.deepEqual(elements(actions).filter(node=>node.tagName==="a").map(node=>attr(node,"href")),["/my/profile","/profile/11111111-1111-4111-8111-111111111111","/my/card","/my/invitation"]);
 });
 
 
@@ -233,31 +233,30 @@ function interactiveProfile(hash = "#journal") {
   };
 }
 
-test("Journal and Timeline tabs select their own views while hashes and browser state stay compatible", () => {
-  const ui = interactiveProfile("#timeline");
+test("Timeline is the default while Journal links select its private section", () => {
+  const ui = interactiveProfile("");
   assert.equal(ui.journal().props.initialMode, "timeline");
   assert.equal(ui.journal().props.view ?? "journal", "journal");
-  assert.deepEqual(ui.tabs().map(tab => tab.props["aria-selected"]), [false, true]);
+  assert.deepEqual(ui.tabs().map(tab => tab.props["aria-selected"]), [true, false]);
   assert.equal(Boolean(ui.panel().props.hidden), false);
   assert.equal(ui.panel().props["aria-labelledby"], "profile-test-timeline-tab");
-  ui.tabs()[0].props.onClick();
-  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.journal().props.initialMode, "all");
   ui.tabs()[1].props.onClick();
+  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.journal().props.initialMode, "all");
+  ui.tabs()[0].props.onClick();
   assert.equal(ui.window.location.hash, "#timeline"); assert.equal(ui.journal().props.initialMode, "timeline");
   ui.navigate("#journal"); assert.equal(ui.journal().props.initialMode, "all");
   ui.navigate("#timeline", "popstate"); assert.equal(ui.journal().props.initialMode, "timeline");
-  ui.navigate("", "popstate"); assert.equal(ui.journal().props.initialMode, "all");
-  assert.deepEqual(ui.tabs().map(tab => tab.props["aria-selected"]), [true, false]);
+  ui.navigate("", "popstate"); assert.equal(ui.journal().props.initialMode, "timeline");
   ui.unmount();
 });
 
-test("legacy Saved, About and unknown hashes safely select private Journal without remounting", () => {
+test("switching sections and legacy hashes never remounts the draft owner", () => {
   const ui = interactiveProfile("#timeline"), initial = ui.journal(), initialPath = ui.journalPath();
   const content = ui.panel().props.children;
   assert.equal(content.props["data-journal-content"], "true");
-  for (const hash of ["#saved", "#about", "#timeline", "#unknown"]) {
+  for (const hash of ["#saved", "#about", "#journal", "#timeline", "#unknown"]) {
     ui.navigate(hash);
-    const journal = ui.journal(), timeline = hash === "#timeline";
+    const journal = ui.journal(), timeline = hash !== "#journal";
     assert.equal(journal.type, initial.type); assert.equal(journal.key, initial.key);
     assert.deepEqual(ui.journalPath(), initialPath, "view switches must not move or remount the draft owner");
     assert.equal(ui.panel().props.children.type, content.type);
@@ -268,10 +267,6 @@ test("legacy Saved, About and unknown hashes safely select private Journal witho
     assert.equal(ui.nodes(ui.render()).some(node => node.type === "details"), false);
   }
   ui.unmount();
-  const legacyAbout=interactiveProfile("#about");
-  assert.equal(legacyAbout.journal().props.initialMode,"all");
-  assert.equal(legacyAbout.panel().props["aria-labelledby"],"profile-test-journal-tab");
-  legacyAbout.unmount();
 });
 
 test("saving an entry can select its private Journal or shared Timeline without remounting the editor", () => {
@@ -289,29 +284,19 @@ test("saving an entry can select its private Journal or shared Timeline without 
 });
 
 test("two profile tabs keep roving keyboard focus with wrapping boundaries", () => {
-  const ui = interactiveProfile("#saved");
+  const ui = interactiveProfile("");
   assert.deepEqual(ui.tabs().map(tab => tab.props.tabIndex), [0, -1]);
   let prevented = 0;
-  ui.tabs()[1].props.onKeyDown({ key: "Home", preventDefault() { prevented++; } });
-  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.focus(), 0);
-  ui.tabs()[0].props.onKeyDown({ key: "ArrowRight", preventDefault() { prevented++; } });
-  assert.equal(ui.window.location.hash, "#timeline"); assert.equal(ui.focus(), 1);
-  assert.equal(ui.journal().props.initialMode, "timeline");
-  assert.deepEqual(ui.tabs().map(tab => tab.props.tabIndex), [-1, 0]);
-  ui.tabs()[1].props.onKeyDown({ key: "ArrowRight", preventDefault() { prevented++; } });
-  assert.equal(ui.window.location.hash, "#journal"); assert.equal(ui.focus(), 0);
-  assert.equal(ui.journal().props.initialMode, "all");
-  ui.tabs()[0].props.onKeyDown({ key: "ArrowLeft", preventDefault() { prevented++; } });
-  assert.equal(ui.window.location.hash, "#timeline"); assert.equal(ui.focus(), 1);
-  ui.tabs()[1].props.onKeyDown({ key: "ArrowLeft", preventDefault() { prevented++; } });
-  assert.equal(ui.window.location.hash,"#journal"); assert.equal(ui.focus(),0);
-  ui.tabs()[0].props.onKeyDown({ key: "End", preventDefault() { prevented++; } });
-  assert.equal(ui.window.location.hash,"#timeline");assert.equal(ui.focus(),1);assert.equal(prevented,6);
+  for (const [index,key,destination,focus] of [[1,"Home","timeline",0],[0,"ArrowRight","journal",1],[1,"ArrowRight","timeline",0],[0,"ArrowLeft","journal",1],[1,"ArrowLeft","timeline",0],[0,"End","journal",1]]) {
+    ui.tabs()[index].props.onKeyDown({ key, preventDefault() { prevented++; } });
+    assert.equal(ui.window.location.hash, `#${destination}`); assert.equal(ui.focus(), focus);
+    assert.equal(ui.journal().props.initialMode, destination === "timeline" ? "timeline" : "all");
+    assert.deepEqual(ui.tabs().map(tab => tab.props.tabIndex), focus === 0 ? [0,-1] : [-1,0]);
+  }
   ui.tabs()[1].props.onKeyDown({ key: "Enter", preventDefault() { prevented++; } });
   assert.equal(prevented, 6, "unrelated keys must remain available to native button behavior");
   ui.unmount();
 });
-
 
 test("profile orders portrait and identity, bio, actions, then earned badges without empty placeholders", () => {
   const empty = render(memberFixture());

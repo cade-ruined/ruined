@@ -32,6 +32,7 @@ export async function fixture(t, { applyExpiry = true, persistentPersonalInvitat
     create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key, status text default 'active');
     create table ruined_members(id uuid primary key, person_id uuid references people(id), email_normalized text unique, deleted_at timestamptz);
+    create table member_public_cards(member_id uuid primary key, version integer not null default 1, invitation_customized_at timestamptz);
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active', member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity);
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text, bio text default 'PRIVATE BIO', avatar_storage_path text default 'PRIVATE PHOTO');
@@ -80,18 +81,24 @@ export async function fixture(t, { applyExpiry = true, persistentPersonalInvitat
       programState: row.program_state, foundationsState: row.foundations_state, administrativeOnboardingState: row.administrative_onboarding_state,
       standingState: row.standing_state, cancellationEffectiveAt: row.cancellation_effective_at, membershipFunding: row.operator ? "operator" : "self" };
   }
+  let cardReadHook = null;
+  const cardRepository = { getInvitationMemberCard: async memberId => {
+    const { rows: [row] } = await db.query("select profile.display_name from ruined_members member join person_profiles profile on profile.person_id=member.person_id where member.id=$1", [memberId]);
+    if (cardReadHook) await cardReadHook();
+    return model.invitationCard(row?.display_name || "Member", crypto.createHash("sha256").update(`ruined-member-card:${memberId}`).digest("hex").slice(0,24));
+  } };
   const configuration = { stripeCheckoutReady: true, membershipSignupReady: true, membershipRegistrationOnly: false };
   const repository = await load("src/lib/membership/invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, read) => read() },
-    "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity }, "./invitation-model": model,
+    "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity }, "./invitation-model": model, "./public-card-repository": cardRepository,
     "@/lib/platform/config": { getPlatformConfiguration: () => configuration },
   });
-  const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": model, "libphonenumber-js/min": phone });
+  const personalModel = await load("src/lib/membership/personal-invitation-model.ts", { "./invitation-model": model, "./public-card-repository": cardRepository, "libphonenumber-js/min": phone });
   const personalRepository = await load("src/lib/membership/personal-invitation-repository.ts", {
     "server-only": {}, "node:crypto": crypto,
     "@/lib/database/server": { getApplicationDatabase: () => sql, withFreshApplicationDatabaseRead: (_stage, read) => read() },
     "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity: identity },
-    "./invitation-model": model, "./personal-invitation-model": personalModel,
+    "./invitation-model": model, "./public-card-repository": cardRepository, "./personal-invitation-model": personalModel,
   });
   const waitlist = await load("src/lib/membership/waitlist-repository.ts", { "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = await load("src/lib/membership/registration-repository.ts", {
@@ -127,5 +134,5 @@ export async function fixture(t, { applyExpiry = true, persistentPersonalInvitat
   async function enable(who = first) { const own = await repository.getOwnMemberInvitation(who.auth); return repository.saveOwnMemberInvitation(who.auth, { enabled: true, version: own.version }); }
   async function submit(who, token, name = "Interested Person") { return waitlist.joinMembershipWaitlist(waitlistModel.parseMembershipWaitlistInput({ name, email: who.email, ...(token ? { invitationToken: token } : {}) })); }
   await addMember(first, true, true); await addMember(second, true, true);
-  return { db, sql, configuration, repository, personalRepository, personalModel, waitlist, ops, opsReferrals, addMember, activate, enable, submit };
+  return { db, sql, configuration, repository, personalRepository, personalModel, waitlist, ops, opsReferrals, addMember, activate, enable, submit, setCardReadHook: hook => { cardReadHook = hook; } };
 }

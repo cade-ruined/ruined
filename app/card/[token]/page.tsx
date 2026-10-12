@@ -24,5 +24,5 @@ export default async function PublicCardPage({ params }: Props) {
   if (!MEMBER_CARD_TOKEN.test(token)) notFound();
   const card = await getPublicMemberCard(token);
   if (!card) notFound();
-  return <PublicMemberCardPage card={card} footerActions={<Link href={`/journal/${token}`}>View Timeline ↗</Link>} />;
+  return <PublicMemberCardPage card={card} footerActions={<Link href={`/profile/${token}`}>View profile ↗</Link>} />;
 }

@@ -1,11 +1,12 @@
 import "server-only";
+import { getInvitationMemberCard } from "./public-card-repository";
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase, withFreshApplicationDatabaseRead } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
-import { invitationCard, MemberInvitationError } from "./invitation-model";
+import { MemberInvitationError } from "./invitation-model";
 import {
   getPersonalInvitationDailyLimit, PERSONAL_INVITATION_UUID, validateCreatePersonalMemberInvitationInput,
   validatePersonalMemberInvitationVersionInput, type CreatePersonalMemberInvitationInput,
@@ -104,8 +105,10 @@ export async function getOwnPersonalInvitations(authUserId: string): Promise<Sna
     const [legacy] = await sql<Array<{ public_token: string; issued_at: Date | string; expires_at: Date | string; enabled: boolean; version: number; active: boolean }>>`
       select public_token, issued_at, expires_at, enabled, version, expires_at > clock_timestamp() as active
       from member_invitations where member_id = ${identity.memberId}::uuid`;
+    const card = await getInvitationMemberCard(identity.memberId);
+    if (!card) throw new MemberInvitationError(409, "Your card changed. Reload before continuing.");
     return {
-      card: invitationCard(names.name, createHash("sha256").update(`ruined-invitation:${identity.memberId}`).digest("hex").slice(0, 24), names.member_tag),
+      card,
       eligible: names.eligible, writable, canGrantComplimentary: names.can_grant_complimentary,
       invitations: rows.map(row => ({ id: row.id, requestId: row.request_id, recipientName: row.recipient_name, recipientEmail: row.recipient_email_normalized ?? "", recipientPhone: row.recipient_phone,
         url: row.active && names.eligible ? `/invitation/${row.public_token}` : null,

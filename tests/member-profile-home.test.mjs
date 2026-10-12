@@ -13,7 +13,7 @@ test("member profile preserves the supplied Polaroid frame byte for byte", async
   );
 });
 
-test("member home repository uses the editable display name and suppresses private arrays", () => {
+test("member home repository uses the editable full name and suppresses private arrays", () => {
   const loader = section(
     repository,
     "export async function getMemberHome",
@@ -25,7 +25,7 @@ test("member home repository uses the editable display name and suppresses priva
   assert.doesNotMatch(loader, /displayName: profile\.directory\.preferredName/);
   assert.match(loader, /memberTag: profile\.directory\.memberTag/);
   assert.match(loader, /displayName: profile\.directory\.displayName/);
-  assert.match(loader, /fullName: profile\.privateProfile\.legalName/);
+  assert.match(loader, /fullName: profile\.directory\.fullName/);
   assert.match(loader, /visibleArtifacts = suppressPrivateHighlights \? \[\] : artifacts\.awards/);
   assert.match(loader, /visibleCircleMembers = suppressPrivateHighlights \? \[\] : circle\.members/);
   assert.match(loader, /visibleUpcomingExperiences = suppressPrivateHighlights \? \[\] : experiences\.upcoming/);

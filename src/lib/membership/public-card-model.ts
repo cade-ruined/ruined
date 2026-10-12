@@ -42,11 +42,20 @@ export type MemberCardSnapshot = {
   writable: boolean;
   eligible: boolean;
   publicUrl: string | null;
+  invitationCustomized: boolean;
   source: MemberCardSource;
   sourceRevision: string;
   availableLabels: MemberCardLabel[];
 };
-export type MemberCardInput = MemberCardSettings & { version: number };
+export type MemberCardInput = MemberCardSettings & { version: number; customizeInvitation?: true };
+/** Public profile identity is separate from the optional collectible card. */
+export type PublicMemberProfile = {
+  name: string;
+  memberTag: string | null;
+  bio: string | null;
+  memberNumber: number | null;
+};
+export const MEMBER_PROFILE_IDENTIFIER = /^(?:[A-Za-z0-9_-]{43}|[a-zA-Z0-9_]{3,24}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 export const MEMBER_CARD_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 export const MEMBER_CARD_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0",
@@ -56,7 +65,7 @@ export const MEMBER_CARD_HEADERS = {
 export const MEMBER_CARD_LIMITS = { name: 64, bio: 180, building: 100, website: 300, labels: 2 } as const;
 const LABEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const FLAGS = ["publicEnabled", "showPortrait", "showMemberSince", "showLocation", "showBio", "showBuilding", "showWebsite"] as const;
-const FIELDS = [...FLAGS, "labelIds", "version"];
+const FIELDS = [...FLAGS, "labelIds", "version", "customizeInvitation"];
 export class PublicCardError extends Error {
   constructor(readonly status: number, message: string) { super(message); this.name = "PublicCardError"; }
 }
@@ -73,6 +82,7 @@ export function validateMemberCardInput(value: unknown): MemberCardInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PublicCardError(400, "A card is required.");
   const input = value as Record<string, unknown>;
   if (Object.keys(input).some(key => !FIELDS.includes(key)) || FLAGS.some(key => typeof input[key] !== "boolean") ||
+      (input.customizeInvitation !== undefined && input.customizeInvitation !== true) ||
       !Number.isSafeInteger(input.version) || Number(input.version) < 0 || Number(input.version) > 2_147_483_646 ||
       !Array.isArray(input.labelIds) || input.labelIds.length > MEMBER_CARD_LIMITS.labels ||
       input.labelIds.some(id => typeof id !== "string" || !LABEL_ID.test(id)) || new Set(input.labelIds).size !== input.labelIds.length) {
@@ -84,6 +94,7 @@ export function validateMemberCardInput(value: unknown): MemberCardInput {
     showLocation: input.showLocation as boolean, showBio: input.showBio as boolean,
     showBuilding: input.showBuilding as boolean, showWebsite: input.showWebsite as boolean,
     labelIds: input.labelIds as string[], version: input.version as number,
+    ...(input.customizeInvitation === true ? { customizeInvitation: true as const } : {}),
   };
 }
 export function defaultMemberCardSettings(): MemberCardSettings {
@@ -96,7 +107,7 @@ export function defaultMemberCardSettings(): MemberCardSettings {
 export function projectMemberCard(settings: MemberCardSettings, source: MemberCardSource, labels: MemberCardLabel[], wearSeed: string): PublicMemberCard {
   return {
     name: source.name,
-    memberTag: source.memberTag,
+    memberTag: null,
     avatarUrl: settings.showPortrait ? source.avatarUrl : null,
     memberSince: settings.showMemberSince ? source.memberSince : null,
     location: settings.showLocation ? source.location : null,

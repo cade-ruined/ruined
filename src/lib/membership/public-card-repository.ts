@@ -9,9 +9,9 @@ import type { MemberAccessIdentity } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
 import { MEMBER_PHOTO_BUCKET, ownedMemberPhotoPath } from "@/lib/membership/photo-policy";
 import {
-  defaultMemberCardSettings, MEMBER_CARD_TOKEN, projectMemberCard, PublicCardError,
+  defaultMemberCardSettings, MEMBER_CARD_TOKEN, MEMBER_PROFILE_IDENTIFIER, projectMemberCard, PublicCardError,
   validateMemberCardInput, type MemberCardInput, type MemberCardLabel, type MemberCardSettings,
-  type MemberCardSnapshot, type MemberCardSource, type PublicMemberCard,
+  type MemberCardSnapshot, type MemberCardSource, type PublicMemberCard, type PublicMemberProfile,
 } from "./public-card-model";
 
 type CardSql = TransactionSql | ReturnType<typeof getApplicationDatabase>;
@@ -20,6 +20,7 @@ type CardRow = {
   member_id: string; public_token: string; wear_seed: string; public_enabled: boolean;
   show_portrait: boolean; show_member_since: boolean; show_location: boolean;
   show_bio: boolean; show_building: boolean; show_website: boolean; label_ids: string[]; version: number;
+  invitation_customized_at: Date | string | null;
 };
 type SourceRow = {
   display_name: string | null; preferred_name: string | null; member_tag: string | null; avatar_storage_path: string | null;
@@ -107,6 +108,7 @@ export async function getOwnMemberCard(authUserId: string): Promise<MemberCardSn
   return {
     card: projectMemberCard(settings, source, availableLabels, row?.wear_seed ?? wearSeed(identity.memberId)),
     settings, version: row?.version ?? 0, writable, eligible, source, sourceRevision: sourceRevision(source, availableLabels), availableLabels,
+    invitationCustomized: Boolean(row?.invitation_customized_at),
     publicUrl: row?.public_enabled && eligible ? `/card/${row.public_token}` : null,
   };
 }
@@ -129,7 +131,7 @@ export async function saveProfileCardSettings(
     const [current] = await tx<CardRow[]>`select * from member_public_cards where member_id = ${identity.memberId}::uuid for update`;
     if ((current?.version ?? 0) !== input.version) throw new PublicCardError(409, "This card changed in another tab. Reload before saving.");
     // Publication can always be withdrawn without re-approving stale profile details or labels.
-    if (current?.public_enabled && !input.publicEnabled && (withdrawalOnly || !writable)) {
+    if (current?.public_enabled && !input.publicEnabled && !input.customizeInvitation && (withdrawalOnly || !writable)) {
       await tx`update member_public_cards set public_enabled = false, version = version + 1,
         updated_at = statement_timestamp() where member_id = ${identity.memberId}::uuid`;
       return;
@@ -166,13 +168,14 @@ export async function saveProfileCardSettings(
     const token = current?.public_token ?? randomBytes(32).toString("base64url");
     await tx`
       insert into member_public_cards (member_id, public_token, wear_seed, public_enabled,
-        show_portrait, show_member_since, show_location, show_bio, show_building, show_website, label_ids)
+        show_portrait, show_member_since, show_location, show_bio, show_building, show_website, label_ids, invitation_customized_at)
       values (${identity.memberId}::uuid, ${token}, ${current?.wear_seed ?? wearSeed(identity.memberId)}, ${input.publicEnabled},
-        ${input.showPortrait}, ${input.showMemberSince}, ${input.showLocation}, ${input.showBio}, ${input.showBuilding}, ${input.showWebsite}, ${tx.json(input.labelIds)}::jsonb)
+        ${input.showPortrait}, ${input.showMemberSince}, ${input.showLocation}, ${input.showBio}, ${input.showBuilding}, ${input.showWebsite}, ${tx.json(input.labelIds)}::jsonb,
+        case when ${input.customizeInvitation === true} then statement_timestamp() else ${current?.invitation_customized_at ?? null}::timestamptz end)
       on conflict (member_id) do update set public_enabled = excluded.public_enabled,
         show_portrait = excluded.show_portrait, show_member_since = excluded.show_member_since, show_location = excluded.show_location,
         show_bio = excluded.show_bio, show_building = excluded.show_building, show_website = excluded.show_website,
-        label_ids = excluded.label_ids, version = member_public_cards.version + 1, updated_at = statement_timestamp()
+        label_ids = excluded.label_ids, invitation_customized_at = excluded.invitation_customized_at, version = member_public_cards.version + 1, updated_at = statement_timestamp()
     `;
 }
 async function publicCardRow(token: string, sql: CardSql = getApplicationDatabase()): Promise<PublicRow | null> {
@@ -234,6 +237,87 @@ export async function getPublicMemberCard(token: string): Promise<PublicMemberCa
   const latest = await publicCardRow(token);
   return latest?.version === row.version && sourceRevision(rowSource(latest, latest.member_id), labels) === revision ? card : null;
 }
+/** Invitation callers establish their own active invitation/owner gate before reading this projection. */
+export async function getInvitationMemberCard(memberId: string): Promise<PublicMemberCard | null> {
+  const sql = getApplicationDatabase();
+  const [member] = await sql<{ person_id: string }[]>`select person_id from ruined_members where id = ${memberId}::uuid`;
+  if (!member) return null;
+  const [source, labels, rows] = await Promise.all([
+    cardSource(memberId, sql), cardLabels(memberId, member.person_id, sql),
+    sql<CardRow[]>`select * from member_public_cards where member_id = ${memberId}::uuid limit 1`,
+  ]);
+  const settings = rows[0]?.invitation_customized_at ? rowSettings(rows[0]) : defaultMemberCardSettings();
+  // Portraits have a separate guarded byte endpoint and are not invitation fields.
+  const card = projectMemberCard({ ...settings, showPortrait: false, showWebsite: false }, source, labels, rows[0]?.wear_seed ?? wearSeed(memberId));
+  const [latestSource, latestLabels, latestRows] = await Promise.all([
+    cardSource(memberId, sql), cardLabels(memberId, member.person_id, sql),
+    sql<CardRow[]>`select * from member_public_cards where member_id = ${memberId}::uuid limit 1`,
+  ]);
+  // A slow label/source read must not outlive withdrawn customization or edited details.
+  if ((latestRows[0]?.version ?? 0) !== (rows[0]?.version ?? 0)
+      || iso(latestRows[0]?.invitation_customized_at ?? null) !== iso(rows[0]?.invitation_customized_at ?? null)
+      || sourceRevision(latestSource, latestLabels) !== sourceRevision(source, labels)) return null;
+  return card;
+}
+
+/** Public profiles have a fixed field set and do not depend on card sharing. */
+type ProfileRow = Pick<PublicRow, "account_state" | "billing_state" | "program_state" | "standing_state" |
+  "administrative_onboarding_state" | "cancellation_effective_at" | "registration_held" | "operator_funded" |
+  "complimentary_funded" | "shared_billing_state"> & {
+  member_id: string; public_token: string | null; display_name: string | null; preferred_name: string | null;
+  member_tag: string | null; bio: string | null; member_number: number | null; membership_activated_at: Date | string | null;
+};
+async function publicProfileRow(identifier: string, sql: CardSql = getApplicationDatabase()): Promise<ProfileRow | null> {
+  if (!MEMBER_PROFILE_IDENTIFIER.test(identifier)) return null;
+  const [row] = await sql<ProfileRow[]>`
+    select member.id as member_id, card.public_token, profile.display_name, profile.preferred_name,
+      profile.member_tag, profile.bio, member.member_number, member.membership_activated_at,
+      lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
+      lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
+      private.ruined_member_has_operator_funding(member.id) as operator_funded,
+      not private.ruined_member_profile_released(member.id) as registration_held,
+      private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
+      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded
+    from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    left join person_profiles profile on profile.person_id = member.person_id
+    left join member_public_cards card on card.member_id = member.id
+    where member.deleted_at is null
+      and (member.id::text = ${identifier} or profile.member_tag = ${identifier.toLowerCase()} or card.public_token = ${identifier})
+      and exists (select 1 from platform_users viewer join platform_role_grants member_grant
+        on member_grant.auth_user_id = viewer.auth_user_id and member_grant.role_slug = 'member' and member_grant.revoked_at is null
+        where viewer.person_id = member.person_id and viewer.status = 'active')
+    limit 1
+  `;
+  if (!row) return null;
+  const identity: MemberAccessIdentity = {
+    accountState: row.account_state, billingState: row.shared_billing_state ?? row.billing_state, programState: row.program_state,
+    standingState: row.standing_state, administrativeOnboardingState: row.administrative_onboarding_state,
+    registrationHeld: row.registration_held === true, cancellationEffectiveAt: iso(row.cancellation_effective_at),
+    membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
+  };
+  return canPublishMemberCard(identity, iso(row.membership_activated_at)) ? row : null;
+}
+function profileProjection(row: ProfileRow): PublicMemberProfile {
+  return { name: row.display_name?.trim() || row.preferred_name?.trim() || "Member", memberTag: row.member_tag,
+    bio: row.bio?.trim() || null, memberNumber: row.member_number };
+}
+function profileScope(row: ProfileRow) {
+  return { memberId: row.member_id, token: row.member_tag || row.public_token || row.member_id,
+    version: createHash("sha256").update(JSON.stringify(profileProjection(row))).digest("hex") };
+}
+export async function getPublicMemberProfileScope(identifier: string, sql: CardSql = getApplicationDatabase()) {
+  const row = await publicProfileRow(identifier, sql);
+  return row ? profileScope(row) : null;
+}
+export async function getOwnMemberProfilePublicScope(memberId: string, sql: CardSql = getApplicationDatabase()) {
+  const row = await publicProfileRow(memberId, sql);
+  return row?.member_id === memberId ? profileScope(row) : null;
+}
+export async function getPublicMemberProfile(identifier: string): Promise<PublicMemberProfile | null> {
+  const row = await publicProfileRow(identifier);
+  return row ? profileProjection(row) : null;
+}
+
 export async function getPublicMemberCardPortrait(token: string): Promise<Blob | null> {
   const row = await publicCardRow(token);
   if (!row) return null;

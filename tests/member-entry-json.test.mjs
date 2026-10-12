@@ -301,14 +301,17 @@ for (const funding of ["self", "operator", "complimentary"]) test(`entry saves, 
     assert.equal(saved.profile.memberTag, "test_member");
     assert.equal(saved.profile.preferredName, null);
     assert.deepEqual((await db.query("select display_name,preferred_name,member_tag from person_profiles")).rows[0],
-      { display_name: "@test_member", preferred_name: null, member_tag: "test_member" });
+      { display_name: "Test Member", preferred_name: null, member_tag: "test_member" });
     assert.equal(saved.profile.birthDate, "1990-01-15");
     assert.deepEqual(saved.profile.apparelSizing, { top: "L" });
     assert.deepEqual(saved.profile.fulfillmentAddress, profileInput.shippingAddress);
     const updated = await repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, apparelTopSize: "XL" });
     assert.deepEqual(updated.profile.apparelSizing, { top: "XL" });
-    await repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, memberTag: " @Renamed_Tag " });
-    assert.equal((await db.query("select display_name from person_profiles")).rows[0].display_name, "@renamed_tag");
+    await assert.rejects(repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, memberTag: " @Renamed_Tag " }), repository.MembershipInputError);
+    assert.equal((await db.query("select display_name from person_profiles")).rows[0].display_name, "Test Member");
+    const corrected = await repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, legalName: "Test Member Corrected" });
+    assert.equal(corrected.profile.legalName, "Test Member Corrected");
+    assert.equal((await db.query("select display_name from person_profiles")).rows[0].display_name, "Test Member Corrected", "a generated public name follows a registration correction");
     await db.exec("update person_profiles set display_name='Chosen public name',preferred_name='Legacy preferred name'");
     await repository.saveMemberOnboardingProfile(ids.auth, profileInput);
     assert.deepEqual((await db.query("select display_name,preferred_name from person_profiles")).rows[0],
@@ -317,7 +320,7 @@ for (const funding of ["self", "operator", "complimentary"]) test(`entry saves, 
     await db.query("insert into people(id) values($1)", [otherPerson]);
     await db.query("insert into person_profiles(person_id,display_name,member_tag) values($1,'Other public name','taken_tag')", [otherPerson]);
     await assert.rejects(repository.saveMemberOnboardingProfile(ids.auth, { ...profileInput, memberTag: "Taken_Tag", legalName: "Should not save" }),
-      error => error instanceof repository.MembershipConflictError && error.code === "member_tag_unavailable");
+      error => error instanceof repository.MembershipInputError && /permanent/.test(error.message));
     assert.equal((await db.query("select legal_name from person_private_profiles where person_id=$1", [ids.person])).rows[0].legal_name, profileInput.legalName);
     assert.equal((await repository.getMemberOnboarding(ids.auth)).profile.memberTag, "test_member");
     const accepted = await repository.acceptPublishedMembershipAgreement(ids.auth, agreementInput);

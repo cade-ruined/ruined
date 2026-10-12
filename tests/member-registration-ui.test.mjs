@@ -347,8 +347,10 @@ test("details save follows server confirmation to required card or complimentary
   for (const required of [true, false]) {
     const f = await detailsFixture(required);
     const markup = renderToStaticMarkup(f.render());
-    assert.doesNotMatch(markup, /Profile photo|public profile|Save my profile|Review agreement/);
-    assert.match(markup, /Your details|Reserve your unique/);
+    assert.doesNotMatch(markup, /Profile photo|Save my profile|Review agreement/);
+    assert.match(markup, /Your name appears on your public profile and member card/);
+    assert.match(markup, /Your details/);
+    assert.match(markup, /Choose your permanent @tag/);
     await f.submit();
     assert.equal(f.calls.length, 1); assert.equal(f.calls[0].url, "/api/my/onboarding"); assert.equal(f.calls[0].body.action, "save_profile");
     assert.deepEqual(f.redirects, [required ? "/my/payment-method" : "/my/registered"]);

@@ -59,7 +59,7 @@ test("public render accepts only the approved projection and metadata does not p
   const result = await page.default(params(token));
   assert.deepEqual(Object.keys(result.props), ["card", "footerActions"]); assert.deepEqual(result.props.card, fixture);
   const html = renderToStaticMarkup(result);
-  assert.match(html, new RegExp(`href="/journal/${token}"`)); assert.match(html, /View Timeline/);
+  assert.match(html, new RegExp(`href="/profile/${token}"`)); assert.match(html, /View profile/);
   assert.match(html, /Chosen &lt;name&gt;/); assert.doesNotMatch(html, /PRIVATE|memberId|personId|email|sourceRevision/);
   const metadata = await page.generateMetadata(params(token));
   assert.equal(metadata.referrer, "no-referrer"); assert.deepEqual(metadata.robots, { index: false, follow: false });
@@ -136,6 +136,7 @@ test("card bytes cannot enter Next's public image cache, while static assets and
   const cardHeaders = Object.fromEntries(headers.find(rule => rule.source === "/card/:path*").headers.map(header => [header.key, header.value]));
   assert.match(cardHeaders["Cache-Control"], /private, no-store/); assert.equal(cardHeaders["Referrer-Policy"], "no-referrer");
   assert.equal(cardHeaders["X-Robots-Tag"], "noindex, nofollow");
+  assert.deepEqual(headers.find(rule => rule.source === "/profile/:path*").headers, headers.find(rule => rule.source === "/card/:path*").headers);
   const securityIndex = headers.findIndex(rule => rule.headers.some(header => header.key === "X-Frame-Options" && header.value === "DENY"));
   assert.ok(securityIndex >= 0 && headers.findIndex(rule => rule.source === "/card/:path*") > securityIndex, "specific privacy headers must override the global referrer policy");
 });
@@ -160,7 +161,7 @@ test("card analytics are suppressed before effects and after navigation, with be
     const metric = { name: "LCP", value: 100, entries: [{ name: `https://members.theruinedproject.com/card/${token}` }] };
     vitals.default(); effect(); reported({ name: "LCP", value: 100, entries: [] });
     assert.equal(sends.length, 1); assert.equal(sends[0][0], "beacon", "ordinary pages keep existing analytics");
-    for (const cardPath of [`/card/${token}`, "/card/preview", "/my/card"]) {
+    for (const cardPath of [`/card/${token}`, "/card/preview", "/my/card", `/profile/${token}`, "/profile/shared_tag", `/journal/${token}`]) {
       visited = { current: false }; pathname = cardPath;
       vitals.default(); reported(metric);
       assert.equal(sends.length, 1, "current card location must suppress reports even before useEffect");

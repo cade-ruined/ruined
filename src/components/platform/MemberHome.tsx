@@ -12,17 +12,17 @@ import { memberTier } from "@/lib/membership/member-number";
 import type { MemberHomeSnapshot } from "@/lib/membership/model";
 import styles from "./MemberProfile.module.css";
 
-const tabs=["journal","timeline"] as const;
+const tabs=["timeline","journal"] as const;
 type JournalMode="all"|"timeline";
 type Tab=typeof tabs[number];
 export default function MemberHome({member,preview=false}:{member:MemberHomeSnapshot;preview?:boolean}) {
   const {avatarUrl}=useMemberPortrait(member.avatarUrl);
-  const [tab,setTab]=useState<Tab>("journal");const [journalMode,setJournalMode]=useState<JournalMode>("all");const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
+  const [tab,setTab]=useState<Tab>("timeline");const [journalMode,setJournalMode]=useState<JournalMode>("timeline");const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
   useEffect(()=>{
     function synchronize(){
       const value=window.location.hash.slice(1);
-      if(value==="timeline"){setTab("timeline");setJournalMode("timeline");}
-      else {setTab("journal");setJournalMode("all");}
+      if(value==="journal"){setTab("journal");setJournalMode("all");}
+      else {setTab("timeline");setJournalMode("timeline");}
     }
     synchronize();
     window.addEventListener("hashchange",synchronize);
@@ -36,12 +36,13 @@ export default function MemberHome({member,preview=false}:{member:MemberHomeSnap
   }
   function keyNavigate(event:KeyboardEvent,index:number){const target=event.key==="ArrowRight"?(index+1)%tabs.length:event.key==="ArrowLeft"?(index+tabs.length-1)%tabs.length:event.key==="Home"?0:event.key==="End"?tabs.length-1:null;if(target!==null){event.preventDefault();select(tabs[target]);tabRefs.current[target]?.focus();}}
   const tag=member.profile.memberTag?`@${member.profile.memberTag}`:null;
-  const selectedName=member.profile.displayName?.trim()||member.displayName.trim();
-  // This is the private owner page; a generated @tag can use the owner's full name.
+  const selectedName=member.profile.fullName?.trim()||member.profile.displayName?.trim()||member.displayName.trim();
+  // Full name is the profile identity; retain a safe fallback for older records.
   const profileName=tag&&selectedName.toLowerCase()===tag?(member.profile.fullName?.trim()||"My profile"):(selectedName||"My profile");
   const [firstName,...surnameParts]=profileName.split(/\s+/);
   const surname=surnameParts.join(" ");
   const tier=memberTier(member.memberNumber);
+  const publicProfileUrl=`/profile/${member.profile.memberTag || member.identity.memberId}`;
   return <main className={styles.profile} data-member-profile>
     <header className={styles.identity}>
       <figure className={styles.polaroid} aria-label={avatarUrl?"Member portrait":"Portrait not added"} data-member-polaroid><div className={styles.photo}><Image src={avatarUrl??"/membership/portrait-pending-editorial.webp"} alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/></div><Image className={styles.frame} src="/membership/polaroid-frame.png" alt="" fill sizes="(max-width: 359px) 128px, (max-width: 700px) 156px, 208px" priority unoptimized/><figcaption>{avatarUrl?"the ruined project":"Add your photo"}</figcaption>{!avatarUrl?<Link className="absolute inset-0 z-10" href="/my/profile" aria-label="Add your profile photo"/>:null}</figure>
@@ -55,7 +56,7 @@ export default function MemberHome({member,preview=false}:{member:MemberHomeSnap
         {member.memberSince?<p className={styles.memberSince}>Member since {new Date(member.memberSince).getUTCFullYear()}</p>:null}
       </div>
       {member.profile.bio?<p className={styles.bio}>{member.profile.bio}</p>:<p className={styles.bio}>A little space of your own.</p>}
-      <div className={styles.identityActions}><Link className="member-button" href="/my/profile"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="m13 3 4 4M3 13 14 2l4 4L7 17l-5 1Z"/></svg>Edit profile</Link><Link className="member-button" href="/my/card">My Card ↗</Link><Link className="member-button" href="/my/invitation">My Invitation ↗</Link></div>
+      <div className={styles.identityActions}><Link className="member-button" href="/my/profile"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="m13 3 4 4M3 13 14 2l4 4L7 17l-5 1Z"/></svg>Edit profile</Link><Link className="member-button" href={publicProfileUrl}>View public profile ↗</Link><Link className="member-button" href="/my/card">My Card ↗</Link><Link className="member-button" href="/my/invitation">My Invitation ↗</Link></div>
       {member.badges?.length ? <div className={styles.earnedBadges}><MemberBadges badges={member.badges} preview={preview}/></div> : null}
     </header>
 

@@ -200,7 +200,7 @@ export default function MemberPhotoUpload({ avatarUrl: initialAvatarUrl, enabled
         <button disabled={disabled} onClick={() => inputRef.current?.click()} type="button">{draft ? "Choose another photo" : avatarUrl ? "Change photo" : "Choose photo"}</button>
         {avatarUrl && !draft ? <button disabled={disabled} onClick={() => savePhoto(true)} type="button">Remove photo</button> : null}
       </div>
-      <p className={styles.hint} id={`${inputId}-help`}>JPG, PNG, WebP, or HEIC · Up to 20 MB.<br />HEIC requires a supported browser. Your profile-sharing settings apply.</p>
+      <p className={styles.hint} id={`${inputId}-help`}>JPG, PNG, WebP, or HEIC · Up to 20 MB.<br />HEIC requires a supported browser.</p>
       {!available ? <p className={styles.hint}>{enabled ? "Photo upload is temporarily unavailable. You can save your details without a photo." : "Photo upload is unavailable in this view."}</p> : null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {message ? <p className={styles.message} role="status">{message}</p> : null}

@@ -85,6 +85,7 @@ const cases = [
   ["invitation-tag-as-name", { ...base, name: "@alex_morgan" }, "invitation"],
   ["invitation-legacy", { ...base, memberTag: null }, "invitation"],
   ["invitation-private-profile", { ...base, avatarUrl: privatePortrait, location: "PRIVATE LOCATION", labels: ["PRIVATE LABEL"], buildingNow: "PRIVATE BUILDING", bio: "PRIVATE BIOGRAPHY", websiteUrl: "https://private-website.example/" }, "invitation"],
+  ["invitation-customized", { ...base, memberTag: null, avatarUrl: null, websiteUrl: null }, "invitation"],
   ["invitation-image-fallback", { ...base, avatarUrl: privatePortrait }, "invitation"],
   ["invitation-unissued", { ...base }, "invitation", null],
   ["invitation-personal", { ...base }, "invitation", invitationExpiresAt, "Taylor"],
@@ -101,7 +102,13 @@ const materialKeys = ["frontRoughness", "backRoughness", "frontBump", "backBump"
 const fingerprint = surface => createHash("sha256").update(surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data).digest("hex");
 const fingerprints = artwork => Object.fromEntries(materialKeys.map(key => [key, fingerprint(artwork[key])]));
 let memberMaterials, publicInvitationPrint, publicInvitationText;
-for (const [name, card, variant, expiresAt = invitationExpiresAt, recipientName = null] of cases) {
+for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipientName = null] of cases) {
+  const customized = name === "invitation-customized";
+  // Match the server boundary: legacy/new invitations are name-only until the
+  // member explicitly saves invitation customization. Raw profile fields are not consent.
+  const card = variant === "invitation" && !customized
+    ? { ...sourceCard, memberTag: null, avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [] }
+    : sourceCard;
   const fallback = name === "invitation-image-fallback";
   // A fresh module avoids the successful reference-image cache masking failure.
   const renderer = fallback ? load(resolve("src/components/membership/card/card-artwork.ts")) : artworkModule;
@@ -121,7 +128,11 @@ for (const [name, card, variant, expiresAt = invitationExpiresAt, recipientName 
     assert.equal(photoDraws.length, fallback ? 0 : 1, `${name} must use the shared couch photograph when available.`);
     if (!fallback) assert.deepEqual(photoDraws[0].crop.slice(-4), [53, 154, 902, 646], `${name} must preserve the reference photo frame.`);
     const textBySide = [artwork.front, artwork.back].map(surface => surface.printedText.map(item => item.text));
-    assert.doesNotMatch(textBySide.flat().join(" "), /PRIVATE|private-website|MEMBER SINCE|BASED IN|A LITTLE ABOUT ME|CURRENTLY BUILDING|Foundations completed/, `${name} must not print member-only profile details.`);
+    if (customized) {
+      const printed = textBySide.flat().join(" ");
+      for (const detail of ["Making space", "deliberate creative practice", "Alpine, Utah", "Foundations completed"]) assert.ok(printed.includes(detail), `${name} must print the selected detail: ${detail}`);
+      assert.doesNotMatch(printed, /private-website/);
+    } else assert.doesNotMatch(textBySide.flat().join(" "), /PRIVATE|private-website|MEMBER SINCE|BASED IN|A LITTLE ABOUT ME|CURRENTLY BUILDING|Foundations completed/, `${name} must not print unselected profile details.`);
     assert.equal(artwork.back.printedImages.some(item => item.source === invitationPhoto), false, `${name} must reserve the photograph for the front.`);
     if (name === "invitation" || fallback) assert.ok(requested.includes(invitationPhoto), `${name} must request the static invitation photograph.`);
     if (name === "invitation") {
@@ -191,11 +202,13 @@ for (const [name, card, variant, expiresAt = invitationExpiresAt, recipientName 
       "The chosen recipient name must be printed completely.");
     for (const line of handwriting) assert.ok(line.left >= 60 && line.right <= 946 && line.top >= 830 && line.bottom < 1073,
       `The handwriting must stay below the photograph and above the footer rule: ${JSON.stringify(line)}`);
-    assert.deepEqual(artwork.back.printedText.map(item => item.text), ["You’re allowed", "to become someone new."], "The back must preserve the supplied message without member-only labels.");
+    if (!customized) assert.deepEqual(artwork.back.printedText.map(item => item.text), ["You’re allowed", "to become someone new."], "The default back must preserve the supplied message without extra fields.");
     const validity = artwork.front.printedText.filter(item => item.text.startsWith("VALID "));
-    assert.equal(validity.length, 1, `${name} must print exactly one validity line.`);
-    assert.equal(validity[0].text, expiresAt ? "VALID UNTIL SEP. 20 8:45PM MDT" : "VALID FOR 48 HOURS ONCE CREATED", `${name} must print its issued deadline or clearly identify an unissued card.`);
-    assert.ok(validity[0].left >= 60 && validity[0].right <= 738 && validity[0].top >= 1300 && validity[0].bottom <= 1350, `${name} validity line must remain below the identity and clear of the foil: ${JSON.stringify(validity[0])}`);
+    assert.equal(validity.length, expiresAt ? 1 : 0, `${name} must print only a service-issued deadline.`);
+    if (expiresAt) {
+      assert.equal(validity[0].text, "VALID UNTIL SEP. 20 8:45PM MDT", `${name} must print its issued deadline.`);
+      assert.ok(validity[0].left >= 60 && validity[0].right <= 738 && validity[0].top >= 1300 && validity[0].bottom <= 1350, `${name} validity line must remain below the identity and clear of the foil: ${JSON.stringify(validity[0])}`);
+    }
   }
   if (name === "invitation") {
     const reports = {};
@@ -233,7 +246,7 @@ for (const [name, card, variant, expiresAt = invitationExpiresAt, recipientName 
     // Check the actual text metrics and stroked rules against the entire foil
     // rectangle plus 24px of breathing room, rather than just its sparse pixels.
     const foilArea = invitation
-      ? side === "front" ? { left: 742, right: 961, top: 1082, bottom: 1370 } : { left: 303, right: 706, top: 430, bottom: 978 }
+      ? side === "front" ? { left: 742, right: 961, top: 1082, bottom: 1370 } : customized ? { left: 409, right: 599, top: 334, bottom: 582 } : { left: 303, right: 706, top: 430, bottom: 978 }
       : { left: 755, right: 963, top: 1082, bottom: 1354 };
     for (const item of [...surface.printedText, ...surface.printedRules]) {
       const intersects = item.right > foilArea.left && item.left < foilArea.right && item.bottom > foilArea.top && item.top < foilArea.bottom;

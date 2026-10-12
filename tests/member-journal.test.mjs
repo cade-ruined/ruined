@@ -41,7 +41,7 @@ async function fixture(){
     remove:async paths=>{paths.forEach(path=>blobs.delete(path));return{error:null};},
     createSignedUrl:async path=>{signed.push(path);return{data:{signedUrl:`https://storage.example.test/private/${path}`},error:null};},
   };
-  const repository=await load('src/lib/membership/journal-repository.ts',{'server-only':{},'node:crypto':{randomUUID},'@/lib/database/server':{getApplicationDatabase:()=>base.sql},'@/lib/membership/repository':base.repository,'@/lib/membership/access-policy':policy,'./journal-model':model,'./public-card-repository':{getOwnMemberCardPublicScope:async()=>null},'./journal-storage':{journalStore:()=>store,journalStorageConfigured:()=>true,validateJournalMedia:storage.validateJournalMedia}});
+  const repository=await load('src/lib/membership/journal-repository.ts',{'server-only':{},'node:crypto':{randomUUID},'@/lib/database/server':{getApplicationDatabase:()=>base.sql},'@/lib/membership/repository':base.repository,'@/lib/membership/access-policy':policy,'./journal-model':model,'./public-card-repository':{getOwnMemberProfilePublicScope:async()=>null},'./journal-storage':{journalStore:()=>store,journalStorageConfigured:()=>true,validateJournalMedia:storage.validateJournalMedia}});
   return{pg,owner,other,blobs,signed,repository,base,close:cleanup};
 }
 test('owner-scoped journal saves idempotently, keeps other records private, and filters saved entries',async()=>{
@@ -201,4 +201,20 @@ test('journal writes recheck locked entitlement and concurrent edits permit one 
   }
   assert.deepEqual(await f.repository.getJournalEntry(timelineIds.auth,entry.id),latest);
  }finally{await f.close();}
+});
+
+test('private Journal preserves legacy entries without public Timeline consent while public feed excludes them',async()=>{
+  const f=await fixture();try{
+    const plain=await f.repository.createJournalEntry(timelineIds.auth,draft({title:'Private words'}));
+    const milestone=await f.repository.createJournalEntry(timelineIds.auth,draft({title:'Private milestone',eventYear:2018,includeOnTimeline:true}));
+    const legacy=await f.repository.createJournalEntry(timelineIds.auth,draft({title:'Legacy flag',eventYear:2019}));
+    const published=await f.repository.createJournalEntry(timelineIds.auth,draft({title:'Public post',eventYear:2020,includeOnTimeline:true}));
+    await f.pg.query("update member_journal_entries set visibility='public' where id in ($1,$2)",[legacy.id,published.id]);
+    const privatePage=await f.repository.getJournal(timelineIds.auth,null,false,{collection:'private'});
+    assert.deepEqual(new Set(privatePage.entries.map(entry=>entry.id)),new Set([plain.id,milestone.id,legacy.id]));
+    assert.equal(privatePage.total,3); assert.deepEqual(privatePage.years,[2019,2018]);
+    const publicPage=await f.repository.getJournal(timelineIds.auth,null,false,{collection:'public'});
+    assert.deepEqual(publicPage.entries.map(entry=>entry.id),[published.id]); assert.equal(publicPage.total,1);
+    assert.deepEqual((await f.repository.getJournal(timelineIds.otherAuth,null,false,{collection:'private'})).entries,[]);
+  }finally{await f.close();}
 });
