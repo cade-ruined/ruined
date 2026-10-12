@@ -196,7 +196,7 @@ test("live membership/auth changes close public feed without publishing private 
   assert.equal(await f.visitor.getPublicJournal(f.token),null);
   await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1",[timelineIds.auth]);
   await f.db.query("update ruined_members set membership_activated_at=null where id=$1",[timelineIds.member]);
-  assert.equal(await f.visitor.getPublicJournal(f.token),null);
+  assert.equal((await f.visitor.getPublicJournal(f.token)).entries.length,1,"A missing collectible-card activation date does not hide an eligible profile's public Timeline.");
 });
 
 async function addMedia(f, visibility = "public", member = timelineIds.member) {

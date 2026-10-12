@@ -40,7 +40,8 @@
   gap: 4px 12px;
 }
 
-.actions button {
+.actions button,
+.instructionsHeader button {
   min-height: 44px;
   padding: 10px 14px;
   font: inherit;
@@ -65,7 +66,8 @@
   border: 1px solid transparent;
 }
 
-.actions button:focus-visible {
+.actions button:focus-visible,
+.instructionsHeader button:focus-visible {
   outline: 2px solid var(--member-ink, #2a2a2a);
   outline-offset: 3px;
 }
@@ -77,7 +79,27 @@
 
 .instructions {
   max-width: 560px;
-  padding-top: 20px;
+  outline: none;
+}
+
+.instructionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.instructionsHeader h2 {
+  margin: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.instructionsHeader button {
+  flex-shrink: 0;
 }
 
 .instructions ol {
