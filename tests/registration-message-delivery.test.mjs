@@ -29,6 +29,27 @@ const confirmedPaidMembership = {
   agreementVersion:"ruined_membership-v3",initialTermAmountCents:418800,buyoutCapCents:150000,isPayer:true,
 };
 
+test("welcome and profile-ready messages preserve their authored palette instead of requesting client recoloring",()=>{
+  const input={memberName:"Alex",siteUrl:new URL("https://members.example.test")};
+  for(const variant of [
+    {kind:"welcome",completionBasis:"saved_card",foundingPricing:confirmedFoundingPricing},
+    {kind:"welcome",completionBasis:"paid_membership",paidMembership:confirmedPaidMembership},
+    {kind:"welcome",completionBasis:"complimentary"},
+    {kind:"profile_ready",completionBasis:"saved_card"},
+  ]) {
+    const {html}=email.createRegistrationEmail({...input,...variant});
+    const nodes=[];
+    function visit(node) {nodes.push(node);for(const child of node.childNodes??[])visit(child);}
+    visit(parse(html));
+    for(const [name,content] of [["color-scheme","light only"],["supported-color-schemes","light"]]) {
+      const matching=nodes.filter(node=>node.tagName==="meta"&&node.attrs.some(attribute=>attribute.name==="name"&&attribute.value===name));
+      assert.equal(matching.length,1,`${variant.kind}: exactly one ${name}`);
+      assert.equal(matching[0].attrs.find(attribute=>attribute.name==="content")?.value,content);
+      assert.equal(matching[0].parentNode.tagName,"head");
+    }
+  }
+});
+
 test("paid welcome discloses verified payment, exact accepted dates, tax and the full monthly commitment",()=>{
   const result=email.createRegistrationEmail({kind:"welcome",memberName:"Alex",completionBasis:"paid_membership",
     siteUrl:new URL("https://members.example.test"),paidMembership:confirmedPaidMembership,

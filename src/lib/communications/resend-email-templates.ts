@@ -136,6 +136,44 @@ function appendedStyle(element: Element, declarations: string) {
   return `${existing}${existing && !existing.trimEnd().endsWith(";") ? ";" : ""}${declarations}`;
 }
 
+/** Keep Ruined's authored palette in clients that otherwise invert live text
+ * independently of the ink texture. "light only" means preserve the original
+ * design, including a dark design; "dark" does not disable Gmail's conversion.
+ * https://emailmarkup.org/en/blog/2026/gmail-app-dark-mode-update
+ * Patch source spans, not the parsed DOM: campaign markers, MSO fallbacks,
+ * artwork and previously authored styling must survive byte-for-byte. */
+export function preserveRuinedEmailColors(html: string): string {
+  if (!/\/(?:membership\/design\/printers-ink\.jpg|ruined-wordmark-email(?:-bone)?\.png)(?:[?#"'\s)]|&)/i.test(html)) return html;
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const elements: Element[] = [];
+  function visit(node: Node) {
+    if (isElement(node)) elements.push(node);
+    if ("childNodes" in node) node.childNodes.forEach(visit);
+  }
+  visit(document);
+  const replacements: Replacement[] = [];
+  let missing = "";
+  for (const [name, value] of [["color-scheme", "light only"], ["supported-color-schemes", "light"]]) {
+    const tags = elements.filter(node => node.tagName === "meta" && attribute(node, "name")?.trim().toLowerCase() === name
+      && node.sourceCodeLocation);
+    const markup = `<meta name="${name}" content="${value}">`;
+    if (!tags.length) missing += markup;
+    tags.forEach((tag, index) => {
+      const location = tag.sourceCodeLocation!;
+      replacements.push({ start: location.startOffset, end: location.endOffset, value: index === 0 ? markup : "" });
+    });
+  }
+  if (missing) {
+    const head = elements.find(node => node.tagName === "head")?.sourceCodeLocation;
+    const body = elements.find(node => node.tagName === "body")?.sourceCodeLocation;
+    const root = elements.find(node => node.tagName === "html")?.sourceCodeLocation;
+    const offset = head?.startTag?.endOffset ?? body?.startTag?.startOffset ?? root?.startTag?.endOffset;
+    if (offset !== undefined) replacements.push({ start: offset, end: offset, value: head?.startTag ? missing : `<head>${missing}</head>` });
+    else return `<!doctype html><html><head>${missing}</head><body>${replaceSpans(html, replacements)}</body></html>`;
+  }
+  return replaceSpans(html, replacements);
+}
+
 /** Only generated assets supplied by the server may contain preview data URLs. */
 function validatedSignOffImage(image: ResendEmailSignOffImage | undefined): ResendEmailSignOffImage {
   if (!image || !Number.isInteger(image.width) || !Number.isInteger(image.height)
@@ -542,6 +580,7 @@ export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: 
   const text = banner ? `${banner.alt}${banner.linkUrl ? `\n${banner.linkUrl}` : ""}\n\n${bodyText}` : bodyText;
   if (banner) html = insertResendEmailBanner(html, banner);
   if (edits.typography === "ruined") html = applyRuinedTypography(html);
+  html = preserveRuinedEmailColors(html);
   const from = renderText(template.from);
   const replyTo = template.replyTo.map(renderText);
   if (/[\u0000-\u001f\u007f]/.test(from) || replyTo.some(value => /[\u0000-\u001f\u007f]/.test(value))) throw new AdminEmailError(400, "The template sender or reply address contains an invalid value.");

@@ -145,7 +145,7 @@ u + .ruined-email .gmail-blend-difference,u + .ruined-email .gmail-blend-differe
 ` : "";
 
   const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="${welcome ? "dark" : "light"}"><title>${escapeHtml(subject)}</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${escapeHtml(subject)}</title>
 <style>${gmailStyles}@media(max-width:480px){.email-pad{padding-left:24px!important;padding-right:24px!important}.email-title{font-size:42px!important}.email-outer{padding:0!important}}</style></head>
 <body${welcome ? ' class="ruined-email"' : ""} style="margin:0;padding:0;background:${theme.outer};color:${theme.ink};font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%">
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all">${escapeHtml(preheader)}</div>
