@@ -5,6 +5,7 @@ import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as profileFields from "../src/lib/membership/profile-fields.ts";
+import * as phone from "../src/lib/membership/phone.ts";
 
 const same = (left, right) => left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
 function hooks() {
@@ -12,7 +13,7 @@ function hooks() {
   const slots = [], effects = [];
   return {
     react: { ...React,
-      useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], value => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }]; },
+      useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial; return [slots[index], value => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }]; },
       useRef(initial) { const index = cursor++; if (!(index in slots)) slots[index] = { current: initial }; return slots[index]; },
       useCallback(callback, dependencies) { const index = cursor++; if (!same(slots[index]?.dependencies, dependencies)) slots[index] = { callback, dependencies }; return slots[index].callback; },
       useEffect(callback, dependencies) { const index = cursor++; if (!same(slots[index]?.dependencies, dependencies)) effects.push(() => { slots[index]?.cleanup?.(); slots[index] = { dependencies, cleanup: callback() }; }); },
@@ -96,6 +97,7 @@ async function profileFixture() {
     react: state.react, "next/link": Link, "@/components/membership/MemberSettingsHeader": () => null,
     "@/components/membership/MemberPhotoUpload": Photo,
     "@/lib/membership/profile-fields": profileFields,
+    "@/lib/membership/phone": phone,
     "./MemberProfileEditor.module.css": {},
     "@/components/support/supportStyles": { SUPPORT_ACTION_CLASS: "", SUPPORT_FIELD_CLASS: "", SUPPORT_LABEL_CLASS: "", SUPPORT_LINK_CLASS: "" },
   });

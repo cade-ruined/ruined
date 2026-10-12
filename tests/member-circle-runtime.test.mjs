@@ -28,6 +28,11 @@ async function loadModule(path, dependencies) {
   return loadedModule.exports;
 }
 
+const phoneModel = await loadModule("src/lib/membership/phone.ts", {
+  "libphonenumber-js/min": require("libphonenumber-js/min"),
+  "i18n-iso-countries/langs/en.json": require("i18n-iso-countries/langs/en.json"),
+});
+
 async function fixture({ revealed = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const pg = new PGlite();
@@ -41,7 +46,7 @@ async function fixture({ revealed = true } = {}) {
     create table ruined_members(id uuid primary key, person_id uuid, deleted_at timestamptz);
     create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'completed', program_state text default 'onboarding', standing_state text default 'active');
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, timezone text, location_label text, bio text, building_now text, updated_at timestamptz);
-    create table person_private_profiles(person_id uuid primary key, legal_name text, mobile_e164 text, birth_date date, default_fulfillment_address jsonb, apparel_sizing jsonb, accessibility_notes text, updated_at timestamptz);
+    create table person_private_profiles(person_id uuid primary key, legal_name text, mobile_e164 text, birth_date date, default_fulfillment_address jsonb check(default_fulfillment_address is null or jsonb_typeof(default_fulfillment_address)='object'), apparel_sizing jsonb check(apparel_sizing is null or jsonb_typeof(apparel_sizing)='object'), accessibility_notes text, updated_at timestamptz);
     create table person_email_addresses(person_id uuid, email text, is_primary boolean, verification_state text, retired_at timestamptz, created_at timestamptz default now());
     create table member_directory_preferences(member_id uuid primary key, directory_status text default 'hidden', avatar_visible boolean default true, location_visible boolean default false, bio_visible boolean default false, building_visible boolean default false, email_scope text default 'none', phone_scope text default 'none', version integer default 1, updated_at timestamptz);
     create table circles(id uuid primary key, name text, status text, activated_at timestamptz, ends_at timestamptz, story text);
@@ -109,7 +114,7 @@ async function fixture({ revealed = true } = {}) {
           else {
             const parameter = value instanceof Parameter
               ? value.array ? arraySerializer(value.value) : types.json.serialize(value.value)
-              : /^\s*::jsonb\b/.test(this.strings[index + 1]) ? types.json.serialize(value)
+              : value !== null && /^\s*::jsonb\b/.test(this.strings[index + 1]) ? types.json.serialize(value)
                 : value instanceof Date ? types.date.serialize(value) : value;
             parameters.push(parameter);
             query += `$${parameters.length}`;
@@ -153,7 +158,7 @@ async function fixture({ revealed = true } = {}) {
     "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
     "@/lib/membership/access-policy": policy,
     "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
-    "@/lib/membership/phone": {},
+    "@/lib/membership/phone": phoneModel,
     "@/lib/membership/avatar-url": { safeMemberAvatarUrl: (value) => value },
     "@/lib/events/member-experiences": { mergeUpcomingPublicMemberExperiences: (items) => items, publicEventDetailHref: (slug) => `/community#${slug}` },
     "@/lib/events/community-event-repository": { getPublicCommunityEvents: async () => [] },
@@ -563,5 +568,129 @@ test("approved placement reveals no Circle data or direct links until Foundation
     assert.ok(await repository.getMemberCircleChatDestination(ids.auth));
     assert.ok(await repository.getMemberLearningResource(ids.auth, "circle-notes"));
     assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.otherEvent), null);
+  } finally { await pg.close(); }
+});
+
+
+const privateDetails = (changes = {}) => ({
+  mobile: "+12025550124", birthDate: "1992-02-29", apparelTopSize: "Custom tall",
+  shippingAddress: { addressLine1: "12 Private Lane", addressLine2: "Unit 4", city: "Denver", region: "CO", postalCode: "80202", countryCode: "US" },
+  ...changes,
+});
+const privateProfileInput = (snapshot, changes = {}) => ({
+  revision: snapshot.revision, fullName: "Member One", memberTag: snapshot.directory.memberTag ?? "member_one",
+  city: "Public City", state: "Public State", bio: "Public bio", buildingNow: "Current work", timezone: "America/Denver",
+  directory: { emailScope: "none", phoneScope: "none" }, privateProfile: privateDetails(), ...changes,
+});
+async function installProfileConsentFixture(pg) {
+  const foundation = await readFile(new URL("../db/migrations/20260819_platform_foundation.sql", import.meta.url), "utf8");
+  const start = foundation.indexOf("create table if not exists member_consents (");
+  await pg.exec(foundation.slice(start, foundation.indexOf("create index if not exists member_consents_member_idx", start)));
+  await pg.exec(await readFile(new URL("../db/migrations/20261008210000_member_sms_phone_consent.sql", import.meta.url), "utf8"));
+}
+
+test("one profile save round trips private details, preserves legacy metadata, and exposes only public fields", async () => {
+  const { pg, identity, repository, cardRepository } = await fixture();
+  try {
+    await pg.query("insert into person_private_profiles(person_id,legal_name,accessibility_notes,default_fulfillment_address,apparel_sizing) values($1,'Private legal name','Preserve these private notes',$2,$3)",
+      [ids.person, JSON.stringify({ deliveryInstructions: "Side door", recipient: "Keep recipient", city: "Old City" }), JSON.stringify({ top: "S", pants: "32", fit: { sleeve: "long" } })]);
+    await pg.query("update person_profiles set website_url='https://kept.example.test' where person_id=$1", [ids.person]);
+    const initial = await repository.getMemberProfile(ids.auth);
+    const saved = await repository.saveMemberProfile(ids.auth, privateProfileInput(initial));
+    assert.equal(saved.privateProfile.mobile, "+12025550124");
+    assert.equal(saved.privateProfile.birthDate, "1992-02-29");
+    assert.deepEqual(saved.privateProfile.fulfillmentAddress, { ...privateDetails().shippingAddress, deliveryInstructions: "Side door", recipient: "Keep recipient" });
+    assert.deepEqual(saved.privateProfile.apparelSizing, { top: "Custom tall", pants: "32", fit: { sleeve: "long" } });
+    assert.equal(saved.privateProfile.legalName, "Private legal name");
+    assert.equal(saved.privateProfile.accessibilityNotes, "Preserve these private notes");
+    assert.equal(saved.directory.websiteUrl, "https://kept.example.test");
+    assert.equal(saved.directory.location, "Public City, Public State");
+    assert.equal(saved.preferences.phoneScope, "none");
+    await pg.exec("alter table ruined_members add column member_number integer default 7");
+    const publicProfile = await cardRepository.getPublicMemberProfile("member_one");
+    assert.deepEqual(publicProfile, { name: "Member One", memberTag: "member_one", bio: "Public bio", memberNumber: 7 });
+    await pg.query("insert into circle_member_assignments(member_id,circle_id) values($1,$2)", [ids.shaperMember, ids.circle]);
+    const originalIdentity = { ...identity };
+    Object.assign(identity, { auth_user_id: ids.shaperAuth, member_id: ids.shaperMember, person_id: ids.shaperPerson, email: "shaper@example.test" });
+    const peerCircle = await repository.getMemberCircle(ids.shaperAuth);
+    Object.assign(identity, originalIdentity);
+    const publicProjections = JSON.stringify([publicProfile, (await cardRepository.getOwnMemberCard(ids.auth)).card,
+      await cardRepository.getInvitationMemberCard(ids.member), peerCircle]);
+    for (const secret of ["12025550124", "1992-02-29", "12 Private Lane", "Unit 4", "80202", "Custom tall", "Side door", "Private legal name", "Preserve these private notes"]) assert.equal(publicProjections.includes(secret), false, secret);
+    const omitted = await repository.saveMemberProfile(ids.auth, privateProfileInput(saved, { privateProfile: undefined }));
+    assert.deepEqual(omitted.privateProfile, saved.privateProfile, "older clients preserve private fields they do not submit");
+    const blank = privateDetails({ mobile: "", birthDate: "", apparelTopSize: "", shippingAddress: { addressLine1: "", addressLine2: "", city: "", region: "", postalCode: "", countryCode: "US" } });
+    const cleared = await repository.saveMemberProfile(ids.auth, privateProfileInput(omitted, { privateProfile: blank }));
+    assert.equal(cleared.privateProfile.mobile, null); assert.equal(cleared.privateProfile.birthDate, null);
+    assert.deepEqual(cleared.privateProfile.fulfillmentAddress, { deliveryInstructions: "Side door", recipient: "Keep recipient" });
+    assert.deepEqual(cleared.privateProfile.apparelSizing, { pants: "32", fit: { sleeve: "long" } });
+  } finally { await pg.close(); }
+});
+
+test("private field validation rejects malformed or overlong values without changing any profile state", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    const initial = await repository.getMemberProfile(ids.auth);
+    const details = privateDetails();
+    const invalid = [null, [], { ...details, sms: true }, { ...details, mobile: 123 },
+      { ...details, mobile: "2025550124" }, { ...details, mobile: "+1" }, { ...details, mobile: "+12025550124 ext 2" },
+      ...["1899-12-31", "2999-01-01", "2023-02-29", "1992-2-29", "not-a-date"].map(birthDate => ({ ...details, birthDate })),
+      { ...details, apparelTopSize: "X".repeat(41) }, { ...details, shippingAddress: null },
+      { ...details, shippingAddress: { ...details.shippingAddress, surprise: "hidden" } },
+      ...["addressLine1", "city", "region", "postalCode", "countryCode"].map(key => ({ ...details, shippingAddress: { ...details.shippingAddress, [key]: "" } })),
+      { ...details, shippingAddress: { ...details.shippingAddress, countryCode: "ZZ" } },
+      ...[["addressLine1", 161], ["addressLine2", 161], ["city", 101], ["region", 101], ["postalCode", 25]].map(([key, length]) => ({ ...details, shippingAddress: { ...details.shippingAddress, [key]: "x".repeat(length) } })),
+    ];
+    for (const privateProfile of invalid) {
+      await assert.rejects(repository.saveMemberProfile(ids.auth, privateProfileInput(initial, { bio: "Must not persist", privateProfile })), repository.MembershipInputError);
+      assert.equal((await repository.getMemberProfile(ids.auth)).revision, initial.revision);
+    }
+    assert.equal((await pg.query("select count(*)::int as count from member_directory_preference_events")).rows[0].count, 0);
+    const blank = privateDetails({ mobile: "", birthDate: "", apparelTopSize: "", shippingAddress: { addressLine1: "", addressLine2: "", city: "", region: "", postalCode: "", countryCode: "US" } });
+    const empty = await repository.saveMemberProfile(ids.auth, privateProfileInput(initial, { privateProfile: blank }));
+    assert.equal(empty.privateProfile.fulfillmentAddress, null); assert.equal(empty.privateProfile.apparelSizing, null);
+  } finally { await pg.close(); }
+});
+
+test("private field edits in another session invalidate stale profile revisions", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    let saved = await repository.saveMemberProfile(ids.auth, privateProfileInput(await repository.getMemberProfile(ids.auth)));
+    for (const change of ["mobile_e164='+12025550125'", "birth_date='1990-01-01'", "default_fulfillment_address=default_fulfillment_address || '{\"city\":\"Changed elsewhere\"}'::jsonb", "apparel_sizing=apparel_sizing || '{\"top\":\"Changed size\"}'::jsonb"]) {
+      await pg.query(`update person_private_profiles set ${change} where person_id=$1`, [ids.person]);
+      const current = await repository.getMemberProfile(ids.auth);
+      assert.notEqual(current.revision, saved.revision);
+      await assert.rejects(repository.saveMemberProfile(ids.auth, privateProfileInput(saved)), repository.MembershipConflictError);
+      assert.deepEqual((await repository.getMemberProfile(ids.auth)).privateProfile, current.privateProfile);
+      saved = current;
+    }
+  } finally { await pg.close(); }
+});
+
+test("private profile phone changes withdraw SMS consent, retain login identity, and roll back with the entire save", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    await pg.query("insert into person_private_profiles(person_id,mobile_e164) values($1,'+12025550124')", [ids.person]);
+    await installProfileConsentFixture(pg);
+    await pg.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence,dedupe_key)
+      values($1,'communications','membership-reminders-v1','accepted',now(),'member',$2,$3,'fixture-sms-consent')`,
+      [ids.member, ids.auth, JSON.stringify({ context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "sms", destination: "+12025550124", action: "sms_checkbox_checked", requested: true })]);
+    const accountBefore = (await pg.query("select * from platform_users where auth_user_id=$1", [ids.auth])).rows;
+    const originalConsent = (await pg.query("select * from member_consents order by id")).rows[0];
+    let saved = await repository.saveMemberProfile(ids.auth, privateProfileInput(await repository.getMemberProfile(ids.auth)));
+    assert.equal((await pg.query("select count(*)::int as count from member_consents")).rows[0].count, 1, "unchanged phone retains original consent");
+    await pg.exec("create function reject_profile_audit() returns trigger language plpgsql as $$begin raise exception 'Fixture save failure'; end$$; create trigger reject_profile_audit before insert on member_directory_preference_events for each row execute function reject_profile_audit()");
+    await assert.rejects(repository.saveMemberProfile(ids.auth, privateProfileInput(saved, { bio: "Rollback public bio", privateProfile: privateDetails({ mobile: "+12025550125" }) })), /Fixture save failure/);
+    assert.equal((await repository.getMemberProfile(ids.auth)).revision, saved.revision);
+    assert.equal((await pg.query("select count(*)::int as count from member_consents")).rows[0].count, 1, "consent withdrawal rolls back with private and public edits");
+    await pg.exec("drop trigger reject_profile_audit on member_directory_preference_events");
+    saved = await repository.saveMemberProfile(ids.auth, privateProfileInput(saved, { privateProfile: privateDetails({ mobile: "+12025550125" }) }));
+    const consent = (await pg.query("select * from member_consents order by id")).rows;
+    assert.equal(consent.length, 2); assert.deepEqual(consent[0], originalConsent);
+    assert.equal(consent[1].decision, "withdrawn"); assert.equal(consent[1].evidence.action, "profile_phone_changed");
+    assert.equal(consent[1].evidence.destination, "+12025550124");
+    await repository.saveMemberProfile(ids.auth, privateProfileInput(saved));
+    assert.equal((await pg.query("select count(*)::int as count from member_consents")).rows[0].count, 2, "returning to the old number never restores consent");
+    assert.deepEqual((await pg.query("select * from platform_users where auth_user_id=$1", [ids.auth])).rows, accountBefore);
   } finally { await pg.close(); }
 });

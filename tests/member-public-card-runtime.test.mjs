@@ -373,3 +373,38 @@ test("invitation projection discards a changed name during its read", async () =
     assert.equal(card.name, "Updated Name"); assert.equal(card.bio, null);
   } finally { await f.pg.close(); }
 });
+
+test("profile API admits only the explicit private membership detail shape", async () => {
+  class MembershipInputError extends Error {}
+  class MembershipAccessDeniedError extends Error {}
+  class MembershipConflictError extends Error {}
+  const calls = [];
+  const route = await load("app/api/my/profile/route.ts", {
+    "next/server": { NextResponse: { json: (data, init) => Response.json(data, init) } },
+    "@/lib/auth/request": { isTrustedPlatformOrigin: () => true },
+    "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: self.auth }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/membership/public-card-model": model,
+    "@/lib/membership/public-card-repository": { getOwnMemberCard: async () => null },
+    "@/lib/membership/repository": { MembershipInputError, MembershipAccessDeniedError, MembershipConflictError,
+      saveMemberProfile: async (auth, input) => { calls.push({ auth, input }); return { revision: "1".repeat(64) }; } },
+  });
+  const privateProfile = { mobile: "+12025550124", birthDate: "1990-02-03", apparelTopSize: "L",
+    shippingAddress: { addressLine1: "12 Private Lane", addressLine2: "", city: "Denver", region: "CO", postalCode: "80202", countryCode: "US" } };
+  const input = { revision: "0".repeat(64), fullName: "Member Name", memberTag: "member_name", bio: "Public bio", buildingNow: "", timezone: "UTC", city: "Public City", state: "Public State",
+    directory: { emailScope: "none", phoneScope: "none" }, privateProfile };
+  const request = body => new Request("https://ruined.test/api/my/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  for (const invalid of [null, [], "private", { ...privateProfile, mobile: 123 }, { ...privateProfile, birthDate: undefined },
+    { ...privateProfile, apparelTopSize: null }, { ...privateProfile, legalName: "Forbidden extra" },
+    { ...privateProfile, sms: true }, { ...privateProfile, shippingAddress: [] },
+    { ...privateProfile, shippingAddress: { ...privateProfile.shippingAddress, city: 12 } },
+    { ...privateProfile, shippingAddress: { ...privateProfile.shippingAddress, region: undefined } },
+    { ...privateProfile, shippingAddress: { ...privateProfile.shippingAddress, deliveryInstructions: "Unexpected input" } }]) {
+    assert.equal((await route.POST(request({ ...input, privateProfile: invalid }))).status, 400);
+  }
+  assert.equal(calls.length, 0);
+  const response = await route.POST(request(input));
+  assert.equal(response.status, 200); assert.match(response.headers.get("Cache-Control"), /no-store/);
+  assert.deepEqual(calls, [{ auth: self.auth, input }]);
+  assert.equal((await route.POST(request({ ...input, privateProfile: undefined }))).status, 200, "older clients can omit private changes");
+});
