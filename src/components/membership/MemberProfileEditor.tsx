@@ -5,13 +5,29 @@ import { type ClipboardEvent, type FormEvent, useRef, useState } from "react";
 
 import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
-import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
+import { SUPPORT_ACTION_CLASS, SUPPORT_FIELD_CLASS, SUPPORT_LABEL_CLASS } from "@/components/support/supportStyles";
 import type { MemberProfileSnapshot } from "@/lib/membership/model";
 import { MEMBER_TIMEZONES, memberTimezoneLabel } from "@/lib/membership/profile-fields";
+import {
+  formatPhoneInput,
+  mobileToE164,
+  PHONE_COUNTRY_OPTIONS,
+  SHIPPING_COUNTRY_OPTIONS,
+  phoneCountryFromInput,
+  phoneCountryFromProfile,
+  phoneInputForCountry,
+  phoneInputFromProfile,
+  supportedPhoneCountry,
+  supportedShippingCountry,
+} from "@/lib/membership/phone";
 
 import styles from "./MemberProfileEditor.module.css";
 
 const fieldClass = `${SUPPORT_FIELD_CLASS} ${styles.field}`;
+
+function savedString(record: Record<string, unknown> | null | undefined, key: string) {
+  return typeof record?.[key] === "string" ? record[key] as string : "";
+}
 
 function scopeLabel(value: string) {
   return value === "none"
@@ -34,6 +50,14 @@ export default function MemberProfileEditor({
 }) {
   const [profile, setProfile] = useState(initialProfile);
   const memberTagRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const address = profile.privateProfile.fulfillmentAddress;
+  const shirtSize = savedString(profile.privateProfile.apparelSizing, "top");
+  const shirtSizes = [...new Set(["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", ...(shirtSize ? [shirtSize] : [])])];
+  const initialPhoneCountry = phoneCountryFromProfile(initialProfile.privateProfile.mobile, savedString(initialProfile.privateProfile.fulfillmentAddress, "countryCode"));
+  const [phoneCountry, setPhoneCountry] = useState(initialPhoneCountry);
+  const [phoneNumber, setPhoneNumber] = useState(() => phoneInputFromProfile(initialProfile.privateProfile.mobile, initialPhoneCountry));
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [memberTag, setMemberTag] = useState(initialProfile.directory.memberTag ?? "");
   const [memberTagError, setMemberTagError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
@@ -43,6 +67,7 @@ export default function MemberProfileEditor({
   const [photoPending, setPhotoPending] = useState(false);
   const [photoDraft, setPhotoDraft] = useState(false);
   const tagLocked = Boolean(profile.directory.memberTag);
+  const phoneChanged = Boolean(profile.privateProfile.mobile) && mobileToE164(phoneNumber, phoneCountry) !== profile.privateProfile.mobile;
   const timezones = [...new Set([...timezoneOptions, profile.directory.timezone ?? "America/Denver"])];
 
   function changeMemberTag(value: string) {
@@ -75,6 +100,15 @@ export default function MemberProfileEditor({
       return;
     }
     try {
+      const rawMobile = String(form.get("mobile-national") ?? "").trim();
+      const country = supportedPhoneCountry(String(form.get("mobile-country") ?? "")) ?? phoneCountry;
+      const mobile = rawMobile ? mobileToE164(rawMobile, country) : "";
+      if (rawMobile && !mobile) {
+        const message = "Enter a complete mobile number for the selected country.";
+        setPhoneError(message);
+        phoneInputRef.current?.focus();
+        throw new Error(message);
+      }
       const response = await fetch("/api/my/profile", {
         body: JSON.stringify({
           revision: profile.revision,
@@ -89,6 +123,19 @@ export default function MemberProfileEditor({
           state: String(form.get("state") ?? ""),
           memberTag: tag,
           timezone: String(form.get("timezone") ?? ""),
+          privateProfile: {
+            mobile,
+            birthDate: String(form.get("birth-date") ?? ""),
+            apparelTopSize: String(form.get("apparel-size") ?? ""),
+            shippingAddress: {
+              addressLine1: String(form.get("shipping-address-line-1") ?? ""),
+              addressLine2: String(form.get("shipping-address-line-2") ?? ""),
+              city: String(form.get("shipping-city") ?? ""),
+              region: String(form.get("shipping-region") ?? ""),
+              postalCode: String(form.get("shipping-postal-code") ?? ""),
+              countryCode: String(form.get("shipping-country-code") ?? ""),
+            },
+          },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -108,6 +155,10 @@ export default function MemberProfileEditor({
       setProfile(payload.profile);
       setMemberTag(payload.profile.directory.memberTag ?? "");
       setMemberTagError(null);
+      setPhoneError(null);
+      const savedCountry = phoneCountryFromProfile(payload.profile.privateProfile.mobile, savedString(payload.profile.privateProfile.fulfillmentAddress, "countryCode"));
+      setPhoneCountry(savedCountry);
+      setPhoneNumber(phoneInputFromProfile(payload.profile.privateProfile.mobile, savedCountry));
       setSaved(true);
     } catch (requestError) {
       setError(
@@ -222,6 +273,98 @@ export default function MemberProfileEditor({
           </div>
         </section>
 
+        <section className="grid gap-6 border-t border-[var(--member-rule)] pt-8 lg:grid-cols-[minmax(13rem,0.5fr)_minmax(0,1fr)] lg:gap-10" aria-labelledby="membership-details-heading">
+          <div>
+            <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"} id="membership-details-heading">Membership details</h2>
+            <p className="mt-3 max-w-md text-base leading-relaxed text-[var(--member-muted)]">Your shipping address, birth date, and shirt size stay private. Phone sharing follows your choice above.</p>
+          </div>
+          <div className="grid min-w-0 gap-6 sm:grid-cols-2">
+            <fieldset className="min-w-0 sm:col-span-2">
+              <legend className={SUPPORT_LABEL_CLASS}>Phone</legend>
+              <div className="mt-2 grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
+                <label className="sr-only" htmlFor="profile-mobile-country">Phone country and calling code</label>
+                <select
+                  className={`${fieldClass} !mt-0`}
+                  id="profile-mobile-country"
+                  name="mobile-country"
+                  value={phoneCountry}
+                  onChange={event => {
+                    const nextCountry = supportedPhoneCountry(event.currentTarget.value);
+                    if (!nextCountry) return;
+                    setPhoneNumber(phoneInputForCountry(phoneNumber, phoneCountry, nextCountry));
+                    setPhoneCountry(nextCountry);
+                    setPhoneError(null);
+                    setError(null);
+                  }}
+                >
+                  {PHONE_COUNTRY_OPTIONS.map(country => <option key={country.code} value={country.code}>{country.callingCode} · {country.name}</option>)}
+                </select>
+                <label className="sr-only" htmlFor="profile-mobile-number">Phone number</label>
+                <input
+                  aria-describedby="profile-phone-error profile-phone-change"
+                  aria-invalid={Boolean(phoneError)}
+                  autoComplete="tel"
+                  className={`${fieldClass} !mt-0 min-w-0`}
+                  id="profile-mobile-number"
+                  inputMode="tel"
+                  maxLength={40}
+                  name="mobile-national"
+                  onInput={event => {
+                    const formatted = formatPhoneInput(event.currentTarget.value, phoneCountry);
+                    setPhoneNumber(formatted);
+                    setPhoneCountry(phoneCountryFromInput(formatted, phoneCountry));
+                    setPhoneError(null);
+                    setError(null);
+                  }}
+                  placeholder="Phone number"
+                  ref={phoneInputRef}
+                  type="tel"
+                  value={phoneNumber}
+                />
+              </div>
+              {phoneError ? <p className="mt-2 text-sm text-[var(--member-red)]" id="profile-phone-error" role="status">{phoneError}</p> : null}
+              {phoneChanged ? <p className="mt-2 text-sm text-[var(--member-muted)]" id="profile-phone-change">Changing your number turns off text reminders.</p> : null}
+            </fieldset>
+            <label className={SUPPORT_LABEL_CLASS}>
+              Birth date
+              <input autoComplete="bday" className={fieldClass} defaultValue={profile.privateProfile.birthDate ?? ""} min="1900-01-01" max={new Date().toISOString().slice(0, 10)} name="birth-date" type="date" />
+            </label>
+            <label className={SUPPORT_LABEL_CLASS}>
+              Shirt size
+              <select className={fieldClass} defaultValue={shirtSize} name="apparel-size">
+                <option value="">Select size</option>
+                {shirtSizes.map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <label className={SUPPORT_LABEL_CLASS + " sm:col-span-2"}>
+              Shipping address
+              <input autoComplete="shipping address-line1" className={fieldClass} defaultValue={savedString(address, "addressLine1")} maxLength={160} name="shipping-address-line-1" />
+            </label>
+            <label className={SUPPORT_LABEL_CLASS + " sm:col-span-2"}>
+              Apartment, suite, etc.
+              <input autoComplete="shipping address-line2" className={fieldClass} defaultValue={savedString(address, "addressLine2")} maxLength={160} name="shipping-address-line-2" />
+            </label>
+            <label className={SUPPORT_LABEL_CLASS}>
+              Shipping city
+              <input autoComplete="shipping address-level2" className={fieldClass} defaultValue={savedString(address, "city")} maxLength={100} name="shipping-city" />
+            </label>
+            <label className={SUPPORT_LABEL_CLASS}>
+              Shipping state or region
+              <input autoComplete="shipping address-level1" className={fieldClass} defaultValue={savedString(address, "region")} maxLength={100} name="shipping-region" />
+            </label>
+            <label className={SUPPORT_LABEL_CLASS}>
+              Postal code
+              <input autoComplete="shipping postal-code" className={fieldClass} defaultValue={savedString(address, "postalCode")} maxLength={24} name="shipping-postal-code" />
+            </label>
+            <label className={SUPPORT_LABEL_CLASS}>
+              Shipping country
+              <select autoComplete="shipping country" className={fieldClass} defaultValue={supportedShippingCountry(savedString(address, "countryCode")) ?? "US"} name="shipping-country-code">
+                {SHIPPING_COUNTRY_OPTIONS.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+              </select>
+            </label>
+          </div>
+        </section>
+
         </fieldset>
         <div className="mt-6 flex flex-wrap items-center justify-between gap-5">
           <div>
@@ -235,13 +378,6 @@ export default function MemberProfileEditor({
       </form>
 
       <p className="mt-8 text-sm text-[var(--member-muted)]">Your card uses your full name. Invite someone through <Link className="underline underline-offset-4" href="/my/invitation">My Invitations</Link>.</p>
-      <section className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-[4px] bg-[var(--member-soft)] p-5">
-        <div>
-          <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Private membership details</h2>
-          <p className="mt-2 max-w-2xl text-base leading-relaxed text-[var(--member-muted)]">Phone, birth date, shipping address, and apparel sizing.</p>
-        </div>
-        <Link className={SUPPORT_LINK_CLASS} href="/my/support">Request a details update</Link>
-      </section>
     </main>
   );
 }

@@ -23,6 +23,19 @@ function isDirectory(value: unknown): value is MemberProfileInput["directory"] {
     Object.keys(candidate).every(key => ["emailScope", "phoneScope"].includes(key));
 }
 
+function isPrivateProfile(value: unknown): value is NonNullable<MemberProfileInput["privateProfile"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  const fields = ["mobile", "birthDate", "apparelTopSize"];
+  if (!fields.every(key => typeof candidate[key] === "string")
+    || !Object.keys(candidate).every(key => [...fields, "shippingAddress"].includes(key))) return false;
+  const address = candidate.shippingAddress;
+  if (!address || typeof address !== "object" || Array.isArray(address)) return false;
+  const addressFields = ["addressLine1", "addressLine2", "city", "region", "postalCode", "countryCode"];
+  return addressFields.every(key => typeof (address as Record<string, unknown>)[key] === "string")
+    && Object.keys(address).every(key => addressFields.includes(key));
+}
+
 function isProfileInput(value: unknown): value is MemberProfileInput {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -30,7 +43,8 @@ function isProfileInput(value: unknown): value is MemberProfileInput {
   return typeof candidate.revision === "string" && /^[0-9a-f]{64}$/.test(candidate.revision) &&
     fields.every(key => typeof candidate[key] === "string") &&
     isDirectory(candidate.directory) &&
-    Object.keys(candidate).every(key => [...fields, "revision", "directory"].includes(key));
+    (candidate.privateProfile === undefined || isPrivateProfile(candidate.privateProfile)) &&
+    Object.keys(candidate).every(key => [...fields, "revision", "directory", "privateProfile"].includes(key));
 }
 
 export async function POST(request: Request) {

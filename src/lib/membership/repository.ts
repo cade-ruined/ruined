@@ -1219,11 +1219,12 @@ type ProfileRow = {
 };
 
 async function profileRevision(row: ProfileRow): Promise<string> {
-  // Include only fields this form can overwrite. Immediate photo uploads do not
+  // Include public and private edit state. Immediate photo uploads do not
   // invalidate a form that never submits the portrait storage path.
   const fields = [row.display_name, row.preferred_name, row.member_tag, row.timezone, row.city, row.state, row.location_label, row.bio,
     row.building_now, row.website_url, row.accessibility_notes, row.directory_status, row.avatar_visible,
-    row.location_visible, row.bio_visible, row.building_visible, row.email_scope, row.phone_scope, row.preference_version];
+    row.location_visible, row.bio_visible, row.building_visible, row.email_scope, row.phone_scope, row.preference_version,
+    row.mobile_e164, row.birth_date ? toIso(row.birth_date)?.slice(0, 10) : null, row.default_fulfillment_address, row.apparel_sizing];
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(fields)));
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
 }
@@ -1317,8 +1318,79 @@ export async function getMemberProfile(
   };
 }
 
+export type MemberPrivateProfileInput = {
+  mobile: string;
+  birthDate: string;
+  apparelTopSize: string;
+  shippingAddress: {
+    addressLine1: string;
+    addressLine2: string;
+    city: string;
+    region: string;
+    postalCode: string;
+    countryCode: string;
+  };
+};
+
+function validatePrivateProfile(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new MembershipInputError("Check your private membership details.");
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some(key => !["mobile", "birthDate", "apparelTopSize", "shippingAddress"].includes(key))) {
+    throw new MembershipInputError("Check your private membership details.");
+  }
+  const text = (value: unknown, label: string, max: number) => {
+    if (typeof value !== "string" || value.trim().length > max) throw new MembershipInputError(`${label} must be ${max} characters or fewer.`);
+    return value.trim();
+  };
+  const mobile = text(input.mobile, "Phone", 16);
+  const parsedMobile = mobile.startsWith("+") ? parsePhoneNumber(mobile, { extract: false }) : undefined;
+  if (mobile && (!E164.test(mobile) || !parsedMobile?.isPossible() || parsedMobile.ext || parsedMobile.number !== mobile)) {
+    throw new MembershipInputError("Use a complete mobile number with country code.");
+  }
+  const birthDate = text(input.birthDate, "Birth date", 10);
+  if (birthDate) {
+    const parsedDate = new Date(`${birthDate}T00:00:00.000Z`);
+    if (!ISO_DATE.test(birthDate) || Number.isNaN(parsedDate.getTime()) || birthDate < "1900-01-01"
+      || parsedDate > new Date() || parsedDate.toISOString().slice(0, 10) !== birthDate) {
+      throw new MembershipInputError("Use a valid birth date between 1900 and today.");
+    }
+  }
+  const apparelTopSize = text(input.apparelTopSize, "Shirt size", 40);
+  if (!input.shippingAddress || typeof input.shippingAddress !== "object" || Array.isArray(input.shippingAddress)) {
+    throw new MembershipInputError("Check your shipping address.");
+  }
+  const address = input.shippingAddress as Record<string, unknown>;
+  const addressFields = ["addressLine1", "addressLine2", "city", "region", "postalCode", "countryCode"];
+  if (Object.keys(address).some(key => !addressFields.includes(key))) throw new MembershipInputError("Check your shipping address.");
+  const shippingAddress = {
+    addressLine1: text(address.addressLine1, "Address", 160),
+    addressLine2: text(address.addressLine2, "Address line 2", 160),
+    city: text(address.city, "City", 100),
+    region: text(address.region, "State or region", 100),
+    postalCode: text(address.postalCode, "Postal code", 24),
+    countryCode: text(address.countryCode, "Country", 2).toUpperCase(),
+  };
+  // A country selector may default to US while the member has no address.
+  if (Object.entries(shippingAddress).some(([key, value]) => key !== "countryCode" && value)) {
+    if (!shippingAddress.addressLine1 || !shippingAddress.city || !shippingAddress.region || !shippingAddress.postalCode
+      || !supportedShippingCountry(shippingAddress.countryCode)) throw new MembershipInputError("Complete your shipping address, including its country.");
+  } else shippingAddress.countryCode = "";
+  return { mobile: mobile || null, birthDate: birthDate || null, apparelTopSize, shippingAddress };
+}
+
+function mergePrivateFields(existing: Record<string, unknown> | null, fields: Record<string, string>) {
+  // Existing values come from JSONB, so nested legacy metadata is JSON-safe.
+  const merged = { ...existing } as Record<string, postgres.JSONValue>;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value) merged[key] = value;
+    else delete merged[key];
+  }
+  return Object.keys(merged).length ? merged : null;
+}
+
 export type MemberProfileInput = {
   revision: string;
+  privateProfile?: MemberPrivateProfileInput;
   websiteUrl?: string;
   card?: MemberCardInput;
   accessibilityNotes?: string;
@@ -1340,6 +1412,7 @@ export async function saveMemberProfile(
 ): Promise<MemberProfileSnapshot> {
   const identity = await requireMemberIdentity(authUserId);
   requireMemberCapability(identity, "profile.write");
+  const privateProfile = input.privateProfile === undefined ? undefined : validatePrivateProfile(input.privateProfile);
   const displayName = cleanRequired(input.fullName ?? input.displayName ?? "", "Full name", 120);
   const memberTag = cleanMemberTag(input.memberTag);
   const timezone = input.timezone.trim() || "America/Denver";
@@ -1364,8 +1437,11 @@ export async function saveMemberProfile(
   }
   const sql = getApplicationDatabase();
   await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 41)`;
     await tx`select pg_advisory_xact_lock(hashtext(${identity.memberId}), 44)`;
-    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for update`;
+    // Phone changes append a consent withdrawal through this member's FK.
+    // Match onboarding's lock order and allow the trigger's KEY SHARE check.
+    await tx`select id from ruined_members where id = ${identity.memberId}::uuid for no key update`;
     const profiles = await tx<Array<{ person_id: string; display_name: string | null; preferred_name: string | null }>>`
       select person_id, display_name, preferred_name from person_profiles where person_id = ${identity.personId}::uuid for update`;
     await tx`select person_id from person_private_profiles where person_id = ${identity.personId}::uuid for update`;
@@ -1416,7 +1492,20 @@ export async function saveMemberProfile(
         website_url = excluded.website_url,
         updated_at = statement_timestamp()
     `;
-    if (accessibilityNotes !== undefined) await tx`
+    if (privateProfile !== undefined) {
+      const address = mergePrivateFields(current.privateProfile.fulfillmentAddress, privateProfile.shippingAddress);
+      const sizing = mergePrivateFields(current.privateProfile.apparelSizing, { top: privateProfile.apparelTopSize });
+      // The database retires prior SMS consent on an actual phone change. This
+      // form never grants messaging consent or changes the account's sign-in.
+      await tx`
+        insert into person_private_profiles (person_id, mobile_e164, birth_date, default_fulfillment_address, apparel_sizing, accessibility_notes)
+        values (${identity.personId}::uuid, ${privateProfile.mobile}, ${privateProfile.birthDate}::date,
+          ${address === null ? null : tx.json(address)}::jsonb, ${sizing === null ? null : tx.json(sizing)}::jsonb, ${accessibilityNotes === undefined ? current.privateProfile.accessibilityNotes : accessibilityNotes})
+        on conflict (person_id) do update set mobile_e164 = excluded.mobile_e164, birth_date = excluded.birth_date,
+          default_fulfillment_address = excluded.default_fulfillment_address, apparel_sizing = excluded.apparel_sizing,
+          accessibility_notes = excluded.accessibility_notes, updated_at = statement_timestamp()
+      `;
+    } else if (accessibilityNotes !== undefined) await tx`
       insert into person_private_profiles (person_id, accessibility_notes)
       values (${identity.personId}::uuid, ${accessibilityNotes})
       on conflict (person_id) do update

@@ -37,10 +37,10 @@ async function load(path, dependencies, globals = {}) {
   return loaded.exports.default;
 }
 const profile = { revision: "a".repeat(64), directory: { displayName: "Public Name", preferredName: "Legacy preferred", memberTag: null, avatarUrl: null }, preferences: {}, privateProfile: {}, access: {} };
-async function fixture(kind, tag = null) {
+async function fixture(kind, tag = null, profileOverrides = {}) {
   const state = hooks(), calls = [], responses = [];
   const onboarding = { profile: { memberTag: tag, preferredName: "Legacy preferred", legalName: "Private Legal Name", mobile: "+18015550100", fulfillmentAddress: { countryCode: "US" }, apparelSizing: {} }, agreement: { acceptanceId: null }, requiredFieldsComplete: false, membershipFunding: "self", email: "private@example.test" };
-  const initialProfile = { ...profile, directory: { ...profile.directory, memberTag: tag } };
+  const initialProfile = { ...profile, ...profileOverrides, directory: { ...profile.directory, ...profileOverrides.directory, memberTag: tag }, privateProfile: { ...profile.privateProfile, ...profileOverrides.privateProfile } };
   const component = await load(`src/components/membership/${kind === "join" ? "JoinForm" : "MemberProfileEditor"}.tsx`, {
     react: state.react, "next/link": Stub, "@stripe/stripe-js": { loadStripe: () => assert.fail("No payment during profile editing") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
@@ -56,11 +56,11 @@ async function fixture(kind, tag = null) {
     "@/lib/membership/member-communication-preferences-model": communicationPreferences,
   }, {
     FormData: class { constructor(values) { this.values = values; } get(name) { return this.values[name] ?? null; } },
-    fetch: async (url, request) => { const body = JSON.parse(request.body); calls.push({ url, body }); return responses.shift() ?? { ok: true, status: 200, json: async () => ({ onboarding, profile: { ...initialProfile, directory: { ...initialProfile.directory, memberTag: body.memberTag || null } } }) }; },
+    fetch: async (url, request) => { const body = JSON.parse(request.body); calls.push({ url, method: request.method, body }); return responses.shift() ?? { ok: true, status: 200, json: async () => ({ onboarding, profile: { ...initialProfile, directory: { ...initialProfile.directory, memberTag: body.memberTag || null } } }) }; },
   });
   const props = kind === "join" ? { initialOnboarding: onboarding, minimumAge: 18, enabled: true, photoStorageReady: true } : { initialProfile, photoStorageReady: true, writable: true };
   const render = () => state.render(component, props);
-  async function submit(tagValue) { await elements(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { "member-tag": tagValue, "legal-name": "Private Legal Name", "full-name": "Public Name", "city": "Salt Lake City", "state": "Utah", "timezone": "America/Denver", "mobile-country": "US", "mobile-national": "8015550100" } }); }
+  async function submit(tagValue, values = {}) { await elements(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { "member-tag": tagValue, "legal-name": "Private Legal Name", "full-name": "Public Name", "city": "Salt Lake City", "state": "Utah", "timezone": "America/Denver", "mobile-country": "US", "mobile-national": "8015550100", ...values } }); }
   return { render, submit, calls, responses };
 }
 
@@ -184,4 +184,79 @@ test("profile editor exposes only the relevant identity and contact controls", a
   assert.ok(elements(timezone).some(node => node.type === "option" && node.props.value === "America/Denver"));
   assert.match(text(tree), /Your Journal is private/);
   assert.doesNotMatch(text(tree), /Circle visibility|Private notes|Short biography|Website \/ Optional/);
+});
+
+
+const privateFieldNames = ["mobile-country", "mobile-national", "birth-date", "apparel-size", "shipping-address-line-1", "shipping-address-line-2", "shipping-city", "shipping-region", "shipping-postal-code", "shipping-country-code"];
+const valueOf = field => field.props.value ?? field.props.defaultValue;
+
+test("private details are editable with saved values inside the profile form before Save", async () => {
+  const view = await fixture("profile", "member_tag", { privateProfile: {
+    mobile: "+442079460018", birthDate: "1990-03-04", apparelSizing: { top: "Custom tall fit" },
+    fulfillmentAddress: { addressLine1: "12 Saved Street", addressLine2: "Flat 4", city: "London", region: "Greater London", postalCode: "SW1A 1AA", countryCode: "GB" },
+  } });
+  const tree = view.render(), all = elements(tree), forms = all.filter(node => node.type === "form");
+  assert.equal(forms.length, 1);
+  const nodes = elements(forms[0]);
+  const saveIndex = nodes.findIndex(node => node.type === "button" && node.props.type === "submit");
+  assert.ok(saveIndex >= 0);
+  for (const name of privateFieldNames) {
+    const matches = nodes.filter(node => node.props.name === name);
+    assert.equal(matches.length, 1, `${name} belongs to the shared save form`);
+    assert.ok(nodes.indexOf(matches[0]) < saveIndex, `${name} appears before Save`);
+  }
+  const byName = name => nodes.find(node => node.props.name === name);
+  assert.equal(valueOf(byName("mobile-country")), "GB");
+  assert.equal(valueOf(byName("mobile-national")).replace(/\D/g, ""), "02079460018");
+  for (const [name, expected] of Object.entries({
+    "birth-date": "1990-03-04", "apparel-size": "Custom tall fit", "shipping-address-line-1": "12 Saved Street", "shipping-address-line-2": "Flat 4", "shipping-city": "London", "shipping-region": "Greater London", "shipping-postal-code": "SW1A 1AA", "shipping-country-code": "GB",
+  })) assert.equal(valueOf(byName(name)), expected, name);
+  assert.ok(elements(byName("apparel-size")).some(node => node.type === "option" && node.props.value === "Custom tall fit"), "unknown saved sizing stays selectable");
+  assert.doesNotMatch(text(tree), /Request a details update/);
+  assert.equal(all.some(node => node.props.href === "/my/support"), false);
+});
+
+test("one profile save submits edited public and private details with a normalized mobile number", async () => {
+  const view = await fixture("profile", "saved_tag");
+  await view.submit("saved_tag", {
+    "full-name": "Updated Public Name", city: "Alpine", state: "Utah", bio: "A new public bio", "email-scope": "circle", "phone-scope": "none",
+    "mobile-country": "US", "mobile-national": "(415) 555-2671", "birth-date": "1991-06-12", "apparel-size": "XL",
+    "shipping-address-line-1": "8 New Road", "shipping-address-line-2": "Studio B", "shipping-city": "Manchester", "shipping-region": "Greater Manchester", "shipping-postal-code": "M1 1AE", "shipping-country-code": "GB",
+  });
+  assert.equal(view.calls.length, 1);
+  const request = view.calls[0];
+  assert.equal(request.url, "/api/my/profile");
+  assert.equal(request.method, "POST");
+  assert.equal(request.body.fullName, "Updated Public Name");
+  assert.equal(request.body.city, "Alpine");
+  assert.equal(request.body.state, "Utah");
+  assert.equal(request.body.bio, "A new public bio");
+  assert.deepEqual(request.body.directory, { emailScope: "circle", phoneScope: "none" });
+  assert.deepEqual(request.body.privateProfile, {
+    mobile: "+14155552671", birthDate: "1991-06-12", apparelTopSize: "XL",
+    shippingAddress: { addressLine1: "8 New Road", addressLine2: "Studio B", city: "Manchester", region: "Greater Manchester", postalCode: "M1 1AE", countryCode: "GB" },
+  });
+  assert.match(text(view.render()), /Profile saved/);
+});
+
+test("legacy members can save while leaving optional private details blank", async () => {
+  const view = await fixture("profile");
+  const nodes = elements(view.render());
+  for (const name of privateFieldNames) assert.notEqual(nodes.find(node => node.props.name === name)?.props.required, true, name);
+  await view.submit("", Object.fromEntries(privateFieldNames.map(name => [name, ""])));
+  assert.equal(view.calls.length, 1);
+  assert.deepEqual(view.calls[0].body.privateProfile, {
+    mobile: "", birthDate: "", apparelTopSize: "",
+    shippingAddress: { addressLine1: "", addressLine2: "", city: "", region: "", postalCode: "", countryCode: "" },
+  });
+});
+
+test("invalid nonblank phone details block profile submission and remain correctable", async () => {
+  const view = await fixture("profile", "saved_tag");
+  await view.submit("saved_tag", { "mobile-country": "US", "mobile-national": "123" });
+  assert.equal(view.calls.length, 0);
+  assert.match(text(view.render()), /(?:complete|valid).*(?:mobile|phone|number)|(?:mobile|phone).*(?:complete|valid)/i);
+  await view.submit("saved_tag", { "mobile-country": "US", "mobile-national": "4155552671" });
+  assert.equal(view.calls.length, 1);
+  assert.equal(view.calls[0].body.privateProfile.mobile, "+14155552671");
 });
