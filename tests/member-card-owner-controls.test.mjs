@@ -37,7 +37,7 @@ function elements(element) {
 const text = element => typeof element === "string" || typeof element === "number" ? String(element)
   : React.isValidElement(element) ? React.Children.toArray(element.props.children).map(text).join("") : "";
 const findButton = (tree, label) => elements(tree).find(element => element.type === "button" && text(element) === label);
-const Link = () => null, Room = () => null, Photo = () => null, Sharing = () => null;
+const Link = () => null, Room = () => null, Photo = () => null;
 const settings = { publicEnabled: false, showPortrait: true, showMemberSince: false, showLocation: false, showBio: true, showBuilding: false, showWebsite: false, labelIds: [] };
 const card = { name: "Saved Name", avatarUrl: null, memberSince: null, location: null, bio: "Saved biography", buildingNow: null, websiteUrl: null, labels: [], wearSeed: "saved-wear" };
 const snapshot = { card, settings, version: 27, writable: true, eligible: true, publicUrl: null, source: { name: "PRIVATE SOURCE" }, sourceRevision: "PRIVATE REVISION", availableLabels: [] };
@@ -60,11 +60,12 @@ async function ownerFixture(props = {}) {
   return { render, calls, copies, shares, savedUrl, listeners, cleanup: state.cleanup };
 }
 
-test("owner card room has one invitation customization link and no editable profile fields or form", async () => {
+test("owner card room links to invitations without any customization controls", async () => {
   const view = await ownerFixture();
   const tree = view.render(), nodes = elements(tree);
   assert.equal(tree.type, Room); assert.equal(tree.props.card, snapshot.card);
-  assert.equal(nodes.filter(node => node.type === Link && node.props.href === "/my/invitation#card-customization").length, 1);
+  assert.equal(nodes.filter(node => node.type === Link && node.props.href === "/my/invitation").length, 1);
+  assert.doesNotMatch(nodes.map(text).join(" "), /customiz|add details/i);
   assert.equal(nodes.some(node => node.type === "form" || node.type === "textarea" || node.type === "select" || node.type === "input" && !node.props.readOnly), false);
   assert.equal(view.calls.length, 0, "mounting a saved owner snapshot must not issue another request");
   view.cleanup(); assert.equal(view.listeners.size, 0);
@@ -74,7 +75,7 @@ test("owner card has no public sharing controls or publication writes", async ()
   const view = await ownerFixture();
   const tree = view.render();
   for (const label of ["Make card public", "Make private", "Copy link", "Share card ↗"]) assert.equal(findButton(tree, label), undefined);
-  assert.match(tree.props.footerNote, /full name.*Invitations/);
+  assert.match(tree.props.footerNote, /full name.*person you’re inviting/);
   assert.equal(view.calls.length, 0);
   assert.equal(elements(tree).some(node => node.type === "input"), false);
   view.cleanup();
@@ -93,7 +94,7 @@ async function profileFixture() {
   const initialCard = { ...snapshot, settings: { ...settings, publicEnabled: true } };
   const editor = await load("src/components/membership/MemberProfileEditor.tsx", {
     react: state.react, "next/link": Link, "@/components/membership/MemberSettingsHeader": () => null,
-    "@/components/membership/MemberPublicSharingSettings": Sharing, "@/components/membership/MemberPhotoUpload": Photo,
+    "@/components/membership/MemberPhotoUpload": Photo,
     "@/lib/membership/profile-fields": profileFields,
     "./MemberProfileEditor.module.css": {},
     "@/components/support/supportStyles": { SUPPORT_ACTION_CLASS: "", SUPPORT_FIELD_CLASS: "", SUPPORT_LABEL_CLASS: "", SUPPORT_LINK_CLASS: "" },
@@ -109,7 +110,6 @@ test("the profile form preserves full text limits and removes obsolete sharing c
     const fields = nodes.filter(node => node.props.name === name);
     assert.equal(fields.length, 1); assert.equal(fields[0].props.maxLength, maximum); assert.equal(fields[0].props.defaultValue, value);
   }
-  assert.equal(nodes.filter(node => node.type === Sharing).length, 0);
   assert.equal(nodes.some(node => ["website-url", "accessibility-notes", "circle-directory-enabled"].includes(node.props.name)), false);
 });
 

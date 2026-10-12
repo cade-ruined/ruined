@@ -174,7 +174,6 @@ test("public landing offers the attributed waitlist without owner controls or jo
   const invitation = await load("src/components/membership/MemberInvitation.tsx", {
     react: React, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
-    "./InvitationCardSettings": () => null,
     "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
@@ -198,7 +197,6 @@ test("expired public views stop new use while retaining the original deadline", 
   const invitation = await load("src/components/membership/MemberInvitation.tsx", {
     react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} }, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
-    "./InvitationCardSettings": () => null,
     "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,
@@ -217,7 +215,6 @@ test("personal landings route directly to email acceptance while legacy invitati
   const invitation = await load("src/components/membership/MemberInvitation.tsx", {
     react: React, "next/link": link,
     "@/components/public-members/MembershipWaitlistForm": renderWaitlist,
-    "./InvitationCardSettings": () => null,
     "./PersonalInvitationAcceptance": renderAcceptance,
     "./card/PublicMemberCardPage": renderInvitation,
     "@/lib/membership/invitation-expiry": expiry,

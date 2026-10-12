@@ -370,12 +370,12 @@ test("profile text and public choices commit together; stale sharing and profile
       revision: initialProfile.revision, displayName: "N".repeat(120), memberTag: "preferred", timezone: "America/Denver", location: "L".repeat(160),
       bio: "B".repeat(1200), buildingNow: "W".repeat(500), websiteUrl: "https://example.test/", accessibilityNotes: "PRIVATE NOTES",
       directory: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" },
-      card: { ...initialCard.settings, publicEnabled: true, showBio: true, showBuilding: true, showWebsite: true, version: initialCard.version },
+      card: { ...initialCard.settings, publicEnabled: true, version: initialCard.version },
     };
     const saved = await repository.saveMemberProfile(ids.auth, input);
     assert.equal(saved.directory.displayName.length, 120); assert.equal(saved.directory.bio.length, 1200); assert.equal(saved.directory.buildingNow.length, 500);
     const publicState = await cardRepository.getOwnMemberCard(ids.auth), token = publicState.publicUrl.split("/").pop();
-    assert.equal((await cardRepository.getPublicMemberCard(token)).bio, input.bio);
+    assert.equal((await cardRepository.getPublicMemberCard(token)).bio, null);
     const hiding = { ...input, revision: saved.revision, bio: "NEW PRIVATE BIO", card: { ...publicState.settings, showBio: false, version: publicState.version } };
     const hidden = await repository.saveMemberProfile(ids.auth, hiding);
     assert.equal(hidden.directory.bio, "NEW PRIVATE BIO"); assert.equal((await cardRepository.getPublicMemberCard(token)).bio, null);

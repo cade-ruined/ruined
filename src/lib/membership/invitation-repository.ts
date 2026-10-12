@@ -73,11 +73,9 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
   if (!MEMBER_INVITATION_TOKEN.test(token)) return null;
   return withFreshApplicationDatabaseRead("member-invitations", async () => {
     const readScope = () => getApplicationDatabase()<Array<{ member_id: string | null; origin: "member" | "ruined_direct"; name: string; member_tag: string | null; expires_at: Date | string | null; recipient_name: string | null;
-      membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null; recipient_email_required: boolean;
-      card_version: number | null; invitation_customized_at: Date | string | null }>>`
+      membership_type: "standard" | "complimentary"; complimentary_ends_at: Date | string | null; recipient_email_required: boolean }>>`
       select invitation.member_id, invitation.origin, invitation.expires_at, invitation.recipient_name,
         invitation.membership_type, invitation.complimentary_ends_at, invitation.recipient_email_required,
-        card.version as card_version, card.invitation_customized_at,
         case when invitation.origin = 'ruined_direct' then 'The Ruined Project'
           else coalesce(nullif(btrim(profile.display_name), ''), nullif(btrim(profile.preferred_name), ''), 'Member') end as name,
         case when invitation.origin = 'ruined_direct' then null else profile.member_tag end as member_tag
@@ -92,7 +90,6 @@ export async function getPublicMemberInvitation(token: string): Promise<PublicMe
             and private.ruined_direct_invitation_available(id)))
       ) invitation left join ruined_members member on member.id = invitation.member_id
       left join person_profiles profile on profile.person_id = member.person_id
-      left join member_public_cards card on card.member_id = member.id
       where invitation.origin = 'ruined_direct'
         or (member.deleted_at is null and private.ruined_member_can_share_invitation(invitation.member_id))
       limit 1

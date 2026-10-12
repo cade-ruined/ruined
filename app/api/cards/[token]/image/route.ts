@@ -1,5 +1,5 @@
 import { MEMBER_CARD_HEADERS } from "@/lib/membership/public-card-model";
-import { getPublicMemberCard, getPublicMemberCardPortrait } from "@/lib/membership/public-card-repository";
+import { getPublicMemberCard } from "@/lib/membership/public-card-repository";
 import { renderPublicMemberCardImage } from "@/lib/membership/public-card-image";
 
 export const runtime = "nodejs";
@@ -12,8 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     const { token } = await params;
     const card = await getPublicMemberCard(token);
     if (!card) return unavailable(404);
-    const portrait = card.avatarUrl ? await getPublicMemberCardPortrait(token) : null;
-    const image = await renderPublicMemberCardImage(card, portrait);
+    const image = await renderPublicMemberCardImage(card);
     const current = await getPublicMemberCard(token);
     if (!current || JSON.stringify(current) !== JSON.stringify(card)) return unavailable(404);
     return new Response(image, {

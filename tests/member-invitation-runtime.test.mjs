@@ -371,10 +371,9 @@ test("public invitations recheck revoked links and membership after slow card pr
 });
 
 
-test("public invitation final gate rejects changed customization while the card is loading", async t => {
+test("public invitation final gate rejects a changed member name while the card is loading", async t => {
   const f = await fixture(t);
   const enabled = await f.enable(), token = enabled.url.split("/").pop();
-  await f.db.query("insert into member_public_cards(member_id,invitation_customized_at) values($1,now())",[first.member]);
-  f.setCardReadHook(() => f.db.query("update member_public_cards set invitation_customized_at=null,version=version+1 where member_id=$1",[first.member]));
+  f.setCardReadHook(() => f.db.query("update person_profiles set display_name='Changed Name' where person_id=$1",[first.person]));
   assert.equal(await f.repository.getPublicMemberInvitation(token),null);
 });

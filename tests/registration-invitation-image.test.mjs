@@ -41,7 +41,8 @@ test("welcome artwork preserves the actual recipient, inviter, deadline and supp
   assert.ok(image.byteLength > 100_000 && image.byteLength < 1_200_000, "private inline image remains email sized");
   assert.match(printed.join(" "), /This is for Alex Rivera\./);
   assert.ok(printed.includes("A personal invitation from"));
-  assert.ok(printed.includes("Cade Mangelson @cade"));
+  assert.ok(printed.includes("Cade Mangelson"));
+  assert.doesNotMatch(printed.join(" "), /@cade/);
   assert.ok(printed.includes("VALID UNTIL OCT. 2 1:00PM MDT"));
   assert.ok(printed.includes("20") && printed.includes("26"));
   assert.equal(globalThis.document, documentBefore); assert.equal(globalThis.window, windowBefore); assert.equal(globalThis.Image, imageBefore);
@@ -81,7 +82,8 @@ test("non-expiring member keepsakes render without a deadline or synthetic date"
   const image = await renderer.renderRegistrationInvitationHero({ ...member, expiresAt: null });
   assert.equal((await sharp(image).metadata()).format, "jpeg");
   assert.match(printed.join(" "), /This is for Alex Rivera\./);
-  assert.ok(printed.includes("Cade Mangelson @cade"));
+  assert.ok(printed.includes("Cade Mangelson"));
+  assert.doesNotMatch(printed.join(" "), /@cade/);
   assert.doesNotMatch(printed.join(" "), /VALID UNTIL|1970|INVALID DATE|NO EXPIRATION/i);
   await assert.rejects(renderer.renderRegistrationInvitationHero({ ...member, invitationSource: "ruined_direct", expiresAt: null }), /complete issued invitation/);
   if (process.env.REGISTRATION_EMAIL_PROOF_DIR) {

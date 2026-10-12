@@ -17,7 +17,7 @@ test("a full 64-character name stays readable and inside its print area", () => 
   }
 });
 
-test("maximum selected location, building and introduction retain their full text", () => {
+test("bounded text retains all characters across different print areas", () => {
   for (const item of [
     { length: 160, width: 880, height: 238, maxSize: 30, minSize: 28, leading: 1.24 },
     { length: 100, width: 864, height: 275, maxSize: 60, minSize: 36, leading: 1.2 },
@@ -31,7 +31,7 @@ test("maximum selected location, building and introduction retain their full tex
   }
 });
 
-test("unbounded milestone names use an explicit ellipsis within two lines", () => {
+test("unbounded secondary text uses an explicit ellipsis within two lines", () => {
   const layout = fitCardText("W".repeat(1500), { width: 838, height: 68, maxSize: 26, minSize: 26, measure });
   const printed = abbreviateCardText(layout, 2, 838, measure);
   assert.equal(printed.lines.length, 2);

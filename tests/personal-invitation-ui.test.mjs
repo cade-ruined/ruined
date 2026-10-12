@@ -42,7 +42,6 @@ async function harness(initialSnapshot = snapshot, options = {}) {
   const component = await load("src/components/membership/MemberInvitation.tsx", {
     react: fakeReact, "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "@/components/public-members/MembershipWaitlistForm": () => null,
-    "./InvitationCardSettings": () => null,
     "./PersonalInvitationAcceptance": () => null,
     "./card/PublicMemberCardPage": ({ children }) => React.createElement("main", null, children),
     "@/lib/membership/invitation-expiry": timedExpiry,

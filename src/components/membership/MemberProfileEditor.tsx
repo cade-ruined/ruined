@@ -237,7 +237,7 @@ export default function MemberProfileEditor({
         </div>
       </form>
 
-      <p className="mt-8 text-sm text-[var(--member-muted)]">Customize your invitation card in <Link className="underline underline-offset-4" href="/my/invitation">My Invitation</Link>.</p>
+      <p className="mt-8 text-sm text-[var(--member-muted)]">Your card uses your full name. Invite someone through <Link className="underline underline-offset-4" href="/my/invitation">My Invitations</Link>.</p>
       <section className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-[4px] bg-[var(--member-soft)] p-5">
         <div>
           <h2 className={SUPPORT_LABEL_CLASS + " ![font-family:var(--font-cadehandy2)]"}>Private membership details</h2>

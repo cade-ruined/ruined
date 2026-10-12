@@ -39,7 +39,7 @@ export default function MemberCardEditor({ initialSnapshot, preview = false }: {
   const feedback = error ? <div className="mx-auto max-w-xl space-y-3 px-5 text-center text-sm text-[#e5e0d5]"><p role="alert">{error}</p><button className="underline underline-offset-4" type="button" disabled={loading} onClick={() => void load()}>{loading ? "Loading…" : "Reload saved card"}</button></div> : null;
   if (!snapshot) return <main className="min-h-screen bg-[#141413] px-6 py-16 text-[#e5e0d5]"><Link href="/my">Back to profile</Link><h1 className="mt-10 text-3xl">My Card</h1>{loading ? <p role="status">Opening your card…</p> : feedback}</main>;
   return <PublicMemberCardPage card={snapshot.card} preview={preview} title={preview ? "MY CARD / PREVIEW" : "MY CARD"}
-    headerActions={<><Link href="/my">My profile</Link><Link href="/my/invitation#card-customization">Customize in Invitations ↗</Link></>}
-    footerNote={preview ? "Preview only. Nothing is published." : "Your card begins with your full name. Add details in Invitations."}
+    headerActions={<Link href="/my">My profile</Link>}
+    footerNote={preview ? "Preview only. Nothing is published." : "Your card includes your full name. Personalize an invitation with the name of the person you’re inviting."}
     footerActions={<Link href="/my/invitation">My Invitations ↗</Link>}>{feedback}</PublicMemberCardPage>;
 }

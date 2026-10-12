@@ -1,4 +1,4 @@
-import { memberCardExcerpt, type PublicMemberCard } from "@/lib/membership/public-card-model";
+import type { PublicMemberCard } from "@/lib/membership/public-card-model";
 import { memberInvitationDeadline } from "@/lib/membership/invitation-expiry";
 import { abbreviateCardText, fitCardText, type CardTextLayout } from "./card-text-layout";
 
@@ -78,7 +78,6 @@ type FoilPosition = { x: number; y: number; width: number; height: number };
 const foilPosition = { x: 779, y: 1106, width: 224 * 283.956 / 400, height: 224 } as const;
 const invitationFrontFoil = { x: 766, y: 1106, width: 240 * 283.956 / 400, height: 240 } as const;
 const invitationBackFoil = { x: 327, y: 454, width: 500 * 283.956 / 400, height: 500 } as const;
-const customizedInvitationBackFoil = { x: 433, y: 358, width: 200 * 283.956 / 400, height: 200 } as const;
 type FoilStamp = { print: HTMLCanvasElement; mask: HTMLCanvasElement; roughness: HTMLCanvasElement; bump: HTMLCanvasElement; position: FoilPosition };
 const foilCache = new WeakMap<HTMLImageElement, Map<FoilPosition, FoilStamp>>();
 const stampedMaterials = new WeakSet<HTMLCanvasElement>();
@@ -213,9 +212,9 @@ function stockMaterial(seed: string, dark: boolean, fibers: Float32Array, edgeWe
   return { wear, roughness, bump };
 }
 
-function cardMaterials(seed: string, photo: HTMLImageElement | null, variant: CardVariant, customizedInvitation = false) {
+function cardMaterials(seed: string, photo: HTMLImageElement | null, variant: CardVariant) {
   // Each layout stamps its own foil positions without changing the physical wear.
-  const key = `${variant}:${customizedInvitation}:${seed}`;
+  const key = `${variant}:${seed}`;
   const existing = materialCache.get(key);
   if (existing) return existing;
   const fibers = paperFibers(photo);
@@ -235,7 +234,7 @@ function cardArtworkFontRequests(variant: CardVariant) {
   return ['400 72px "IvyOra Text"', '500 20px "Inter Variable"', ...(variant === "invitation" ? ['700 38px "Inter Variable"', `400 118px ${handwritingFamily()}`] : [])];
 }
 
-/** The invitation is its own print layout, using only consented identity fields. */
+/** The invitation uses the member's name and optional recipient name. */
 function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingContext2D, card: PublicMemberCard, photo: HTMLImageElement | null, wordmark: HTMLImageElement | null, expiresAt: string | null, recipientName: string | null, invitationSource: "member" | "ruined_direct") {
   const cream = "#fff9e9";
   mark(front, wordmark, 52, 49, 266, 80, "#ffffff");
@@ -266,7 +265,7 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
 
   front.strokeStyle = palette.rule; front.lineWidth = 1;
   front.beginPath(); front.moveTo(62, 1073); front.lineTo(944, 1073); front.stroke();
-  const identity = card.memberTag && card.name !== `@${card.memberTag}` ? `${card.name} @${card.memberTag}` : card.name;
+  const identity = card.name;
   const identityFont = (size: number) => `700 ${size}px "Inter Variable", Inter, sans-serif`;
   const identityLayout = fitCardText(identity, { width: 674, height: 138, maxSize: 38, minSize: 20, leading: 1.16,
     measure: (value, size) => { front.font = identityFont(size); return front.measureText(value).width; } });
@@ -286,32 +285,28 @@ function printInvitation(front: CanvasRenderingContext2D, back: CanvasRenderingC
 
   back.textAlign = "center";
   printText(back, textLayout(back, "You’re allowed", 880, 70, 50, 50, true), CARD_WIDTH / 2, 235, cream, true);
-  const details = [card.bio, card.buildingNow ? `Currently building: ${card.buildingNow}` : null,
-    card.location, card.memberSince ? `Member since ${new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(card.memberSince))}` : null,
-    ...card.labels].filter(Boolean).join(" · ");
-  if (details) {
-    const layout = textLayout(back, details, 790, 410, 32, 24, false, 1.45);
-    printText(back, abbreviateCardText(layout, 11, 790, measure(back)), CARD_WIDTH / 2, 626, cream);
-  }
   printText(back, textLayout(back, "to become someone new.", 880, 70, 50, 50, true), CARD_WIDTH / 2, 1134, cream, true);
   back.textAlign = "left";
 }
 
 async function createCardArtwork(source: PublicMemberCard, variant: CardVariant = "member", invitationExpiresAt: string | null = null, invitationRecipientName: string | null = null, invitationSource: "member" | "ruined_direct" = "member"): Promise<CardArtwork> {
   const invitation = variant === "invitation";
-  const card = invitation && invitationSource === "ruined_direct"
-    ? { ...source, name: "The Ruined Project", memberTag: null, avatarUrl: null, memberSince: null, location: null, labels: [], websiteUrl: null, buildingNow: null, bio: null }
-    : { ...source, ...(invitation ? { avatarUrl: null, websiteUrl: null } : {}), bio: memberCardExcerpt(source.bio, 180), buildingNow: memberCardExcerpt(source.buildingNow, 100) };
-  const customizedInvitation = invitation && Boolean(card.bio || card.buildingNow || card.location || card.memberSince || card.labels.length);
+  // Keep the print boundary name-only even if a caller supplies legacy profile fields.
+  const card: PublicMemberCard = {
+    name: invitation && invitationSource === "ruined_direct" ? "The Ruined Project" : source.name,
+    wearSeed: source.wearSeed,
+    memberTag: null, avatarUrl: null, memberSince: null, location: null,
+    bio: null, buildingNow: null, websiteUrl: null, labels: [],
+  };
   const fonts = environment.loadFonts(cardArtworkFontRequests(variant));
   let fontTimer: ReturnType<typeof setTimeout> | undefined;
   const [, [portrait, leaf, wordmark, paperPhoto, inkPhoto, invitationPhoto]] = await Promise.all([
     Promise.race([fonts, new Promise<void>(resolve => { fontTimer = setTimeout(resolve, 1800); })]).finally(() => { if (fontTimer) clearTimeout(fontTimer); }),
     Promise.all([card.avatarUrl ? loadImage(card.avatarUrl) : Promise.resolve(null), referenceImage("/ruined-mark.svg"), referenceImage("/ruined-wordmark.svg"), referenceImage("/membership/design/distressed-paper.jpg"), referenceImage("/membership/design/printers-ink.jpg"), invitation ? referenceImage("/membership/foundations/beginning.webp") : Promise.resolve(null)]),
   ]);
-  const materials = cardMaterials(card.wearSeed, paperPhoto, variant, customizedInvitation);
+  const materials = cardMaterials(card.wearSeed, paperPhoto, variant);
   const foil = authenticityFoil(leaf, invitation ? invitationFrontFoil : foilPosition);
-  const backFoil = invitation ? authenticityFoil(leaf, customizedInvitation ? customizedInvitationBackFoil : invitationBackFoil) : foil;
+  const backFoil = invitation ? authenticityFoil(leaf, invitationBackFoil) : foil;
   stampMaterial(materials.front, foil); stampMaterial(materials.back, backFoil);
   const front = canvas(), back = canvas(); const f = front.getContext("2d")!, b = back.getContext("2d")!;
   for (const ctx of [f, b]) { rounded(ctx, 0, 0, CARD_WIDTH, CARD_HEIGHT, 43); ctx.clip(); }

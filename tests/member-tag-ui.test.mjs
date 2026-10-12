@@ -49,7 +49,7 @@ async function fixture(kind, tag = null) {
     "@/components/membership/AgreementText": Stub, "@/components/membership/MemberPhotoUpload": Stub,
     "@/components/membership/MemberPaymentMethod": Stub,
     "@/components/membership/MemberSmsConsentDisclosure": Stub,
-    "@/components/membership/MemberSettingsHeader": Stub, "@/components/membership/MemberPublicSharingSettings": Stub,
+    "@/components/membership/MemberSettingsHeader": Stub,
     "@/lib/membership/profile-fields": profileFields,
     "./MemberProfileEditor.module.css": new Proxy({}, { get: (_, key) => key }),
     "@/components/support/supportStyles": {}, "@/lib/membership/entry-stage": entryStage, "@/lib/membership/pricing": pricing, "@/lib/membership/phone": phone,

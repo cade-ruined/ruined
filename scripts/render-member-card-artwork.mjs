@@ -85,7 +85,7 @@ const cases = [
   ["invitation-tag-as-name", { ...base, name: "@alex_morgan" }, "invitation"],
   ["invitation-legacy", { ...base, memberTag: null }, "invitation"],
   ["invitation-private-profile", { ...base, avatarUrl: privatePortrait, location: "PRIVATE LOCATION", labels: ["PRIVATE LABEL"], buildingNow: "PRIVATE BUILDING", bio: "PRIVATE BIOGRAPHY", websiteUrl: "https://private-website.example/" }, "invitation"],
-  ["invitation-customized", { ...base, memberTag: null, avatarUrl: null, websiteUrl: null }, "invitation"],
+  ["invitation-legacy-fields", { ...base, memberTag: null, avatarUrl: null, websiteUrl: null }, "invitation"],
   ["invitation-image-fallback", { ...base, avatarUrl: privatePortrait }, "invitation"],
   ["invitation-unissued", { ...base }, "invitation", null],
   ["invitation-personal", { ...base }, "invitation", invitationExpiresAt, "Taylor"],
@@ -102,13 +102,8 @@ const materialKeys = ["frontRoughness", "backRoughness", "frontBump", "backBump"
 const fingerprint = surface => createHash("sha256").update(surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data).digest("hex");
 const fingerprints = artwork => Object.fromEntries(materialKeys.map(key => [key, fingerprint(artwork[key])]));
 let memberMaterials, publicInvitationPrint, publicInvitationText;
-for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipientName = null] of cases) {
-  const customized = name === "invitation-customized";
-  // Match the server boundary: legacy/new invitations are name-only until the
-  // member explicitly saves invitation customization. Raw profile fields are not consent.
-  const card = variant === "invitation" && !customized
-    ? { ...sourceCard, memberTag: null, avatarUrl: null, memberSince: null, location: null, bio: null, buildingNow: null, websiteUrl: null, labels: [] }
-    : sourceCard;
+for (const [name, card, variant, expiresAt = invitationExpiresAt, recipientName = null] of cases) {
+  // Pass raw legacy fields through: the renderer itself must ignore them.
   const fallback = name === "invitation-image-fallback";
   // A fresh module avoids the successful reference-image cache masking failure.
   const renderer = fallback ? load(resolve("src/components/membership/card/card-artwork.ts")) : artworkModule;
@@ -128,11 +123,7 @@ for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipien
     assert.equal(photoDraws.length, fallback ? 0 : 1, `${name} must use the shared couch photograph when available.`);
     if (!fallback) assert.deepEqual(photoDraws[0].crop.slice(-4), [53, 154, 902, 646], `${name} must preserve the reference photo frame.`);
     const textBySide = [artwork.front, artwork.back].map(surface => surface.printedText.map(item => item.text));
-    if (customized) {
-      const printed = textBySide.flat().join(" ");
-      for (const detail of ["Making space", "deliberate creative practice", "Alpine, Utah", "Foundations completed"]) assert.ok(printed.includes(detail), `${name} must print the selected detail: ${detail}`);
-      assert.doesNotMatch(printed, /private-website/);
-    } else assert.doesNotMatch(textBySide.flat().join(" "), /PRIVATE|private-website|MEMBER SINCE|BASED IN|A LITTLE ABOUT ME|CURRENTLY BUILDING|Foundations completed/, `${name} must not print unselected profile details.`);
+    assert.doesNotMatch(textBySide.flat().join(" "), /PRIVATE|private-website|MEMBER SINCE|BASED IN|A LITTLE ABOUT ME|CURRENTLY BUILDING|Foundations completed|Making space|deliberate creative practice|Alpine, Utah/, `${name} must not print profile details.`);
     assert.equal(artwork.back.printedImages.some(item => item.source === invitationPhoto), false, `${name} must reserve the photograph for the front.`);
     if (name === "invitation" || fallback) assert.ok(requested.includes(invitationPhoto), `${name} must request the static invitation photograph.`);
     if (name === "invitation") {
@@ -152,19 +143,13 @@ for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipien
     assert.equal(artwork.front.printedImages.some(item => item.source === invitationPhoto), false, `${name} member artwork must not render the invitation photograph.`);
   }
   if (name === "member-with-portrait") {
-    assert.ok(requested.includes(memberPortrait), "Member artwork must still fetch its own portrait.");
-    const portraits = artwork.front.printedImages.filter(item => item.source === memberPortrait);
-    assert.equal(portraits.length, 1, "Member artwork must still render its own portrait once.");
-    const { width, height, crop: [sx, sy, sw, sh, x, y, w, h] } = portraits[0];
-    assert.equal(sx, (width - sw) / 2, "Member portraits must retain their horizontal crop.");
-    assert.equal(sy, (height - sh) * .4, "Member portraits must retain their existing vertical crop.");
-    assert.deepEqual([x, y, w], [53, 154, 902], "Member portraits must retain their established placement.");
-    assert.ok(h > 0 && h <= 766, "Member portrait height must stay within its existing frame.");
+    assert.equal(requested.includes(memberPortrait), false, "Name-only member artwork must not fetch a profile portrait.");
+    for (const side of ["front", "back"]) assert.deepEqual(artwork[side].toBuffer("image/png"), memberMaterials.artwork[side].toBuffer("image/png"), `A legacy portrait must not change the member ${side}.`);
   }
   const printedTagCount = invitation
     ? artwork.front.printedText.map(item => item.text).join("").replace(/\s/g, "").split(`@${card.memberTag}`).length - 1
     : artwork.front.printedText.filter(item => item.text === `@${card.memberTag}`).length;
-  assert.equal(printedTagCount, card.memberTag ? 1 : 0, `${name} must print the tag exactly once.`);
+  assert.equal(printedTagCount, card.memberTag && card.name === `@${card.memberTag}` ? 1 : 0, `${name} must not add a member tag to the name.`);
   for (const side of ["front", "back"]) await writeFile(`output/member-card/qa/artwork-${name}-${side}.png`, artwork[side].toBuffer("image/png"));
   if (name === "sample") {
     memberMaterials = { artwork, fingerprints: fingerprints(artwork) };
@@ -202,7 +187,7 @@ for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipien
       "The chosen recipient name must be printed completely.");
     for (const line of handwriting) assert.ok(line.left >= 60 && line.right <= 946 && line.top >= 830 && line.bottom < 1073,
       `The handwriting must stay below the photograph and above the footer rule: ${JSON.stringify(line)}`);
-    if (!customized) assert.deepEqual(artwork.back.printedText.map(item => item.text), ["You’re allowed", "to become someone new."], "The default back must preserve the supplied message without extra fields.");
+    assert.deepEqual(artwork.back.printedText.map(item => item.text), ["You’re allowed", "to become someone new."], "The back must preserve the supplied message without extra fields.");
     const validity = artwork.front.printedText.filter(item => item.text.startsWith("VALID "));
     assert.equal(validity.length, expiresAt ? 1 : 0, `${name} must print only a service-issued deadline.`);
     if (expiresAt) {
@@ -246,7 +231,7 @@ for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipien
     // Check the actual text metrics and stroked rules against the entire foil
     // rectangle plus 24px of breathing room, rather than just its sparse pixels.
     const foilArea = invitation
-      ? side === "front" ? { left: 742, right: 961, top: 1082, bottom: 1370 } : customized ? { left: 409, right: 599, top: 334, bottom: 582 } : { left: 303, right: 706, top: 430, bottom: 978 }
+      ? side === "front" ? { left: 742, right: 961, top: 1082, bottom: 1370 } : { left: 303, right: 706, top: 430, bottom: 978 }
       : { left: 755, right: 963, top: 1082, bottom: 1354 };
     for (const item of [...surface.printedText, ...surface.printedRules]) {
       const intersects = item.right > foilArea.left && item.left < foilArea.right && item.bottom > foilArea.top && item.top < foilArea.bottom;
@@ -259,19 +244,20 @@ for (const [name, sourceCard, variant, expiresAt = invitationExpiresAt, recipien
         assert.equal(intersects, false, `${name} ${side} text runs overlap: ${item.text} / ${other.text}`);
       }
     });
-    const shouldPrintName = side === "front" || !invitation && !card.buildingNow && !card.bio;
+    const shouldPrintName = side === "front" || !invitation;
     const printedName = surface.printedText.filter(item => invitation
       ? item.font.includes("Inter Variable") && item.top > 1100 && /^700\s/.test(item.font)
-      : item.font.includes("IvyOra") && (side === "front" || !card.buildingNow && !card.bio)).map(item => item.text).join("");
-    const expectedIdentity = invitation && card.memberTag && card.name !== `@${card.memberTag}` ? `${card.name} @${card.memberTag}` : card.name;
+      : item.font.includes("IvyOra")).map(item => item.text).join("");
+    const expectedIdentity = card.name;
     if (shouldPrintName) assert.equal(printedName.replace(/\s/g, ""), expectedIdentity.replace(/\s/g, ""), `${name} ${side} must preserve the full identity.`);
     layoutChecks.push({ name, side, textRuns: surface.printedText.length, rules: surface.printedRules.length, foilClearance: 24, nameCheck: shouldPrintName ? "passed" : "not printed on this face" });
   }
   if (name === "maximum") {
     const printed = (side, serif) => artwork[side].printedText.filter(item => /^W+$/.test(item.text) && item.font.includes("IvyOra") === serif).map(item => item.text).join("");
-    assert.equal(printed("front", false), card.location, "All 160 location characters must survive the narrower metadata column.");
-    assert.equal(printed("back", true), card.buildingNow, "All 100 building characters must remain visible.");
-    assert.equal(printed("back", false), card.bio, "All 180 biography characters must remain visible.");
+    assert.equal(printed("front", true), card.name, "The complete member name must remain visible on the front.");
+    assert.equal(printed("back", true), card.name, "The complete member name must remain visible on the back.");
+    assert.equal(printed("front", false), "", "Legacy location details must not appear.");
+    assert.equal(printed("back", false), "", "Legacy biography details must not appear.");
   }
 }
 // Exercise both cache orders. Rendering one variant must never stamp its foil
@@ -297,4 +283,4 @@ assert.notEqual(invitationBefore.backFoilMask, memberBefore.backFoilMask, "Varia
 assert.deepEqual(fingerprints(memberMaterials.artwork), memberMaterials.fingerprints, "All proof variants must leave the original member materials unchanged.");
 await writeFile("output/member-card/qa/artwork-layout-checks.json", JSON.stringify(layoutChecks, null, 2));
 await writeFile("output/member-card/qa/invitation-artwork-checks.json", JSON.stringify(invitationChecks, null, 2));
-console.log("Rendered standalone member, full-profile, and invitation artwork proofs. These do not verify browser layout or WebGL.");
+console.log("Rendered name-only member and invitation artwork proofs, including recipient personalization. These do not verify browser layout or WebGL.");

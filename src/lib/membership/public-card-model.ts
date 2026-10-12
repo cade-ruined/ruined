@@ -12,7 +12,7 @@ export type PublicMemberCard = {
   wearSeed: string;
 };
 export function publicMemberCardIdentity(card: Pick<PublicMemberCard, "name" | "memberTag">): string {
-  return !card.memberTag || card.name === `@${card.memberTag}` ? card.name : `${card.name} (@${card.memberTag})`;
+  return card.name;
 }
 export type MemberCardSettings = {
   publicEnabled: boolean;
@@ -42,12 +42,11 @@ export type MemberCardSnapshot = {
   writable: boolean;
   eligible: boolean;
   publicUrl: string | null;
-  invitationCustomized: boolean;
   source: MemberCardSource;
   sourceRevision: string;
   availableLabels: MemberCardLabel[];
 };
-export type MemberCardInput = MemberCardSettings & { version: number; customizeInvitation?: true };
+export type MemberCardInput = MemberCardSettings & { version: number };
 /** Public profile identity is separate from the optional collectible card. */
 export type PublicMemberProfile = {
   name: string;
@@ -65,7 +64,7 @@ export const MEMBER_CARD_HEADERS = {
 export const MEMBER_CARD_LIMITS = { name: 64, bio: 180, building: 100, website: 300, labels: 2 } as const;
 const LABEL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const FLAGS = ["publicEnabled", "showPortrait", "showMemberSince", "showLocation", "showBio", "showBuilding", "showWebsite"] as const;
-const FIELDS = [...FLAGS, "labelIds", "version", "customizeInvitation"];
+const FIELDS = [...FLAGS, "labelIds", "version"];
 export class PublicCardError extends Error {
   constructor(readonly status: number, message: string) { super(message); this.name = "PublicCardError"; }
 }
@@ -81,21 +80,20 @@ export function normalizeCardWebsite(value: string): string {
 export function validateMemberCardInput(value: unknown): MemberCardInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PublicCardError(400, "A card is required.");
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !FIELDS.includes(key)) || FLAGS.some(key => typeof input[key] !== "boolean") ||
-      (input.customizeInvitation !== undefined && input.customizeInvitation !== true) ||
+  if (Object.keys(input).some(key => !FIELDS.includes(key)) || typeof input.publicEnabled !== "boolean" ||
+      FLAGS.some(key => input[key] !== undefined && typeof input[key] !== "boolean") ||
       !Number.isSafeInteger(input.version) || Number(input.version) < 0 || Number(input.version) > 2_147_483_646 ||
-      !Array.isArray(input.labelIds) || input.labelIds.length > MEMBER_CARD_LIMITS.labels ||
-      input.labelIds.some(id => typeof id !== "string" || !LABEL_ID.test(id)) || new Set(input.labelIds).size !== input.labelIds.length) {
+      (input.labelIds !== undefined && (!Array.isArray(input.labelIds) || input.labelIds.length > MEMBER_CARD_LIMITS.labels ||
+        input.labelIds.some(id => typeof id !== "string" || !LABEL_ID.test(id)) || new Set(input.labelIds).size !== input.labelIds.length))) {
     throw new PublicCardError(400, "Check your card choices and try again.");
   }
-  return {
-    publicEnabled: input.publicEnabled as boolean,
-    showPortrait: input.showPortrait as boolean, showMemberSince: input.showMemberSince as boolean,
-    showLocation: input.showLocation as boolean, showBio: input.showBio as boolean,
-    showBuilding: input.showBuilding as boolean, showWebsite: input.showWebsite as boolean,
-    labelIds: input.labelIds as string[], version: input.version as number,
-    ...(input.customizeInvitation === true ? { customizeInvitation: true as const } : {}),
-  };
+  // Legacy clients may withdraw a published card with their old selections attached.
+  // No request can enable optional card content; every accepted save clears it.
+  if (input.publicEnabled && (FLAGS.some(key => key !== "publicEnabled" && input[key] === true) ||
+      (Array.isArray(input.labelIds) && input.labelIds.length > 0))) {
+    throw new PublicCardError(400, "Cards include only your full name.");
+  }
+  return { ...defaultMemberCardSettings(), publicEnabled: input.publicEnabled, version: input.version as number };
 }
 export function defaultMemberCardSettings(): MemberCardSettings {
   return {
@@ -104,18 +102,10 @@ export function defaultMemberCardSettings(): MemberCardSettings {
   };
 }
 /** Used for owner drafts and public responses; never spreads a profile or identity. */
-export function projectMemberCard(settings: MemberCardSettings, source: MemberCardSource, labels: MemberCardLabel[], wearSeed: string): PublicMemberCard {
+export function projectMemberCard(_settings: MemberCardSettings, source: MemberCardSource, _labels: MemberCardLabel[], wearSeed: string): PublicMemberCard {
   return {
-    name: source.name,
-    memberTag: null,
-    avatarUrl: settings.showPortrait ? source.avatarUrl : null,
-    memberSince: settings.showMemberSince ? source.memberSince : null,
-    location: settings.showLocation ? source.location : null,
-    bio: settings.showBio ? source.bio || null : null,
-    buildingNow: settings.showBuilding ? source.buildingNow || null : null,
-    websiteUrl: settings.showWebsite ? source.websiteUrl || null : null,
-    labels: settings.labelIds.map(id => labels.find(label => label.id === id)?.label).filter((label): label is string => !!label).slice(0, MEMBER_CARD_LIMITS.labels),
-    wearSeed,
+    name: source.name, memberTag: null, avatarUrl: null, memberSince: null, location: null,
+    bio: null, buildingNow: null, websiteUrl: null, labels: [], wearSeed,
   };
 }
 /** Only print excerpts are shortened. Public details always retain the full shared profile. */

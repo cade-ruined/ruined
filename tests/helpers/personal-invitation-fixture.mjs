@@ -32,7 +32,6 @@ export async function fixture(t, { applyExpiry = true, persistentPersonalInvitat
     create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key, status text default 'active');
     create table ruined_members(id uuid primary key, person_id uuid references people(id), email_normalized text unique, deleted_at timestamptz);
-    create table member_public_cards(member_id uuid primary key, version integer not null default 1, invitation_customized_at timestamptz);
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text default 'active', member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity);
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, member_tag text, bio text default 'PRIVATE BIO', avatar_storage_path text default 'PRIVATE PHOTO');

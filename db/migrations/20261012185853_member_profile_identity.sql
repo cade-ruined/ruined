@@ -29,11 +29,6 @@ set directory_status = 'circle_visible', bio_visible = true,
     version = version + 1, updated_at = statement_timestamp()
 where directory_status <> 'circle_visible' or not bio_visible;
 
--- Existing card choices are not consent to add optional fields to invitations.
-alter table public.member_public_cards
-  add column invitation_customized_at timestamptz;
-comment on column public.member_public_cards.invitation_customized_at is 'Explicit invitation customization consent. Null keeps invitation cards name only regardless of legacy public card selections.';
-
 -- New tags remain claimable, but an assigned tag cannot be changed or cleared.
 -- The existing unique index continues to arbitrate simultaneous first claims.
 create function private.ruined_lock_member_tag()

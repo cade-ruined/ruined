@@ -12,7 +12,6 @@ import MembershipWaitlistForm from "@/components/public-members/MembershipWaitli
 import PublicMemberCardPage from "./card/PublicMemberCardPage";
 import PersonalInvitationAcceptance from "./PersonalInvitationAcceptance";
 import styles from "./MemberInvitation.module.css";
-import InvitationCardSettings from "./InvitationCardSettings";
 
 export function InvitationLanding({ card, token, expiresAt, recipientName, membershipType = "standard", complimentaryEndsAt = null, invitationSource = "member", paymentSetupOnly = false, registrationOnly = false, preview = false }: { card: PublicMemberCard; token?: string; expiresAt: string | null; recipientName?: string | null; membershipType?: "standard" | "complimentary"; complimentaryEndsAt?: string | null; invitationSource?: "member" | "ruined_direct"; paymentSetupOnly?: boolean; registrationOnly?: boolean; preview?: boolean }) {
   const expired = useInvitationExpired(expiresAt);
@@ -202,7 +201,6 @@ export default function MemberInvitation({ initialSnapshot, preview = false }: {
     footerActions={<Link href="/my/card">My Card ↗</Link>}>
     <div className={styles.dashboard}>
       <p className={styles.previewCaption}>{selected ? <>Showing the invitation for <strong>{selected.recipientName}</strong><button type="button" onClick={() => setSelectedId(null)}>Back to new invitation</button></> : <>Your next invitation{recipientName.trim() ? <>, for <strong>{recipientName.trim()}</strong></> : " starts here."}</>}</p>
-      <InvitationCardSettings disabled={!writable || busy} preview={preview} onSaved={card => setSnapshot(current => current ? { ...current, card } : current)} />
       <section id="create-invitation" className={styles.panel} aria-labelledby="my-invitation-title">
         <p className={styles.eyebrow}>A personal introduction</p><h2 id="my-invitation-title">Bring someone in.</h2>
         <p>Put their name on a card. Each person gets their own invitation and confirms their email before joining.</p>
