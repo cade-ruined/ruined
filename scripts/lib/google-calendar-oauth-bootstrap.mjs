@@ -63,6 +63,62 @@ function requiredString(value, label, maximumLength = 4_096) {
   return value.trim();
 }
 
+export function validateOrganizerEmail(value = GOOGLE_CALENDAR_ORGANIZER_EMAIL) {
+  if (typeof value !== "string" || value.length > 254) {
+    throw new GoogleCalendarBootstrapError("Choose a valid Ruined Workspace organizer email.");
+  }
+  const email = value.trim().toLowerCase();
+  const [local, domain, extra] = email.split("@");
+  if (
+    extra !== undefined
+    || domain !== GOOGLE_CALENDAR_ORGANIZER_DOMAIN
+    || !local
+    || local.length > 64
+    || !/^[a-z0-9]+(?:[._+-][a-z0-9]+)*$/.test(local)
+    || /[\u0000\r\n]/.test(value)
+  ) {
+    throw new GoogleCalendarBootstrapError(
+      `The organizer must be an email address at ${GOOGLE_CALENDAR_ORGANIZER_DOMAIN}.`,
+    );
+  }
+  return email;
+}
+
+export function parseGoogleCalendarBootstrapArgs(args) {
+  if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
+    return { help: true };
+  }
+  const positional = [];
+  let organizer;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--organizer") {
+      if (organizer !== undefined || !args[index + 1] || args[index + 1].startsWith("-")) {
+        throw new GoogleCalendarBootstrapError("Provide exactly one email after --organizer.");
+      }
+      organizer = args[++index];
+    } else if (argument.startsWith("-")) {
+      throw new GoogleCalendarBootstrapError(`Unknown authorization option: ${argument}.`);
+    } else {
+      positional.push(argument);
+    }
+  }
+  if (
+    !positional[0]
+    || positional.length > 2
+    || (positional.length === 2 && organizer !== undefined)
+  ) {
+    throw new GoogleCalendarBootstrapError(
+      "Provide the OAuth client JSON path and, optionally, one organizer email.",
+    );
+  }
+  return {
+    help: false,
+    clientPath: positional[0],
+    organizerEmail: validateOrganizerEmail(organizer ?? positional[1]),
+  };
+}
+
 export function assertFixedLoopbackCallback(value = GOOGLE_CALENDAR_CALLBACK_URL) {
   let callback;
   try {
@@ -156,7 +212,12 @@ export function validateCallbackRequestMetadata({ host, method, remoteAddress })
   }
 }
 
-export function validateGoogleIdTokenClaims(payload, expectedAudience) {
+export function validateGoogleIdTokenClaims(
+  payload,
+  expectedAudience,
+  expectedOrganizer = GOOGLE_CALENDAR_ORGANIZER_EMAIL,
+) {
+  const organizerEmail = validateOrganizerEmail(expectedOrganizer);
   if (!isRecord(payload)) {
     throw new GoogleCalendarBootstrapError(
       "Google did not return a verifiable identity.",
@@ -181,9 +242,9 @@ export function validateGoogleIdTokenClaims(payload, expectedAudience) {
       "The Google account email is not verified.",
     );
   }
-  if (email !== GOOGLE_CALENDAR_ORGANIZER_EMAIL) {
+  if (email !== organizerEmail) {
     throw new GoogleCalendarBootstrapError(
-      `Authorize exactly ${GOOGLE_CALENDAR_ORGANIZER_EMAIL}.`,
+      `Authorize exactly ${organizerEmail}.`,
     );
   }
   if (hostedDomain !== GOOGLE_CALENDAR_ORGANIZER_DOMAIN) {
@@ -213,7 +274,7 @@ export function validateGrantedGoogleScopes(value) {
   const scopes = normalizeGrantedScopes(value);
   if (!scopes.has(GOOGLE_CALENDAR_EVENTS_SCOPE)) {
     throw new GoogleCalendarBootstrapError(
-      "Google did not grant Ruined permission to manage Cade's owned events.",
+      "Google did not grant Ruined permission to manage the organizer's owned events.",
     );
   }
 

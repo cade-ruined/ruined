@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
@@ -35,10 +35,27 @@ test("commercial enrollment uses the real schema, current registered people, saf
     return { getApplicationDatabase: () => wrap(db) };
   }, loaded, loaded.exports);
   const repository = loaded.exports;
+  const calendarModule = { exports: {} };
+  new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/platform/ops-calendar-repository.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(name => name === "node:crypto" ? { createHash, randomUUID }
+    : name === "@/lib/database/server" ? { getApplicationDatabase: () => wrap(db) }
+    : name === "@/lib/google/calendar" ? {
+      getGoogleCalendarConfigurationStatus: () => ({ ready: true, organizerEmail: "connect@example.test", calendarId: "primary" }),
+      createGoogleCalendarEvent: () => assert.fail("Billing invalidation cannot call Google"),
+      updateGoogleCalendarEvent: () => assert.fail("Billing invalidation cannot call Google"),
+      cancelGoogleCalendarEvent: () => assert.fail("Billing invalidation cannot call Google"),
+    }
+    : name === "@/lib/google/communications" ? { googleCommunicationLivemode: () => false } : {}, calendarModule, calendarModule.exports);
+  const calendarInvalidationModule = { exports: {} };
+  new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/platform/calendar-audience-invalidation.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(name => name === "@/lib/platform/ops-calendar-repository" ? calendarModule.exports : {}, calendarInvalidationModule, calendarInvalidationModule.exports);
   const billingModule = { exports: {} };
   new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/stripe/billing-repository.ts"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)(name => name === "@/lib/stripe/database" ? { getBillingDatabase: () => wrap(db) }
+    : name === "@/lib/platform/calendar-audience-invalidation" ? calendarInvalidationModule.exports
     : name === "@/lib/membership/commercial-repository" ? repository : {}, billingModule, billingModule.exports);
   const accessModule = { exports: {} };
   new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/membership/access-policy.ts"), {
@@ -532,6 +549,70 @@ test("commercial enrollment uses the real schema, current registered people, saf
     await repository.bindCommercialMembershipPrice({ reservationId: quote.id, stripePriceId: "price_shared_review" });
     await assert.rejects(wrap(db).begin(tx => repository.lockCommercialMembershipReservation(quote.id, tx)), /verified adult account/);
     await repository.releaseCommercialMembershipReservation({ reservationId: quote.id, reason: "before_checkout_abandoned" });
+  });
+
+  await t.test("billing changes queue only existing published Calendar links and retain their operator authorization", async () => {
+    const who = await member(190, { age: false });
+    const organizer = id(1001);
+    for (const [number, eventStatus, linkStatus] of [
+      [9701, "published", "active"], [9702, "published", null],
+      [9703, "draft", "active"], [9704, "cancelled", "active"],
+      [9705, "published", "cancelled"], [9706, "published", "active"],
+    ]) {
+      await db.query(`insert into experiences(id,slug,kind,title,starts_at,ends_at,visibility,registration_mode,status,
+        published_at,cancelled_at,cancellation_reason,created_by_auth_user_id)
+        values($1,$2,'weekly_call','Calendar billing test',now()+interval '10 days',now()+interval '10 days 90 minutes',
+          'all_members','none',$3,now(),case when $3='cancelled' then now() else null end,
+          case when $3='cancelled' then 'Cancelled in isolated fixture' else null end,$4)`,
+      [id(number), `calendar-billing-${number}`, eventStatus, organizer]);
+      if (linkStatus) await db.query(`insert into experience_calendar_links(experience_id,organizer_email,organizer_calendar_id,
+        provider_event_id,livemode,status,desired_experience_version,synced_experience_version,desired_attendee_revision,
+        synced_attendee_revision,last_synced_at,created_by_auth_user_id,updated_by_auth_user_id)
+        values($1,'connect@example.test','primary',$2,false,$3,1,1,1,1,now(),$4,$5)`,
+      [id(number), `calendar-billing-${number}`, linkStatus, organizer, number === 9706 ? null : organizer]);
+    }
+    const links = async () => (await db.query(`select experience_id,status,desired_attendee_revision,synced_attendee_revision,
+      created_by_auth_user_id,updated_by_auth_user_id,version from experience_calendar_links order by experience_id`)).rows;
+    const baseline = await links();
+    const changedIds = [id(9701), id(9706)];
+    const protectedLinks = baseline.filter(link => !changedIds.includes(link.experience_id));
+    const project = async (state, eventCreated, suffix) => {
+      const sourceEventId = `evt_calendar_billing_${suffix}`;
+      await db.query(`insert into stripe_webhook_events(event_id,event_type,object_id,livemode,stripe_created,status)
+        values($1,'customer.subscription.updated',$2,false,$3,'processing')`, [sourceEventId, who.member, eventCreated]);
+      await wrap(db).begin(tx => billingModule.exports.updateMemberBillingState(tx, { memberId: who.member, state, eventCreated, sourceEventId }));
+    };
+    const markSynced = () => db.query(`update experience_calendar_links set status='active',
+      synced_attendee_revision=desired_attendee_revision,last_synced_at=now(),version=version+1
+      where experience_id in ($1,$2)`, changedIds);
+    const assertPending = async revision => {
+      const current = await links();
+      assert.equal(current.length, baseline.length, "A billing change cannot create a Calendar invitation");
+      assert.deepEqual(current.filter(link => !changedIds.includes(link.experience_id)), protectedLinks,
+        "Draft/cancelled events and cancelled Calendar links stay untouched");
+      for (const link of current.filter(link => changedIds.includes(link.experience_id))) {
+        assert.equal(link.status, "pending_update");
+        assert.equal(Number(link.desired_attendee_revision), revision);
+        assert.equal(link.created_by_auth_user_id, organizer);
+        assert.equal(link.updated_by_auth_user_id, organizer, "Provider updates retain the operator rather than impersonating the member");
+      }
+      assert.equal((await db.query("select count(*)::int as count from experience_calendar_links where experience_id=$1", [id(9702)])).rows[0].count, 0);
+    };
+    const time = Math.floor(Date.now() / 1000);
+    await project("active", time, "paid");
+    await assertPending(2);
+    await markSynced();
+    const synced = await links();
+    await project("active", time + 1, "unchanged");
+    assert.deepEqual(await links(), synced, "An unchanged billing projection does not dirty Calendar again");
+    await project("ended", time - 1, "stale");
+    assert.deepEqual(await links(), synced, "A stale webhook cannot dirty Calendar or remove the member");
+    assert.equal((await db.query("select billing_state from member_lifecycle where member_id=$1", [who.member])).rows[0].billing_state, "active");
+    await project("attention_required", time + 2, "attention");
+    await assertPending(3);
+    await markSynced();
+    await project("ended", time + 3, "ended");
+    await assertPending(4);
   });
 
 });

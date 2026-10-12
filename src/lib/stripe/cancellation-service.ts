@@ -327,7 +327,7 @@ export async function reconcilePrepaidMembershipCancellation(input: { subscripti
     join stripe_membership_prepaid_proofs proof on proof.contract_id = contract.id
       and proof.stripe_subscription_id = contract.stripe_subscription_id and proof.member_id = contract.member_id
     where contract.stripe_subscription_id = ${input.subscriptionId} and contract.livemode = ${input.livemode}
-      and contract.terms_snapshot->'billingSchedule'->>'version' = 'foundations-prepaid-v1'
+      and contract.terms_snapshot->'billingSchedule'->>'version' in ('foundations-prepaid-v1', 'foundations-prepaid-v2')
       and cancellation.intent = 'cancel_before_start'
       and cancellation.status in ('requested', 'billing_stopped', 'collection_in_flight', 'manual_review')
       and (proof.cancellation_id is null or proof.cancellation_id = cancellation.id)
@@ -359,7 +359,7 @@ export async function listPendingPrepaidMembershipCancellations(limit = 25) {
     join stripe_membership_commitments contract on contract.id = cancellation.contract_id
     join stripe_membership_prepaid_proofs proof on proof.contract_id = contract.id
       and proof.stripe_subscription_id = contract.stripe_subscription_id and proof.member_id = contract.member_id
-    where contract.terms_snapshot->'billingSchedule'->>'version' = 'foundations-prepaid-v1'
+    where contract.terms_snapshot->'billingSchedule'->>'version' in ('foundations-prepaid-v1', 'foundations-prepaid-v2')
       and cancellation.intent = 'cancel_before_start'
       and cancellation.status in ('requested', 'billing_stopped', 'collection_in_flight')
       and (proof.cancellation_id is null or proof.cancellation_id = cancellation.id)

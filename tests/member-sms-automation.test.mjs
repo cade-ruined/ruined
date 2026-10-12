@@ -56,6 +56,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     create table ruined_members(id uuid primary key,person_id uuid,membership_state text,deleted_at timestamptz);
     create table people(id uuid primary key,status text);
     create table person_private_profiles(person_id uuid primary key,mobile_e164 text);
+    create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
     create table platform_users(auth_user_id uuid primary key,member_id uuid,person_id uuid,status text,email_normalized text);
     create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz);
     create table member_lifecycle(member_id uuid primary key,account_state text,administrative_onboarding_state text,
@@ -69,7 +70,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
       progression_level_slug text,registration_mode text,status text,starts_at timestamptz,cancelled_at timestamptz);
-    create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,status text);
+    create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,member_id uuid,status text,source text default 'member');
     create table integration_entity_links(id uuid primary key default gen_random_uuid(),provider text,local_entity_type text,
       local_entity_id text,external_entity_type text,livemode boolean,metadata jsonb);`);
   const profileMigration = read("db/migrations/20260930140000_member_registration_access.sql");
@@ -97,6 +98,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     await db.query("insert into ruined_members values($1,$2,'active',null)", [memberId, personId]);
     await db.query("insert into people values($1,'active')", [personId]);
     await db.query("insert into person_private_profiles values($1,$2)", [personId, phone]);
+    await db.query("insert into person_email_addresses values($1,'fixture@example.test',true,null,'verified')", [personId]);
     await db.query("insert into platform_users values($1,$2,$3,'active','fixture@example.test')", [authId, memberId, personId]);
     await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [authId]);
     await db.query("insert into member_lifecycle values($1,'active','completed','active',null,'completed','active','active',null)", [memberId]);
@@ -126,7 +128,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
   }
   async function reset() {
     await db.exec(`truncate private.member_sms_automation_jobs,private.member_sms_delivery_attempts,private.member_sms_inbound_receipts,
-      private.member_sms_phone_suppressions,member_consents,ruined_members,people,person_private_profiles,platform_users,platform_role_grants,
+      private.member_sms_phone_suppressions,member_consents,ruined_members,people,person_private_profiles,person_email_addresses,platform_users,platform_role_grants,
       member_lifecycle,member_registration_access,circles,circle_member_assignments,membership_blocks,block_circle_assignments,
       experiences,experience_registrations,integration_entity_links,member_complimentary_grants cascade;`);
     sends.length = 0; providerFails = false;

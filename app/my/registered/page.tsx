@@ -6,14 +6,22 @@ import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { getMemberRegistration } from "@/lib/membership/registration-repository";
 import { memberRegistrationPreview } from "@/lib/membership/preview-scenarios";
 import { memberRegistrationDestination } from "@/lib/membership/registration-routing";
+import { hasEligibleExplicitExperienceInvitations } from "@/lib/platform/experience-member-access";
 
 export const metadata: Metadata = { title: "You’re registered | Ruined", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 export default async function MemberRegisteredPage() {
-  const context = await getMembershipPageContext<{ registration: Awaited<ReturnType<typeof getMemberRegistration>> }>(
-    { registration: memberRegistrationPreview("registered") },
-    async authUserId => ({ registration: await getMemberRegistration(authUserId) }),
+  const context = await getMembershipPageContext<{ registration: Awaited<ReturnType<typeof getMemberRegistration>>; invitedCalendarAvailable: boolean }>(
+    { registration: memberRegistrationPreview("registered"), invitedCalendarAvailable: false },
+    async authUserId => {
+      const registration = await getMemberRegistration(authUserId);
+      return {
+        registration,
+        invitedCalendarAvailable: registration?.state === "registered" && registration.ready
+          ? await hasEligibleExplicitExperienceInvitations(authUserId) : false,
+      };
+    },
     "registration",
   );
   if (context.state === "signed_out") redirect("/my/access");
@@ -32,5 +40,6 @@ export default async function MemberRegisteredPage() {
     initialPayment={registration.initialPayment}
     preview={context.state === "preview"}
     activationAvailable={paidCheckoutAvailable || context.state === "preview"}
+    invitedCalendarAvailable={context.data.invitedCalendarAvailable}
   />;
 }

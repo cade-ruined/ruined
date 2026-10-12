@@ -6,12 +6,14 @@ import {
   GOOGLE_CALENDAR_EVENTS_SCOPE,
   assertFixedLoopbackCallback,
   mergeGoogleCalendarEnv,
+  parseGoogleCalendarBootstrapArgs,
   parseGoogleOAuthClientJson,
   redactOAuthSecrets,
   validateCallbackRequestMetadata,
   validateGoogleIdTokenClaims,
   validateGrantedGoogleScopes,
   validateOAuthTokenBundle,
+  validateOrganizerEmail,
 } from "../scripts/lib/google-calendar-oauth-bootstrap.mjs";
 
 const clientId = "test-client.apps.googleusercontent.com";
@@ -72,7 +74,50 @@ test("the callback metadata rejects non-loopback, alternate hosts, and non-GET r
   }), /fixed loopback/);
 });
 
-test("identity validation is locked to Cade, the Workspace domain, and the OAuth audience", () => {
+test("organizer selection supports explicit Workspace accounts and retains the Cade default", () => {
+  assert.deepEqual(parseGoogleCalendarBootstrapArgs(["client.json"]), {
+    help: false,
+    clientPath: "client.json",
+    organizerEmail: "cade@theruinedproject.com",
+  });
+  for (const args of [
+    ["client.json", "--organizer", "CONNECT@theruinedproject.com"],
+    ["--organizer", "connect@theruinedproject.com", "client.json"],
+    ["client.json", "connect@theruinedproject.com"],
+  ]) {
+    assert.deepEqual(parseGoogleCalendarBootstrapArgs(args), {
+      help: false,
+      clientPath: "client.json",
+      organizerEmail: "connect@theruinedproject.com",
+    });
+  }
+  assert.deepEqual(parseGoogleCalendarBootstrapArgs(["--help"]), { help: true });
+  for (const args of [
+    [],
+    ["client.json", "--organizer"],
+    ["client.json", "--organizer", "--help"],
+    ["client.json", "--organizer", "connect@theruinedproject.com", "--organizer", "cade@theruinedproject.com"],
+    ["client.json", "--organizer", "connect@theruinedproject.com", "cade@theruinedproject.com"],
+    ["client.json", "connect@theruinedproject.com", "extra"],
+    ["client.json", "--unknown"],
+  ]) {
+    assert.throws(() => parseGoogleCalendarBootstrapArgs(args));
+  }
+  for (const email of [
+    "connect@gmail.com",
+    "connect@theruinedproject.com.example.com",
+    "connect@@theruinedproject.com",
+    "Connect <connect@theruinedproject.com>",
+    "connect@theruinedproject.com\n",
+    "@theruinedproject.com",
+    "",
+    null,
+  ]) {
+    assert.throws(() => validateOrganizerEmail(email));
+  }
+});
+
+test("identity validation defaults to Cade and still verifies Workspace domain and OAuth audience", () => {
   assert.deepEqual(validateGoogleIdTokenClaims({
     aud: clientId,
     email: "CADE@theruinedproject.com",
@@ -100,6 +145,34 @@ test("identity validation is locked to Cade, the Workspace domain, and the OAuth
     email_verified: true,
     hd: "example.com",
   }, clientId), /must belong to theruinedproject/);
+});
+
+test("an explicitly selected organizer must match Google's verified identity exactly", () => {
+  const claims = {
+    aud: clientId,
+    email: "connect@theruinedproject.com",
+    email_verified: true,
+    hd: "theruinedproject.com",
+  };
+  assert.deepEqual(validateGoogleIdTokenClaims(claims, clientId, "connect@theruinedproject.com"), {
+    email: "connect@theruinedproject.com",
+    hostedDomain: "theruinedproject.com",
+  });
+  assert.throws(() => validateGoogleIdTokenClaims({
+    ...claims, email: "cade@theruinedproject.com",
+  }, clientId, "connect@theruinedproject.com"), /Authorize exactly connect/);
+  assert.throws(() => validateGoogleIdTokenClaims({
+    ...claims, email_verified: false,
+  }, clientId, "connect@theruinedproject.com"), /email is not verified/);
+  assert.throws(() => validateGoogleIdTokenClaims({
+    ...claims, hd: "example.com",
+  }, clientId, "connect@theruinedproject.com"), /must belong to theruinedproject/);
+  assert.throws(() => validateGoogleIdTokenClaims({
+    ...claims, aud: "other.apps.googleusercontent.com",
+  }, clientId, "connect@theruinedproject.com"), /different OAuth client/);
+  assert.throws(() => validateGoogleIdTokenClaims({
+    ...claims, email: "connect@example.com",
+  }, clientId, "connect@example.com"), /organizer must be/);
 });
 
 test("scope and token validation require the narrow Calendar grant and an offline refresh token", () => {
@@ -151,14 +224,14 @@ test("the env merge changes only Calendar keys, removes target duplicates, and p
     GOOGLE_CALENDAR_OAUTH_CLIENT_ID: clientId,
     GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET: "new-client-secret",
     GOOGLE_CALENDAR_OAUTH_REFRESH_TOKEN: "test-refresh-token",
-    GOOGLE_CALENDAR_ORGANIZER_EMAIL: "cade@theruinedproject.com",
+    GOOGLE_CALENDAR_ORGANIZER_EMAIL: "connect@theruinedproject.com",
   });
 
   assert.match(merged, /^# existing local settings\r\nDATABASE_URL=/);
   assert.match(merged, /\r\nUNRELATED=value with spaces\r\n/);
   assert.equal((merged.match(/^GOOGLE_CALENDAR_ENABLED=/gm) ?? []).length, 1);
   assert.match(merged, /^GOOGLE_CALENDAR_ENABLED=true$/m);
-  assert.match(merged, /^GOOGLE_CALENDAR_ORGANIZER_EMAIL=cade@theruinedproject\.com$/m);
+  assert.match(merged, /^GOOGLE_CALENDAR_ORGANIZER_EMAIL=connect@theruinedproject\.com$/m);
   assert.match(merged, /^GOOGLE_CALENDAR_CALENDAR_ID=primary$/m);
   assert.match(merged, /^GOOGLE_CALENDAR_OAUTH_CLIENT_ID=test-client\.apps\.googleusercontent\.com$/m);
   assert.match(merged, /^GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET=new-client-secret$/m);
