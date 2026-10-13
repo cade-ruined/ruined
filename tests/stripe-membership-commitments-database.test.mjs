@@ -54,6 +54,32 @@ test("accepted contracts are immutable, idempotent and require explicit v2 recur
   assert.equal((await db.query("select count(*) from stripe_membership_commitments")).rows[0].count, 1);
 });
 
+test("database consent microseconds survive the JavaScript contract timestamp boundary without weakening identity checks", async t => {
+  const { db, c, attempt, tx } = await fixture(t);
+  const storedAcceptedAt = "2026-09-01T12:00:00.132987Z";
+  await db.query("update membership_agreement_acceptances set accepted_at=$1", [storedAcceptedAt]);
+  // Production timestamps retain microseconds; Date and the immutable contract
+  // snapshot retain milliseconds (truncate, never round up).
+  const accepted = (await db.query("select accepted_at from membership_agreement_acceptances")).rows[0];
+  const contract = policy.buildMembershipCommitment({ ...c, acceptedAt: accepted.accepted_at });
+  assert.equal(contract.acceptedAt, "2026-09-01T12:00:00.132Z");
+  for (const changed of [
+    { acceptedAt: "2026-09-01T12:00:00.131Z" },
+    { acceptedAt: "2026-09-01T12:00:00.133Z" },
+    { agreementAcceptanceId: randomUUID() },
+    { agreementContentSha256: "b".repeat(64) },
+    { agreementVersion: "ruined_membership-v3" },
+    { memberId: randomUUID() },
+  ]) {
+    await assert.rejects(tx(sql => repo.createMembershipCommitment(sql,
+      policy.buildMembershipCommitment({ ...contract, ...changed }), attempt)), /consent_mismatch/);
+  }
+  assert.deepEqual(await tx(sql => repo.createMembershipCommitment(sql, contract, attempt)), contract);
+  assert.deepEqual(await tx(sql => repo.createMembershipCommitment(sql, contract, attempt)), contract);
+  assert.equal((await db.query("select count(*) from stripe_membership_commitments")).rows[0].count, 1);
+  assert.equal((await db.query("select to_char(accepted_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as exact from membership_agreement_acceptances")).rows[0].exact, storedAcceptedAt);
+});
+
 test("replacement invoice is fenced after stopping ordinary collection and retains one key across uncertainty", async t => {
   const { db, c, attempt, now, tx, reconciliation } = await fixture(t);
   await tx(sql => repo.createMembershipCommitment(sql, c, attempt));

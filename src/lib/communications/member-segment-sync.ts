@@ -86,6 +86,8 @@ export async function readMemberSegmentSource(sql: Sql | TransactionSql, email?:
       case when registration.member_id is null then false
         else private.ruined_member_registration_ready(member.id) end as registration_ready,
       coalesce((registration.completion_basis='saved_card' and registration.payment_setup_livemode)
+        or (registration.completion_basis='paid_membership' and registration.payment_setup_livemode
+          and registration.payment_reservation_id=private.ruined_member_paid_reservation(member.id))
         or (registration.completion_basis='complimentary'
           and (private.ruined_member_has_complimentary_funding(member.id)
             or private.ruined_member_has_operator_funding(member.id))),false) as real_registration,
