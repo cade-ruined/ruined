@@ -63,7 +63,9 @@ export async function createMembershipCommitment(tx: CommitmentTransaction, cont
       and acceptance.member_id = ${contract.memberId}::uuid and acceptance.id = ${contract.agreementAcceptanceId}::uuid
       and acceptance.agreement_content_sha256 = ${contract.agreementContentSha256}
       and acceptance.agreement_key_snapshot || '-v' || acceptance.agreement_version_snapshot::text = ${contract.agreementVersion}
-      and acceptance.accepted_at = ${contract.acceptedAt}::timestamptz
+      -- The contract serializes the database timestamp through JavaScript Date.
+      -- Compare at that same precision without changing the original consent.
+      and date_trunc('milliseconds', acceptance.accepted_at) = ${contract.acceptedAt}::timestamptz
       and attempt.billing_plan = ${contract.billingPlan} and attempt.stripe_price_id = ${contract.priceId}
       and attempt.billing_schedule is not distinct from ${contract.billingSchedule ? tx.json(json(contract.billingSchedule)) : null}::jsonb
       and nullif(attempt.recurring_payment_terms->'billingSchedule', 'null'::jsonb) is not distinct from ${contract.billingSchedule ? tx.json(json(contract.billingSchedule)) : null}::jsonb
