@@ -106,7 +106,7 @@ async function fixture(t) {
       destination: m.email, requested: true, action: "email_preference_on_at_submission", marketingConsent: false, ...options.evidence };
     const result = await db.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
       values($1,'communications','membership-reminders-v2',$2,$3,$4,$5,$6) returning id::text`,
-    [m.memberId, options.decision ?? "accepted", ago(60), options.source ?? "member", m.authId, JSON.stringify(evidence)]);
+    [m.memberId, options.decision ?? "accepted", ago(60), options.source ?? "member", Object.hasOwn(options, "actor") ? options.actor : m.authId, JSON.stringify(evidence)]);
     return result.rows[0].id;
   }
   async function event(options = {}) {
@@ -265,6 +265,45 @@ test("cadence repository uses canonical access, exact current consent and durabl
       await f.consent(m, options);
     }
     assert.equal(await f.enqueue(), 0);
+  });
+  await t.test("only fully audited admin email preferences qualify, and invalid evidence cannot queue", async () => {
+    await f.reset(); const actor = await f.member(), e = await f.event(); await f.plan(e, actor);
+    const approval = { action: "operator_email_preference_enabled", operatorApproved: true, memberAffirmed: false, approvalReference: "Approved founder preferences 2026-10-13" };
+    const valid = await f.member(); await f.roster(valid, e); await f.consent(valid, { source: "ops", actor: actor.authId, evidence: approval });
+    const excluded = [];
+    for (const options of [
+      { evidence: { action: undefined } }, { evidence: { operatorApproved: undefined } }, { evidence: { operatorApproved: false } },
+      { evidence: { memberAffirmed: undefined } }, { evidence: { memberAffirmed: true } },
+      ...[undefined, "", " \t\r\n ", null, 123, { approved: true }].map(approvalReference => ({ evidence: { approvalReference } })),
+      { evidence: { requested: false } }, { evidence: { requested: undefined } },
+      { evidence: { marketingConsent: true } }, { evidence: { marketingConsent: undefined } },
+      ...["operator", "migration", "checkout"].map(source => ({ source })),
+      { actor: null }, { evidence: { destination: "old@example.test" } },
+    ]) {
+      const member = await f.member(); excluded.push(member.memberId); await f.roster(member, e);
+      await f.consent(member, { source: "ops", actor: actor.authId, ...options, evidence: { ...approval, ...options.evidence } });
+    }
+    const recipients = await f.repo.readCadenceRecipients(f.sql, await f.repo.readCadenceEvent(f.sql, e.id), "members");
+    assert.equal(recipients.find(row => row.memberId === valid.memberId).eligible, true);
+    assert.ok(recipients.filter(row => excluded.includes(row.memberId)).every(row => !row.eligible && /not enabled/.test(row.reason)));
+    assert.equal(await f.enqueue(), 1);
+    assert.deepEqual((await f.state()).map(row => row.member_id), [valid.memberId]);
+    const current = await f.claim();
+    await f.consent(valid, { decision: "withdrawn", evidence: { requested: false } });
+    assert.equal((await f.repo.withCadenceDelivery(current.claim, current.lease, () => assert.fail("withdrawn admin preference must not dispatch"))).kind, "cancelled");
+    assert.equal(await f.enqueue(), 0);
+  });
+  await t.test("an approved admin preference cannot bypass local suppression at enqueue or dispatch", async () => {
+    await f.reset(); const actor = await f.member(), m = await f.member(), e = await f.event(); await f.roster(m, e); await f.plan(e, actor);
+    await f.consent(m, { source: "ops", actor: actor.authId, evidence: { action: "operator_email_preference_enabled", operatorApproved: true,
+      memberAffirmed: false, approvalReference: "Approved founder preferences 2026-10-13" } });
+    await f.db.query("insert into communication_contacts(email_normalized,delivery_state) values($1,'unsubscribed')", [m.email]);
+    assert.equal(await f.enqueue(), 0);
+    await f.db.exec("update communication_contacts set delivery_state='active'");
+    assert.equal(await f.enqueue(), 1); const current = await f.claim();
+    await f.repo.withCadenceDelivery(current.claim, current.lease, tx => f.repo.freezeCadenceDelivery(tx, current.claim.id, frozenPayload(m.email)));
+    await f.db.exec("update communication_contacts set delivery_state='complained'");
+    assert.equal((await f.repo.withCadenceDelivery(current.claim, current.lease, () => assert.fail("suppression must win"))).kind, "manualReview");
   });
   await t.test("a funded onboarding founder qualifies only through the explicit invited call", async () => {
     await f.reset();

@@ -13,7 +13,7 @@ const channels = ["email", "sms"] as const;
 type Channel = typeof channels[number];
 type Decision = {
   id: string; channel: Channel; decision: "accepted" | "withdrawn"; destination: string; requestFingerprint: string | null;
-  policyVersion: string; affirmativeEmail: boolean; affirmativeSms: boolean;
+  policyVersion: string; authorizedEmail: boolean; affirmativeSms: boolean;
 };
 type Destinations = { email: string; phone: string | null };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -29,8 +29,11 @@ async function readState(sql: Sql | TransactionSql, memberId: string, destinatio
   const rows = await sql<Array<Decision>>`select distinct on (evidence->>'channel') id::text,
       evidence->>'channel' as channel,decision,evidence->>'destination' as destination,
       evidence->>'requestFingerprint' as "requestFingerprint",policy_version as "policyVersion",
-      (source='member' and actor_auth_user_id is not null and evidence->>'requested'='true'
-        and evidence->>'marketingConsent'='false') is true as "affirmativeEmail",
+      (actor_auth_user_id is not null and evidence->>'requested'='true' and evidence->>'marketingConsent'='false'
+        and (source='member' or (source='ops' and evidence->>'action'='operator_email_preference_enabled'
+          and evidence->>'operatorApproved'='true' and evidence->>'memberAffirmed'='false'
+          and jsonb_typeof(evidence->'approvalReference')='string'
+          and evidence->>'approvalReference' ~ '[^[:space:]]'))) is true as "authorizedEmail",
       (source='member' and actor_auth_user_id is not null and evidence->>'action'='sms_checkbox_checked'
         and evidence->>'requested'='true' and evidence->>'marketingConsent'='false'
         and evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}) is true as "affirmativeSms"
@@ -42,7 +45,7 @@ async function readState(sql: Sql | TransactionSql, memberId: string, destinatio
     const decision = latest[channel];
     if (!decision) return null;
     return decision.decision === "accepted" && Boolean(destination) && decision.destination === destination
-      && (channel !== "email" || decision.affirmativeEmail)
+      && (channel !== "email" || decision.authorizedEmail)
       && (channel !== "sms" || (decision.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && decision.affirmativeSms));
   };
   const snapshot: MemberCommunicationPreferencesSnapshot = {
@@ -54,7 +57,7 @@ async function readState(sql: Sql | TransactionSql, memberId: string, destinatio
   return { latest, snapshot };
 }
 
-/** No defaults are stored here. Null means this member has never chosen. */
+/** No defaults are stored here. Null means no preference has been recorded. */
 export async function getMemberCommunicationPreferences(sql: Sql | TransactionSql, memberId: string,
   destinations: Destinations): Promise<MemberCommunicationPreferencesSnapshot> {
   return (await readState(sql, memberId, destinations)).snapshot;
@@ -86,7 +89,7 @@ export async function saveMemberCommunicationPreferences(tx: TransactionSql,
   const requestedChannels: readonly Channel[] = options.emailOnly ? ["email"] : channels;
   const matches = (channel: Channel) => latest[channel]?.destination === destinations[channel]
     && latest[channel]?.decision === (input[channel] ? "accepted" : "withdrawn")
-    && (channel !== "email" || !input.email || latest.email?.affirmativeEmail)
+    && (channel !== "email" || !input.email || latest.email?.authorizedEmail)
     && (channel !== "sms" || !input.sms || (latest.sms?.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && latest.sms.affirmativeSms));
   const fingerprint = hash([CONTEXT, member.memberId, input.expectedRevision, input.noticeVersion,
     input.email, input.sms, member.email, member.phone, ...(options.emailOnly ? ["email_only"] : [])]);
