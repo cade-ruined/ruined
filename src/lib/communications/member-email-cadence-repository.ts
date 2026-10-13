@@ -83,8 +83,13 @@ export async function readCadenceRecipients(tx: TransactionSql, event: CadenceEv
         exists(select 1 from communication_contacts contact where contact.email_normalized=member.email_normalized
           and contact.delivery_state<>'active') as suppressed,
         coalesce(consent.decision='accepted' and consent.evidence->>'destination'=member.email_normalized
-          and consent.source='member' and consent.actor_auth_user_id is not null
-          and consent.evidence->>'requested'='true' and consent.evidence->>'marketingConsent'='false',false) as consent
+          and consent.actor_auth_user_id is not null
+          and consent.evidence->>'requested'='true' and consent.evidence->>'marketingConsent'='false'
+          and (consent.source='member' or (consent.source='ops'
+            and consent.evidence->>'action'='operator_email_preference_enabled'
+            and consent.evidence->>'operatorApproved'='true' and consent.evidence->>'memberAffirmed'='false'
+            and jsonb_typeof(consent.evidence->'approvalReference')='string'
+            and consent.evidence->>'approvalReference' ~ '[^[:space:]]')),false) as consent
       from ruined_members member join people person on person.id=member.person_id
       left join person_profiles profile on profile.person_id=member.person_id
       left join member_registration_access access on access.member_id=member.id

@@ -160,6 +160,58 @@ test("member email preference saves only explicit email decisions, preserving al
 
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
+
+test("Account recognizes only explicitly audited admin email preferences and preserves member control", async t => {
+  const f = await fixture(t), operatorId = crypto.randomUUID();
+  async function adminPreference(options = {}) {
+    const evidence = { context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "email", destination: f.member.email,
+      requested: true, marketingConsent: false, action: "operator_email_preference_enabled", operatorApproved: true,
+      memberAffirmed: false, approvalReference: "Approved founder preferences 2026-10-13", ...options.evidence };
+    await f.pg.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
+      values($1,'communications',$2,'accepted',clock_timestamp(),$3,$4,$5)`, [f.member.memberId, model.MEMBER_COMMUNICATION_NOTICE_VERSION,
+      options.source ?? "ops", Object.hasOwn(options, "actor") ? options.actor : operatorId, JSON.stringify(evidence)]);
+  }
+  await t.test("incomplete approval, legacy sources, missing actor and stale destinations remain off", async () => {
+    for (const options of [
+      { evidence: { action: undefined } }, { evidence: { action: "email_preference_on_at_submission" } },
+      { evidence: { operatorApproved: undefined } }, { evidence: { operatorApproved: false } },
+      { evidence: { memberAffirmed: undefined } }, { evidence: { memberAffirmed: true } },
+      ...[undefined, "", " \t\r\n ", null, 123, { approved: true }].map(approvalReference => ({ evidence: { approvalReference } })),
+      { evidence: { requested: false } }, { evidence: { requested: undefined } },
+      { evidence: { marketingConsent: true } }, { evidence: { marketingConsent: undefined } },
+      ...["operator", "migration", "checkout"].map(source => ({ source })),
+      { actor: null }, { evidence: { destination: "prior@example.com" } },
+    ]) {
+      await f.reset(); await adminPreference(options);
+      assert.equal((await f.get()).email, false, JSON.stringify(options));
+    }
+  });
+  await t.test("approved admin preferences display on without fabricating member affirmation; later withdrawal wins and SMS stays unchanged", async () => {
+    await f.reset();
+    await f.pg.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
+      values($1,'communications',$2,'accepted',clock_timestamp(),'member',$3,$4)`, [f.member.memberId, model.MEMBER_COMMUNICATION_NOTICE_VERSION, f.member.authUserId,
+      JSON.stringify({ context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "sms", destination: f.member.phone,
+        action: "sms_checkbox_checked", requested: true, marketingConsent: false, termsVersion: model.MEMBER_SMS_TERMS_VERSION })]);
+    const sms = (await f.rows()).filter(row => row.evidence.channel === "sms");
+    await adminPreference();
+    const accepted = (await f.rows()).find(row => row.evidence.channel === "email");
+    assert.equal((await f.get()).email, true);
+    assert.equal((await (await f.route.GET(new Request(f.url))).json()).email, true);
+    await f.save(await f.input(true));
+    assert.equal((await f.rows()).length, 2, "an unchanged choice does not relabel admin approval as member affirmation");
+    const stale = await f.input(true);
+    await f.save(await f.input(false));
+    assert.equal((await f.get()).email, false);
+    await assert.rejects(f.save(stale), error => error.code === "communication_preferences_changed");
+    const rows = await f.rows();
+    assert.deepEqual(rows.find(row => row.id === accepted.id), accepted);
+    assert.equal(rows.at(-1).source, "member"); assert.equal(rows.at(-1).decision, "withdrawn");
+    assert.deepEqual(rows.filter(row => row.evidence.channel === "sms"), sms);
+    assert.equal((await preferences.getMemberCommunicationPreferences(f.sql, f.member.memberId, { email: f.member.email, phone: f.member.phone })).sms, true);
+    assert.equal((await f.pg.query("select mobile_e164 from person_private_profiles")).rows[0].mobile_e164, f.member.phone);
+  });
+});
+
 function ui({ preview = false, initialEmail = null, response } = {}) {
   const slots = [], effects = [], calls = []; let cursor = 0, changed = false;
   const hooks = { ...React,
