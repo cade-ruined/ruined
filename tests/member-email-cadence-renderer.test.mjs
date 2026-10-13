@@ -71,6 +71,36 @@ test("server bindings and body text remain escaped while line breaks and exact U
   for (const url of expected) assert.ok(all.some(node => node.tagName === "a" && attr(node, "href") === url), url);
 });
 
+test("generated links keep readable inline color and wrapping after a mail client removes head styles, without changing approved copy", () => {
+  const authoredLink = '<a href="https://example.test/original" style="color:#f3efe6">Original footer</a>';
+  const f = fixture({ html: `<html><head><style>a{color:#ffca2c}</style></head><body style="background:#111111;color:#f3efe6"><h1>{{{HEADING}}}</h1><p data-message="true">{{{BODY}}}</p>${authoredLink}</body></html>` });
+  const approved = copy.cadenceCopy({ event: f.event, kind: f.plan.kind, track: f.plan.track,
+    stage: f.stage, memberName: f.memberName, siteUrl: f.plan.siteUrl });
+  const result = renderer.renderCadenceEmail(f);
+  assert.equal(result.subject, approved.subject);
+  const document = parse5.parse(result.html);
+  const authored = nodes(document).find(node => node.tagName === "a" && attr(node, "href") === "https://example.test/original");
+  assert.match(attr(authored, "style"), /^color:#f3efe6;/, "existing design links keep their authored color");
+  assert.doesNotMatch(attr(authored, "style"), /overflow-wrap|word-break|text-decoration/, "cadence-only styles do not overwrite design links");
+  const html = nodes(document).find(node => node.tagName === "html");
+  html.childNodes = html.childNodes.filter(node => node.tagName !== "head");
+  const stripped = parse5.parse(parse5.serialize(document));
+  assert.equal(nodes(stripped).filter(node => node.tagName === "style").length, 0);
+  const body = nodes(stripped).find(node => attr(node, "data-message") === "true");
+  const bodyText = node => node.nodeName === "#text" ? node.value : node.tagName === "br" ? "\n" : (node.childNodes ?? []).map(bodyText).join("");
+  assert.equal(bodyText(body), approved.body, "approved wording, punctuation, line breaks and displayed URLs are unchanged");
+  const links = nodes(body).filter(node => node.tagName === "a");
+  assert.deepEqual(links.map(link => attr(link, "href")), [approved.callUrl, approved.profileUrl, approved.preferencesUrl]);
+  for (const link of links) {
+    const styles = Object.fromEntries(attr(link, "style").split(";").filter(Boolean).map(rule => rule.split(":")));
+    assert.equal(styles.color, "#ffca2c");
+    assert.equal(styles["overflow-wrap"], "anywhere");
+    assert.equal(styles["word-break"], "break-word");
+    assert.equal(styles["text-decoration"], "underline");
+    assert.equal(bodyText(link), attr(link, "href"));
+  }
+});
+
 test("static copy targets replace just their selected visible span and preserve neighboring copy", () => {
   const f = fixture({ variables: [], html: '<html><body><h1>Old headline</h1><p>Old message</p><p>Keep this footer.</p></body></html>' });
   f.plan.bodyTarget = `copy:${f.plan.template.fields.find(field => field.value === "Old message").key}`;
