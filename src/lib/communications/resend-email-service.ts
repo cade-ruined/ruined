@@ -7,6 +7,7 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 import { AdminEmailError, isAdminEmailAddress } from "./admin-email-model";
 import { assertAdminEmailAccess, requireAdminEmailActor } from "./admin-email-repository";
 import { prepareAdminEmailSignOff } from "./admin-email-sign-off";
+import { hasCampaignUnsubscribe } from "./resend-email-campaign-footer";
 import { normalizeResendEmailSignOff, normalizeResendTemplate, renderResendEmailTemplate } from "./resend-email-templates";
 import type { ResendEmailEdits } from "./resend-email-model";
 
@@ -139,8 +140,8 @@ export async function prepareResendEmail(actor: string, input: Record<string, un
   return { ...rendered, from, subject };
 }
 function requireUnsubscribe(html: string) {
-  if (!/href\s*=\s*["']\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}["']/i.test(html)) {
-    throw new AdminEmailError(400, "This design needs a Resend unsubscribe link before it can be used for a campaign. Add it to the template in Resend.");
+  if (!hasCampaignUnsubscribe(html)) {
+    throw new AdminEmailError(400, "This campaign needs a visible unsubscribe link. Re-create the draft from its design to add the footer, then review it again.");
   }
 }
 type Recipient = { email: string; name: string };

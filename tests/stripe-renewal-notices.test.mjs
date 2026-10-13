@@ -79,6 +79,8 @@ test("notice uses the actual next invoice amount and tax and rejects incomplete 
   assert.match(message.text, /\$402.80/); assert.ok(message.text.includes(new Intl.NumberFormat("en-US", { style: "currency", currency: "usd" }).format((annualAmount + 35280) / 100)));
   assert.match(message.text, /https:\/\/members.example.test\/my\/account/); assert.match(message.text, /Review billing and cancellation options/); assert.doesNotMatch(message.text, /no cancellation fee/);
   assert.match(message.text, /UTC/); assert.match(message.text, /current invoice preview/);
+  assert.match(message.html, /<head>[\s\S]*<meta name="color-scheme" content="light only">/);
+  assert.match(message.html, /<meta name="supported-color-schemes" content="light">[\s\S]*<\/head>/);
   for (const change of [i => i.currency = "eur", i => i.customer = "cus_other", i => i.automatic_tax.status = "requires_location_inputs",
     i => i.lines.data[0].period.start -= 86400, i => i.lines.data[0].parent.subscription_item_details.proration = true,
     i => i.lines.has_more = true, i => i.lines.data[0].subtotal = 1]) {

@@ -19,7 +19,8 @@ async function load(file, dependencies = {}) {
   return loaded.exports;
 }
 const model = await load("src/lib/communications/admin-email-model.ts");
-const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model });
+const campaignFooter = await load("src/lib/communications/resend-email-campaign-footer.ts", { parse5 });
+const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model, "./resend-email-campaign-footer": campaignFooter });
 const layout = await load("src/lib/communications/email-sign-off-layout.ts");
 const uploads = [];
 const renderer = await load("src/lib/communications/admin-email-sign-off.ts", {

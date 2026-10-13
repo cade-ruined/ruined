@@ -122,6 +122,8 @@ test("operator notifications reach only connect and work with marketing disabled
   assert.match(email.payload.text, /R-000047/);
   assert.match(email.payload.text, /Replies to this email are not added/);
   assert.doesNotMatch(email.payload.html, /member@example\.com/);
+  assert.match(email.payload.html, /<head>[\s\S]*<meta name="color-scheme" content="light only">/);
+  assert.match(email.payload.html, /<meta name="supported-color-schemes" content="light">[\s\S]*<\/head>/);
   const sql = worker.queries.map((entry) => entry.query).join("\n");
   assert.match(sql, /for update skip locked/);
   assert.match(sql, /locked_at < now\(\) - interval '5 minutes'/);

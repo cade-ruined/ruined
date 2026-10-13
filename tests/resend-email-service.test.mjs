@@ -20,8 +20,9 @@ async function load(path, dependencies = {}, globals = {}) {
 }
 
 const model = await load("src/lib/communications/admin-email-model.ts");
+const campaignFooter = await load("src/lib/communications/resend-email-campaign-footer.ts", { parse5 });
 const templates = await load("src/lib/communications/resend-email-templates.ts", {
-  parse5, "./admin-email-model": model,
+  parse5, "./admin-email-model": model, "./resend-email-campaign-footer": campaignFooter,
 });
 const fixed = { segment: crypto.randomUUID(), topic: crypto.randomUUID(), template: crypto.randomUUID(), version: crypto.randomUUID() };
 const unsubscribe = '<a href="{{{RESEND_UNSUBSCRIBE_URL}}}">Manage preferences</a>';
@@ -150,7 +151,7 @@ async function fixture(t, globals = {}) {
   const service = await load("src/lib/communications/resend-email-service.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => db },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
-    "./admin-email-model": model, "./admin-email-repository": repository, "./resend-email-templates": templates,
+    "./admin-email-model": model, "./admin-email-repository": repository, "./resend-email-templates": templates, "./resend-email-campaign-footer": campaignFooter,
     "./admin-email-sign-off": { prepareAdminEmailSignOff: async (actor, text, persist) => {
       const image = { url: persist ? `https://storage.example.com/storage/v1/object/public/admin-email-images/${crypto.randomUUID()}.png` : signOffPreviewUrl, width: 192, height: 42 };
       state.signOffs.push({ actor, text, persist, image });
@@ -355,7 +356,36 @@ test("native campaign drafts retain a hosted sign-off before review without send
   assert.equal(f.state.sends.length, 0);
 });
 
-test("invalid edits, sender, audience and unsubscribe state fail before sign-off storage", async t => {
+test("personal designs preview and review as campaigns with a footer while individual emails stay usable", async t => {
+  const f = await fixture(t);
+  const individual = f.individual();
+  const original = structuredClone(f.state.template);
+  const input = { ...individual, mode: "campaign" };
+  const preview = await f.service.prepareResendEmail(f.admin, input);
+  assert.ok(campaignFooter.hasCampaignUnsubscribe(preview.html));
+  assert.match(preview.text, /Unsubscribe: \{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}/);
+  assert.match(preview.html, /name="color-scheme" content="light only"/);
+  const saved = await f.service.saveResendBroadcast(f.admin, input);
+  const review = await f.service.reviewResendEmail(f.admin, { broadcastId: saved.id });
+  assert.equal(review.html, preview.html);
+  assert.equal(review.text, preview.text);
+  assert.equal((review.html.match(/data-ruined-campaign-footer=/g) ?? []).length, 1);
+  const direct = await f.service.reviewResendEmail(f.admin, individual);
+  assert.doesNotMatch(direct.html + direct.text, /RESEND_UNSUBSCRIBE_URL|data-ruined-campaign-footer/);
+  assert.deepEqual(f.state.template, original);
+  assert.equal(templates.normalizeResendTemplate(f.state.template).campaignOnly, false);
+  assert.equal(f.state.sends.length, 0);
+});
+
+test("saved provider campaigns with missing visible unsubscribe links need a new reviewed draft", async t => {
+  const f = await fixture(t);
+  const saved = await f.service.saveResendBroadcast(f.admin, f.input);
+  f.state.broadcasts.get(saved.id).html = `<!--${unsubscribe}--><p>Archived draft.</p>`;
+  await assert.rejects(f.service.reviewResendEmail(f.admin, { broadcastId: saved.id }), /Re-create the draft/);
+  assert.equal(f.state.sends.length, 0);
+});
+
+test("invalid edits, sender and audience fail before sign-off storage", async t => {
   const f = await fixture(t);
   const input = { ...f.input, edits: { ...f.input.edits, typography: "ruined", signOff: { text: "After the fear" } } };
   for (const changes of [{ segmentId: "invalid" }, { topicId: "invalid" }, { name: "x".repeat(201) },
@@ -364,8 +394,6 @@ test("invalid edits, sender, audience and unsubscribe state fail before sign-off
     await assert.rejects(f.service.saveResendBroadcast(f.admin, { ...input, ...changes }), error => error.status === 400);
   }
   const originalHtml = f.state.template.html, originalFrom = f.state.template.from;
-  f.state.template.html = "<p>No campaign unsubscribe link</p>";
-  await assert.rejects(f.service.saveResendBroadcast(f.admin, input), error => error.status === 400);
   f.state.template.html = originalHtml;
   f.state.template.from = "";
   await assert.rejects(f.service.saveResendBroadcast(f.admin, input), error => error.status === 400);

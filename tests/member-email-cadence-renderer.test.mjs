@@ -15,7 +15,8 @@ async function load(name, dependencies = {}) {
   return loaded.exports;
 }
 const admin = await load("admin-email-model");
-const templates = await load("resend-email-templates", { parse5, "./admin-email-model": admin });
+const campaignFooter = await load("resend-email-campaign-footer", { parse5 });
+const templates = await load("resend-email-templates", { parse5, "./admin-email-model": admin, "./resend-email-campaign-footer": campaignFooter });
 const model = await load("member-email-cadence-model");
 const copy = await load("member-email-cadence-copy", { "./member-email-cadence-model": model });
 const renderer = await load("member-email-cadence-renderer", { parse5, "./admin-email-model": admin,

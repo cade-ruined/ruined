@@ -68,13 +68,13 @@ function defaultEdits(template: ResendEmailTemplate): ResendEmailEdits {
   };
 }
 function escapeText(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
-function sampleRender(edits: ResendEmailEdits, signOffImage?: ResendEmailSignOffImage): RenderedEmail {
+function sampleRender(edits: ResendEmailEdits, campaign: boolean, signOffImage?: ResendEmailSignOffImage): RenderedEmail {
   const html = SAMPLE_HTML.replace("{{HEADLINE}}", escapeText(edits.copy.headline ?? "")).replace("{{MESSAGE}}", escapeText(edits.copy.message ?? "")).replace("{{FIRST_NAME}}", escapeText(edits.values.FIRST_NAME ?? "there"));
-  return renderResendEmailTemplate({ ...SAMPLE_TEMPLATE, html, variables: [], fields: [] }, { ...edits, values: {}, copy: {} }, { campaign: false, signOffImage });
+  return renderResendEmailTemplate({ ...SAMPLE_TEMPLATE, html, variables: [], fields: [] }, { ...edits, values: {}, copy: {} }, { campaign, signOffImage });
 }
 async function localTemplateRender(template: ResendEmailTemplate, edits: ResendEmailEdits, campaign: boolean, sample: boolean): Promise<RenderedEmail> {
   const signOffImage = edits.signOff ? await renderEmailSignOffPreview(edits.signOff.text) : undefined;
-  return sample ? sampleRender(edits, signOffImage) : renderResendEmailTemplate(template, edits, { campaign, signOffImage });
+  return sample ? sampleRender(edits, campaign, signOffImage) : renderResendEmailTemplate(template, edits, { campaign, signOffImage });
 }
 function previewEdits(edits: ResendEmailEdits, fallbackAlt = false): ResendEmailEdits {
   // Keep an unfinished banner editable without interrupting the rest of the preview.
@@ -443,7 +443,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
               <label className="block text-sm font-medium" htmlFor="resend-segment">Resend segment<select className={OPERATOR_FIELD_CLASS} id="resend-segment" onChange={(event) => { setSegmentId(event.target.value); change(); }} required value={segmentId}><option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="">Choose a segment</option>{overview?.segments.map((segment) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={segment.id} value={segment.id}>{segment.name}</option>)}</select></label>
               <label className="block text-sm font-medium" htmlFor="resend-topic">Subscription topic<select className={OPERATOR_FIELD_CLASS} id="resend-topic" onChange={(event) => { setTopicId(event.target.value); change(); }} required value={topicId}><option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" value="">Choose a topic</option>{overview?.topics.map((topic) => <option className="bg-[var(--operator-surface)] text-[color:var(--operator-ink)]" key={topic.id} value={topic.id}>{topic.name}</option>)}</select><span className="mt-2 block text-xs font-normal leading-relaxed text-[color:var(--operator-muted)]">Resend applies this topic’s subscription preferences and unsubscribe settings.</span></label>
               </>}
-
+              <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">An unsubscribe footer is included automatically when this design needs one. You can check it in the preview.</p>
             </>}
           </fieldset>
           <section className="operator-bento-card min-w-0 space-y-4" aria-labelledby="resend-banner-title">
