@@ -71,7 +71,7 @@ async function paidCohort(tx: TransactionSql, cohortMonth?: string): Promise<Ema
     from member_registration_access registration join ruined_members member on member.id=registration.member_id and member.deleted_at is null
     join people identity on identity.id=member.person_id and identity.status='active'
     join membership_commercial_reservations reservation on reservation.id=private.ruined_member_paid_reservation(member.id)
-    where registration.registered_at is not null
+    where registration.registered_at is not null and registration.payment_setup_livemode
       and (${cohortMonth ?? null}::text is null or reservation.billing_schedule->>'cohortMonth'=${cohortMonth ?? null})
       and exists(select 1 from person_email_addresses address where address.person_id=member.person_id
         and address.email_normalized=member.email_normalized and address.verification_state='verified' and address.retired_at is null)
@@ -81,20 +81,14 @@ async function paidCohort(tx: TransactionSql, cohortMonth?: string): Promise<Ema
   return valid.length ? bounded(await knownPeople(tx, { emails: valid.map(row => row.email) })) : [];
 }
 async function canonicalRegisteredEmails(tx: TransactionSql, state: "all" | "waiting" | "open", email?: string): Promise<string[]> {
-  // The existing canonical selector predates paid_membership. Only extend its registration proof with the current provider-evidence function.
+  // Use the same current identity and funding evidence as membership segment sync.
   if (!email) {
     const [count] = await tx<Array<{ count: number }>>`select count(*)::integer as count from ruined_members`;
     if (count.count > 10000) throw new AdminEmailError(400, "The member directory is too large for this group rule. Use a cohort or call audience.");
   }
   const source = await readMemberSegmentSource(tx, email);
-  const paid = await tx<Array<{ email: string }>>`select member.email_normalized as email from ruined_members member
-    join member_registration_access registration on registration.member_id=member.id
-    where registration.completion_basis='paid_membership' and registration.registered_at is not null
-      and (${email ?? null}::text is null or member.email_normalized=${email ?? null})
-      and registration.payment_reservation_id=private.ruined_member_paid_reservation(member.id)`;
-  const paidEmails = new Set(paid.map(row => row.email));
   const selected = source.filter(member => {
-    const classified = classifyMemberSegment({ ...member, real_registration: member.real_registration || paidEmails.has(member.email) });
+    const classified = classifyMemberSegment(member);
     return (classified === "waiting" || classified === "open") && (state === "all" || classified === state);
   });
   return selected.map(member => member.email);

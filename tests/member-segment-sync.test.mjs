@@ -168,7 +168,7 @@ test("database selection verifies current identity and recognizes only live curr
         program_state text,standing_state text,cancellation_effective_at timestamptz,billing_state text);
       create table member_onboardings(member_id text,profile_completed_at timestamptz,state text);
       create table member_registration_access(member_id text,registered_at timestamptz,profile_activated_at timestamptz,
-        completion_basis text,payment_setup_livemode boolean);
+        completion_basis text,payment_setup_livemode boolean,payment_reservation_id text);
       create table person_private_profiles(person_id text,legal_name text);
       create table person_profiles(person_id text,display_name text);
       create table person_email_addresses(person_id text,email_normalized text,verification_state text,retired_at timestamptz);
@@ -183,13 +183,14 @@ test("database selection verifies current identity and recognizes only live curr
       create table membership_enrollment_episodes(reservation_id text,member_id text,ended_at timestamptz);
       create table communication_contacts(email_normalized text,delivery_state text);
       create function private.ruined_member_registration_ready(text) returns boolean language sql as 'select true';
+      create function private.ruined_member_paid_reservation(text) returns text language sql as 'select null::text';
       create function private.ruined_member_has_complimentary_funding(text) returns boolean language sql as 'select false';
       create function private.ruined_member_has_operator_funding(text) returns boolean language sql as 'select false';
       insert into ruined_members values ('a','a','member@example.com',null);
       insert into people values ('a','active');
       insert into member_lifecycle values ('a','active','completed','onboarding','active',null,'pending');
       insert into member_onboardings values ('a',now(),'completed');
-      insert into member_registration_access values ('a',now(),null,'saved_card',true);
+      insert into member_registration_access values ('a',now(),null,'saved_card',true,null);
       insert into person_private_profiles values ('a','Cherry Hill');
       insert into person_email_addresses values ('a','member@example.com','verified',null);
       insert into platform_users values ('a','member@example.com','active','a','a');

@@ -85,6 +85,55 @@ const manual=(name,members)=>({name,description:'Selected local contacts',mode:'
 const rule=(name,selection)=>({name,description:'A current audience',mode:'rule',rule:selection});
 const status=number=>error=>error.status===number;
 
+test('live paid registrations share current payment proof across segments and native groups',async t=>{
+  const f=await fixture(t),{db,sql,repo,actor,paid}=f;
+  const {readMemberSegmentSource,classifyMemberSegment}=f.load('src/lib/communications/member-segment-sync.ts');
+  const source=async()=>classifyMemberSegment((await readMemberSegmentSource(sql,paid.email))[0]);
+  const emails=async selection=>(await repo.previewEmailGroup(actor,rule('Payment evidence',selection))).members.map(member=>member.email);
+  const waiting={kind:'registered_members',state:'waiting'},open={kind:'registered_members',state:'open'},cohort={kind:'foundations_cohort',cohortMonth:'2026-11'};
+  assert.equal(await source(),'waiting','settled first-month payment qualifies before the prepaid service period starts');
+  assert.deepEqual(await emails(waiting),[paid.email]);
+  assert.deepEqual(await emails(cohort),[paid.email]);
+  assert.deepEqual(await emails(open),[],'payment does not grant profile access');
+  await db.query('update member_registration_access set profile_activated_at=now() where member_id=$1',[paid.memberId]);
+  assert.equal(await source(),'open');
+  assert.deepEqual(await emails(open),[paid.email]);
+  assert.deepEqual(await emails(waiting),[]);
+  await db.query('update member_registration_access set profile_activated_at=null where member_id=$1',[paid.memberId]);
+  for(const [description,change,restore,cohortExcluded=true] of [
+    ['unpaid Checkout',"update stripe_checkout_sessions set payment_status='unpaid'","update stripe_checkout_sessions set payment_status='paid'"],
+    ['incomplete Checkout',"update stripe_checkout_attempts set status='open'","update stripe_checkout_attempts set status='completed'"],
+    ['unpaid invoice',"update stripe_invoices set stripe_status='open'","update stripe_invoices set stripe_status='paid'"],
+    ['refunded payment',"update stripe_membership_prepaid_proofs set refund_state='refunded',amount_refunded=34900","update stripe_membership_prepaid_proofs set refund_state='none',amount_refunded=0"],
+    ['payment pending review',"update stripe_membership_prepaid_proofs set review_reason='provider_evidence_missing'","update stripe_membership_prepaid_proofs set review_reason=null"],
+    ['unrelated registered purchase',`update member_registration_access set payment_reservation_id='${id(9999)}'`,`update member_registration_access set payment_reservation_id='${f.reservation}'`,false],
+    ['sandbox payment',`update member_registration_access set payment_setup_livemode=false;
+      update stripe_checkout_attempts set payment_setup_livemode=false;
+      update stripe_checkout_sessions set livemode=false;
+      update stripe_membership_commitments set livemode=false;
+      update stripe_membership_prepaid_proofs set livemode=false`,
+      `update member_registration_access set payment_setup_livemode=true;
+      update stripe_checkout_attempts set payment_setup_livemode=true;
+      update stripe_checkout_sessions set livemode=true;
+      update stripe_membership_commitments set livemode=true;
+      update stripe_membership_prepaid_proofs set livemode=true`],
+  ]) {
+    await t.test(description,async()=>{
+      await db.exec(change);
+      try {
+        assert.equal(await source(),'test_or_unfunded');
+        assert.deepEqual(await emails(waiting),[]);
+        if(cohortExcluded) assert.deepEqual(await emails(cohort),[]);
+      } finally {await db.exec(restore);}
+      assert.equal(await source(),'waiting','restored verified evidence becomes eligible again');
+    });
+  }
+  await db.exec('update member_registration_access set registered_at=null');
+  assert.equal(await source(),'registration_incomplete');
+  assert.deepEqual(await emails(waiting),[]);
+  assert.deepEqual(await emails(cohort),[]);
+});
+
 test('email groups use current local identities and separate permission from selection',async t=>{
   const f=await fixture(t),{repo,actor,db}=f;
   await t.test('only active administrators can read, preview, save or search',async()=>{
