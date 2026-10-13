@@ -31,12 +31,16 @@ export function getResendEmailConfiguration() {
 }
 // Share pacing across requests in this process. Provider rate limiting remains authoritative across instances.
 let nextRequest = 0;
-async function provider<T>(path: string, method = "GET", body?: unknown, idempotencyKey?: string): Promise<T> {
+async function provider<T>(path: string, method = "GET", body?: unknown, idempotencyKey?: string, deadline?: number): Promise<T> {
   const key = process.env.RESEND_API_KEY?.trim();
   if (!key) throw new AdminEmailError(503, "Resend is not connected yet.");
   const wait = Math.max(0, nextRequest - Date.now());
+  if (deadline !== undefined && (!Number.isFinite(deadline) || Date.now() + wait + 8000 >= deadline)) {
+    throw new AdminEmailError(503, "The email delivery check reached its time limit before contacting Resend.");
+  }
   nextRequest = Date.now() + wait + 150;
   if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+  if (deadline !== undefined && Date.now() + 8000 >= deadline) throw new AdminEmailError(503, "The email delivery check reached its time limit before contacting Resend.");
   let response: Response;
   try {
     response = await fetch(`https://api.resend.com${path}`, { method, cache: "no-store", signal: AbortSignal.timeout(8000),
@@ -52,12 +56,12 @@ async function provider<T>(path: string, method = "GET", body?: unknown, idempot
   return response.json() as Promise<T>;
 }
 type Page<T> = { data: T[]; has_more: boolean };
-async function all<T extends { id: string }>(path: string, limit = 1000): Promise<T[]> {
+async function all<T extends { id: string }>(path: string, limit = 1000, deadline?: number): Promise<T[]> {
   const items: T[] = [];
   const seen = new Set<string>();
   let after = "";
   do {
-    const page = await provider<Page<T>>(`${path}${path.includes("?") ? "&" : "?"}limit=100${after ? `&after=${encodeURIComponent(after)}` : ""}`);
+    const page = await provider<Page<T>>(`${path}${path.includes("?") ? "&" : "?"}limit=100${after ? `&after=${encodeURIComponent(after)}` : ""}`, "GET", undefined, undefined, deadline);
     if (!Array.isArray(page.data) || typeof page.has_more !== "boolean") throw new AdminEmailError(502, "Resend returned an incomplete list. Refresh before continuing.");
     for (const item of page.data) {
       if (!item.id || seen.has(item.id)) throw new AdminEmailError(502, "Resend's list changed while loading. Refresh before continuing.");
@@ -70,6 +74,8 @@ async function all<T extends { id: string }>(path: string, limit = 1000): Promis
   } while (after);
   throw new AdminEmailError(502, "Resend returned an incomplete list.");
 }
+// Native group campaigns use the same authenticated, bounded provider client.
+export { provider as resendEmailProvider, all as listResendEmailRecords };
 const broadcastSummary = (item: Partial<GetBroadcastResponseSuccess>) => ({ id: item.id!, name: item.name ?? "Untitled campaign", subject: item.subject ?? "", status: item.status!, createdAt: item.created_at! });
 const emailSummary = (item: ListEmail) => ({ id: item.id, subject: item.subject, to: item.to, lastEvent: item.last_event, createdAt: item.created_at });
 export async function getResendEmailHistory(actor: string, collection: string, cursor?: string) {

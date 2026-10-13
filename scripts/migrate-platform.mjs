@@ -114,6 +114,8 @@ const migrations = [
   "../db/migrations/20261012211658_circle_size_work.sql",
   "../db/migrations/20261012230000_member_email_cadence.sql",
   "../db/migrations/20261012233000_member_email_sequences.sql",
+  "../db/migrations/20261013200000_admin_email_groups.sql",
+  "../db/migrations/20261013210000_admin_email_group_campaigns.sql",
 ];
 
 function migrationBody(migration, migrationName) {

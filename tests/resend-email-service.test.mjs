@@ -48,7 +48,7 @@ function assertBanner(html) {
   assert.ok(html.indexOf("campaign-banner.jpg") < html.indexOf("<h1"));
 }
 
-async function fixture(t) {
+async function fixture(t, globals = {}) {
   const PGlite = await loadPGliteForSchemaChecks(), pg = new PGlite();
   t.after(() => pg.close());
   await pg.exec(`
@@ -157,7 +157,7 @@ async function fixture(t) {
       if (state.signOffFailure) throw state.signOffFailure;
       return image;
     } },
-  }, { fetch: mockFetch, process: { env }, setTimeout: callback => setTimeout(callback, 0) });
+  }, { fetch: mockFetch, process: { env }, setTimeout: callback => setTimeout(callback, 0), ...globals });
   const input = { mode: "campaign", templateId: fixed.template, templateVersion: fixed.version,
     segmentId: fixed.segment, topicId: fixed.topic, name: "Native campaign", edits: { subject: "A considered update", values: {}, copy: {} } };
   async function campaign() {
@@ -181,6 +181,21 @@ test("database fixture preserves postgres.js JSON object and pre-stringified sca
   const [nulls] = await f.db`select ${null}::jsonb is null as raw, ${f.db.json(null)}::jsonb is null as typed`;
   assert.deepEqual(nulls, { raw: true, typed: true });
   await assert.rejects(f.db`insert into operator_audit_events(metadata) values(${JSON.stringify(value)}::jsonb)`, /check constraint/);
+});
+
+test("bounded provider calls stop before an expired request or pagination budget", async t => {
+  let now=Date.now();
+  class Clock extends Date { static now() { return now; } }
+  const f=await fixture(t,{Date:Clock});
+  await assert.rejects(f.service.resendEmailProvider("/contacts","GET",undefined,undefined,now+1000),/time limit/);
+  assert.equal(f.state.requests.length,0);
+  f.state.getOverride=async parsed=>{
+    assert.equal(parsed.pathname,"/segments");
+    now+=20000;
+    return Response.json({data:[{id:fixed.segment}],has_more:true});
+  };
+  await assert.rejects(f.service.listResendEmailRecords("/segments",1000,now+10000),/time limit/);
+  assert.equal(f.state.requests.length,1,"an exhausted page budget never requests the next page");
 });
 
 test("manual email configuration does not depend on an OpenAI key or model", async t => {

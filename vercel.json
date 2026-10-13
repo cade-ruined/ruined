@@ -40,6 +40,10 @@
     {
       "path": "/api/internal/stripe/prepaid/process",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/communications/group-emails",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
