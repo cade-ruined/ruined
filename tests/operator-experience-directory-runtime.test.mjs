@@ -46,6 +46,7 @@ function fixture(patch = {}, { hash = "", respond = async () => Response.json({ 
   };
   const dependencies = {
     react: hooks,
+    "@/components/platform/OperatorEventEmailCadenceFields": { __esModule: true, default: () => null },
     "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), refresh() {} }) },
     "next/link": { __esModule: true, default: "a" },
     "@/components/platform/OperatorDialog": { __esModule: true, default: Dialog },
@@ -229,4 +230,12 @@ test("the quick event flow shares pending protection, navigates to the saved eve
   assert.equal(f.modal().props.title, "Schedule a meeting");
   assert.notEqual(f.quick().key, version);
   assert.deepEqual(f.calls, []);
+});
+
+test("advanced setup sends an explicit Foundations stage and cohort, while old submissions omit it", async () => {
+  const f = fixture(); f.open(); f.advanced();
+  await f.submit({ ...values, visibility: "invite_only", emailCadenceKind: "foundations_03", emailCadenceTrack: "members", emailCadenceCohortMonth: "2026-11" });
+  assert.deepEqual(f.calls[0].body.emailCadence, { kind: "foundations_03", track: "members", cohortMonth: "2026-11" });
+  const legacy = fixture(); legacy.open(); legacy.advanced(); await legacy.submit();
+  assert.equal(Object.hasOwn(legacy.calls[0].body, "emailCadence"), false);
 });

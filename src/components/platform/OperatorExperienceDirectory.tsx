@@ -8,6 +8,7 @@ import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorQuickEventForm from "@/components/platform/OperatorQuickEventForm";
+import OperatorEventEmailCadenceFields from "@/components/platform/OperatorEventEmailCadenceFields";
 import StateLabel from "@/components/platform/StateLabel";
 import {
   OPERATOR_FIELD_CLASS,
@@ -162,6 +163,10 @@ export default function OperatorExperienceDirectory({
           title: String(data.get("title") ?? ""),
           visibility,
           waitlistEnabled: registrationMode === "internal" && data.get("waitlistEnabled") === "on",
+          ...(data.get("emailCadenceKind") ? { emailCadence: {
+            kind: String(data.get("emailCadenceKind")), track: String(data.get("emailCadenceTrack") ?? "members"),
+            ...(data.get("emailCadenceCohortMonth") ? { cohortMonth: String(data.get("emailCadenceCohortMonth")) } : {}),
+          } } : {}),
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -281,6 +286,7 @@ export default function OperatorExperienceDirectory({
                 </FormField> : null}
               </div>}
             </fieldset>
+            {directory.canManageGlobal ? <OperatorEventEmailCadenceFields /> : null}
             <FormField label="Where (optional)">
               <input className={OPERATOR_FIELD_CLASS} maxLength={500} name="locationLabel" placeholder="Online or a place name" />
             </FormField>

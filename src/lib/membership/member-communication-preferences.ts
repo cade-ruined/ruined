@@ -13,7 +13,7 @@ const channels = ["email", "sms"] as const;
 type Channel = typeof channels[number];
 type Decision = {
   id: string; channel: Channel; decision: "accepted" | "withdrawn"; destination: string; requestFingerprint: string | null;
-  policyVersion: string; affirmativeSms: boolean;
+  policyVersion: string; affirmativeEmail: boolean; affirmativeSms: boolean;
 };
 type Destinations = { email: string; phone: string | null };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -29,6 +29,8 @@ async function readState(sql: Sql | TransactionSql, memberId: string, destinatio
   const rows = await sql<Array<Decision>>`select distinct on (evidence->>'channel') id::text,
       evidence->>'channel' as channel,decision,evidence->>'destination' as destination,
       evidence->>'requestFingerprint' as "requestFingerprint",policy_version as "policyVersion",
+      (source='member' and actor_auth_user_id is not null and evidence->>'requested'='true'
+        and evidence->>'marketingConsent'='false') is true as "affirmativeEmail",
       (source='member' and actor_auth_user_id is not null and evidence->>'action'='sms_checkbox_checked'
         and evidence->>'requested'='true' and evidence->>'marketingConsent'='false'
         and evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}) is true as "affirmativeSms"
@@ -40,6 +42,7 @@ async function readState(sql: Sql | TransactionSql, memberId: string, destinatio
     const decision = latest[channel];
     if (!decision) return null;
     return decision.decision === "accepted" && Boolean(destination) && decision.destination === destination
+      && (channel !== "email" || decision.affirmativeEmail)
       && (channel !== "sms" || (decision.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && decision.affirmativeSms));
   };
   const snapshot: MemberCommunicationPreferencesSnapshot = {
@@ -60,7 +63,7 @@ export async function getMemberCommunicationPreferences(sql: Sql | TransactionSq
 /** Caller holds the member lock. No provider calls, subscriptions, or outbox work. */
 export async function saveMemberCommunicationPreferences(tx: TransactionSql,
   member: { memberId: string; personId: string; authUserId: string; email: string; phone: string },
-  input: MemberCommunicationPreferencesInput | undefined): Promise<void> {
+  input: MemberCommunicationPreferencesInput | undefined, options: { emailOnly?: boolean } = {}): Promise<void> {
   if (input === undefined) return;
   if (!input || typeof input.email !== "boolean" || typeof input.sms !== "boolean"
     || typeof input.expectedRevision !== "string" || input.expectedRevision.length > 80) {
@@ -80,22 +83,24 @@ export async function saveMemberCommunicationPreferences(tx: TransactionSql,
   if (!identity?.verified) throw new MemberCommunicationPreferencesError(403, "Verify your email before saving communication preferences.");
   const { latest, snapshot } = await readState(tx, member.memberId, { email: member.email, phone: identity.phone });
   const destinations = { email: member.email, sms: member.phone };
+  const requestedChannels: readonly Channel[] = options.emailOnly ? ["email"] : channels;
   const matches = (channel: Channel) => latest[channel]?.destination === destinations[channel]
     && latest[channel]?.decision === (input[channel] ? "accepted" : "withdrawn")
+    && (channel !== "email" || !input.email || latest.email?.affirmativeEmail)
     && (channel !== "sms" || !input.sms || (latest.sms?.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && latest.sms.affirmativeSms));
   const fingerprint = hash([CONTEXT, member.memberId, input.expectedRevision, input.noticeVersion,
-    input.email, input.sms, member.email, member.phone]);
+    input.email, input.sms, member.email, member.phone, ...(options.emailOnly ? ["email_only"] : [])]);
   if (snapshot.revision !== input.expectedRevision) {
     // A lost response can retry the exact committed choice, but a stale form
     // must never restore a withdrawal or overwrite another tab's decision.
-    if (identity.phone === member.phone && channels.every(matches)
-      && channels.some(channel => latest[channel]?.requestFingerprint === fingerprint)) return;
+    if ((options.emailOnly || identity.phone === member.phone) && requestedChannels.every(matches)
+      && requestedChannels.some(channel => latest[channel]?.requestFingerprint === fingerprint)) return;
     throw new MemberCommunicationPreferencesError(409, "Your communication preferences changed. Reload before saving them.", "communication_preferences_changed");
   }
-  if (input.sms && (identity.phone !== member.phone || !matches("sms")) && input.smsOptIn?.phone !== member.phone) {
+  if (!options.emailOnly && input.sms && (identity.phone !== member.phone || !matches("sms")) && input.smsOptIn?.phone !== member.phone) {
     throw new MemberCommunicationPreferencesError(400, "Select text reminders again to confirm this phone number.", "sms_opt_in_required");
   }
-  for (const channel of channels) {
+  for (const channel of requestedChannels) {
     // Returning to an earlier number still records the new active confirmation.
     if (matches(channel) && !(channel === "sms" && input.sms && identity.phone !== member.phone)) continue;
     const enabled = input[channel];
@@ -107,7 +112,7 @@ export async function saveMemberCommunicationPreferences(tx: TransactionSql,
           requested: enabled, requestFingerprint: fingerprint,
           action: enabled ? channel === "sms" ? "sms_checkbox_checked" : "email_preference_on_at_submission" : "preference_off_at_submission",
           destinationVerified: channel === "email", marketingConsent: false,
-          emailDefaultMayBePreselected: channel === "email" && !latest.email,
+          emailDefaultMayBePreselected: channel === "email" && !latest.email && !options.emailOnly,
           ...(channel === "sms" ? { termsVersion: MEMBER_SMS_TERMS_VERSION,
             termsHref: MEMBER_SMS_TERMS_HREF, privacyHref: MEMBER_SMS_PRIVACY_HREF } : {}),
         })}::jsonb,${`member-reminders:${member.memberId}:${channel}:${fingerprint}`}) on conflict(dedupe_key) do nothing`;

@@ -29,6 +29,7 @@ function load(path, overrides = {}, browserWindow, runtime = {}) {
       "@/components/platform/OperatorPageFrame": "src/components/platform/OperatorPageFrame.tsx",
       "@/components/platform/OperatorDialog": "src/components/platform/OperatorDialog.tsx",
       "@/components/platform/OperatorDateTimeField": "src/components/platform/OperatorDateTimeField.tsx",
+      "@/components/platform/OperatorEventEmailCadenceFields": "src/components/platform/OperatorEventEmailCadenceFields.tsx",
       "@/components/platform/OperatorQuickEventForm": "src/components/platform/OperatorQuickEventForm.tsx",
       "@/lib/datetime/zoned-date-time": "src/lib/datetime/zoned-date-time.ts",
       "@/components/platform/StateLabel": "src/components/platform/StateLabel.tsx",

@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
+import OperatorEventEmailCadenceFields from "@/components/platform/OperatorEventEmailCadenceFields";
 import {
   OPERATOR_BUTTON_CLASS,
   OPERATOR_FIELD_CLASS,
@@ -81,6 +82,9 @@ export default function OperatorQuickEventForm({
           externalRegistrationUrl: null,
           registrationOpensAt: null,
           registrationClosesAt: null,
+          ...(data.get("emailCadenceKind") ? { emailCadence: {
+            kind: String(data.get("emailCadenceKind")), track: "members",
+          } } : {}),
         }),
       });
       const payload = await response.json() as { error?: string; experience?: { experienceId?: string } };
@@ -128,6 +132,7 @@ export default function OperatorQuickEventForm({
       </label>
     </div>
     <p className="!mt-2 text-xs text-[color:var(--operator-muted)]">Times in {timezone || "your selected time zone"}.</p>
+    {directory.canManageGlobal ? <OperatorEventEmailCadenceFields quick /> : null}
     <details className="text-sm">
       <summary className="min-h-11 cursor-pointer py-3 text-[color:var(--operator-muted)]">Time zone & description</summary>
       <div className="space-y-4 pb-2 pt-2">

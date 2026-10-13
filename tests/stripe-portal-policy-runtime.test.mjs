@@ -96,6 +96,7 @@ test("account distinguishes a scheduled cancellation from a renewal, ended billi
     "next/link": Link,
     "@/components/membership/MemberSettingsHeader": () => null,
     "@/components/membership/MembershipCancellation": () => null,
+    "@/components/membership/MemberEmailPreferences": () => null,
     "@/components/support/supportStyles": { SUPPORT_ACTION_CLASS: "", SUPPORT_LINK_CLASS: "" },
   })).default;
   const account = { access: { mode: "full" }, standingState: "active", email: "member@example.test", billingState: "active", agreement: {}, subscription: { status: "active", currentPeriodEnd: "2026-10-28T12:00:00.000Z", cancelAtPeriodEnd: false, cancelAt: null } };

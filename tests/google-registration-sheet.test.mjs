@@ -267,6 +267,7 @@ test("the Sheet worker route stays private without a second membership cron owne
   assert.deepEqual(
     JSON.parse(vercel).crons,
     [
+      { path: "/api/internal/communications/member-email", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/member-sms", schedule: "*/5 * * * *" },
       { path: "/api/internal/ops/work-summary", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/member-segments", schedule: "*/15 * * * *" },

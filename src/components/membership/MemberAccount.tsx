@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
 import MembershipCancellation from "@/components/membership/MembershipCancellation";
+import MemberEmailPreferences from "@/components/membership/MemberEmailPreferences";
 import { SUPPORT_ACTION_CLASS, SUPPORT_LINK_CLASS } from "@/components/support/supportStyles";
 import type { MemberAccountSnapshot } from "@/lib/membership/model";
 
@@ -78,6 +79,7 @@ export default function MemberAccount({ account, billingConnected, preview = fal
           ) : null}
           {!entry && !complimentary && !preview ? <MembershipCancellation /> : null}
         </section>
+        <MemberEmailPreferences preview={preview} />
         <section aria-labelledby="account-agreement" className={sectionClass + " lg:col-span-2"}>
           <h2 className={labelClass} id="account-agreement">Agreement</h2>
           <dl className="mt-4 grid gap-5 sm:grid-cols-3">
