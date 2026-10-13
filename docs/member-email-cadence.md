@@ -2,6 +2,18 @@
 
 This release covers event-linked email reminders from the October 2026 founder test and November/future member cadence. It does not turn the entire communications document into a send list. Existing registration welcome delivery and SMS automation remain separate and unchanged.
 
+## Operations management
+
+Open **Messages → Recurring emails**, or use **Recurring emails** inside the email workspace. The canonical page is `/ops/messages?mode=automations`; `/ops/email-automations` remains supported.
+
+The manager lists approved reusable sequences and individual call plans, with search, status filters, next scheduled reminders, and delivery counts. Opening an existing record shows its saved design and each message stage, timing and audience rules, inherited calls or individual overrides, and recent delivery activity. Inspect a specific call to see its current eligible and excluded recipients and reasons. These reads do not create an approval, change a roster, or send email.
+
+**Edit design** loads the saved template fields and bindings. Changes and resumptions go through the existing full message and recipient review before activation. Pausing a sequence pauses its inherited calls; independent approvals and individually paused calls keep their own settings. Timing and the main message follow the approved cadence rules described below; this manager does not introduce arbitrary schedules or rewrite the approved copy.
+
+Next scheduled reminders are opportunities to send, not promises of delivery. Eligibility is rechecked at dispatch. A recorded `sent` result means the email provider accepted the message; inbox delivery, bounces, and complaints are separate provider events. Missing provider access is shown explicitly, and saved approvals remain inspectable when the live template catalog is unavailable.
+
+Welcome/profile-ready emails, renewal notices, and the internal work summary appear separately with their existing management links and configuration status. Configuration readiness is not evidence of a successful scheduler run or email delivery. Unfinished protocols stay in their own inactive section.
+
 ## Copy approval — October 12, 2026
 
 Cade approved the email wording shown in this chat: the Foundations introduction, one-week/two-day preparation message, Foundations 01 and 02–04 reminders, Membership reminders, Circle reminders, and shared personalized call details, account links, and sign-off. The wording is implemented in `src/lib/communications/member-email-cadence-copy.ts` at reviewed commit `ac1fc6f148955007c04f97cf72bda3c444e0118e` (SHA-256 `b86736317c0b41c7394a983212c08ac129b98421a42ef11a70776b3da8d96866`).

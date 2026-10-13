@@ -19,6 +19,7 @@ async function load(path, dependencies = {}, globals = {}) {
 }
 const model = await load("src/lib/communications/admin-email-model.ts");
 const cadence = await load("src/lib/communications/member-email-cadence-model.ts");
+const management = await load("src/lib/communications/member-email-cadence-management.ts");
 const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model });
 const copy = await load("src/lib/communications/member-email-cadence-copy.ts", { "./member-email-cadence-model": cadence });
 const renderer = await load("src/lib/communications/member-email-cadence-renderer.ts", {
@@ -62,7 +63,7 @@ async function fixture(t) {
   const draft = { eventId: event.id, kind: "foundations_01", track: "members", templateId: template.id, templateVersion: template.version,
     bodyTarget: "variable:BODY", headingTarget: `copy:${template.fields.find(field => field.value === "Original heading").key}`, bindings: {} };
   const state = { event: clone(event), template: clone(template), recipients: clone(recipients), ready: true, calls: [], providerHook: null, lockedRosterHook: null,
-    providerFailure: null, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] };
+    providerFailure: null, catalogFailure: null, matchingEvents: null, configuration: {enabled: false, ready: false, activatedAt: null}, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] };
   const repository = {
     readCadenceEvent: async (_tx, id) => id === state.event?.id ? clone(state.event) : null,
     sameCadenceEvent: (a, b) => a !== null && Object.keys(b).every(key => a[key] === b[key]),
@@ -80,11 +81,12 @@ async function fixture(t) {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql },
     "./admin-email-model": model, "./admin-email-repository": auth,
     "./resend-email-service": { getResendEmailTemplate: async (_actor, templateId) => { assert.equal(templateId, template.id); state.calls.push("template"); return clone(state.template); } },
-    "./member-email-cadence-model": cadence, "./member-email-cadence-delivery": delivery,
+    "./member-email-cadence-model": cadence, "./member-email-cadence-delivery": {...delivery, getMemberEmailCadenceDeliveryConfiguration: () => clone(state.configuration)},
+    "./member-email-cadence-management": management, "./automated-email-catalog": {getAutomatedEmailCatalog: () => []},
     "./member-email-cadence-repository": repository, "./member-email-cadence-renderer": renderer,
-    "./member-email-cadence-inheritance": { matchingCadenceEvents: async () => state.event ? [clone(state.event)] : [] },
+    "./member-email-cadence-inheritance": { matchingCadenceEvents: async () => state.matchingEvents ?? (state.event ? [clone(state.event)] : []) },
     "./member-email-cadence-provider": {
-      listCadenceTemplates: async () => { state.calls.push("templates"); return [clone(state.template)]; },
+      listCadenceTemplates: async () => { state.calls.push("templates"); if (state.catalogFailure) throw state.catalogFailure; return [clone(state.template)]; },
       reviewCadenceProviderRecipients: async rows => { state.calls.push("recipients"); if (state.providerHook) await state.providerHook(); if (state.providerFailure) throw state.providerFailure;
         return rows.map(row => state.suppressed.has(row.email) ? { ...row, eligible: false, reason: "Provider suppressed" } : row); },
     },
@@ -110,11 +112,14 @@ async function fixture(t) {
   async function reset() {
     await pg.exec("truncate private.member_email_cadence_deliveries,private.member_email_cadence_reviews,private.member_email_cadence_plans,private.member_email_cadence_sequences,private.member_email_cadence_event_bindings,operator_audit_events;");
     await pg.exec("update platform_users set status='active'; update platform_role_grants set revoked_at=null;");
+    await pg.query("update experiences set title=$2,starts_at=$3,ends_at=$4,status='published',cancelled_at=null,version=1 where id=$1", [event.id,event.title,event.startsAt,event.endsAt]);
     Object.assign(state, { event: clone(event), template: clone(template), recipients: clone(recipients), ready: true, calls: [], providerHook: null,
-      lockedRosterHook: null, providerFailure: null, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] });
+      lockedRosterHook: null, providerFailure: null, catalogFailure: null, matchingEvents: null, configuration: {enabled: false, ready: false, activatedAt: null}, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] });
   }
+  const get = query => route.GET(new Request(`https://members.example.com/api/ops/emails/automations${query ? `?${new URLSearchParams(query)}` : ""}`));
+  const enable = () => { state.configuration = {enabled: true, ready: true, activatedAt: future(-10)}; };
   const rows = async name => (await pg.query(`select * from private.member_email_cadence_${name} order by id`)).rows;
-  return { pg, admin, other, guide, draft, event, template, state, service, route, post, reset, rows };
+  return { pg, admin, other, guide, draft, event, template, state, service, route, post, get, enable, reset, rows };
 }
 
 test("admin cadence reviews and activations persist safely through real PostgreSQL JSONB semantics", async t => {
@@ -205,7 +210,8 @@ test("admin cadence reviews and activations persist safely through real PostgreS
     await f.reset(); const overview = await f.service.getCadenceOverview(f.admin);
     assert.equal(overview.configuration.enabled, false); assert.equal(overview.configuration.ready, false);
     assert.equal(overview.events[0].id, f.event.id); assert.equal(overview.plans.length, 0); assert.equal(overview.templates[0].id, f.template.id);
-    assert.ok(overview.inactive.some(item => /completion/i.test(item.title))); assert.equal(overview.setupRequired, false);
+    assert.deepEqual(overview.inactive.map(item => item.title), ["Missed calls and unfinished work", "Foundations completion and Circle reveal", "Birthdays, anniversaries, and milestones", "Holidays, launches, and clothing drops"]);
+    assert.equal(overview.setupRequired, false);
   });
   await t.test("a future sequence can be reviewed and approved before any calls or members exist", async () => {
     await f.reset(); f.state.event = null; f.state.recipients = [];
@@ -247,7 +253,7 @@ test("admin cadence reviews and activations persist safely through real PostgreS
     assert.equal((await f.rows("sequences")).length, 0);
   });
   await t.test("overview exposes durable delivery outcomes and a changed call without mutating approval", async () => {
-    await f.reset(); const reviewed = await f.service.previewCadence(f.admin, f.draft);
+    await f.reset(); f.enable(); const reviewed = await f.service.previewCadence(f.admin, f.draft);
     const active = await f.service.activateCadence(f.admin, reviewed.reviewToken);
     let [plan] = (await f.service.getCadenceOverview(f.admin)).plans;
     assert.equal(plan.attention, "");
@@ -274,8 +280,8 @@ test("admin cadence reviews and activations persist safely through real PostgreS
 test("automation HTTP route preserves authentication, same-origin, bounded JSON and safe error handling", async t => {
   const f = await fixture(t);
   await t.test("GET and POST reject signed-out or unauthorized accounts before provider access", async () => {
-    f.state.viewer = null; assert.equal((await f.route.GET()).status, 401); assert.equal((await f.post({ action: "preview", draft: f.draft })).status, 401);
-    f.state.viewer = { authUserId: f.guide }; assert.equal((await f.route.GET()).status, 403); assert.equal((await f.post({ action: "preview", draft: f.draft })).status, 403);
+    f.state.viewer = null; assert.equal((await f.get()).status, 401); assert.equal((await f.post({ action: "preview", draft: f.draft })).status, 401);
+    f.state.viewer = { authUserId: f.guide }; assert.equal((await f.get()).status, 403); assert.equal((await f.post({ action: "preview", draft: f.draft })).status, 403);
     assert.equal(f.state.calls.length, 0);
   });
   await t.test("cross-origin, malformed, oversized and wrong-media requests fail without provider activity", async () => {
@@ -301,4 +307,180 @@ test("automation HTTP route preserves authentication, same-origin, bounded JSON 
     assert.equal(response.status, 503); assert.doesNotMatch(JSON.stringify(await response.json()), /private-provider-secret/);
     assert.doesNotMatch(JSON.stringify(f.state.logs), /private-provider-secret/); assert.equal((await f.rows("reviews")).length, 0);
   });
+});
+
+test("saved automation management reads project approvals without changing delivery authority", async t => {
+  const f = await fixture(t);
+  const activate = async (scope = "event") => {
+    const reviewed = await f.service.previewCadence(f.admin, { ...f.draft, scope, eventId: scope === "sequence" ? "" : f.event.id });
+    return f.service.activateCadence(f.admin, reviewed.reviewToken);
+  };
+  await t.test("detail authenticates before reads, rejects invalid scope and IDs, and returns 404 for absent records", async () => {
+    await f.reset();
+    const query = {scope: "event", id: crypto.randomUUID()};
+    f.state.viewer = null; assert.equal((await f.get(query)).status, 401);
+    f.state.viewer = {authUserId: f.guide}; assert.equal((await f.get(query)).status, 403);
+    await assert.rejects(f.service.getCadenceManagementDetail(f.guide, "event", query.id), error => error.status === 403);
+    assert.deepEqual(f.state.calls, []);
+    f.state.viewer = {authUserId: f.admin};
+    assert.equal((await f.get({...query, scope: "all"})).status, 400);
+    assert.equal((await f.get({...query, id: "bad"})).status, 400);
+    assert.equal((await f.get(query)).status, 404);
+    assert.equal((await f.rows("reviews")).length, 0);
+  });
+  await t.test("detail renders saved template and approved copy without live design reads, review rows, or raw private fields", async () => {
+    await f.reset(); f.enable(); const active = await activate();
+    const before = {plans: await f.rows("plans"), reviews: await f.rows("reviews"), deliveries: await f.rows("deliveries")};
+    f.state.calls = []; f.state.template.version = "new-live-version"; f.state.template.html = "<p>Changed provider template</p>";
+    const response = await f.get({scope: "event", id: active.id});
+    assert.equal(response.status, 200); assert.equal(response.headers.get("Cache-Control"), "no-store");
+    const detail = await response.json();
+    assert.equal(detail.template.version, f.template.version); assert.equal(detail.draft.templateVersion, f.template.version);
+    assert.equal(detail.template.html, f.template.html); assert.equal(detail.previews.length, 4); assert.equal(detail.occurrences.length, 4);
+    assert.match(detail.previews[0].text, /Every RU\/NED Membership starts in the same place/);
+    assert.equal(detail.status, "upcoming"); assert.equal(detail.nextReminder.stage, "orientation");
+    assert.equal(detail.recipientsChecked, true); assert.equal(detail.recipients.length, 2);
+    assert.deepEqual(Object.keys(detail.recipients[0]).sort(), ["eligible", "email", "memberId", "name", "reason"]);
+    assert.deepEqual(f.state.calls, ["recipients"]);
+    assert.deepEqual({plans: await f.rows("plans"), reviews: await f.rows("reviews"), deliveries: await f.rows("deliveries")}, before);
+    assert.doesNotMatch(JSON.stringify(detail), /audience_hash|reviewToken|expected_consent_id|lock_token|provider_message_id|actor_auth_user_id/);
+  });
+  await t.test("global pause, local pause, missing Meet and revoked approver never advertise a next send", async () => {
+    await f.reset(); const active = await activate();
+    let detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.status, "blocked"); assert.equal(detail.nextReminder, null);
+    f.enable(); f.state.ready = false;
+    detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.status, "blocked"); assert.equal(detail.nextReminder, null); assert.match(detail.warnings.join(" "), /Meet/);
+    f.state.ready = true;
+    await f.pg.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1", [f.admin]);
+    detail = await f.service.getCadenceManagementDetail(f.other, "event", active.id);
+    assert.equal(detail.status, "blocked"); assert.equal(detail.nextReminder, null);
+    await f.pg.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [f.admin]);
+    await f.service.pauseCadence(f.admin, active.id, active.revision);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.status, "paused"); assert.equal(detail.nextReminder, null); assert.equal(detail.previews.length, 4);
+    assert.equal((await f.rows("plans"))[0].active, false);
+  });
+  await t.test("changed, cancelled, past and exhausted calls retain approved previews but cannot show upcoming sends", async () => {
+    await f.reset(); f.enable(); const active = await activate();
+    await f.pg.query("update experiences set title='Replacement title',version=2 where id=$1", [f.event.id]);
+    let detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.status, "changed"); assert.equal(detail.nextReminder, null);
+    assert.equal(detail.calls[0].title, "Replacement title"); assert.match(detail.previews.at(-1).subject, /Foundations 01/);
+    assert.doesNotMatch(detail.previews.at(-1).subject, /Replacement/);
+    await f.pg.query("update experiences set cancelled_at=clock_timestamp() where id=$1", [f.event.id]);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.status, "cancelled"); assert.equal(detail.nextReminder, null); assert.equal(detail.recipientsChecked, false);
+    await f.pg.query("update experiences set cancelled_at=null,starts_at=$2,ends_at=$3 where id=$1", [f.event.id, future(-1), future(-0.9)]);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.status, "past"); assert.equal(detail.nextReminder, null); assert.equal(detail.recipientsChecked, false);
+    await f.reset(); f.enable(); const exhausted = await activate();
+    await f.pg.query("update private.member_email_cadence_plans set activated_at=$2 where id=$1", [exhausted.id, future(29.99)]);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "event", exhausted.id);
+    assert.equal(detail.status, "no_remaining"); assert.equal(detail.nextReminder, null);
+  });
+  await t.test("sequence detail uses deliberate recipient inspection and preserves individual overrides during parent pause", async () => {
+    await f.reset(); f.enable(); const sequence = await activate("sequence"); const individual = await activate();
+    f.state.calls = [];
+    let detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+    assert.equal(detail.draft.scope, "sequence"); assert.equal(detail.draft.eventId, "");
+    assert.equal(detail.selectedEventId, f.event.id); assert.equal(detail.recipientsChecked, false); assert.deepEqual(f.state.calls, []);
+    assert.equal(detail.calls[0].status, "manual_override"); assert.equal(detail.calls[0].planId, individual.id); assert.equal(detail.calls[0].nextReminder, null);
+    await assert.rejects(f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id, crypto.randomUUID()), error => error.status === 400);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id, f.event.id);
+    assert.equal(detail.recipientsChecked, true); assert.equal(detail.recipients.length, 2);
+    await f.service.pauseCadenceSequence(f.admin, sequence.id, sequence.revision);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+    assert.equal(detail.status, "paused"); assert.equal(detail.nextReminder, null); assert.equal(detail.calls[0].status, "manual_override");
+    const own = await f.service.getCadenceManagementDetail(f.admin, "event", individual.id);
+    assert.equal(own.status, "upcoming"); assert.ok(own.nextReminder);
+  });
+  await t.test("future inherited calls show pending setup and paused children without approving anything", async () => {
+    await f.reset(); f.enable(); const sequence = await activate("sequence");
+    let detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+    assert.equal(detail.status, "inheritance_pending"); assert.equal(detail.calls[0].status, "inheritance_pending"); assert.equal(detail.nextReminder, null);
+    const plan = await activate();
+    await f.pg.query("update private.member_email_cadence_plans set sequence_id=$2,sequence_revision=$3 where id=$1", [plan.id, sequence.id, sequence.revision]);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+    assert.equal(detail.status, "upcoming"); assert.ok(detail.nextReminder); assert.equal(detail.calls[0].status, "upcoming");
+    await f.service.pauseCadence(f.admin, plan.id, plan.revision);
+    detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+    assert.equal(detail.calls[0].status, "paused"); assert.equal(detail.nextReminder, null);
+    assert.equal((await f.rows("plans"))[0].active, false);
+    f.state.event = null;
+    detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+    assert.equal(detail.previewIsExample, true); assert.equal(detail.selectedEventId, null); assert.equal(detail.recipientsChecked, false); assert.equal(detail.previews.length, 4);
+    assert.equal((await f.rows("plans")).length, 1);
+  });
+  await t.test("provider outages preserve management and saved previews while withholding unverified eligibility", async () => {
+    await f.reset(); f.enable(); const active = await activate();
+    f.state.catalogFailure = Error("sensitive-catalog-token");
+    const overview = await f.service.getCadenceOverview(f.admin);
+    assert.equal(overview.plans[0].id, active.id); assert.deepEqual(overview.templates, []);
+    assert.match(overview.warnings.join(" "), /design list is unavailable/); assert.doesNotMatch(JSON.stringify(overview), /sensitive-catalog-token/);
+    f.state.providerFailure = Error("sensitive-provider-token");
+    const detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.previews.length, 4); assert.equal(detail.recipientsChecked, false); assert.deepEqual(detail.recipients, []);
+    assert.match(detail.warnings.join(" "), /could not be verified/); assert.doesNotMatch(JSON.stringify(detail), /sensitive-provider-token/);
+    const paused = await f.post({action: "pause", id: active.id, revision: active.revision}); assert.equal(paused.status, 200);
+  });
+  await t.test("history projects bounded safe outcomes and provider acceptance without exposing frozen payloads or tokens", async () => {
+    await f.reset(); f.enable(); const active = await activate();
+    for (const status of ["sent", "pending", "sending", "failed", "manual_review", "cancelled"]) {
+      const member = crypto.randomUUID(); await f.pg.query("insert into ruined_members values($1)", [member]);
+      await f.pg.query(`insert into private.member_email_cadence_deliveries
+        (plan_id,plan_revision,experience_id,member_id,starts_at,stage,expected_email,expected_consent_id,due_at,expires_at,status,payload,last_error,lock_token,provider_message_id)
+        values($1,1,$2,$3,$4,'day_before','hidden-person@example.com',21,$5,$6,$7,$8::jsonb,'sensitive-raw-error',$9,'sensitive-provider-id')`,
+        [active.id,f.event.id,member,f.event.startsAt,future(29),future(29.01),status,JSON.stringify({secret: "sensitive-payload"}),crypto.randomUUID()]);
+    }
+    const before = await f.rows("deliveries");
+    const detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
+    assert.equal(detail.recentDeliveries.length, 6);
+    assert.match(detail.recentDeliveries.find(item => item.status === "sent").reason, /not proof of inbox delivery/);
+    assert.match(detail.recentDeliveries.find(item => item.status === "manual_review").reason, /Automatic retries are stopped/);
+    assert.doesNotMatch(JSON.stringify(detail), /sensitive-|hidden-person|lock_token|provider_message_id|expected_consent_id/);
+    assert.deepEqual(await f.rows("deliveries"), before);
+    assert.deepEqual(detail.calls[0].delivery, {sent: 1,pending: 2,failed: 1,manualReview: 1,cancelled: 1});
+  });
+});
+
+test("sequence history retains uncertain outcomes after calls leave the future matching audience", async t => {
+  const f = await fixture(t); f.enable();
+  const sequenceReview = await f.service.previewCadence(f.admin, {...f.draft,scope: "sequence",eventId: ""});
+  const sequence = await f.service.activateCadence(f.admin, sequenceReview.reviewToken);
+  const callReview = await f.service.previewCadence(f.admin, f.draft);
+  const plan = await f.service.activateCadence(f.admin, callReview.reviewToken);
+  await f.pg.query("update private.member_email_cadence_plans set sequence_id=$2,sequence_revision=$3 where id=$1", [plan.id,sequence.id,sequence.revision]);
+  const member = crypto.randomUUID(); await f.pg.query("insert into ruined_members values($1)", [member]);
+  await f.pg.query(`insert into private.member_email_cadence_deliveries
+    (plan_id,plan_revision,experience_id,member_id,starts_at,stage,expected_email,expected_consent_id,due_at,expires_at,status)
+    values($1,1,$2,$3,$4,'day_before','member@example.com',21,$5,$6,'manual_review')`,
+    [plan.id,f.event.id,member,f.event.startsAt,future(29),future(29.01)]);
+  await f.pg.query("update experiences set starts_at=$2,ends_at=$3,cancelled_at=clock_timestamp() where id=$1", [f.event.id,future(-1),future(-0.9)]);
+  f.state.matchingEvents = [];
+  const overview = await f.service.getCadenceOverview(f.admin);
+  assert.equal(overview.sequences[0].matchingCallCount, 0);
+  assert.equal(overview.sequences[0].delivery.manualReview, 1);
+  assert.equal(overview.sequences[0].nextReminder, null);
+  const detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
+  assert.equal(detail.calls.length, 0); assert.equal(detail.recentDeliveries[0].status, "manual_review");
+});
+
+test("overview prioritizes current calls and explicitly reports its bounded history window", async t => {
+  const f = await fixture(t);
+  const reviewed = await f.service.previewCadence(f.admin, f.draft);
+  const active = await f.service.activateCadence(f.admin, reviewed.reviewToken);
+  const snapshot = (await f.rows("plans"))[0].snapshot;
+  await f.pg.query(`insert into experiences(id,title,starts_at,ends_at,timezone,status,kind,visibility,registration_mode)
+    select gen_random_uuid(),'Older call',now()-interval '2 days',now()-interval '1 day','America/Denver','published','weekly_call','invite_only','internal'
+    from generate_series(1,250)`);
+  await f.pg.query(`insert into private.member_email_cadence_plans(experience_id,active,snapshot,approved_by,updated_at)
+    select id,false,$2::jsonb,$3,clock_timestamp() from experiences where id<>$1`, [f.event.id,JSON.stringify(snapshot),f.admin]);
+  const overview = await f.service.getCadenceOverview(f.admin);
+  assert.equal(overview.plans.length, 250); assert.equal(overview.plans[0].id, active.id);
+  assert.match(overview.warnings.join(" "), /Older call approvals are omitted/);
+  await f.pg.query("update experiences set starts_at=$2,ends_at=$3 where id<>$1", [f.event.id,future(10),future(10.1)]);
+  const withPausedFutureCalls = await f.service.getCadenceOverview(f.admin);
+  assert.equal(withPausedFutureCalls.plans[0].id, active.id);
 });

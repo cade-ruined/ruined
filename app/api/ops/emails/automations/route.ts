@@ -1,15 +1,19 @@
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { adminEmailErrorResponse, readAdminEmailJson, requireAdminEmailMutation } from "@/lib/communications/admin-email-api";
 import { AdminEmailError } from "@/lib/communications/admin-email-model";
-import { getCadenceOverview, previewCadence, activateCadence, pauseCadence, pauseCadenceSequence } from "@/lib/communications/member-email-cadence-service";
+import { getCadenceOverview, getCadenceManagementDetail, previewCadence, activateCadence, pauseCadence, pauseCadenceSequence } from "@/lib/communications/member-email-cadence-service";
 import { opsJson } from "@/lib/platform/ops-api";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
-export async function GET() {
+export async function GET(request:Request) {
   try {
     const viewer=await getCurrentPlatformViewer();
     if (!viewer) return opsJson({error:"Administrator access is required."},401);
+    const query=new URL(request.url).searchParams;
+    if (query.has("scope") || query.has("id") || query.has("eventId")) {
+      return opsJson(await getCadenceManagementDetail(viewer.authUserId,query.get("scope"),query.get("id"),query.get("eventId")));
+    }
     return opsJson(await getCadenceOverview(viewer.authUserId));
   } catch(error) {return adminEmailErrorResponse(error);}
 }

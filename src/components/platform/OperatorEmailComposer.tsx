@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import OperatorDialog from "@/components/platform/OperatorDialog";
@@ -322,14 +323,14 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   return <OperatorPageFrame title="Messages">
     <OperatorMessagesTabs active="emails" />
     <header className="operator-record-header mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div><h2 className="operator-page-heading">Emails</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-[color:var(--operator-muted)]">Your Resend templates, audiences, and email history.</p></div>
+      <div><h2 className="operator-page-heading">Emails</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-[color:var(--operator-muted)]">Your Resend templates, campaigns, recurring emails, and delivery history.</p></div>
       <div className="flex flex-wrap gap-2">{template || broadcast ? <button className={OPERATOR_BUTTON_CLASS} disabled={busy} onClick={() => requestChange(() => resetWorkspace("templates"))} type="button">New email</button> : null}<button className={OPERATOR_BUTTON_CLASS} disabled={busy || preview} onClick={() => void loadOverview()} type="button">{pending === "refresh" ? "Refreshing…" : "Refresh Resend"}</button></div>
     </header>
     {preview ? <p className="mb-5 rounded-none bg-[var(--operator-surface-muted)] px-4 py-3 text-sm leading-relaxed text-[color:var(--operator-muted)]" role="status">{previewCatalog ? "Your existing Resend designs and audience names, loaded for preview. Edits stay in this page. Saving and sending are off." : "Preview workspace. The template and audience below are samples. Saving and sending are off."}</p> : null}
     {overview && !preview && overview.configuration.issues.length ? <div data-operator-tone="wait" className="operator-emphasis mb-5 rounded-none border border-[color:var(--operator-ink)]/15 px-4 py-3 text-sm leading-relaxed"><p className="font-semibold">{overview.configuration.connected ? "Some email tools need attention." : "Connect Resend to load your workspace."}</p><ul className="mt-1 space-y-1 text-[color:var(--operator-muted)]">{overview.configuration.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
     <div aria-live="polite" aria-atomic="true" className="mb-4 empty:hidden">{notice ? <p className="rounded-none bg-[var(--operator-surface-muted)] px-4 py-3 text-sm leading-relaxed">{notice}</p> : null}</div>
     {error ? <p data-operator-tone="error" className="operator-emphasis mb-4 scroll-mt-28 rounded-none border border-[var(--color-poster)]/35 px-4 py-3 text-sm leading-relaxed text-[var(--operator-danger)]" ref={errorRef} role="alert">{error}</p> : null}
-    <nav aria-label="Resend workspace" className="mb-5 flex flex-wrap gap-1 border-b border-[color:var(--operator-ink)]/15 pb-3">{([{ id: "templates", label: "Templates" }, { id: "broadcasts", label: "Campaigns" }, { id: "emails", label: "Sent emails" }] as const).map((item) => <button aria-current={view === item.id ? "page" : undefined} className={`min-h-11 rounded-none px-4 text-sm ${view === item.id ? "bg-[var(--operator-surface-muted)] font-semibold" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} disabled={busy} key={item.id} onClick={() => requestChange(() => resetWorkspace(item.id))} type="button">{item.label}</button>)}</nav>
+    <nav aria-label="Resend workspace" className="mb-5 flex flex-wrap gap-1 border-b border-[color:var(--operator-ink)]/15 pb-3">{([{ id: "templates", label: "Templates" }, { id: "broadcasts", label: "Campaigns" }, { id: "emails", label: "Sent emails" }] as const).map((item) => <button aria-current={view === item.id ? "page" : undefined} className={`min-h-11 rounded-none px-4 text-sm ${view === item.id ? "bg-[var(--operator-surface-muted)] font-semibold" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} disabled={busy} key={item.id} onClick={() => requestChange(() => resetWorkspace(item.id))} type="button">{item.label}</button>)}<Link className="inline-flex min-h-11 items-center rounded-none px-4 text-sm text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]" href="/ops/messages?mode=automations">Recurring emails</Link></nav>
     {pending === "loading" ? <p className="py-12 text-sm text-[color:var(--operator-muted)]" role="status">Loading templates, audiences, and history from Resend…</p> : null}
 
     {view === "templates" && !template && overview ? <section aria-labelledby="resend-templates-title">
