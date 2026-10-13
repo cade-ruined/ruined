@@ -84,12 +84,27 @@ test("simple event creation publishes and queues delivery atomically in isolated
   const config = { ready: true, organizerEmail: "organizer@example.test", calendarId: "primary" };
   let mode = false;
   let eligibleAttendeeCount = 1;
+  const bindingCalls = [];
+  let bindingFailure = null;
+  const emailModel = await load("src/lib/communications/admin-email-model.ts");
   const communications = { ...await load("src/lib/google/communications.ts"), googleCommunicationLivemode: () => mode };
   const dependencies = {
     "@/lib/database/server": { getApplicationDatabase: () => sqlBridge(db) },
     "@/lib/google/communications": communications,
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError },
     "@/lib/platform/experience-member-access": {},
+    "@/lib/communications/admin-email-model": emailModel,
+    "@/lib/communications/member-email-cadence-inheritance": {
+      async saveCadenceEventBinding(tx, actor, eventId, value, normalized) {
+        bindingCalls.push({ actor, eventId, value, normalized });
+        // The inheritance module has its own policy tests. This fixture verifies
+        // that its writes share the event transaction, including error translation.
+        if (actor !== ids.admin) throw new emailModel.AdminEmailError(403, "An admin must classify a call.");
+        await tx`insert into test_cadence_bindings(event_id,payload) values(${eventId}::uuid,${tx.json(value)})
+          on conflict(event_id) do update set payload=excluded.payload`;
+        if (bindingFailure) throw bindingFailure;
+      },
+    },
   };
   const calendar = await load("src/lib/platform/ops-calendar-repository.ts", {
     ...dependencies,
@@ -116,6 +131,7 @@ test("simple event creation publishes and queues delivery atomically in isolated
   assert.ok(externalIndex);
   await db.exec(`
     create role anon; create role authenticated; create schema private;
+    create table test_cadence_bindings(event_id uuid primary key,payload jsonb);
     create table people(id uuid primary key);
     create table ruined_members(id uuid primary key,person_id uuid references people(id),unique(id,person_id));
     create table platform_users(auth_user_id uuid primary key,status text);
@@ -142,7 +158,7 @@ test("simple event creation publishes and queues delivery atomically in isolated
   await db.query("insert into membership_blocks values ($1)", [ids.block]);
   await db.query("insert into circle_staff_assignments(auth_user_id,circle_id,role_slug) values ($1,$2,'circle_leader'),($3,$2,'guide')", [ids.supporter, ids.circle, ids.guide]);
   const create = (overrides = {}, actorAuthUserId = ids.admin) => repository.createAndPublishOpsExperience({ actorAuthUserId, event: event(overrides) });
-  const tables = ["experiences", "integration_entity_links", "experience_calendar_links", "experience_events", "operator_audit_events"];
+  const tables = ["test_cadence_bindings", "experiences", "integration_entity_links", "experience_calendar_links", "experience_events", "operator_audit_events"];
   const snapshot = async () => Object.fromEntries(await Promise.all(tables.map(async (name) => [name, (await db.query(`select to_jsonb(row)::text as value from ${name} row order by to_jsonb(row)::text`)).rows])));
   const unchangedFailure = async (operation, predicate) => {
     const before = await snapshot();
@@ -233,6 +249,45 @@ test("simple event creation publishes and queues delivery atomically in isolated
       { registrationMode: "internal" }, { capacity: 5 }, { waitlistEnabled: true },
       { endsAt: new Date(Date.now() - 1000).toISOString() },
     ]) await unchangedFailure(() => create(overrides), (error) => error.code === "invalid_request");
+  });
+  await t.test("classification participates in event create and update, while omission preserves it", async () => {
+    assert.equal(bindingCalls.length, 0, "legacy events never load or invoke cadence persistence");
+    const emailCadence = { kind: "foundations_01", track: "members", cohortMonth: "2026-11" };
+    const details = draft({ title: "  An explicitly classified call  ", visibility: "invite_only", registrationMode: "internal", emailCadence });
+    const result = await repository.createOpsExperience({ actorAuthUserId: ids.admin, draft: details });
+    assert.equal(bindingCalls.length, 1);
+    assert.equal(bindingCalls[0].actor, ids.admin);
+    assert.equal(bindingCalls[0].eventId, result.experienceId);
+    assert.equal(bindingCalls[0].normalized.title, "An explicitly classified call");
+    assert.equal(bindingCalls[0].normalized.registrationMode, "internal");
+    const binding = async () => (await db.query("select payload from test_cadence_bindings where event_id=$1", [result.experienceId])).rows[0].payload;
+    assert.deepEqual(await binding(), emailCadence);
+    const withoutClassification = { ...details, title: "Edited call title" };
+    delete withoutClassification.emailCadence;
+    await repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: result.experienceId, draft: withoutClassification });
+    assert.equal(bindingCalls.length, 1);
+    assert.deepEqual(await binding(), emailCadence);
+    await repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: result.experienceId,
+      draft: { ...withoutClassification, emailCadence: { kind: "none", track: "members" } } });
+    assert.deepEqual(await binding(), { kind: "none", track: "members" });
+    bindingFailure = new emailModel.AdminEmailError(400, "This call does not match its cohort.");
+    try {
+      await unchangedFailure(() => repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: result.experienceId, draft: details }), error => error instanceof RepositoryError && error.code === "invalid_request");
+      await unchangedFailure(() => repository.createOpsExperience({ actorAuthUserId: ids.admin, draft: details }), error => error.code === "invalid_request");
+    } finally { bindingFailure = null; }
+  });
+  await t.test("classification is part of quick-create retry identity and failures cannot queue a calendar invitation", async () => {
+    const submission = event({ emailCadence: { kind: "membership", track: "members" } });
+    const result = await create(submission);
+    const calls = bindingCalls.length;
+    assert.deepEqual(await create(submission), result);
+    assert.equal(bindingCalls.length, calls, "a response retry never reclassifies an event");
+    await unchangedFailure(() => create({ ...submission, emailCadence: { kind: "none", track: "members" } }), error => error.code === "conflict");
+    bindingFailure = new emailModel.AdminEmailError(503, "Sequence setup is not installed.");
+    try { await unchangedFailure(() => create({ emailCadence: { kind: "membership", track: "members" } }), error => error.status === 503); }
+    finally { bindingFailure = null; }
+    await db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [ids.supporter]);
+    await unchangedFailure(() => create({ visibility: "circle", circleId: ids.circle, kind: "circle_meeting", emailCadence: { kind: "circle", track: "members" } }, ids.supporter), error => error instanceof RepositoryError && error.code === "forbidden");
   });
   await t.test("advanced draft creation still works without Calendar setup and sends nothing", async () => {
     config.ready = false; mode = null;

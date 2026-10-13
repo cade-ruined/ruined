@@ -4,6 +4,7 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { id, loader, read } from "./helpers/member-sms-fixture.mjs";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { installPaidReservationFunction } from "./helpers/paid-reservation-fixture.mjs";
 
 // The existing SMS fixture's lazy-fragment bridge also supports conditional FOR SHARE clauses.
 function sqlBridge(engine) {
@@ -56,22 +57,33 @@ async function fixture(t) {
     create table member_progression_assignments(id uuid primary key default gen_random_uuid(),member_id uuid,
       progression_level_slug text,assigned_at timestamptz,ended_at timestamptz);
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
-      progression_level_slug text,registration_mode text,status text,starts_at timestamptz,ends_at timestamptz,cancelled_at timestamptz,version integer default 1);
+      progression_level_slug text,registration_mode text,status text,starts_at timestamptz,ends_at timestamptz,cancelled_at timestamptz,version integer default 1,capacity integer);
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,member_id uuid,
-      status text,source text default 'member',registered_at timestamptz);
+      status text,source text default 'member',registered_at timestamptz default clock_timestamp(),metadata jsonb,unique(experience_id,person_id));
     create table experience_registration_events(id uuid primary key default gen_random_uuid(),registration_id uuid,
-      next_status text,previous_status text,occurred_at timestamptz);
+      next_status text,previous_status text,occurred_at timestamptz default clock_timestamp(),
+      experience_id uuid,person_id uuid,source text,actor_auth_user_id uuid,reason text,dedupe_key text unique);
+    create table operator_audit_events(actor_auth_user_id uuid,action text,subject_type text,subject_id text,member_id uuid,reason text,metadata jsonb,dedupe_key text unique);
     create table integration_entity_links(id uuid primary key default gen_random_uuid(),provider text,local_entity_type text,
       local_entity_id text,external_entity_type text,livemode boolean,metadata jsonb);
     create function private.ruined_member_paid_reservation(uuid) returns uuid language sql as 'select null::uuid';`);
-  // Canonical access checks and funding SQL are real. No paid provider evidence exists in this fixture.
+  // Canonical access and the shipped paid-provider predicate run against isolated fixture evidence.
   await installOperatorFundingFunctions(db);
+  await db.exec("drop table member_registration_access; drop function private.ruined_member_paid_reservation(uuid)");
+  await installPaidReservationFunction(db);
+  await db.exec(`alter table member_registration_access add column profile_activated_at timestamptz,add column registered_at timestamptz;
+    alter table membership_commercial_reservations add column billing_plan text default 'monthly'`);
   await db.exec(read("db/migrations/20261012230000_member_email_cadence.sql"));
+  await db.exec(read("db/migrations/20261012233000_member_email_sequences.sql"));
   const sql = sqlBridge(db);
+  const calendar=[];
   const env = { MEMBER_EMAIL_CADENCE_ENABLED: "true", MEMBER_EMAIL_CADENCE_ACTIVATED_AT: ago(2880), GOOGLE_COMMUNICATIONS_LIVEMODE: "true" };
-  const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql } });
+  const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql },
+    "@/lib/platform/ops-calendar-repository": { markOpsExperienceCalendarPending: async (_tx, input) => calendar.push(input) } });
   const repo = load("src/lib/communications/member-email-cadence-repository.ts");
   const model = load("src/lib/communications/member-email-cadence-model.ts");
+  const inheritance=load("src/lib/communications/member-email-cadence-inheritance.ts");
+  const schedules=load("src/lib/membership/foundations-schedule.ts");
   let serial = 100;
   async function member(options = {}) {
     const m = { memberId: id(serial++), personId: id(serial++), authId: id(serial++), email: `member-${serial}@example.test` };
@@ -128,10 +140,13 @@ async function fixture(t) {
     return { m, e, planId };
   }
   async function reset() {
-    await db.exec(`truncate private.member_email_cadence_deliveries,private.member_email_cadence_reviews,private.member_email_cadence_plans,
+    await db.exec(`truncate private.member_email_cadence_deliveries,private.member_email_cadence_reviews,private.member_email_cadence_plans,private.member_email_cadence_sequences,private.member_email_cadence_event_bindings,
       ruined_members,people,person_profiles,person_email_addresses,platform_users,platform_role_grants,member_lifecycle,member_registration_access,
       member_consents,communication_contacts,circles,circle_member_assignments,membership_blocks,block_circle_assignments,member_progression_assignments,experiences,
-      experience_registrations,experience_registration_events,integration_entity_links,member_complimentary_grants cascade;`);
+      experience_registrations,experience_registration_events,integration_entity_links,member_complimentary_grants,operator_audit_events,
+      membership_commercial_reservations,membership_commercial_participants,stripe_subscriptions,stripe_membership_prepaid_proofs,
+      stripe_checkout_attempts,stripe_checkout_sessions,stripe_membership_commitments,stripe_invoices cascade;`);
+    calendar.length=0;
     env.MEMBER_EMAIL_CADENCE_ENABLED = "true"; env.MEMBER_EMAIL_CADENCE_ACTIVATED_AT = ago(2880);
   }
   const state = async () => (await db.query("select * from private.member_email_cadence_deliveries order by id")).rows;
@@ -140,7 +155,7 @@ async function fixture(t) {
     const lease = randomUUID(), claimed = await repo.claimCadenceDelivery(lease);
     assert.ok(claimed); return { claim: claimed, lease };
   }
-  return { db, sql, env, repo, model, member, consent, event, roster, plan, setup, reset, state, enqueue, claim };
+  return { db, sql, env, repo, model, inheritance, schedules, calendar, member, consent, event, roster, plan, setup, reset, state, enqueue, claim };
 }
 
 test("cadence repository uses canonical access, exact current consent and durable occurrence delivery", async t => {
@@ -191,8 +206,8 @@ test("cadence repository uses canonical access, exact current consent and durabl
   await t.test("new members, late profile activation and late registration promotions cannot backfill an automatic reminder", async () => {
     for (const lateEnrollment of [
       ({ m }) => f.db.query("update ruined_members set created_at=clock_timestamp() where id=$1", [m.memberId]),
-      ({ m }) => f.db.query("insert into member_registration_access values($1,null,clock_timestamp())", [m.memberId]),
-      ({ m }) => f.db.query("insert into member_registration_access values($1,clock_timestamp(),$2)", [m.memberId, ago(2880)]),
+      ({ m }) => f.db.query("insert into member_registration_access(member_id,profile_activated_at,registered_at) values($1,null,clock_timestamp())", [m.memberId]),
+      ({ m }) => f.db.query("insert into member_registration_access(member_id,profile_activated_at,registered_at) values($1,clock_timestamp(),$2)", [m.memberId, ago(2880)]),
       async ({ m, e }) => {
         await f.roster(m, e);
         await f.db.exec("insert into experience_registration_events(registration_id,next_status,previous_status,occurred_at) select id,'registered','waitlisted',clock_timestamp() from experience_registrations");
@@ -373,5 +388,184 @@ test("cadence repository uses canonical access, exact current consent and durabl
         await tx.query(`select * from private.member_email_cadence_${table}`);
       }), /permission denied/);
     }
+  });
+});
+
+async function cadenceSequence(f, actor, event, options = {}) {
+  await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [actor.authId]);
+  const snapshot = { eventId: event.id, kind: options.kind ?? "membership", track: options.track ?? "members",
+    templateId: id(880001), templateVersion: "approved-v1", bodyTarget: "copy:body", bindings: {},
+    template: { html: "<p>Reviewed design.</p>" }, event, siteUrl: "https://members.example.test" };
+  const { rows } = await f.db.query(`insert into private.member_email_cadence_sequences(kind,track,active,snapshot,approved_by)
+    values($1,$2,true,$3,$4) returning id`, [snapshot.kind, snapshot.track, JSON.stringify(snapshot), actor.authId]);
+  return { id: rows[0].id, snapshot };
+}
+const inheritedPlans = async f => (await f.db.query("select * from private.member_email_cadence_plans order by experience_id")).rows;
+const reconcile = f => f.inheritance.reconcileCadenceInheritance(f.model.getMemberEmailCadenceConfiguration(f.env), Date.now() + 30_000);
+async function paidCohortMember(f, schedule, options = {}) {
+  const member = await f.member({ onboarding: true }), reservation = randomUUID(), contract = randomUUID();
+  const subscription = `sub_${reservation}`, customer = `cus_${reservation}`, invoice = `in_${reservation}`, checkout = `cs_${reservation}`;
+  await f.db.query(`update member_registration_access set payment_setup_account_id='acct_fixture',payment_setup_livemode=true,registered_at=$2 where member_id=$1`,
+    [member.memberId, options.unregistered ? null : ago(2880)]);
+  await f.db.query(`insert into membership_commercial_reservations(id,payer_member_id,kind,status,stripe_subscription_id,billing_schedule,billing_plan)
+    values($1,$2,'individual','reserved',$3,$4,'monthly')`, [reservation, member.memberId, subscription, JSON.stringify(schedule)]);
+  await f.db.query("insert into membership_commercial_participants values($1,$2,$3)", [reservation, member.memberId, member.personId]);
+  await f.db.query("insert into stripe_subscriptions(id,member_id,stripe_status,stripe_customer_id) values($1,$2,'trialing',$3)", [subscription, member.memberId, customer]);
+  await f.db.query(`insert into stripe_checkout_attempts values($1,'completed',$2,now(),'acct_fixture',true,$3,$1,$4,$5)`,
+    [reservation, member.memberId, subscription, JSON.stringify(schedule), checkout]);
+  await f.db.query("insert into stripe_checkout_sessions values($1,'complete','paid',true,$2,$3)", [checkout, member.memberId, subscription]);
+  await f.db.query("insert into stripe_membership_commitments values($1,$2,$3,true,$4,$5)", [contract, reservation, member.memberId, JSON.stringify({ billingSchedule: schedule }), customer]);
+  await f.db.query("insert into stripe_invoices values($1,$2,$3,$4,'paid','membership',34900,34900,'usd',now())", [invoice, member.memberId, subscription, customer]);
+  await f.db.query(`insert into stripe_membership_prepaid_proofs values($1,$2,$3,true,$4,0,null,null,34900,34900,now(),$5,$6,'usd',now())`,
+    [reservation, contract, member.memberId, options.refunded ? "full" : "none", invoice, subscription]);
+  return { ...member, reservation };
+}
+async function foundationSequence(f, options = {}) {
+  const future = new Date(); future.setUTCMonth(future.getUTCMonth() + 2);
+  const cohortMonth = future.toISOString().slice(0, 7);
+  const schedule = f.schedules.foundationsBillingScheduleForMonth(cohortMonth, "monthly", "foundations-prepaid-v3");
+  const event = await f.event({ title: "Authored call title", kind: "member_event", visibility: "invite_only", registrationMode: "internal",
+    startsAt: schedule.callStartsAt[0], endsAt: new Date(Date.parse(schedule.callStartsAt[0]) + 90 * 60_000).toISOString() });
+  const actor = await f.member();
+  const sequence = await cadenceSequence(f, actor, event, { kind: "foundations_01", ...options });
+  const binding = { kind: "foundations_01", track: options.track ?? "members", ...(options.track === "founder_test" ? {} : { cohortMonth }) };
+  await f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, event.id, binding, event));
+  return { event, actor, sequence, schedule, binding };
+}
+
+test("reusable email sequences inherit only reviewed semantics and current authority", async t => {
+  const f = await fixture(t);
+  await t.test("semantic calls inherit without title matching; explicit exclusions, public calls and external calls do not", async () => {
+    await f.reset(); const actor = await f.member();
+    const first = await f.event({ title: "Any authored title", registrationMode: "none" });
+    const source = await cadenceSequence(f, actor, first);
+    const second = await f.event({ title: "A future weekly call", registrationMode: "none" });
+    await f.event({ title: "Membership call", kind: "member_event" });
+    await f.event({ visibility: "public" }); await f.event({ registrationMode: "external" });
+    const excluded = await f.event();
+    await f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, excluded.id, { kind: "none", track: "members" }, excluded));
+    assert.deepEqual((await f.inheritance.matchingCadenceEvents(f.sql, "membership", "members")).map(e => e.id).sort(), [first.id, second.id].sort());
+    assert.deepEqual(await reconcile(f), { plans: 2, enrolled: 0 });
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    const plans = await inheritedPlans(f);
+    assert.ok(plans.every(plan => plan.sequence_id === source.id && plan.sequence_revision === 1 && plan.snapshot.templateVersion === "approved-v1"));
+    assert.equal((await f.db.query("select count(*)::int as count from experience_registrations")).rows[0].count, 0);
+  });
+  await t.test("disabled, future and exhausted-budget inheritance performs no changes", async () => {
+    await f.reset(); const actor = await f.member(), event = await f.event(); await cadenceSequence(f, actor, event);
+    for (const configuration of [{ enabled: false, ready: true, activatedAt: ago(10) },
+      { enabled: true, ready: false, activatedAt: null }, { enabled: true, ready: true, activatedAt: ago(-10) }]) {
+      assert.deepEqual(await f.inheritance.reconcileCadenceInheritance(configuration, Date.now() + 30_000), { plans: 0, enrolled: 0 });
+    }
+    assert.deepEqual(await f.inheritance.reconcileCadenceInheritance(f.model.getMemberEmailCadenceConfiguration(f.env), Date.now() - 1), { plans: 0, enrolled: 0 });
+    assert.deepEqual(await inheritedPlans(f), []);
+  });
+  await t.test("manual overrides and paused children survive every inherited rule refresh", async () => {
+    await f.reset(); const actor = await f.member(), first = await f.event(), paused = await f.event();
+    const sequence = await cadenceSequence(f, actor, first);
+    const manualId = await f.plan(first, actor, { snapshot: { templateVersion: "manual" } });
+    await reconcile(f);
+    await f.db.query("update private.member_email_cadence_plans set active=false where experience_id=$1", [paused.id]);
+    await f.db.query("update private.member_email_cadence_sequences set revision=revision+1,snapshot=jsonb_set(snapshot,'{templateVersion}','\"new design\"') where id=$1", [sequence.id]);
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    const plans = await inheritedPlans(f);
+    assert.equal(plans.find(p => p.id === manualId).snapshot.templateVersion, "manual");
+    assert.equal(plans.find(p => p.experience_id === paused.id).active, false);
+    assert.equal(plans.find(p => p.experience_id === paused.id).sequence_revision, 1);
+  });
+  await t.test("resuming a revised rule refreshes unchanged active calls but never accepts event or classification edits", async () => {
+    await f.reset(); const actor = await f.member(), unchanged = await f.event(), changed = await f.event(), reclassified = await f.event();
+    const sequence = await cadenceSequence(f, actor, unchanged); await reconcile(f);
+    await f.db.query("update experiences set title='New call details',version=version+1 where id=$1", [changed.id]);
+    await f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, reclassified.id, { kind: "none", track: "members" }, reclassified));
+    await f.db.query("update private.member_email_cadence_sequences set active=false,revision=revision+1 where id=$1", [sequence.id]);
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    await f.db.query("update private.member_email_cadence_sequences set active=true,revision=revision+1,snapshot=jsonb_set(snapshot,'{templateVersion}','\"approved-v3\"') where id=$1", [sequence.id]);
+    assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 0 });
+    const plans = await inheritedPlans(f);
+    assert.equal(plans.find(p => p.experience_id === unchanged.id).snapshot.templateVersion, "approved-v3");
+    assert.equal(plans.find(p => p.experience_id === unchanged.id).revision, 2);
+    assert.ok(plans.filter(p => p.experience_id !== unchanged.id).every(p => p.sequence_revision === 1));
+  });
+  await t.test("sequence pauses, revoked approvers and changed bindings fence both fresh and uncertain deliveries", async () => {
+    for (const invalidate of [
+      sequence => f.db.query("update private.member_email_cadence_sequences set active=false,revision=revision+1 where id=$1", [sequence.id]),
+      (_sequence, actor) => f.db.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'", [actor.authId]),
+      (_sequence, actor, event) => f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, event.id, { kind: "none", track: "members" }, event)),
+    ]) for (const attempted of [false, true]) {
+      await f.reset(); const actor = await f.member(), event = await f.event({ registrationMode: "none" }); await f.consent(actor);
+      const sequence = await cadenceSequence(f, actor, event); await reconcile(f);
+      await f.db.exec("update private.member_email_cadence_plans set activated_at=clock_timestamp()-interval '2 days'");
+      assert.equal(await f.enqueue(), 1); const current = await f.claim();
+      if (attempted) await f.repo.withCadenceDelivery(current.claim, current.lease, (tx, delivery) => f.repo.freezeCadenceDelivery(tx, delivery.id, frozenPayload(actor.email)));
+      await invalidate(sequence, actor, event);
+      assert.equal(await f.enqueue(), 0);
+      assert.equal((await f.repo.withCadenceDelivery(current.claim, current.lease, () => assert.fail("stale inherited delivery"))).kind, attempted ? "manualReview" : "cancelled");
+      assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    }
+  });
+  await t.test("binding validation rejects title guesses, mismatched accepted times and unauthorized event writers", async () => {
+    await f.reset(); const { event, actor, schedule, binding } = await foundationSequence(f);
+    assert.deepEqual(f.inheritance.normalizeCadenceEventBinding(binding, event), binding);
+    assert.throws(() => f.inheritance.normalizeCadenceEventBinding(binding, { ...event, startsAt: ago(-100) }), /accepted cohort session time/);
+    assert.throws(() => f.inheritance.normalizeCadenceEventBinding(binding, { ...event, timeZone: "UTC" }), /accepted cohort session time/);
+    assert.throws(() => f.inheritance.normalizeCadenceEventBinding({ ...binding, cohortMonth: "2020-01" }, event), /cohort month/);
+    assert.throws(() => f.inheritance.normalizeCadenceEventBinding({ ...binding, kind: "foundations_02" }, event), /accepted cohort session time/);
+    assert.throws(() => f.inheritance.normalizeCadenceEventBinding(binding, { ...event, visibility: "all_members" }), /private call/);
+    assert.equal(schedule.callStartsAt[0], event.startsAt);
+    const member = await f.member();
+    await assert.rejects(f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, member.authId, event.id, { kind: "none", track: "members" }, event)), error => error.status === 403);
+    await f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, event.id, undefined, event));
+    assert.deepEqual(await f.inheritance.readCadenceEventBinding(f.sql, event.id), binding);
+  });
+  await t.test("only registered paid members on the exact accepted cohort are invited; no preferences or general access are created", async () => {
+    await f.reset(); const { event, schedule } = await foundationSequence(f);
+    const eligible = await paidCohortMember(f, schedule);
+    assert.equal((await f.db.query("select private.ruined_member_paid_reservation($1::uuid) as id", [eligible.memberId])).rows[0].id, eligible.reservation);
+    assert.deepEqual(f.schedules.parseFoundationsBillingSchedule(schedule, "monthly"), schedule);
+    const cancelled = await paidCohortMember(f, schedule); await f.roster(cancelled, event, { status: "cancelled" });
+    const waiting = await paidCohortMember(f, schedule); await f.roster(waiting, event, { status: "waitlisted" });
+    await paidCohortMember(f, schedule, { refunded: true }); await paidCohortMember(f, schedule, { unregistered: true });
+    const mismatched = await paidCohortMember(f, { ...schedule, callStartsAt: [ago(-100), ...schedule.callStartsAt.slice(1)] });
+    const unverified = await paidCohortMember(f, schedule);
+    await f.db.query("update person_email_addresses set verification_state='unverified' where person_id=$1", [unverified.personId]);
+    const suspended = await paidCohortMember(f, schedule);
+    await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [suspended.memberId]);
+    await f.member({ onboarding: true, complimentary: true });
+    assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 1 });
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    const rows = (await f.db.query("select member_id,status,source from experience_registrations order by member_id")).rows;
+    assert.deepEqual(rows.filter(r => r.status === "registered"), [{ member_id: eligible.memberId, status: "registered", source: "ops" }]);
+    assert.equal(rows.find(r => r.member_id === cancelled.memberId).status, "cancelled");
+    assert.equal(rows.find(r => r.member_id === waiting.memberId).status, "waitlisted");
+    assert.equal(rows.some(r => r.member_id === mismatched.memberId), false);
+    assert.equal((await f.db.query("select count(*)::int as count from operator_audit_events")).rows[0].count, 1);
+    assert.equal((await f.db.query("select count(*)::int as count from member_consents")).rows[0].count, 0);
+    assert.equal((await f.db.query("select standing_state from member_lifecycle where member_id=$1", [eligible.memberId])).rows[0].standing_state, "pre_active");
+    assert.deepEqual(f.calendar.map(c => [c.experienceId, c.reason]), [[event.id, "attendees"]]);
+    const late = await paidCohortMember(f, schedule);
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 1 });
+    assert.equal((await f.db.query("select count(*)::int as count from experience_registrations where member_id=$1", [late.memberId])).rows[0].count, 1);
+  });
+  await t.test("manual approval winning before reconciliation prevents any automatic paid enrollment", async () => {
+    await f.reset(); const { event, actor, schedule } = await foundationSequence(f); await paidCohortMember(f, schedule);
+    // The isolated engine queues these concurrent callers; the explicit approval owns the event first.
+    await Promise.all([f.plan(event, actor, { snapshot: { kind: "foundations_01", templateVersion: "manual override" } }), reconcile(f)]);
+    const plans = await inheritedPlans(f);
+    assert.equal(plans[0].sequence_id, null); assert.equal(plans[0].snapshot.templateVersion, "manual override");
+    assert.equal((await f.db.query("select count(*)::int as count from experience_registrations")).rows[0].count, 0);
+    assert.deepEqual(f.calendar, []);
+  });
+  await t.test("capacity remains create-only, founder tests remain manually rostered, and revoked authority enrolls nobody", async () => {
+    await f.reset(); let current = await foundationSequence(f); await paidCohortMember(f, current.schedule); await paidCohortMember(f, current.schedule);
+    await f.db.query("update experiences set capacity=1 where id=$1", [current.event.id]);
+    assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 1 });
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    await f.reset(); current = await foundationSequence(f, { track: "founder_test" }); await paidCohortMember(f, current.schedule);
+    assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 0 });
+    await f.reset(); current = await foundationSequence(f); await paidCohortMember(f, current.schedule);
+    await f.db.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'", [current.actor.authId]);
+    assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+    assert.deepEqual(await inheritedPlans(f), []);
   });
 });

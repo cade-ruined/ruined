@@ -22,16 +22,17 @@ function load(path, dependencies = {}, fetch = noNetwork, window = undefined) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText;
   const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", "fetch", "window", compiled)((name) => {
+  new Function("require", "module", "exports", "fetch", "window", "FormData", compiled)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "next/link") return { __esModule: true, default: Link };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: Dialog };
+    if (name === "@/components/platform/OperatorEventEmailCadenceFields") return load("src/components/platform/OperatorEventEmailCadenceFields.tsx");
     if (name === "@/components/platform/OperatorDateTimeField") return load("src/components/platform/OperatorDateTimeField.tsx");
     if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     throw new Error(`Unexpected dependency ${name}`);
-  }, loadedModule, loadedModule.exports, fetch, window);
+  }, loadedModule, loadedModule.exports, fetch, window, class { constructor(form) { this.values = form.values; } get(name) { return this.values[name] ?? null; } });
   return loadedModule.exports;
 }
 const styles = load("src/components/platform/operatorStyles.ts");
@@ -276,4 +277,24 @@ test("drafts with newly saved Meet links promise preservation in both meeting an
   const meeting = panel(provided);
   assert.match(text(meeting), /Invitations will include your saved Google Meet link/);
   assert.doesNotMatch(text(meeting), /Google creates the Meet link/);
+});
+
+
+test("editing preserves an existing sequence unless the admin explicitly changes it", async () => {
+  const current = { kind: "foundations_01", track: "members", cohortMonth: "2026-11" };
+  for (const fields of [{}, { emailCadenceKind: "none", emailCadenceTrack: "members" }]) {
+    const f = interactive({ emailCadence: current });
+    nodes(f.draw()).find(node => node.props?.id === "edit-experience-trigger").props.onClick();
+    const form = nodes(f.draw()).find(node => node.type === "form" && node.props.id === "edit-experience");
+    await form.props.onSubmit({ preventDefault() {}, currentTarget: { values: { title: "New event title", startsAt: experience.startsAt, endsAt: experience.endsAt, circleId: "circle-1", ...fields } } });
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls[0].options.method, "PATCH");
+    const payload = JSON.parse(f.calls[0].options.body);
+    assert.equal(payload.title, "New event title");
+    if (fields.emailCadenceKind) assert.deepEqual(payload.emailCadence, { kind: "none", track: "members" });
+    else assert.equal(Object.hasOwn(payload, "emailCadence"), false);
+  }
+  const supporter = interactive({ canManageGlobal: false });
+  nodes(supporter.draw()).find(node => node.props?.id === "edit-experience-trigger").props.onClick();
+  assert.equal(elements(render(supporter.draw())).some(node => attr(node, "name") === "emailCadenceKind"), false);
 });

@@ -251,7 +251,21 @@ function normalizeDraft(input: OpsExperienceDraftInput) {
     title,
     visibility,
     waitlistEnabled: Boolean(input.waitlistEnabled),
+    ...(input.emailCadence === undefined ? {} : { emailCadence: input.emailCadence }),
   };
+}
+
+async function saveEmailCadenceBinding(tx: postgres.TransactionSql, actor: string, experienceId: string, draft: ReturnType<typeof normalizeDraft>) {
+  if (draft.emailCadence === undefined) return;
+  const { saveCadenceEventBinding } = await import("@/lib/communications/member-email-cadence-inheritance");
+  try { await saveCadenceEventBinding(tx, actor, experienceId, draft.emailCadence, draft); }
+  catch (error) {
+    const { AdminEmailError } = await import("@/lib/communications/admin-email-model");
+    if (error instanceof AdminEmailError && [400, 403, 409].includes(error.status)) {
+      throw new OpsOperatingRepositoryError(error.status === 403 ? "forbidden" : error.status === 409 ? "conflict" : "invalid_request", error.message);
+    }
+    throw error;
+  }
 }
 
 async function requireEventOperator(
@@ -943,8 +957,17 @@ export async function getOpsExperienceRecord(
       memberOptions = eligibleOptions;
     }
     const calendar = await getOpsExperienceCalendarStateForTx(tx, experienceId);
+    let emailCadence: OpsExperienceRecord["emailCadence"];
+    if (access.isAdmin) {
+      const [bindingTable] = await tx`select to_regclass('private.member_email_cadence_event_bindings') is not null as ready`;
+      if (bindingTable?.ready) {
+        const { readCadenceEventBinding } = await import("@/lib/communications/member-email-cadence-inheritance");
+        emailCadence = await readCadenceEventBinding(tx, experienceId);
+      }
+    }
 
     return {
+      ...(emailCadence === undefined ? {} : { emailCadence }),
       archivedAt: asIso(event.archived_at),
       blockId: event.block_id,
       canEdit: canDefine,
@@ -1156,6 +1179,7 @@ async function persistOpsExperience(input: {
         ${access.authUserId}::uuid
       )
     `;
+    await saveEmailCadenceBinding(tx, access.authUserId, experienceId, draft);
     if (input.meetingUrl) {
       await tx`
         insert into integration_entity_links (
@@ -1301,6 +1325,7 @@ export async function updateOpsExperience(input: {
         updated_at = statement_timestamp()
       where id = ${experienceId}::uuid
     `;
+    await saveEmailCadenceBinding(tx, access.authUserId, experienceId, draft);
     const promotedCount = await promoteWaitlist(tx, experienceId, access.authUserId);
     const after = {
       capacity: draft.capacity,

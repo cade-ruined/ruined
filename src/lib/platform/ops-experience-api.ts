@@ -19,6 +19,16 @@ function nullableString(value: unknown): string | null {
       : null;
 }
 
+function emailCadenceValue(value: unknown): OpsExperienceDraftInput["emailCadence"] | null {
+  if (!isRecord(value) || !Object.keys(value).every(key => ["kind", "track", "cohortMonth"].includes(key))
+    || typeof value.kind !== "string" || !["none", "foundations_01", "foundations_02", "foundations_03", "foundations_04", "membership", "circle"].includes(value.kind)
+    || typeof value.track !== "string" || !["founder_test", "members"].includes(value.track)
+    || (value.cohortMonth !== undefined && (typeof value.cohortMonth !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value.cohortMonth)))) return null;
+  return { kind: value.kind as NonNullable<OpsExperienceDraftInput["emailCadence"]>["kind"],
+    track: value.track as NonNullable<OpsExperienceDraftInput["emailCadence"]>["track"],
+    ...(value.cohortMonth === undefined ? {} : { cohortMonth: value.cohortMonth as string }) };
+}
+
 export function parseOpsExperienceDraft(
   value: unknown,
 ): OpsExperienceDraftInput | null {
@@ -41,6 +51,7 @@ export function parseOpsExperienceDraft(
     "title",
     "visibility",
     "waitlistEnabled",
+    "emailCadence",
   ]);
   if (!Object.keys(value).every((key) => allowed.has(key))) return null;
 
@@ -53,6 +64,8 @@ export function parseOpsExperienceDraft(
     return null;
   }
   if (typeof value.waitlistEnabled !== "boolean") return null;
+  const emailCadence = value.emailCadence === undefined ? undefined : emailCadenceValue(value.emailCadence);
+  if (emailCadence === null) return null;
 
   return {
     blockId: nullableString(value.blockId),
@@ -72,6 +85,7 @@ export function parseOpsExperienceDraft(
     title: stringValue(value.title),
     visibility: stringValue(value.visibility) as OpsExperienceDraftInput["visibility"],
     waitlistEnabled: value.waitlistEnabled,
+    ...(emailCadence === undefined ? {} : { emailCadence }),
   };
 }
 

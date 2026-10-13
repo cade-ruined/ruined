@@ -1,7 +1,7 @@
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
 import { adminEmailErrorResponse, readAdminEmailJson, requireAdminEmailMutation } from "@/lib/communications/admin-email-api";
 import { AdminEmailError } from "@/lib/communications/admin-email-model";
-import { getCadenceOverview, previewCadence, activateCadence, pauseCadence } from "@/lib/communications/member-email-cadence-service";
+import { getCadenceOverview, previewCadence, activateCadence, pauseCadence, pauseCadenceSequence } from "@/lib/communications/member-email-cadence-service";
 import { opsJson } from "@/lib/platform/ops-api";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -21,6 +21,7 @@ export async function POST(request:Request) {
     if (body.action==="preview") return opsJson(await previewCadence(actor,body.draft));
     if (body.action==="activate") return opsJson(await activateCadence(actor,body.reviewToken));
     if (body.action==="pause") return opsJson(await pauseCadence(actor,body.id,body.revision));
+    if (body.action==="pause_sequence") return opsJson(await pauseCadenceSequence(actor,body.id,body.revision));
     throw new AdminEmailError(400,"Choose review, activate, or pause.");
   } catch(error) {return adminEmailErrorResponse(error);}
 }

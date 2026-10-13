@@ -38,6 +38,7 @@ async function fixture(t) {
       version integer not null default 1,circle_id uuid,block_id uuid,progression_level_slug text);
     create table ruined_members(id uuid primary key);`);
   await pg.exec(await readFile(new URL("../db/migrations/20261012230000_member_email_cadence.sql", import.meta.url), "utf8"));
+  await pg.exec(await readFile(new URL("../db/migrations/20261012233000_member_email_sequences.sql", import.meta.url), "utf8"));
   const admin = crypto.randomUUID(), other = crypto.randomUUID(), guide = crypto.randomUUID();
   await pg.query("insert into platform_users values($1,'active'),($2,'active'),($3,'active')", [admin, other, guide]);
   await pg.query("insert into platform_role_grants values($1,'ops_admin',null),($2,'ops_admin',null),($3,'guide',null)", [admin, other, guide]);
@@ -81,6 +82,7 @@ async function fixture(t) {
     "./resend-email-service": { getResendEmailTemplate: async (_actor, templateId) => { assert.equal(templateId, template.id); state.calls.push("template"); return clone(state.template); } },
     "./member-email-cadence-model": cadence, "./member-email-cadence-delivery": delivery,
     "./member-email-cadence-repository": repository, "./member-email-cadence-renderer": renderer,
+    "./member-email-cadence-inheritance": { matchingCadenceEvents: async () => state.event ? [clone(state.event)] : [] },
     "./member-email-cadence-provider": {
       listCadenceTemplates: async () => { state.calls.push("templates"); return [clone(state.template)]; },
       reviewCadenceProviderRecipients: async rows => { state.calls.push("recipients"); if (state.providerHook) await state.providerHook(); if (state.providerFailure) throw state.providerFailure;
@@ -106,7 +108,7 @@ async function fixture(t) {
     method: "POST", headers: { Origin: "https://members.example.com", "Content-Type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body),
   }));
   async function reset() {
-    await pg.exec("truncate private.member_email_cadence_deliveries,private.member_email_cadence_reviews,private.member_email_cadence_plans,operator_audit_events;");
+    await pg.exec("truncate private.member_email_cadence_deliveries,private.member_email_cadence_reviews,private.member_email_cadence_plans,private.member_email_cadence_sequences,private.member_email_cadence_event_bindings,operator_audit_events;");
     await pg.exec("update platform_users set status='active'; update platform_role_grants set revoked_at=null;");
     Object.assign(state, { event: clone(event), template: clone(template), recipients: clone(recipients), ready: true, calls: [], providerHook: null,
       lockedRosterHook: null, providerFailure: null, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] });
@@ -204,6 +206,45 @@ test("admin cadence reviews and activations persist safely through real PostgreS
     assert.equal(overview.configuration.enabled, false); assert.equal(overview.configuration.ready, false);
     assert.equal(overview.events[0].id, f.event.id); assert.equal(overview.plans.length, 0); assert.equal(overview.templates[0].id, f.template.id);
     assert.ok(overview.inactive.some(item => /completion/i.test(item.title))); assert.equal(overview.setupRequired, false);
+  });
+  await t.test("a future sequence can be reviewed and approved before any calls or members exist", async () => {
+    await f.reset(); f.state.event = null; f.state.recipients = [];
+    const result = await f.service.previewCadence(f.admin, { ...f.draft, scope: "sequence", eventId: "" });
+    assert.equal(result.scope, "sequence"); assert.equal(result.previews.length, 4);
+    assert.deepEqual(result.matchingEvents, []); assert.deepEqual(result.recipients, []);
+    assert.match(result.warnings.join(" "), /current and future matching/);
+    const active = await f.service.activateCadence(f.admin, result.reviewToken);
+    assert.equal(active.scope, "sequence"); assert.equal(active.active, true);
+    assert.equal((await f.rows("sequences")).length, 1);
+    assert.equal((await f.rows("plans")).length, 0); assert.equal((await f.rows("deliveries")).length, 0);
+    assert.equal((await f.service.getCadenceOverview(f.admin)).sequences[0].id, active.id);
+    await assert.rejects(f.service.activateCadence(f.admin, result.reviewToken), error => error.status === 409);
+  });
+  await t.test("sequence approval does not freeze an example roster or permit stale competing rule updates", async () => {
+    await f.reset(); const draft = { ...f.draft, scope: "sequence" };
+    const first = await f.service.previewCadence(f.admin, draft), competing = await f.service.previewCadence(f.other, draft);
+    f.state.recipients = []; f.state.event.title = "Changed example";
+    const active = await f.service.activateCadence(f.admin, first.reviewToken);
+    await assert.rejects(f.service.activateCadence(f.other, competing.reviewToken), error => error.status === 409 && /sequence/.test(error.message));
+    const paused = await f.service.pauseCadenceSequence(f.admin, active.id, active.revision);
+    assert.equal(paused.active, false); assert.equal(paused.revision, 2);
+    await assert.rejects(f.service.pauseCadenceSequence(f.admin, active.id, active.revision), error => error.status === 409);
+    const next = await f.service.previewCadence(f.admin, { ...draft, eventId: "" });
+    const resumed = await f.service.activateCadence(f.admin, next.reviewToken);
+    assert.equal(resumed.id, active.id); assert.equal(resumed.revision, 3);
+    assert.equal((await f.rows("deliveries")).length, 0);
+  });
+  await t.test("sequence approval requires a matching example, unchanged design, and active admin", async () => {
+    await f.reset(); const draft = { ...f.draft, scope: "sequence", eventId: "" };
+    await assert.rejects(f.service.previewCadence(f.admin, { ...draft, eventId: crypto.randomUUID() }), error => error.status === 400);
+    const first = await f.service.previewCadence(f.admin, draft);
+    f.state.template.html += "<!-- changed -->";
+    await assert.rejects(f.service.activateCadence(f.admin, first.reviewToken), error => error.status === 409);
+    await f.reset(); const second = await f.service.previewCadence(f.admin, draft);
+    await f.pg.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1", [f.admin]);
+    await assert.rejects(f.service.activateCadence(f.admin, second.reviewToken), error => error.status === 403);
+    await assert.rejects(f.service.pauseCadenceSequence(f.guide, crypto.randomUUID(), 1), error => error.status === 403);
+    assert.equal((await f.rows("sequences")).length, 0);
   });
   await t.test("overview exposes durable delivery outcomes and a changed call without mutating approval", async () => {
     await f.reset(); const reviewed = await f.service.previewCadence(f.admin, f.draft);

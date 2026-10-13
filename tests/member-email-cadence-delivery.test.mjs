@@ -43,7 +43,7 @@ async function fixture(options = {}) {
     dueAt: new Date(Date.now() - 60_000).toISOString(), expiresAt: new Date(Date.now() + 29 * 60_000).toISOString(),
     status: "pending", plan: {}, event: {}, stage: {}, ...options.row };
   const calls = { enqueue: 0, claims: 0, reads: 0, render: 0, freezes: 0, suppression: 0,
-    provider: [], errors: [], transactions: 0, reservations: 0 };
+    provider: [], errors: [], transactions: 0, reservations: 0, inheritance: 0 };
   let txActive = false;
   const repository = {
     CadenceDeliveryError,
@@ -120,6 +120,7 @@ async function fixture(options = {}) {
     "server-only": {}, "node:crypto": crypto, "./member-email-cadence-model": model,
     "./member-email-cadence-delivery": transport, "./member-email-cadence-provider": provider,
     "./member-email-cadence-renderer": renderer, "./member-email-cadence-repository": repository,
+    "./member-email-cadence-inheritance": { reconcileCadenceInheritance: async () => { calls.inheritance++; return { plans: 0, enrolled: 0 }; } },
   }, options.globals);
   return { ...worker, transport, calls, get row() { return row; }, update(patch) { Object.assign(row, patch); } };
 }
@@ -132,7 +133,7 @@ test("disabled, unconfigured, preview, and future activation paths do no databas
     const f = await fixture(options);
     const result = await f.processMemberEmailCadenceBatch();
     assert.ok(result.skipped);
-    assert.equal(f.calls.enqueue + f.calls.claims + f.calls.render + f.calls.suppression + f.calls.provider.length, 0);
+    assert.equal(f.calls.inheritance + f.calls.enqueue + f.calls.claims + f.calls.render + f.calls.suppression + f.calls.provider.length, 0);
   }
   for (const key of envKeys) {
     const saved = process.env[key]; delete process.env[key];
@@ -271,6 +272,7 @@ test("the default pass delivers beyond ten recipients and remains capped at one 
       },
       "./member-email-cadence-provider": { assertCadenceRecipientDeliverable: async () => { checked++; } },
       "./member-email-cadence-renderer": { renderCadenceEmail: () => assert.fail("Already frozen") },
+      "./member-email-cadence-inheritance": { reconcileCadenceInheritance: async () => ({ plans: 0, enrolled: 0 }) },
       "./member-email-cadence-repository": {
         CadenceDeliveryError, enqueueCadenceDeliveries: async () => rows.length,
         claimCadenceDelivery: async () => rows[claimed++] ?? null,

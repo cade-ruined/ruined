@@ -35,6 +35,7 @@ function fixture(patch = {}, { respond = async () => Response.json({ experience:
   };
   const dependencies = {
     react: hooks,
+    "@/components/platform/OperatorEventEmailCadenceFields": { __esModule: true, default: () => null },
     "@/components/platform/OperatorDateTimeField": { __esModule: true, default: DateTimeField },
   };
   function load(path) {
@@ -208,4 +209,14 @@ test("retrying unchanged details keeps the same request ID while editing starts 
   assert.notEqual(f.calls[2].body.requestId, f.calls[0].body.requestId);
   assert.equal(f.calls[2].body.title, "Updated event title");
   assert.deepEqual(f.created, []);
+});
+
+test("a quick event can explicitly opt into Membership emails without changing its event kind", async () => {
+  const f = fixture();
+  await f.submit({ ...values, emailCadenceKind: "membership" });
+  assert.equal(f.calls[0].body.kind, "member_event");
+  assert.deepEqual(f.calls[0].body.emailCadence, { kind: "membership", track: "members" });
+  const none = fixture();
+  await none.submit({ ...values, emailCadenceKind: "none" });
+  assert.deepEqual(none.calls[0].body.emailCadence, { kind: "none", track: "members" });
 });

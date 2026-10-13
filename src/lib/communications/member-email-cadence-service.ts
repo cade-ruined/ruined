@@ -4,11 +4,12 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { AdminEmailError } from "./admin-email-model";
 import { assertAdminEmailAccess, requireAdminEmailActor } from "./admin-email-repository";
 import { getResendEmailTemplate } from "./resend-email-service";
-import { cadenceOccurrences, isCadenceKind, isCadenceTrack } from "./member-email-cadence-model";
+import { CADENCE_KIND_LABELS, cadenceOccurrences, isCadenceKind, isCadenceTrack } from "./member-email-cadence-model";
 import { getMemberEmailCadenceDeliveryConfiguration, assertCadencePayload } from "./member-email-cadence-delivery";
 import { readCadenceEvent, sameCadenceEvent, readCadenceRecipients, cadenceCallReady } from "./member-email-cadence-repository";
 import { listCadenceTemplates, reviewCadenceProviderRecipients } from "./member-email-cadence-provider";
 import { cadencePreviewPlan, renderCadenceEmail, validateCadenceDesign } from "./member-email-cadence-renderer";
+import { matchingCadenceEvents } from "./member-email-cadence-inheritance";
 import type { CadenceDraft, CadenceEventSnapshot, CadencePlan, CadenceRecipient } from "./member-email-cadence-types";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -32,14 +33,16 @@ const INACTIVE=[
 function draftInput(value:unknown):CadenceDraft {
   if (!value || typeof value!=="object" || Array.isArray(value)) throw new AdminEmailError(400,"Choose a call and email design.");
   const draft=value as CadenceDraft;
-  id(draft.eventId); id(draft.templateId);
+  if (draft.scope!==undefined && draft.scope!=="event" && draft.scope!=="sequence") throw new AdminEmailError(400,"Choose a call or future sequence.");
+  if (draft.scope!=="sequence" || draft.eventId) id(draft.eventId);
+  id(draft.templateId);
   if (!isCadenceKind(draft.kind) || !isCadenceTrack(draft.track) || typeof draft.templateVersion!=="string"
     || !draft.templateVersion || typeof draft.bodyTarget!=="string"
     || (draft.headingTarget!==undefined && typeof draft.headingTarget!=="string")) throw new AdminEmailError(400,"Complete the call and design setup.");
-  return {eventId:draft.eventId,kind:draft.kind,track:draft.track,templateId:draft.templateId,templateVersion:draft.templateVersion,
+  return {scope:draft.scope ?? "event",eventId:draft.eventId || "",kind:draft.kind,track:draft.track,templateId:draft.templateId,templateVersion:draft.templateVersion,
     bodyTarget:draft.bodyTarget,headingTarget:draft.headingTarget || undefined,bindings:draft.bindings,copy:draft.copy};
 }
-function assertEventScope(plan:CadencePlan) {
+function assertEventScope(plan:CadencePlan,futureRequired=true) {
   const event=plan.event;
   if ((plan.kind.startsWith("foundations_") || plan.track==="founder_test")
     && (event.visibility!=="invite_only" || event.registration_mode!=="internal")) {
@@ -51,7 +54,7 @@ function assertEventScope(plan:CadencePlan) {
   if (plan.kind==="membership" && (event.visibility==="circle" || event.kind==="circle_meeting")) {
     throw new AdminEmailError(400,"Use the Circle call cadence for this meeting.");
   }
-  if (!cadenceOccurrences(event,plan.kind,plan.track).some(item=>Date.parse(item.dueAt)>Date.now())) {
+  if (futureRequired && !cadenceOccurrences(event,plan.kind,plan.track).some(item=>Date.parse(item.dueAt)>Date.now())) {
     throw new AdminEmailError(400,"This call has no future reminders left. Past send times are never replayed.");
   }
 }
@@ -61,8 +64,9 @@ export async function getCadenceOverview(actor:string) {
   const templates=await listCadenceTemplates(actor);
   const configuration=getMemberEmailCadenceDeliveryConfiguration();
   const base={templates,configuration,inactive:INACTIVE};
-  const [tables]=await sql`select to_regclass('private.member_email_cadence_plans') is not null as ready`;
-  if (!tables?.ready) return {...base,events:[],plans:[],setupRequired:true};
+  const [tables]=await sql`select to_regclass('private.member_email_cadence_plans') is not null
+    and to_regclass('private.member_email_cadence_sequences') is not null as ready`;
+  if (!tables?.ready) return {...base,events:[],plans:[],sequences:[],setupRequired:true};
   return sql.begin(async tx=>{
     await requireAdminEmailActor(tx,actor);
     const events=await tx`select id,title,starts_at as "startsAt",ends_at as "endsAt",timezone as "timeZone"
@@ -71,10 +75,12 @@ export async function getCadenceOverview(actor:string) {
         and visibility<>'public' and registration_mode<>'external' order by starts_at,id limit 250`;
     const rows=await tx<Array<{
       id:string;eventId:string;kind:string;track:string;active:boolean;revision:number;templateName:string;updatedAt:Date|string;
+      sequenceId:string|null;sequenceReady:boolean|null;
       approvedEvent:CadenceEventSnapshot;currentEvent:CadenceEventSnapshot;eventAvailable:boolean;
       delivery:{sent:number;pending:number;failed:number;manualReview:number;cancelled:number};
     }>>`select plan.id,plan.experience_id as "eventId",plan.snapshot->>'kind' as kind,plan.snapshot->>'track' as track,
       plan.active,plan.revision,plan.snapshot->'template'->>'name' as "templateName",plan.updated_at as "updatedAt",
+      plan.sequence_id as "sequenceId",(sequence.active and sequence.revision=plan.sequence_revision) as "sequenceReady",
       plan.snapshot->'event' as "approvedEvent",
       jsonb_build_object('id',event.id,'title',event.title,'startsAt',event.starts_at,'endsAt',event.ends_at,
         'timeZone',event.timezone,'version',event.version::text,'visibility',event.visibility,'circle_id',event.circle_id,
@@ -86,20 +92,34 @@ export async function getCadenceOverview(actor:string) {
         'manualReview',count(*) filter(where status='manual_review'),'cancelled',count(*) filter(where status='cancelled'))
         from private.member_email_cadence_deliveries where plan_id=plan.id) as delivery
       from private.member_email_cadence_plans plan join experiences event on event.id=plan.experience_id
+      left join private.member_email_cadence_sequences sequence on sequence.id=plan.sequence_id
       order by plan.updated_at desc limit 250`;
-    const plans=rows.map(({approvedEvent,currentEvent,eventAvailable,...plan})=>{
+    const plans=rows.map(({approvedEvent,currentEvent,eventAvailable,sequenceReady,...plan})=>{
       const current={...currentEvent,startsAt:new Date(currentEvent.startsAt).toISOString(),
         endsAt:currentEvent.endsAt ? new Date(currentEvent.endsAt).toISOString() : ""};
       const changed=plan.active && (!eventAvailable || !sameCadenceEvent(current,approvedEvent));
       const attention=changed ? "Call changed — review again before reminders can resume."
+        : plan.sequenceId && !sequenceReady ? "Sequence paused or awaiting its approved update. No reminders will send for this call."
         : plan.delivery.failed+plan.delivery.manualReview>0 ? "Delivery needs attention. Check the email history before taking further action." : "";
       return {...plan,attention};
     });
-    return {...base,events,plans,setupRequired:false};
+    const sequences=await tx`select id,kind,track,active,revision,snapshot->'template'->>'name' as "templateName",
+      updated_at as "updatedAt" from private.member_email_cadence_sequences order by kind,track`;
+    return {...base,events,plans,sequences,setupRequired:false};
   });
 }
 
-type ReviewSnapshot={plan:CadencePlan;localAudienceHash:string;planRevision:number|null};
+type ReviewSnapshot={plan:CadencePlan;localAudienceHash:string;planRevision:number|null;scope?:"event"|"sequence";sequenceRevision?:number|null};
+
+function exampleCadenceEvent(draft:CadenceDraft):CadenceEventSnapshot {
+  const start=new Date(Date.now()+45*86_400_000);start.setUTCHours(22,0,0,0);
+  const privateCall=draft.kind.startsWith("foundations_") || draft.track==="founder_test";
+  return {id:"00000000-0000-4000-8000-000000000001",title:CADENCE_KIND_LABELS[draft.kind],
+    startsAt:start.toISOString(),endsAt:new Date(start.getTime()+90*60_000).toISOString(),timeZone:"America/Denver",version:"1",
+    visibility:privateCall ? "invite_only" : draft.kind==="circle" ? "circle" : "all_members",
+    circle_id:draft.kind==="circle" ? "00000000-0000-4000-8000-000000000002" : null,block_id:null,progression_level_slug:null,
+    registration_mode:privateCall ? "internal" : "none",kind:draft.kind==="circle" ? "circle_meeting" : "weekly_call"};
+}
 export async function previewCadence(actor:string,value:unknown) {
   await assertAdminEmailAccess(actor);
   const draft=draftInput(value);
@@ -109,16 +129,24 @@ export async function previewCadence(actor:string,value:unknown) {
   const sql=getApplicationDatabase();
   const source=await sql.begin(async tx=>{
     await requireAdminEmailActor(tx,actor);
-    const event=await readCadenceEvent(tx,draft.eventId);
+    const sequence=draft.scope==="sequence";
+    const matchingEvents=sequence ? await matchingCadenceEvents(tx,draft.kind,draft.track) : [];
+    if (sequence && draft.eventId && !matchingEvents.some(event=>event.id===draft.eventId)) {
+      throw new AdminEmailError(400,"That example call is not classified for this sequence. Set its email sequence in Calendar, or use the sample preview.");
+    }
+    const event=sequence && !draft.eventId ? exampleCadenceEvent(draft) : await readCadenceEvent(tx,draft.eventId);
     if (!event) throw new AdminEmailError(400,"Choose a published future call with a complete start and end time.");
-    if (!await cadenceCallReady(tx,event.id)) throw new AdminEmailError(400,"This call needs its working calendar and Meet link before reminders can be prepared.");
+    if (!sequence && !await cadenceCallReady(tx,event.id)) throw new AdminEmailError(400,"This call needs its working calendar and Meet link before reminders can be prepared.");
     const [existing]=await tx<Array<{revision:number}>>`select revision from private.member_email_cadence_plans where experience_id=${event.id}::uuid`;
+    const [existingSequence]=sequence ? await tx<Array<{revision:number}>>`select revision from private.member_email_cadence_sequences
+      where kind=${draft.kind} and track=${draft.track}` : [];
     const plan=cadencePreviewPlan(draft,template,event);
-    assertEventScope(plan);
-    return {plan,planRevision:existing?.revision ?? null,recipients:await readCadenceRecipients(tx,event,draft.track)};
+    assertEventScope(plan,!sequence);
+    return {plan,planRevision:existing?.revision ?? null,sequenceRevision:existingSequence?.revision ?? null,matchingEvents,
+      recipients:sequence && !draft.eventId ? [] : await readCadenceRecipients(tx,event,draft.track)};
   });
   const recipients=await reviewCadenceProviderRecipients(source.recipients);
-  const occurrences=cadenceOccurrences(source.plan.event,draft.kind,draft.track).filter(item=>Date.parse(item.dueAt)>Date.now());
+  const occurrences=cadenceOccurrences(source.plan.event,draft.kind,draft.track).filter(item=>draft.scope==="sequence" || Date.parse(item.dueAt)>Date.now());
   const previews=occurrences.map(occurrence=>{
     const rendered=renderCadenceEmail({plan:source.plan,event:source.plan.event,stage:occurrence.stage,
       email:"preview@example.com",memberName:"Member"});
@@ -130,7 +158,8 @@ export async function previewCadence(actor:string,value:unknown) {
     return {stage:occurrence.stage,html:rendered.html,subject:rendered.subject,text:rendered.text};
   });
   if (!previews.length) throw new AdminEmailError(409,"The remaining send time has passed. Choose a later call.");
-  const snapshot:ReviewSnapshot={plan:source.plan,localAudienceHash:audienceHash(source.recipients),planRevision:source.planRevision};
+  const snapshot:ReviewSnapshot={scope:draft.scope,plan:source.plan,localAudienceHash:audienceHash(source.recipients),
+    planRevision:source.planRevision,sequenceRevision:source.sequenceRevision};
   const [review]=await sql.begin(async tx=>{
     await requireAdminEmailActor(tx,actor,true);
     // Reviews are private, short-lived approvals; pruning them never changes a plan or a delivery.
@@ -139,8 +168,11 @@ export async function previewCadence(actor:string,value:unknown) {
       (actor_auth_user_id,snapshot,audience_hash) values(${actor}::uuid,${tx.json(snapshot)}::jsonb,${audienceHash(recipients)})
       returning id,expires_at as "expiresAt"`;
   });
-  return {reviewToken:review.id,expiresAt:new Date(review.expiresAt).toISOString(),preview:previews[0],previews,occurrences,recipients,
-    warnings:["Foundations uses confirmed invitations. Open Membership and Circle calls use their current qualified audience. New members qualify only for future send times.",
+  return {scope:draft.scope,matchingEvents:source.matchingEvents,reviewToken:review.id,expiresAt:new Date(review.expiresAt).toISOString(),preview:previews[0],previews,occurrences,recipients,
+    warnings:[...(draft.scope==="sequence" ? ["Approval applies this design to current and future matching published calls. Example recipients are a snapshot; each call uses its own qualified audience.",
+      "Paid Foundations members join only calls matching their accepted cohort and session time. Existing cancellations, waitlists, individual plans, and paused calls are preserved.",
+      "Example dates show the sequence timing. Past stages are never sent, and calls need a working Meet link before reminders can run."] : []),
+      "Foundations uses confirmed invitations. Open Membership and Circle calls use their current qualified audience. New members qualify only for future send times.",
       "Call details or audience scope changes pause delivery until you review the call again.",
       ...(!getMemberEmailCadenceDeliveryConfiguration().ready ? ["Global delivery is paused or not configured. Activating a plan alone will not send emails."] : []),
       ...(recipients.some(item=>!item.eligible) ? ["Excluded people will not receive these reminders unless they qualify before a future send time."] : [])]};
@@ -156,6 +188,7 @@ export async function activateCadence(actor:string,reviewToken:unknown) {
   const {plan,planRevision,localAudienceHash}=review.snapshot;
   const template=await getResendEmailTemplate(actor,plan.templateId);
   if (hash(template)!==hash(plan.template)) throw new AdminEmailError(409,"The Resend design changed. Review it again before activation.");
+  if (review.snapshot.scope==="sequence") return activateSequenceReview(actor,reviewId,review.snapshot);
   const recipients=await sql.begin(async tx=>{
     const event=await readCadenceEvent(tx,plan.eventId);
     if (!sameCadenceEvent(event,plan.event)) throw new AdminEmailError(409,"Call details changed. Review again.");
@@ -180,7 +213,8 @@ export async function activateCadence(actor:string,reviewToken:unknown) {
       where experience_id=${plan.eventId}::uuid for update`;
     if ((old?.revision ?? null)!==planRevision) throw new AdminEmailError(409,"Another admin changed this plan. Review it again.");
     const rows=old ? await tx`update private.member_email_cadence_plans set snapshot=${tx.json(plan)}::jsonb,
-      revision=revision+1,active=true,activated_at=clock_timestamp(),approved_by=${actor}::uuid,updated_at=clock_timestamp()
+      revision=revision+1,active=true,activated_at=clock_timestamp(),approved_by=${actor}::uuid,updated_at=clock_timestamp(),
+      sequence_id=null,sequence_revision=null
       where id=${old.id}::uuid returning id,revision`
       : await tx`insert into private.member_email_cadence_plans(experience_id,active,snapshot,approved_by)
         values(${plan.eventId}::uuid,true,${tx.json(plan)}::jsonb,${actor}::uuid) returning id,revision`;
@@ -189,6 +223,45 @@ export async function activateCadence(actor:string,reviewToken:unknown) {
       values(${actor}::uuid,'member_email_cadence.activated','experience',${plan.eventId},
         ${tx.json({planId:rows[0].id,revision:rows[0].revision,reviewId,kind:plan.kind,track:plan.track,eligible:checked.filter(item=>item.eligible).length})}::jsonb)`;
     return {id:rows[0].id,revision:rows[0].revision,active:true};
+  });
+}
+
+async function activateSequenceReview(actor:string,reviewId:string,snapshot:ReviewSnapshot) {
+  const {plan,sequenceRevision}=snapshot;
+  return getApplicationDatabase().begin(async tx=>{
+    await tx`set local lock_timeout='3s'`;
+    await requireAdminEmailActor(tx,actor,true);
+    await tx`select pg_advisory_xact_lock(hashtext(${`member-email-sequence:${plan.kind}:${plan.track}`}))`;
+    const [review]=await tx`select id from private.member_email_cadence_reviews where id=${reviewId}::uuid
+      and actor_auth_user_id=${actor}::uuid and consumed_at is null and expires_at>clock_timestamp() for update`;
+    if (!review) throw new AdminEmailError(409,"This review expired or was already used. Review the sequence again.");
+    const [old]=await tx<Array<{id:string;revision:number}>>`select id,revision from private.member_email_cadence_sequences
+      where kind=${plan.kind} and track=${plan.track} for update`;
+    if ((old?.revision ?? null)!==sequenceRevision) throw new AdminEmailError(409,"Another admin changed this sequence. Review it again.");
+    const [sequence]=old ? await tx`update private.member_email_cadence_sequences set active=true,revision=revision+1,
+      activated_at=clock_timestamp(),snapshot=${tx.json(plan)}::jsonb,approved_by=${actor}::uuid,updated_at=clock_timestamp()
+      where id=${old.id}::uuid returning id,revision`
+      : await tx`insert into private.member_email_cadence_sequences(kind,track,active,snapshot,approved_by)
+        values(${plan.kind},${plan.track},true,${tx.json(plan)}::jsonb,${actor}::uuid) returning id,revision`;
+    await tx`update private.member_email_cadence_reviews set consumed_at=clock_timestamp() where id=${reviewId}::uuid`;
+    await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,metadata)
+      values(${actor}::uuid,'member_email_sequence.activated','member_email_sequence',${sequence.id},
+        ${tx.json({revision:sequence.revision,reviewId,kind:plan.kind,track:plan.track})}::jsonb)`;
+    return {id:sequence.id,revision:sequence.revision,active:true,scope:"sequence" as const};
+  });
+}
+
+export async function pauseCadenceSequence(actor:string,sequenceId:unknown,revision:unknown) {
+  id(sequenceId);
+  if (!Number.isSafeInteger(revision) || Number(revision)<1) throw new AdminEmailError(400,"Reload the sequence before pausing it.");
+  return getApplicationDatabase().begin(async tx=>{
+    await requireAdminEmailActor(tx,actor,true);
+    const [sequence]=await tx`update private.member_email_cadence_sequences set active=false,revision=revision+1,updated_at=clock_timestamp()
+      where id=${sequenceId as string}::uuid and revision=${Number(revision)} returning id,revision`;
+    if (!sequence) throw new AdminEmailError(409,"This sequence changed. Reload before pausing.");
+    await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,metadata)
+      values(${actor}::uuid,'member_email_sequence.paused','member_email_sequence',${sequence.id},${tx.json({revision:sequence.revision})}::jsonb)`;
+    return {id:sequence.id,revision:sequence.revision,active:false,scope:"sequence" as const};
   });
 }
 

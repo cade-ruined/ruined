@@ -6,15 +6,16 @@ import { assertCadencePayload, assertCadenceReplayWindow, getMemberEmailCadenceD
   sendCadencePayload } from "./member-email-cadence-delivery";
 import { assertCadenceRecipientDeliverable } from "./member-email-cadence-provider";
 import { renderCadenceEmail } from "./member-email-cadence-renderer";
+import { reconcileCadenceInheritance } from "./member-email-cadence-inheritance";
 import { CadenceDeliveryError, claimCadenceDelivery, completeCadenceDelivery, enqueueCadenceDeliveries,
   failCadenceDelivery, freezeCadenceDelivery, withCadenceDelivery } from "./member-email-cadence-repository";
 
 const BATCH_BUDGET_MS = 165_000;
 
-/** Enqueues only current, approved occurrences. This worker cannot enroll members or change their consent. */
+/** Reconciles approved call sequences and cohort invitations; never changes reminder consent. */
 export async function processMemberEmailCadenceBatch(requestedLimit = 100) {
   const configuration = getMemberEmailCadenceConfiguration();
-  const result = { ...getMemberEmailCadenceDeliveryConfiguration(), queued: 0, claimed: 0, sent: 0,
+  const result = { ...getMemberEmailCadenceDeliveryConfiguration(), inherited: 0, enrolled: 0, queued: 0, claimed: 0, sent: 0,
     failed: 0, cancelled: 0, deferred: 0, manualReview: 0, skipped: null as null | "disabled" | "unconfigured" | "not_activated" };
   if (!configuration.enabled) return { ...result, skipped: "disabled" as const };
   if (!result.ready) return { ...result, skipped: "unconfigured" as const };
@@ -24,6 +25,9 @@ export async function processMemberEmailCadenceBatch(requestedLimit = 100) {
   const lease = randomUUID();
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, Math.trunc(requestedLimit))) : 100;
   try {
+    const inherited=await reconcileCadenceInheritance(configuration,deadline);
+    result.inherited=inherited.plans;result.enrolled=inherited.enrolled;
+    if (Date.now() >= deadline) return result;
     result.queued = await enqueueCadenceDeliveries(configuration);
     if (Date.now() >= deadline) return result;
     for (let index = 0; index < limit && Date.now() < deadline; index++) {

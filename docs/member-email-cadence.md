@@ -2,11 +2,15 @@
 
 This release covers event-linked email reminders from the October 2026 founder test and November/future member cadence. It does not turn the entire communications document into a send list. Existing registration welcome delivery and SMS automation remain separate and unchanged.
 
-## Explicit event classification
+## Reusable sequences and event classification
 
-An operator selects a track (`founder_test` or `members`) and kind (`foundations_01` through `foundations_04`, `membership`, or `circle`) for a real scheduled event. Never infer a Foundations stage, Circle, or audience from an event title. The event supplies its current title, start/end time, timezone, and authorized calendar access.
+An administrator approves a published Resend design once for a track (`founder_test` or `members`) and kind (`foundations_01` through `foundations_04`, `membership`, or `circle`). The approval includes every reminder stage, the design's fixed text and variable bindings, and its application to current and future matching calls. A sequence may be approved before any matching calls or recipients exist. Example recipients are informational, not a frozen list to copy into another cohort.
 
-Each approved plan belongs to one saved event. The October test and November/future timing rules do not create calls, enroll a cohort, or generate an infinite recurring schedule. An operator must create and approve the actual upcoming events and their audience rules; later cohorts need their own event plans. Listed dates are timing examples until the corresponding event, audience, and plan have been verified.
+Published future calls inherit their matching approved sequence during reconciliation. Explicit email-sequence classification on the event takes precedence, including an explicit “none.” An ordinary `weekly_call` for a member audience can inherit Membership reminders; a `circle_meeting` for a Circle can inherit Circle reminders. Generic `member_event` records are not assumed to be Membership calls. Foundations calls require an explicit stage and track; member-cohort calls also require the cohort month. Titles never determine classification.
+
+Actual calls still need to be scheduled with their working Meet link. Creating a new cohort's classified calls is enough for the approved sequences to apply: separate email approval for every call is no longer required. The system does not create an infinite calendar or alter accepted member schedules.
+
+An individual call's approval overrides inheritance. Paused calls stay paused. Pausing a sequence stops all of its inherited deliveries, including queued work. Updating or resuming an approved sequence refreshes unchanged, active inherited plans for future stages only. A call whose saved details or audience change requires an individual review; reconciliation never silently accepts those changes.
 
 | Event / track | Email stages |
 | --- | --- |
@@ -29,12 +33,15 @@ Recipient selection follows the saved event and approved cadence classification:
 
 | Call type | Candidate audience |
 | --- | --- |
-| Foundations, or any founder-test track | Explicit confirmed call registrations. Founder-test registrations must additionally have `source='ops'`; there is no inferred founder list. |
+| Foundations / members | Confirmed private call invitations, including create-only cohort enrollment from authoritative paid reservations whose accepted cohort month and session time match the explicitly classified call. |
+| Any founder-test track | Explicit confirmed call registrations with `source='ops'`; there is no inferred founder list or automatic founder enrollment. |
 | Membership with `registration_mode='none'` | Canonical currently eligible members with access to that event. A reservation is not required. |
 | Circle with `registration_mode='none'` | Canonical currently eligible members assigned to that specific Circle and authorized for the event. Historical assignments do not qualify. |
 | Other supported calls with internal registration | Explicit confirmed call registrations and current event access. |
 
 An explicit call-registration cancellation suppresses reminders even when the event otherwise requires no reservation. Every candidate still needs a verified current email, a current recorded opt-in for membership email reminders, and current account/membership/event eligibility. Application and provider delivery suppression and unsubscribe checks still apply. Registration or membership alone, marketing lists, and old Circle assignments do not establish permission to send.
+
+Cohort reconciliation uses the canonical paid-reservation evidence and the member's immutable accepted `billing_schedule`, including its version and exact `callStartsAt` entry. It does not reconstruct accepted terms from the latest calendar. It requires current invitation eligibility and an active administrator behind the approved sequence. Enrollment only creates missing registrations; any existing cancellation, waitlist, or other registration state is preserved. Late payments are picked up on a later pass, with no replay of earlier reminders. Complimentary members and founder tests retain their explicitly managed rosters.
 
 Recheck cancellation, schedule, enrollment, preference, and destination changes immediately before sending. Each member/event/schedule/stage must have a durable deduplication identity. Expired, superseded, or no-longer-qualified work is skipped; delivery retries must not replay an uncertain successful send.
 
@@ -60,8 +67,8 @@ Source audit also found “Tomorrow” on a day-of Membership draft and conflict
 
 ## Rollout verification
 
-1. Confirm the real future event schedule, explicit kinds/tracks, and the applicable audience source: confirmed Foundations/founder-test rosters, or canonical event/Circle eligibility for Membership/Circle calls with no reservation. Verify founder-test registrations were explicitly created by an administrator.
-2. Preview each stage's recipients, rendered content, local time and expiry without sending. Confirm no historical occurrence or opted-out member appears.
+1. Confirm the real future event schedule, explicit kinds/tracks/cohort months, and the applicable audience source: accepted paid cohort schedules or confirmed private invitations for Foundations, explicit founder-test rosters, or canonical event/Circle eligibility for Membership/Circle calls. Check the event's email-sequence classification rather than its title.
+2. Approve each reusable sequence's complete stage previews and Resend design. Inspect matching calls and any example recipients. Confirm no historical occurrence or opted-out member is eligible for delivery. Use individual plans only for exceptions.
 3. Verify enabled/activation/provider gates and existing welcome/SMS separation; then enable only the approved future rules.
 4. Inspect queued, skipped, sent, failed and uncertain outcomes. Recheck event changes and opt-outs before broadening the rollout.
 

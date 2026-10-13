@@ -1,3 +1,7 @@
+import type { CadenceKind, CadenceTrack } from "@/lib/communications/member-email-cadence-model";
+
+export type OpsExperienceEmailCadence = { kind: CadenceKind | "none"; track: CadenceTrack; cohortMonth?: string };
+
 export type OpsExperienceLifecycleState =
   | "archived"
   | "cancelled"
@@ -76,6 +80,7 @@ export type OpsExperienceCalendarState = {
 };
 
 export type OpsExperienceRecord = OpsExperienceDirectoryItem & {
+  emailCadence?: OpsExperienceEmailCadence | null;
   archivedAt: string | null;
   blockId: string | null;
   canEdit: boolean;
@@ -104,6 +109,7 @@ export type OpsExperienceRecord = OpsExperienceDirectoryItem & {
 };
 
 export type OpsExperienceDraftInput = {
+  emailCadence?: OpsExperienceEmailCadence;
   blockId: string | null;
   capacity: number | null;
   circleId: string | null;

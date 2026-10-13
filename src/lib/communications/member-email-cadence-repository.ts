@@ -146,15 +146,37 @@ export async function readCadenceRecipients(tx: TransactionSql, event: CadenceEv
   return recipients;
 }
 
-function planFromRow(row: { id: string; revision: number; active: boolean; activatedAt: Date | string; snapshot: CadencePlan }): CadencePlan {
+type PlanRow = { id: string; revision: number; active: boolean; activatedAt: Date | string; snapshot: CadencePlan;
+  sequenceId: string | null; sequenceRevision: number | null };
+function planFromRow(row: PlanRow): CadencePlan {
   return { ...row.snapshot, id: row.id, revision: row.revision, active: row.active, activatedAt: iso(row.activatedAt) };
+}
+
+/** A paused/replaced rule or changed classification cannot authorize an inherited send. */
+async function inheritanceIsCurrent(tx: TransactionSql,row: PlanRow): Promise<boolean> {
+  if (!row.sequenceId) return true;
+  const sequences=await tx`select sequence.id from private.member_email_cadence_sequences sequence
+    join platform_users actor on actor.auth_user_id=sequence.approved_by and actor.status='active'
+    join platform_role_grants grant_row on grant_row.auth_user_id=actor.auth_user_id and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
+    where sequence.id=${row.sequenceId}::uuid and sequence.active and sequence.revision=${row.sequenceRevision}
+      and sequence.kind=${row.snapshot.kind} and sequence.track=${row.snapshot.track}
+    for share of sequence,actor,grant_row`;
+  if (!sequences.length) return false;
+  const expected=(row.snapshot as CadencePlan & {inheritanceBinding?:{kind:string;track:string;cohortMonth?:string}}).inheritanceBinding;
+  if (!expected) return false;
+  const [binding]=await tx<Array<{kind:string;track:string;cohortMonth:string|null}>>`select kind,track,cohort_month as "cohortMonth"
+    from private.member_email_cadence_event_bindings where experience_id=${row.snapshot.eventId}::uuid for share`;
+  if (binding) return binding.kind===expected.kind && binding.track===expected.track && (binding.cohortMonth ?? null)===(expected.cohortMonth ?? null);
+  const event=row.snapshot.event;
+  return expected.track==='members' && !expected.cohortMonth && ((expected.kind==='membership' && event.kind==='weekly_call'
+    && ['all_members','block','progression'].includes(event.visibility)) || (expected.kind==='circle' && event.kind==='circle_meeting' && event.visibility==='circle'));
 }
 
 export async function enqueueCadenceDeliveries(configuration: CadenceConfiguration): Promise<number> {
   if (!configuration.enabled || !configuration.ready || !configuration.activatedAt) return 0;
   const sql = getApplicationDatabase();
-  const plans = await sql<Array<{ id: string; revision: number; active: boolean; activatedAt: Date | string; snapshot: CadencePlan }>>`
-    select id,revision,active,activated_at as "activatedAt",snapshot from private.member_email_cadence_plans
+  const plans = await sql<PlanRow[]>`
+    select id,revision,active,activated_at as "activatedAt",snapshot,sequence_id as "sequenceId",sequence_revision as "sequenceRevision" from private.member_email_cadence_plans
     where active and (snapshot->'event'->>'startsAt')::timestamptz>statement_timestamp() order by id`;
   let queued = 0;
   for (const row of plans) {
@@ -168,7 +190,7 @@ export async function enqueueCadenceDeliveries(configuration: CadenceConfigurati
       await tx`set local statement_timeout='10s'`;
       const [current] = await tx`select id from private.member_email_cadence_plans where id=${plan.id}::uuid
         and active and revision=${plan.revision} for share`;
-      if (!current || !sameCadenceEvent(await readCadenceEvent(tx,plan.eventId,true),plan.event)
+      if (!current || !await inheritanceIsCurrent(tx,row) || !sameCadenceEvent(await readCadenceEvent(tx,plan.eventId,true),plan.event)
         || !await cadenceCallReady(tx,plan.eventId,true)) return 0;
       const recipients = await readCadenceRecipients(tx,plan.event,plan.track);
       let count = 0;
@@ -214,8 +236,8 @@ export async function withCadenceDelivery<T>(claim: CadenceDeliveryClaim, lease:
   return getApplicationDatabase().begin(async tx => {
     await tx`set local lock_timeout='3s'`;
     await tx`set local statement_timeout='10s'`;
-    const [row] = await tx<Array<{ id: string; revision: number; active: boolean; activatedAt: Date | string; snapshot: CadencePlan }>>`
-      select plan.id,plan.revision,plan.active,plan.activated_at as "activatedAt",plan.snapshot
+    const [row] = await tx<PlanRow[]>`
+      select plan.id,plan.revision,plan.active,plan.activated_at as "activatedAt",plan.snapshot,plan.sequence_id as "sequenceId",plan.sequence_revision as "sequenceRevision"
       from private.member_email_cadence_plans plan join private.member_email_cadence_deliveries delivery on delivery.plan_id=plan.id
       where delivery.id=${claim.id}::uuid for share of plan`;
     const [job] = await tx<Array<{ planRevision: number; stage: CadenceDelivery["stage"]; expectedEmail: string; consentId: string;
@@ -228,7 +250,7 @@ export async function withCadenceDelivery<T>(claim: CadenceDeliveryClaim, lease:
     const plan = row ? planFromRow(row) : null;
     const event = plan ? await readCadenceEvent(tx,plan.eventId,true) : null;
     const configuration = getMemberEmailCadenceConfiguration();
-    let valid = Boolean(plan && plan.active && plan.revision===job.planRevision && configuration.enabled && configuration.ready
+    let valid = Boolean(plan && plan.active && plan.revision===job.planRevision && row && await inheritanceIsCurrent(tx,row) && configuration.enabled && configuration.ready
       && sameCadenceEvent(event,plan.event) && iso(job.startsAt)===plan.event.startsAt
       && cadenceOccurrenceIsDue({stage:job.stage,dueAt:iso(job.dueAt),expiresAt:iso(job.expiresAt)},
         {now:new Date(),configuration,enrolledAt:plan.activatedAt}));

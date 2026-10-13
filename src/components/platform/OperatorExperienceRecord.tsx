@@ -6,6 +6,7 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "re
 
 import OperatorExperienceCalendar from "@/components/platform/OperatorExperienceCalendar";
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
+import OperatorEventEmailCadenceFields from "@/components/platform/OperatorEventEmailCadenceFields";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
@@ -316,6 +317,10 @@ export default function OperatorExperienceRecord({
           ? String(data.get("externalRegistrationUrl") ?? "") || null
           : null,
         kind: String(data.get("kind") ?? experience.kind),
+        ...(data.get("emailCadenceKind") ? { emailCadence: {
+          kind: String(data.get("emailCadenceKind")), track: String(data.get("emailCadenceTrack") ?? "members"),
+          ...(data.get("emailCadenceCohortMonth") ? { cohortMonth: String(data.get("emailCadenceCohortMonth")) } : {}),
+        } } : {}),
         locationLabel: String(data.get("locationLabel") ?? ""),
         registrationClosesAt: zonedDateTimeLocalToIso(String(data.get("registrationClosesAt") ?? ""), timezone),
         registrationMode,
@@ -623,6 +628,7 @@ export default function OperatorExperienceRecord({
                 <input className={OPERATOR_FIELD_CLASS} defaultValue={experience.externalRegistrationUrl ?? ""} name="externalRegistrationUrl" placeholder="https://" required type="url" />
               </FormField>
             ) : null}
+            {experience.canManageGlobal ? <OperatorEventEmailCadenceFields current={experience.emailCadence} /> : null}
             <FormField className="sm:col-span-2" label="Short summary">
               <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} defaultValue={experience.summary ?? ""} maxLength={2000} name="summary" />
             </FormField>
