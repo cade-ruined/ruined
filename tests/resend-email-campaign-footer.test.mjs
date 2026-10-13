@@ -68,3 +68,13 @@ test("full documents and source fragments get a valid table outside inline text 
     assert.ok(hasCampaignUnsubscribe(output.html));
   }
 });
+
+test("zero-whitespace email layouts can restore readable text inside their cells", () => {
+  const existing = `<body style="font-size:0;line-height:0"><table><tr><td style="font-size:14px;line-height:20px"><a href="${marker}">Unsubscribe</a></td></tr></table></body>`;
+  assert.ok(hasCampaignUnsubscribe(existing));
+  assert.equal(withCampaignUnsubscribe(existing, "Note").html, existing);
+  const missing = '<body style="font-size:0;line-height:0"><p style="font-size:14px">A note.</p></body>';
+  const fixed = withCampaignUnsubscribe(missing, "Note");
+  assert.ok(hasCampaignUnsubscribe(fixed.html));
+  assert.deepEqual(withCampaignUnsubscribe(fixed.html, fixed.text), fixed);
+});

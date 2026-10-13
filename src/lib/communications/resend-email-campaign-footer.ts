@@ -12,7 +12,7 @@ function hidden(node: Element): boolean {
   const style = attr(node, "style") ?? "";
   const end = "(?:\\s*!important)?\\s*(?:;|$)";
   if (new RegExp("(?:^|;)\\s*(?:display\\s*:\\s*none|visibility\\s*:\\s*(?:hidden|collapse)|mso-hide\\s*:\\s*all)" + end, "i").test(style)) return true;
-  if (new RegExp("(?:^|;)\\s*(?:opacity|font-size|line-height)\\s*:\\s*(?:0(?:\\.0+)?|\\.0+)(?:px|em|rem|pt|%)?" + end, "i").test(style)) return true;
+  if (new RegExp("(?:^|;)\\s*opacity\\s*:\\s*(?:0(?:\\.0+)?|\\.0+)%?" + end, "i").test(style)) return true;
   return new RegExp("(?:^|;)\\s*(?:max-)?height\\s*:\\s*0(?:px|em|rem|pt|%)?" + end, "i").test(style)
     && new RegExp("(?:^|;)\\s*overflow(?:-y)?\\s*:\\s*(?:hidden|clip)" + end, "i").test(style);
 }
@@ -29,9 +29,21 @@ function visibleElements(html: string) {
   visit(document);
   return elements;
 }
+function zeroFont(node: Node): boolean {
+  let current: Node | null | undefined = node;
+  while (current) {
+    if ("tagName" in current) {
+      const declarations = [...(attr(current, "style") ?? "").matchAll(/(?:^|;)\s*font-size\s*:\s*([^;]+)/gi)];
+      const value = declarations.at(-1)?.[1].replace(/\s*!important\s*$/i, "").trim();
+      if (value && !/^(?:inherit|unset)$/i.test(value)) return /^(?:0(?:\.0+)?|\.0+)(?:px|em|rem|pt|%)?$/i.test(value);
+    }
+    current = "parentNode" in current ? current.parentNode : undefined;
+  }
+  return false;
+}
 function hasLabel(node: Node, visible: Set<Element>): boolean {
   if ("tagName" in node && !visible.has(node)) return false;
-  if (node.nodeName === "#text" && "value" in node && node.value.trim()) return true;
+  if (node.nodeName === "#text" && "value" in node && node.value.trim() && !zeroFont(node)) return true;
   if ("tagName" in node && node.tagName === "img" && attr(node, "alt")?.trim()) return true;
   return "childNodes" in node && node.childNodes.some(child => hasLabel(child, visible));
 }
