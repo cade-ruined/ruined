@@ -43,7 +43,7 @@ function bodyHtml(html: string,body: string,links: string[]): string {
       const alternatives=links.map(link=>link.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).sort((a,b)=>b.length-a.length);
       const split=new RegExp(`(${alternatives.join("|")})`,"g");
       const rendered=body.split(split).map(part=>links.includes(part)
-        ? `<a href="${escape(part)}">${escape(part)}</a>` : escape(part).replaceAll("\n","<br>")).join("");
+        ? `<a href="${escape(part)}" style="color:#ffca2c;overflow-wrap:anywhere;word-break:break-word;text-decoration:underline">${escape(part)}</a>` : escape(part).replaceAll("\n","<br>")).join("");
       replacements.push({start:location.startOffset,end:location.endOffset,value:source.replaceAll(BODY_MARKER,rendered)});
     }
     if ("childNodes" in node) node.childNodes.forEach(child=>visit(child,hidden));
