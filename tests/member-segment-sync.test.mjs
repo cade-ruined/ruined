@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyMemberSegment, getMemberSegmentConfiguration, listAllSegmentContacts,
-  MEMBER_SEGMENT_NAMES, reconcileMemberSegments, readMemberSegmentSource,
+  MEMBER_SEGMENT_NAMES, UNIFIED_MEMBER_SEGMENT_NAMES, reconcileMemberSegments, readMemberSegmentSource,
 } from "../src/lib/communications/member-segment-sync.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile } from "node:fs/promises";
@@ -13,14 +13,16 @@ const member = (email, overrides = {}) => ({ email, name: "Cherry Hill", account
   profile_open: false, registration_ready: true, real_registration: true, real_existing_access: false,
   delivery_eligible: true, ...overrides });
 
-function fixture(initial = []) {
+function fixture(initial = [], names = MEMBER_SEGMENT_NAMES) {
   let sequence = 0;
   const calls = [];
+  const reads = [];
   const contacts = new Map(initial.map(item => [item.id, { first_name: "Cherry", last_name: "Hill",
     unsubscribed: false, topics: { general: "opt_in" }, segments: new Set(), ...item }]));
   const provider = {
-    async getSegment(id) { return { id, name: MEMBER_SEGMENT_NAMES[id] }; },
+    async getSegment(id) { reads.push(["segment",id]); return { id, name: names[id] }; },
     async listContacts(segmentId, after) {
+      reads.push(["contacts",segmentId,after]);
       const data = [...contacts.values()].filter(contact => contact.segments.has(segmentId));
       const start = after ? data.findIndex(contact => contact.id === after) + 1 : 0;
       return { data: data.slice(start, start + 2), has_more: start + 2 < data.length };
@@ -42,7 +44,7 @@ function fixture(initial = []) {
     async addToSegment(id, segment) { calls.push(["add", id, segment]); contacts.get(id).segments.add(segment); },
     async removeFromSegment(id, segment) { calls.push(["remove", id, segment]); contacts.get(id).segments.delete(segment); },
   };
-  return { provider, contacts, calls };
+  return { provider, contacts, calls, reads };
 }
 
 test("lifecycle eligibility separates registration, active access and test records", () => {
@@ -155,6 +157,80 @@ test("configuration defaults off and rejects reused segment IDs", () => {
   assert.equal(getMemberSegmentConfiguration(env).ready, false);
   env.RESEND_MEMBER_PROFILES_OPEN_SEGMENT_ID = "00000000-0000-4000-8000-000000000002";
   assert.equal(getMemberSegmentConfiguration(env).ready, true);
+});
+
+test("explicit unified configuration takes priority and partial or blank changes fail closed", () => {
+  const first="00000000-0000-4000-8000-000000000001",second="00000000-0000-4000-8000-000000000002";
+  const legacy={RESEND_API_KEY:"test",DATABASE_URL:"test",RESEND_MEMBER_WAITING_SEGMENT_ID:first,RESEND_MEMBER_PROFILES_OPEN_SEGMENT_ID:second};
+  assert.equal(getMemberSegmentConfiguration(legacy).layout,"legacy");
+  for(const change of [{RESEND_MEMBERS_SEGMENT_ID:first},{RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID:second},
+    {RESEND_MEMBERS_SEGMENT_ID:""},{RESEND_MEMBERS_SEGMENT_ID:first,RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID:first}]) {
+    const config=getMemberSegmentConfiguration({...legacy,...change});
+    assert.equal(config.layout,"unified");assert.equal(config.ready,false);
+  }
+  const config=getMemberSegmentConfiguration({...legacy,RESEND_MEMBER_SEGMENT_SYNC_ENABLED:"true",RESEND_MEMBERS_SEGMENT_ID:second,RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID:first});
+  assert.equal(config.layout,"unified");assert.equal(config.ready,true);assert.equal(config.enabled,true);
+  assert.deepEqual(config.segments,{members:second,accessRequests:first});
+  assert.equal(getMemberSegmentConfiguration({RESEND_API_KEY:"test",DATABASE_URL:"test",RESEND_MEMBERS_SEGMENT_ID:first,RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID:second}).ready,true,"legacy keys are unnecessary for the unified layout");
+});
+
+const unified={layout:"unified",segments:{members:"members",accessRequests:"accessRequests"}};
+test("unified membership combines waiting and open, preserves requests and BYOB, and never resets consent",async()=>{
+  const topics={general:"opt_out",store:"opt_in"};
+  const f=fixture([
+    {id:"waiting",email:"waiting@example.com",unsubscribed:true,topics,segments:new Set(["accessRequests","byob"])},
+    {id:"open",email:"open@example.com",segments:new Set(["members","accessRequests"])},
+    {id:"incomplete",email:"incomplete@example.com",segments:new Set(["members","accessRequests","byob"])},
+    {id:"request",email:"request@example.com",segments:new Set(["accessRequests"])},
+    {id:"unrelated",email:"unrelated@example.com",segments:new Set(["members","byob"])},
+  ],UNIFIED_MEMBER_SEGMENT_NAMES);
+  const source=[member("waiting@example.com"),member("open@example.com",{profile_open:true}),
+    member("incomplete@example.com",{registered:false}),member("new@example.com")];
+  const run=apply=>reconcileMemberSegments({...unified,source,provider:f.provider,apply});
+  const dry=await run(false);
+  assert.deepEqual(dry.eligible,{waiting:2,open:1});assert.equal(dry.excluded.registration_incomplete,1);
+  assert.deepEqual(dry.planned,{creates:1,nameUpdates:0,additions:2,removals:4});
+  assert.deepEqual(f.calls,[]);
+  await run(true);
+  assert.deepEqual([...f.contacts.get("waiting").segments].sort(),["byob","members"]);
+  assert.equal(f.contacts.get("waiting").unsubscribed,true);assert.deepEqual(f.contacts.get("waiting").topics,topics);
+  assert.deepEqual([...f.contacts.get("open").segments],["members"]);
+  assert.deepEqual([...f.contacts.get("incomplete").segments].sort(),["accessRequests","byob"]);
+  assert.deepEqual([...f.contacts.get("request").segments],["accessRequests"]);
+  assert.deepEqual([...f.contacts.get("unrelated").segments],["byob"]);
+  const created=[...f.contacts.values()].find(contact=>contact.email==="new@example.com");
+  assert.deepEqual([...created.segments],["members"]);
+  assert.deepEqual(created.topics,{general:"opt_out",store:"opt_out"});
+  assert.ok(f.reads.every(read=>["members","accessRequests"].includes(read[1])),"BYOB is not read or managed");
+  assert.ok(f.calls.filter(call=>call[0]==="add").every(call=>call[2]==="members"),"the sync never adds access-code requests");
+  assert.deepEqual((await run(true)).applied,{creates:0,nameUpdates:0,additions:0,removals:0});
+  source[0].profile_open=true;
+  assert.deepEqual((await run(true)).applied,{creates:0,nameUpdates:0,additions:0,removals:0},"profile release stays in the same Members group");
+});
+
+test("unified layout checks complete pagination and names before any pruning",async()=>{
+  for(const failure of ["pagination","name"]) {
+    const f=fixture([{id:"stale",email:"stale@example.com",segments:new Set(["members"])},
+      ...Array.from({length:5},(_,index)=>({id:`request-${index}`,email:`request-${index}@example.com`,segments:new Set(["accessRequests"])}))],UNIFIED_MEMBER_SEGMENT_NAMES);
+    if(failure==="pagination") {
+      const list=f.provider.listContacts;
+      f.provider.listContacts=async(id,after)=>{if(id==="accessRequests"&&after)throw Error("second page unavailable");return list(id,after);};
+    } else f.provider.getSegment=async id=>({id,name:id==="accessRequests"?"Ruined / BYOB":UNIFIED_MEMBER_SEGMENT_NAMES[id]});
+    await assert.rejects(reconcileMemberSegments({...unified,source:[],provider:f.provider,apply:true}));
+    assert.deepEqual(f.calls,[]);assert.deepEqual([...f.contacts.get("stale").segments],["members"]);
+  }
+});
+
+test("bounded unified sync converges and removes eligible requests beyond the first page",async()=>{
+  const f=fixture(Array.from({length:5},(_,index)=>({id:`request-${index}`,email:`request-${index}@example.com`,segments:new Set(["accessRequests"])})),UNIFIED_MEMBER_SEGMENT_NAMES);
+  const source=[member("request-4@example.com"),member("new@example.com")];
+  const run=()=>reconcileMemberSegments({...unified,source,provider:f.provider,apply:true,maxNewContacts:1,maxMutations:2});
+  const first=await run();assert.equal(first.applied.removals,1);assert.equal(first.applied.additions,1);assert.ok(first.deferred>0);
+  assert.deepEqual([...f.contacts.get("request-4").segments],["members"]);
+  assert.equal((await run()).applied.creates,1);
+  assert.deepEqual((await run()).applied,{creates:0,nameUpdates:0,additions:0,removals:0});
+  assert.equal([...f.contacts.values()].filter(contact=>contact.segments.has("accessRequests")).length,4);
+  assert.equal([...f.contacts.values()].filter(contact=>contact.segments.has("members")).length,2);
 });
 
 test("database selection verifies current identity and recognizes only live current couple funding", async () => {

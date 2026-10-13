@@ -3,34 +3,51 @@ import type { Sql, TransactionSql } from "postgres";
 /** Server/maintenance use only. This reconciles service-email groups; it never
  * sends mail, enrolls a marketing topic, changes access, or resets preferences. */
 export type MemberSegment = "waiting" | "open";
+type UnifiedMemberSegment = "members" | "accessRequests";
+type MemberSegmentSelection = { layout?: "legacy"; segments: Record<MemberSegment, string> }
+  | { layout: "unified"; segments: Record<UnifiedMemberSegment, string> };
 export type MemberSegmentConfiguration = {
   enabled: boolean;
   ready: boolean;
   missing: string[];
-  segments: Record<MemberSegment, string>;
-};
+} & MemberSegmentSelection;
 export const MEMBER_SEGMENT_NAMES: Record<MemberSegment, string> = {
   waiting: "Ruined / Registered — awaiting profile access",
   open: "Ruined / Profiles open",
 };
-const segmentKeys: MemberSegment[] = ["waiting", "open"];
+export const UNIFIED_MEMBER_SEGMENT_NAMES: Record<UnifiedMemberSegment, string> = {
+  members: "Ruined / Members",
+  accessRequests: "Ruined / Access-code requests",
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const normalizedEmail = (value: string) => value.trim().toLowerCase();
 
 export function getMemberSegmentConfiguration(env: NodeJS.ProcessEnv = process.env): MemberSegmentConfiguration {
-  const segments = {
-    waiting: env.RESEND_MEMBER_WAITING_SEGMENT_ID?.trim() ?? "",
-    open: env.RESEND_MEMBER_PROFILES_OPEN_SEGMENT_ID?.trim() ?? "",
-  };
   const enabled = env.RESEND_MEMBER_SEGMENT_SYNC_ENABLED === "true";
-  const missing = [
+  const required = [
     ...(!env.RESEND_API_KEY?.trim() ? ["RESEND_API_KEY"] : []),
     ...(!env.DATABASE_URL?.trim() ? ["DATABASE_URL"] : []),
+  ];
+  // Presence of either new key opts into the reviewed Members/access-request
+  // layout. A partial or blank update must not fall back to unrelated old IDs.
+  if (env.RESEND_MEMBERS_SEGMENT_ID !== undefined || env.RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID !== undefined) {
+    const segments = { members: env.RESEND_MEMBERS_SEGMENT_ID?.trim() ?? "",
+      accessRequests: env.RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID?.trim() ?? "" };
+    const missing = [...required,
+      ...(!UUID.test(segments.members) ? ["RESEND_MEMBERS_SEGMENT_ID"] : []),
+      ...(!UUID.test(segments.accessRequests) ? ["RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID"] : []),
+      ...(segments.members && segments.members === segments.accessRequests ? ["distinct membership segment IDs"] : []),
+    ];
+    return { enabled, ready: missing.length === 0, missing, layout: "unified", segments };
+  }
+  const segments = { waiting: env.RESEND_MEMBER_WAITING_SEGMENT_ID?.trim() ?? "",
+    open: env.RESEND_MEMBER_PROFILES_OPEN_SEGMENT_ID?.trim() ?? "" };
+  const missing = [...required,
     ...(!UUID.test(segments.waiting) ? ["RESEND_MEMBER_WAITING_SEGMENT_ID"] : []),
     ...(!UUID.test(segments.open) ? ["RESEND_MEMBER_PROFILES_OPEN_SEGMENT_ID"] : []),
     ...(segments.waiting && segments.waiting === segments.open ? ["distinct membership segment IDs"] : []),
   ];
-  return { enabled, ready: missing.length === 0, missing, segments };
+  return { enabled, ready: missing.length === 0, missing, layout: "legacy", segments };
 }
 
 export type MemberSegmentSource = {
@@ -177,51 +194,59 @@ function contactName(name: string): ContactName {
   return { first_name, last_name: rest.join(" ") };
 }
 
-export async function reconcileMemberSegments(input: {
+export async function reconcileMemberSegments(input: MemberSegmentSelection & {
   source: MemberSegmentSource[];
-  segments: Record<MemberSegment, string>;
   provider: MemberSegmentProvider;
   apply?: boolean;
   maxNewContacts?: number;
   maxMutations?: number;
 }) {
-  const { provider, segments } = input;
-  if (!segments.waiting || !segments.open || segments.waiting === segments.open) throw new MemberSegmentSyncError("invalid_segment_configuration");
+  const { provider } = input;
+  type ManagedKey = MemberSegment | UnifiedMemberSegment;
+  const managed: Array<{ key: ManagedKey; id: string; name: string }> = input.layout === "unified"
+    ? (["members", "accessRequests"] as const).map(key => ({ key, id: input.segments[key], name: UNIFIED_MEMBER_SEGMENT_NAMES[key] }))
+    : (["waiting", "open"] as const).map(key => ({ key, id: input.segments[key], name: MEMBER_SEGMENT_NAMES[key] }));
+  if (managed.some(segment => !segment.id) || new Set(managed.map(segment => segment.id)).size !== managed.length) {
+    throw new MemberSegmentSyncError("invalid_segment_configuration");
+  }
+  const segmentId = (key: ManagedKey) => managed.find(segment => segment.key === key)!.id;
   const report = {
-    mode: input.apply ? "apply" : "dry-run", sourceMembers: input.source.length,
+    mode: input.apply ? "apply" : "dry-run", layout: input.layout ?? "legacy", sourceMembers: input.source.length,
     eligible: { waiting: 0, open: 0 }, excluded: {} as Partial<Record<MemberSegmentExclusion, number>>,
     providerUnsubscribed: 0, planned: { creates: 0, nameUpdates: 0, additions: 0, removals: 0 },
     applied: { creates: 0, nameUpdates: 0, additions: 0, removals: 0 }, deferred: 0,
   };
-  const desired = new Map<string, { segment: MemberSegment; name: ContactName }>();
+  const desired = new Map<string, { segment: ManagedKey; name: ContactName }>();
   for (const member of input.source) {
     const result = classifyMemberSegment(member);
     if (result !== "waiting" && result !== "open") { report.excluded[result] = (report.excluded[result] ?? 0) + 1; continue; }
     const email = normalizedEmail(member.email);
     if (desired.has(email)) throw new MemberSegmentSyncError("duplicate_member_email");
-    desired.set(email, { segment: result, name: contactName(member.name) });
+    desired.set(email, { segment: input.layout === "unified" ? "members" : result, name: contactName(member.name) });
     report.eligible[result]++;
   }
-  const owned = new Map<MemberSegment, SegmentContact[]>();
+  const owned = new Map<ManagedKey, SegmentContact[]>();
   const known = new Map<string, SegmentContact>();
-  for (const key of segmentKeys) {
+  for (const { key, id, name } of managed) {
     // Prevent accidental use of the existing General audience or another group's ID.
-    const segment = await provider.getSegment(segments[key]);
-    if (segment.id !== segments[key] || segment.name !== MEMBER_SEGMENT_NAMES[key]) throw new MemberSegmentSyncError("segment_name_mismatch");
-    const contacts = await listAllSegmentContacts(provider, segments[key]);
+    const segment = await provider.getSegment(id);
+    if (segment.id !== id || segment.name !== name) throw new MemberSegmentSyncError("segment_name_mismatch");
+    const contacts = await listAllSegmentContacts(provider, id);
     owned.set(key, contacts);
     for (const contact of contacts) known.set(normalizedEmail(contact.email), contact);
   }
   type Operation = { kind: "nameUpdates" | "additions" | "removals"; run: () => Promise<unknown> };
   const operations: Operation[] = [];
-  // Remove stale eligibility and wrong-stage memberships before additions.
-  for (const key of segmentKeys) for (const contact of owned.get(key)!) {
-    if (desired.get(normalizedEmail(contact.email))?.segment !== key) {
+  // Members are canonical. Access-code requests are not: remove only people who
+  // now qualify as members and preserve every other request and unrelated group.
+  for (const { key, id } of managed) for (const contact of owned.get(key)!) {
+    const eligible = desired.get(normalizedEmail(contact.email));
+    if (key === "accessRequests" ? Boolean(eligible) : eligible?.segment !== key) {
       report.planned.removals++;
-      operations.push({ kind: "removals", run: () => provider.removeFromSegment(contact.id, segments[key]) });
+      operations.push({ kind: "removals", run: () => provider.removeFromSegment(contact.id, id) });
     }
   }
-  const missing: Array<{ email: string; segment: MemberSegment; name: ContactName }> = [];
+  const missing: Array<{ email: string; segment: ManagedKey; name: ContactName }> = [];
   let lookups = 0;
   const maxNew = Math.max(1, Math.min(100, input.maxNewContacts ?? 30));
   for (const [email, target] of desired) {
@@ -241,7 +266,7 @@ export async function reconcileMemberSegments(input: {
     if (!owned.get(target.segment)!.some(existing => existing.id === contact.id)) {
       const id = contact.id;
       report.planned.additions++;
-      operations.push({ kind: "additions", run: () => provider.addToSegment(id, segments[target.segment]) });
+      operations.push({ kind: "additions", run: () => provider.addToSegment(id, segmentId(target.segment)) });
     }
   }
   if (!input.apply) return report;
@@ -274,7 +299,7 @@ export async function reconcileMemberSegments(input: {
         if (!contact) throw error;
       }
     }
-    await provider.addToSegment(contact.id, segments[member.segment]);
+    await provider.addToSegment(contact.id, segmentId(member.segment));
     report.applied.additions++;
     mutations++;
   }
@@ -322,7 +347,7 @@ export async function runMemberSegmentSync(sql: Sql, options: { apply?: boolean;
     const [lock] = await tx`select pg_try_advisory_xact_lock(193741,8301) as acquired`;
     if (!lock.acquired) return { enabled: config.enabled, ready: true, skipped: "busy" };
     const source = await readMemberSegmentSource(tx);
-    const result = await reconcileMemberSegments({ source, segments: config.segments,
+    const result = await reconcileMemberSegments({ ...config, source,
       provider: createMemberSegmentProvider(env.RESEND_API_KEY!.trim()), apply: options.apply });
     return { enabled: config.enabled, ready: true, ...result };
   });
