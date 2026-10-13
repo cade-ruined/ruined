@@ -2,6 +2,12 @@
 
 This release covers event-linked email reminders from the October 2026 founder test and November/future member cadence. It does not turn the entire communications document into a send list. Existing registration welcome delivery and SMS automation remain separate and unchanged.
 
+## Copy approval — October 12, 2026
+
+Cade approved the email wording shown in this chat: the Foundations introduction, one-week/two-day preparation message, Foundations 01 and 02–04 reminders, Membership reminders, Circle reminders, and shared personalized call details, account links, and sign-off. The wording is implemented in `src/lib/communications/member-email-cadence-copy.ts` at reviewed commit `ac1fc6f148955007c04f97cf72bda3c444e0118e` (SHA-256 `b86736317c0b41c7394a983212c08ac129b98421a42ef11a70776b3da8d96866`).
+
+This records approval of the message copy. Published Resend design binding, call/cohort classification, recipient verification, deployment, and sequence activation remain rollout steps. Unfinished protocols remain inactive; this approval does not change reminder preferences, activate sending, or backfill past messages.
+
 ## Reusable sequences and event classification
 
 An administrator approves a published Resend design once for a track (`founder_test` or `members`) and kind (`foundations_01` through `foundations_04`, `membership`, or `circle`). The approval includes every reminder stage, the design's fixed text and variable bindings, and its application to current and future matching calls. A sequence may be approved before any matching calls or recipients exist. Example recipients are informational, not a frozen list to copy into another cohort.
