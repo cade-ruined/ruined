@@ -16,8 +16,9 @@ async function load(file, dependencies = {}) {
   return loaded.exports;
 }
 const model = await load("src/lib/communications/admin-email-model.ts");
+const footer = await load("src/lib/communications/resend-email-campaign-footer.ts", { parse5, "./admin-email-model": model });
 const { preserveRuinedEmailColors, normalizeResendTemplate, renderResendEmailTemplate } = await load("src/lib/communications/resend-email-templates.ts", {
-  parse5, "./admin-email-model": model,
+  parse5, "./admin-email-model": model, "./resend-email-campaign-footer": footer,
 });
 const allNodes = node => [node, ...(node.childNodes ?? []).flatMap(allNodes)];
 const attr = (node, name) => node.attrs?.find(item => item.name === name)?.value;
@@ -91,7 +92,7 @@ test("brand fragments without authored head markup gain valid metadata without l
   }
 });
 
-test("light Ruined cards retain their dark text and buttons while unrelated designs remain untouched", () => {
+test("light cards retain their dark text and buttons and generic designs receive palette metadata", () => {
   const lightBody = '<body><img src="https://members.theruinedproject.com/ruined-wordmark-email.png" alt="Ruined">'
     + '<table bgcolor="#ffca2c"><tr><td style="color:#23231f"><p>Pricing</p>'
     + '<a style="background:#a83329;color:#fff9ec" href="https://members.example.test/my">Open your profile</a></td></tr></table></body>';
@@ -103,7 +104,12 @@ test("light Ruined cards retain their dark text and buttons while unrelated desi
     '<html><head><meta name="color-scheme" content="light dark"></head><body>A different design.</body></html>',
     '<p>Ruined welcomes you.</p><img src="https://example.test/other-logo.png">',
     '<html><head><style>@media(prefers-color-scheme:dark){p{color:white}}</style></head><body><p>Dark support.</p></body></html>',
-  ]) assert.equal(preserveRuinedEmailColors(unknown), unknown);
+  ]) {
+    const protectedHtml = preserveRuinedEmailColors(unknown);
+    assertFixedPalette(protectedHtml);
+    if (unknown.startsWith("<html>")) assert.equal(withoutSchemeMetadata(protectedHtml), withoutSchemeMetadata(unknown));
+    else assert.ok(protectedHtml.includes(unknown), "Unbranded fragment source stays intact");
+  }
 });
 
 test("original source-offset copy edits and campaign placeholders survive protection on the final rendered email", () => {
@@ -128,4 +134,50 @@ test("original source-offset copy edits and campaign placeholders survive protec
   assert.ok(rendered.text.includes("Ruined team"));
   assert.deepEqual(rendered.replyTo, ["reply@example.test"]);
   assert.equal(rendered.subject, "A note from Ruined");
+});
+
+
+test("full documents without Ruined assets preserve exact artwork, author styles and copy", () => {
+  for (const artwork of ["", '<img src="https://example.com/a-different-logo.svg?version=2" alt="An original mark">']) {
+    const original = '<!doctype html>\r\n<html lang="en"><head><style>p{color:#23231f}@media(prefers-color-scheme:dark){.authored{color:#fff}}</style></head><body>'
+      + artwork + '<!--[if mso]><table><tr><td><![endif]--><p class="authored" style="color:#e9e4d9">Exact &amp; considered.</p><!--[if mso]></td></tr></table><![endif]--></body></html>';
+    const result = preserveRuinedEmailColors(original);
+    assertFixedPalette(result);
+    assert.equal(withoutSchemeMetadata(result), original);
+  }
+});
+
+test("generic fragments with partial metadata get one valid head without altering their visible bytes", () => {
+  const content = '<p style="color:#e9e4d9">One precise note.</p><img src="https://example.com/original.svg" alt="Original">';
+  for (const original of [content, '<meta name="color-scheme" content="dark">' + content,
+    '<!doctype html><meta name="supported-color-schemes" content="dark">' + content,
+    '<body><meta name="color-scheme" content="dark">' + content + '</body>',
+    '<html><meta name="color-scheme" content="dark"><style>p{margin:0}</style><body>' + content + '</body></html>']) {
+    const result = preserveRuinedEmailColors(original);
+    assertFixedPalette(result);
+    assert.ok(result.includes(content));
+    assert.equal((result.match(/<!doctype/gi) ?? []).length, (original.match(/<!doctype/gi) ?? []).length || (original.includes('<body>') ? 0 : 1));
+  }
+});
+
+test("misplaced body metadata is removed and replaced in the real head", () => {
+  const original = '<html><head><title>Source title</title></head><body><meta name="color-scheme" content="dark"><p>Exact source.</p><meta name="supported-color-schemes" content="dark"></body></html>';
+  const result = preserveRuinedEmailColors(original);
+  assertFixedPalette(result);
+  assert.equal(withoutSchemeMetadata(result), withoutSchemeMetadata(original));
+});
+
+test("individual no-logo designs stay individual and source offsets remain editable", () => {
+  const original = '<p>A personal note.</p><p>Signed, Ruined.</p>';
+  const template = normalizeResendTemplate({ id: "generic", name: "A personal note", status: "published", current_version_id: "one", has_unpublished_versions: false,
+    subject: "A note", from: "Ruined <sender@example.test>", reply_to: [], html: original, text: "A personal note.\nSigned, Ruined.", variables: [] });
+  const before = structuredClone(template);
+  const field = template.fields[0];
+  const result = renderResendEmailTemplate(template, { subject: template.subject, values: {}, copy: { [field.key]: "A revised personal note." } }, { campaign: false });
+  assertFixedPalette(result.html);
+  assert.ok(result.html.includes('<p>A revised personal note.</p><p>Signed, Ruined.</p>'));
+  assert.equal(result.text, "A revised personal note.\n\nSigned, Ruined.");
+  assert.deepEqual(template, before);
+  assert.equal(template.campaignOnly, false);
+  assert.doesNotMatch(result.html, /RESEND_UNSUBSCRIBE_URL|contact\./);
 });

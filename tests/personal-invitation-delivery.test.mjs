@@ -27,6 +27,8 @@ const input = {
 test("personal invitation email escapes names, uses the fixed deadline and makes no signup claims", () => {
   const message = email.createPersonalInvitationEmail(input);
   assert.match(message.html, /Alex &lt;script&gt;&amp;/);
+  assert.match(message.html, /<head>[\s\S]*<meta name="color-scheme" content="light only">/);
+  assert.match(message.html, /<meta name="supported-color-schemes" content="light">[\s\S]*<\/head>/);
   assert.doesNotMatch(message.html, /<script>/);
   assert.match(message.text, /Cade Mangelson @cade/);
   assert.match(message.text, /SEP\. 23 12:00PM MDT/);

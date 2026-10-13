@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import ts from "typescript";
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -229,6 +230,12 @@ test("confirmation email carries the Ruined identity with durable fallbacks", as
     source("src/lib/communications/resend.ts"),
     source("src/lib/communications/general-updates-confirmation-email.ts"),
   ]);
+  const output = ts.transpileModule(template, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const mod = { exports: {} };
+  new Function("module", "exports", output)(mod, mod.exports);
+  const rendered = mod.exports.createGeneralUpdatesConfirmationEmail({ siteUrl: new URL("https://members.example.test"), confirmationUrl: "https://members.example.test/communications/confirm?token=example" });
+  assert.match(rendered.html, /<head>[\s\S]*<meta content="light only" name="color-scheme">/);
+  assert.match(rendered.html, /<meta content="light" name="supported-color-schemes">[\s\S]*<\/head>/);
   const wordmark = await fs.readFile(path.join(root, "public", "ruined-wordmark-email.png"));
 
   assert.equal(wordmark.subarray(1, 4).toString("ascii"), "PNG");

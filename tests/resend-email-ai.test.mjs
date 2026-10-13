@@ -17,7 +17,8 @@ async function load(file, dependencies = {}) {
 }
 const model = await load("src/lib/communications/admin-email-model.ts");
 const aiError = await load("src/lib/communications/admin-email-ai.ts");
-const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model });
+const campaignFooter = await load("src/lib/communications/resend-email-campaign-footer.ts", { parse5 });
+const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model, "./resend-email-campaign-footer": campaignFooter });
 
 async function fixture(t, options = {}) {
   const previousKey = process.env.OPENAI_API_KEY, previousModel = process.env.OPENAI_EMAIL_MODEL;

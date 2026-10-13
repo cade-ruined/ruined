@@ -20,7 +20,8 @@ async function load(path, dependencies = {}, globals = {}) {
 const model = await load("src/lib/communications/admin-email-model.ts");
 const cadence = await load("src/lib/communications/member-email-cadence-model.ts");
 const management = await load("src/lib/communications/member-email-cadence-management.ts");
-const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model });
+const campaignFooter = await load("src/lib/communications/resend-email-campaign-footer.ts", { parse5 });
+const templates = await load("src/lib/communications/resend-email-templates.ts", { parse5, "./admin-email-model": model, "./resend-email-campaign-footer": campaignFooter });
 const copy = await load("src/lib/communications/member-email-cadence-copy.ts", { "./member-email-cadence-model": cadence });
 const renderer = await load("src/lib/communications/member-email-cadence-renderer.ts", {
   parse5, "./member-email-cadence-copy": copy, "./resend-email-templates": templates, "./admin-email-model": model,

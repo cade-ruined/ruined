@@ -16,8 +16,9 @@ async function load(file, dependencies = {}) {
   return loaded.exports;
 }
 const model = await load("src/lib/communications/admin-email-model.ts");
-const { normalizeResendTemplate, renderResendEmailTemplate, normalizeResendEmailBanner, normalizeResendEmailSignOff } = await load("src/lib/communications/resend-email-templates.ts", {
-  parse5, "./admin-email-model": model,
+const footer = await load("src/lib/communications/resend-email-campaign-footer.ts", { parse5, "./admin-email-model": model });
+const { normalizeResendTemplate, renderResendEmailTemplate, normalizeResendEmailBanner, normalizeResendEmailSignOff, preserveRuinedEmailColors } = await load("src/lib/communications/resend-email-templates.ts", {
+  parse5, "./admin-email-model": model, "./resend-email-campaign-footer": footer,
 });
 const provider = overrides => ({ id: "template-one", name: "An existing design", status: "published", current_version_id: "version-one",
   has_unpublished_versions: false, subject: "An update", from: "Ruined <sender@example.test>", reply_to: ["reply@example.test"],
@@ -25,7 +26,7 @@ const provider = overrides => ({ id: "template-one", name: "An existing design",
 const edits = (template, overrides = {}) => ({ subject: template.subject, values: {}, copy: {}, ...overrides });
 const allNodes = node => [node, ...(node.childNodes ?? []).flatMap(allNodes)];
 
-test("static designs round-trip byte-for-byte including assets, links, style, comments and CRLF", () => {
+test("static designs preserve bytes outside palette metadata including assets, links, styles, comments and CRLF", () => {
   const html = '<!DOCTYPE html>\r\n<html><head><style>@media(max-width:600px){.hero{width:100%}}</style><title>Existing title</title></head><body>\r\n'
     + '<!--[if mso]><table><tr><td>Original fallback</td></tr></table><![endif]-->'
     + '<span style="display:none;max-height:0">Private preheader</span><svg viewBox="0 0 1 1"><text>Official geometry</text></svg>'
@@ -33,7 +34,7 @@ test("static designs round-trip byte-for-byte including assets, links, style, co
     + '<p class=copy>  Welcome &amp; hello.  </p><a href="https://example.test/path?a=1&amp;b=2" style="color:#111">Read more</a></td></tr></table>\r\n</body></html>';
   const template = normalizeResendTemplate(provider({ html }));
   const copy = Object.fromEntries(template.fields.map(field => [field.key, field.value]));
-  assert.equal(renderResendEmailTemplate(template, edits(template, { copy }), { campaign: false }).html, html);
+  assert.equal(renderResendEmailTemplate(template, edits(template, { copy }), { campaign: false }).html, preserveRuinedEmailColors(html));
   assert.deepEqual(template.fields.map(field => field.value), ["Welcome & hello.", "Read more"]);
   assert.equal(template.campaignOnly, false);
 });
@@ -43,12 +44,12 @@ test("copy replacements touch only selected text spans and keep duplicate nodes 
   const template = normalizeResendTemplate(provider({ html, text: "Hello & welcome\nHello & welcome\nOriginal link" }));
   const first = template.fields[0];
   const rendered = renderResendEmailTemplate(template, edits(template, { copy: { [first.key]: 'Less & more <script>alert("x")</script>' } }), { campaign: false });
-  assert.equal(rendered.html, html.replace("  Hello &amp; welcome  ", "  Less &amp; more &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;  "));
+  assert.equal(rendered.html, preserveRuinedEmailColors(html.replace("  Hello &amp; welcome  ", "  Less &amp; more &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;  ")));
   assert.match(rendered.text, /Less & more <script>/);
   assert.equal((rendered.text.match(/Hello & welcome/g) ?? []).length, 1);
   assert.match(rendered.text, /https:\/\/example.test\/fixed/);
   assert.equal(renderResendEmailTemplate(template, edits(template, { copy: { [first.key]: "" } }), { campaign: false }).html,
-    html.replace("  Hello &amp; welcome  ", "    "));
+    preserveRuinedEmailColors(html.replace("  Hello &amp; welcome  ", "    ")));
 });
 
 test("declared string and numeric variables use supplied values and typed fallbacks", () => {
@@ -57,10 +58,10 @@ test("declared string and numeric variables use supplied values and typed fallba
       { key: "NAME", type: "string", fallback_value: "friend" }, { key: "COUNT", type: "number", fallback_value: 0 },
     ] }));
   const fallback = renderResendEmailTemplate(template, edits(template), { campaign: false });
-  assert.equal(fallback.html, "<p>Hello friend. There are 0 places.</p>");
+  assert.equal(fallback.html, preserveRuinedEmailColors("<p>Hello friend. There are 0 places.</p>"));
   assert.equal(fallback.subject, "Hello friend");
   const rendered = renderResendEmailTemplate(template, edits(template, { values: { NAME: "A < B & C", COUNT: "1e2" } }), { campaign: false });
-  assert.equal(rendered.html, "<p>Hello A &lt; B &amp; C. There are 100 places.</p>");
+  assert.equal(rendered.html, preserveRuinedEmailColors("<p>Hello A &lt; B &amp; C. There are 100 places.</p>"));
   assert.equal(rendered.text, "Hello A < B & C. There are 100 places.");
   assert.throws(() => renderResendEmailTemplate(template, edits(template, { values: { COUNT: "NaN" } }), { campaign: false }), /valid number/);
   assert.throws(() => renderResendEmailTemplate(template, edits(template, { values: { COUNT: "0x20" } }), { campaign: false }), /valid number/);
@@ -92,11 +93,11 @@ test("campaign contact fallback and unsubscribe markers are preserved exactly an
   const template = normalizeResendTemplate(provider({ html, text: "Hello {{{contact.first_name|friend}}}\n{{{RESEND_UNSUBSCRIBE_URL}}}", has_unpublished_versions: true }));
   assert.equal(template.campaignOnly, true);
   assert.equal(template.hasUnpublishedVersions, true);
-  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: true }).html, html);
+  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: true }).html, preserveRuinedEmailColors(html));
   assert.throws(() => renderResendEmailTemplate(template, edits(template), { campaign: false }), /campaign personalization/);
   const field = template.fields.find(item => item.value === "One update.");
   const changed = renderResendEmailTemplate(template, edits(template, { copy: { [field.key]: "A clearer update." } }), { campaign: true });
-  assert.equal(changed.html, html.replace("One update.", "A clearer update."));
+  assert.equal(changed.html, preserveRuinedEmailColors(html.replace("One update.", "A clearer update.")));
   assert.match(changed.text, /\{\{\{contact.first_name\|friend\}\}\}/);
   assert.match(changed.text, /A clearer update/);
   assert.match(changed.text, /RESEND_UNSUBSCRIBE_URL/);
@@ -119,7 +120,7 @@ test("hidden preheaders and head text remain unchanged while variables there may
   const html = '<html><head><title>{{{TITLE}}}</title><style>body{color:black}</style></head><body><div hidden>Hidden</div><span aria-hidden="true">Hidden2</span><span style="mso-hide:all">Hidden3</span><p>Visible</p></body></html>';
   const template = normalizeResendTemplate(provider({ html, variables: [{ key: "TITLE", type: "string", fallback_value: "A title" }] }));
   assert.deepEqual(template.fields.map(field => field.value), ["Visible"]);
-  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: false }).html, html.replace("{{{TITLE}}}", "A title"));
+  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: false }).html, preserveRuinedEmailColors(html.replace("{{{TITLE}}}", "A title")));
 });
 
 test("render enforces subject, individual field and combined edit limits", () => {
@@ -160,8 +161,8 @@ test("optional banner sits below the exact logo and above the first visible head
   const wrapper = image.parentNode.parentNode.parentNode.parentNode.parentNode;
   assert.equal(wrapper.tagName, "table");
   const { startOffset, endOffset } = wrapper.sourceCodeLocation;
-  assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), html);
-  assert.equal(html.slice(0, startOffset).endsWith(logo), true);
+  assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), preserveRuinedEmailColors(html));
+  assert.equal(rendered.html.slice(0, startOffset).endsWith(logo), true);
   assert.equal(rendered.html.slice(endOffset).startsWith("<h1>One considered update.</h1>"), true);
   assert.equal(image.attrs.find(attr => attr.name === "alt").value, banner.alt);
   assert.equal(image.attrs.find(attr => attr.name === "width").value, "536");
@@ -170,9 +171,9 @@ test("optional banner sits below the exact logo and above the first visible head
   assert.equal(image.parentNode.attrs.find(attr => attr.name === "href").value, banner.linkUrl);
   assert.equal(rendered.text, `${banner.alt}\n${banner.linkUrl}\n\n${text}`);
   assert.equal(template.html, html);
-  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: true }).html, html);
+  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: true }).html, preserveRuinedEmailColors(html));
   const removed = renderResendEmailTemplate(template, edits(template, { banner: null }), { campaign: true });
-  assert.equal(removed.html, html);
+  assert.equal(removed.html, preserveRuinedEmailColors(html));
   assert.equal(removed.text, text);
 });
 
@@ -208,7 +209,7 @@ test("heading-free designs preserve logo-only paragraphs and tables and never ne
     assert.equal(wrapper.tagName, "table");
     assert.ok(["body", "td"].includes(wrapper.parentNode.tagName));
     const { startOffset, endOffset } = wrapper.sourceCodeLocation;
-    assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), html);
+    assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), preserveRuinedEmailColors(html));
     if (html.includes('alt="Ruined"')) assert.ok(rendered.html.indexOf('alt="Ruined"') < rendered.html.indexOf(banner.url.replaceAll("&", "&amp;")));
   }
 });
@@ -277,17 +278,17 @@ test("known sign-offs are detected, preserve exact source when omitted, and remo
   const template = normalizeResendTemplate(provider({ html, text }));
   assert.equal(template.signOffText, "After the fear");
   const unchanged = renderResendEmailTemplate(template, edits(template), { campaign: true });
-  assert.equal(unchanged.html, html);
+  assert.equal(unchanged.html, preserveRuinedEmailColors(html));
   assert.equal(unchanged.text, text);
   const removed = renderResendEmailTemplate(template, edits(template, { signOff: null }), { campaign: true });
-  assert.equal(removed.html, html.replace(knownSignOff, ""));
+  assert.equal(removed.html, preserveRuinedEmailColors(html.replace(knownSignOff, "")));
   assert.ok(removed.html.includes(exactLogo));
   assert.ok(removed.html.includes(exactFooter));
   assert.match(removed.text, /An authored note/);
   assert.doesNotMatch(removed.text, /After the fear/);
   const arbitrary = normalizeResendTemplate(provider({ html: '<p>A note.</p><img src="https://images.example.com/handwriting.png" alt="All the love">' }));
   assert.equal(arbitrary.signOffText, undefined);
-  assert.equal(renderResendEmailTemplate(arbitrary, edits(arbitrary, { signOff: null }), { campaign: false }).html, arbitrary.html);
+  assert.equal(renderResendEmailTemplate(arbitrary, edits(arbitrary, { signOff: null }), { campaign: false }).html, preserveRuinedEmailColors(arbitrary.html));
 });
 
 test("a custom sign-off replaces its original image in place with escaped alt and preserves the logo, artwork styling and unsubscribe footer", () => {
@@ -325,14 +326,14 @@ test("new sign-offs stay in the final content cell before a separate bordered co
   assert.equal(table.parentNode.tagName, "td");
   assert.equal(attr(table.parentNode, "id"), "content");
   const { startOffset, endOffset } = table.sourceCodeLocation;
-  assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), html);
+  assert.equal(rendered.html.slice(0, startOffset) + rendered.html.slice(endOffset), preserveRuinedEmailColors(html));
   assert.ok(rendered.html.includes(footer));
   assert.ok(rendered.text.indexOf("Your name") < rendered.text.indexOf("All the love"));
   assert.ok(rendered.text.indexOf("All the love") < rendered.text.indexOf("Contact us"));
 });
 
 test("sign-off insertion preserves the complete unsubscribe footer and explicit footer and remains outside inline elements", () => {
-  for (const footer of [exactFooter, '<footer><p>Contact us.</p><a href="https://example.com/preferences">Preferences</a></footer>']) {
+  for (const footer of [exactFooter, '<footer><p>Contact us.</p><a href="{{{RESEND_UNSUBSCRIBE_URL}}}">Preferences</a></footer>']) {
     const html = `<main>${exactLogo}<p><a href="https://example.com"><strong>Final copy.</strong></a></p>${footer}</main>`;
     const template = normalizeResendTemplate(provider({ html }));
     const rendered = renderResendEmailTemplate(template, edits(template, { signOff: { text: "All the love" } }), { campaign: true, signOffImage });
@@ -345,7 +346,7 @@ test("sign-off insertion preserves the complete unsubscribe footer and explicit 
   }
   const plain = normalizeResendTemplate(provider({ html: '<main><p><em>Last copy.</em></p></main>' }));
   const rendered = renderResendEmailTemplate(plain, edits(plain, { signOff: { text: "All the love" } }), { campaign: false, signOffImage });
-  assert.ok(rendered.html.startsWith('<main><p><em>Last copy.</em></p><table'));
+  assert.ok(rendered.html.includes('<main><p><em>Last copy.</em></p><table'));
 });
 
 test("edited copy and authored plaintext retain exactly one current sign-off", () => {
@@ -401,6 +402,25 @@ test("Ruined typography changes only text styling, including nested heading over
   assert.match(rendered.html, /IvyOraText-Medium\.ttf/);
   assert.match(rendered.html, /Inter-Variable-Latin\.woff2/);
   assert.equal(rendered.text, template.text);
-  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: false }).html, html);
+  assert.equal(renderResendEmailTemplate(template, edits(template), { campaign: false }).html, preserveRuinedEmailColors(html));
   assert.throws(() => renderResendEmailTemplate(template, edits(template, { typography: "custom" }), { campaign: false }), /Ruined email typography/);
+});
+
+
+test("a plain individual design gains a campaign footer only in its composed campaign", () => {
+  const html = '<html><head><title>Personal</title></head><body><main><p>A considered personal note.</p><p>With love, Ruined.</p></main></body></html>';
+  const text = "A considered personal note.\n\nWith love, Ruined.";
+  const template = normalizeResendTemplate(provider({ html, text }));
+  const before = structuredClone(template);
+  const campaign = renderResendEmailTemplate(template, edits(template), { campaign: true });
+  assert.match(campaign.html, /href="\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}"/);
+  assert.match(campaign.text, /RESEND_UNSUBSCRIBE_URL/);
+  assert.ok(campaign.text.startsWith(text));
+  assert.ok(campaign.html.includes('<p>A considered personal note.</p><p>With love, Ruined.</p>'));
+  const individual = renderResendEmailTemplate(template, edits(template), { campaign: false });
+  assert.equal(individual.html, preserveRuinedEmailColors(html));
+  assert.equal(individual.text, text);
+  assert.doesNotMatch(individual.html, /RESEND_UNSUBSCRIBE_URL/);
+  assert.equal(template.campaignOnly, false);
+  assert.deepEqual(template, before);
 });

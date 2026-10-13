@@ -128,13 +128,13 @@ test("unavailable rule groups remain manageable without claiming an empty or sel
 const template = { id: "template-1", version: "version-1", name: "Member note", status: "published", hasUnpublishedVersions: false, html: "<html><head></head><body><p>Original design</p></body></html>", text: null, subject: "A member note", from: "Ruined <hello@example.test>", replyTo: [], variables: [], fields: [{ key: "body", label: "Message", value: "Original copy" }] };
 const reviewed = { id: "review-1", origin: "local_group", mode: "campaign", campaignId: "campaign-1", subject: "Approved subject", html: template.html, text: "Approved body", from: template.from, replyTo: [], recipients: [{ email: person.email, name: person.name }], recipientCount: 1, excludedCount: 1, excluded: [{ email: other.email, name: other.name, reason: "Membership reminders are off." }], groupName: "Selected members", purpose: "membership_updates", expiresAt: "2099-01-01T00:00:00Z" };
 function composerFixture({ preview = false, sendingReady = true, respond } = {}) {
-  const h = harness(), calls = [], sampleGroups = samples.createEmailGroupPreview(); let campaign, campaigns = [], revision = 0;
+  const h = harness(), calls = [], rendererCalls = [], sampleGroups = samples.createEmailGroupPreview(); let campaign, campaigns = [], revision = 0;
   const data = { templates: [template], segments: [{ id: "segment-1", name: "Existing Resend segment" }], topics: [{ id: "topic-1", name: "Member notices", defaultSubscription: "opt_in" }], broadcasts: [], emails: [], configuration: { connected: true, sendingReady: true, issues: [] }, cursors: { broadcasts: null, emails: null } };
   const config = { ready: true, sendingReady, issues: sendingReady ? [] : ["Group sending is paused."] };
   const deps = { react: h.hooks, "next/link": { __esModule: true, default: "a" }, "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" }, "@/components/platform/OperatorMessagesTabs": { __esModule: true, default: "message-tabs" }, "@/components/platform/operatorStyles": styles,
     "@/components/platform/OperatorDialog": { __esModule: true, default: "dialog" }, "@/components/platform/OperatorEmailGroups": { __esModule: true, default: "email-groups" }, "@/components/platform/OperatorEmailGroupCampaigns": { ...history, __esModule: true, default: "group-history" }, "@/components/platform/emailGroupPreview": samples,
     "@/components/platform/OperatorEmailBannerUpload": { __esModule: true, default: "banner-upload", renderLocalEmailBanner: html => html }, "@/components/platform/emailSignOffPreview": { renderEmailSignOffPreview: async () => undefined },
-    "@/lib/communications/resend-email-templates": { normalizeResendEmailBanner: value => value ?? null, normalizeResendEmailSignOff: value => value ?? null, renderResendEmailTemplate: (selected, edits) => ({ html: selected.html, subject: edits.subject, from: selected.from }) },
+    "@/lib/communications/resend-email-templates": { normalizeResendEmailBanner: value => value ?? null, normalizeResendEmailSignOff: value => value ?? null, renderResendEmailTemplate: (selected, edits, options) => { rendererCalls.push({ selected, edits, options }); return { html: selected.html, subject: edits.subject, from: selected.from }; } },
   };
   async function fallback(call) {
     if (call.method === "GET") {
@@ -158,7 +158,7 @@ function composerFixture({ preview = false, sendingReady = true, respond } = {})
   const draw = () => h.render(Component, { preview }); const ui = controls(draw);
   async function setup() { draw(); await ui.settle(); ui.find(node => node.type === "button" && text(node).startsWith("Use template")).props.onClick(); await ui.settle(); ui.button("Audience campaign").props.onClick(); ui.change("resend-group", "sample-group-manual"); ui.change("resend-group-purpose", "membership_updates"); await h.flushTimers(450); await ui.settle(); }
   function ack() { ui.find(node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } }); }
-  return { ...ui, setup, ack, calls, sampleGroups, config, flushPreview: () => h.flushTimers(450) };
+  return { ...ui, setup, ack, calls, rendererCalls, sampleGroups, config, flushPreview: () => h.flushTimers(450) };
 }
 
 test("Ruined campaigns save exact group revision and edits, review separately, and queue only the opaque review", async () => {
@@ -235,4 +235,18 @@ test("dirty and pending group editing also protect parent workspace navigation",
   assert.equal(f.calls.length, requests); assert.ok(f.find(node => node.type === "email-groups")); assert.equal(f.find(node => node.type === "dialog"), undefined);
   group.props.onPendingChange(false); f.button("Templates").props.onClick(); f.button("Discard changes").props.onClick();
   assert.equal(f.find(node => node.type === "email-groups"), undefined);
+});
+
+
+test("sample design and recipient review use campaign mode only while a campaign is selected", async () => {
+  const f = composerFixture({ preview: true }); await f.setup();
+  assert.equal(f.rendererCalls.at(-1).options.campaign, true);
+  assert.match(text(f.draw()), /An unsubscribe footer is included automatically/);
+  await f.submit(); await f.settle(); assert.equal(f.rendererCalls.at(-1).options.campaign, true);
+  f.button("Back to email").props.onClick(); f.button("Individual email").props.onClick(); f.change("resend-recipient", "alex@example.test");
+  await f.flushPreview(); await f.settle();
+  assert.equal(f.rendererCalls.at(-1).options.campaign, false);
+  assert.doesNotMatch(text(f.draw()), /An unsubscribe footer is included automatically/);
+  await f.submit(); await f.settle(); assert.equal(f.rendererCalls.at(-1).options.campaign, false);
+  assert.equal(f.calls.length, 0);
 });

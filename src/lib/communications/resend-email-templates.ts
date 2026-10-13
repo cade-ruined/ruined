@@ -1,5 +1,6 @@
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
 import { AdminEmailError } from "./admin-email-model";
+import { withCampaignUnsubscribe } from "./resend-email-campaign-footer";
 import type {
   RenderedResendEmail, ResendEmailBanner, ResendEmailEdits, ResendEmailSignOff, ResendEmailSignOffImage,
   ResendEmailTemplate, ResendEmailTemplateField, ResendEmailTemplateVariable,
@@ -136,14 +137,13 @@ function appendedStyle(element: Element, declarations: string) {
   return `${existing}${existing && !existing.trimEnd().endsWith(";") ? ";" : ""}${declarations}`;
 }
 
-/** Keep Ruined's authored palette in clients that otherwise invert live text
+/** Keep every email design's authored palette in clients that otherwise invert live text
  * independently of the ink texture. "light only" means preserve the original
  * design, including a dark design; "dark" does not disable Gmail's conversion.
  * https://emailmarkup.org/en/blog/2026/gmail-app-dark-mode-update
  * Patch source spans, not the parsed DOM: campaign markers, MSO fallbacks,
  * artwork and previously authored styling must survive byte-for-byte. */
 export function preserveRuinedEmailColors(html: string): string {
-  if (!/\/(?:membership\/design\/printers-ink\.jpg|ruined-wordmark-email(?:-bone)?\.png)(?:[?#"'\s)]|&)/i.test(html)) return html;
   const document = parse(html, { sourceCodeLocationInfo: true });
   const elements: Element[] = [];
   function visit(node: Node) {
@@ -152,24 +152,35 @@ export function preserveRuinedEmailColors(html: string): string {
   }
   visit(document);
   const replacements: Replacement[] = [];
+  const head = elements.find(node => node.tagName === "head");
+  const headStart = head?.sourceCodeLocation?.startTag;
   let missing = "";
   for (const [name, value] of [["color-scheme", "light only"], ["supported-color-schemes", "light"]]) {
     const tags = elements.filter(node => node.tagName === "meta" && attribute(node, "name")?.trim().toLowerCase() === name
       && node.sourceCodeLocation);
     const markup = `<meta name="${name}" content="${value}">`;
-    if (!tags.length) missing += markup;
-    tags.forEach((tag, index) => {
+    const retained = headStart ? tags.find(tag => tag.parentNode === head) : undefined;
+    if (!retained) missing += markup;
+    tags.forEach(tag => {
       const location = tag.sourceCodeLocation!;
-      replacements.push({ start: location.startOffset, end: location.endOffset, value: index === 0 ? markup : "" });
+      replacements.push({ start: location.startOffset, end: location.endOffset, value: tag === retained ? markup : "" });
     });
   }
   if (missing) {
-    const head = elements.find(node => node.tagName === "head")?.sourceCodeLocation;
-    const body = elements.find(node => node.tagName === "body")?.sourceCodeLocation;
     const root = elements.find(node => node.tagName === "html")?.sourceCodeLocation;
-    const offset = head?.startTag?.endOffset ?? body?.startTag?.startOffset ?? root?.startTag?.endOffset;
-    if (offset !== undefined) replacements.push({ start: offset, end: offset, value: head?.startTag ? missing : `<head>${missing}</head>` });
-    else return `<!doctype html><html><head>${missing}</head><body>${replaceSpans(html, replacements)}</body></html>`;
+    const body = elements.find(node => node.tagName === "body")?.sourceCodeLocation;
+    const doctype = document.childNodes.find(node => node.nodeName === "#documentType")?.sourceCodeLocation;
+    if (headStart) replacements.push({ start: headStart.endOffset, end: headStart.endOffset, value: missing });
+    else if (root?.startTag || body?.startTag) {
+      // Put a real head before any implicit head content. Inserting immediately
+      // before body can otherwise move a fragment's existing metadata into body.
+      const offset = root?.startTag?.endOffset ?? doctype?.endOffset ?? 0;
+      replacements.push({ start: offset, end: offset, value: `<head>${missing}</head>` });
+    } else {
+      const content = replaceSpans(html, replacements);
+      const offset = doctype?.endOffset ?? 0;
+      return `${doctype ? content.slice(0, offset) : "<!doctype html>"}<html><head>${missing}</head><body>${content.slice(offset)}</body></html>`;
+    }
   }
   return replaceSpans(html, replacements);
 }
@@ -577,9 +588,10 @@ export function renderResendEmailTemplate(template: ResendEmailTemplate, edits: 
   if (template.text && !copyChanged && edits.signOff !== undefined) {
     bodyText = updateAuthoredSignOff(bodyText, originalSignOffText(signOffImages(visibleNodes(template.html).nodes)), signOff?.text);
   }
-  const text = banner ? `${banner.alt}${banner.linkUrl ? `\n${banner.linkUrl}` : ""}\n\n${bodyText}` : bodyText;
+  let text = banner ? `${banner.alt}${banner.linkUrl ? `\n${banner.linkUrl}` : ""}\n\n${bodyText}` : bodyText;
   if (banner) html = insertResendEmailBanner(html, banner);
   if (edits.typography === "ruined") html = applyRuinedTypography(html);
+  if (options.campaign) ({ html, text } = withCampaignUnsubscribe(html, text));
   html = preserveRuinedEmailColors(html);
   const from = renderText(template.from);
   const replyTo = template.replyTo.map(renderText);

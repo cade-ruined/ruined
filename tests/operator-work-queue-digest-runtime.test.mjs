@@ -69,6 +69,8 @@ test("digest email escapes titles, uses the official wordmark, respects capped t
   const queue = { items: [...sampleQueue.items.map((item) => ({ ...item, label: '<script>alert("title")</script>', notes: "PRIVATE NOTE", email: "PRIVATE CONTACT", card: "PRIVATE CARD" })), { kind: "workflow_failure", workId: "failure-1", label: "Review automation", memberName: null, memberId: null, state: "failed", dueAt: "2026-10-05T16:00:00Z", priority: 100, errorCode: "PRIVATE ERROR" }], totals: { tasks: 200, artifacts: 0, failures: 1 } };
   const result = email.createWorkQueueDigestEmail({ queue, slot, generatedAt: "2026-10-05T17:02:00Z" });
   assert.match(result.subject, /10:00 AM MST/);
+  assert.match(result.html, /<head>[\s\S]*<meta name="color-scheme" content="light only">/);
+  assert.match(result.html, /<meta name="supported-color-schemes" content="light">[\s\S]*<\/head>/);
   assert.match(result.html, /ruined-wordmark-email\.png/);
   assert.match(result.html, /&lt;script&gt;/);
   assert.doesNotMatch(result.html, /<script>/);
