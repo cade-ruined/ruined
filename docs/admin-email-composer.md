@@ -61,6 +61,8 @@ Uncertain responses are not automatically retried. Check Resend before another s
 
 The application stores groups, local campaign drafts, review snapshots, send claims, native group deliveries, purpose-scoped withdrawals, audit events and image-upload usage limits. Ruined groups do not create or synchronize new Resend segments.
 
+The separate membership-contact sync can maintain the existing **Ruined / Members** and **Ruined / Access-code requests** segments. Set `RESEND_MEMBERS_SEGMENT_ID` and `RESEND_ACCESS_CODE_REQUESTS_SEGMENT_ID` together, with `RESEND_MEMBER_SEGMENT_SYNC_ENABLED=true`. Completed, currently eligible registrations and members with open profiles share Members. Eligible members are removed from Access-code requests; all other requests and BYOB are left alone. Ineligible contacts are removed from Members without deleting their contact, changing unsubscribe state or changing topic preferences. No segment is created. Both IDs and exact segment names are checked before changes; a partial or blank new configuration fails closed. The earlier waiting/profile-open split remains supported only when neither new key is defined.
+
 ## Configuration
 
 Keep these migrations in the existing platform migration runner. They are already applied in production; new installations apply them through the same runner:
