@@ -6,14 +6,22 @@ const UNSUBSCRIBE = "{{{RESEND_UNSUBSCRIBE_URL}}}";
 const MARKER = /^\{\{\{\s*RESEND_UNSUBSCRIBE_URL\s*\}\}\}$/;
 const BLOCKED = new Set(["head", "script", "style", "textarea", "iframe", "object", "embed", "svg", "math", "template", "noscript"]);
 const attr = (node: Element, name: string) => node.attrs.find(item => item.name === name)?.value;
+function hidden(node: Element): boolean {
+  if (node.attrs.some(item => item.name === "hidden" || item.name === "inert"
+    || item.name === "aria-hidden" && item.value.toLowerCase() === "true")) return true;
+  const style = attr(node, "style") ?? "";
+  const end = "(?:\\s*!important)?\\s*(?:;|$)";
+  if (new RegExp("(?:^|;)\\s*(?:display\\s*:\\s*none|visibility\\s*:\\s*(?:hidden|collapse)|mso-hide\\s*:\\s*all)" + end, "i").test(style)) return true;
+  if (new RegExp("(?:^|;)\\s*(?:opacity|font-size|line-height)\\s*:\\s*(?:0(?:\\.0+)?|\\.0+)(?:px|em|rem|pt|%)?" + end, "i").test(style)) return true;
+  return new RegExp("(?:^|;)\\s*(?:max-)?height\\s*:\\s*0(?:px|em|rem|pt|%)?" + end, "i").test(style)
+    && new RegExp("(?:^|;)\\s*overflow(?:-y)?\\s*:\\s*(?:hidden|clip)" + end, "i").test(style);
+}
 function visibleElements(html: string) {
   const document = parse(html, { sourceCodeLocationInfo: true });
   const elements: Element[] = [];
   function visit(node: Node) {
     if ("tagName" in node) {
-      if (BLOCKED.has(node.tagName) || node.attrs.some(item => item.name === "hidden"
-        || item.name === "aria-hidden" && item.value.toLowerCase() === "true"
-        || item.name === "style" && /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden|mso-hide\s*:\s*all)(?:\s*!important)?\s*(?:;|$)/i.test(item.value))) return;
+      if (BLOCKED.has(node.tagName) || hidden(node)) return;
       elements.push(node);
     }
     if ("childNodes" in node) node.childNodes.forEach(visit);

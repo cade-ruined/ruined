@@ -46,6 +46,10 @@ test("comments, hidden or empty anchors and plain-text markers cannot replace th
     `<div hidden><a href="${marker}">Hidden</a></div>`,
     `<div style="display:none"><a href="${marker}">Hidden</a></div>`,
     `<div aria-hidden="true"><a href="${marker}">Hidden</a></div>`,
+    `<div inert><a href="${marker}">Hidden</a></div>`,
+    `<div style="opacity:0"><a href="${marker}">Hidden</a></div>`,
+    `<div style="font-size:0;line-height:0"><a href="${marker}">Hidden</a></div>`,
+    `<div style="max-height:0;overflow:hidden"><a href="${marker}">Hidden</a></div>`,
     `<template><a href="${marker}">Inert</a></template>`,
   ]) {
     assert.equal(hasCampaignUnsubscribe(content), false);
