@@ -14,10 +14,12 @@ function compile(path, dependency = noDependency, fetch = () => { throw Error("U
   new Function("require", "module", "exports", "fetch", output)(name => name === "react/jsx-runtime" ? require(name) : dependency(name), mod, mod.exports, fetch);
   return mod.exports;
 }
+const management = compile("src/lib/communications/member-email-cadence-management.ts");
 const model = compile("src/lib/communications/member-email-cadence-model.ts");
+const copy = compile("src/lib/communications/member-email-cadence-copy.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
 const styles = compile("src/components/platform/operatorStyles.ts");
-const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
-const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
+const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(typeof node.type === "function" ? node.type(node.props) : node.props?.children)];
+const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(typeof node.type === "function" ? node.type(node.props) : node.props?.children) : String(node);
 const API = "/api/ops/emails/automations";
 const event = { id: "event-1", title: "November Foundations 01", startsAt: "2026-11-05T22:00:00Z", endsAt: "2026-11-05T23:30:00Z", timeZone: "America/Denver" };
 const template = {
@@ -26,9 +28,11 @@ const template = {
   variables: [{ key: "NAME", type: "string", fallbackValue: "Friend" }, { key: "URL", type: "string", fallbackValue: "" }, { key: "BODY", type: "string", fallbackValue: "Saved body" }],
   fields: [{ key: "heading", label: "Heading", value: "Saved heading" }, { key: "body", label: "Message", value: "Saved message" }, { key: "greeting", label: "Greeting", value: "Hi there," }, { key: "signature", label: "Signature", value: "Your name" }],
 };
-const plan = { id: "plan-1", eventId: event.id, kind: "foundations_01", track: "members", active: true, revision: 7, templateName: template.name, updatedAt: "2026-10-12T15:00:00Z" };
-const sequence = { id: "sequence-1", kind: "foundations_01", track: "members", active: true, revision: 2, templateName: template.name, updatedAt: "2026-10-12T15:00:00Z" };
-const overview = { events: [event], templates: [template], plans: [], sequences: [], configuration: { enabled: false, ready: false }, inactive: [{ title: "Completion", reason: "Awaiting approved completion rules." }] };
+const counts = { sent: 0, pending: 0, failed: 0, manualReview: 0, cancelled: 0 };
+const summary = { title: "Foundations 01 · Members", status: "upcoming", attention: "", ...management.cadenceManagementDescriptions("foundations_01", "members"), nextReminder: null, delivery: counts };
+const plan = { ...summary, title: event.title, sequenceId: null, id: "plan-1", eventId: event.id, kind: "foundations_01", track: "members", active: true, revision: 7, templateName: template.name, updatedAt: "2026-10-12T15:00:00Z" };
+const sequence = { ...summary, matchingCallCount: 1, id: "sequence-1", kind: "foundations_01", track: "members", active: true, revision: 2, templateName: template.name, updatedAt: "2026-10-12T15:00:00Z" };
+const overview = { events: [event], templates: [template], plans: [], sequences: [], configuration: { enabled: false, ready: false, activatedAt: null }, setupRequired: false, warnings: [], managedElsewhere: [], inactive: [{ title: "Completion", reason: "Awaiting approved completion rules." }] };
 const review = {
   reviewToken: "opaque-reviewed-token", expiresAt: "2099-01-01T00:00:00Z", scope: "event",
   preview: { html: "<html><head></head><body>Reviewed first email</body></html>", subject: "Reviewed subject", text: "Reviewed copy" },
@@ -37,6 +41,17 @@ const review = {
   recipients: [{ memberId: "member-1", name: "Alex", email: "alex@example.test", eligible: true, reason: "" }, { memberId: "member-2", name: "Jordan", email: "jordan@example.test", eligible: false, reason: "Membership email updates are turned off." }],
   warnings: ["Only actual confirmed registrations are included."],
 };
+function savedDetail(data, scope, id, eventId) {
+  const item = (scope === "sequence" ? data.sequences : data.plans).find(row => row.id === id);
+  assert.ok(item, `Unknown saved automation: ${id}`);
+  const call = { ...event, planId: plan.id, revision: plan.revision, active: item.active, status: item.status, attention: item.attention, nextReminder: null, delivery: counts };
+  return { scope, id, revision: item.revision, active: item.active, title: item.title, status: item.status,
+    draft: { scope, eventId: scope === "event" ? event.id : "", kind: item.kind, track: item.track, templateId: template.id, templateVersion: template.version, bodyTarget: "copy:body", headingTarget: "copy:heading", bindings: { NAME: { source: "member_name" }, URL: { source: "call_url" }, BODY: { source: "literal", value: "Saved body" } }, copy: { greeting: "", signature: "RU/NED" } },
+    template, configuration: data.configuration, timingSummary: item.timingSummary, audienceSummary: item.audienceSummary, inheritanceSummary: item.inheritanceSummary, nextReminder: null,
+    calls: [call], selectedEventId: event.id, previewIsExample: !eventId && scope === "sequence", previews: review.previews, occurrences: review.occurrences,
+    recipients: eventId || scope === "event" ? review.recipients : [], recipientsChecked: Boolean(eventId) || scope === "event", recentDeliveries: [], warnings: [],
+  };
+}
 function fixture({ preview = false, data = overview, reviewed = review, selectedTemplate = template, respond } = {}) {
   const slots = [], effects = [], calls = [];
   let cursor = 0, changed = false;
@@ -51,9 +66,15 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/components/platform/OperatorMessagesTabs": { __esModule: true, default: "message-tabs" },
     "@/components/platform/operatorStyles": styles,
     "@/lib/communications/member-email-cadence-model": model,
+    "@/lib/communications/member-email-cadence-copy": copy,
+    "@/lib/communications/member-email-cadence-management": management,
   };
+  deps["@/components/platform/OperatorEmailAutomationManager"] = compile("src/components/platform/OperatorEmailAutomationManager.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; });
   async function fallback(call) {
-    if (call.method === "GET") return Response.json(call.url === API ? data : { template: selectedTemplate });
+    if (call.method === "GET") {
+      if (call.url.startsWith(`${API}?`)) { const query = new URL(call.url, "https://example.test").searchParams; return Response.json(savedDetail(data, query.get("scope"), query.get("id"), query.get("eventId"))); }
+      return Response.json(call.url === API ? data : { template: selectedTemplate });
+    }
     return Response.json(JSON.parse(call.body).action === "preview" ? reviewed : { ok: true });
   }
   const Component = compile("src/components/platform/OperatorEmailAutomations.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }, async (url, options) => { const call = { url, ...options }; calls.push(call); return respond ? respond(call, fallback) : fallback(call); }).default;
@@ -62,9 +83,10 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   const button = label => { const result = find(node => node.type === "button" && text(node) === label); assert.ok(result, `Missing button: ${label}`); return result; };
   async function settle() { await new Promise(resolve => setImmediate(resolve)); return draw(); }
   function change(id, value) { const field = find(node => node.props?.id === id); assert.ok(field, `Missing field: ${id}`); field.props.onChange({ target: { value }, currentTarget: { value } }); }
-  async function setup({ scope = "event", withEvent = true } = {}) { draw(); await settle(); if (scope !== "sequence") change("cadence-scope", scope); if (withEvent) change("cadence-event", preview ? "preview-november" : event.id); change("cadence-template", preview ? "preview-template" : template.id); await settle(); change("cadence-body", "copy:body"); change("cadence-heading", "copy:heading"); }
+  async function setup({ scope = "event", withEvent = true } = {}) { draw(); await settle(); button("New automation").props.onClick(); if (scope !== "sequence") change("cadence-scope", scope); if (withEvent) change("cadence-event", preview ? "preview-november" : event.id); change("cadence-template", preview ? "preview-template" : template.id); await settle(); change("cadence-body", "copy:body"); change("cadence-heading", "copy:heading"); }
   const submit = () => find(node => node.type === "form").props.onSubmit({ preventDefault() {} });
-  return { draw, find, button, calls, change, settle, setup, submit };
+  async function openSaved(id) { draw(); await settle(); const row = find(node => node.type === "li" && node.key === id); assert.ok(row, `Missing saved row: ${id}`); const open = nodes(row).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("View ")); assert.ok(open); open.props.onClick(); await settle(); }
+  return { draw, find, button, calls, change, settle, setup, submit, openSaved };
 }
 
 test("sample workspace supports review with real cadence timing while remaining completely offline", async () => {
@@ -81,7 +103,7 @@ test("sample workspace supports review with real cadence timing while remaining 
   assert.match(frame.props.srcDoc, /script-src 'none'/);
   assert.equal(f.button("Activation off in preview").props.disabled, true);
   f.button("Activation off in preview").props.onClick();
-  f.button("Refresh").props.onClick(); await f.settle();
+  f.button("Back to automations").props.onClick(); f.button("Discard changes").props.onClick(); f.button("Refresh").props.onClick(); await f.settle();
   assert.equal(f.calls.length, 0);
 });
 
@@ -234,7 +256,7 @@ test("local sample preview renders fixed copy edits as text without a provider r
   const html = f.find(node => node.type === "iframe").props.srcDoc;
   assert.match(html, /RU\/NED &lt;team&gt;/);
   assert.doesNotMatch(html, /Hi there,|Your name|<team>/);
-  assert.match(html, /Alex, we’re back together tomorrow/);
+  assert.match(html, /Every RU\/NED Membership starts in the same place/);
   assert.equal(f.calls.length, 0);
 });
 
@@ -257,7 +279,7 @@ test("empty eligibility, no future stages and expired reviews block activation i
 
 test("pausing uses the displayed plan revision and reloads the current plan list", async () => {
   const f = fixture({ data: { ...overview, plans: [plan] } }); f.draw(); await f.settle();
-  f.button("Pause automation").props.onClick(); await f.settle();
+  await f.openSaved(plan.id); f.button("Pause automation").props.onClick(); await f.settle();
   assert.deepEqual(JSON.parse(f.calls.find(call => call.method === "POST").body), { action: "pause", id: plan.id, revision: plan.revision });
   assert.equal(f.calls.filter(call => call.url === API && call.method === "GET").length, 2);
   assert.match(text(f.draw()), /Automation paused/);
@@ -278,7 +300,7 @@ test("sequence pause targets its revision and leaves individual overrides unchan
   assert.match(text(f.find(node => node.type === "li" && node.key === individual.id)), /Individually approved/);
   assert.match(text(f.find(node => node.type === "li" && node.key === sequence.id)), /Revision 2/);
   assert.match(text(f.draw()), /Pausing a sequence also pauses its inherited reminders/);
-  assert.match(text(f.draw()), /Paid Foundations members are enrolled only when their accepted cohort and session dates match/);
+  await f.openSaved(sequence.id, "sequence");
   const pause = f.button("Pause sequence"); pause.props.onClick(); pause.props.onClick(); await f.settle();
   const calls = f.calls.filter(call => call.method === "POST");
   assert.equal(calls.length, 1);
@@ -303,18 +325,18 @@ test("changed calls need review and delivery exceptions point to existing Resend
   const history = nodes(row).find(node => node.type === "a");
   assert.equal(history.props.href, "/ops/messages?mode=emails");
   assert.match(text(history), /Check Resend delivery history/);
-  assert.deepEqual(nodes(row).filter(node => node.type === "button").map(text), ["Pause automation"]);
+  assert.deepEqual(nodes(row).filter(node => node.type === "button").map(text), [event.title]);
 });
 
 test("missing setup, campaign-only designs and template load failures cannot produce a review", async () => {
-  const setup = fixture({ data: { ...overview, setupRequired: true } }); setup.draw(); await setup.settle();
+  const setup = fixture({ data: { ...overview, setupRequired: true } }); setup.draw(); await setup.settle(); setup.button("New automation").props.onClick();
   assert.equal(setup.button("Review sequence").props.disabled, true);
   await setup.submit();
   assert.equal(setup.calls.filter(call => call.method === "POST").length, 0);
-  const campaign = fixture({ selectedTemplate: { ...template, campaignOnly: true } }); campaign.draw(); await campaign.settle(); campaign.change("cadence-template", template.id); await campaign.settle();
+  const campaign = fixture({ selectedTemplate: { ...template, campaignOnly: true } }); campaign.draw(); await campaign.settle(); campaign.button("New automation").props.onClick(); campaign.change("cadence-template", template.id); await campaign.settle();
   assert.match(text(campaign.draw()), /Choose an individual email template/);
   assert.equal(campaign.button("Review sequence").props.disabled, true);
-  const unpublished = fixture({ selectedTemplate: { ...template, status: "draft" } }); unpublished.draw(); await unpublished.settle(); unpublished.change("cadence-template", template.id); await unpublished.settle();
+  const unpublished = fixture({ selectedTemplate: { ...template, status: "draft" } }); unpublished.draw(); await unpublished.settle(); unpublished.button("New automation").props.onClick(); unpublished.change("cadence-template", template.id); await unpublished.settle();
   assert.match(text(unpublished.draw()), /Publish this design in Resend/);
   assert.equal(unpublished.button("Review sequence").props.disabled, true);
   let fail = false;
@@ -352,4 +374,230 @@ test("automations has an explicit messages tab without changing existing message
   const links = nodes(Tabs({ active: "automations" })).filter(node => node.type === "a");
   assert.equal(links.length, 4);
   assert.equal(links.find(link => link.props["aria-current"] === "page").props.href, "/ops/messages?mode=automations");
+});
+
+test("management hub searches saved sequences and calls and filters actionable states", async () => {
+  const paused = { ...sequence, id: "paused-sequence", title: "Circle call · Members", kind: "circle", active: false, status: "paused" };
+  const changed = { ...plan, status: "changed", attention: "Call changed — review its time." };
+  const f = fixture({ data: { ...overview, sequences: [sequence, paused], plans: [changed] } });
+  f.draw(); await f.settle();
+  assert.equal(f.find(node => node.type === "form"), undefined);
+  assert.match(text(f.draw()), /Recurring emails/);
+  assert.ok(f.find(node => node.key === sequence.id && node.type === "li"));
+  f.change("automation-search", "circle");
+  assert.equal(f.find(node => node.key === sequence.id && node.type === "li"), undefined);
+  assert.ok(f.find(node => node.key === paused.id && node.type === "li"));
+  f.change("automation-search", ""); f.change("automation-filter", "attention");
+  assert.ok(f.find(node => node.key === plan.id && node.type === "li"));
+  assert.equal(f.find(node => node.key === paused.id && node.type === "li"), undefined);
+  f.change("automation-filter", "paused");
+  assert.ok(f.find(node => node.key === paused.id && node.type === "li"));
+  assert.equal(f.find(node => node.key === plan.id && node.type === "li"), undefined);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("opening a saved sequence renders its approved stages without inspecting recipients or making a review token", async () => {
+  const f = fixture({ data: { ...overview, sequences: [sequence] } });
+  await f.openSaved(sequence.id, "sequence");
+  assert.equal(f.calls.at(-1).url, `${API}?scope=sequence&id=${sequence.id}`);
+  assert.match(text(f.draw()), /16 calendar days and 7 calendar days before/);
+  assert.match(text(f.draw()), /8 a.m. Denver time/);
+  assert.match(text(f.draw()), /None currently scheduled to send/);
+  assert.match(text(f.draw()), /Choose a call and inspect its current recipients/);
+  assert.doesNotMatch(text(f.draw()), /alex@example.test/);
+  const frame = f.find(node => node.type === "iframe");
+  assert.equal(frame.props.title, "Saved automation email design");
+  assert.equal(frame.props.sandbox, "");
+  assert.match(frame.props.srcDoc, /First stage/);
+  f.change("automation-saved-stage", "1");
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Second stage/);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("recipient inspection sends only a read-only actual-call selection and hides old results when selection changes", async () => {
+  let finish;
+  const response = new Promise(resolve => { finish = resolve; });
+  const data = { ...overview, sequences: [sequence] };
+  const f = fixture({ data, respond: (call, fallback) => call.url.includes("eventId=") ? response : fallback(call) });
+  await f.openSaved(sequence.id, "sequence");
+  const inspect = f.button("Inspect recipients");
+  inspect.props.onClick(); inspect.props.onClick();
+  assert.equal(f.calls.filter(call => call.url.includes("eventId=")).length, 1);
+  assert.equal(f.calls.at(-1).method, "GET");
+  assert.equal(f.calls.at(-1).url, `${API}?scope=sequence&id=${sequence.id}&eventId=${event.id}`);
+  assert.equal(f.button("Checking recipients…").props.disabled, true);
+  finish(Response.json(savedDetail(data, "sequence", sequence.id, event.id))); await f.settle();
+  assert.match(text(f.draw()), /1 eligible · 1 excluded/);
+  assert.match(text(f.draw()), /alex@example.test/);
+  assert.match(text(f.draw()), /Excluded: Membership email updates are turned off/);
+  f.change("automation-recipient-call", "");
+  assert.doesNotMatch(text(f.draw()), /alex@example.test/);
+  assert.equal(f.button("Inspect recipients").props.disabled, true);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("saved edits preserve the approved template version, field bindings and fixed copy before guarded reactivation", async () => {
+  const f = fixture({ data: { ...overview, sequences: [sequence] }, reviewed: { ...review, scope: "sequence" } });
+  await f.openSaved(sequence.id, "sequence"); f.button("Edit design").props.onClick();
+  assert.equal(f.find(node => node.props?.id === "cadence-template").props.value, template.id);
+  assert.equal(f.find(node => node.props?.id === "cadence-body").props.value, "copy:body");
+  assert.equal(f.find(node => node.props?.id === "cadence-source-NAME").props.value, "member_name");
+  assert.equal(f.find(node => node.props?.id === "cadence-source-URL").props.value, "call_url");
+  assert.equal(f.find(node => node.props?.id === "cadence-copy-2").props.value, "");
+  assert.equal(f.find(node => node.props?.id === "cadence-copy-3").props.value, "RU/NED");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+  await f.submit();
+  const posted = JSON.parse(f.calls.find(call => call.method === "POST").body);
+  assert.equal(posted.action, "preview");
+  assert.equal(posted.draft.templateVersion, template.version);
+  assert.equal(posted.draft.scope, "sequence");
+  assert.deepEqual(posted.draft.copy, { greeting: "", signature: "RU/NED" });
+  assert.deepEqual(posted.draft.bindings.NAME, { source: "member_name" });
+  f.change("cadence-copy-3", "Team RU/NED");
+  assert.equal(f.find(node => node.type === "button" && text(node) === "Activate sequence"), undefined);
+  f.button("Back to sequence").props.onClick();
+  assert.match(text(f.draw()), /Discard the changes/);
+  f.button("Keep editing").props.onClick();
+  assert.equal(f.find(node => node.props?.id === "cadence-copy-3").props.value, "Team RU/NED");
+  f.button("Back to sequence").props.onClick(); f.button("Discard changes").props.onClick();
+  assert.equal(f.find(node => node.type === "form"), undefined);
+  assert.equal(f.calls.filter(call => call.body && JSON.parse(call.body).action === "activate").length, 0);
+});
+
+test("paused automation resumes through prefilled review, never an immediate activation request", async () => {
+  const f = fixture({ data: { ...overview, plans: [{ ...plan, active: false, status: "paused" }] } });
+  await f.openSaved(plan.id);
+  f.button("Review and resume").props.onClick();
+  assert.equal(f.find(node => node.props?.id === "cadence-scope").props.value, "event");
+  assert.equal(f.find(node => node.props?.id === "cadence-event").props.value, event.id);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+  await f.submit();
+  assert.equal(JSON.parse(f.calls.find(call => call.method === "POST").body).action, "preview");
+  assert.ok(f.button("Activate automation"));
+});
+
+test("delivery activity exposes failures without a retry action and separates provider acceptance from delivery", async () => {
+  const data = { ...overview, plans: [plan] };
+  const f = fixture({ data, respond: (call, fallback) => call.url.startsWith(`${API}?`) ? Response.json({ ...savedDetail(data, "event", plan.id), recentDeliveries: [{ id: "delivery-1", eventId: event.id, eventTitle: event.title, stage: "day_before", status: "manual_review", dueAt: event.startsAt, updatedAt: event.startsAt, sentAt: null, reason: "Provider outcome uncertain. Verify Resend before taking action." }] }) : fallback(call) });
+  await f.openSaved(plan.id);
+  assert.match(text(f.draw()), /Needs delivery review/);
+  assert.match(text(f.draw()), /Provider outcome uncertain/);
+  assert.match(text(f.draw()), /Sent means accepted by the email provider/);
+  assert.equal(f.find(node => node.type === "button" && /retry/i.test(text(node))), undefined);
+});
+
+test("sample manager supports saved previews, inspection, editing and review without any network calls", async () => {
+  const f = fixture({ preview: true });
+  await f.openSaved("sample-sequence-members", "sequence");
+  assert.match(text(f.draw()), /fictional/);
+  assert.equal(f.button("Pause sequence").props.disabled, true);
+  f.button("Pause sequence").props.onClick();
+  f.button("Inspect recipients").props.onClick(); await f.settle();
+  assert.match(text(f.draw()), /alex@example.test/);
+  f.button("Edit design").props.onClick(); await f.submit();
+  assert.equal(f.button("Activation off in preview").props.disabled, true);
+  f.button("Activation off in preview").props.onClick();
+  assert.equal(f.calls.length, 0);
+});
+
+test("a failed detail or audience request leaves saved state intact and surfaces the failure", async () => {
+  let fail = false;
+  const f = fixture({ data: { ...overview, sequences: [sequence] }, respond: (call, fallback) => fail && call.url.startsWith(`${API}?`) ? Response.json({ error: "Audience check unavailable. Try again later." }, { status: 503 }) : fallback(call) });
+  await f.openSaved(sequence.id, "sequence"); fail = true;
+  f.button("Inspect recipients").props.onClick(); await f.settle();
+  assert.match(text(f.draw()), /Audience check unavailable/);
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /First stage/);
+  assert.doesNotMatch(text(f.draw()), /alex@example.test/);
+  assert.equal(Boolean(f.button("Edit design").props.disabled), false);
+});
+
+test("other automatic workflows remain distinct from unfinished protocols and do not imply delivery success", async () => {
+  const f = fixture({ data: { ...overview, warnings: ["Live template catalog temporarily unavailable. Saved designs remain visible."], managedElsewhere: [{ id: "registration", title: "Welcome and profile-ready emails", state: "configured", statusLabel: "Configured", trigger: "Follows verified registration and profile access.", timing: "After the relevant account change.", recipients: "The corresponding member.", management: { href: "/ops/members", label: "View members" }, controlBoundary: "Managed by registration settings; not paused with recurring call reminders." }] } });
+  f.draw(); await f.settle();
+  const existing = f.find(node => node.props?.["aria-labelledby"] === "existing-automated-emails-heading");
+  assert.match(text(existing), /Welcome and profile-ready/);
+  assert.match(text(existing), /does not confirm successful delivery/);
+  assert.match(text(f.find(node => node.props?.["aria-labelledby"] === "inactive-automations-heading")), /Completion/);
+  assert.doesNotMatch(text(existing), /Awaiting approved completion rules/);
+  assert.match(text(f.draw()), /Saved designs remain visible/);
+});
+
+test("focused details preserve the library search when returning and sample stages use actual approved copy", async () => {
+  const f = fixture({ preview: true }); f.draw();
+  f.change("automation-search", "Foundations 01");
+  await f.openSaved("sample-sequence-members");
+  assert.equal(f.find(node => node.props?.id === "automation-search"), undefined);
+  const frame = f.find(node => node.type === "iframe");
+  assert.match(frame.props.srcDoc, /What we mean by Foundations/);
+  assert.doesNotMatch(frame.props.srcDoc, /Tomorrow:/);
+  f.change("automation-saved-stage", "2");
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Tomorrow:/);
+  assert.doesNotMatch(f.find(node => node.type === "iframe").props.srcDoc, /What we mean by Foundations/);
+  f.button("Back to automations").props.onClick();
+  assert.equal(f.find(node => node.props?.id === "automation-search").props.value, "Foundations 01");
+  assert.equal(f.find(node => node.type === "iframe"), undefined);
+  assert.equal(f.calls.length, 0);
+});
+
+test("next reminder uses its explicit time zone and ready sequences do not look finished", async () => {
+  const nextReminder = { stage: "day_before", dueAt: "2026-11-04T22:00:00Z", expiresAt: "2026-11-04T22:30:00Z", eventId: event.id, eventTitle: event.title, timeZone: "America/New_York" };
+  const f = fixture({ data: { ...overview, configuration: { ...overview.configuration, enabled: true, ready: true }, sequences: [{ ...sequence, nextReminder }, { ...sequence, id: "ready-sequence", title: "Circle call · Members", status: "no_remaining", matchingCallCount: 0 }] } });
+  f.draw(); await f.settle();
+  assert.match(text(f.find(node => node.type === "li" && node.key === sequence.id)), /5:00 PM · America\/New_York/);
+  const ready = text(f.find(node => node.type === "li" && node.key === "ready-sequence"));
+  assert.match(ready, /Ready for future calls/);
+  assert.doesNotMatch(ready, /finished/);
+});
+
+test("dirty editor guards client-side navigation and completed review receives focus without stage-change jumps", async () => {
+  const previous = { window: globalThis.window, document: globalThis.document, Element: globalThis.Element };
+  const windowListeners = new Map(), documentListeners = new Map(), focused = [], navigated = [];
+  class ElementStub { constructor(href, target = "") { this.href = href; this.target = target; } closest() { return this; } hasAttribute() { return false; } }
+  globalThis.Element = ElementStub;
+  globalThis.window = { location: { href: "https://example.test/ops/messages?mode=automations", pathname: "/ops/messages", search: "?mode=automations", assign: url => navigated.push(url) }, addEventListener: (name, fn) => windowListeners.set(name, fn), removeEventListener: name => windowListeners.delete(name) };
+  globalThis.document = { addEventListener: (name, fn) => documentListeners.set(name, fn), removeEventListener: name => documentListeners.delete(name), getElementById: id => ({ focus: () => focused.push(id), scrollIntoView() {} }) };
+  try {
+    const f = fixture(); await f.setup(); await f.submit(); f.draw();
+    assert.ok(focused.includes("automation-review-heading"));
+    const count = focused.filter(id => id === "automation-review-heading").length;
+    f.change("cadence-preview-stage", "1"); f.draw();
+    assert.equal(focused.filter(id => id === "automation-review-heading").length, count);
+    let prevented = 0;
+    const click = { target: new ElementStub("https://example.test/ops/messages?mode=emails"), preventDefault() { prevented++; }, stopPropagation() {} };
+    documentListeners.get("click")(click); f.draw();
+    assert.equal(prevented, 1); assert.equal(navigated.length, 0);
+    assert.ok(focused.includes("automation-discard-confirmation"));
+    f.button("Keep editing").props.onClick();
+    assert.ok(f.find(node => node.type === "form"));
+    documentListeners.get("click")(click); f.button("Discard changes").props.onClick();
+    assert.deepEqual(navigated, ["https://example.test/ops/messages?mode=emails"]);
+    let warned = false;
+    windowListeners.get("beforeunload")({ preventDefault() { warned = true; } });
+    assert.equal(warned, false);
+  } finally { for (const key of Object.keys(previous)) { if (previous[key] === undefined) delete globalThis[key]; else globalThis[key] = previous[key]; } }
+});
+
+test("effective filters exclude finished and cancelled calls while blocked prerequisites need attention", async () => {
+  const past = { ...plan, id: "past", status: "past" };
+  const cancelled = { ...plan, id: "cancelled", status: "cancelled" };
+  const blocked = { ...plan, id: "blocked", status: "blocked", attention: "The call needs its access link before reminders can send." };
+  const f = fixture({ data: { ...overview, plans: [plan, past, cancelled, blocked] } });
+  f.draw(); await f.settle(); f.change("automation-filter", "active");
+  assert.ok(f.find(node => node.type === "li" && node.key === plan.id));
+  for (const id of ["past", "cancelled", "blocked"]) assert.equal(f.find(node => node.type === "li" && node.key === id), undefined);
+  f.change("automation-filter", "attention");
+  assert.ok(f.find(node => node.type === "li" && node.key === "blocked"));
+  assert.equal(f.find(node => node.type === "li" && node.key === plan.id), undefined);
+});
+
+test("sequences with the same call-type title visibly distinguish member and founder tracks", async () => {
+  const members = { ...sequence, title: "Foundations 01" };
+  const founders = { ...sequence, id: "founder-sequence", title: "Foundations 01", track: "founder_test" };
+  const f = fixture({ data: { ...overview, sequences: [members, founders] } }); f.draw(); await f.settle();
+  assert.match(text(f.find(node => node.type === "li" && node.key === members.id)), /Members · Personal note/);
+  assert.match(text(f.find(node => node.type === "li" && node.key === founders.id)), /Founder test · Personal note/);
+  await f.openSaved(founders.id);
+  assert.match(text(f.draw()), /Reusable sequence · Founder test/);
+  f.button("Edit design").props.onClick();
+  assert.ok(f.button("Back to sequence"));
 });

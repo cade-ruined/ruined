@@ -2,31 +2,23 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import OperatorEmailAutomationManager, { type AutomationFilter, type AutomationSelection } from "@/components/platform/OperatorEmailAutomationManager";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS } from "@/components/platform/operatorStyles";
 import { CADENCE_STAGE_LABELS, cadenceOccurrences, type CadenceEvent, type CadenceKind, type CadenceStage, type CadenceTrack } from "@/lib/communications/member-email-cadence-model";
+import { cadenceCopy } from "@/lib/communications/member-email-cadence-copy";
+import { cadenceManagementDescriptions, type CadenceManagementDetail, type CadenceManagementOverview, type CadenceManagementPlanSummary, type CadenceManagementSequenceSummary } from "@/lib/communications/member-email-cadence-management";
 import type { CadenceBindingSource, CadenceDraft } from "@/lib/communications/member-email-cadence-types";
-import type { ResendEmailTemplate, ResendEmailTemplateSummary } from "@/lib/communications/resend-email-model";
+import type { ResendEmailTemplate } from "@/lib/communications/resend-email-model";
 
 type Kind = CadenceKind;
 type Track = CadenceTrack;
 type Source = CadenceBindingSource;
 type Event = CadenceEvent;
-type Plan = {
-  id: string; eventId: string; kind: Kind; track: Track; active: boolean; revision: number; templateName: string; updatedAt: string;
-  sequenceId?: string | null;
-  attention?: string;
-  delivery?: { sent: number; pending: number; failed: number; manualReview: number; cancelled: number };
-};
-type Sequence = Pick<Plan, "id" | "kind" | "track" | "active" | "revision" | "templateName" | "updatedAt">;
-type Overview = {
-  events: Event[]; plans: Plan[]; templates: ResendEmailTemplateSummary[];
-  sequences?: Sequence[];
-  configuration: { enabled: boolean; ready: boolean };
-  inactive: Array<{ title: string; reason: string }>;
-  setupRequired?: boolean;
-};
+type Plan = CadenceManagementPlanSummary;
+type Sequence = CadenceManagementSequenceSummary;
+type Overview = CadenceManagementOverview;
 type Draft = CadenceDraft;
 type Preview = { html: string; subject: string; text: string };
 type Review = {
@@ -60,7 +52,11 @@ const SAMPLE_OVERVIEW: Overview = {
     { id: "preview-october", title: "Foundations 03 — October founder test", startsAt: "2026-10-22T21:00:00.000Z", endsAt: "2026-10-22T22:30:00.000Z", timeZone: "America/Denver" },
     { id: "preview-november", title: "Foundations 01 — November", startsAt: "2026-11-05T22:00:00.000Z", endsAt: "2026-11-05T23:30:00.000Z", timeZone: "America/Denver" },
   ],
-  plans: [], sequences: [], templates: [SAMPLE_TEMPLATE], configuration: { enabled: false, ready: false },
+  plans: [], sequences: [], templates: [SAMPLE_TEMPLATE], configuration: { enabled: true, ready: true, activatedAt: "2026-10-01T00:00:00Z" }, setupRequired: false, warnings: [], managedElsewhere: [
+    { id: "registration", title: "Welcome and profile-ready emails", state: "configured", statusLabel: "Sample · configured", trigger: "A completed registration queues a welcome. Releasing profile access queues the profile-ready email.", timing: "Once per milestone. Pending messages are checked every five minutes.", recipients: "The registered member at their current verified email address, after readiness checks.", management: { href: "/ops/registrations", label: "Open registrations" }, controlBoundary: "Registrations manages profile release and shows delivery status. Copy and the delivery switch are maintained separately from call reminders." },
+    { id: "renewal", title: "Membership renewal notices", state: "paused", statusLabel: "Sample · paused", trigger: "An eligible annual membership approaches renewal, or a monthly membership approaches the end of its initial term.", timing: "40 and 20 days before the renewal or initial term ends. Checked daily at 13:00 UTC.", recipients: "The membership customer after current billing and renewal checks.", management: { href: "/ops/access-billing", label: "Review billing services" }, controlBoundary: "Rules, copy, and the delivery switch belong to the billing workflow. This page does not change charges or renewal terms." },
+    { id: "work_digest", title: "Operations work summary", state: "incomplete", statusLabel: "Sample · setup incomplete", trigger: "A scheduled summary of the operations work queue.", timing: "This sample uses 10:00 a.m. and 3:00 p.m. Mountain time, following daylight saving time.", recipients: "One designated operations administrator with active access and a verified email address.", management: { href: "/ops/work", label: "Open work queue" }, controlBoundary: "The work queue controls the included tasks. The recipient, timing, and delivery switch are maintained separately from member reminders." },
+  ],
   inactive: [
     { title: "Missed calls and unfinished work", reason: "Completion rules, catch-up instructions, and deadlines need approval." },
     { title: "Foundations completion and Circle reveal", reason: "These will be connected to verified completion and an approved Circle assignment." },
@@ -76,7 +72,7 @@ function exampleEvent(kind: Kind): Event {
 function dateLabel(value: string, timeZone = "America/Denver") {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "Time unavailable";
-  try { return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(date); }
+  try { return `${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(date)} · ${timeZone}`; }
   catch { return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Denver" }).format(date); }
 }
 function stageLabel(value: string) { return CADENCE_STAGE_LABELS[value as CadenceStage] ?? value.replaceAll("_", " ").replaceAll("-", " "); }
@@ -93,33 +89,69 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
   return result;
 }
 function sampleReview(draft: Draft, event: Event, template: ResendEmailTemplate): Review {
-  const subject = `Tomorrow: ${event.title}.`;
-  const body = `Alex, we’re back together tomorrow.\n\n${event.title}\n${dateLabel(event.startsAt, event.timeZone)}\n\nGive yourself the full call and come ready to participate.\n\nThis is a sample. No email will be sent.`;
-  const fields = template.fields.map(field => ({
-    heading: `copy:${field.key}` === draft.headingTarget,
-    value: `copy:${field.key}` === draft.bodyTarget ? body : `copy:${field.key}` === draft.headingTarget ? subject : draft.copy?.[field.key] ?? field.value,
-  }));
-  if (draft.headingTarget?.startsWith("variable:")) fields.unshift({ heading: true, value: subject });
-  if (draft.bodyTarget.startsWith("variable:")) fields.push({ heading: false, value: body });
-  const text = fields.map(field => field.value).filter(Boolean).join("\n\n");
-  const html = fields.filter(field => field.value).map(field => field.heading ? `<h1>${escaped(field.value)}</h1>` : `<p style="white-space:pre-wrap;line-height:1.7">${escaped(field.value)}</p>`).join("");
-  return { reviewToken: "preview-only", scope: draft.scope ?? "event", matchingEvents: draft.scope === "sequence" && draft.eventId ? [event] : [], preview: { subject, text, html: `<html><head></head><body style="margin:0;padding:32px;background:#e5e0d5;color:#2a2a2a;font-family:Arial,sans-serif"><p>RU/NED · SAMPLE</p>${html}</body></html>` },
-    occurrences: cadenceOccurrences(event, draft.kind, draft.track),
+  const occurrences = cadenceOccurrences(event, draft.kind, draft.track);
+  const previews = occurrences.map(occurrence => {
+    const copy = cadenceCopy({ event, kind: draft.kind, track: draft.track, stage: occurrence.stage, memberName: "Alex Sample", siteUrl: "https://members.example.test" });
+    const fields = template.fields.map(field => ({
+      heading: `copy:${field.key}` === draft.headingTarget,
+      value: `copy:${field.key}` === draft.bodyTarget ? copy.body : `copy:${field.key}` === draft.headingTarget ? copy.heading : draft.copy?.[field.key] ?? field.value,
+    }));
+    if (draft.headingTarget?.startsWith("variable:")) fields.unshift({ heading: true, value: copy.heading });
+    if (draft.bodyTarget.startsWith("variable:")) fields.push({ heading: false, value: copy.body });
+    const text = fields.map(field => field.value).filter(Boolean).join("\n\n");
+    const html = fields.filter(field => field.value).map(field => field.heading ? `<h1 style="overflow-wrap:anywhere">${escaped(field.value)}</h1>` : `<p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${escaped(field.value)}</p>`).join("");
+    return { stage: occurrence.stage, subject: copy.subject, text, html: `<html><head></head><body style="margin:0;padding:24px;background:#e5e0d5;color:#2a2a2a;font-family:Arial,sans-serif"><p>RU/NED · SAMPLE</p>${html}</body></html>` };
+  });
+  return { reviewToken: "preview-only", scope: draft.scope ?? "event", matchingEvents: draft.scope === "sequence" && draft.eventId ? [event] : [], preview: previews[0] ?? { subject: "Reminder preview", text: "No reminder stages available.", html: "<p>No reminder stages available.</p>" }, previews, occurrences,
     recipients: draft.eventId ? [{ memberId: "preview-one", name: "Alex Sample", email: "alex@example.test", eligible: true, reason: null }, { memberId: "preview-two", name: "Jordan Sample", email: "jordan@example.test", eligible: false, reason: "Membership email updates are turned off." }] : [],
     warnings: ["Preview only. Foundations and founder tests use confirmed invitations. Other Membership and Circle calls use their eligible call audience."] };
 }
 
+const SAMPLE_COUNTS = { sent: 1, pending: 0, failed: 0, manualReview: 0, cancelled: 0 };
+function sampleOverview(): Overview {
+  const events = SAMPLE_OVERVIEW.events;
+  const sequences: Sequence[] = [
+    { id: "sample-sequence-members", kind: "foundations_01", track: "members", active: true, revision: 2, templateName: SAMPLE_TEMPLATE.name, updatedAt: "2026-10-12T18:00:00Z", title: "Foundations 01 · Members", status: "upcoming", attention: "", ...cadenceManagementDescriptions("foundations_01", "members"), nextReminder: { ...cadenceOccurrences(events[1], "foundations_01", "members")[0], eventId: events[1].id, eventTitle: events[1].title, timeZone: events[1].timeZone }, delivery: SAMPLE_COUNTS, matchingCallCount: 1 },
+    { id: "sample-sequence-founders", kind: "foundations_03", track: "founder_test", active: false, revision: 1, templateName: SAMPLE_TEMPLATE.name, updatedAt: "2026-10-12T18:00:00Z", title: "Foundations 03 · Founder test", status: "paused", attention: "", ...cadenceManagementDescriptions("foundations_03", "founder_test"), nextReminder: null, delivery: { ...SAMPLE_COUNTS, sent: 0 }, matchingCallCount: 1 },
+  ];
+  const plans: Plan[] = events.map((event, index) => { const sequence = sequences[index === 0 ? 1 : 0]; return { ...sequence, id: `sample-plan-${event.id}`, eventId: event.id, title: event.title, sequenceId: sequence.id, delivery: { ...SAMPLE_COUNTS, sent: 0 }, attention: sequence.active ? "" : "Sequence paused. Its inherited reminders are paused too." }; });
+  return { ...SAMPLE_OVERVIEW, sequences, plans };
+}
+function sampleDetail(overview: Overview, selection: AutomationSelection, checkedEventId?: string): CadenceManagementDetail {
+  const item = selection.scope === "sequence" ? overview.sequences.find(value => value.id === selection.id) : overview.plans.find(value => value.id === selection.id);
+  if (!item) throw new Error("This sample automation is unavailable.");
+  const plans = selection.scope === "sequence" ? overview.plans.filter(plan => plan.sequenceId === item.id) : overview.plans.filter(plan => plan.id === item.id);
+  const calls = plans.flatMap(plan => { const event = overview.events.find(value => value.id === plan.eventId); return event ? [{ ...event, planId: plan.id, revision: plan.revision, active: plan.active, status: plan.status, attention: plan.attention, nextReminder: plan.nextReminder, delivery: plan.delivery }] : []; });
+  const event = calls.find(call => call.id === checkedEventId) ?? calls[0] ?? exampleEvent(item.kind);
+  const draft: Draft = { scope: selection.scope, eventId: selection.scope === "event" ? event.id : "", kind: item.kind, track: item.track, templateId: SAMPLE_TEMPLATE.id, templateVersion: SAMPLE_TEMPLATE.version, bodyTarget: "copy:body", headingTarget: "copy:heading", bindings: { MEMBER_NAME: { source: "member_name" }, CALL_URL: { source: "call_url" } }, copy: { greeting: "", signature: "RU/NED" } };
+  const reviewed = sampleReview({ ...draft, eventId: event.id }, event, SAMPLE_TEMPLATE);
+  return { scope: selection.scope, id: item.id, revision: item.revision, active: item.active, title: item.title, status: item.status, draft, template: SAMPLE_TEMPLATE, configuration: overview.configuration, timingSummary: item.timingSummary, audienceSummary: item.audienceSummary, inheritanceSummary: item.inheritanceSummary, nextReminder: item.nextReminder, calls, selectedEventId: event.id, previewIsExample: true,
+    previews: (reviewed.previews ?? []).map(item => ({ ...item, stage: item.stage as CadenceStage })), occurrences: reviewed.occurrences.map(occurrence => ({ ...occurrence, stage: occurrence.stage as CadenceStage })), recipients: reviewed.recipients.map(recipient => ({ ...recipient, reason: recipient.reason ?? "" })), recipientsChecked: Boolean(checkedEventId) || selection.scope === "event", recentDeliveries: selection.scope === "sequence" && item.active ? [{ id: "sample-delivery", eventId: "sample-earlier-call", eventTitle: "Foundations 01 — earlier sample call", stage: "orientation", status: "sent", dueAt: "2026-10-12T18:00:00Z", updatedAt: "2026-10-12T18:01:00Z", sentAt: "2026-10-12T18:01:00Z", reason: "Sample provider acceptance. No real email was sent." }] : [], warnings: ["Sample workspace. These designs, calls, recipients, and delivery records are fictional. Activation and sending are disabled."] };
+}
+
 export default function OperatorEmailAutomations({ preview = false }: { preview?: boolean }) {
-  const [overview, setOverview] = useState<Overview | null>(preview ? SAMPLE_OVERVIEW : null);
+  const [overview, setOverview] = useState<Overview | null>(preview ? sampleOverview() : null);
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [template, setTemplate] = useState<ResendEmailTemplate | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [previewStage, setPreviewStage] = useState(0);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingLabel, setEditingLabel] = useState<string | null>(null);
+  const [detail, setDetail] = useState<CadenceManagementDetail | null>(null);
+  const [selection, setSelection] = useState<AutomationSelection | null>(null);
+  const [detailStage, setDetailStage] = useState(0);
+  const [recipientEventId, setRecipientEventId] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<AutomationFilter>("all");
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [pending, setPending] = useState<string | null>(preview ? null : "loading");
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   const busy = useRef(false);
   const mounted = useRef(true);
+  const navigationTarget = useRef<string | null>(null);
+  const allowNavigation = useRef(false);
   const event = overview?.events.find(item => item.id === draft.eventId);
   const sequenceScope = draft.scope === "sequence";
   const reviewingSequence = review?.scope === "sequence";
@@ -139,9 +171,51 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     return () => { mounted.current = false; controller.abort(); };
   }, [preview]);
 
+  useEffect(() => {
+    if (!editorOpen || typeof window === "undefined") return;
+    const warn = (event: BeforeUnloadEvent) => {
+      if ((dirty || busy.current) && !allowNavigation.current) { event.preventDefault(); event.returnValue = ""; }
+    };
+    const guard = (event: MouseEvent) => {
+      if ((!dirty && !busy.current) || allowNavigation.current || event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+      const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (!["http:", "https:"].includes(destination.protocol) || (destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash)) return;
+      event.preventDefault(); event.stopPropagation();
+      if (busy.current) { setMessage("Wait for the current automation action to finish before leaving."); return; }
+      navigationTarget.current = destination.href; setConfirmDiscard(true);
+    };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("click", guard, true);
+    return () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("click", guard, true); };
+  }, [dirty, editorOpen]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const heading = document.getElementById(editorOpen ? "automation-editor-heading" : "automation-detail-heading");
+    if (!heading) return;
+    heading.focus({ preventScroll: true });
+    heading.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [editorOpen, detail?.id]);
+
+  useEffect(() => {
+    if (!review || typeof document === "undefined") return;
+    const heading = document.getElementById("automation-review-heading");
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [review]);
+
+  useEffect(() => {
+    if (!confirmDiscard || typeof document === "undefined") return;
+    const confirmation = document.getElementById("automation-discard-confirmation");
+    confirmation?.focus({ preventScroll: true });
+    confirmation?.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }, [confirmDiscard]);
+
   function change(update: Partial<Draft>) {
     if (busy.current) return;
-    setDraft(current => ({ ...current, ...update })); setReview(null); setMessage(""); setFailed(false);
+    setDraft(current => ({ ...current, ...update })); setDirty(true); setReview(null); setMessage(""); setFailed(false);
   }
   async function perform(label: string, action: () => Promise<void>) {
     if (busy.current) return;
@@ -154,12 +228,12 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     await perform("loading", async () => {
       if (preview) return;
       const result = await request<Overview>(API);
-      if (mounted.current) { setOverview(result); setReview(null); }
+      if (mounted.current) { setOverview(result); setReview(null); setDetail(null); setSelection(null); }
     });
   }
   async function chooseTemplate(id: string) {
     if (busy.current) return;
-    setReview(null); setTemplate(null); setDraft(current => ({ ...current, templateId: id, templateVersion: "", bodyTarget: "", headingTarget: undefined, bindings: {}, copy: undefined }));
+    setDirty(true); setReview(null); setTemplate(null); setDraft(current => ({ ...current, templateId: id, templateVersion: "", bodyTarget: "", headingTarget: undefined, bindings: {}, copy: undefined }));
     if (!id) return;
     await perform("template", async () => {
       const selected = preview ? SAMPLE_TEMPLATE : (await request<{ template: ResendEmailTemplate }>(`/api/ops/emails/resend/templates/${encodeURIComponent(id)}`)).template;
@@ -192,6 +266,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
       setReview(null);
       await request(API, { action: "activate", reviewToken: token });
       if (!mounted.current) return;
+      setEditorOpen(false); setDirty(false); setDetail(null); setSelection(null);
       setMessage(reviewingSequence ? "Sequence activated for matching published calls, including future calls. Earlier stages will not be sent." : "Automation activated for future reminders. Earlier stages will not be sent.");
       try { setOverview(await request<Overview>(API)); }
       catch { setMessage(`${reviewingSequence ? "Sequence" : "Automation"} activated. Refresh the list to see its latest status.`); }
@@ -202,7 +277,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     await perform(`pause:${plan.id}`, async () => {
       await request(API, { action: "pause", id: plan.id, revision: plan.revision });
       if (!mounted.current) return;
-      setReview(null); setOverview(current => current ? { ...current, plans: current.plans.map(item => item.id === plan.id ? { ...item, active: false } : item) } : current);
+      setDetail(null); setSelection(null); setReview(null); setOverview(current => current ? { ...current, plans: current.plans.map(item => item.id === plan.id ? { ...item, active: false } : item) } : current);
       setMessage("Automation paused. Future reminders will not be sent by this plan.");
       try { setOverview(await request<Overview>(API)); }
       catch { setMessage("Automation paused. Refresh the list to see its latest status."); }
@@ -213,7 +288,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     await perform(`pause-sequence:${sequence.id}`, async () => {
       await request(API, { action: "pause_sequence", id: sequence.id, revision: sequence.revision });
       if (!mounted.current) return;
-      setReview(null); setOverview(current => current ? { ...current,
+      setDetail(null); setSelection(null); setReview(null); setOverview(current => current ? { ...current,
         sequences: current.sequences?.map(item => item.id === sequence.id ? { ...item, active: false } : item),
         plans: current.plans.map(item => item.sequenceId === sequence.id ? { ...item, active: false } : item),
       } : current);
@@ -223,28 +298,49 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     });
   }
 
-  return <OperatorPageFrame title="Email automations">
+  async function openDetail(next: AutomationSelection, actualEventId?: string) {
+    if (busy.current || !overview) return;
+    await perform(actualEventId ? "recipients" : "detail", async () => {
+      const params = new URLSearchParams({ scope: next.scope, id: next.id });
+      if (actualEventId) params.set("eventId", actualEventId);
+      const result = preview ? sampleDetail(overview, next, actualEventId) : await request<CadenceManagementDetail>(`${API}?${params}`);
+      if (!mounted.current) return;
+      setDetail(result); setSelection(next); setDetailStage(0); setRecipientEventId(result.selectedEventId ?? "");
+    });
+  }
+  function newAutomation() {
+    if (busy.current) return;
+    setDetail(null); setSelection(null); navigationTarget.current = null;
+    setDraft(blankDraft()); setTemplate(null); setReview(null); setEditorOpen(true); setEditingLabel(null); setDirty(false); setConfirmDiscard(false); setMessage("");
+  }
+  function editSaved() {
+    if (busy.current || !detail) return;
+    setDraft({ ...detail.draft, scope: detail.scope, bindings: { ...detail.draft.bindings }, copy: { ...Object.fromEntries(detail.template.fields.map(field => [field.key, field.value])), ...detail.draft.copy } });
+    setTemplate(detail.template); setReview(null); setPreviewStage(0); setEditingLabel(detail.title); setEditorOpen(true); setDirty(false); setConfirmDiscard(false); setMessage("");
+  }
+  function closeEditor(discard = false) {
+    if (busy.current) return;
+    if (!discard) navigationTarget.current = null;
+    if (dirty && !discard) { setConfirmDiscard(true); return; }
+    if (discard && navigationTarget.current) { allowNavigation.current = true; window.location.assign(navigationTarget.current); return; }
+    setEditorOpen(false); setDirty(false); setReview(null); setConfirmDiscard(false); setMessage("");
+  }
+  function pauseSelected() {
+    if (!detail || !overview) return;
+    if (detail.scope === "sequence") { const item = overview.sequences.find(value => value.id === detail.id); if (item) void pauseSequence(item); }
+    else { const item = overview.plans.find(value => value.id === detail.id); if (item) void pause(item); }
+  }
+
+  return <OperatorPageFrame title="Recurring emails">
     <OperatorMessagesTabs active="automations" />
-    <header className="mb-5 flex flex-wrap items-start justify-between gap-4"><div className="max-w-2xl"><h2 className="operator-page-heading">Email automations</h2><p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">Approve a reminder sequence once for matching calls, or set up an individual call. Each delivery still checks the call’s audience and the member’s reminder preferences.</p></div><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => void refresh()} type="button">Refresh</button></header>
+    <header className="mb-5 flex flex-wrap items-start justify-between gap-4"><div className="max-w-2xl"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--operator-muted)]">Communications / automatic reminders</p><h2 className="operator-page-heading mt-2">Recurring emails</h2><p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">Manage the reminders that run around each call. Inspect the approved message, check who qualifies, and review changes before they go live.</p></div><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || overview?.setupRequired} onClick={newAutomation} type="button">New automation</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => void refresh()} type="button">Refresh</button></>}</div></header>
     {preview ? <p className="operator-emphasis mb-5 p-4 text-sm" data-operator-tone="wait">Preview workspace. Events, designs, and recipients below are samples. Nothing is saved or sent.</p> : null}
     {overview && (!overview.configuration.enabled || !overview.configuration.ready || overview.setupRequired) ? <section className="operator-emphasis mb-5 space-y-2 p-4 text-sm" data-operator-tone="wait" aria-label="Automation readiness"><h3 className="font-semibold">{overview.setupRequired ? "Automation setup is required" : !overview.configuration.enabled ? "Automatic delivery is paused" : "Delivery setup is incomplete"}</h3><p>{overview.setupRequired ? "The automation service needs setup before a plan can be reviewed or activated." : !overview.configuration.enabled ? "You can prepare and activate plans. No automated emails will leave until automatic delivery is enabled." : "You can prepare plans, but delivery will wait until the email service is ready."}</p></section> : null}
     {message ? <p className={`mb-5 break-words text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={failed ? "alert" : "status"}>{message}</p> : null}
     {!overview ? <p className="operator-bento-card text-sm" role="status">{pending ? "Loading automations…" : "Automations are unavailable. Refresh to try again."}</p> : <>
-      <section className="operator-bento-card mb-5" aria-labelledby="automation-sequences-heading"><h3 className="text-lg font-semibold" id="automation-sequences-heading">Approved sequences</h3><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">One sequence per call type and cadence. Current and future published calls inherit it when their reminder settings match. Pausing a sequence also pauses its inherited reminders.</p>
-        {overview.sequences?.length ? <ul className="mt-4 divide-y divide-[color:var(--operator-ink)]/15">{overview.sequences.map(sequence => <li className="flex flex-wrap items-start justify-between gap-4 py-4" key={sequence.id}><div className="min-w-0"><p className="break-words text-sm font-semibold">{KINDS.find(item => item.value === sequence.kind)?.label ?? "Member call"} · {sequence.track === "founder_test" ? "Founder test" : "Members"}</p><p className="mt-1 break-words text-xs text-[color:var(--operator-muted)]">{sequence.templateName} · Revision {sequence.revision}</p><p className="mt-2 text-xs">{sequence.active ? overview.configuration.enabled && overview.configuration.ready ? "Active" : "Active · delivery paused" : "Paused"}</p></div>{sequence.active ? <button className={OPERATOR_BUTTON_CLASS} disabled={preview || !!pending} onClick={() => void pauseSequence(sequence)} type="button">{pending === `pause-sequence:${sequence.id}` ? "Pausing…" : "Pause sequence"}</button> : null}</li>)}</ul> : <p className="mt-3 text-sm text-[color:var(--operator-muted)]">No reusable sequences have been approved yet.</p>}
-        <p className="mt-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">To revise or resume a sequence, choose its call type and cadence below and review it again. Individual overrides and paused calls keep their own settings.</p>
-      </section>
-      <section className="operator-bento-card mb-5" aria-labelledby="automation-plans-heading"><h3 className="text-lg font-semibold" id="automation-plans-heading">Configured calls</h3>{overview.plans.length ? <ul className="mt-4 divide-y divide-[color:var(--operator-ink)]/15">{overview.plans.map(plan => {
-        const deliveryReviewCount = (plan.delivery?.failed ?? 0) + (plan.delivery?.manualReview ?? 0);
-        const callChanged = /^Call changed\b/i.test(plan.attention ?? "");
-        const sequencePaused = /^Sequence paused\b/i.test(plan.attention ?? "");
-        return <li className="flex flex-wrap items-start justify-between gap-4 py-4" key={plan.id}><div className="min-w-0"><p className="break-words text-sm font-semibold">{overview.events.find(item => item.id === plan.eventId)?.title ?? KINDS.find(item => item.value === plan.kind)?.label ?? "Scheduled call"}</p><p className="mt-1 break-words text-xs text-[color:var(--operator-muted)]">{plan.track === "founder_test" ? "Founder test" : "Members"} · {plan.templateName}</p><p className="mt-2 text-xs">{callChanged ? "Needs review" : sequencePaused ? "Paused · sequence" : plan.active ? overview.configuration.enabled && overview.configuration.ready ? "Active" : "Active · delivery paused" : "Paused"}</p>
-          <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{plan.sequenceId ? `Inherited from ${KINDS.find(item => item.value === plan.kind)?.label ?? "member call"} sequence` : "Individually approved"}</p>
-          {plan.delivery ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{plan.delivery.sent} sent · {plan.delivery.pending} waiting · {deliveryReviewCount} need review</p> : null}
-          {plan.attention ? <p className="mt-2 max-w-xl break-words text-sm text-[var(--operator-danger)]">{plan.attention}</p> : null}
-          {deliveryReviewCount > 0 ? <Link className="mt-1 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/ops/messages?mode=emails">Check Resend delivery history ↗</Link> : null}
-        </div>{plan.active ? <button className={OPERATOR_BUTTON_CLASS} disabled={preview || !!pending} onClick={() => void pause(plan)} type="button">{pending === `pause:${plan.id}` ? "Pausing…" : "Pause automation"}</button> : null}</li>;
-      })}</ul> : <p className="mt-3 text-sm text-[color:var(--operator-muted)]">No calls have an automation yet.</p>}<p className="mt-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">Calls marked Needs review require a fresh review before reminders can resume. Choose This call below to revise an individual plan or resume a paused call.</p></section>
+      {!editorOpen ? <OperatorEmailAutomationManager overview={overview} detail={detail} selection={selection} query={query} filter={filter} previewStage={detailStage} recipientEventId={recipientEventId} pending={pending} preview={preview} onQuery={setQuery} onFilter={setFilter} onSelect={next => void openDetail(next)} onStage={setDetailStage} onRecipientEvent={setRecipientEventId} onInspectRecipients={() => { if (selection && recipientEventId) void openDetail(selection, recipientEventId); }} onEdit={editSaved} onPause={pauseSelected} onClose={() => { setDetail(null); setSelection(null); }} /> : <>
+      <section className="operator-bento-card mb-5"><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--operator-muted)]">{editingLabel ? "Revise approved setup" : "New automation"}</p><h3 className="mt-2 scroll-mt-24 break-words text-xl font-semibold outline-none" id="automation-editor-heading" tabIndex={-1}>{editingLabel ?? "Choose a call and its design"}</h3><p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">{editingLabel ? "The saved design, text, and field connections are loaded below. Review again before activating. If the source template has changed, the review will ask you to choose its current version." : "Reminder timing follows the approved cadence. This setup controls the design and which calls inherit it."}</p></section>
+      {confirmDiscard ? <section className="operator-emphasis mb-5 scroll-mt-24 p-4 outline-none" data-operator-tone="wait" role="alert" id="automation-discard-confirmation" tabIndex={-1}><p className="text-sm">Discard the changes to this setup?</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => { navigationTarget.current = null; setConfirmDiscard(false); }}>Keep editing</button><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => closeEditor(true)}>Discard changes</button></div></section> : null}
       <form className="space-y-5" onSubmit={reviewDraft}>
         <fieldset className="operator-bento-card min-w-0" disabled={!!pending || overview.setupRequired}><legend className="sr-only">Choose reminder scope and design</legend><h3 className="text-lg font-semibold">Set up reminders</h3><div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
           <label className="block min-w-0 text-sm font-medium md:col-span-2" htmlFor="cadence-scope">Apply to<select className={OPERATOR_FIELD_CLASS} id="cadence-scope" value={draft.scope ?? "event"} onChange={e => change({ scope: e.target.value as "event" | "sequence" })}><option value="sequence">Future calls of this type</option><option value="event">This call</option></select></label>
@@ -260,7 +356,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
         </fieldset> : null}
         <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || !template || (!sequenceScope && !event) || !draft.bodyTarget || draft.bodyTarget === draft.headingTarget || overview.setupRequired} type="submit">{pending === "review" ? "Preparing review…" : sequenceScope ? "Review sequence" : "Review automation"}</button>
       </form>
-      {review ? <section className="mt-7 space-y-5" aria-labelledby="automation-review-heading"><header><h3 className="text-xl font-semibold" id="automation-review-heading">Review before activating</h3><p className="mt-2 text-sm text-[color:var(--operator-muted)]">{reviewingSequence ? `${KINDS.find(item => item.value === draft.kind)?.label ?? "Member call"} · ${draft.track === "founder_test" ? "Founder test" : "Members"}` : event?.title} · {template?.name}</p>{reviewingSequence ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{event ? `Example call: ${event.title}.` : "The email and timing below use a representative future call."}</p> : null}{review.expiresAt ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Review expires {dateLabel(review.expiresAt, event?.timeZone)}. Changes to this setup require another review.</p> : null}</header>
+      {review ? <section className="mt-7 space-y-5" aria-labelledby="automation-review-heading"><header><h3 className="scroll-mt-24 text-xl font-semibold outline-none" id="automation-review-heading" tabIndex={-1}>Review before activating</h3><p className="mt-2 text-sm text-[color:var(--operator-muted)]">{reviewingSequence ? `${KINDS.find(item => item.value === draft.kind)?.label ?? "Member call"} · ${draft.track === "founder_test" ? "Founder test" : "Members"}` : event?.title} · {template?.name}</p>{reviewingSequence ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{event ? `Example call: ${event.title}.` : "The email and timing below use a representative future call."}</p> : null}{review.expiresAt ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Review expires {dateLabel(review.expiresAt, event?.timeZone)}. Changes to this setup require another review.</p> : null}</header>
         {reviewingSequence ? <section className="operator-bento-card" aria-labelledby="cadence-matching-calls-heading"><h4 className="font-semibold" id="cadence-matching-calls-heading">Matching published calls</h4><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">Each matching call uses its own qualified audience. Individual overrides and paused calls retain their settings.</p>{review.matchingEvents?.length ? <ul className="mt-3 space-y-3">{review.matchingEvents.map(item => <li className="break-words text-sm" key={item.id}>{preview ? <p className="font-medium">{item.title}</p> : <Link className="font-medium underline underline-offset-4" href={`/ops/experiences/${encodeURIComponent(item.id)}`}>{item.title} ↗</Link>}<p className="mt-1 text-xs text-[color:var(--operator-muted)]">{dateLabel(item.startsAt, item.timeZone)}</p></li>)}</ul> : <p className="mt-3 text-sm">No matching calls are scheduled yet. The sequence can be approved now and will apply when matching calls are published.</p>}</section> : null}
         <div className="grid min-w-0 gap-5 xl:grid-cols-2"><div className="min-w-0 space-y-5"><section className="operator-bento-card"><h4 className="font-semibold">{reviewingSequence ? "Example reminder timing" : "Scheduled reminders"}</h4><p className="mt-2 text-xs text-[color:var(--operator-muted)]">Times shown in {event?.timeZone ?? "America/Denver"}. {reviewingSequence ? "Timing is calculated separately from each call’s scheduled time." : "Only future stages can be activated."}</p><ul className="mt-3 space-y-3">{review.occurrences.map(occurrence => <li className="break-words text-sm" key={`${occurrence.stage}:${occurrence.dueAt}`}><p className="font-medium capitalize">{stageLabel(occurrence.stage)}</p><p className="mt-1">{dateLabel(occurrence.dueAt, event?.timeZone)}</p><p className="mt-1 text-xs text-[color:var(--operator-muted)]">Expires {dateLabel(occurrence.expiresAt, event?.timeZone)}</p></li>)}</ul>{!review.occurrences.length ? <p className="mt-3 text-sm">{reviewingSequence ? "There are no remaining reminder times for this example. Future matching calls use the approved sequence." : "No future reminders are available for this event."}</p> : null}</section>
           <section className="operator-bento-card"><h4 className="font-semibold">{reviewingSequence ? "Example call recipients" : "Recipients"}</h4><p className="mt-2 text-sm">{eligibleCount} eligible · {review.recipients.length - eligibleCount} excluded</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{reviewingSequence ? "These recipients belong to the example call only. Future calls resolve their own audience, and members joining later receive only future stages. " : ""}Eligibility and communication choices are checked again before each delivery.</p>{!review.recipients.length ? <p className="mt-3 text-sm">{reviewingSequence ? "No recipients are included in this example. You can approve the sequence before its future audience is known." : "No recipients currently qualify for this call. Check its audience, membership access, and reminder preferences. Foundations and founder tests also need confirmed invitations in Events."}</p> : <ul className="mt-3 max-h-96 space-y-3 overflow-y-auto">{review.recipients.map(recipient => <li className="break-words border-t border-[color:var(--operator-ink)]/15 pt-3 text-sm" key={recipient.memberId}><p className="font-medium">{recipient.name || "Member"}</p><p className="break-all text-xs text-[color:var(--operator-muted)]">{recipient.email}</p><p className={`mt-1 text-xs ${recipient.eligible ? "text-[var(--operator-success-text)]" : "text-[color:var(--operator-muted)]"}`}>{recipient.eligible ? "Eligible" : `Excluded: ${recipient.reason || "Not eligible for this reminder."}`}</p></li>)}</ul>}</section></div>
@@ -268,6 +364,9 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
         {review.warnings.length ? <div className="operator-emphasis p-4 text-sm" data-operator-tone="wait"><ul className="space-y-2">{review.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div> : null}
         <div className="operator-bento-card"><p className="max-w-2xl text-sm leading-relaxed">{reviewingSequence ? "Activating approves this sequence for current and future published calls with the selected call type and cadence. Each call sends only to its qualified audience. Individual overrides and paused calls stay unchanged. Members joining later receive only future stages. Pausing the sequence stops its inherited reminders." : "Activating allows future reminders to be sent automatically to this call’s eligible audience. Past reminders are skipped. You can pause this plan at any time."}</p>{!overview.configuration.enabled || !overview.configuration.ready ? <p className="mt-3 text-sm font-medium">Delivery is currently paused. {reviewingSequence ? "An activated sequence" : "An activated plan"} will wait for automatic delivery to be enabled and ready.</p> : null}<div className="mt-4 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={preview || !!pending || (!reviewingSequence && (!eligibleCount || !review.occurrences.length)) || expired || overview.setupRequired} onClick={() => void activate()} type="button">{pending === "activate" ? "Activating…" : preview ? "Activation off in preview" : reviewingSequence ? "Activate sequence" : "Activate automation"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => setReview(null)} type="button">Back to setup</button></div>{expired ? <p className="mt-3 text-sm text-[var(--operator-danger)]" role="alert">This review has expired. Review the setup again before activating.</p> : null}</div>
       </section> : null}
+      </>}
+      {overview.warnings?.length ? <aside className="operator-emphasis mt-5 p-4 text-sm leading-relaxed" data-operator-tone="wait" aria-label="Automation service notes"><ul className="space-y-2">{overview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></aside> : null}
+      {overview.managedElsewhere?.length ? <section className="operator-bento-card mt-7" aria-labelledby="existing-automated-emails-heading"><h3 className="text-lg font-semibold" id="existing-automated-emails-heading">Other automatic emails</h3><p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">These existing workflows have their own controls. Their configuration status does not confirm successful delivery.</p><ul className="mt-4 grid gap-5 lg:grid-cols-3">{overview.managedElsewhere.map(workflow => <li className="min-w-0 border-t border-[color:var(--operator-line)] pt-4" key={workflow.id}><h4 className="text-sm font-semibold">{workflow.title}</h4><p className="mt-2 text-xs font-medium">{workflow.statusLabel}</p><p className="mt-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.trigger}</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.timing}</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.recipients}</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.controlBoundary}</p><Link className="mt-2 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={workflow.management.href}>{workflow.management.label} ↗</Link></li>)}</ul></section> : null}
       <section className="operator-bento-card mt-7" aria-labelledby="inactive-automations-heading"><h3 className="text-lg font-semibold" id="inactive-automations-heading">Not active yet</h3><p className="mt-2 text-sm text-[color:var(--operator-muted)]">Unfinished protocols stay off until their rules and copy are approved.</p><ul className="mt-4 space-y-4">{overview.inactive.map(item => <li key={item.title}><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-sm leading-relaxed text-[color:var(--operator-muted)]">{item.reason}</p></li>)}</ul></section>
     </>}
   </OperatorPageFrame>;
