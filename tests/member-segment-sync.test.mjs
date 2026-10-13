@@ -203,7 +203,7 @@ test("database selection verifies current identity and recognizes only live curr
       assert.ok(definition);
       await db.exec(definition.replace("target_member_id uuid", "target_member_id text"));
     }
-    const sql = async strings => (await db.query(strings.join(""))).rows;
+    const sql = async (strings, ...values) => (await db.query(strings.reduce((query, part, index) => query + (index ? `$${index}` : "") + part, ""), values)).rows;
     assert.equal(classifyMemberSegment((await readMemberSegmentSource(sql))[0]), "waiting");
     await db.exec("update member_registration_access set payment_setup_livemode=false");
     assert.equal(classifyMemberSegment((await readMemberSegmentSource(sql))[0]), "test_or_unfunded");
@@ -227,6 +227,9 @@ test("database selection verifies current identity and recognizes only live curr
       insert into stripe_webhook_events values ('invoice','invoice.paid',true,'processed');
     `);
     const partner = async () => (await readMemberSegmentSource(sql)).find(row => row.email === "partner@example.com");
+    assert.equal((await readMemberSegmentSource(sql)).length, 2, "omitted filter retains the whole canonical audience");
+    assert.deepEqual((await readMemberSegmentSource(sql, "partner@example.com")).map(row => row.email), ["partner@example.com"]);
+    assert.deepEqual(await readMemberSegmentSource(sql, "absent@example.com"), []);
     assert.equal(classifyMemberSegment(await partner()), "open", "second adult qualifies through the live payer invoice");
     await db.exec("update stripe_webhook_events set livemode=false");
     assert.equal(classifyMemberSegment(await partner()), "test_or_unfunded", "sandbox payer cannot qualify the second adult");

@@ -66,7 +66,7 @@ export function classifyMemberSegment(member: MemberSegmentSource): MemberSegmen
 
 /** Only the member's current verified email can be exported. No waitlist,
  * invitation-only, event, journal, billing, phone, or address data is exported. */
-export async function readMemberSegmentSource(sql: Sql | TransactionSql): Promise<MemberSegmentSource[]> {
+export async function readMemberSegmentSource(sql: Sql | TransactionSql, email?: string): Promise<MemberSegmentSource[]> {
   return sql<MemberSegmentSource[]>`
     select member.email_normalized as email,
       coalesce(nullif(btrim(private_profile.legal_name),''),nullif(btrim(profile.display_name),''),'') as name,
@@ -125,6 +125,7 @@ export async function readMemberSegmentSource(sql: Sql | TransactionSql): Promis
     left join member_registration_access registration on registration.member_id=member.id
     left join person_private_profiles private_profile on private_profile.person_id=member.person_id
     left join person_profiles profile on profile.person_id=member.person_id
+    where (${email ?? null}::text is null or member.email_normalized=${email ?? null})
     order by member.id
   `;
 }
