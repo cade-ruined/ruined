@@ -4,7 +4,7 @@ import {
   MEMBER_SMS_UPDATES_DETAIL,
 } from "@/lib/membership/member-communication-preferences-model";
 
-/** Shared by registration and its public, non-submitting review example. */
+/** Shared by registration and the live text-message preference form. */
 export default function MemberSmsConsentDisclosure({ id, className }: { id: string; className?: string }) {
   return (
     <p className={className} id={id}>

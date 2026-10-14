@@ -63,7 +63,7 @@ test("membership legal pages point canonical and Open Graph URLs to their actual
       "react/jsx-runtime": { jsx: () => null },
       "next/link": component,
       "@/components/EditorialPage": component,
-      "@/components/membership/MemberSmsOptInExample": component,
+      "@/components/membership/MemberSmsOptInForm": component,
     });
     const expected = `https://members.theruinedproject.com${path}`;
     assert.equal(metadata.alternates.canonical, expected);

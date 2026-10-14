@@ -2,11 +2,17 @@
 
 ## Current scope
 
-Registration collects a separate, optional, unchecked SMS choice for membership
-updates and call reminders. Promotions are excluded. The disclosure records its
-version, exact phone number, authenticated member, time, and SMS terms version.
-Email choices are independent. Older SMS decisions do not enroll members under
-the new wording; original records are preserved.
+Updated October 14, 2026. Two website paths collect a separate, optional SMS
+choice for membership updates and call reminders: the public text-message
+preferences page and authenticated membership registration. A new SMS choice is
+unchecked. Promotions are excluded. A successful authenticated save records the
+consent wording/version, exact phone number, member, time, and SMS terms version
+in the existing consent ledger. Email choices are independent. Older SMS
+decisions do not enroll members under the new wording; original records are
+preserved.
+
+The public form correction described below is awaiting deployment and live
+verification. Do not treat this implementation description as production proof.
 
 The repository includes a disabled transport, signed inbound/status webhooks,
 and a gated scheduled worker for fresh opt-in confirmations and call reminders.
@@ -15,41 +21,85 @@ test has completed. Keep `MEMBER_SMS_ENABLED=false` and
 `MEMBER_SMS_AUTOMATION_ENABLED=false`. Installing credentials alone does not send
 texts. There is no promotional campaign or bulk historical confirmation backfill.
 
-The existing RU/NED Low Volume Standard brand is approved. The campaign still
-needs review and paid submission. Use [the prepared campaign
-draft](member-sms-campaign-draft.md) and the existing number/service; the draft
-records their identifiers and the actual fee gate encountered in the Console.
+The previously submitted campaign `CM1964ed2428424f5a584f230e93395445` was
+rejected with **30896 — Opt-in Error**. The reviewer found no working submit
+button at the submitted URL and rejected the non-submitting mockup as consent
+evidence. Use [the prepared resubmission draft](member-sms-campaign-draft.md) and
+edit the same campaign after correcting and verifying the live flow. Confirm
+the existing RU/NED brand, service, and number in Console. No resubmission or
+campaign approval is recorded here.
 
-## Public review links
+## Public review links and consent paths
 
-- Program terms and interactive opt-in example:
+- Program terms and real text-message preferences form:
   https://members.theruinedproject.com/membership/text-messages
 - Privacy: https://members.theruinedproject.com/privacy
 - Registration entry: https://members.theruinedproject.com/membership#your-invitation
-- Shared registration form in preview mode, with synthetic information:
-  https://members.theruinedproject.com/assets/membership/registration-sms-opt-in.jpg
 
-The example is explicitly a demonstration and cannot save consent. The real
-form appears after invitation/email verification under **Membership updates**.
-Both use the same disclosure component. Describe this distinction accurately
-in carrier review; the public example is not an enrollment endpoint.
+### Public text-message preferences
 
-Suggested message-flow description, to verify against the actual published form:
+The public page presents the mobile-number field, separate unchecked SMS
+checkbox, disclosure, Privacy Policy and SMS Terms links, and a submit control.
+Saving requires a verified email session. A signed-out user is directed through
+email sign-in and back to the page to complete the SMS choice. No purchase is
+required. Signing in, entering a number, and accepting membership terms do not
+independently authorize text messages.
 
-> Members begin at the Ruined membership landing page or their personalized
-> invitation, verify their email, and enter their registration information. In
-> the Membership updates section they may select a separate, unchecked SMS
-> checkbox for recurring Ruined membership updates and call reminders at their
-> supplied mobile number. The disclosure states that consent is optional and
-> not a condition of purchase or membership, message frequency varies, message
-> and data rates may apply, and STOP/HELP instructions. It links our SMS terms
-> and privacy policy. Email preferences and membership agreements are separate.
-> A public example of that exact disclosure is available at the program URL.
+`GET /api/my/sms-preferences` reads the authenticated member's current SMS state.
+`POST /api/my/sms-preferences` saves the authenticated member's phone and SMS
+choice through the existing consent ledger. This endpoint changes SMS
+preferences only; it does not alter email preferences or enable sending. A
+successful save must be visible in the UI and durable after reload. The real
+endpoint, its authentication boundary, persistence, and error handling must pass
+live verification before this flow is represented as complete in carrier review.
 
-The screenshot is evidence of the real shared form rendered in preview mode;
-it is not a live person's signup. Verify it is publicly available after release.
+### Membership registration
+
+Members may also begin at the membership landing page or a personalized
+invitation, verify their email, enter their registration information, and choose
+SMS under **Membership updates** before saving their details. SMS consent stays
+separate from email choices, membership agreements, and payment. This path
+continues to record consent in the same ledger.
+
+Both paths display: "I agree to receive recurring text messages from Ruined about
+membership updates and call reminders." The adjacent disclosure states that
+consent is optional and not a condition of purchase or membership, frequency
+varies, message and data rates may apply, and users may reply STOP to unsubscribe
+or HELP for help. Both link the privacy policy and SMS terms above. Include both
+paths and the email-verification gate in the campaign's message-flow field.
+
+Capture and publicly host current evidence for any gated steps a reviewer cannot
+reach, including the authenticated registration form. Use authorized test details
+and redact private information. Add verified hosted URLs to the campaign message
+flow. The previous interactive example and preview screenshots are not proof
+that the corrected form can submit or save consent; do not use them as the
+primary opt-in flow. Screenshots supplement the functional forms.
+
 Do not claim messaging is active. The public terms identify delivery as not yet
-enabled, and the automation remains gated until approval and delivery testing.
+enabled, and automation remains gated until approval and delivery testing.
+
+## October 14 rejection correction — verification record
+
+Campaign: `CM1964ed2428424f5a584f230e93395445`. Original submission: October 8,
+2026 at 22:21:32.493 UTC. Rejection: **30896**, missing functional submission and
+reliance on a mockup.
+
+| Check | Status |
+| --- | --- |
+| Corrected public form deployed at the submitted URL | Pending |
+| Signed-out desktop/mobile form and policy-link review | Pending |
+| Verified-email sign-in returns to the working preferences form | Pending |
+| Authorized save produces success and durable phone/consent evidence | Pending |
+| Invalid input cannot create consent; SMS save leaves email unchanged | Pending |
+| Registration consent path verified | Pending |
+| Current hosted evidence of gated steps published and checked | Pending |
+| Existing campaign updated and resubmitted | Not submitted in this correction |
+| Campaign approval and number association | Rejected; resubmission pending |
+| Both outbound send switches remain disabled | Required; confirm in production |
+
+Record actual deployment identifiers, dates, and test outcomes here when
+available. Local tests, a screenshot, or a successful page load alone do not
+establish that the complete production consent flow works.
 
 ## Connect the existing Twilio account
 
@@ -169,10 +219,13 @@ purchases, and email subscriptions do not authorize texts.
 
 ## Launch checks still required
 
-1. Verify the existing number/service and approved brand. Review the prepared
-   campaign, obtain approval for the paid submission, submit it, and wait for
-   approval and successful number association. Brand approval alone is not
-   campaign approval.
+1. Complete the corrected public-form and registration checks in the verification
+   record above and the [resubmission checklist](member-sms-campaign-draft.md).
+   Confirm the existing brand, service, and number, then update and resubmit the
+   same rejected campaign when authorized. Twilio's current 30896 guidance says
+   resubmitting the same campaign does not incur a new vetting fee; review any
+   current Console acknowledgement. Wait for campaign approval and successful
+   number association. Brand approval alone is not campaign approval.
 2. Verify production credentials and signed inbound/status handling while
    outbound remains disabled. Invalid signatures must not alter any records.
    An unsigned 403 probe confirms rejection only, not real Twilio delivery.
@@ -202,10 +255,12 @@ invalidation; the second creates private transport tables; the third adds
 durable automation jobs and delivery status fields. These migrations do not
 backfill consent, send messages, charge members, or open profiles.
 
-Run consent, registration, public-page, transport, automation, and signed-webhook tests,
-lint/typecheck, CI, and desktop/mobile form checks. Verify the public URLs after
-release. Until credentials exist, the inbound route should return 503 without
-changing data. Sending remains disabled by default.
+Run consent, SMS-preferences API, registration, public-page, transport,
+automation, and signed-webhook tests, lint/typecheck, CI, and desktop/mobile form
+checks. Verify both consent flows after release, including authentication, a
+successful authorized save, persisted consent evidence, and unchanged email
+preferences. Until credentials exist, the inbound route should return 503
+without changing data. Sending remains disabled by default.
 
 For rollback, disable outbound sending first. Keep signed inbound STOP processing
 available if any texts have ever been sent; do not drop evidence or suppression
@@ -213,6 +268,7 @@ tables. Existing acceptance records must not be rewritten to older versions.
 
 ## Provider references
 
+- [30896 rejection and resubmission guidance](https://www.twilio.com/docs/api/errors/30896)
 - [Active SMS opt-in requirements](https://www.twilio.com/docs/api/errors/30925)
 - [Campaign and message-flow information](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info)
 - [Advanced Opt-Out](https://www.twilio.com/docs/messaging/tutorials/advanced-opt-out)
