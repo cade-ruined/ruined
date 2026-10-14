@@ -24,55 +24,30 @@ function load(path, overrides = {}) {
     return require(name);
   };
   new Function("require", "module", "exports", "fetch", "window", js)(dependency, loaded, loaded.exports,
-    () => assert.fail("Public SMS examples cannot send requests"),
-    new Proxy({}, { get: () => assert.fail("Public SMS examples cannot persist or navigate") }));
+    () => assert.fail("Server-rendered SMS pages cannot send requests"),
+    new Proxy({}, { get: () => assert.fail("Server-rendered SMS pages cannot persist or navigate") }));
   return loaded.exports;
 }
-const nodes = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(nodes)] : [];
-
-test("public SMS terms render consent evidence without an account or enrollment form", () => {
+test("public SMS page renders the real optional consent form and a submit button without an account", () => {
   const page = load("app/membership/text-messages/page.tsx");
   const html = renderToStaticMarkup(React.createElement(page.default));
-  for (const text of ["recurring text messages from Ruined", "membership updates and call reminders", "Message frequency varies", "Message and data rates may apply", "Consent is not a condition of purchase or membership", "STOP", "HELP", "Interactive example", "No enrollment", "not currently enabled", "third parties or affiliates", "marketing or promotional purposes"]) {
+  for (const text of ["recurring text messages from Ruined", "membership updates and call reminders", "Message frequency varies", "Message and data rates may apply", "Consent is not a condition of purchase or membership", "STOP", "HELP", "Save your text preference", "not currently enabled", "third parties or affiliates", "marketing or promotional purposes"]) {
     assert.ok(html.includes(text), text);
   }
   assert.match(html, /href="\/privacy"/);
   assert.match(html, /href="\/membership#your-invitation"/);
   assert.match(html, /href="\/membership\/text-messages"/);
   assert.match(html, /mailto:connect@theruinedproject.com/);
-  assert.doesNotMatch(html, /<form\b|type="submit"|action="/);
+  assert.match(html, /<form[^>]*aria-label="Ruined text-message preferences"/);
+  assert.match(html, /<button[^>]*type="submit"/);
+  assert.match(html.match(/<input[^>]*name="phone"[^>]*>/)?.[0] ?? "", /type="tel"/);
+  assert.doesNotMatch(html, /Interactive example|No enrollment|sms-example-mobile|example-text-updates/);
   assert.equal(page.metadata.alternates.canonical, "https://members.theruinedproject.com/membership/text-messages");
   assert.match(html, /START alone does not restore Ruined membership texts/);
   assert.match(html, /collect fresh text-message consent before messages can resume/);
-  const checkbox = html.match(/<input[^>]*name="example-text-updates"[^>]*>/)?.[0];
+  const checkbox = html.match(/<input[^>]*name="sms"[^>]*>/)?.[0];
   assert.ok(checkbox);
   assert.doesNotMatch(checkbox, /checked|required/);
-});
-
-test("public example changes independent local choices, resets texts for a new number, and cannot enroll", () => {
-  let cursor = 0;
-  const slots = [];
-  const react = { ...React, useState(initial) {
-    const i = cursor++;
-    if (!(i in slots)) slots[i] = initial;
-    return [slots[i], next => { slots[i] = next; }];
-  } };
-  const Example = load("src/components/membership/MemberSmsOptInExample.tsx", { react }).default;
-  const render = () => { cursor = 0; return Example(); };
-  const input = name => nodes(render()).find(node => node.type === "input" && node.props.name === name);
-  const phone = () => nodes(render()).find(node => node.props.id === "sms-example-mobile");
-  assert.equal(input("example-text-updates").props.checked, false);
-  assert.equal(input("example-text-updates").props.required, undefined);
-  input("example-text-updates").props.onChange({ currentTarget: { checked: true } });
-  assert.equal(input("example-text-updates").props.checked, true);
-  assert.match(renderToStaticMarkup(render()), /No text-message consent has been submitted/);
-  input("example-email-updates").props.onChange({ currentTarget: { checked: false } });
-  assert.equal(input("example-text-updates").props.checked, true);
-  phone().props.onChange({ currentTarget: { value: "2025550124" } });
-  assert.equal(input("example-text-updates").props.checked, false);
-  phone().props.onChange({ currentTarget: { value: "" } });
-  assert.equal(input("example-text-updates").props.disabled, true);
-  assert.equal(nodes(render()).some(node => node.type === "form" || node.props.type === "submit"), false);
 });
 
 test("privacy revision is current and protects mobile data and SMS consent from marketing sharing", () => {

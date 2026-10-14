@@ -1,32 +1,36 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import EditorialPage from "@/components/EditorialPage";
-import MemberSmsOptInExample from "@/components/membership/MemberSmsOptInExample";
+import MemberSmsOptInForm from "@/components/membership/MemberSmsOptInForm";
 import { sharingMetadata } from "@/lib/sharing";
 
-const description = "Ruined membership text-message terms, privacy, and an example of our optional registration opt-in.";
+const description = "Ruined membership text-message preferences, optional opt-in, terms, and privacy.";
 const canonicalUrl = "https://members.theruinedproject.com/membership/text-messages";
 const contact = <a className="underline underline-offset-4" href="mailto:connect@theruinedproject.com">connect@theruinedproject.com</a>;
 
 export const metadata: Metadata = {
-  title: "Terms & Conditions",
+  title: "Membership texts & SMS terms",
   description,
   alternates: { canonical: canonicalUrl },
-  ...sharingMetadata({ title: "Terms & Conditions", description, path: canonicalUrl }),
+  ...sharingMetadata({ title: "Membership texts & SMS terms", description, path: canonicalUrl }),
 };
 
 export default function MembershipTextMessagesPage() {
   return <EditorialPage
-    eyebrow="SMS terms · October 8, 2026"
-    title="Terms & Conditions"
+    eyebrow="Membership texts · October 14, 2026"
+    title="Membership texts"
     intro="A separate, optional way to receive Ruined membership updates and call reminders."
     sections={[
+      { title: "Save your text preference", body: <>
+        <p>This form saves your choice to your Ruined membership account. No purchase is required to save a text preference. You can also choose texts while completing registration.</p>
+        <MemberSmsOptInForm />
+      </> },
       { title: "SMS Terms", body: <>
         <p>Ruined membership texts cover membership updates and call reminders only. If you opt in, you agree to recurring text messages from Ruined at the mobile number you provide. Message frequency varies with your membership and call schedule. Message and data rates may apply.</p>
         <p>Text-message delivery is being prepared and is not currently enabled. These terms describe the planned program; submitting a preference does not mean that messages have started.</p>
       </> },
       { title: "Your choice", body: <>
-        <p>During registration, enter your mobile number, then select the separate text-message checkbox under Membership updates and save your details. The checkbox is unchecked for new members. Email preferences are separate.</p>
+        <p>Use the form on this page to enter your mobile number and select the separate text-message checkbox. If prompted, verify your membership email, then select Save text preference. The checkbox starts unchecked. During registration, the same optional checkbox appears under Membership updates and is saved with your details. Email preferences are separate.</p>
         <p>Consent is not a condition of purchase or membership. You can complete registration without selecting text messages. Entering a phone number, accepting membership terms, or choosing email updates does not enroll you in texts. A changed number requires a new text-message choice.</p>
       </> },
       { title: "Stop or get help", body: <>
@@ -38,15 +42,6 @@ export default function MembershipTextMessagesPage() {
       { title: "Privacy", body: <>
         <p>We use your mobile number and text-message choice to provide the messages you requested and keep a record of your consent. We do not sell or share mobile information, SMS opt-in data, or consent with third parties or affiliates for their marketing or promotional purposes.</p>
         <p>We may share information with service providers only as needed to operate and deliver the text-message program, subject to confidentiality and use restrictions. Read our <Link className="underline underline-offset-4" href="/privacy">Privacy Policy</Link>.</p>
-      </> },
-      { title: "Registration opt-in example", body: <>
-        <p>This public example shows the optional email and text choices presented in registration. The text disclosure and policy links are the same ones used in the registration form. The example is interactive, but cannot submit an enrollment.</p>
-        <MemberSmsOptInExample />
-        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-sms-form.jpg">View the full registration form preview ↗</a></p>
-        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-sms-opt-in.jpg">View the text-message consent close-up ↗</a></p>
-        <p><a className="inline-flex min-h-11 items-center underline underline-offset-4" href="/assets/membership/registration-payment-preview.jpg">View the agreement and payment preview ↗</a></p>
-        <p>These screenshots show the registration form and payment page in preview mode, using example details and no real member information. The previews cannot submit a registration, accept an agreement, or authorize billing.</p>
-        <p>Actual registration requires email verification, followed by registration details, the membership agreement, and payment when required. Members can continue through those steps whether or not they choose text messages.</p>
       </> },
       { title: "Continue to Ruined", body: <>
         <p>To begin membership registration, follow the membership invitation flow. Text reminders remain optional throughout registration.</p>

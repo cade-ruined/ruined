@@ -66,7 +66,7 @@ export async function getMemberCommunicationPreferences(sql: Sql | TransactionSq
 /** Caller holds the member lock. No provider calls, subscriptions, or outbox work. */
 export async function saveMemberCommunicationPreferences(tx: TransactionSql,
   member: { memberId: string; personId: string; authUserId: string; email: string; phone: string },
-  input: MemberCommunicationPreferencesInput | undefined, options: { emailOnly?: boolean } = {}): Promise<void> {
+  input: MemberCommunicationPreferencesInput | undefined, options: { emailOnly?: boolean; smsOnly?: boolean } = {}): Promise<void> {
   if (input === undefined) return;
   if (!input || typeof input.email !== "boolean" || typeof input.sms !== "boolean"
     || typeof input.expectedRevision !== "string" || input.expectedRevision.length > 80) {
@@ -86,13 +86,13 @@ export async function saveMemberCommunicationPreferences(tx: TransactionSql,
   if (!identity?.verified) throw new MemberCommunicationPreferencesError(403, "Verify your email before saving communication preferences.");
   const { latest, snapshot } = await readState(tx, member.memberId, { email: member.email, phone: identity.phone });
   const destinations = { email: member.email, sms: member.phone };
-  const requestedChannels: readonly Channel[] = options.emailOnly ? ["email"] : channels;
+  const requestedChannels: readonly Channel[] = options.emailOnly ? ["email"] : options.smsOnly ? ["sms"] : channels;
   const matches = (channel: Channel) => latest[channel]?.destination === destinations[channel]
     && latest[channel]?.decision === (input[channel] ? "accepted" : "withdrawn")
     && (channel !== "email" || !input.email || latest.email?.authorizedEmail)
     && (channel !== "sms" || !input.sms || (latest.sms?.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && latest.sms.affirmativeSms));
   const fingerprint = hash([CONTEXT, member.memberId, input.expectedRevision, input.noticeVersion,
-    input.email, input.sms, member.email, member.phone, ...(options.emailOnly ? ["email_only"] : [])]);
+    input.email, input.sms, member.email, member.phone, ...(options.emailOnly ? ["email_only"] : options.smsOnly ? ["sms_only"] : [])]);
   if (snapshot.revision !== input.expectedRevision) {
     // A lost response can retry the exact committed choice, but a stale form
     // must never restore a withdrawal or overwrite another tab's decision.
