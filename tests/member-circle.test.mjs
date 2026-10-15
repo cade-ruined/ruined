@@ -57,7 +57,7 @@ test("Circle Chat and Meet share one restrained, branded room surface", () => {
   assert.match(communication, /meeting\.meetingUrl \? "Join Google Meet ↗" : "View gathering →"/);
   assert.match(communication, /target="_blank"/);
   assert.match(communication, /target=\{meeting\.meetingUrl \? "_blank" : undefined\}/);
-  assert.match(communication, /data-state="unavailable"/);
+  assert.match(communication, /data-state=\{ready \? "ready" : "unavailable"\}/);
   assert.match(communication, /data-state="unscheduled"/);
   assert.doesNotMatch(communication, /title=/);
   assert.doesNotMatch(communication, /border-[btlry]/);
@@ -67,7 +67,7 @@ test("the photo cluster shows every member and stays private and keyboard access
   assert.match(cluster, /data-circle-member-cluster/);
   assert.match(cluster, /data-circle-member/);
   assert.doesNotMatch(cluster, /members\.slice/);
-  assert.match(cluster, /data-expanded/);
+  assert.match(cluster, /circleClusterPositions\(visibleMembers\.length, visibleMembers\.findIndex\(\(person\) => person\.isSelf\)\)/);
   assert.match(cluster, /visibleMembers\.map/);
   assert.match(cluster, /aria-label="Circle members"/);
   assert.match(cluster, /aria-label=\{`View \$\{person\.displayName\}`\}/);

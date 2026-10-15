@@ -4,25 +4,13 @@ import Link from "next/link";
 import { useState, type CSSProperties } from "react";
 
 import CircleMemberPortrait from "@/components/membership/CircleMemberPortrait";
+import { circleClusterPositions, type CircleClusterPosition } from "@/lib/membership/circle-cluster-layout";
 import type { PrivacySafePersonSummary } from "@/lib/membership/model";
 
+import actions from "./CircleActions.module.css";
 import styles from "./circle-member-cluster.module.css";
 
-const positions = [
-  { left: 16, size: 25, top: 4 },
-  { left: 39, size: 27, top: 0 },
-  { left: 64, size: 24, top: 7 },
-  { left: 3, size: 24, top: 32 },
-  { left: 25, size: 28, top: 27 },
-  { left: 51, size: 25, top: 30 },
-  { left: 74, size: 23, top: 35 },
-  { left: 15, size: 25, top: 60 },
-  { left: 39, size: 28, top: 59 },
-  { left: 65, size: 25, top: 61 },
-] as const;
-
-function positionStyle(index: number): CSSProperties {
-  const position = positions[index] ?? positions[positions.length - 1];
+function positionStyle(position: CircleClusterPosition): CSSProperties {
   return {
     "--cluster-left": `${position.left}%`,
     "--cluster-size": `${position.size}%`,
@@ -52,6 +40,7 @@ export default function CircleMemberCluster({
   members: PrivacySafePersonSummary[];
 }) {
   const visibleMembers = members;
+  const positions = circleClusterPositions(visibleMembers.length, visibleMembers.findIndex((person) => person.isSelf));
   const initialMemberId = visibleMembers.find((person) => person.isSelf)?.id
     ?? visibleMembers[0]?.id
     ?? null;
@@ -74,11 +63,11 @@ export default function CircleMemberCluster({
 
   return (
     <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(17rem,0.75fr)] lg:gap-10" data-circle-member-cluster>
-      <ol aria-label="Circle members" className={styles.cluster} data-member-count={visibleMembers.length} data-expanded={visibleMembers.length > positions.length ? "true" : undefined}>
+      <ol aria-label="Circle members" className={styles.cluster} data-member-count={visibleMembers.length}>
         {visibleMembers.map((person, index) => {
           const selectedMember = person.id === selected.id;
           return (
-            <li className={styles.member} data-circle-member key={person.id} style={positionStyle(index)}>
+            <li className={styles.member} data-circle-member data-self={person.isSelf ? "true" : undefined} key={person.id} style={positionStyle(positions[index])}>
               <button
                 aria-label={`View ${person.displayName}`}
                 aria-pressed={selectedMember}
@@ -127,19 +116,19 @@ export default function CircleMemberCluster({
         ) : null}
         <div className="mt-6 flex flex-wrap gap-2.5 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.035em]">
             <Link
-              className="rounded-[4px] bg-[var(--color-highlight)] px-4 py-3 text-[var(--member-ink)] transition-colors hover:bg-[#f3bd18] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]"
+              className={`${actions.action} ${actions.primary}`}
               data-circle-profile-link
               href={`/my/circle/people/${encodeURIComponent(selected.id)}`}
             >
               Profile
             </Link>
             {selected.email ? (
-              <a className="rounded-[4px] bg-[var(--color-faded)] px-4 py-3 text-[var(--color-bone)] transition-colors hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]" href={`mailto:${selected.email}`}>
+              <a className={`${actions.action} ${actions.secondary}`} href={`mailto:${selected.email}`}>
                 Email
               </a>
             ) : null}
             {selected.phone ? (
-              <a className="rounded-[4px] bg-black/[0.055] px-4 py-3 text-[var(--member-muted)] transition-colors hover:bg-black/[0.09] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]" href={`tel:${selected.phone}`}>
+              <a className={`${actions.action} ${actions.secondary}`} href={`tel:${selected.phone}`}>
                 Call
               </a>
             ) : null}

@@ -4,6 +4,8 @@ import CircleMemberCluster from "@/components/membership/CircleMemberCluster";
 import CircleRoomCommunication from "@/components/membership/CircleRoomCommunication";
 import type { MemberCircleSnapshot } from "@/lib/membership/model";
 
+import actions from "./CircleActions.module.css";
+
 export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnapshot }) {
   const futureMeetings = circle.meetings
     .filter((meeting) => new Date(meeting.endsAt ?? meeting.startsAt).getTime() >= Date.now())
@@ -23,7 +25,7 @@ export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnaps
           <p className="mt-7 max-w-xl font-[var(--font-body)] text-base leading-relaxed text-[var(--member-muted)]">
             You can continue Foundations now. Ruined will place you into a Circle before Foundations can be completed.
           </p>
-          <Link className="mt-8 w-fit rounded-[4px] bg-[var(--color-faded)] px-5 py-4 font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.04em] text-[var(--color-bone)] shadow-[6px_7px_0_var(--color-poster)] transition-transform active:translate-x-[2px] active:translate-y-[2px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)]" href="/my/foundations">
+          <Link className={`mt-8 w-fit ${actions.action} ${actions.primary}`} href="/my/foundations">
             Continue Foundations →
           </Link>
         </section>
