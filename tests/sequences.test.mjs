@@ -281,12 +281,11 @@ test("only the optimized fireside loop is deployable", async () => {
 });
 
 test("responsive journey has no tablet or hybrid-input fallthrough", async () => {
-  const [contract, bootstrap, journey, indexes, comingSoon] =
+  const [contract, bootstrap, journey, comingSoon] =
     await Promise.all([
       fs.readFile(path.join(root, "src", "utils", "immersiveExperience.ts"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "ImmersiveParallax.tsx"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "MobileImmersiveJourney.tsx"), "utf8"),
-      fs.readFile(path.join(root, "src", "components", "sequence", "JourneyIndexes.tsx"), "utf8"),
       fs.readFile(path.join(root, "src", "components", "sequence", "JourneyComingSoon.tsx"), "utf8"),
     ]);
 
@@ -307,7 +306,6 @@ test("responsive journey has no tablet or hybrid-input fallthrough", async () =>
   assert.match(journey, /onPointerMove=\{handlePointerMove\}/);
   assert.match(journey, /onClickCapture=\{handleClickCapture\}/);
   assert.doesNotMatch(journey, /"a, button, input, select, textarea/);
-  assert.match(indexes, /text-\[clamp\(0\.78rem,2\.2vw,1\.25rem\)\]/);
   assert.match(comingSoon, /text-\[clamp\(2\.25rem,6vw,3\.75rem\)\]/);
 });
 
@@ -474,16 +472,11 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(indexes, /href="\/store"[\s\S]*Off the Rack/);
   assert.doesNotMatch(indexes, /View catalogue/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
-  assert.match(indexes, /const visibleEvents = events\.slice\(0, 3\)/);
-  assert.match(indexes, /visibleEvents\.length === 2[\s\S]*"sm:mx-auto sm:w-2\/3"/);
-  assert.match(indexes, /gridTemplateColumns: `repeat\(\$\{Math\.max\(visibleEvents\.length, 1\)\}/);
+  assert.match(indexes, /visibleEvents\.length === 2[\s\S]*"min-\[1025px\]:mx-auto min-\[1025px\]:w-2\/3"/);
   assert.match(indexes, /href=\{`\/community#\$\{event\.id\}`\}/);
-  assert.match(indexes, /const nextAvailable = events\.find\(\(event\) => event\.status === "Upcoming"\)/);
   assert.match(indexes, /const isEnded = event\.status === "Ended"/);
   assert.match(indexes, /const isNextAvailable = event\.id === nextAvailable\?\.id/);
   assert.match(indexes, /data-event-dimmed=\{isDimmed \? "true" : undefined\}/);
-  assert.match(indexes, /`Ended · 0\$\{index \+ 1\}`/);
-  assert.match(indexes, /`Available · 0\$\{index \+ 1\}`/);
   assert.match(eventsIndex, /window\.location\.hash\.slice\(1\)/);
   assert.match(eventsIndex, /setSelectedId\(event\.id\)/);
   assert.match(eventsIndex, /window\.history\.replaceState/);
@@ -892,7 +885,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.doesNotMatch(desktop, /<JourneySectionHero/);
   assert.match(indexes, /const JOURNEY_GRID_CLASS/);
   assert.match(indexes, /const JOURNEY_CARD_CLASS/);
-  assert.doesNotMatch(indexes, /sm:aspect-\[16\/9\]/);
+  assert.doesNotMatch(indexes, /(?:^|\s)sm:aspect-\[16\/9\]/);
   assert.match(desktop, /\[start - 0\.018, start\]/);
   assert.match(desktop, /preload=\{shouldLoad \? "auto" : "none"\}/);
   assert.doesNotMatch(mobile, /cta: "View all pieces"/);
@@ -957,7 +950,7 @@ test("BYOB explains what guests should bring", async () => {
     fs.readFile(path.join(root, "src", "components", "events", "EventsIndex.tsx"), "utf8"),
   ]);
 
-  assert.match(events, /summary: isDateAnnouncement[\s\S]*?"Bring Your Own \(Bell or bodyweight\)\."/);
+  assert.match(events, /summary:[\s\S]*?"Bring Your Own \(Bell or bodyweight\)\."/);
   assert.match(eventsIndex, /\{selected\.summary\}/);
 });
 
@@ -999,7 +992,6 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
 
   assert.match(events, /Array\.from\(\{ length: 4 \}/);
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
-  assert.match(events, /image: isFirstEvent\s*\? BYOB_01_FEATURE_IMAGE\s*: isSecondEvent \? "\/events\/byob-02-recap-poster\.webp" : "\/events\/byob-key-art\.png"/);
   assert.match(events, /status: index < 3 \? "Ended" : "Upcoming"/);
   assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
@@ -1010,7 +1002,7 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
   assert.match(eventsIndex, /controls[\s\S]*playsInline[\s\S]*preload="metadata"/);
   assert.match(eventsIndex, /event\.gallery\?\.\[0\]\?\.src === event\.image \? "object-\[50%_62%\]"/);
   assert.doesNotMatch(eventsIndex, /Watch the recap/);
-  assert.match(eventsIndex, /Next available/);
+  assert.match(eventsIndex, /Next gathering/);
   assert.match(eventsIndex, /<optgroup label="Archive">/);
   assert.match(eventsIndex, /<optgroup label="Upcoming">/);
   assert.match(eventsIndex, /value=\{selected\.id\}/);

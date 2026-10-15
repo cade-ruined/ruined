@@ -12,7 +12,7 @@ const indexSource = await readFile(new URL("../src/components/sequence/JourneyIn
 const compiled = ts.transpileModule(indexSource, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
-function load(react = React, environment = {}) {
+function load(react = React, environment = {}, exportName = "JourneyLobbyIndex") {
   const dependencies = {
     react, "react/jsx-runtime": jsxRuntime,
     "@/lib/store/product-colors": productColors,
@@ -28,7 +28,7 @@ function load(react = React, environment = {}) {
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency: ${name}`);
     return dependencies[name];
   }, output, output.exports, environment.window, environment.ResizeObserver);
-  return output.exports.JourneyLobbyIndex;
+  return output.exports[exportName];
 }
 const JourneyLobbyIndex = load();
 const events = [
@@ -91,13 +91,14 @@ test("an open event can lead with its own image even without the archive event",
 
 test("a date announcement leads the lobby without reopening the previous gathering", () => {
   const announcement = {
-    id: "byob-04", title: "BYOB Nº 04", date: "13 November 2026", status: "Upcoming",
+    id: "byob-05", title: "BYOB Nº 05", date: "11 December 2026", status: "Upcoming",
+    dateTime: "2026-12-11T07:00:00.000Z", dateOnly: true,
     image: "/events/byob-key-art.png",
   };
   const { cards } = render({ events: [...events.map((event) => ({ ...event, status: "Ended" })), announcement] });
-  assert.equal(attr(cards[0], "href"), "/community#byob-04");
-  assert.match(text(cards[0]), /BYOB Nº 04/);
-  assert.match(text(cards[0]), /Save the date · 13 November 2026/);
+  assert.equal(attr(cards[0], "href"), "/community#byob-05");
+  assert.match(text(cards[0]), /BYOB Nº 05/);
+  assert.match(text(cards[0]), /Save the date · 11 December 2026/);
   assert.doesNotMatch(text(cards[0]), /Register now|October 9/);
 });
 
@@ -202,4 +203,86 @@ test("manual arrows advance one card, honor reduced motion, and disable at the r
   reducedMotion = true;
   button("Previous feature").props.onClick();
   assert.deepEqual(calls.at(-1), { left: -320, behavior: "instant" });
+});
+
+
+const JourneyEventsIndex = load(React, {}, "JourneyEventsIndex");
+function gathering(number, month, status) {
+  const id = `byob-${String(number).padStart(2, "0")}`;
+  return {
+    id, title: `BYOB Nº ${String(number).padStart(2, "0")}`, status,
+    dateTime: `2026-${String(month).padStart(2, "0")}-13T07:00:00.000Z`,
+    date: `13 ${["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month]} 2026`,
+    dateOnly: status === "Upcoming", image: `/${id}.webp`,
+  };
+}
+const completedByob = [gathering(1, 8, "Ended"), gathering(2, 9, "Ended"), gathering(3, 10, "Ended")];
+const novemberByob = {
+  ...gathering(4, 11, "Upcoming"), date: "14 November 2026", dateTime: "2026-11-14T16:00:00.000Z",
+  time: "9:00 AM MST", dateOnly: undefined,
+};
+function renderEventCards(eventData) {
+  const fragment = parseFragment(renderToStaticMarkup(React.createElement(JourneyEventsIndex, { events: eventData })));
+  return { all: nodes(fragment), cards: nodes(fragment).filter(node => attr(node, "data-journey-event-card") !== undefined) };
+}
+
+test("the homepage features November before October and September recaps without mutating a four-date feed", () => {
+  for (const feed of [[...completedByob, novemberByob], [completedByob[1], novemberByob, completedByob[0], completedByob[2]]]) {
+    const unchanged = structuredClone(feed);
+    Object.freeze(feed);
+    const { cards } = renderEventCards(feed);
+    assert.deepEqual(cards.map(card => attr(card, "href")), ["/community#byob-04", "/community#byob-03", "/community#byob-02"]);
+    assert.match(text(cards[0]), /Next gathering.*BYOB Nº 04.*14 November 2026.*9:00 AM MST/);
+    assert.match(text(cards[1]), /Archive.*BYOB Nº 03/);
+    assert.match(text(cards[2]), /Archive.*BYOB Nº 02/);
+    assert.doesNotMatch(cards.map(text).join(" "), /Available|Register|BYOB Nº 01/);
+    assert.equal(attr(cards[0], "data-event-dimmed"), undefined);
+    assert.equal(attr(cards[1], "data-event-dimmed"), "true");
+    assert.equal(attr(nodes(cards[0]).find(node => node.tagName === "time"), "datetime"), "2026-11-14T16:00:00.000Z");
+    assert.deepEqual(feed, unchanged);
+  }
+});
+
+test("current and upcoming gatherings stay chronological ahead of recent archives in larger feeds", () => {
+  const december = gathering(5, 12, "Upcoming");
+  const ongoing = { ...gathering(6, 10, "Ongoing"), dateTime: "2026-10-15T14:00:00.000Z" };
+  const futureFirst = [december, completedByob[0], novemberByob, completedByob[2], completedByob[1]];
+  assert.deepEqual(renderEventCards(futureFirst).cards.map(card => attr(card, "href")), [
+    "/community#byob-04", "/community#byob-05", "/community#byob-03",
+  ]);
+  const current = renderEventCards([...futureFirst, ongoing]).cards;
+  assert.deepEqual(current.map(card => attr(card, "href")), ["/community#byob-06", "/community#byob-04", "/community#byob-05"]);
+  assert.match(text(current[0]), /Happening now/);
+  const lobby = render({ events: futureFirst }).cards;
+  assert.equal(attr(lobby[0], "href"), "/community#byob-04", "the opening lobby uses the same chronological next date");
+  assert.match(text(lobby[0]), /14 November 2026.*9:00 AM MST/);
+});
+
+test("an archive-only homepage keeps its newest three recaps and never labels one as available", () => {
+  const oldest = gathering(0, 7, "Ended");
+  const { cards } = renderEventCards([completedByob[1], oldest, completedByob[2], completedByob[0]]);
+  assert.deepEqual(cards.map(card => attr(card, "href")), ["/community#byob-03", "/community#byob-02", "/community#byob-01"]);
+  assert.ok(cards.every(card => text(card).startsWith("Archive")));
+  assert.doesNotMatch(cards.map(text).join(" "), /Available|Next gathering|Register/);
+  assert.equal(renderEventCards([]).cards.length, 0);
+});
+
+test("event cards retain the full-width feature and archive pair through mobile landscape widths", () => {
+  const { all, cards } = renderEventCards([...completedByob, novemberByob]);
+  const grid = all.find(node => attr(node, "data-journey-event-grid") !== undefined);
+  const gridClasses = (attr(grid, "class") ?? "").split(/\s+/);
+  assert.ok(gridClasses.includes("grid-cols-2"));
+  assert.ok(gridClasses.includes("min-[1025px]:grid-cols-3"));
+  assert.ok(!gridClasses.includes("sm:grid-cols-3"), "landscape phones must keep the two-row layout");
+  assert.equal(attr(grid, "style"), undefined, "an inline column count must not override the mobile layout");
+  assert.ok((attr(cards[0], "class") ?? "").includes("max-[1025px]:col-span-2"));
+  assert.ok((attr(cards[0], "class") ?? "").includes("max-[1025px]:aspect-[16/9]"));
+  for (const card of cards.slice(1)) assert.ok((attr(card, "class") ?? "").includes("max-[1025px]:aspect-[4/3]"));
+  for (const card of cards) {
+    const title = nodes(card).find(node => node.tagName === "strong");
+    assert.ok((attr(title, "class") ?? "").split(/\s+/).includes("text-base"));
+    assert.equal(card.tagName, "a", "native links preserve tapping, keyboard use and open-in-new-tab");
+  }
+  const allEvents = all.find(node => node.tagName === "a" && attr(node, "href") === "/community");
+  assert.ok((attr(allEvents, "class") ?? "").split(/\s+/).includes("min-h-11"));
 });

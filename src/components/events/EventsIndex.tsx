@@ -9,7 +9,7 @@ import { usePublicEvents } from "@/lib/events/use-public-events";
 
 function eventState(event: StudioEvent, nextAvailableId?: string) {
   if (event.status === "Ended") return "Archive";
-  if (event.id === nextAvailableId) return "Next available";
+  if (event.id === nextAvailableId) return "Next gathering";
   return event.status === "Ongoing" ? "Ongoing" : "Scheduled";
 }
 
@@ -95,7 +95,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
                       setSelectedId(null);
                     }
                   }}
-                  className="ui-heading text-[0.58rem] uppercase tracking-[0.14em] text-[var(--color-poster)] transition-colors hover:text-black focus-visible:text-black"
+                  className="ui-heading inline-flex min-h-11 items-center text-xs uppercase tracking-[0.1em] text-[var(--color-poster)] transition-colors hover:text-black focus-visible:text-black"
                 >
                   ← All events
                 </Link>
@@ -115,7 +115,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
                   );
                   if (nextEvent) selectEvent(nextEvent);
                 }}
-                className="ui-heading w-full appearance-none border border-black/30 bg-transparent px-3 py-3 pr-10 text-[0.62rem] uppercase tracking-[0.1em] text-[var(--color-faded)] outline-none transition-colors hover:bg-white focus-visible:border-[var(--color-poster)] focus-visible:ring-1 focus-visible:ring-[var(--color-poster)]"
+                className="ui-heading min-h-11 w-full appearance-none border border-black/30 bg-transparent px-3 py-3 pr-10 text-xs uppercase tracking-[0.1em] text-[var(--color-faded)] outline-none transition-colors hover:bg-white focus-visible:border-[var(--color-poster)] focus-visible:ring-1 focus-visible:ring-[var(--color-poster)]"
               >
                 {ARCHIVE_EVENTS.length ? (
                   <optgroup label="Archive">
@@ -290,7 +290,8 @@ function EventsOverview({
   events: StudioEvent[];
   onSelect: (event: StudioEvent) => void;
 }) {
-  const ARCHIVE_EVENTS = events.filter((event) => event.status === "Ended");
+  const ARCHIVE_EVENTS = events.filter((event) => event.status === "Ended")
+    .sort((a, b) => Date.parse(b.dateTime) - Date.parse(a.dateTime));
   const UPCOMING_EVENTS = events.filter((event) => event.status !== "Ended");
   return (
     <main className="-mt-[3.25rem] min-h-screen bg-black text-[var(--color-bone)] sm:-mt-[3.5rem]">

@@ -23,24 +23,29 @@ test('completed BYOB dates retain their history while November is announced with
  assert.equal(recap.image,recap.videoPoster);
  assert.equal(recap.registration.status,'Closed');
  const october=events.find(e=>e.id==='byob-03');
+ assert.equal(october.video,'/events/byob-03-recap.mp4');
+ assert.equal(october.videoPoster,'/events/byob-03-recap-poster.webp');
+ assert.equal(october.image,october.videoPoster);
  assert.equal(october.time,'8:00 AM MDT');
  assert.equal(october.location,'Tibble Fork Reservoir · Hill south of the parking lot');
  assert.deepEqual(october.registration,{href:'/community/byob-03/register',label:'Register',status:'Closed'});
  const upcoming=events.find(e=>e.id==='byob-04');
  assert.equal(upcoming.image,'/events/byob-key-art.png');
- assert.equal(upcoming.date,'13 November 2026');
- assert.equal(upcoming.dateOnly,true);
- assert.equal(upcoming.time,'Details to come');
+ assert.equal(upcoming.date,'14 November 2026');
+ assert.equal(upcoming.dateTime,'2026-11-14T16:00:00.000Z');
+ assert.equal(upcoming.dateOnly,undefined);
+ assert.equal(upcoming.time,'9:00 AM MST');
  assert.equal(upcoming.timezone,'America/Denver');
  assert.equal(upcoming.registration,undefined);
 });
 
-test('BYOB02 recap has web-sized media with playback metadata at the front',async()=>{
- const mp4=await readFile(path.join(root,'public/events/byob-02-recap.mp4'));
- assert.ok(mp4.length<16*1024*1024,'Recap exceeds16MiB web budget');
+for (const number of ['02', '03']) test(`BYOB${number} recap has web-sized media with playback metadata at the front`,async()=>{
+ const mp4=await readFile(path.join(root,`public/events/byob-${number}-recap.mp4`));
+ const budget = number === '03' ? 4 : 16;
+ assert.ok(mp4.length<budget*1024*1024,`Recap exceeds ${budget}MiB web budget`);
  const moov=mp4.indexOf('moov');const mdat=mp4.indexOf('mdat');
  assert.ok(moov>=0&&mdat>moov,'MP4 must support fast-start playback');
- const posterPath=path.join(root,'public/events/byob-02-recap-poster.webp');
+ const posterPath=path.join(root,`public/events/byob-${number}-recap-poster.webp`);
  const metadata=await sharp(posterPath).metadata();
  assert.equal(metadata.width,720);assert.equal(metadata.height,1280);
  assert.ok((await stat(posterPath)).size<150*1024);
