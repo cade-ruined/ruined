@@ -87,10 +87,10 @@ test("legacy Circle profile preserves genuine membership denial", async () => {
   }
 });
 
-test("authorized missing or stale Circle targets are 404s, not membership denial", async () => {
+test("authorized missing or stale Circle targets return to the current roster", async () => {
   for (const options of [{ includeTarget: false }, {}]) {
     const f = fixture(options);
-    await assert.rejects(f.run("member:removed"), error => error.kind === "notFound");
+    await assert.rejects(f.run("member:removed"), error => error.kind === "redirect" && error.href === "/my/circle");
     assert.deepEqual(f.calls, ["registration", "circle"]);
   }
 });
@@ -102,7 +102,7 @@ test("legacy Circle profile redirects only an authorized roster target to its pu
     assert.deepEqual(f.calls, ["registration", "circle"]);
   }
   const outsider = fixture({ publicProfileHref: "/profile/circle-person", includeTarget: false });
-  await assert.rejects(outsider.run(), error => error.kind === "notFound");
+  await assert.rejects(outsider.run(), error => error.kind === "redirect" && error.href === "/my/circle");
 });
 
 test("members without a public profile retain their authorized private Circle dossier", async () => {
