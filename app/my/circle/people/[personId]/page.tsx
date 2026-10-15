@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import CirclePersonProfile, { type CirclePersonRole } from "@/components/membership/CirclePersonProfile";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
@@ -40,10 +40,10 @@ export default async function CirclePersonPage({ params }: { params: Promise<{ p
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  // A removed or stale Circle assignment is a missing profile, not a loss of
-  // the viewer's membership. Resolve the target only after checking access.
+  // Older links refer to Circle assignments that may have changed. Send the
+  // authorized viewer back to their current roster so they can choose a profile.
   const profile = personFromCircle(context.data, personId);
-  if (!profile) notFound();
+  if (!profile) redirect("/my/circle");
   if (profile.person.publicProfileHref) redirect(profile.person.publicProfileHref);
   return <CirclePersonProfile {...profile} />;
 }

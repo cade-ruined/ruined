@@ -125,7 +125,7 @@ test("Circle member and Shaper links resolve through the viewer's privacy-safe C
   assert.match(personPage, /circle\.members\.find\(\(person\) => person\.id === personId\)/);
   assert.match(personPage, /circle\.shaper\?\.id === personId/);
   assert.match(personPage, /PREVIEW_MEMBER_CIRCLE,\s*getMemberCircle,/);
-  assert.match(personPage, /if \(!profile\) notFound\(\)/);
+  assert.match(personPage, /if \(!profile\) redirect\("\/my\/circle"\)/);
   assert.match(personPage, /if \(profile\.person\.publicProfileHref\) redirect\(profile\.person\.publicProfileHref\)/);
   assert.match(personProfile, /data-circle-person-profile/);
   assert.match(personProfile, /role === "shaper" \? "Circle Supporter"/);
