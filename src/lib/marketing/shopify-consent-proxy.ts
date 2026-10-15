@@ -1,4 +1,5 @@
 import "server-only";
+import { isSameOriginRequest } from "@/lib/request-origin";
 import { Kind, parse, print, visit, type FieldNode, type SelectionSetNode } from "graphql";
 
 const MAX_BODY_BYTES = 8192;
@@ -93,19 +94,45 @@ async function boundedBody(request: Request): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+/** Forward only Shopify's opaque visitor tokens and their expiry metadata.
+ * The Customer Privacy API reads these from the fetch ResourceTiming entry;
+ * keeping them lets it reuse HttpOnly-cookie sessions after a full reload.
+ */
+export function shopifyTrackingServerTiming(header: string | null): string | null {
+  if (!header || header.length > 16384) return null;
+  const entries = header.match(/(?:[^,"\\]|"(?:[^"\\]|\\.)*")+/g) ?? [];
+  const selected = new Map<string, string>();
+  for (const entry of entries) {
+    const field = entry.trim();
+    const name = /^(_y|_s|_ye|_se)(?:\s*;|$)/.exec(field)?.[1];
+    if (!name) continue;
+    // Duplicate or malformed fields are ambiguous; let Shopify refresh instead.
+    if (selected.has(name)) return null;
+    const match = /^(_y|_s|_ye|_se)\s*;\s*desc="([^"\\]*)"$/.exec(field);
+    if (!match) return null;
+    const value = match[2];
+    const valid = name.endsWith("e") ? /^\d{1,16}$/.test(value)
+      : /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+    if (!valid) return null;
+    selected.set(name, field);
+  }
+  return selected.size ? [...selected.values()].join(", ") : null;
+}
+
 function error(status: number) {
   return Response.json({ errors: [{ message: "Cookie preferences are unavailable." }] }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function proxyShopifyConsent(request: Request, environment: Record<string, string | undefined>, upstreamFetch: typeof fetch = fetch): Promise<Response> {
-  const origin = new URL(request.url).origin;
   // Same-site sibling domains are not same-origin. This endpoint can change consent.
-  if (request.method !== "POST" || request.headers.get("origin") !== origin
+  if (request.method !== "POST" || !isSameOriginRequest(request)
     || (request.headers.has("sec-fetch-site") && request.headers.get("sec-fetch-site") !== "same-origin")) return error(403);
+  const origin = request.headers.get("origin")!;
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") return error(415);
   const domain = environment.SHOPIFY_STORE_DOMAIN?.trim().toLowerCase().replace(/^https:\/\//, "").replace(/\/$/, "");
   const token = environment.SHOPIFY_STOREFRONT_ACCESS_TOKEN?.trim();
-  if (environment.META_TRACKING_ENABLED !== "true" || !domain || !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(domain) || !token || !/^[a-f0-9]{32}$/i.test(token)) return error(503);
+  const enabled = environment.META_TRACKING_ENABLED === "true" || environment.STOREFRONT_ANALYTICS_ENABLED === "true";
+  if (!enabled || !domain || !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(domain) || !token || !/^[a-f0-9]{32}$/i.test(token)) return error(503);
   let query: string | null;
   try { query = consentQuery(await boundedBody(request)); } catch { return error(400); }
   if (!query) return error(400);
@@ -124,6 +151,8 @@ export async function proxyShopifyConsent(request: Request, environment: Record<
       method: "POST", headers, body: JSON.stringify({ query, variables: {} }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
     });
     const responseHeaders = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
+    const serverTiming = shopifyTrackingServerTiming(upstream.headers.get("server-timing"));
+    if (serverTiming) responseHeaders.set("Server-Timing", serverTiming);
     // Preserve each opaque Shopify cookie, including deletion/expiry attributes.
     // Never forward application/auth cookies or rewrite the Shopify Domain.
     for (const cookie of upstream.headers.getSetCookie()) {

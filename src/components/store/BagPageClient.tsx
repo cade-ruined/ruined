@@ -1,10 +1,13 @@
 "use client";
 
+import { shopifyAnalyticsTrackingHeaders } from "@/lib/analytics/shopify";
+import { flushStoreCart, trackStoreEvent } from "@/lib/analytics/storefront";
+import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
 import { checkoutVisitorConsent, checkoutWithAttribution } from "@/lib/marketing/meta";
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Product } from "@/data/products";
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { getProductColorHref, getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
@@ -86,6 +89,7 @@ export default function BagPageClient({
 }) {
   const { items, count, hydrated, setQuantity, remove, clear } = useBag();
   const [submitting, setSubmitting] = useState(false);
+  const viewed = useRef(false);
   const [error, setError] = useState("");
   const displayItems = useMemo(() => resolveBagItems(items, products), [items, products]);
   const currencies = new Set(displayItems.map((item) => item.currencyCode));
@@ -121,14 +125,66 @@ export default function BagPageClient({
     return `mailto:${email}?subject=${encodeURIComponent("Ruined bag enquiry")}&body=${encodeURIComponent(body)}`;
   }, [displayItems, email]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    const view = () => {
+      if (viewed.current) return;
+      if (trackStoreEvent("store_bag_viewed", {
+        source: "bag", quantity: count,
+        ...(currency ? { value: total, currency } : {}),
+      })) viewed.current = true;
+    };
+    view();
+    window.addEventListener(MARKETING_CONSENT_EVENT, view);
+    return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
+  }, [hydrated, count, total, currency]);
+
+  function trackItem(event: "store_bag_quantity_changed" | "store_bag_item_removed", item: DisplayBagItem, quantity: number) {
+    // Only current catalog data is eligible; stale local bag text is untrusted.
+    if (!item.canonical) return;
+    const product = products.find((entry) => entry.id === item.productId);
+    if (!product) return;
+    trackStoreEvent(event, {
+      product_id: product.shopifyProductGid ?? product.id,
+      product_handle: product.id,
+      variant_id: item.variantId,
+      source: "bag", quantity,
+      value: Number(item.priceAmount) * quantity,
+      currency: item.currencyCode,
+    });
+  }
+
+  function changeQuantity(item: DisplayBagItem, quantity: number) {
+    if (submitting) return;
+    setQuantity(item.key, quantity);
+    // The bag store clamps each line to 1–20 pieces. No-op clicks are not changes.
+    if (quantity >= 1 && quantity <= 20 && quantity !== item.quantity) trackItem("store_bag_quantity_changed", item, quantity);
+  }
+
+  function removeItem(item: DisplayBagItem) {
+    if (submitting) return;
+    remove(item.key);
+    trackItem("store_bag_item_removed", item, item.quantity);
+  }
+
+  function clearItems() {
+    if (submitting) return;
+    clear();
+    for (const item of displayItems) trackItem("store_bag_item_removed", item, item.quantity);
+  }
+
   async function beginCheckout() {
     if (!canCheckout || submitting) return;
     setSubmitting(true);
     setError("");
+    const checkoutProperties = { source: "bag" as const, quantity: count, ...(currency ? { value: total, currency } : {}) };
+    trackStoreEvent("store_checkout_clicked", checkoutProperties);
+    let errorCategory: "network" | "checkout_unavailable" | "invalid_response" | "redirect_failed" = "network";
     try {
+      await flushStoreCart();
       const response = await fetch("/api/store/checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...shopifyAnalyticsTrackingHeaders() },
         body: JSON.stringify({
           visitorConsent: checkoutVisitorConsent(),
           lines: displayItems.map((item) => ({
@@ -137,12 +193,16 @@ export default function BagPageClient({
           })),
         }),
       });
+      errorCategory = response.ok ? "invalid_response" : "checkout_unavailable";
       const payload = (await response.json()) as { checkoutUrl?: string; error?: string };
       if (!response.ok || !payload.checkoutUrl) {
         throw new Error(payload.error || "Checkout is temporarily unavailable.");
       }
+      errorCategory = "redirect_failed";
       window.location.assign(checkoutWithAttribution(payload.checkoutUrl));
+      trackStoreEvent("store_checkout_redirected", checkoutProperties);
     } catch (checkoutError) {
+      trackStoreEvent("store_checkout_failed", { ...checkoutProperties, error_category: errorCategory });
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout is temporarily unavailable.");
       setSubmitting(false);
     }
@@ -198,11 +258,11 @@ export default function BagPageClient({
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="flex h-11 items-center border border-white/25" role="group" aria-label={`Quantity for ${item.productName}`}>
-                  <button type="button" onClick={() => setQuantity(item.key, item.quantity - 1)} className="h-11 w-11 text-lg hover:bg-white hover:text-black" aria-label="Decrease quantity">−</button>
+                  <button type="button" disabled={submitting} onClick={() => changeQuantity(item, item.quantity - 1)} className="h-11 w-11 text-lg hover:bg-white hover:text-black disabled:cursor-wait disabled:opacity-40" aria-label="Decrease quantity">−</button>
                   <span className="w-9 text-center font-mono text-xs tabular-nums" aria-live="polite">{item.quantity}</span>
-                  <button type="button" onClick={() => setQuantity(item.key, item.quantity + 1)} className="h-11 w-11 text-lg hover:bg-white hover:text-black" aria-label="Increase quantity">+</button>
+                  <button type="button" disabled={submitting} onClick={() => changeQuantity(item, item.quantity + 1)} className="h-11 w-11 text-lg hover:bg-white hover:text-black disabled:cursor-wait disabled:opacity-40" aria-label="Increase quantity">+</button>
                 </div>
-                <button type="button" onClick={() => remove(item.key)} className="inline-flex min-h-11 min-w-11 items-center justify-center font-mono text-[0.6rem] uppercase tracking-[0.16em] text-white/65 underline decoration-white/30 underline-offset-4 hover:text-white">Remove</button>
+                <button type="button" disabled={submitting} onClick={() => removeItem(item)} className="inline-flex min-h-11 min-w-11 items-center justify-center font-mono text-[0.6rem] uppercase tracking-[0.16em] text-white/65 underline decoration-white/30 underline-offset-4 hover:text-white disabled:cursor-wait disabled:opacity-40">Remove</button>
               </div>
             </div>
           </article>
@@ -213,7 +273,7 @@ export default function BagPageClient({
         <div className="border border-white/20 p-6 lg:sticky lg:top-32">
           <div className="flex justify-between font-mono text-[0.58rem] uppercase tracking-[0.22em] text-white/55">
             <span>{count} {count === 1 ? "piece" : "pieces"}</span>
-            <button type="button" onClick={clear} className="inline-flex min-h-11 min-w-11 items-center justify-end underline decoration-white/30 underline-offset-4 hover:text-white">Clear</button>
+            <button type="button" disabled={submitting} onClick={clearItems} className="inline-flex min-h-11 min-w-11 items-center justify-end underline decoration-white/30 underline-offset-4 hover:text-white disabled:cursor-wait disabled:opacity-40">Clear</button>
           </div>
           {currency && (
             <div className="mt-8 flex items-baseline justify-between border-t border-white/15 pt-5">

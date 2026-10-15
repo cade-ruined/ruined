@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Product, ProductVariant } from "@/data/products";
 import { useBag } from "@/components/store/bag-store";
 import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
+import { trackStoreEvent } from "@/lib/analytics/storefront";
+import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
 import { trackMetaAddToCart } from "@/lib/marketing/meta";
 
 function matches(variant: ProductVariant, selection: Record<string, string>) {
@@ -27,6 +29,28 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
   const [added, setAdded] = useState(false);
   const [error, setError] = useState(false);
   const { add } = useBag();
+  const interactedProduct = useRef<string | null>(null);
+  const viewedProduct = useRef<string | null>(null);
+  const trackProductOpen = useCallback(() => {
+    if (viewedProduct.current === product.id) return;
+    const variant = product.variants.find((item) => item.available) ?? product.variants[0];
+    if (trackStoreEvent("store_product_opened", {
+      product_id: product.shopifyProductGid ?? product.id,
+      product_handle: product.id,
+      source: "quick_buy",
+      ...(variant ? { variant_id: variant.id, quantity: 1, value: Number(variant.priceAmount), currency: variant.currencyCode } : {}),
+    })) viewedProduct.current = product.id;
+  }, [product.id, product.shopifyProductGid, product.variants]);
+
+  useEffect(() => {
+    // Quick buy is inline in the moving rack. Count intentional interaction,
+    // not a hidden card mounting before its store scene is visible.
+    const retry = () => {
+      if (interactedProduct.current === product.id) trackProductOpen();
+    };
+    window.addEventListener(MARKETING_CONSENT_EVENT, retry);
+    return () => window.removeEventListener(MARKETING_CONSENT_EVENT, retry);
+  }, [product.id, trackProductOpen]);
   const resolvedSelection = { ...fixedSelection, ...selection };
   const complete = options.every((option) => Boolean(resolvedSelection[option.name]));
   const selectedVariant = complete
@@ -51,6 +75,17 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
   }
 
   function choose(name: string, value: string) {
+    if (choices.some((option) => option.name === name && option.values.includes(value))) {
+      interactedProduct.current = product.id;
+      trackProductOpen();
+      if (selection[name] !== value) trackStoreEvent("store_variant_selected", {
+        product_id: product.shopifyProductGid ?? product.id,
+        product_handle: product.id,
+        source: "quick_buy",
+        option_name: name,
+        option_value: value,
+      });
+    }
     setSelection(selectionThrough(name, value));
     setAdded(false);
     setError(false);
@@ -58,8 +93,10 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
 
   function addSelectedVariant() {
     if (!selectedVariant?.available) return;
+    interactedProduct.current = product.id;
+    trackProductOpen();
     try {
-      add({
+      const addedQuantity = add({
         productId: product.id,
         productName: product.name,
         productCode: product.code,
@@ -72,8 +109,19 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
         image: getVariantImage(product, selectedVariant),
         expectedShipDate: product.expectedShipDate,
       });
-      trackMetaAddToCart(product, selectedVariant);
-      setAdded(true);
+      if (addedQuantity > 0) {
+        trackStoreEvent("store_add_to_bag", {
+          product_id: product.shopifyProductGid ?? product.id,
+          product_handle: product.id,
+          variant_id: selectedVariant.id,
+          source: "quick_buy",
+          quantity: addedQuantity,
+          value: Number(selectedVariant.priceAmount) * addedQuantity,
+          currency: selectedVariant.currencyCode,
+        });
+        trackMetaAddToCart(product, selectedVariant, addedQuantity);
+      }
+      setAdded(addedQuantity > 0);
       setError(false);
     } catch {
       setAdded(false);

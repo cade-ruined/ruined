@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+const cartHandler = await read("src/lib/store/shopify-cart.ts");
 
 const [
   shopify,
@@ -70,51 +71,23 @@ test("checkout can use the Ruined public checkout hostname without trusting the 
   assert.doesNotMatch(checkoutRoute, /checkoutDomain|SHOPIFY_CHECKOUT_DOMAIN/);
 });
 
-test("checkout derives preorder attributes from the trusted Shopify catalogue", () => {
-  assert.match(checkoutRoute, /createCheckoutUrl,\s*getProducts,\s*type CheckoutLine/);
-  assert.match(checkoutRoute, /const products = await getProducts\(\)/);
-  assert.match(
-    checkoutRoute,
-    /products\.flatMap\(\(product\)\s*=>[\s\S]*?product\.variants\.map\(\(variant\)\s*=>\s*\[variant\.id,\s*\{ product, variant \}\]/
-  );
-  assert.match(checkoutRoute, /if \(!catalogueLine\?\.variant\.available\)/);
-  assert.match(
-    checkoutRoute,
-    /const expectedShipDate = catalogueLine\.product\.expectedShipDate\?\.trim\(\)/
-  );
-  assert.match(
-    checkoutRoute,
-    /attributes:\s*\[[\s\S]*?\{ key:\s*"Order type",\s*value:\s*"Preorder" \}[\s\S]*?\{ key:\s*"Expected ship date",\s*value:\s*expectedShipDate \}[\s\S]*?\]/
-  );
-  assert.match(checkoutRoute, /const checkoutUrl = await createCheckoutUrl\(lines, 1, body\.visitorConsent\)/);
-
-  assert.match(
-    shopify,
-    /type CheckoutLine\s*=\s*\{[\s\S]*?attributes\?:\s*\{ key:\s*string;\s*value:\s*string \}\[\]/
-  );
-  assert.match(
-    shopify,
-    /\.\.\.\(line\.attributes\?\.length\s*\?\s*\{ attributes:\s*line\.attributes \}\s*:\s*\{\}\)/
-  );
-  assert.match(shopify, /result\.userErrors\.length\s*>\s*0/);
-  assert.match(shopify, /warnings\s*\{\s*code\s+message\s+target\s*\}/);
-  assert.match(shopify, /result\.warnings\.length\s*>\s*0/);
+test("checkout derives preorder attributes from the shared trusted Shopify catalogue boundary", () => {
+  assert.match(checkoutRoute, /handleShopifyCartRequest\(request, \{ checkout: true \}\)/);
+  assert.match(cartHandler, /const products = await getProducts\(\)/);
+  assert.match(cartHandler, /if \(!catalogueLine\?\.variant\.available\)/);
+  assert.match(cartHandler, /const expectedShipDate = catalogueLine\.product\.expectedShipDate\?\.trim\(\)/);
+  assert.match(cartHandler, /attributes:\s*\[[\s\S]*?\{ key:\s*"Order type",\s*value:\s*"Preorder" \}[\s\S]*?\{ key:\s*"Expected ship date",\s*value:\s*expectedShipDate \}/);
+  assert.match(cartHandler, /result\.userErrors\.length/);
+  assert.match(cartHandler, /result\.warnings\.length/);
 });
 
 test("the browser cannot provide trusted preorder dates or checkout attributes", () => {
-  assert.match(
-    checkoutRoute,
-    /const ALLOWED_LINE_FIELDS = new Set\(\["variantId",\s*"quantity"\]\)/
-  );
-  assert.match(checkoutRoute, /type RequestBody\s*=\s*\{\s*lines\?:\s*unknown;\s*visitorConsent\?:\s*unknown;\s*\}/);
-  assert.match(
-    checkoutRoute,
-    /Object\.keys\(line\)\.some\(\(field\)\s*=>\s*!ALLOWED_LINE_FIELDS\.has\(field\)\)/
-  );
+  assert.match(cartHandler, /const ALLOWED_LINE_FIELDS = new Set\(\["variantId",\s*"quantity"\]\)/);
+  assert.match(cartHandler, /Object\.keys\(line\)\.some\(\(field\)\s*=>\s*!ALLOWED_LINE_FIELDS\.has\(field\)\)/);
 
   const checkoutRequest = bagPage.slice(
     bagPage.indexOf("async function beginCheckout"),
-    bagPage.indexOf("if (!hydrated)")
+    bagPage.indexOf("if (!hydrated)", bagPage.indexOf("async function beginCheckout"))
   );
   assert.match(
     checkoutRequest,
@@ -194,12 +167,12 @@ test("customer-facing preorder dates show the month without exposing Shopify's e
   }
 
   assert.match(
-    checkoutRoute,
+    cartHandler,
     /\{ key:\s*"Expected ship date",\s*value:\s*expectedShipDate \}/,
     "Shopify checkout should retain the trusted exact date for fulfillment",
   );
   assert.doesNotMatch(
-    checkoutRoute,
+    cartHandler,
     /format(?:Expected|Journey)ShipDate/,
     "presentation formatting must not alter Shopify's checkout line attribute",
   );
@@ -230,7 +203,7 @@ test("normal products retain normal bag identity, copy, and attribute-free check
   assert.match(bagStore, /return `\$\{productId\}::\$\{variantId\}`/);
 
   assert.match(
-    checkoutRoute,
+    cartHandler,
     /\.\.\.\(expectedShipDate[\s\S]*?\?\s*\{[\s\S]*?attributes:[\s\S]*?\}[\s\S]*?:\s*\{\}\)/
   );
   assert.match(

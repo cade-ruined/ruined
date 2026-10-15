@@ -1,0 +1,296 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import React from "react";
+import * as jsxRuntime from "react/jsx-runtime";
+import ts from "typescript";
+import * as colors from "../src/lib/store/product-colors.ts";
+import * as fits from "../src/lib/store/product-fit-images.ts";
+import * as links from "../src/lib/store/product-links.ts";
+
+function hooks() {
+  const slots = [], effects = [];
+  let cursor = 0;
+  const same = (left, right) => left && right && left.length === right.length && left.every((value, i) => Object.is(value, right[i]));
+  const react = {
+    ...React,
+    useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }]; },
+    useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
+    useId() { return "guide-test"; },
+    useMemo(callback, deps) { const i = cursor++; if (!same(slots[i]?.deps, deps)) slots[i] = { deps, value: callback() }; return slots[i].value; },
+    useCallback(callback, deps) { return react.useMemo(() => callback, deps); },
+    useEffect(callback, deps) { const i = cursor++; if (!same(slots[i]?.deps, deps)) effects.push(() => { slots[i]?.cleanup?.(); slots[i] = { deps, cleanup: callback() }; }); },
+  };
+  return { react, render(component, props) { cursor = 0; const result = component(props); effects.splice(0).forEach(run => run()); return result; }, cleanup() { slots.forEach(slot => slot?.cleanup?.()); } };
+}
+function load(path, dependencies, environment = {}) {
+  const compiled = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const loaded = { exports: {} };
+  new Function("require", "module", "exports", ...Object.keys(environment), compiled)(name => {
+    assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency ${name}`);
+    return dependencies[name];
+  }, loaded, loaded.exports, ...Object.values(environment));
+  return loaded.exports.default ?? loaded.exports;
+}
+const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
+const text = node => typeof node === "string" ? node : React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : "";
+const Stub = () => null;
+const SizeGuide = () => null;
+const product = {
+  id: "hoodie", shopifyProductGid: "gid://shopify/Product/123", name: "Hoodie", code: "RU-1", subtitle: "", material: "", origin: "", care: "", tone: "shadow", price: "$64",
+  options: [{ name: "Color", values: ["Black", "Blue"] }, { name: "Size", values: ["S", "M"] }],
+  variants: ["Black", "Blue"].flatMap((color, i) => ["S", "M"].map((size, j) => ({
+    id: `gid://shopify/ProductVariant/${i * 2 + j + 1}`, title: `${color} / ${size}`, available: true, price: "$64", priceAmount: "64.00", currencyCode: "USD",
+    selectedOptions: [{ name: "Color", value: color }, { name: "Size", value: size }],
+  }))),
+};
+const bagItem = { key: "hoodie::1", productId: product.id, productName: product.name, productCode: product.code, variantId: product.variants[0].id, variantTitle: product.variants[0].title, selectedOptions: product.variants[0].selectedOptions, unitPrice: "$64", priceAmount: "64.00", currencyCode: "USD", quantity: 1 };
+function fixture(path, props = {}, options = {}) {
+  const state = hooks(), events = [], calls = [], mutations = [], metaAdds = [];
+  let allowed = options.allowed ?? true, params = new URLSearchParams(), currentProps = props;
+  let items = options.items ?? [bagItem], hydrated = options.hydrated ?? true;
+  let mutationFails = false, redirectFails = false;
+  const window = new EventTarget();
+  window.location = { pathname: "/store/hoodie", search: "", assign(url) { if (redirectFails) throw new Error("private redirect detail"); calls.push({ redirect: url }); } };
+  window.history = { replaceState() {} };
+  const dependencies = {
+    react: state.react, "react/jsx-runtime": jsxRuntime,
+    "next/link": { default: Stub }, "next/image": { default: Stub }, "next/navigation": { useSearchParams: () => params },
+    "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
+    "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
+    "@/lib/store/catalog": { catalogNotice: () => ({}) },
+    "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
+    "@/lib/marketing/meta": { trackMetaProductView() {}, trackMetaAddToCart(product, variant, quantity) { metaAdds.push({ product, variant, quantity }); }, checkoutVisitorConsent: () => undefined, checkoutWithAttribution: value => value },
+    "@/lib/analytics/shopify": { shopifyAnalyticsTrackingHeaders: () => allowed ? { "X-Shopify-UniqueToken": "unique", "X-Shopify-VisitToken": "visit" } : {} },
+    "@/lib/analytics/storefront": { trackStoreEvent(name, properties) { if (!allowed) return false; events.push({ name, properties }); return true; }, flushStoreCart: () => options.flush?.() ?? Promise.resolve() },
+    "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Shipping" },
+    "@/data/product-size-guides": { getProductSizeGuide: () => ({ fit: "Unisex" }), getProductSizeGuideConfig: () => ({ sizeOption: "Size", fitOption: "Fit" }) },
+    "./ProductPurchase": { default: Stub }, "./ProductSizeGuideDialog": { default: SizeGuide }, "./BagLink": { default: Stub },
+  };
+  const mutate = (action, value) => { if (mutationFails) throw new Error("storage private detail"); mutations.push({ action, value }); };
+  const bag = { useBag: () => ({ items, hydrated, count: items.reduce((sum, item) => sum + item.quantity, 0), add: value => { mutate("add", value); return options.add ? options.add(value) : (options.addedQuantity ?? 1); }, setQuantity: (key, quantity) => mutate("quantity", { key, quantity }), remove: key => mutate("remove", key), clear: () => mutate("clear") }), isShopifyVariantId: value => value.startsWith("gid://shopify/ProductVariant/") };
+  dependencies["./bag-store"] = bag;
+  dependencies["@/components/store/bag-store"] = bag;
+  const Component = load(path, dependencies, {
+    window,
+    fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body), headers: init.headers }); return options.response ? options.response() : { ok: true, json: async () => ({ checkoutUrl: "https://checkout.example.test/secret-checkout" }) }; },
+  });
+  const render = () => state.render(Component, currentProps);
+  return {
+    render, events, calls, mutations, metaAdds, cleanup: state.cleanup,
+    setAllowed(value) { allowed = value; }, consent() { window.dispatchEvent(new Event("consent")); },
+    setProps(value) { currentProps = value; }, setParams(value) { params = new URLSearchParams(value); },
+    setItems(value) { items = value; }, setHydrated(value) { hydrated = value; }, failMutation() { mutationFails = true; }, failRedirect() { redirectFails = true; },
+    named(name) { return events.filter(event => event.name === name); },
+    button(label) { return elements(render()).find(node => node.type === "button" && (text(node) === label || node.props["aria-label"] === label)); },
+  };
+}
+
+test("product views wait for consent and do not repeat for variant changes or consent notifications", () => {
+  const view = fixture("src/components/store/ProductDetail.tsx", { product }, { allowed: false });
+  view.render(); assert.equal(view.events.length, 0);
+  view.setAllowed(true); view.consent(); view.consent();
+  view.setParams("variant=gid%3A%2F%2Fshopify%2FProductVariant%2F4"); view.render();
+  assert.equal(view.named("store_product_opened").length, 1);
+  assert.deepEqual(view.events[0].properties, { product_id: product.shopifyProductGid, product_handle: product.id, source: "product_page", variant_id: product.variants[0].id, quantity: 1, value: 64, currency: "USD" });
+  view.setProps({ product: { ...product, id: "other", shopifyProductGid: "gid://shopify/Product/456" } }); view.render();
+  assert.equal(view.named("store_product_opened").length, 2);
+  view.cleanup(); view.consent(); assert.equal(view.named("store_product_opened").length, 2);
+});
+
+test("product controls record catalog choices and successful adds, with the exact variant totals", () => {
+  const view = fixture("src/components/store/ProductPurchase.tsx", { product, initialColor: "Black" });
+  view.button("M").props.onClick();
+  const guide = elements(view.render()).find(node => node.type === SizeGuide);
+  guide.props.onOpen();
+  view.button("Add to bag").props.onClick();
+  assert.deepEqual(view.named("store_variant_selected")[0].properties, { product_id: product.shopifyProductGid, product_handle: product.id, source: "product_page", option_name: "Size", option_value: "M" });
+  assert.equal(view.named("store_size_guide_opened").length, 1);
+  assert.deepEqual(view.named("store_add_to_bag")[0].properties, { product_id: product.shopifyProductGid, product_handle: product.id, variant_id: product.variants[1].id, source: "product_page", quantity: 1, value: 64, currency: "USD" });
+  view.failMutation(); assert.throws(() => view.button("Added to bag").props.onClick());
+  assert.equal(view.named("store_add_to_bag").length, 1, "failed storage cannot produce a successful add event");
+});
+
+test("quick buy records first interaction instead of hidden mount and retries only its view after consent", () => {
+  const view = fixture("src/components/sequence/JourneyQuickBuy.tsx", { product }, { allowed: false });
+  const choose = (name, value) => elements(view.render()).find(node => node.type === "label" && text(node).startsWith(name)).props.children[1].props.onChange({ currentTarget: { value } });
+  view.render(); view.setAllowed(true); view.consent(); assert.equal(view.events.length, 0);
+  view.setAllowed(false); choose("Color", "Blue");
+  view.setAllowed(true); view.consent(); view.consent();
+  assert.equal(view.named("store_product_opened").length, 1);
+  assert.equal(view.named("store_variant_selected").length, 0, "denied choices are not replayed");
+  choose("Size", "M"); view.button("Add to bag").props.onClick();
+  assert.equal(view.named("store_product_opened").length, 1);
+  assert.equal(view.named("store_add_to_bag")[0].properties.source, "quick_buy");
+  assert.equal(view.named("store_add_to_bag")[0].properties.variant_id, product.variants[3].id);
+  view.failMutation(); view.button("Added ✓").props.onClick();
+  assert.equal(view.named("store_add_to_bag").length, 1);
+  view.cleanup();
+});
+
+test("bag view waits for hydration and consent, then remains one view across cart changes", () => {
+  const view = fixture("src/components/store/BagPageClient.tsx", { products: [product], email: "private@example.test" }, { allowed: false, hydrated: false });
+  view.render(); view.setAllowed(true); view.consent(); assert.equal(view.events.length, 0);
+  view.setHydrated(true); view.render();
+  assert.deepEqual(view.named("store_bag_viewed")[0].properties, { source: "bag", quantity: 1, value: 64, currency: "USD" });
+  view.setItems([{ ...bagItem, quantity: 2 }]); view.render(); view.consent();
+  assert.equal(view.named("store_bag_viewed").length, 1);
+  view.cleanup();
+});
+
+test("bag actions count actual quantity changes and removals without leaking stale bag metadata", () => {
+  const view = fixture("src/components/store/BagPageClient.tsx", { products: [product], email: "private@example.test" });
+  view.button("Decrease quantity").props.onClick();
+  assert.equal(view.named("store_bag_quantity_changed").length, 0);
+  view.button("Increase quantity").props.onClick();
+  assert.equal(view.named("store_bag_quantity_changed")[0].properties.quantity, 2);
+  view.button("Remove").props.onClick();
+  assert.equal(view.named("store_bag_item_removed").length, 1);
+  view.button("Clear").props.onClick(); assert.equal(view.named("store_bag_item_removed").length, 2);
+  view.setItems([{ ...bagItem, variantId: "unknown-person@example.test", productId: "private local text" }]);
+  view.button("Remove").props.onClick(); assert.equal(view.named("store_bag_item_removed").length, 2);
+  assert.doesNotMatch(JSON.stringify(view.events), /private@example|private local|unknown-person/);
+  view.cleanup();
+});
+
+test("checkout waits for cart synchronization and records click followed by redirect without checkout identifiers", async () => {
+  let finishSync;
+  const syncing = new Promise(resolve => { finishSync = resolve; });
+  const view = fixture("src/components/store/BagPageClient.tsx", { products: [product], email: "private@example.test" }, { flush: () => syncing });
+  const pending = view.button("Secure checkout").props.onClick();
+  assert.equal(view.named("store_checkout_clicked").length, 1);
+  assert.equal(view.calls.length, 0, "POST must wait for the sync cookie to settle");
+  for (const label of ["Decrease quantity", "Increase quantity", "Remove", "Clear"]) {
+    const control = view.button(label);
+    assert.equal(control.props.disabled, true, `${label} stays locked while checkout is preparing`);
+    control.props.onClick();
+  }
+  assert.deepEqual(view.mutations, [], "handlers cannot change the submitted bag while checkout is pending");
+  assert.equal(view.button("Preparing secure checkout…").props.disabled, true);
+  finishSync(); await pending;
+  assert.equal(view.calls[0].url, "/api/store/checkout");
+  assert.deepEqual(view.calls[0].body.lines, [{ variantId: bagItem.variantId, quantity: 1 }]);
+  assert.equal(view.calls[0].headers["X-Shopify-UniqueToken"], "unique");
+  assert.equal(view.calls[0].headers["X-Shopify-VisitToken"], "visit");
+  assert.equal(view.named("store_checkout_redirected").length, 1);
+  assert.equal(view.named("store_checkout_failed").length, 0);
+  assert.doesNotMatch(JSON.stringify(view.events), /secret-checkout|checkoutUrl|private@example/);
+  view.cleanup();
+});
+
+test("checkout errors use fixed categories and never copy server, network, or redirect messages", async () => {
+  for (const [category, response, redirect] of [
+    ["network", () => { throw new Error("personal network message"); }, false],
+    ["checkout_unavailable", () => ({ ok: false, json: async () => ({ error: "personal server message" }) }), false],
+    ["invalid_response", () => ({ ok: true, json: async () => ({}) }), false],
+    ["redirect_failed", undefined, true],
+  ]) {
+    const view = fixture("src/components/store/BagPageClient.tsx", { products: [product], email: "private@example.test" }, { response });
+    if (redirect) view.failRedirect();
+    await view.button("Secure checkout").props.onClick();
+    assert.equal(view.named("store_checkout_failed")[0].properties.error_category, category);
+    for (const label of ["Decrease quantity", "Increase quantity", "Remove", "Clear"]) {
+      assert.equal(view.button(label).props.disabled, false, `${label} unlocks after a checkout failure`);
+    }
+    view.button("Increase quantity").props.onClick();
+    assert.deepEqual(view.mutations, [{ action: "quantity", value: { key: bagItem.key, quantity: 2 } }]);
+    assert.equal(view.named("store_checkout_redirected").length, 0);
+    assert.doesNotMatch(JSON.stringify(view.events), /personal|private redirect|private@example/);
+    view.cleanup();
+  }
+});
+
+
+test("catalog selection records only an activated product link", () => {
+  const view = fixture("src/components/store/StoreGallery.tsx", { products: [product] });
+  const tree = view.render();
+  assert.equal(view.events.length, 0);
+  const card = elements(tree).find(node => node.props.entry?.product.id === product.id);
+  card.type(card.props).props.onClick();
+  assert.deepEqual(view.events, [{ name: "store_product_selected", properties: { product_id: product.shopifyProductGid, product_handle: product.id, source: "store" } }]);
+});
+
+test("size guide notifies only after opening the native dialog", () => {
+  const state = hooks();
+  let opens = 0;
+  const document = { body: { style: { overflow: "auto" } } };
+  const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; } };
+  const Component = load("src/components/store/ProductSizeGuideDialog.tsx", { react: state.react, "react/jsx-runtime": jsxRuntime, "next/image": { default: Stub } }, { document, requestAnimationFrame: callback => callback() });
+  const tree = state.render(Component, { guide: { fit: "Unisex", label: "Size", image: { width: 1000, height: 800, cropTop: 0, src: "/guide.png", alt: "Size chart" } }, onOpen() { assert.equal(dialog.open, true); opens++; } });
+  elements(tree).find(node => node.type === "dialog").props.ref.current = dialog;
+  const trigger = elements(tree).find(node => node.type === "button" && text(node) === "Size guide");
+  assert.equal(opens, 0);
+  trigger.props.onClick(); trigger.props.onClick();
+  assert.equal(opens, 1, "already-open dialog does not count again");
+  elements(tree).find(node => node.type === "button" && text(node) === "Close").props.onClick();
+  trigger.props.onClick(); assert.equal(opens, 2);
+  state.cleanup();
+});
+
+function persistedBag() {
+  let saved = "[]", fail = false;
+  const events = [];
+  const window = new EventTarget();
+  window.localStorage = {
+    getItem: () => saved,
+    setItem(_key, value) { if (fail) throw new DOMException("Storage denied", "SecurityError"); saved = value; },
+  };
+  window.addEventListener("ruined:bag-change", () => events.push("change"));
+  const bag = load("src/components/store/bag-store.ts", { react: {
+    ...React, useState: initial => [initial, () => {}], useEffect() {}, useCallback: callback => callback, useMemo: callback => callback(),
+  } }, { window });
+  return { ...bag, events, failWrites() { fail = true; } };
+}
+
+test("the real bag returns only persisted quantity increases, including a partial increase at its cap", () => {
+  const bag = persistedBag();
+  assert.equal(bag.addBagItem({ ...bagItem, quantity: 18 }), 18);
+  assert.equal(bag.addBagItem({ ...bagItem, quantity: 5 }), 2);
+  assert.equal(bag.readBag()[0].quantity, 20);
+  assert.equal(bag.useBag().add(bagItem), 0, "the hook preserves the zero delta at the cap");
+  assert.equal(bag.readBag()[0].quantity, 20);
+  const eventsBeforeFailure = bag.events.length;
+  bag.failWrites();
+  assert.throws(() => bag.addBagItem({ ...bagItem, variantId: product.variants[1].id }), /Storage denied/);
+  assert.equal(bag.events.length, eventsBeforeFailure, "a failed write cannot report a bag change");
+  assert.equal(bag.readBag().length, 1);
+});
+
+test("both purchase controls suppress UI and Meta add events when the real bag reaches 20", () => {
+  for (const path of ["src/components/store/ProductPurchase.tsx", "src/components/sequence/JourneyQuickBuy.tsx"]) {
+    const bag = persistedBag();
+    bag.addBagItem({ ...bagItem, quantity: 19 });
+    const view = fixture(path, { product, initialColor: "Black" }, { add: bag.addBagItem });
+    if (path.includes("JourneyQuickBuy")) {
+      const choose = (name, value) => elements(view.render()).find(node => node.type === "label" && text(node).startsWith(name)).props.children[1].props.onChange({ currentTarget: { value } });
+      choose("Color", "Black"); choose("Size", "S");
+    } else view.button("S").props.onClick();
+    view.button("Add to bag").props.onClick();
+    assert.equal(bag.readBag()[0].quantity, 20);
+    const successLabel = path.includes("JourneyQuickBuy") ? "Added ✓" : "Added to bag";
+    view.button(successLabel).props.onClick();
+    assert.equal(bag.readBag()[0].quantity, 20);
+    assert.equal(view.named("store_add_to_bag").length, 1, path);
+    assert.equal(view.named("store_add_to_bag")[0].properties.quantity, 1);
+    assert.equal(view.named("store_add_to_bag")[0].properties.value, 64);
+    assert.equal(view.metaAdds.length, 1, path);
+    assert.equal(view.metaAdds[0].quantity, 1);
+    assert.ok(view.button("Add to bag"), "a capped click must not announce another successful addition");
+    view.cleanup();
+  }
+});
+
+test("purchase controls pass the returned added quantity and its total value to both trackers", () => {
+  for (const path of ["src/components/store/ProductPurchase.tsx", "src/components/sequence/JourneyQuickBuy.tsx"]) {
+    const view = fixture(path, { product, initialColor: "Black" }, { addedQuantity: 2 });
+    if (path.includes("JourneyQuickBuy")) {
+      const choose = (name, value) => elements(view.render()).find(node => node.type === "label" && text(node).startsWith(name)).props.children[1].props.onChange({ currentTarget: { value } });
+      choose("Color", "Black"); choose("Size", "S");
+    } else view.button("S").props.onClick();
+    view.button("Add to bag").props.onClick();
+    assert.equal(view.named("store_add_to_bag")[0].properties.quantity, 2);
+    assert.equal(view.named("store_add_to_bag")[0].properties.value, 128);
+    assert.equal(view.metaAdds[0].quantity, 2);
+    view.cleanup();
+  }
+});

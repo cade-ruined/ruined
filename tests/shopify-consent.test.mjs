@@ -15,7 +15,8 @@ function load(path, dependencies = {}, environment = {}) {
   }, output, output.exports, { env: environment });
   return output.exports;
 }
-const { consentQuery, proxyShopifyConsent } = load("src/lib/marketing/shopify-consent-proxy.ts", { "server-only": {}, graphql });
+const requestOrigin = load("src/lib/request-origin.ts");
+const { consentQuery, proxyShopifyConsent, shopifyTrackingServerTiming } = load("src/lib/marketing/shopify-consent-proxy.ts", { "server-only": {}, graphql, "@/lib/request-origin": requestOrigin });
 const consent = load("src/lib/marketing/consent.ts");
 const environment = { META_TRACKING_ENABLED: "true", SHOPIFY_STORE_DOMAIN: "fixture.myshopify.com", SHOPIFY_STOREFRONT_ACCESS_TOKEN: "a".repeat(32) };
 const query = 'query { consentManagement { cookies(visitorConsent:{marketing:false,analytics:false}, landingPage:"https://theruinedproject.com/store?utm_source=facebook",origReferrer:"https://www.instagram.com/") { trackingConsentCookie cookieDomain landingPageCookie origReferrerCookie shopifyUnique shopifyVisit } customerAccountUrl } }';
@@ -116,6 +117,18 @@ test("proxy forwards read/token fallback without requiring a marker and fails cl
   assert.equal((await proxyShopifyConsent(request(), environment, async () => { throw new Error("Offline"); })).status, 502);
 });
 
+test("analytics can use the strict consent proxy independently of Meta, while both disabled fail closed", async () => {
+  let forwarded = 0;
+  const upstream = async () => { forwarded += 1; return new Response('{"data":{}}'); };
+  const analyticsOnly = { ...environment, META_TRACKING_ENABLED: "false", STOREFRONT_ANALYTICS_ENABLED: "true" };
+  assert.equal((await proxyShopifyConsent(request(), analyticsOnly, upstream)).status, 200);
+  assert.equal((await proxyShopifyConsent(request({ query: "query { shop { id } }" }), analyticsOnly, upstream)).status, 400);
+  for (const enabled of [undefined, "false", "TRUE"]) {
+    assert.equal((await proxyShopifyConsent(request(), { ...analyticsOnly, STOREFRONT_ANALYTICS_ENABLED: enabled }, upstream)).status, 503);
+  }
+  assert.equal(forwarded, 1);
+});
+
 test("checkout validates booleans and passes actual choices to Shopify without changing signed consent in its URL", async () => {
   const calls = [];
   const api = load("src/lib/shopify.ts", {
@@ -139,16 +152,48 @@ test("checkout validates booleans and passes actual choices to Shopify without c
   assert.equal(consent.validVisitorConsent(undefined), true);
 });
 
-test("checkout endpoint rejects malformed consent and forwards valid consent with trusted catalogue lines", async () => {
+test("checkout uses the shared catalogue and consent boundary", async () => {
   const calls = [];
   const route = load("app/api/store/checkout/route.ts", {
-    "next/server": { NextResponse: Response }, "@/lib/marketing/consent": consent,
-    "@/lib/shopify": { getProducts: async () => [{ variants: [{ id: "gid://shopify/ProductVariant/1", available: true }] }], createCheckoutUrl: async (...arguments_) => { calls.push(arguments_); return "https://checkout.theruinedproject.com/checkouts/id?_cs=opaque"; } },
+    "@/lib/store/shopify-cart": { handleShopifyCartRequest: async (...arguments_) => { calls.push(arguments_); return Response.json({ checkoutUrl: "https://checkout.theruinedproject.com/checkouts/id" }); } },
   });
-  const checkout = (visitorConsent) => new Request("https://theruinedproject.com/api/store/checkout", { method: "POST", body: JSON.stringify({ lines: [{ variantId: "gid://shopify/ProductVariant/1", quantity: 1 }], visitorConsent }) });
-  assert.equal((await route.POST(checkout({ marketing: "yes" }))).status, 400);
-  assert.equal(calls.length, 0);
-  assert.equal((await route.POST(checkout({ marketing: false, analytics: false }))).status, 200);
-  assert.deepEqual(calls[0][2], { marketing: false, analytics: false });
-  assert.deepEqual(calls[0][0], [{ variantId: "gid://shopify/ProductVariant/1", quantity: 1 }]);
+  const checkout = new Request("https://theruinedproject.com/api/store/checkout", { method: "POST" });
+  assert.equal((await route.POST(checkout)).status, 200);
+  assert.equal(calls[0][0], checkout);
+  assert.deepEqual(calls[0][1], { checkout: true });
+});
+
+test("consent proxy preserves only opaque Shopify token Server-Timing fields for reload continuity", async () => {
+  const tokens = '_y;desc="11111111-1111-4111-8111-111111111111", _s;desc="22222222-2222-4222-8222-222222222222", _ye;desc="1800000000", _se;desc="1792080000"';
+  const response = await proxyShopifyConsent(request(), environment, async () => new Response('{"data":{}}', {
+    headers: { "Server-Timing": `request;dur=150, ${tokens}, private;desc="email@example.com", _cmp;desc="opaque-consent"` },
+  }));
+  assert.equal(response.headers.get("Server-Timing"), tokens);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(shopifyTrackingServerTiming('unrelated;desc="comma, inside quote", ' + tokens), tokens);
+  for (const malformed of [null, 'private;desc="person@example.com"', '_y;desc="person@example.com"', '_s;desc="private-token"',
+    tokens + ', _s;desc="33333333-3333-4333-8333-333333333333"',
+    tokens.replace('_se;desc="1792080000"', '_se;desc="not-an-expiry"'),
+    '_y;desc="11111111-1111-4111-8111-111111111111";secret="private"',
+    'x'.repeat(16385),
+  ]) assert.equal(shopifyTrackingServerTiming(malformed), null);
+});
+
+test("consent proxy validates browser Host even when Next normalizes the request URL internally", async () => {
+  let calls = 0;
+  const result = await proxyShopifyConsent(new Request("http://localhost:3000/api/unstable/graphql.json", {
+    method: "POST", headers: { origin: "https://theruinedproject.com", host: "theruinedproject.com", "content-type": "application/json", "sec-fetch-site": "same-origin" },
+    body: JSON.stringify({ query }),
+  }), environment, async (_url, options) => {
+    calls += 1;
+    assert.equal(options.headers.get("referer"), "https://theruinedproject.com/");
+    return new Response('{"data":{}}');
+  });
+  assert.equal(result.status, 200);
+  assert.equal(calls, 1);
+  for (const headers of [
+    { host: "theruinedproject.com", origin: "https://members.theruinedproject.com" },
+    { host: "attacker.example", origin: "https://theruinedproject.com", "x-forwarded-host": "theruinedproject.com" },
+    { host: "theruinedproject.com", origin: "https://theruinedproject.com/" },
+  ]) assert.equal((await proxyShopifyConsent(request(undefined, headers), environment, () => assert.fail("Cross-origin consent request reached Shopify"))).status, 403);
 });

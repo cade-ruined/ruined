@@ -9,6 +9,8 @@ import { SITE_URL } from "@/lib/site";
 import { sharingMetadata } from "@/lib/sharing";
 import "@fontsource-variable/inter";
 import MarketingConsent from "@/components/MarketingConsent";
+import StorefrontAnalytics from "@/components/StorefrontAnalytics";
+import { publicStorefrontAnalyticsConfig } from "@/lib/analytics/config";
 import { publicMarketingConfig } from "@/lib/marketing/consent";
 
 const cadeHandy2 = localFont({
@@ -56,14 +58,15 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
   modal,
 }: {
   children: React.ReactNode;
   modal: React.ReactNode;
 }) {
-  const marketingConfig = publicMarketingConfig(process.env);
+  const analyticsConfig = await publicStorefrontAnalyticsConfig(process.env);
+  const marketingConfig = publicMarketingConfig(analyticsConfig ? { ...process.env, META_TRACKING_ENABLED: "true" } : process.env);
   const organizationSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -104,7 +107,8 @@ export default function RootLayout({
         <SiteFooter marketingEnabled={Boolean(marketingConfig)} />
         {modal}
         <WebVitals />
-        {marketingConfig && <MarketingConsent config={marketingConfig} />}
+        {analyticsConfig && <StorefrontAnalytics config={analyticsConfig} />}
+        {marketingConfig && <MarketingConsent config={marketingConfig} metaEnabled={process.env.META_TRACKING_ENABLED === "true"} />}
       </body>
     </html>
   );

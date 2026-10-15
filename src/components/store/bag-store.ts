@@ -69,7 +69,7 @@ function bagItemKey(productId: string, variantId: string): string {
   return `${productId}::${variantId}`;
 }
 
-function readBag(): BagItem[] {
+export function readBag(): BagItem[] {
   if (typeof window === "undefined") return [];
   try {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
@@ -119,23 +119,29 @@ function mutateBag(update: (items: BagItem[]) => BagItem[]) {
   writeBag(update(readBag()));
 }
 
-export function addBagItem(item: NewBagItem) {
+export function addBagItem(item: NewBagItem): number {
+  if (typeof window === "undefined") return 0;
+  let addedQuantity = 0;
   const key = bagItemKey(item.productId, item.variantId);
   mutateBag((items) => {
     const existing = items.find((line) => line.key === key);
+    const quantity = clampQuantity((existing?.quantity ?? 0) + (item.quantity ?? 1));
+    addedQuantity = Math.max(0, quantity - (existing?.quantity ?? 0));
     if (existing) {
       return items.map((line) =>
         line.key === key
           ? {
               ...line,
               expectedShipDate: item.expectedShipDate ?? line.expectedShipDate,
-              quantity: clampQuantity(line.quantity + (item.quantity ?? 1)),
+              quantity,
             }
           : line
       );
     }
-    return [...items, { ...item, key, quantity: clampQuantity(item.quantity ?? 1) }];
+    return [...items, { ...item, key, quantity }];
   });
+  // Return only after storage succeeds; a clamp can persist without an addition.
+  return addedQuantity;
 }
 
 export function useBag() {

@@ -41,6 +41,8 @@ const client = isShopifyConfigured
     })
   : null;
 
+export function getShopifyStorefrontClient() { return client; }
+
 // ─── GraphQL ────────────────────────────────────────────────────────────────
 
 const PRODUCTS_QUERY = `#graphql
@@ -307,7 +309,7 @@ export type CheckoutLine = {
 
 const CHECKOUT_HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
-function resolvePublicCheckoutUrl(checkoutUrl: string): string | null {
+export function resolvePublicCheckoutUrl(checkoutUrl: string): string | null {
   try {
     const url = new URL(checkoutUrl);
     if (url.protocol !== "https:") return null;

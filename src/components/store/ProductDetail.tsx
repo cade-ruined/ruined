@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PRODUCT_TONES, type Product } from "@/data/products";
 import { getProductColorImages, getProductColorOption } from "@/lib/store/product-colors";
 import { getProductFitImages, getProductFitOption } from "@/lib/store/product-fit-images";
 import { productSelectionHref, requestedProductVariant } from "@/lib/store/product-links";
 import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
+import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { trackMetaProductView } from "@/lib/marketing/meta";
 import type { ProductVariant } from "@/data/products";
 import ProductPurchase from "./ProductPurchase";
@@ -17,6 +18,7 @@ export default function ProductDetail({ product, children }: {
   children: ReactNode;
 }) {
   const searchParams = useSearchParams();
+  const viewedProduct = useRef<string | null>(null);
   const colorOption = getProductColorOption(product);
   const requestedVariant = requestedProductVariant(product, searchParams.get("variant"));
   const requestedColor = requestedVariant?.selectedOptions.find((option) => option.name === colorOption?.name)?.value ?? searchParams.get("color");
@@ -48,6 +50,22 @@ export default function ProductDetail({ product, children }: {
     window.addEventListener(MARKETING_CONSENT_EVENT, view);
     return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
   }, [product, requestedVariant]);
+
+  useEffect(() => {
+    const view = () => {
+      if (viewedProduct.current === product.id) return;
+      const variant = requestedVariant ?? product.variants.find((item) => item.available) ?? product.variants[0];
+      if (trackStoreEvent("store_product_opened", {
+        product_id: product.shopifyProductGid ?? product.id,
+        product_handle: product.id,
+        source: "product_page",
+        ...(variant ? { variant_id: variant.id, quantity: 1, value: Number(variant.priceAmount), currency: variant.currencyCode } : {}),
+      })) viewedProduct.current = product.id;
+    };
+    view();
+    window.addEventListener(MARKETING_CONSENT_EVENT, view);
+    return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
+  }, [product.id, product.shopifyProductGid, product.variants, requestedVariant]);
 
   function chooseColor(value: string) {
     if (!colorOption?.values.includes(value) || value === color) return;

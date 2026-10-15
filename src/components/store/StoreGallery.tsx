@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { trackStoreEvent } from "@/lib/analytics/storefront";
 import Link from "next/link";
 import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
@@ -148,6 +151,7 @@ function ProductCard({
   return (
     <Link
       href={href}
+      onClick={() => trackStoreEvent("store_product_selected", { product_id: product.shopifyProductGid ?? product.id, product_handle: product.id, source: "store" })}
       className={`group border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${
         featured ? "col-span-2" : ""
       }`}

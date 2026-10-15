@@ -10,6 +10,7 @@ import {
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 import { getProductFitOption } from "@/lib/store/product-fit-images";
+import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { trackMetaAddToCart } from "@/lib/marketing/meta";
 import BagLink from "./BagLink";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
@@ -121,6 +122,15 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
   }
 
   function choose(name: string, value: string) {
+    if (selection[name] !== value && options.some((option) => option.name === name && option.values.includes(value))) {
+      trackStoreEvent("store_variant_selected", {
+        product_id: product.shopifyProductGid ?? product.id,
+        product_handle: product.id,
+        source: "product_page",
+        option_name: name,
+        option_value: value,
+      });
+    }
     setAdded(false);
     if (name === colorOption?.name) onColorChange?.(value);
     if (name === fitOption?.name) onFitChange?.(value);
@@ -140,7 +150,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
 
   function addSelectedVariant() {
     if (!selectedVariant?.available) return;
-    add({
+    const addedQuantity = add({
       productId: product.id,
       productName: product.name,
       productCode: product.code,
@@ -153,8 +163,19 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
       image: getVariantImage(product, selectedVariant),
       expectedShipDate: product.expectedShipDate,
     });
-    trackMetaAddToCart(product, selectedVariant);
-    setAdded(true);
+    if (addedQuantity > 0) {
+      trackStoreEvent("store_add_to_bag", {
+        product_id: product.shopifyProductGid ?? product.id,
+        product_handle: product.id,
+        variant_id: selectedVariant.id,
+        source: "product_page",
+        quantity: addedQuantity,
+        value: Number(selectedVariant.priceAmount) * addedQuantity,
+        currency: selectedVariant.currencyCode,
+      });
+      trackMetaAddToCart(product, selectedVariant, addedQuantity);
+    }
+    setAdded(addedQuantity > 0);
   }
 
   return (
@@ -181,7 +202,11 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
           {option.name === sizeGuideConfig?.sizeOption && (
             <div className="mt-1 flex min-h-11 items-center justify-end">
               {sizeGuide ? (
-                <ProductSizeGuideDialog guide={sizeGuide} />
+                <ProductSizeGuideDialog guide={sizeGuide} onOpen={() => trackStoreEvent("store_size_guide_opened", {
+                  product_id: product.shopifyProductGid ?? product.id,
+                  product_handle: product.id,
+                  source: "product_page",
+                })} />
               ) : (
                 <span className="font-mono text-[0.54rem] uppercase tracking-[0.16em] text-white/35">
                   Select fit for size guide
