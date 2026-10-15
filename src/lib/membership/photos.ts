@@ -20,6 +20,8 @@ import {
 } from "@/lib/membership/photo-policy";
 import { getMemberCircle, getMemberIdentity } from "@/lib/membership/repository";
 import { getOperatorRole } from "@/lib/platform/repository";
+import { safeMemberAvatarUrl } from "./avatar-url";
+import { getPublicMemberProfileScope } from "./public-card-repository";
 
 function storageConfiguration() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -255,4 +257,35 @@ async function downloadMemberPhoto(path: string): Promise<Blob | null> {
     throw new MemberPhotoError(503, "This photo is temporarily unavailable.");
   }
   return data;
+}
+
+/** Public profiles share the current portrait only while the member is eligible and has not hidden it. */
+export async function getPublicMemberProfilePortraitSource(identifier: string) {
+  const scope = await getPublicMemberProfileScope(identifier);
+  if (!scope) return null;
+  const [row] = await getApplicationDatabase()<Array<{ avatar_storage_path: string | null; avatar_visible: boolean }>>`
+    select profile.avatar_storage_path, coalesce(preference.avatar_visible, true) as avatar_visible
+    from ruined_members member
+    join person_profiles profile on profile.person_id = member.person_id
+    left join member_directory_preferences preference on preference.member_id = member.id
+    where member.id = ${scope.memberId}::uuid and member.deleted_at is null
+  `;
+  if (!row || row.avatar_visible === false) return null;
+  const avatarUrl = safeMemberAvatarUrl(row.avatar_storage_path);
+  if (!avatarUrl || (avatarUrl.startsWith("/api/") && !ownedMemberPhotoPath(scope.memberId, avatarUrl))) return null;
+  const latest = await getPublicMemberProfileScope(identifier);
+  if (!latest || latest.memberId !== scope.memberId || latest.version !== scope.version) return null;
+  return { memberId: scope.memberId, version: scope.version, avatarUrl };
+}
+
+/** Unlike owner/Circle photo routes, this route rechecks public eligibility after the storage read. */
+export async function getPublicMemberProfilePortrait(identifier: string): Promise<Blob | null> {
+  const source = await getPublicMemberProfilePortraitSource(identifier);
+  if (!source) return null;
+  const path = ownedMemberPhotoPath(source.memberId, source.avatarUrl);
+  if (!path) return null;
+  const photo = await downloadMemberPhoto(path);
+  const current = await getPublicMemberProfilePortraitSource(identifier);
+  if (!current || current.memberId !== source.memberId || current.version !== source.version || current.avatarUrl !== source.avatarUrl) return null;
+  return photo;
 }

@@ -176,15 +176,21 @@ test("profile media without card activation still requires public Timeline conse
 const Image = ({ src, alt }) => React.createElement("img", { src, alt });
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const css = new Proxy({}, { get: (_, key) => key });
-const dependencies = { "next/image": Image, "next/link": Link, "@/lib/membership/member-number": load("src/lib/membership/member-number.ts"), "./PublicJournal.module.css": css };
+const dependencies = { "next/image": Image, "next/link": Link, "@/lib/membership/member-number": load("src/lib/membership/member-number.ts"),
+  "./MemberBadges": ({ badges }) => React.createElement("div", { "data-public-badges": true }, badges.map(badge => React.createElement("span", { key: badge.key }, badge.label))),
+  "../platform/MemberProfile.module.css": css, "./MemberJourneyShell.module.css": css, "./MemberJournal.module.css": css, "./PublicJournal.module.css": css };
 
 test("visitor profile displays full name, tag, bio, join number and tier above Timeline", () => {
   const Component = load("src/components/membership/PublicJournal.tsx", dependencies).default;
-  const html = renderToStaticMarkup(React.createElement(Component, { token, identity: profile }));
+  const html = renderToStaticMarkup(React.createElement(Component, { token, identity: { ...profile, avatarUrl: "/api/profile/member/portrait" }, badges: [{ key: "early-supporter", label: "I Was Here" }] }));
   assert.match(html, />Timeline<\/h2>/);
-  assert.match(html, /Shared name/); assert.match(html, /@member/); assert.match(html, /A public bio/);
+  assert.match(html, /aria-label="Shared name"/); assert.match(html, /@member/); assert.match(html, /A public bio/);
   assert.match(html, /Originals/); assert.match(html, /0017/);
-  assert.doesNotMatch(html, /mailto:|Message|>Journal<\/h2>|Member card|<img/);
+  assert.match(html, /data-member-theme="paper"/);
+  assert.match(html, /src="\/api\/profile\/member\/portrait"/);
+  assert.match(html, /polaroid-frame\.png/);
+  assert.match(html, /I Was Here/);
+  assert.doesNotMatch(html, /mailto:|Message|>Journal<\/h2>|Member card|Edit profile|My Invitation|New \+/);
 });
 
 test("visitor identity disappears when the feed reports unavailable membership", async () => {

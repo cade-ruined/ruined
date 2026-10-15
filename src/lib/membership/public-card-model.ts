@@ -53,6 +53,8 @@ export type PublicMemberProfile = {
   memberTag: string | null;
   bio: string | null;
   memberNumber: number | null;
+  /** Visitor presentation only; uploaded portraits use the gated profile route. */
+  avatarUrl?: string | null;
 };
 export const MEMBER_PROFILE_IDENTIFIER = /^(?:[A-Za-z0-9_-]{43}|[a-zA-Z0-9_]{3,24}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 export const MEMBER_CARD_TOKEN = /^[A-Za-z0-9_-]{43}$/;
