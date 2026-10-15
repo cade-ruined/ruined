@@ -131,6 +131,16 @@ type LobbySelection = {
   alt: string;
 };
 
+/** Prioritize the current/next gathering, followed by the latest public recaps. */
+function orderedCommunityEvents(events: StudioEvent[]) {
+  const priority = { Ongoing: 0, Upcoming: 1, Ended: 2 };
+  return [...events].sort((left, right) => {
+    const stateOrder = priority[left.status] - priority[right.status];
+    const dateOrder = Date.parse(left.dateTime) - Date.parse(right.dateTime);
+    return stateOrder || (left.status === "Ended" ? -dateOrder : dateOrder) || left.id.localeCompare(right.id);
+  });
+}
+
 export function JourneyLobbyIndex({
   events,
   products,
@@ -139,7 +149,7 @@ export function JourneyLobbyIndex({
   products: Product[];
 }) {
   const byobOne = events.find((candidate) => candidate.id === "byob-01");
-  const nextByob = events.find((candidate) => candidate.id.startsWith("byob-") && candidate.status !== "Ended");
+  const nextByob = orderedCommunityEvents(events).find((candidate) => candidate.id.startsWith("byob-") && candidate.status !== "Ended");
   const byobRegistrationOpen = nextByob?.registration?.status === "Open";
   const newProducts = products
     .filter((product) => product.image)
@@ -151,7 +161,7 @@ export function JourneyLobbyIndex({
           href: byobRegistrationOpen ? nextByob.registration!.href : `/community#${nextByob.id}`,
           realm: "Community" as const,
           title: nextByob.title,
-          meta: `${byobRegistrationOpen ? "Register now" : "Save the date"} · ${nextByob.date}`,
+          meta: `${byobRegistrationOpen ? "Register now" : "Save the date"} · ${nextByob.date}${!nextByob.dateOnly && nextByob.time && nextByob.time !== "Details to come" ? ` · ${nextByob.time}` : ""}`,
           image: nextByob.image ?? byobOne?.image,
           alt: `${nextByob.title} community gathering in the mountains.`,
         }]
@@ -282,14 +292,14 @@ export function JourneyLobbyIndex({
             />
           )}
           <span className={`absolute inset-0 ${selection.products ? "bg-gradient-to-b from-black/25 via-transparent to-transparent" : "bg-gradient-to-t from-black/85 via-black/5 to-black/35"}`} />
-          <span className="absolute left-2 top-2 bg-black/90 px-1.5 py-1 font-sans text-[clamp(0.4rem,0.9vw,0.5rem)] font-medium uppercase tracking-[0.16em] text-[var(--color-signal)] sm:left-3 sm:top-3 sm:tracking-[0.2em]">
+          <span className="absolute left-2 top-2 bg-black/90 px-1.5 py-1 font-sans text-[0.625rem] lg:text-[0.6875rem] font-medium uppercase tracking-[0.16em] text-[var(--color-signal)] sm:left-3 sm:top-3 sm:tracking-[0.2em]">
             {selection.realm}
           </span>
           <span className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3">
-            <strong className="journey-card-title block text-[clamp(0.78rem,2.2vw,1.25rem)] leading-[0.95] text-white">
+            <strong className="journey-card-title block text-base sm:text-lg lg:text-xl leading-[0.95] text-white">
               {selection.title}
             </strong>
-            <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[clamp(0.38rem,0.9vw,0.48rem)] uppercase leading-tight tracking-[0.08em] text-white/60 sm:tracking-[0.12em]">
+            <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[0.6875rem] lg:text-xs uppercase leading-tight tracking-[0.08em] text-white/60 sm:tracking-[0.12em]">
               <span>{selection.meta}</span>
               {selection.href && <span className="shrink-0 text-white/80 transition-transform group-hover:translate-x-1">↗</span>}
             </span>
@@ -584,33 +594,39 @@ export function JourneyAboutIndex() {
 }
 
 export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
-  const nextAvailable = events.find((event) => event.status === "Upcoming");
-  const visibleEvents = events.slice(0, 3);
+  const visibleEvents = orderedCommunityEvents(events).slice(0, 3);
+  const nextAvailable = visibleEvents.find((event) => event.status !== "Ended");
   const compactGridClass =
     visibleEvents.length === 1
-      ? "sm:mx-auto sm:w-1/3"
+      ? "min-[1025px]:mx-auto min-[1025px]:w-1/3"
       : visibleEvents.length === 2
-        ? "sm:mx-auto sm:w-2/3"
+        ? "min-[1025px]:mx-auto min-[1025px]:w-2/3"
         : "";
+  const columnsClass = visibleEvents.length <= 1 ? "grid-cols-1" : visibleEvents.length === 2 ? "grid-cols-2" : "grid-cols-2 min-[1025px]:grid-cols-3";
 
   return (
-    <div>
+    <div data-journey-events-index>
       <div
-        className={`${JOURNEY_GRID_CLASS} ${compactGridClass}`}
-        style={{
-          gridTemplateColumns: `repeat(${Math.max(visibleEvents.length, 1)}, minmax(0, 1fr))`,
-        }}
+        data-journey-event-grid
+        className={`grid gap-2 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] min-[1025px]:gap-1.5 min-[1025px]:p-1.5 ${columnsClass} ${compactGridClass}`}
       >
         {visibleEvents.map((event, index) => {
           const isEnded = event.status === "Ended";
           const isNextAvailable = event.id === nextAvailable?.id;
-          const isDimmed = !isNextAvailable;
+          const isDimmed = isEnded;
+          const featuredMobile = index === 0 && visibleEvents.length !== 2;
+          const mobileCardClass = featuredMobile
+            ? `${visibleEvents.length === 3 ? "max-[1025px]:col-span-2 " : ""}max-[1025px]:aspect-[16/9]`
+            : "max-[1025px]:aspect-[4/3]";
+          const label = isEnded ? "Archive" : event.status === "Ongoing" ? "Happening now"
+            : isNextAvailable ? "Next gathering" : "Upcoming";
 
           return (
             <Link
               key={event.id}
               href={`/community#${event.id}`}
-              className={JOURNEY_CARD_CLASS}
+              className={`${JOURNEY_CARD_CLASS} ${mobileCardClass} focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white`}
+              data-journey-event-card={event.id}
               data-event-dimmed={isDimmed ? "true" : undefined}
             >
               {event.image && (
@@ -618,31 +634,30 @@ export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
                   src={event.image}
                   alt={event.gallery?.[0]?.alt ?? event.title}
                   fill
-                  sizes="(min-width: 640px) 22rem, 28vw"
+                  sizes={featuredMobile ? "(min-width: 1025px) 22rem, 90vw" : "(min-width: 1025px) 22rem, 45vw"}
                   className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
                 />
               )}
-              <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+              <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30" />
               {isDimmed && (
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none absolute inset-0 transition-colors duration-300 group-hover:bg-black/40 group-focus-visible:bg-black/40 ${isEnded ? "bg-black/45" : "bg-black/55"}`}
+                  className="pointer-events-none absolute inset-0 bg-black/30 transition-colors duration-300 group-hover:bg-black/20 group-focus-visible:bg-black/20"
                 />
               )}
-              <span className="absolute left-2 top-2 font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] font-medium uppercase tracking-[0.14em] text-white/70 sm:left-4 sm:top-4 sm:tracking-[0.2em]">
-                {isEnded
-                  ? `Ended · 0${index + 1}`
-                  : isNextAvailable
-                    ? `Available · 0${index + 1}`
-                    : `0${index + 1}`}
+              <span className="absolute left-3 top-3 font-sans text-[0.625rem] font-medium uppercase tracking-[0.12em] text-white/80 min-[1025px]:left-4 min-[1025px]:top-4">
+                {label}
               </span>
-              <span className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4">
-                <strong className="journey-card-title block text-[clamp(0.62rem,1.8vw,1.125rem)] leading-tight text-white">
+              <span className="absolute bottom-3 left-3 right-3 min-[1025px]:bottom-4 min-[1025px]:left-4 min-[1025px]:right-4">
+                <strong className="journey-card-title block text-base leading-tight text-white min-[1025px]:text-[clamp(0.85rem,1.8vw,1.125rem)]">
                   {event.title}
                 </strong>
-                <span className="mt-1 flex items-center justify-between font-sans text-[clamp(0.4rem,0.9vw,0.52rem)] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:tracking-[0.16em]">
-                  <span>{event.date}</span>
-                  <span className="transition-transform group-hover:translate-x-1">
+                <span className="mt-1 flex items-end justify-between gap-2 font-sans text-[0.6875rem] leading-snug text-white/80 min-[1025px]:mt-2">
+                  <time dateTime={event.dateOnly ? event.dateTime.slice(0, 10) : event.dateTime}>
+                    {event.date}
+                    {!isEnded && !event.dateOnly && event.time && event.time !== "Details to come" ? ` · ${event.time}` : ""}
+                  </time>
+                  <span aria-hidden="true" className="shrink-0 transition-transform group-hover:translate-x-1">
                     ↗
                   </span>
                 </span>
@@ -653,7 +668,7 @@ export function JourneyEventsIndex({ events }: { events: StudioEvent[] }) {
       </div>
       <Link
         href="/community"
-        className="ui-heading mt-3 flex items-center justify-between border border-white/25 bg-black/80 px-4 py-3 text-xs text-white"
+        className="ui-heading mt-3 flex min-h-11 items-center justify-between border border-white/25 bg-black/80 px-4 py-3 text-xs text-white"
       >
         <span>See all events</span>
         <span aria-hidden="true">→</span>

@@ -74,6 +74,8 @@ const nextConfig = {
         "/events/byob-01-recap.mp4",
         "/events/byob-01-recap-poster.webp",
         "/events/byob-01/gallery/:path*",
+        "/events/byob-03-recap.mp4",
+        "/events/byob-03-recap-poster.webp",
       ].map((source) => ({
         source,
         headers: [

@@ -44,44 +44,44 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 4 }, (_, index) => {
   const monthIndex = 7 + index;
   const year = 2026 + Math.floor(monthIndex / 12);
   const month = monthIndex % 12;
-  const day = secondFriday(year, month).getUTCDate();
+  // The November gathering moves to Saturday, November 14.
+  const day = secondFriday(year, month).getUTCDate() + (index === 3 ? 1 : 0);
   const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const number = String(index + 1).padStart(2, "0");
   const isFirstEvent = index === 0;
   const id = `byob-${number}`;
-  const isSecondEvent = index === 1;
+  const recapNumber = index === 1 || index === 2 ? number : null;
   const isRegistrationEvent = index === 1 || index === 2;
-  const isDateAnnouncement = index === 3;
+  const isNovemberEvent = index === 3;
   return {
     id,
     title: `BYOB Nº ${number}`,
     eyebrow: "Monthly gathering",
     date: `${day} ${MONTHS[month]} ${year}`,
-    // November's Denver date boundary is storage for ordering, not a call time.
-    dateTime: isDateAnnouncement ? `${isoDate}T07:00:00.000Z` : `${isoDate}T14:00:00.000Z`,
-    dateOnly: isDateAnnouncement || undefined,
+    // November 14 at 9 AM Mountain Standard Time is 16:00 UTC.
+    dateTime: isNovemberEvent ? `${isoDate}T16:00:00.000Z` : `${isoDate}T14:00:00.000Z`,
     time: isFirstEvent
       ? "8:00 AM"
       : isRegistrationEvent
         ? "8:00 AM MDT"
-        : "Details to come",
+        : "9:00 AM MST",
     location: isFirstEvent
       ? "Tibble Fork Reservoir · Up on the hill"
       : isRegistrationEvent
         ? "Tibble Fork Reservoir · Hill south of the parking lot"
         : "Details to come",
     admission: "",
-    summary: isDateAnnouncement
-      ? "Bring Your Own (Bell or bodyweight). Time, location, and registration details coming soon."
+    summary: isNovemberEvent
+      ? "Bring Your Own (Bell or bodyweight). Location and registration details coming soon."
       : "Bring Your Own (Bell or bodyweight).",
     timezone: "America/Denver",
     image: isFirstEvent
       ? BYOB_01_FEATURE_IMAGE
-      : isSecondEvent ? "/events/byob-02-recap-poster.webp" : "/events/byob-key-art.png",
-    video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : isSecondEvent ? "/events/byob-02-recap.mp4" : undefined,
+      : recapNumber ? `/events/byob-${recapNumber}-recap-poster.webp` : "/events/byob-key-art.png",
+    video: isFirstEvent ? "/events/byob-01-recap.mp4?v=2" : recapNumber ? `/events/byob-${recapNumber}-recap.mp4` : undefined,
     videoPoster: isFirstEvent
       ? "/events/byob-01-recap-poster.webp?v=2"
-      : isSecondEvent ? "/events/byob-02-recap-poster.webp" : undefined,
+      : recapNumber ? `/events/byob-${recapNumber}-recap-poster.webp` : undefined,
     gallery: isFirstEvent ? BYOB_01_GALLERY : undefined,
     registration: isRegistrationEvent
       ? {
