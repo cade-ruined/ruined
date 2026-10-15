@@ -1,3 +1,5 @@
+import { installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -51,7 +53,7 @@ async function fixture(t) {
       policy_version text,decision text,accepted_at timestamptz,source text,actor_auth_user_id uuid,evidence jsonb,dedupe_key text unique);
     create table communication_contacts(id uuid primary key default gen_random_uuid(),email_normalized text,delivery_state text);
     create table circles(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
-    create table circle_member_assignments(id uuid primary key default gen_random_uuid(),member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
+    create table circle_member_assignments(id bigint generated always as identity primary key,member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table membership_blocks(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table member_progression_assignments(id uuid primary key default gen_random_uuid(),member_id uuid,
@@ -69,10 +71,12 @@ async function fixture(t) {
     create function private.ruined_member_paid_reservation(uuid) returns uuid language sql as 'select null::uuid';`);
   // Canonical access and the shipped paid-provider predicate run against isolated fixture evidence.
   await installOperatorFundingFunctions(db);
+  await installCircleRevealFunction(db);
   await db.exec("drop table member_registration_access; drop function private.ruined_member_paid_reservation(uuid)");
   await installPaidReservationFunction(db);
   await db.exec(`alter table member_registration_access add column profile_activated_at timestamptz,add column registered_at timestamptz;
     alter table membership_commercial_reservations add column billing_plan text default 'monthly'`);
+  await installRegistrationProfileReleaseFunction(db);
   await db.exec(read("db/migrations/20261012230000_member_email_cadence.sql"));
   await db.exec(read("db/migrations/20261012233000_member_email_sequences.sql"));
   const sql = sqlBridge(db);
