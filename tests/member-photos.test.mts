@@ -83,6 +83,8 @@ async function photoModule(options: {
     "@/lib/database/server": { getApplicationDatabase: () => database },
     "@/lib/membership/access-policy": access,
     "@/lib/membership/photo-policy": policy,
+    "./avatar-url": await load("src/lib/membership/avatar-url.ts", { "./photo-policy": policy }),
+    "./public-card-repository": { getPublicMemberProfileScope: async () => null },
     "@/lib/membership/repository": {
       getMemberIdentity: async () => options.identity === undefined ? identity : options.identity,
       getMemberCircle: async () => options.circle ?? null,

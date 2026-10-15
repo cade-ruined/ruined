@@ -173,7 +173,7 @@ export default function MemberProfileEditor({
 
   return (
     <main className={`member-journey-page member-profile-editor mx-auto max-w-[78rem] pb-24 font-[var(--font-body)] text-[var(--member-ink)] ${styles.editor}`}>
-      <MemberSettingsHeader title="Edit profile" /><p className={styles.intro}>Your name, @tag, bio, member number, and Timeline appear on your public profile. Your Journal is private.</p>
+      <MemberSettingsHeader title="Edit profile" /><p className={styles.intro}>Your photo, name, @tag, bio, member number, earned badges, and Timeline appear on your public profile. Your Journal is private.</p>
       {!writable ? <p className="mb-6 rounded-[4px] bg-[var(--member-soft)] p-4 text-base leading-relaxed" role="status">{preview ? "Preview only. Profile changes are not saved." : profile.access.reason ?? "Your profile is read only. Contact support if you need to update it."} {!preview ? <Link className="underline underline-offset-4" href="/my/support">Get help</Link> : null}</p> : null}
 
       <form onSubmit={save} onChange={() => setSaved(false)}>

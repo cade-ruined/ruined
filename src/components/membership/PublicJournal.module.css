@@ -1,31 +1,14 @@
-.page { min-height: 100svh; padding: 36px 24px; background: #f1efea; color: #1d1d1b; }
-.content { width: min(100%, 680px); margin: 0 auto; }
-.back { color: #66645e; font-size: 11px; text-decoration: none; letter-spacing: .07em; text-transform: uppercase; }
-.identity { padding: 64px 0 36px; }
-.identity h1 { margin: 0; font-size: clamp(36px, 6vw, 58px); font-weight: 500; line-height: 1.05; letter-spacing: -.045em; overflow-wrap: anywhere; }
-.tag { margin: 12px 0 0; color: #66645e; font-size: 14px; overflow-wrap: anywhere; }
-.identityCopy { min-width: 0; }
-.bio { max-width: 560px; margin: 24px 0 0; font-size: 16px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
-.membership { display: flex; flex-wrap: wrap; gap: 16px; margin: 24px 0 0; color: #66645e; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
-.journal { border-top: 1px solid #ccc9c1; }
-.journalTitle { width: fit-content; margin: 0; padding: 22px 0 20px; border-bottom: 2px solid #1d1d1b; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .12em; }
-.entries { border-top: 1px solid #ccc9c1; }
-.entry { padding: 28px 0; border-bottom: 1px solid #ccc9c1; min-width: 0; }
-.postHeading { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
-.postIdentity { display: flex; gap: 12px; align-items: center; min-width: 0; }
-.postIdentity > div { display: grid; gap: 4px; min-width: 0; }
-.postIdentity strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
-.postIdentity > div > span { color: #6d6a63; font-size: 12px; overflow-wrap: anywhere; }
-.monogram { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border: 1px solid #ccc9c1; border-radius: 50%; font-size: 16px; }
-.entry time { flex-shrink: 0; color: #6d6a63; font-size: 11px; }
-.entry h3 { margin: 20px 0 12px; font-size: 20px; font-weight: 500; line-height: 1.3; letter-spacing: -.02em; overflow-wrap: anywhere; }
-.body { margin: 16px 0 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.media { display: grid; gap: 12px; margin-top: 20px; }
-.media img, .media video { display: block; width: 100%; height: auto; max-height: 720px; border-radius: 4px; object-fit: contain; }
-.empty, .status { padding: 28px 0 64px; font-size: 14px; color: #6d6a63; }
-.status button, .more { border: 1px solid #bbb7af; border-radius: 3px; background: transparent; color: inherit; padding: 12px 20px; cursor: pointer; }
-.more { margin: 28px 0; }
-.footer { padding-top: 40px; font-size: 11px; color: #6d6a63; }
-@media (max-width: 480px) { .page { padding: 28px 20px; } .identity { padding: 44px 0 32px; } .entry { padding: 24px 0; } .postHeading { align-items: flex-start; gap: 12px; } .entry time { max-width: 90px; text-align: right; line-height: 1.5; } }
-
-.preview { margin: 24px 0 0; color: #66645e; font-size: 12px; }
+.content { width:100%; max-width:1280px; }
+.back { display:inline-flex; align-items:center; min-height:44px; margin-bottom:28px; color:var(--member-muted); font-size:11px; letter-spacing:.07em; text-transform:uppercase; text-decoration:none; }
+.back:hover { color:var(--member-ink); }
+.preview { margin:0 0 24px; color:var(--member-muted); font-size:12px; }
+.timelineTitle { position:relative; display:flex; align-items:center; min-height:56px; margin:0; font-family:var(--font-body)!important; font-size:13px; font-weight:500!important; line-height:1.5; }
+.timelineTitle::after { content:""; position:absolute; height:3px; bottom:-1px; left:0; right:0; background:var(--member-accent); }
+.media { display:grid; gap:12px; margin-top:20px; }
+.media img,.media video { display:block; width:100%; height:auto; max-height:680px; object-fit:contain; background:var(--member-soft); }
+.status { padding:28px 0 48px; font-size:14px; line-height:1.7; color:var(--member-muted); }
+.status button,.more { display:inline-flex; align-items:center; justify-content:center; min-height:44px; margin-top:16px; border:1px solid var(--member-rule); background:transparent; color:var(--member-ink); padding:10px 20px; font-size:13px; cursor:pointer; }
+.status button:hover,.more:hover { border-color:var(--member-ink); }
+.footer { border-top:1px solid var(--member-rule); padding:24px 0 0; margin-top:32px; font-size:11px; color:var(--member-muted); }
+.footer a { display:inline-flex; align-items:center; min-height:44px; }
+@media(max-width:700px) { .back { margin-bottom:20px; } }
