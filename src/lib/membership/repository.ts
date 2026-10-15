@@ -21,7 +21,7 @@ import {
   googleCommunicationLivemode,
   googleCommunicationUrlFromMetadata,
 } from "@/lib/google/communications";
-import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
+import { deriveMemberAccessPolicy, memberCan, memberCircleIsRevealed } from "@/lib/membership/access-policy";
 import { shopifyArtifactProductFromSpecification } from "@/lib/membership/artifact-products";
 import { safeMemberAvatarUrl } from "@/lib/membership/avatar-url";
 import { supportedShippingCountry } from "@/lib/membership/phone";
@@ -110,6 +110,7 @@ type IdentityRow = {
   cancellation_effective_at: Date | string | null;
   email: string;
   foundations_state: FoundationsState;
+  circle_revealed?: boolean;
   member_id: string;
   person_id: string;
   program_state: ProgramState;
@@ -132,6 +133,7 @@ function identityFromRow(row: IdentityRow): MemberIdentity {
     cancellationEffectiveAt: toIso(row.cancellation_effective_at),
     email: row.email,
     foundationsState: row.foundations_state,
+    circleRevealed: row.circle_revealed,
     memberId: row.member_id,
     personId: row.person_id,
     programState: row.program_state,
@@ -157,6 +159,7 @@ export async function getMemberIdentity(
       private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
       lifecycle.program_state,
       lifecycle.foundations_state,
+      private.ruined_member_circle_is_revealed(member.id) as circle_revealed,
       lifecycle.administrative_onboarding_state,
       lifecycle.standing_state,
       lifecycle.cancellation_effective_at
@@ -1728,7 +1731,7 @@ export async function getMemberCircle(
 ): Promise<MemberCircleSnapshot | null> {
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
-  if (!memberCan(access, "circle.read") || identity.foundationsState !== "completed") {
+  if (!memberCan(access, "circle.read") || !memberCircleIsRevealed(identity)) {
     return {
       revealStatus: "locked",
       access,
@@ -1759,6 +1762,7 @@ export async function getMemberCircle(
     left join membership_blocks membership_block
       on membership_block.id = block_assignment.block_id
     where member_assignment.member_id = ${identity.memberId}::uuid
+      and private.ruined_member_circle_is_revealed(member_assignment.member_id)
       and member_assignment.ended_at is null
       and member_assignment.assigned_at <= statement_timestamp()
       and circle.status in ('forming', 'active')
@@ -1991,7 +1995,7 @@ export async function getMemberCircleChatDestination(
 ): Promise<string | null> {
   const identity = await requireMemberIdentity(authUserId);
   requireMemberCapability(identity, "circle.read");
-  if (identity.foundationsState !== "completed") return null;
+  if (!memberCircleIsRevealed(identity)) return null;
   const sql = getApplicationDatabase();
   const googleLivemode = googleCommunicationLivemode();
   const rows = await sql<Array<{ metadata: unknown }>>`
@@ -2009,6 +2013,7 @@ export async function getMemberCircleChatDestination(
       and link.external_entity_type = 'chat_space'
       and link.livemode = ${googleLivemode}
     where member_assignment.member_id = ${identity.memberId}::uuid
+      and private.ruined_member_circle_is_revealed(member_assignment.member_id)
       and member_assignment.ended_at is null
       and member_assignment.assigned_at <= statement_timestamp()
     order by member_assignment.assigned_at desc
@@ -2040,7 +2045,7 @@ export async function getMemberExperienceMeetingDestination(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
-        and lifecycle.foundations_state = 'completed'
+        and private.ruined_member_circle_is_revealed(lifecycle.member_id)
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -2119,7 +2124,7 @@ export async function getMemberExperiences(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
-        and lifecycle.foundations_state = 'completed'
+        and private.ruined_member_circle_is_revealed(lifecycle.member_id)
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -2247,7 +2252,7 @@ export async function setMemberExperienceRegistration(
         from member_lifecycle lifecycle
         left join circle_member_assignments member_assignment
           on member_assignment.member_id = lifecycle.member_id
-          and lifecycle.foundations_state = 'completed'
+          and private.ruined_member_circle_is_revealed(lifecycle.member_id)
           and member_assignment.ended_at is null
           and member_assignment.assigned_at <= statement_timestamp()
         left join circles active_circle
@@ -2668,7 +2673,7 @@ export async function getMemberLearning(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
-        and lifecycle.foundations_state = 'completed'
+        and private.ruined_member_circle_is_revealed(lifecycle.member_id)
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -2798,7 +2803,7 @@ export async function getMemberLearningResource(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
-        and lifecycle.foundations_state = 'completed'
+        and private.ruined_member_circle_is_revealed(lifecycle.member_id)
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
       left join circles active_circle
@@ -3743,7 +3748,7 @@ export async function getMemberUpdates(
       from member_lifecycle lifecycle
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
-        and lifecycle.foundations_state = 'completed'
+        and private.ruined_member_circle_is_revealed(lifecycle.member_id)
         and member_assignment.ended_at is null
       left join block_circle_assignments block_assignment
         on block_assignment.circle_id = member_assignment.circle_id
@@ -3764,9 +3769,9 @@ export async function getMemberUpdates(
       where notification.member_id = ${identity.memberId}::uuid
         and notification.person_id = ${identity.personId}::uuid
         and notification.channel = 'in_app'
-        and (notification.notification_type <> 'circle' or ${identity.foundationsState === "completed"})
-        and (${identity.foundationsState === "completed"} or dispatch.target_type is null or dispatch.target_type not in ('circle', 'block'))
-        and (${identity.foundationsState === "completed"} or notification.announcement_id is null or exists (
+        and (notification.notification_type <> 'circle' or ${memberCircleIsRevealed(identity)})
+        and (${memberCircleIsRevealed(identity)} or dispatch.target_type is null or dispatch.target_type not in ('circle', 'block'))
+        and (${memberCircleIsRevealed(identity)} or notification.announcement_id is null or exists (
           select 1 from member_announcement_targets target
           where target.announcement_id = notification.announcement_id
             and target.target_type not in ('circle', 'block')

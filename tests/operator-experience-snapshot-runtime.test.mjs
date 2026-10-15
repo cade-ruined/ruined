@@ -1,3 +1,5 @@
+import { installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -141,13 +143,16 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     ${appendOnly}
   `);
   await installOperatorFundingFunctions(db);
+  await installCircleRevealFunction(db);
   await installPaidReservationFunction(db);
+  await db.exec("alter table member_registration_access add column profile_activated_at timestamptz");
+  await installRegistrationProfileReleaseFunction(db);
   for (const migration of ["20260828_operator_experience_management", "20260829_operator_google_calendar_sync", "20260829_operator_google_calendar_sync_hardening", "20260829_operator_google_calendar_meet_url_constraint", "20260904225258_calendar_durable_reconciliation"]) {
     await db.exec(await source(`db/migrations/${migration}.sql`));
   }
   async function reset() {
     await clearPaidReservationFixture(db);
-    await db.exec("delete from member_complimentary_grants");
+    await db.exec("delete from member_complimentary_grants; delete from member_circle_reveal_grants");
     await db.exec("truncate people,ruined_members,platform_users,member_lifecycle,person_profiles,person_email_addresses,circles,membership_blocks,circle_member_assignments,block_circle_assignments,circle_staff_assignments,experiences,operator_audit_events restart identity cascade");
     await db.query("insert into people values ($1,'active')", [ids.person]);
     await db.query("insert into ruined_members(id,person_id,email,email_normalized) values ($1,$2,'member@example.test','member@example.test')", [ids.member, ids.person]);
@@ -267,7 +272,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
       assert.equal((await record()).calendar.attendeeCount, 0, restrict);
       await db.exec(restore);
     }
-    await db.exec("delete from member_complimentary_grants");
+    await db.exec("delete from member_complimentary_grants; delete from member_circle_reveal_grants");
   });
 
   await t.test("Block snapshots remain read-only and enforce current Circle and Block placement", async () => {
@@ -327,6 +332,28 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     assert.equal(providerCalls[2].eventId, saved.provider_event_id);
     assert.deepEqual(providerCalls[2].attendees, []);
     assert.equal((await db.query("select count(*)::integer as count from experience_calendar_links")).rows[0].count, 1);
+  });
+
+  await t.test("early Circle grants update Calendar eligibility without inventing Foundations completion", async () => {
+    await reset();
+    await db.exec("update member_lifecycle set foundations_state='in_progress',program_state='onboarding'");
+    assert.equal(await snapshotEligible(), false);
+    assert.equal((await record()).calendar.attendeeCount, 0);
+    await db.query(`insert into member_circle_reveal_grants(circle_member_assignment_id,member_id,circle_id)
+      select id,member_id,circle_id from circle_member_assignments where member_id=$1`, [ids.member]);
+    assert.equal(await snapshotEligible(), true);
+    assert.equal(await authorized(), true);
+    assert.equal((await record()).calendar.attendeeCount, 1);
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `early-circle-${crypto.randomUUID()}` });
+    assert.deepEqual(providerCalls[0].attendees.map(attendee => attendee.email), ["member@example.test"]);
+    assert.equal((await db.query("select foundations_state from member_lifecycle")).rows[0].foundations_state, "in_progress");
+    await db.exec("update member_circle_reveal_grants set revoked_at=now()");
+    assert.equal(await snapshotEligible(), false);
+    assert.equal(await authorized(), false);
+    await bridge(db).begin(tx => invalidation.markCalendarAudiencesPendingForMember(tx, { memberId: ids.member }));
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "sync", requestKey: `early-circle-revoked-${crypto.randomUUID()}` });
+    assert.deepEqual(providerCalls[1].attendees, []);
+    assert.equal(providerCalls[1].eventId, providerCalls[0].eventId ?? (await db.query("select provider_event_id from experience_calendar_links")).rows[0].provider_event_id);
   });
 
   const invitedAudience = { id: ids.event, visibility: "invite_only", registration_mode: "internal", circle_id: null, block_id: null };

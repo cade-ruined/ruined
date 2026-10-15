@@ -1,3 +1,4 @@
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -56,6 +57,7 @@ async function fixture(t, { role = "ops_admin", launched = false } = {}) {
   }
   await installComplimentaryFundingFunctions(db);
   await installRegistrationProfileReleaseFunction(db);
+  await installCircleRevealFunction(db);
   await db.query("insert into people(id) values($1)", [ids.person]);
   await db.query("insert into ruined_members values($1,$2,'admin@example.test',null)", [ids.member, ids.person]);
   await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized) values($1,$2,$3,'admin@example.test')", [ids.auth, ids.member, ids.person]);

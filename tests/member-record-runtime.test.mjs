@@ -1,3 +1,4 @@
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -41,6 +42,7 @@ async function fixture() {
   `);
   await installOperatorFundingFunctions(pg);
   await installRegistrationProfileReleaseFunction(pg);
+  await installCircleRevealFunction(pg);
   const foundations = await source("db/migrations/20260826_membership_operating_spine_04_foundations_automation.sql");
   const community = await source("db/migrations/20260826_membership_operating_spine_03_community_experiences.sql");
   for (const [migration, table] of [[foundations, "member_milestones"], [foundations, "artifact_awards"], [community, "experience_attendance_events"]]) {

@@ -1,3 +1,4 @@
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
@@ -65,7 +66,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     create table member_consents(id bigint generated always as identity primary key,member_id uuid,consent_type text,
       policy_version text,decision text,accepted_at timestamptz,source text,actor_auth_user_id uuid,evidence jsonb,dedupe_key text unique);
     create table circles(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
-    create table circle_member_assignments(id uuid primary key default gen_random_uuid(),member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
+    create table circle_member_assignments(id bigint generated always as identity primary key,member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table membership_blocks(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
@@ -77,6 +78,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
   const start = profileMigration.indexOf("create function private.ruined_member_profile_released(");
   await db.exec(profileMigration.slice(start, profileMigration.indexOf("$$;", start) + 3));
   await installOperatorFundingFunctions(db);
+  await installCircleRevealFunction(db);
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   const sql = sqlBridge(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true", MEMBER_SMS_AUTOMATION_ENABLED: "true",

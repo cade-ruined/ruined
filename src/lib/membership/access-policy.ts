@@ -46,6 +46,13 @@ export function memberCan(
   return access.capabilities.includes(capability);
 }
 
+/** Reveal is separate from participation access and actual Foundations progress. */
+export function memberCircleIsRevealed(
+  identity: Pick<MemberIdentity, "circleRevealed" | "foundationsState">,
+): boolean {
+  return identity.circleRevealed ?? (identity.foundationsState === "completed");
+}
+
 export type MemberAccessIdentity = Pick<MemberIdentity,
   "accountState" | "administrativeOnboardingState" | "billingState" |
   "cancellationEffectiveAt" | "programState" | "standingState"

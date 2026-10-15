@@ -1,3 +1,4 @@
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import * as crypto from "node:crypto";
@@ -131,7 +132,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       create table member_lifecycle(member_id uuid,account_state text,billing_state text,administrative_onboarding_state text,standing_state text,cancellation_effective_at timestamptz,foundations_state text default 'completed');
       create table person_profiles(person_id uuid,preferred_name text,display_name text);
       create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
-      create table circle_member_assignments(member_id uuid,circle_id uuid,ended_at timestamptz);
+      create table circle_member_assignments(member_id uuid,circle_id uuid,ended_at timestamptz,id bigint generated always as identity primary key,assigned_at timestamptz default now());
       create table block_circle_assignments(circle_id uuid,block_id uuid,ended_at timestamptz);
       create table circle_staff_assignments(auth_user_id uuid,circle_id uuid,role_slug text,ended_at timestamptz);
       create table experiences(id uuid primary key,title text,details text,summary text,starts_at timestamptz,ends_at timestamptz,
@@ -144,6 +145,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       create function ruined_reject_append_only_mutation() returns trigger language plpgsql as $$begin raise exception 'append only'; end;$$;
     `);
     await installOperatorFundingFunctions(db);
+    await installCircleRevealFunction(db);
     for (const migration of ["20260829_operator_google_calendar_sync", "20260829_operator_google_calendar_sync_hardening", "20260829_operator_google_calendar_meet_url_constraint", "20260904225258_calendar_durable_reconciliation"]) {
       await db.exec(await source(`db/migrations/${migration}.sql`));
     }
@@ -173,7 +175,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
       await db.exec("update person_email_addresses set email_normalized='member@example.test'");
       await db.query("update experiences set visibility='circle',circle_id=$1", [circle]);
       await empty();
-      await db.query("insert into circle_member_assignments values ($1,$2,null)", [member, circle]);
+      await db.query("insert into circle_member_assignments(member_id,circle_id,ended_at) values ($1,$2,null)", [member, circle]);
       assert.equal(await audience(), 1);
       await db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [memberActor]);
       await empty();

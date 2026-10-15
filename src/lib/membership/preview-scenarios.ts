@@ -1,4 +1,4 @@
-import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
+import { deriveMemberAccessPolicy, memberCan, memberCircleIsRevealed } from "@/lib/membership/access-policy";
 import { PREVIEW_MEMBER_IDENTITY, PREVIEW_MEMBER_FOUNDATIONS_STATE } from "@/lib/membership/preview";
 import type { MemberIdentity } from "@/lib/membership/model";
 
@@ -51,8 +51,8 @@ export function memberPreviewSnapshot<T>(fixture: T, scenario: MemberPreviewScen
       : { kind: "account", title: "Review membership", body: access.reason, href: "/my/account" };
   }
   if (!memberCan(access, "learn.read") && "collections" in data) { data.uncollected = []; data.collections = []; }
-  if ("circle" in data) data.revealStatus = identity.foundationsState === "completed" ? "revealed" : "locked";
-  if (!memberCan(access, "circle.read") || identity.foundationsState !== "completed") {
+  if ("circle" in data) data.revealStatus = memberCircleIsRevealed(identity) ? "revealed" : "locked";
+  if (!memberCan(access, "circle.read") || !memberCircleIsRevealed(identity)) {
     for (const key of ["circle", "block", "shaper", "nextMeeting", "circleName", "blockName"]) if (key in data) data[key] = null;
     for (const key of ["circleMembers", "members", "meetings", "resources"]) if (key in data) data[key] = [];
     if ("communication" in data) data.communication = { chatHref: null, chatState: "unavailable" };
@@ -98,7 +98,7 @@ export function memberPreviewFoundations(identity: MemberIdentity) {
     }
     state.units = state.units.map((unit) => ({ ...unit, status: "completed" }));
   }
-  if (identity.foundationsState !== "completed") state.activeCircleName = null;
+  if (!memberCircleIsRevealed(identity)) state.activeCircleName = null;
   return state;
 }
 

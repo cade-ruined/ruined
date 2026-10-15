@@ -191,6 +191,8 @@ async function evaluateExperienceMemberAccess(
     cancellation_effective_at: Date | string | null;
     email_normalized: string;
     foundations_state: MemberIdentity["foundationsState"];
+    circle_revealed: boolean;
+    registration_held: boolean;
     person_id: string;
     current_progression_level_slug: string | null;
     program_state: MemberIdentity["programState"];
@@ -200,6 +202,8 @@ async function evaluateExperienceMemberAccess(
       lifecycle.account_state, lifecycle.administrative_onboarding_state,
       lifecycle.billing_state, lifecycle.cancellation_effective_at,
       lifecycle.foundations_state, lifecycle.program_state, lifecycle.standing_state,
+      private.ruined_member_circle_is_revealed(member.id) as circle_revealed,
+      not private.ruined_member_profile_released(member.id) as registration_held,
       lifecycle.current_progression_level_slug
     from ruined_members member
     join people person on person.id = member.person_id and person.status = 'active'
@@ -217,6 +221,7 @@ async function evaluateExperienceMemberAccess(
   const row = rows[0];
   if (!row) return false;
   const access = deriveMemberAccessPolicy({
+    registrationHeld: row.registration_held,
     membershipFunding: funding[0]?.complimentary_funded ? "complimentary" : "self",
     accountState: row.account_state,
     administrativeOnboardingState: row.administrative_onboarding_state,
@@ -230,12 +235,12 @@ async function evaluateExperienceMemberAccess(
     programState: row.program_state,
     standingState: row.standing_state,
   });
-  // Circle membership is approved during Foundations but revealed only at completion.
+  // Circle reveal requires completed Foundations or a grant for the current placement.
   if (!memberCan(access, "experiences.member") && !(
     experience.visibility === "circle" && memberCan(access, "circle.read")
   )) return false;
 
-  if (["circle", "block"].includes(experience.visibility) && row.foundations_state !== "completed") return false;
+  if (["circle", "block"].includes(experience.visibility) && !row.circle_revealed) return false;
 
   if (experience.visibility === "circle") {
     const assignments = await tx`
@@ -243,6 +248,7 @@ async function evaluateExperienceMemberAccess(
       from circle_member_assignments assignment
       join circles circle on circle.id = assignment.circle_id and circle.status = 'active'
       where assignment.member_id = ${memberId}::uuid
+        and private.ruined_member_circle_is_revealed(assignment.member_id)
         and assignment.circle_id = ${experience.circle_id}::uuid
         and assignment.ended_at is null
         and assignment.assigned_at <= statement_timestamp()
@@ -261,6 +267,7 @@ async function evaluateExperienceMemberAccess(
         on block_assignment.circle_id = circle.id and block_assignment.ended_at is null
       join membership_blocks block on block.id = block_assignment.block_id and block.status = 'active'
       where member_assignment.member_id = ${memberId}::uuid
+        and private.ruined_member_circle_is_revealed(member_assignment.member_id)
         and member_assignment.ended_at is null
         and member_assignment.assigned_at <= statement_timestamp()
         and circle.activated_at <= statement_timestamp()

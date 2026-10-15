@@ -1,3 +1,4 @@
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -35,7 +36,7 @@ async function fixture(t) {
     create table person_profiles(person_id uuid,preferred_name text,display_name text,avatar_storage_path text,timezone text,location_label text,bio text,building_now text,updated_at timestamptz);
     create table person_private_profiles(person_id uuid,legal_name text,mobile_e164 text,default_fulfillment_address jsonb,apparel_sizing jsonb,accessibility_notes text,updated_at timestamptz);
     create table member_directory_preferences(member_id uuid,directory_status text default 'hidden');
-    create table circle_member_assignments(member_id uuid,circle_id uuid,ended_at timestamptz);
+    create table circle_member_assignments(member_id uuid,circle_id uuid,ended_at timestamptz,id bigint generated always as identity primary key,assigned_at timestamptz default now());
     create table block_circle_assignments(circle_id uuid,block_id uuid,ended_at timestamptz);
     create table artifact_awards(id uuid,member_id uuid,artifact_template_version_id uuid,member_input_snapshot jsonb,status text);
     create table member_announcements(id uuid,title text,body_text text,image_storage_path text,action_label text,action_url text,status text,published_at timestamptz);
@@ -44,6 +45,7 @@ async function fixture(t) {
       image_storage_path_snapshot text,action_label_snapshot text,action_url_snapshot text,status text,sent_at timestamptz,delivered_at timestamptz,dedupe_key text unique);
     create table member_notification_events(id bigint generated always as identity primary key,notification_id uuid,event_type text,evidence jsonb,dedupe_key text unique);
   `);
+  await installCircleRevealFunction(pg);
   for (const member of [current, deleted]) {
     await pg.query("insert into ruined_members values($1,$1,$2)", [member, member === deleted ? new Date().toISOString() : null]);
     await pg.query("insert into member_lifecycle(member_id) values($1)", [member]);
