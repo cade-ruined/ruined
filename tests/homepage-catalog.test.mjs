@@ -118,16 +118,18 @@ test("homepage retains the five-second upstream cancellation limit and can retry
 });
 
 test("homepage and Store share fresh catalog reads while checkout still validates products", async () => {
-  const [home, adapter, store, checkout] = await Promise.all([
+  const [home, adapter, store, checkout, cartHandler] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/store/homepage-catalog.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/store/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/store/checkout/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/store/shopify-cart.ts", import.meta.url), "utf8"),
   ]);
   assert.match(home, /getHomepageCatalog\(\)/);
   assert.match(home, /dynamic = "force-dynamic"/);
   assert.match(adapter, /return getCatalog\(\)/);
   assert.doesNotMatch(adapter, /unstable_cache|next\/cache|fetchedAt/);
   assert.match(store, /getCatalog\(\)/);
-  assert.match(checkout, /await getProducts\(\)/);
+  assert.match(checkout, /handleShopifyCartRequest\(request, \{ checkout: true \}\)/);
+  assert.match(cartHandler, /await getProducts\(\)/);
 });

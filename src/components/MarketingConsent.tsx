@@ -21,12 +21,14 @@ function loadPrivacyApi(config: MarketingConfig) {
     const response = await fetch("/api/unstable/graphql.json", {
       method: "POST", credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(10000),
       headers: { "Content-Type": "application/json", "Shopify-Storefront-Consent-Management": "1" },
-      body: JSON.stringify({ query: "query { consentManagement { cookies(visitorConsent:{}) { trackingConsentCookie } } }", variables: {} }),
+      body: JSON.stringify({ query: "query { consentManagement { cookies(visitorConsent:{}) { trackingConsentCookie cookieDomain shopifyUnique shopifyVisit } } }", variables: {} }),
     });
     if (!response.ok) throw new Error("Privacy preferences unavailable.");
     const payload = await response.json();
     const injectedConsent = payload.data?.consentManagement?.cookies?.trackingConsentCookie;
     if (payload.errors?.length || typeof injectedConsent !== "string" || !injectedConsent || injectedConsent.length > 8192) throw new Error("Privacy preferences unavailable.");
+    // The proxy preserves Shopify's token Server-Timing fields for the SDK to
+    // read from this completed fetch; no visitor tokens are fabricated here.
     // Feed Shopify's opaque current state into its supported initialization
     // option. Never replay an Allow choice from local/session storage.
     privacy.config = { ...privacy.config, isHeadless: true, asyncConsent: true, asyncVisitorState: true,
@@ -45,7 +47,7 @@ function loadPrivacyApi(config: MarketingConfig) {
   return privacyScript;
 }
 
-export default function MarketingConsent({ config }: { config: MarketingConfig }) {
+export default function MarketingConsent({ config, metaEnabled = true }: { config: MarketingConfig; metaEnabled?: boolean }) {
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
@@ -60,7 +62,7 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
     let active = true;
     const hostAllowed = window.location.hostname === config.storefrontRootDomain
       || window.location.hostname === `www.${config.storefrontRootDomain}`;
-    configureMetaTracking(hostAllowed);
+    configureMetaTracking(hostAllowed && metaEnabled);
     setConsentUpdatePending(true);
     const refresh = () => {
       const privacy = window.Shopify?.customerPrivacy;
@@ -100,7 +102,7 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
       document.removeEventListener("visitorConsentCollected", refresh);
       document.removeEventListener("consentTrackingApiLoaded", refresh);
     };
-  }, [config]);
+  }, [config, metaEnabled]);
 
   useEffect(() => {
     if (!isMarketingPage(pathname)) revokeMetaTracking();
@@ -146,7 +148,7 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
       setConsentUpdatePending(false);
       failed.current = false;
       setError("");
-      configureMetaTracking(true);
+      configureMetaTracking(metaEnabled);
       if (allow && marketingConsentAllowed(privacy, window.navigator.globalPrivacyControl === true)) { grantMetaTracking(true); trackMetaPageView(); }
       else revokeMetaTracking();
       window.dispatchEvent(new Event(MARKETING_CONSENT_EVENT));
@@ -162,8 +164,8 @@ export default function MarketingConsent({ config }: { config: MarketingConfig }
   return (
     <section aria-label="Cookie preferences" className="fixed inset-x-3 bottom-3 z-[90] mx-auto max-w-2xl border border-white/20 bg-[#11100e] p-5 text-[var(--color-bone)] shadow-2xl sm:bottom-5 sm:p-6">
       <p className="font-mono text-xs uppercase tracking-[0.2em]">Optional cookies</p>
-      <p className="mt-3 text-sm leading-relaxed text-white/75">With your permission, Meta uses cookies to measure visits and product activity and help Ruined show relevant ads. Shopify saves your choice for checkout. Shopping works without these cookies. <Link href="/privacy" className="underline underline-offset-4">Privacy policy</Link></p>
-      {gpc && <p className="mt-3 text-sm text-white/70">Your browser’s privacy signal keeps marketing tracking off.</p>}
+      <p className="mt-3 text-sm leading-relaxed text-white/75">With your permission, Shopify and Vercel measure visits, product activity, and progress through checkout so we can improve the store. Meta also uses cookies to measure advertising and help Ruined show relevant ads. Shopify saves your choice for checkout. Shopping works without these cookies. <Link href="/privacy" className="underline underline-offset-4">Privacy policy</Link></p>
+      {gpc && <p className="mt-3 text-sm text-white/70">Your browser’s privacy signal keeps optional tracking off.</p>}
       {error && <p role="status" className="mt-3 text-sm text-white/80">{error}</p>}
       <div className="mt-5 flex flex-wrap gap-3">
         <button type="button" disabled={!ready || saving} onClick={() => choose(false)} className="min-h-11 flex-1 border border-white/60 px-4 py-3 text-xs disabled:opacity-40">Reject optional cookies</button>

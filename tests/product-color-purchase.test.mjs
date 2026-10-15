@@ -35,6 +35,9 @@ const product = {
 };
 const dependencies = {
   react: React,
+  "@/lib/analytics/storefront": { trackStoreEvent: () => false, flushStoreCart: async () => {} },
+  "@/lib/analytics/shopify": { shopifyAnalyticsTrackingHeaders: () => ({}) },
+  "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
   "@/lib/marketing/meta": { trackMetaAddToCart: () => {}, checkoutWithAttribution: (url) => url, checkoutVisitorConsent: () => undefined },
   "react/jsx-runtime": jsxRuntime,
   "next/link": { default: () => null },
@@ -66,7 +69,7 @@ function purchase(initialColor, selectedProduct = product) {
       if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
       return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
     } },
-    "./bag-store": { ...dependencies["./bag-store"], useBag: () => ({ add: (item) => added.push(item) }) },
+    "./bag-store": { ...dependencies["./bag-store"], useBag: () => ({ add: (item) => { added.push(item); return 1; } }) },
   }).default;
   const render = () => { cursor = 0; return elements(Component({ product: selectedProduct, initialColor, onColorChange: (color) => changed.push(color), onFitChange: (fit) => changedFits.push(fit) })); };
   const button = (label) => render().find((node) => node.type === "button" && content(node) === label);

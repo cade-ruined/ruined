@@ -30,6 +30,7 @@ async function compile(relativePath, dependencies, environment = {}) {
 }
 
 const uiDependencies = {
+  "@/lib/analytics/storefront": { trackStoreEvent: () => false },
   "react/jsx-runtime": jsxRuntime,
   react: React,
   "@/lib/marketing/meta": { trackMetaAddToCart: () => {} },

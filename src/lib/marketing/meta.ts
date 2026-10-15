@@ -163,10 +163,13 @@ export function trackMetaProductView(product: Product, variant?: ProductVariant)
   send("trackSingle", META_PIXEL_ID, "ViewContent", data);
 }
 
-export function trackMetaAddToCart(product: Product, variant: ProductVariant) {
-  if (!variant.available || !currentMarketingPermission()) return;
+export function trackMetaAddToCart(product: Product, variant: ProductVariant, quantity = 1) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20 || !variant.available || !currentMarketingPermission()) return;
   const data = commerceEventData(product, variant);
-  if (data) pixel()?.("trackSingle", META_PIXEL_ID, "AddToCart", data);
+  if (data?.contents && data.value !== undefined) pixel()?.("trackSingle", META_PIXEL_ID, "AddToCart", {
+    ...data, value: data.value * quantity,
+    contents: data.contents.map((item) => ({ ...item, quantity })),
+  });
 }
 
 /** Shopify owns checkout/Purchase events; only carry consented click attribution. */

@@ -11,7 +11,7 @@ import * as productColors from "../src/lib/store/product-colors.ts";
 
 const compiled = new Map();
 function load(path, dependencies, environment = {}) {
-  dependencies = { "@/lib/marketing/meta": { trackMetaAddToCart: () => assert.fail("Rendering must not record a cart event") }, ...dependencies };
+  dependencies = { "@/lib/analytics/storefront": { trackStoreEvent: () => false }, "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" }, "@/lib/marketing/meta": { trackMetaAddToCart: () => assert.fail("Rendering must not record a cart event") }, ...dependencies };
   if (!compiled.has(path)) {
     compiled.set(path, ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -66,13 +66,16 @@ const product = {
   ],
 };
 
-function fixture(item = product, add = () => {}, props = {}) {
+function fixture(item = product, add = () => 1, props = {}) {
   const slots = [];
   let cursor = 0;
   const calls = [];
   const tracked = [];
   const hooks = {
     ...React,
+    useCallback: callback => callback,
+    useEffect() {},
+    useRef(initial) { const index = cursor++; if (!(index in slots)) slots[index] = { current: initial }; return slots[index]; },
     useState(initial) {
       const index = cursor++;
       if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
@@ -80,7 +83,7 @@ function fixture(item = product, add = () => {}, props = {}) {
     },
   };
   const Component = load("src/components/sequence/JourneyQuickBuy.tsx", {
-    "@/lib/marketing/meta": { trackMetaAddToCart: (item, selected) => tracked.push({ item, selected }) },
+    "@/lib/marketing/meta": { trackMetaAddToCart: (item, selected, quantity) => tracked.push({ item, selected, quantity }) },
     "@/lib/store/product-colors": productColors,
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
@@ -208,7 +211,7 @@ test("the featured Grey hoodie needs only a size and adds the exact Grey variant
   const greyMedium = variant(107, "Grey", "M");
   const item = { ...product, variants: [...product.variants, greyMedium] };
   const before = structuredClone(item);
-  const view = fixture(item, () => {}, { color: "Grey" });
+  const view = fixture(item, () => 1, { color: "Grey" });
   assert.equal(elements(view.render()).filter((node) => node.type === "select").length, 1);
   assert.equal(view.select("Size").props.value, "");
   assert.equal(view.button().props.disabled, true);
@@ -229,7 +232,7 @@ test("the featured Grey hoodie needs only a size and adds the exact Grey variant
 });
 
 test("the featured Grey hoodie stays sold out even when Black can still be purchased", () => {
-  const view = fixture(product, () => {}, { color: "Grey" });
+  const view = fixture(product, () => 1, { color: "Grey" });
   assert.ok(product.variants.some((item) => item.available && item.title.startsWith("Black")));
   assert.equal(elements(view.render()).filter((node) => node.type === "select").length, 1);
   assert.equal(view.select("Size").props.disabled, true);
@@ -272,7 +275,7 @@ test("fully sold-out and variantless products stay disabled even when handlers a
 
 test("a bag failure keeps the selection, reports failure, and confirms only a successful retry", () => {
   let fail = true;
-  const view = fixture(product, () => { if (fail) throw new Error("Bag unavailable"); });
+  const view = fixture(product, () => { if (fail) throw new Error("Bag unavailable"); return 1; });
   view.choose("Color", "Blue");
   view.choose("Size", "M");
   view.button().props.onClick();
@@ -512,7 +515,7 @@ test("On the Rack features Blue, the women's script crop, and the Crest polo in 
     "/SundayClothes-BlueHoodieFront.png", "/SundayClothes-BlueHoodieBack.png",
   ]);
   assert.deepEqual(nodes(cards[2]).filter((node) => node.tagName === "img").map((node) => attr(node, "src")), ["/CrestPolo.png"]);
-  const bluePurchase = fixture(hoodie, () => {}, { color: "Blue" });
+  const bluePurchase = fixture(hoodie, () => 1, { color: "Blue" });
   bluePurchase.choose("Size", "M");
   bluePurchase.button().props.onClick();
   assert.equal(bluePurchase.calls[0].variantId, "gid://shopify/ProductVariant/403");

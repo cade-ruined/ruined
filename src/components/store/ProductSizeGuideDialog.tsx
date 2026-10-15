@@ -6,8 +6,10 @@ import type { ProductSizeGuide } from "@/data/product-size-guides";
 
 export default function ProductSizeGuideDialog({
   guide,
+  onOpen,
 }: {
   guide: ProductSizeGuide;
+  onOpen?: () => void;
 }) {
   const headingId = useId();
   const dialogId = `${headingId}-dialog`;
@@ -22,6 +24,7 @@ export default function ProductSizeGuideDialog({
     previousOverflowRef.current = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     dialog.showModal();
+    onOpen?.();
     requestAnimationFrame(() => {
       const viewport = chartViewportRef.current;
       if (!viewport) return;

@@ -51,7 +51,7 @@ test("product gallery switches to the selected Fit while other products retain c
   const Image = () => null;
   const Purchase = () => null;
   const dependencies = {
-    react: { ...React, useEffect: () => {}, useState(initial) {
+    react: { ...React, useEffect: () => {}, useRef(initial) { const index = cursor++; if (!(index in slots)) slots[index] = { current: initial }; return slots[index]; }, useState(initial) {
       const index = cursor++;
       if (!(index in slots)) slots[index] = initial;
       return [slots[index], (value) => { slots[index] = value; }];
@@ -65,6 +65,7 @@ test("product gallery switches to the selected Fit while other products retain c
     "@/lib/store/product-links": links,
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
     "@/lib/marketing/meta": { trackMetaProductView: () => {} },
+    "@/lib/analytics/storefront": { trackStoreEvent: () => false },
     "./ProductPurchase": { default: Purchase },
   };
   const output = { exports: {} };

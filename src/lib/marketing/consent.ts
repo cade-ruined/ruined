@@ -36,7 +36,17 @@ export function marketingConsentAllowed(privacy: CustomerPrivacy | undefined, gl
 }
 
 let consentUpdatePending = true;
-export function setConsentUpdatePending(pending: boolean) { consentUpdatePending = pending; }
+export function setConsentUpdatePending(pending: boolean) {
+  consentUpdatePending = pending;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(MARKETING_CONSENT_EVENT));
+}
+export function isConsentUpdatePending() { return consentUpdatePending; }
+
+export function analyticsConsentAllowed(privacy: CustomerPrivacy | undefined, globalPrivacyControl = false): boolean {
+  if (!privacy || privacy.consentStatus !== "loaded" || globalPrivacyControl) return false;
+  try { return privacy.currentVisitorConsent().analytics === "yes" && privacy.analyticsProcessingAllowed(); }
+  catch { return false; }
+}
 
 /** Unknown choices stay omitted; regional processing defaults are not a choice. */
 export function visitorConsentForCheckout(privacy: CustomerPrivacy | undefined, localVeto = false, globalPrivacyControl = false): VisitorConsent | undefined {
@@ -51,7 +61,7 @@ export function visitorConsentForCheckout(privacy: CustomerPrivacy | undefined, 
     } catch { result = {}; }
   }
   if (localVeto) { result.marketing = false; result.analytics = false; }
-  if (globalPrivacyControl) { result.marketing = false; result.saleOfData = false; }
+  if (globalPrivacyControl) { result.marketing = false; result.analytics = false; result.saleOfData = false; }
   return Object.keys(result).length ? result : undefined;
 }
 

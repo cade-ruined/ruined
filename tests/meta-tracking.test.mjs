@@ -266,6 +266,7 @@ test("fresh bootstrap injects Shopify denial over stale compatibility storage an
   assert.equal(view.reads[0].url, "/api/unstable/graphql.json");
   assert.equal(view.reads[0].options.credentials, "same-origin");
   assert.match(JSON.parse(view.reads[0].options.body).query, /visitorConsent:\{\}/);
+  assert.match(JSON.parse(view.reads[0].options.body).query, /trackingConsentCookie cookieDomain shopifyUnique shopifyVisit/);
   assert.equal(b.privacy.config.injectedConsent, "opaque-from-Shopify");
   assert.equal(window.sessionStorage.getItem("consentHeader"), "stale-allow");
   assert.equal(b.meta.currentMarketingPermission(), false);
@@ -297,4 +298,17 @@ test("a preexisting foreign loaded SDK is not trusted as authoritative checkout 
   assert.equal(b.meta.currentMarketingPermission(), false);
   assert.equal(b.requests.length, 0);
   assert.equal(b.scripts.length, 0);
+});
+
+
+test("Meta cart additions use the actual saved quantity and reject zero or invalid deltas", () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  b.meta.grantMetaTracking(true);
+  for (const quantity of [0, -1, 21, 1.5, NaN]) b.meta.trackMetaAddToCart(product, variant, quantity);
+  assert.equal(window.fbq?.queue?.some(call => call[2] === "AddToCart") ?? false, false);
+  b.meta.trackMetaAddToCart(product, variant, 2);
+  const adds = window.fbq.queue.filter(call => call[2] === "AddToCart");
+  assert.equal(adds.length, 1);
+  assert.equal(adds[0][3].value, 192);
+  assert.deepEqual(adds[0][3].contents, [{ id: "52219441938753", quantity: 2, item_price: 96 }]);
 });

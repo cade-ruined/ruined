@@ -280,6 +280,7 @@ test("single-color and no-color products pass through as one canonical entry wit
 
 test("the rendered catalog keeps four correct color cards even when Shopify returns the Black cover for every variant", () => {
   const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
+    "@/lib/analytics/storefront": { trackStoreEvent: () => false },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
