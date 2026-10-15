@@ -36,6 +36,7 @@ export default function MemberFoundationsHome({
   const nextMoment = FOUNDATION_MOMENTS.find((moment) => moment.id === state.nextMomentId);
   const hasActiveCircle = state.activeCircleStatus === "active";
   const completed = state.status === "completed";
+  const circleRevealed = completed || Boolean(state.activeCircleName);
   const progress = state.totalUnits > 0
     ? Math.min(100, Math.max(0, (state.completedUnits / state.totalUnits) * 100))
     : 0;
@@ -137,14 +138,14 @@ export default function MemberFoundationsHome({
       <aside className={styles.circle} aria-label="Circle status">
         <p>
           <span className={styles.circleDot} data-active={hasActiveCircle} aria-hidden="true" />
-          {completed
+          {circleRevealed
             ? state.activeCircleName ?? "Your Circle"
             : hasActiveCircle
               ? "Your Circle will be revealed at the final moment."
               : "Your Circle is being prepared while you begin."}
         </p>
         <Link href="/my/circle">
-          {completed ? "My Circle" : "Circle preferences"}
+          {circleRevealed ? "My Circle" : "Circle preferences"}
           <span aria-hidden="true">↗</span>
         </Link>
       </aside>

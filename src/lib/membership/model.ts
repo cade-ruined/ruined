@@ -66,6 +66,8 @@ export type MemberIdentity = {
   cancellationEffectiveAt: string | null;
   email: string;
   foundationsState: FoundationsState;
+  /** Server-derived Circle reveal eligibility; never marks Foundations complete. */
+  circleRevealed?: boolean;
   memberId: string;
   personId: string;
   programState: ProgramState;

@@ -1,3 +1,5 @@
+import { installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import { installComplimentaryFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -178,6 +180,8 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
     }
 
     await installComplimentaryFundingFunctions(db);
+  await installCircleRevealFunction(db);
+  await installRegistrationProfileReleaseFunction(db);
 
     await t.test("meeting directory exposes exact Circle IDs and only current authorized scheduling choices", async () => {
       await reset("ops_admin");

@@ -1,3 +1,4 @@
+import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
@@ -66,6 +67,7 @@ async function fixture({ revealed = true } = {}) {
   `);
   await installOperatorFundingFunctions(pg);
   await installRegistrationProfileReleaseFunction(pg);
+  await installCircleRevealFunction(pg);
   const community = await readFile(new URL("../db/migrations/20260826_membership_operating_spine_03_community_experiences.sql", import.meta.url), "utf8");
   await pg.exec(community.match(/create table if not exists public\.member_directory_preference_events \([\s\S]*?\n\);/)[0]);
   await pg.query("insert into people(id) values($1),($2)", [ids.person, ids.shaperPerson]);
@@ -127,7 +129,10 @@ async function fixture({ revealed = true } = {}) {
         const parameters = [], query = this.compile(parameters);
         // Identity linkage is independently covered; all scoped data queries and
         // writes under test execute against PostgreSQL, not fake result branches.
-        if (query.includes("from platform_users platform_user")) return [identity];
+        if (query.includes("from platform_users platform_user")) {
+          const reveal = (await engine.query("select private.ruined_member_circle_is_revealed($1) as circle_revealed", [identity.member_id])).rows[0];
+          return [{ ...identity, ...reveal }];
+        }
         if (query.includes("pg_advisory_xact_lock")) return [];
         return (await engine.query(query, parameters)).rows;
       }
@@ -568,6 +573,69 @@ test("approved placement reveals no Circle data or direct links until Foundation
     assert.ok(await repository.getMemberCircleChatDestination(ids.auth));
     assert.ok(await repository.getMemberLearningResource(ids.auth, "circle-notes"));
     assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.otherEvent), null);
+  } finally { await pg.close(); }
+});
+
+
+test("an early placement grant exposes the Circle, its resources and Meet link without completing Foundations", async () => {
+  const { pg, identity, repository } = await fixture({ revealed: false });
+  try {
+    await pg.query("insert into integration_entity_links values('google','circle',$1,'chat_space',false,$2)", [ids.circle, JSON.stringify({ url: "https://chat.google.com/room/private" })]);
+    assert.equal((await repository.getMemberCircle(ids.auth)).revealStatus, "locked");
+    await pg.query(`insert into member_circle_reveal_grants(circle_member_assignment_id,member_id,circle_id)
+      select id,member_id,circle_id from circle_member_assignments where member_id=$1 and ended_at is null`, [ids.member]);
+    const current = await repository.getMemberIdentity(ids.auth);
+    assert.equal(current.foundationsState, "in_progress");
+    assert.equal(current.circleRevealed, true);
+    const circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.revealStatus, "revealed");
+    assert.equal(circle.circle.name, "Circle One");
+    assert.ok(circle.members.length);
+    assert.ok(circle.resources.some(resource => resource.href === "/my/learn/circle-notes"));
+    assert.ok(circle.meetings.some(meeting => meeting.id === ids.event));
+    assert.ok(await repository.getMemberCircleChatDestination(ids.auth));
+    assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.event), "https://meet.google.com/abc-defg-hij");
+    assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.otherEvent), null);
+    assert.ok(await repository.getMemberLearningResource(ids.auth, "circle-notes"));
+    assert.equal(await repository.getMemberLearningResource(ids.auth, "other-notes"), null);
+    const calendar = await repository.getMemberExperiences(ids.auth);
+    assert.ok(calendar.upcoming.some(event => event.id === ids.event));
+    assert.equal(calendar.upcoming.some(event => event.id === ids.otherEvent), false);
+    assert.equal(identity.foundations_state, "in_progress");
+    assert.equal((await pg.query("select foundations_state from member_lifecycle where member_id=$1", [ids.member])).rows[0].foundations_state, "in_progress");
+    await pg.query("update member_circle_reveal_grants set revoked_at=now() where member_id=$1", [ids.member]);
+    assert.equal((await repository.getMemberCircle(ids.auth)).revealStatus, "locked");
+    assert.equal(await repository.getMemberCircleChatDestination(ids.auth), null);
+    assert.equal(await repository.getMemberExperienceMeetingDestination(ids.auth, ids.event), null);
+    assert.equal(await repository.getMemberLearningResource(ids.auth, "circle-notes"), null);
+  } finally { await pg.close(); }
+});
+
+test("early Circle access preserves account, entry, funding, standing and registration-release gates", async () => {
+  const { pg, identity, repository } = await fixture({ revealed: false });
+  try {
+    await pg.query(`insert into member_circle_reveal_grants(circle_member_assignment_id,member_id,circle_id)
+      select id,member_id,circle_id from circle_member_assignments where member_id=$1`, [ids.member]);
+    const original = { ...identity };
+    for (const denied of [
+      { account_state: "suspended" }, { account_state: "closed" },
+      { billing_state: "pending" }, { billing_state: "attention_required" },
+      { administrative_onboarding_state: "in_progress" }, { standing_state: "paused" },
+      { registration_held: true },
+    ]) {
+      Object.assign(identity, original, { registration_held: false }, denied);
+      const result = await repository.getMemberCircle(ids.auth);
+      assert.equal(result.revealStatus, "locked", JSON.stringify(denied));
+      assert.equal(result.circle, null);
+      assert.deepEqual(result.members, []);
+      assert.deepEqual(result.meetings, []);
+      assert.deepEqual(result.resources, []);
+      await assert.rejects(() => repository.getMemberCircleChatDestination(ids.auth), repository.MembershipAccessDeniedError);
+      await assert.rejects(() => repository.getMemberExperienceMeetingDestination(ids.auth, ids.event), repository.MembershipAccessDeniedError);
+      assert.equal(await repository.getMemberLearningResource(ids.auth, "circle-notes"), null);
+    }
+    Object.assign(identity, original, { registration_held: false });
+    assert.equal((await repository.getMemberCircle(ids.auth)).revealStatus, "revealed");
   } finally { await pg.close(); }
 });
 

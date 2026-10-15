@@ -590,7 +590,7 @@ export async function getMemberPlatformSnapshot(
       select assignment.circle_id
       from circle_member_assignments assignment
       where assignment.member_id = member.id and assignment.ended_at is null
-        and lifecycle.foundations_state = 'completed'
+        and private.ruined_member_circle_is_revealed(lifecycle.member_id)
       order by assignment.assigned_at desc
       limit 1
     ) active_circle on true

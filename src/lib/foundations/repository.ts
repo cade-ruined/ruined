@@ -299,7 +299,7 @@ export async function getMemberFoundationsState(
   >`
     select
       member.id as member_id,
-      case when lifecycle.foundations_state = 'completed' then active_circle.name end as circle_name,
+      case when private.ruined_member_circle_is_revealed(member.id) then active_circle.name end as circle_name,
       active_circle.status as circle_status
     from platform_users platform_user
     join platform_role_grants member_grant
