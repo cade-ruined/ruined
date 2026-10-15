@@ -6,6 +6,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
+import { circleClusterPositions } from "../src/lib/membership/circle-cluster-layout.ts";
 
 const require = createRequire(import.meta.url);
 const compiled = ts.transpileModule(readFileSync(new URL("../src/components/membership/CircleMemberCluster.tsx", import.meta.url), "utf8"), {
@@ -14,6 +15,7 @@ const compiled = ts.transpileModule(readFileSync(new URL("../src/components/memb
 const mod = { exports: {} };
 new Function("require", "module", "exports", compiled)((name) => {
   if (name === "react" || name === "react/jsx-runtime") return require(name);
+  if (name === "@/lib/membership/circle-cluster-layout") return { circleClusterPositions };
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
   if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) };
   if (name.endsWith("/CircleMemberPortrait")) return { __esModule: true, default: () => React.createElement("span", { "data-portrait": "" }) };
@@ -29,7 +31,9 @@ test("a Circle above the target range shows every person, including a self membe
   const tree = render(people(14));
   assert.equal(tree.filter((node) => attr(node, "data-circle-member") !== undefined).length, 14);
   const roster = tree.find((node) => attr(node, "aria-label") === "Circle members");
-  assert.equal(attr(roster, "data-expanded"), "true");
+  const viewer = tree.find(node => node.tagName === "li" && attr(node, "data-self") === "true");
+  assert.match(attr(viewer, "style"), /--cluster-left:50%;/);
+  assert.match(attr(viewer, "style"), /--cluster-top:50%/);
   assert.equal(attr(roster, "data-member-count"), "14");
   const selected = tree.filter((node) => attr(node, "aria-pressed") === "true");
   assert.equal(selected.length, 1);
@@ -40,7 +44,7 @@ test("a Circle above the target range shows every person, including a self membe
 test("a ten-person Circle retains its portrait arrangement and an empty Circle remains usable", () => {
   const ten = render(people(10));
   assert.equal(ten.filter((node) => attr(node, "data-circle-member") !== undefined).length, 10);
-  assert.equal(attr(ten.find((node) => attr(node, "aria-label") === "Circle members"), "data-expanded"), undefined);
+  assert.equal(attr(ten.find((node) => attr(node, "aria-label") === "Circle members"), "data-member-count"), "10");
   const empty = render([]);
   assert.ok(empty.some((node) => attr(node, "data-circle-empty-roster") !== undefined));
   assert.equal(empty.filter((node) => node.tagName === "button").length, 0);

@@ -127,6 +127,7 @@ export type PrivacySafePersonSummary = {
   location: string | null;
   memberTag: string | null;
   phone: string | null;
+  publicProfileHref?: string | null;
 };
 
 export type MemberExperienceSummary = {

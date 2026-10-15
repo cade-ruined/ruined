@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import type { MemberExperienceSummary } from "@/lib/membership/model";
 
+import actions from "./CircleActions.module.css";
+
 type CircleRoomCommunicationProps = {
   chat: {
     href: string | null;
@@ -34,13 +36,14 @@ function meetingStamp(value: string, timezone: string) {
   };
 }
 
-const cardFocus =
-  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#15120f]";
-
 function ChatCard({ chat }: Pick<CircleRoomCommunicationProps, "chat">) {
   const ready = chat.state === "ready" && Boolean(chat.href);
-  const contents = (
-    <>
+  return (
+    <article
+      className="flex min-h-[17rem] flex-col rounded-none bg-[#B7CBDD] p-5 sm:p-6"
+      data-circle-chat-card
+      data-state={ready ? "ready" : "unavailable"}
+    >
       <div>
         <p className="[font-family:var(--font-cadehandy2)] text-[1.35rem] leading-none text-black/58">
           Between gatherings
@@ -53,31 +56,20 @@ function ChatCard({ chat }: Pick<CircleRoomCommunicationProps, "chat">) {
         <p className="max-w-[30rem] font-[var(--font-body)] text-sm font-semibold leading-relaxed text-black/62">
           The ongoing room for questions, notes, and the work between meetings.
         </p>
-        <span className="mt-6 inline-flex min-h-11 items-center font-[var(--font-body)] text-[0.68rem] font-black uppercase tracking-[0.045em] text-black/70 transition-transform group-hover:translate-x-1 motion-reduce:transition-none">
-          {ready ? "Open Google Chat ↗" : "Being connected"}
-        </span>
+        {ready && chat.href ? (
+          <Link
+            aria-label="Open this Circle in Google Chat"
+            className={`mt-6 ${actions.action} ${actions.ink}`}
+            href={chat.href}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open Google Chat <span aria-hidden="true">↗</span>
+          </Link>
+        ) : (
+          <p className="mt-6 font-[var(--font-body)] text-xs font-semibold text-black/70">Being connected</p>
+        )}
       </div>
-    </>
-  );
-
-  const cardClassName =
-    "group flex min-h-[17rem] flex-col rounded-none bg-[#B7CBDD] p-5 sm:p-6";
-
-  return ready && chat.href ? (
-    <Link
-      aria-label="Open this Circle in Google Chat"
-      className={`${cardClassName} transition-[box-shadow,transform] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[4px_5px_0_#15120f] motion-reduce:transition-none ${cardFocus}`}
-      data-circle-chat-card
-      data-state="ready"
-      href={chat.href}
-      rel="noreferrer"
-      target="_blank"
-    >
-      {contents}
-    </Link>
-  ) : (
-    <article className={cardClassName} data-circle-chat-card data-state="unavailable">
-      {contents}
     </article>
   );
 }
@@ -138,7 +130,7 @@ function MeetCard({ meeting }: Pick<CircleRoomCommunicationProps, "meeting">) {
         </p>
         <Link
           aria-label={`${actionLabel.replace(" ↗", "").replace(" →", "")}: ${meeting.title}`}
-          className={`mt-4 inline-flex min-h-11 items-center font-[var(--font-body)] text-[0.68rem] font-black uppercase tracking-[0.045em] text-white transition-transform hover:translate-x-1 motion-reduce:transition-none ${cardFocus}`}
+          className={`mt-4 ${actions.action} ${actions.primary} ${actions.onColor}`}
           href={actionHref}
           rel={meeting.meetingUrl ? "noreferrer" : undefined}
           target={meeting.meetingUrl ? "_blank" : undefined}
@@ -161,10 +153,10 @@ export default function CircleRoomCommunication({
           The room
         </h2>
         <Link
-          className="inline-flex min-h-11 items-center font-[var(--font-body)] text-xs font-bold uppercase tracking-[0.045em] text-[var(--member-muted)] transition-colors hover:text-[var(--color-poster)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]"
+          className={`${actions.action} ${actions.secondary}`}
           href="/my/experiences"
         >
-          All experiences →
+          View calendar <span aria-hidden="true">→</span>
         </Link>
       </div>
       <div className="mt-5 grid gap-7 md:grid-cols-2 md:gap-8">

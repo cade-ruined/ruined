@@ -44,7 +44,7 @@ async function fixture({ revealed = true } = {}) {
     create table people(id uuid primary key, status text default 'active');
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
-    create table ruined_members(id uuid primary key, person_id uuid, deleted_at timestamptz);
+    create table ruined_members(id uuid primary key, person_id uuid, deleted_at timestamptz, member_number integer default 7);
     create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'completed', program_state text default 'onboarding', standing_state text default 'active');
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, timezone text, location_label text, bio text, building_now text, updated_at timestamptz);
     create table person_private_profiles(person_id uuid primary key, legal_name text, mobile_e164 text, birth_date date, default_fulfillment_address jsonb check(default_fulfillment_address is null or jsonb_typeof(default_fulfillment_address)='object'), apparel_sizing jsonb check(apparel_sizing is null or jsonb_typeof(apparel_sizing)='object'), accessibility_notes text, updated_at timestamptz);
@@ -138,7 +138,10 @@ async function fixture({ revealed = true } = {}) {
       }
       then(resolve, reject) { return this.execute().then(resolve, reject); }
     }
-    const sql = (strings, ...values) => new Query(strings, values);
+    const sql = (strings, ...values) => {
+      if (!strings.raw) return new Query(["(", ...strings.slice(1).map(() => ", "), ")"], strings);
+      return new Query(strings, values);
+    };
     sql.json = driver.json;
     sql.array = driver.array;
     sql.begin = (callback) => pg.transaction((transaction) => callback(makeDb(transaction)));
@@ -158,7 +161,10 @@ async function fixture({ revealed = true } = {}) {
     "./registration-repository": existingMemberRegistration,
     ...existingMemberIntakeDependencies,
     "./public-card-model": cardModel,
-    "./public-card-repository": { saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args) },
+    "./public-card-repository": {
+      saveProfileCardSettings: (...args) => cardRepository.saveProfileCardSettings(...args),
+      getPublicMemberProfileLinks: (...args) => cardRepository.getPublicMemberProfileLinks(...args),
+    },
     "libphonenumber-js/min": require("libphonenumber-js/min"),
     "@/lib/database/server": { getApplicationDatabase: () => makeDb(pg) },
     "@/lib/membership/access-policy": policy,
@@ -206,6 +212,8 @@ test("Circle identity and bio are visible by default; contact and location field
     await pg.query("update person_profiles set member_tag='my_private_tag' where person_id=$1", [ids.person]);
     let circle = await repository.getMemberCircle(ids.auth);
     assert.equal(circle.members[0].id, "member:1");
+    assert.equal(circle.members[0].publicProfileHref, "/profile/my_private_tag");
+    assert.equal(circle.shaper.publicProfileHref, null, "Circle leadership alone does not publish a member profile");
     assert.equal(circle.members[0].memberTag, "my_private_tag", "the owner can see their own tag while their directory profile is hidden");
     assert.equal(circle.shaper.id, "shaper:1");
     assert.equal(circle.members.some((member) => member.id === circle.shaper.id), false);
@@ -228,6 +236,25 @@ test("Circle identity and bio are visible by default; contact and location field
     await pg.query("update circle_staff_assignments set circle_id=$1", [ids.circle]);
     await pg.exec("update platform_role_grants set revoked_at=now()");
     assert.equal((await repository.getMemberCircle(ids.auth)).shaper, null);
+  } finally { await pg.close(); }
+});
+
+test("Circle links use actual member identities and follow public profile eligibility", async () => {
+  const { pg, repository } = await fixture();
+  try {
+    await pg.query("insert into member_lifecycle(member_id) values($1)", [ids.shaperMember]);
+    await pg.query("insert into platform_role_grants values($1,'member',null)", [ids.shaperAuth]);
+    await pg.query("insert into circle_member_assignments(member_id,circle_id) values($1,$2)", [ids.shaperMember, ids.circle]);
+    let circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.members.find(person => !person.isSelf).publicProfileHref, `/profile/${ids.shaperMember}`, "a tagless member still has a working public profile");
+    assert.equal(circle.shaper.publicProfileHref, `/profile/${ids.shaperMember}`);
+    await pg.query("update person_profiles set member_tag='circle_peer' where person_id=$1", [ids.shaperPerson]);
+    circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.members.find(person => !person.isSelf).publicProfileHref, "/profile/circle_peer");
+    await pg.query("update member_lifecycle set account_state='suspended' where member_id=$1", [ids.shaperMember]);
+    circle = await repository.getMemberCircle(ids.auth);
+    assert.equal(circle.members.find(person => !person.isSelf)?.publicProfileHref ?? null, null);
+    assert.equal(circle.shaper.publicProfileHref, null);
   } finally { await pg.close(); }
 });
 
@@ -674,7 +701,6 @@ test("one profile save round trips private details, preserves legacy metadata, a
     assert.equal(saved.directory.websiteUrl, "https://kept.example.test");
     assert.equal(saved.directory.location, "Public City, Public State");
     assert.equal(saved.preferences.phoneScope, "none");
-    await pg.exec("alter table ruined_members add column member_number integer default 7");
     const publicProfile = await cardRepository.getPublicMemberProfile("member_one");
     assert.deepEqual(publicProfile, { name: "Member One", memberTag: "member_one", bio: "Public bio", memberNumber: 7 });
     await pg.query("insert into circle_member_assignments(member_id,circle_id) values($1,$2)", [ids.shaperMember, ids.circle]);

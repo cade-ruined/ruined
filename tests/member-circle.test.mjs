@@ -57,7 +57,7 @@ test("Circle Chat and Meet share one restrained, branded room surface", () => {
   assert.match(communication, /meeting\.meetingUrl \? "Join Google Meet ↗" : "View gathering →"/);
   assert.match(communication, /target="_blank"/);
   assert.match(communication, /target=\{meeting\.meetingUrl \? "_blank" : undefined\}/);
-  assert.match(communication, /data-state="unavailable"/);
+  assert.match(communication, /data-state=\{ready \? "ready" : "unavailable"\}/);
   assert.match(communication, /data-state="unscheduled"/);
   assert.doesNotMatch(communication, /title=/);
   assert.doesNotMatch(communication, /border-[btlry]/);
@@ -67,7 +67,7 @@ test("the photo cluster shows every member and stays private and keyboard access
   assert.match(cluster, /data-circle-member-cluster/);
   assert.match(cluster, /data-circle-member/);
   assert.doesNotMatch(cluster, /members\.slice/);
-  assert.match(cluster, /data-expanded/);
+  assert.match(cluster, /circleClusterPositions\(visibleMembers\.length, visibleMembers\.findIndex\(\(person\) => person\.isSelf\)\)/);
   assert.match(cluster, /visibleMembers\.map/);
   assert.match(cluster, /aria-label="Circle members"/);
   assert.match(cluster, /aria-label=\{`View \$\{person\.displayName\}`\}/);
@@ -97,7 +97,7 @@ test("preview shows ten distinct fictional portraits without fabricating connect
   assert.match(portrait, /person\.avatarUrl/);
   assert.match(portrait, /initials\(person\.displayName\)/);
   assert.doesNotMatch(cluster, /previewPortraitStyle\(index\)/);
-  assert.match(repository, /const members = directoryRows\.map\(directoryPerson\)/);
+  assert.match(repository, /const members = directoryRows\.map\(circlePerson\)/);
   assert.match(repository, /members,/);
 });
 
@@ -124,8 +124,9 @@ test("Circle member and Shaper links resolve through the viewer's privacy-safe C
   assert.match(personPage, /personFromCircle/);
   assert.match(personPage, /circle\.members\.find\(\(person\) => person\.id === personId\)/);
   assert.match(personPage, /circle\.shaper\?\.id === personId/);
-  assert.match(personPage, /getMemberCircle\(authUserId\)/);
-  assert.match(personPage, /if \(\(context\.state === "preview" \|\| context\.state === "authenticated"\) && !context\.data\) notFound\(\)/);
+  assert.match(personPage, /PREVIEW_MEMBER_CIRCLE,\s*getMemberCircle,/);
+  assert.match(personPage, /if \(!profile\) notFound\(\)/);
+  assert.match(personPage, /if \(profile\.person\.publicProfileHref\) redirect\(profile\.person\.publicProfileHref\)/);
   assert.match(personProfile, /data-circle-person-profile/);
   assert.match(personProfile, /role === "shaper" \? "Circle Supporter"/);
   assert.match(personProfile, /href=\{`mailto:\$\{person\.email\}`\}/);

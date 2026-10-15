@@ -1,0 +1,85 @@
+.action {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 11px 17px;
+  border: 1px solid;
+  border-radius: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-decoration: none;
+  text-transform: none;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+}
+
+.primary {
+  color: #15120f;
+  background: #ffca2c;
+  border-color: #15120f;
+  box-shadow: 3px 3px 0 var(--member-ink);
+}
+
+.secondary {
+  color: var(--member-ink);
+  background: var(--member-panel);
+  border-color: var(--member-rule);
+}
+
+.ink {
+  --circle-action-focus: #15120f;
+  color: #e5e0d5;
+  background: #15120f;
+  border-color: #15120f;
+  box-shadow: 3px 3px 0 rgb(21 18 15 / 0.3);
+}
+
+.onColor {
+  --circle-action-focus: #e5e0d5;
+  box-shadow: 3px 3px 0 #15120f;
+}
+
+/* Override the site's important red focus rule on the colored room cards. */
+.action.action:focus-visible {
+  outline: 2px solid var(--circle-action-focus, var(--member-ink)) !important;
+  outline-offset: 4px !important;
+}
+
+@media (hover: hover) {
+  .action:hover {
+    transform: translateY(-1px);
+  }
+
+  .secondary:hover {
+    border-color: var(--member-ink);
+  }
+}
+
+.action:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .action {
+    color: LinkText;
+    background: Canvas;
+    border-color: LinkText;
+    box-shadow: none;
+  }
+
+  .action.action:focus-visible {
+    outline-color: Highlight !important;
+  }
+}

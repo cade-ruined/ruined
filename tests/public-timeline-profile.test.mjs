@@ -44,6 +44,34 @@ test("public profiles exist without card opt-in and expose exactly the fixed pub
   assert.equal((await f.db.query("select count(*)::int n from member_public_cards where member_id=$1",[timelineIds.member])).rows[0].n,0,"profile GET never creates cards");
 });
 
+test("Circle public profile links resolve a full roster in one read with canonical legacy fallbacks", async t => {
+  const f = await publicJournalFixture(t);
+  let profileQueries = 0;
+  f.setAfterQuery(query => { if (query.includes("select member.id as member_id")) profileQueries++; });
+  const links = await f.cardRepository.getPublicMemberProfileLinks([
+    timelineIds.member, timelineIds.otherMember, timelineIds.member,
+    randomUUID(), "shared_tag", `member:${timelineIds.member}`, "not-a-member",
+  ]);
+  assert.deepEqual(links, new Map([
+    [timelineIds.member, "/profile/shared_tag"],
+    [timelineIds.otherMember, "/profile/other_tag"],
+  ]));
+  assert.equal(profileQueries, 1, "One profile read serves the entire roster.");
+  assert.doesNotMatch(JSON.stringify([...links]), /PRIVATE|email|phone|location|building|avatar/);
+
+  await f.db.query("update person_profiles set member_tag=null");
+  await f.db.query("delete from member_public_cards where member_id=$1", [timelineIds.otherMember]);
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfileLinks([timelineIds.member, timelineIds.otherMember]), new Map([
+    [timelineIds.member, `/profile/${f.token}`],
+    [timelineIds.otherMember, `/profile/${timelineIds.otherMember}`],
+  ]), "Tagless members retain existing token or real member UUID links without enabling cards.");
+  assert.equal((await f.db.query("select count(*)::int n from member_public_cards where public_enabled")).rows[0].n, 0);
+  const queriesBeforeEmpty = profileQueries;
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfileLinks([]), new Map());
+  assert.deepEqual(await f.cardRepository.getPublicMemberProfileLinks(["shared_tag", `member:${timelineIds.member}`]), new Map());
+  assert.equal(profileQueries, queriesBeforeEmpty, "Empty or invalid member-ID lists do not query profiles.");
+});
+
 test("profile identity excludes inactive members and never falls back to private contact details", async t => {
   const f = await publicJournalFixture(t);
   await f.db.query("update person_profiles set display_name=null,preferred_name=null where person_id=$1",[timelineIds.person]);
@@ -74,6 +102,7 @@ test("released completed members can publish their profile and Timeline without 
     assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), {
       name: "Shared name", memberTag: "shared_tag", bio: "PUBLIC BIO", memberNumber: null,
     }, scenario.name);
+    assert.equal((await f.cardRepository.getPublicMemberProfileLinks([timelineIds.member])).get(timelineIds.member), "/profile/shared_tag", scenario.name);
     const entry = await f.journal.createJournalEntry(timelineIds.auth, {
       id: randomUUID(), kind: "text", title: "", body: scenario.name, mediaIds: [], visibility: "public", includeOnTimeline: true,
     });
@@ -98,6 +127,8 @@ test("profile eligibility keeps incomplete, suspended, ended, unreleased and rem
     assert.equal(await f.cardRepository.getPublicMemberProfile("shared_tag"), null, message);
     assert.equal(await f.cardRepository.getOwnMemberProfilePublicScope(timelineIds.member), null, message);
     assert.equal(await f.visitor.getPublicJournal("shared_tag"), null, message);
+    assert.deepEqual(await f.cardRepository.getPublicMemberProfileLinks([timelineIds.member, timelineIds.otherMember]),
+      new Map([[timelineIds.otherMember, "/profile/other_tag"]]), message);
   };
   for (const assignment of [
     "account_state='provisional'", "account_state='invited'", "account_state='suspended'", "account_state='closed'",

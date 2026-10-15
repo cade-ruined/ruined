@@ -1,8 +1,8 @@
 .cluster {
   position: relative;
   width: 100%;
-  max-width: 47rem;
-  aspect-ratio: 1.2;
+  max-width: 39rem;
+  aspect-ratio: 1;
   margin-inline: auto;
   isolation: isolate;
 }
@@ -13,21 +13,12 @@
   left: var(--cluster-left);
   width: var(--cluster-size);
   aspect-ratio: 1;
+  transform: translate(-50%, -50%);
   z-index: 1;
 }
 
-.cluster[data-expanded="true"] {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(0.8rem, 2vw, 1.4rem);
-  aspect-ratio: auto;
-  padding: 0.5rem;
-}
-
-.cluster[data-expanded="true"] .member {
-  position: relative;
-  inset: auto;
-  width: 100%;
+.member[data-self="true"] {
+  z-index: 2;
 }
 
 .member:has(.memberButton[aria-pressed="true"]),
@@ -121,17 +112,6 @@
 }
 
 @media (max-width: 639px) {
-  .cluster[data-expanded="true"] {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    width: 100%;
-    margin-left: 0;
-  }
-  .cluster {
-    width: calc(100% + 0.5rem);
-    margin-left: -0.25rem;
-    aspect-ratio: 1.08;
-  }
-
   .youBadge {
     right: -0.2rem;
     min-width: 2.25rem;

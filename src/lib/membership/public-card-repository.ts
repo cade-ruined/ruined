@@ -224,9 +224,10 @@ type ProfileRow = Pick<PublicRow, "account_state" | "billing_state" | "program_s
   member_id: string; public_token: string | null; display_name: string | null; preferred_name: string | null;
   member_tag: string | null; bio: string | null; member_number: number | null;
 };
-async function publicProfileRow(identifier: string, sql: CardSql = getApplicationDatabase()): Promise<ProfileRow | null> {
-  if (!MEMBER_PROFILE_IDENTIFIER.test(identifier)) return null;
-  const [row] = await sql<ProfileRow[]>`
+async function publicProfileRows(identifiers: string[], sql: CardSql): Promise<ProfileRow[]> {
+  const validIdentifiers = [...new Set(identifiers.filter(identifier => MEMBER_PROFILE_IDENTIFIER.test(identifier)))];
+  if (!validIdentifiers.length) return [];
+  const rows = await sql<ProfileRow[]>`
     select member.id as member_id, card.public_token, profile.display_name, profile.preferred_name,
       profile.member_tag, profile.bio, member.member_number,
       lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
@@ -239,20 +240,26 @@ async function publicProfileRow(identifier: string, sql: CardSql = getApplicatio
     left join person_profiles profile on profile.person_id = member.person_id
     left join member_public_cards card on card.member_id = member.id
     where member.deleted_at is null
-      and (member.id::text = ${identifier} or profile.member_tag = ${identifier.toLowerCase()} or card.public_token = ${identifier})
+      and (member.id::text in ${sql(validIdentifiers)}
+        or profile.member_tag in ${sql(validIdentifiers.map(identifier => identifier.toLowerCase()))}
+        or card.public_token in ${sql(validIdentifiers)})
       and exists (select 1 from platform_users viewer join platform_role_grants member_grant
         on member_grant.auth_user_id = viewer.auth_user_id and member_grant.role_slug = 'member' and member_grant.revoked_at is null
         where viewer.person_id = member.person_id and viewer.status = 'active')
-    limit 1
   `;
-  if (!row) return null;
+  return rows.filter(profileRowIsPublic);
+}
+function profileRowIsPublic(row: ProfileRow): boolean {
   const identity: MemberAccessIdentity = {
     accountState: row.account_state, billingState: row.shared_billing_state ?? row.billing_state, programState: row.program_state,
     standingState: row.standing_state, administrativeOnboardingState: row.administrative_onboarding_state,
     registrationHeld: row.registration_held === true, cancellationEffectiveAt: iso(row.cancellation_effective_at),
     membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
   };
-  return canPublishMemberProfile(identity) ? row : null;
+  return canPublishMemberProfile(identity);
+}
+async function publicProfileRow(identifier: string, sql: CardSql = getApplicationDatabase()): Promise<ProfileRow | null> {
+  return (await publicProfileRows([identifier], sql))[0] ?? null;
 }
 function profileProjection(row: ProfileRow): PublicMemberProfile {
   return { name: row.display_name?.trim() || row.preferred_name?.trim() || "Member", memberTag: row.member_tag,
@@ -261,6 +268,12 @@ function profileProjection(row: ProfileRow): PublicMemberProfile {
 function profileScope(row: ProfileRow) {
   return { memberId: row.member_id, token: row.member_tag || row.public_token || row.member_id,
     version: createHash("sha256").update(JSON.stringify(profileProjection(row))).digest("hex") };
+}
+/** Resolve only currently public profiles; Circle-only details never enter this projection. */
+export async function getPublicMemberProfileLinks(memberIds: string[], sql: CardSql = getApplicationDatabase()): Promise<Map<string, string>> {
+  const ids = [...new Set(memberIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)).map(id => id.toLowerCase()))];
+  const rows = await publicProfileRows(ids, sql);
+  return new Map(rows.map(row => [row.member_id, `/profile/${encodeURIComponent(profileScope(row).token)}`]));
 }
 export async function getPublicMemberProfileScope(identifier: string, sql: CardSql = getApplicationDatabase()) {
   const row = await publicProfileRow(identifier, sql);
