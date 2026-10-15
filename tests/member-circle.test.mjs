@@ -97,7 +97,7 @@ test("preview shows ten distinct fictional portraits without fabricating connect
   assert.match(portrait, /person\.avatarUrl/);
   assert.match(portrait, /initials\(person\.displayName\)/);
   assert.doesNotMatch(cluster, /previewPortraitStyle\(index\)/);
-  assert.match(repository, /const members = directoryRows\.map\(directoryPerson\)/);
+  assert.match(repository, /const members = directoryRows\.map\(circlePerson\)/);
   assert.match(repository, /members,/);
 });
 
@@ -124,8 +124,9 @@ test("Circle member and Shaper links resolve through the viewer's privacy-safe C
   assert.match(personPage, /personFromCircle/);
   assert.match(personPage, /circle\.members\.find\(\(person\) => person\.id === personId\)/);
   assert.match(personPage, /circle\.shaper\?\.id === personId/);
-  assert.match(personPage, /getMemberCircle\(authUserId\)/);
-  assert.match(personPage, /if \(\(context\.state === "preview" \|\| context\.state === "authenticated"\) && !context\.data\) notFound\(\)/);
+  assert.match(personPage, /PREVIEW_MEMBER_CIRCLE,\s*getMemberCircle,/);
+  assert.match(personPage, /if \(!profile\) notFound\(\)/);
+  assert.match(personPage, /if \(profile\.person\.publicProfileHref\) redirect\(profile\.person\.publicProfileHref\)/);
   assert.match(personProfile, /data-circle-person-profile/);
   assert.match(personProfile, /role === "shaper" \? "Circle Supporter"/);
   assert.match(personProfile, /href=\{`mailto:\$\{person\.email\}`\}/);

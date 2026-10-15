@@ -1699,6 +1699,7 @@ type CircleBaseRow = {
 };
 
 type DirectoryRow = {
+  member_id: string | null;
   member_tag: string | null;
   avatar_storage_path: string | null;
   bio: string | null;
@@ -1790,6 +1791,7 @@ export async function getMemberCircle(
     sql<Array<DirectoryRow>>`
       select
         'member:' || assignment.id::text as directory_id,
+        target_member.id as member_id,
         target_member.id = ${identity.memberId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Member') as display_name,
         profile.member_tag,
@@ -1846,6 +1848,7 @@ export async function getMemberCircle(
     sql<Array<DirectoryRow>>`
       select
         'shaper:' || staff_assignment.id::text as directory_id,
+        shaper_member.id as member_id,
         platform_user.auth_user_id = ${authUserId}::uuid as is_self,
         coalesce(profile.display_name, profile.preferred_name, 'Circle Supporter') as display_name,
         profile.member_tag,
@@ -1962,7 +1965,18 @@ export async function getMemberCircle(
     `,
   ]);
 
-  const members = directoryRows.map(directoryPerson);
+  // Resolve only people already visible in this viewer's Circle. Public profile
+  // eligibility remains separate from private Circle contact sharing.
+  const { getPublicMemberProfileLinks } = await import("./public-card-repository");
+  const publicProfileLinks = await getPublicMemberProfileLinks(
+    [...directoryRows, ...shaperRows].flatMap((row) => row.member_id ? [row.member_id] : []),
+    sql,
+  );
+  const circlePerson = (row: DirectoryRow): PrivacySafePersonSummary => ({
+    ...directoryPerson(row),
+    publicProfileHref: row.member_id ? publicProfileLinks.get(row.member_id) ?? null : null,
+  });
+  const members = directoryRows.map(circlePerson);
   const chatReady = circle.circle_status === "active" && Boolean(
     googleCommunicationUrlFromMetadata("chat", chatLinkRows[0]?.metadata),
   );
@@ -1986,7 +2000,7 @@ export async function getMemberCircle(
     meetings: meetingRows.map(experienceFromRow),
     members,
     resources: resourceRows,
-    shaper: shaperRows[0] ? directoryPerson(shaperRows[0]) : null,
+    shaper: shaperRows[0] ? circlePerson(shaperRows[0]) : null,
   };
 }
 

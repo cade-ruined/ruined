@@ -118,9 +118,9 @@ export default function CircleMemberCluster({
             <Link
               className={`${actions.action} ${actions.primary}`}
               data-circle-profile-link
-              href={`/my/circle/people/${encodeURIComponent(selected.id)}`}
+              href={selected.publicProfileHref ?? `/my/circle/people/${encodeURIComponent(selected.id)}`}
             >
-              Profile
+              {selected.publicProfileHref ? "Public profile" : "Circle profile"}
             </Link>
             {selected.email ? (
               <a className={`${actions.action} ${actions.secondary}`} href={`mailto:${selected.email}`}>

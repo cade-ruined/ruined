@@ -32,15 +32,18 @@ function personFromCircle(
 
 export default async function CirclePersonPage({ params }: { params: Promise<{ personId: string }> }) {
   const { personId } = await params;
-  const previewPerson = personFromCircle(PREVIEW_MEMBER_CIRCLE, personId);
-  const context = await getMembershipPageContext<CirclePersonData | null>(
-    previewPerson,
-    async (authUserId) => personFromCircle(await getMemberCircle(authUserId), personId),
+  const context = await getMembershipPageContext(
+    PREVIEW_MEMBER_CIRCLE,
+    getMemberCircle,
     "Circle profile",
   );
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
-  if ((context.state === "preview" || context.state === "authenticated") && !context.data) notFound();
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
-  return <CirclePersonProfile {...context.data} />;
+  // A removed or stale Circle assignment is a missing profile, not a loss of
+  // the viewer's membership. Resolve the target only after checking access.
+  const profile = personFromCircle(context.data, personId);
+  if (!profile) notFound();
+  if (profile.person.publicProfileHref) redirect(profile.person.publicProfileHref);
+  return <CirclePersonProfile {...profile} />;
 }

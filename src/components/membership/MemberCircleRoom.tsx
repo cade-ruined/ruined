@@ -50,7 +50,7 @@ export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnaps
                 <Link
                   className="ui-heading mt-1.5 inline-block text-lg font-black uppercase leading-[0.9] tracking-[-0.03em] text-[var(--member-muted)] transition-colors hover:text-[var(--member-red)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[var(--color-poster)] sm:text-xl"
                   data-circle-shaper-profile-link
-                  href={`/my/circle/people/${encodeURIComponent(circle.shaper.id)}`}
+                  href={circle.shaper.publicProfileHref ?? `/my/circle/people/${encodeURIComponent(circle.shaper.id)}`}
                 >
                   {circle.shaper.displayName}
                 </Link>

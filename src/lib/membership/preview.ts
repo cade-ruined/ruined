@@ -95,6 +95,7 @@ const previewSelf: PrivacySafePersonSummary = {
   memberTag: "preview_member",
   email: PREVIEW_MEMBER_IDENTITY.email,
   id: "preview-directory-self",
+  publicProfileHref: "/profile/preview_member",
   isSelf: true,
   location: "Alpine, Utah",
   phone: "+18015550100",
