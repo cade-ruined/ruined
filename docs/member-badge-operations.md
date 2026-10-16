@@ -2,18 +2,22 @@
 
 Use **Experiences → open an event → Change badge credit** to identify the program activity an event counts toward. Review the actual program schedule and audience before saving. An event title, RSVP, invitation, email reminder, or Google Meet link never establishes attendance or earns a badge.
 
-## Review the December TIME calls
+## Configured December TIME calls
 
-For the six December 2026 TIME calls, confirm each record against the approved schedule, then enter these values. The names below identify the records to review; they are not automatic classification rules.
+All six December 2026 TIME calls are configured with the badge credit below, verified against the approved **Ruined Project 2026 Calendar**, December page. Each runs from **3:00–4:30 PM Mountain Time (America/Denver)**. The names identify these reviewed records; they are not automatic classification rules.
 
-| Call to review | Badge credit | Stage or topic | Program month |
-| --- | --- | --- | --- |
-| Membership TIME SEE | Membership call | See | 2026-12 |
-| Membership TIME FACE | Membership call | Face | 2026-12 |
-| Membership TIME CUT | Membership call | Cut | 2026-12 |
-| Membership TIME GROW | Membership call | Grow | 2026-12 |
-| Circle TIME WHY | Circle call | Why | 2026-12 |
-| Circle TIME BUILD | Circle call | Implementation, only after confirming BUILD is the scheduled implementation session | 2026-12 |
+| Scheduled call | Date | Badge credit | Stage or topic | Program month |
+| --- | --- | --- | --- | --- |
+| Membership TIME SEE | December 1 | Membership call | See | 2026-12 |
+| Membership TIME FACE | December 8 | Membership call | Face | 2026-12 |
+| Founders Circle TIME WHY | December 9 | Circle call | Why | 2026-12 |
+| Membership TIME CUT | December 15 | Membership call | Cut | 2026-12 |
+| Founders Circle TIME BUILD | December 16 | Circle call | Implementation | 2026-12 |
+| Membership TIME GROW | December 29 | Membership call | Grow | 2026-12 |
+
+The calendar places BUILD as the second Circle meeting, after SEE, FACE, and CUT. The established Circle program describes its second meeting as implementation; this supports the reviewed BUILD → Implementation mapping. Each of the six saved classifications has an operator audit. Event details, audiences, versions, and Calendar links were verified unchanged. No attendance was recorded by this setup; these future calls earn credit only after they occur and actual attendance is confirmed.
+
+## Classify future or historical events
 
 Membership credit requires the **Weekly call** type and no Circle audience. Circle credit requires the **Circle meeting** type and its correct Circle audience. Keep **No badge credit** until any unclear classification is resolved. Do not move an event to another audience to make its badge classification fit.
 

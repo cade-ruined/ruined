@@ -23,7 +23,8 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 async function monitorFixture(fetcher = async () => reply(200, "authenticated"), options = {}) {
   let now = 0, timerId = 0;
   const calls = [], statuses = [], timers = new Map();
-  const win = new EventTarget(), doc = new EventTarget(), nav = { onLine: true };
+  const { online = true, ...monitorOptions } = options;
+  const win = new EventTarget(), doc = new EventTarget(), nav = { onLine: online };
   doc.visibilityState = "visible";
   class Clock extends Date { static now() { return now; } }
   const library = await load("src/lib/auth/member-session-monitor.ts", {}, {
@@ -32,7 +33,7 @@ async function monitorFixture(fetcher = async () => reply(200, "authenticated"),
     clearTimeout(id) { timers.delete(id); },
     fetch(url, init) { calls.push({ url, init }); return fetcher(url, init); },
   });
-  const controller = library.startMemberSessionMonitor({ ownerId: "owner-one", initialStatus: "connected", onStatus: state => statuses.push(state), ...options });
+  const controller = library.startMemberSessionMonitor({ ownerId: "owner-one", initialStatus: "connected", onStatus: state => statuses.push(state), ...monitorOptions });
   return { controller, calls, statuses, timers, nav, doc,
     fire(target, name) { (target === "document" ? doc : win).dispatchEvent(new Event(name)); },
     async advance(ms) { now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) { timers.delete(id); timer.callback(); } await tick(); },
@@ -54,19 +55,73 @@ test("foreground events share one refresh, transmit no token, and throttle healt
   f.controller.stop();
 });
 
-test("hidden and offline pages wait for a real return, including short background visits", async () => {
+test("hidden pages pause scheduled work and short background visits restore the healthy timer", async () => {
   const f = await monitorFixture(); await tick();
   f.doc.visibilityState = "hidden"; f.fire("document", "visibilitychange");
   assert.equal(f.timers.size, 0);
   await f.advance(5000); f.fire("window", "focus"); assert.equal(f.calls.length, 1);
   f.doc.visibilityState = "visible"; f.fire("document", "visibilitychange");
   assert.equal(f.calls.length, 1); assert.equal(f.timers.size, 1, "brief backgrounding must restore the active refresh timer");
-  f.nav.onLine = false; f.fire("window", "offline");
-  assert.equal(f.statuses.at(-1), "offline"); assert.equal(f.timers.size, 0);
-  await f.advance(600_000); assert.equal(f.calls.length, 1);
-  f.nav.onLine = true; f.fire("window", "online"); await tick();
-  assert.equal(f.calls.length, 2); assert.equal(f.statuses.at(-1), "connected");
   f.controller.stop();
+});
+
+test("a false browser offline hint never blocks authoritative verification or healthy refreshes", async () => {
+  const f = await monitorFixture(undefined, { online: false }); await tick();
+  assert.equal(f.nav.onLine, false); assert.equal(f.calls.length, 1);
+  assert.deepEqual(f.statuses, ["connected"]);
+  assert.deepEqual(f.calls[0].init.headers, { "X-Ruined-Session-Owner": "owner-one" });
+  assert.equal(f.calls[0].init.credentials, "same-origin");
+  await f.advance(300_000); assert.equal(f.calls.length, 2);
+  assert.equal(f.statuses.at(-1), "connected");
+  f.fire("window", "offline"); await tick();
+  assert.equal(f.calls.length, 3, "an offline event verifies the server rather than trusting the hint");
+  assert.equal(f.statuses.at(-1), "connected"); f.controller.stop();
+});
+
+test("explicit retry recovers from a real network failure while the browser still reports offline", async () => {
+  let reachable = false;
+  const f = await monitorFixture(async () => { if (!reachable) throw new TypeError("Network unavailable"); return reply(200, "authenticated"); }, { online: false });
+  await tick(); assert.deepEqual(f.statuses, ["offline"]); assert.equal(f.calls.length, 1);
+  assert.equal(f.timers.size, 1, "even a persistent offline hint must allow bounded recovery attempts");
+  reachable = true; await f.controller.check();
+  assert.equal(f.nav.onLine, false); assert.equal(f.calls.length, 2);
+  assert.equal(f.statuses.at(-1), "connected");
+  assert.deepEqual(f.calls[1].init.headers, { "X-Ruined-Session-Owner": "owner-one" });
+  f.controller.stop();
+});
+
+test("true offline failures back off, stay offline, and cannot manufacture authenticated access", async () => {
+  const f = await monitorFixture(async () => { throw new TypeError("Network unavailable"); }, { online: false });
+  await tick(); assert.deepEqual(f.statuses, ["offline"]);
+  await f.advance(4999); assert.equal(f.calls.length, 1);
+  await f.advance(1); assert.equal(f.calls.length, 2); assert.equal(f.statuses.at(-1), "offline");
+  await f.advance(9999); assert.equal(f.calls.length, 2);
+  await f.advance(1); assert.equal(f.calls.length, 3);
+  assert.ok(!f.statuses.includes("connected")); assert.ok(!f.statuses.includes("signed_out"));
+  f.controller.stop(); assert.equal(f.timers.size, 0);
+});
+
+test("offline events preserve pending server verification and its request deadline", async () => {
+  const waiting = deferred();
+  const f = await monitorFixture(() => waiting.promise);
+  const signal = f.calls[0].init.signal;
+  f.nav.onLine = false; f.fire("window", "offline"); f.fire("window", "offline");
+  assert.equal(f.calls.length, 1); assert.equal(signal.aborted, false); assert.deepEqual(f.statuses, []);
+  waiting.resolve(reply(200, "authenticated")); await tick();
+  assert.deepEqual(f.statuses, ["connected"]); f.controller.stop();
+  const timeout = await monitorFixture((_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted")))), { online: false });
+  await timeout.advance(10_000); assert.equal(timeout.calls[0].init.signal.aborted, true); assert.equal(timeout.statuses.at(-1), "offline");
+  await timeout.advance(5000); assert.equal(timeout.calls.length, 2); timeout.controller.stop();
+});
+
+test("an offline hint cannot bypass server-confirmed logout or account isolation", async () => {
+  const signedOut = await monitorFixture(async () => reply(401, "signed_out"), { online: false }); await tick();
+  assert.deepEqual(signedOut.statuses, ["signed_out"]);
+  await signedOut.controller.check(); assert.equal(signedOut.statuses.at(-1), "signed_out"); signedOut.controller.stop();
+  const changed = await monitorFixture(async () => reply(409, "account_changed"), { online: false }); await tick();
+  assert.deepEqual(changed.statuses, ["account_changed"]);
+  await changed.controller.check(); changed.fire("window", "offline"); changed.fire("window", "online"); await changed.advance(600_000);
+  assert.equal(changed.calls.length, 1); assert.deepEqual(changed.statuses, ["account_changed"]); changed.controller.stop();
 });
 
 test("temporary errors retry with backoff and never manufacture a logout", async () => {
