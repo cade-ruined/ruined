@@ -57,7 +57,7 @@ export default function MemberHome({member,preview=false}:{member:MemberHomeSnap
       </div>
       {member.profile.bio?<p className={styles.bio}>{member.profile.bio}</p>:<p className={styles.bio}>A little space of your own.</p>}
       <div className={styles.identityActions}><Link className="member-button" href="/my/profile"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="m13 3 4 4M3 13 14 2l4 4L7 17l-5 1Z"/></svg>Edit profile</Link><Link className="member-button" href={publicProfileUrl}>View public profile ↗</Link><Link className="member-button" href="/my/card">My Card ↗</Link><Link className="member-button" href="/my/invitation">My Invitation ↗</Link></div>
-      {member.badges?.length ? <div className={styles.earnedBadges}><MemberBadges badges={member.badges} preview={preview}/></div> : null}
+      <div className={styles.earnedBadges}>{member.badges?.length ? <MemberBadges badges={member.badges} preview={preview}/> : null}<Link className={styles.badgeCollectionLink} href="/my/badges">Your badges <span aria-hidden="true">↗</span></Link></div>
     </header>
 
     <InstallRuined variant="profile"/>

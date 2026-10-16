@@ -1,3 +1,4 @@
+import type { ExperienceBadgeCredit } from "@/lib/platform/badge-credit-model";
 import type { CadenceKind, CadenceTrack } from "@/lib/communications/member-email-cadence-model";
 
 export type OpsExperienceEmailCadence = { kind: CadenceKind | "none"; track: CadenceTrack; cohortMonth?: string };
@@ -80,6 +81,7 @@ export type OpsExperienceCalendarState = {
 };
 
 export type OpsExperienceRecord = OpsExperienceDirectoryItem & {
+  badgeCredit?: ExperienceBadgeCredit;
   emailCadence?: OpsExperienceEmailCadence | null;
   archivedAt: string | null;
   blockId: string | null;
@@ -109,6 +111,7 @@ export type OpsExperienceRecord = OpsExperienceDirectoryItem & {
 };
 
 export type OpsExperienceDraftInput = {
+  badgeCredit?: ExperienceBadgeCredit;
   emailCadence?: OpsExperienceEmailCadence;
   blockId: string | null;
   capacity: number | null;

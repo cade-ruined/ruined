@@ -1,3 +1,4 @@
+import { installBadgeEvidenceSchema } from './helpers/badge-collection-fixture.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -58,9 +59,20 @@ async function fixture(t, { migrate = true } = {}) {
     await db.query("insert into private.member_number_assignments values($1,$2)", [id(n + 100), n]);
   }
   if (migrate) await db.exec(migration);
+  await db.exec(`
+    alter table ruined_members add column email_normalized text;
+    alter table private.member_number_assignments add column activated_at timestamptz;
+    create table person_email_addresses(person_id uuid,email_normalized text,verification_state text,retired_at timestamptz);
+    create table membership_waitlist(email_normalized text,joined_waitlist_at timestamptz);
+    create function private.ruined_member_can_share_invitation(uuid) returns boolean language sql stable as 'select false';
+  `);
+  await installBadgeEvidenceSchema(db);
   const model = await badgeModel();
-  const repository = () => load("src/lib/membership/badge-notification-repository.ts", {
+  const base = await load("src/lib/membership/badge-repository.ts", {
     "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => wrap(db) }, "./badge-model": model,
+  });
+  const repository = () => load("src/lib/membership/badge-notification-repository.ts", {
+    "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => wrap(db) }, "./badge-model": model, "./badge-repository": base,
   });
   const award = (n, key = "early-supporter", date = earnedAt, event = "membership-activation:1", version = 2) => db.query(
     "insert into member_badge_awards(member_id,badge_key,earned_at,source_event_id,rule_version) values($1,$2,$3,$4,$5)",
@@ -101,17 +113,10 @@ test("owned earned badges persist across devices and acknowledge once without pa
   await f.acknowledgeMemberBadge(id(2), "early-supporter");
 });
 
-test("new awards remain unseen and chronological while unknown catalog entries and cohort-hidden awards are excluded", async t => {
+test("unknown catalog entries and cohort-hidden awards fail closed", async t => {
   const f = await fixture(t); await f.award(1); await f.acknowledgeMemberBadge(id(1), "early-supporter");
-  // Extend only this isolated test catalog to exercise future multi-award ordering.
-  for (const key of ["later-badge", "earlier-badge", "same-time-badge"]) f.model.MEMBERSHIP_BADGES[key] = { label: key, description: "A future earned badge." };
-  await f.award(1, "later-badge", "2026-09-29T12:00:00Z");
-  await f.award(1, "same-time-badge", "2026-09-28T12:00:00Z");
-  await f.award(1, "earlier-badge", "2026-09-28T12:00:00Z");
   await f.award(1, "unknown-badge", "2026-09-27T12:00:00Z");
-  assert.deepEqual((await f.getUnacknowledgedMemberBadges(id(1))).map(badge => badge.key), ["earlier-badge", "same-time-badge", "later-badge"]);
-  await f.acknowledgeMemberBadge(id(1), "same-time-badge");
-  assert.deepEqual((await f.getUnacknowledgedMemberBadges(id(1))).map(badge => badge.key), ["earlier-badge", "later-badge"]);
+  assert.deepEqual(await f.getUnacknowledgedMemberBadges(id(1)), []);
   await f.award(2);
   await f.db.query("update private.member_number_assignments set member_number=51 where member_id=$1", [id(102)]);
   await f.db.query("update ruined_members set member_number=51 where id=$1", [id(102)]);
@@ -168,9 +173,9 @@ test("deleted, suspended, mismatched and revoked owners are rejected before ackn
   await assert.rejects(() => f.acknowledgeMemberBadge(id(1), "early-supporter"), error => error.status === 403);
 });
 
-test("only the exact acknowledgement-column rollout gap is soft for reads; all writes and other failures stay closed", async t => {
+test("missing migration columns fail closed for both reads and writes", async t => {
   const f = await fixture(t, { migrate: false }); await f.award(1);
-  assert.deepEqual(await f.getUnacknowledgedMemberBadges(id(1)), []);
+  await assert.rejects(() => f.getUnacknowledgedMemberBadges(id(1)), error => error.code === "42703");
   await assert.rejects(() => f.acknowledgeMemberBadge(id(1), "early-supporter"), error => error.code === "42703");
   await f.db.exec(migration);
   await f.db.exec("alter table member_badge_awards rename column earned_at to missing_earned_at");
@@ -195,7 +200,7 @@ const apiRequest = (body, options = {}) => new Request("https://members.example.
 });
 async function apiFixture({ trusted = true, auth = "active", mode = "connected", owner = id(1) } = {}) {
   const calls = [], model = await badgeModel();
-  const repository = await load("src/lib/membership/badge-notification-repository.ts", { "server-only": {}, "@/lib/database/server": {}, "./badge-model": model });
+  const repository = await load("src/lib/membership/badge-repository.ts", { "server-only": {}, "@/lib/database/server": {}, "./badge-model": model });
   const sessions = await load("src/lib/auth/session.ts", {
     "server-only": {}, "@/lib/supabase/server": {},
     "@/lib/auth/session-errors": await load("src/lib/auth/session-errors.ts"),

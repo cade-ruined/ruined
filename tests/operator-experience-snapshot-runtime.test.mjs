@@ -13,6 +13,7 @@ import { clearPaidReservationFixture, installPaidReservationFunction, seedPaidRe
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 async function load(path, dependencies = {}) {
+  if (path !== "src/lib/platform/badge-credit-model.ts") dependencies = { ...dependencies, "@/lib/platform/badge-credit-model": await load("src/lib/platform/badge-credit-model.ts", {}) };
   const compiled = ts.transpileModule(await source(path), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
   } }).outputText;
@@ -138,6 +139,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     create table operator_audit_events(id bigserial primary key,actor_auth_user_id uuid references platform_users,action text,subject_type text,subject_id text,member_id uuid,request_id text,reason text,before_snapshot jsonb,after_snapshot jsonb,metadata jsonb,dedupe_key text unique);
     create table integration_entity_links(provider text,local_entity_type text,local_entity_id text,external_entity_type text,external_entity_id text,livemode boolean,metadata jsonb,updated_at timestamptz,unique(provider,local_entity_type,local_entity_id,external_entity_type,livemode));
     ${shippedTable(community, "experiences")}
+    alter table experiences add column metadata jsonb not null default '{}'::jsonb;
     ${shippedTable(community, "experience_registrations")}
     ${shippedTable(community, "experience_attendance_events")}
     ${appendOnly}
@@ -188,6 +190,18 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     assert.deepEqual(await snapshot(), before); assert.deepEqual(providerCalls, []);
     config.ready = false; assert.equal((await record()).calendar.configured, false);
     assert.equal((await record()).calendar.attendeeCount, 1, "missing Google credentials do not block the event record");
+  });
+
+  await t.test("operator snapshot reads explicit credit and defaults unclassified historical events to none", async () => {
+    await reset();
+    assert.deepEqual((await record()).badgeCredit, { track: "none", stage: null, month: null });
+    const credit = { track: "circle", stage: "implementation", month: "2026-10" };
+    await db.query("update experiences set metadata=$2::jsonb where id=$1", [ids.event, JSON.stringify({ badge_credit: credit, future_key: "private" })]);
+    const callsBefore = providerCalls.length;
+    const current = await record();
+    assert.deepEqual(current.badgeCredit, credit);
+    assert.equal(Object.hasOwn(current, "metadata"), false);
+    assert.equal(providerCalls.length, callsBefore);
   });
 
   await t.test("fixture enforces PostgreSQL's original 25006 failure for the locking wrapper in READ ONLY", async () => {

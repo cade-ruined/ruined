@@ -55,30 +55,96 @@ export async function reconcileMemberBadgesForStripeEvent(tx: TransactionSql, ev
   if (event?.member_id) await reconcileMemberBadges(tx, event.member_id);
 }
 
-/** Owner-scoped profile loader. No waitlist email or billing evidence leaves the server. */
-export async function getMemberBadges(memberId: string): Promise<MemberBadge[]> {
-  const sql = getApplicationDatabase();
-  try {
-    const rows = await sql<Array<{ badge_key: string; earned_at: Date }>>`
-      select award.badge_key, award.earned_at from member_badge_awards award
-      join ruined_members member on member.id = award.member_id and member.deleted_at is null
-      where award.member_id = ${memberId}::uuid
-        and (award.badge_key <> 'early-supporter' or exists (
-          select 1 from private.member_number_assignments assignment
-          where assignment.member_id = member.id and assignment.member_number = member.member_number
-            and assignment.member_number between 0 and 50
-        ))
-      order by award.earned_at, award.badge_key
-    `;
-    return rows.flatMap(row => {
-      const badge = memberBadge(row.badge_key, new Date(row.earned_at).toISOString());
-      return badge ? [badge] : [];
-    });
-  } catch (error) {
-    // A staged code release can read profiles before this additive migration.
-    // Other database failures remain visible instead of looking like no awards.
-    if (error && typeof error === "object" && "code" in error && error.code === "42P01"
-        && "message" in error && String(error.message).includes("member_badge_awards")) return [];
-    throw error;
+export class BadgeNotificationError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "BadgeNotificationError";
   }
+}
+
+/** Canonical person linkage, current member role and the paid-registration release gate. */
+export async function lockBadgeOwner(tx: TransactionSql, authUserId: string): Promise<string> {
+  const [owner] = await tx<Array<{ member_id: string }>>`
+    select member.id as member_id
+    from platform_users account
+    join ruined_members member on member.person_id = account.person_id
+      and (account.member_id is null or member.id = account.member_id) and member.deleted_at is null
+    join people person on person.id = member.person_id and person.status = 'active'
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      and lifecycle.account_state not in ('suspended', 'closed')
+    join platform_role_grants member_grant on member_grant.auth_user_id = account.auth_user_id
+      and member_grant.role_slug = 'member' and member_grant.revoked_at is null
+    where account.auth_user_id = ${authUserId}::uuid and account.status = 'active'
+      and private.ruined_member_profile_released(member.id)
+    for share of account, member, person, lifecycle, member_grant
+  `;
+  if (!owner) throw new BadgeNotificationError(403, "Your member badges are unavailable.");
+  return owner.member_id;
+}
+
+/** Inserts each achievement once; current evidence governs visibility on every read. */
+export async function reconcileMemberBadgeCollection(tx: TransactionSql, memberId: string): Promise<void> {
+  await reconcileMemberBadges(tx, memberId);
+  await tx`
+    insert into member_badge_awards(member_id, badge_key, earned_at, source_event_id, rule_version, public_visible)
+    select ${memberId}::uuid, progress.badge_key, progress.earned_at, progress.source_event_id, 1,
+      progress.badge_key <> 'first-words'
+    from private.ruined_member_badge_progress(${memberId}::uuid) progress
+    where progress.progress >= progress.target and progress.earned_at is not null
+      and progress.earned_at <= statement_timestamp()
+      and private.ruined_member_profile_released(${memberId}::uuid)
+    on conflict(member_id, badge_key) do nothing
+  `;
+}
+
+export type ValidMemberBadgeRow = {
+  badge_key: string; earned_at: Date; public_visible: boolean; acknowledged_at: Date | null;
+  source_event_id: string; rule_version: number;
+};
+
+/** Public callers must opt into this explicit visibility filter. Unknown keys fail closed in memberBadge. */
+export async function readValidMemberBadgeRows(tx: TransactionSql, memberId: string, publicOnly = false): Promise<ValidMemberBadgeRow[]> {
+  return tx<ValidMemberBadgeRow[]>`
+    select award.badge_key, award.earned_at, award.public_visible, award.acknowledged_at,
+      award.source_event_id, award.rule_version
+    from member_badge_awards award
+    join ruined_members member on member.id = award.member_id and member.deleted_at is null
+    join people person on person.id = member.person_id and person.status = 'active'
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id and lifecycle.account_state not in ('suspended', 'closed')
+    left join private.ruined_member_badge_progress(${memberId}::uuid) progress on progress.badge_key = award.badge_key
+    where award.member_id = ${memberId}::uuid and (not ${publicOnly} or award.public_visible)
+      and private.ruined_member_profile_released(member.id)
+      and ((award.badge_key = 'early-supporter' and exists (
+        select 1 from private.member_number_assignments assignment
+        where assignment.member_id = member.id and assignment.member_number = member.member_number
+          and assignment.member_number between 0 and 50
+      )) or (progress.progress >= progress.target and progress.earned_at is not null
+        and progress.earned_at <= statement_timestamp()))
+    order by award.earned_at, award.badge_key
+  `;
+}
+
+export function memberBadgeFromAward(row: ValidMemberBadgeRow): MemberBadge | null {
+  const badge = memberBadge(row.badge_key, new Date(row.earned_at).toISOString());
+  if (!badge) return null;
+  return { ...badge, ...(row.badge_key === "early-supporter" && row.rule_version === 3
+    && row.source_event_id === "existing-profile-grant:2026-09-28"
+    ? { description: "Had a Ruined profile before launch." } : {}) };
+}
+
+/** Member ID is supplied by the already authenticated profile repository. */
+export async function getMemberBadges(memberId: string): Promise<MemberBadge[]> {
+  return getApplicationDatabase().begin(async tx => {
+    await reconcileMemberBadgeCollection(tx, memberId);
+    const rows = await readValidMemberBadgeRows(tx, memberId);
+    return rows.flatMap(row => { const badge = memberBadgeFromAward(row); return badge ? [badge] : []; });
+  });
+}
+
+/** Never reconcile on a public read or return private awards. */
+export async function getPublicMemberBadges(memberId: string): Promise<MemberBadge[]> {
+  return getApplicationDatabase().begin(async tx => {
+    const rows = await readValidMemberBadgeRows(tx, memberId, true);
+    return rows.flatMap(row => { const badge = memberBadgeFromAward(row); return badge ? [badge] : []; });
+  });
 }

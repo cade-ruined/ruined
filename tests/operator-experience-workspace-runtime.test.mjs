@@ -27,6 +27,8 @@ function load(path, dependencies = {}, fetch = noNetwork, window = undefined) {
     if (name === "next/link") return { __esModule: true, default: Link };
     if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
     if (name === "@/components/platform/OperatorDialog") return { __esModule: true, default: Dialog };
+    if (name === "@/components/platform/OperatorEventBadgeCreditFields") return load("src/components/platform/OperatorEventBadgeCreditFields.tsx");
+    if (name === "@/lib/platform/badge-credit-model") return load("src/lib/platform/badge-credit-model.ts");
     if (name === "@/components/platform/OperatorEventEmailCadenceFields") return load("src/components/platform/OperatorEventEmailCadenceFields.tsx");
     if (name === "@/components/platform/OperatorDateTimeField") return load("src/components/platform/OperatorDateTimeField.tsx");
     if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");
@@ -297,4 +299,26 @@ test("editing preserves an existing sequence unless the admin explicitly changes
   const supporter = interactive({ canManageGlobal: false });
   nodes(supporter.draw()).find(node => node.props?.id === "edit-experience-trigger").props.onClick();
   assert.equal(elements(render(supporter.draw())).some(node => attr(node, "name") === "emailCadenceKind"), false);
+});
+
+
+test("completed and archived events expose only a separate badge-credit mutation with no Calendar request", async () => {
+  for (const state of ["completed", "archived"]) {
+    const f = interactive({ state });
+    assert.equal(nodes(f.draw()).some(node => node.props?.id === "edit-experience-trigger"), false);
+    const trigger = nodes(f.draw()).find(node => node.props?.id === "edit-badge-credit-trigger");
+    assert.ok(trigger);
+    trigger.props.onClick();
+    const dialog = nodes(f.draw()).find(node => node.type === Dialog && node.props.title === "Change badge credit");
+    assert.equal(dialog.props.returnFocusId, "edit-badge-credit-trigger");
+    const form = nodes(dialog).find(node => node.type === "form");
+    await form.props.onSubmit({ preventDefault() {}, currentTarget: { values: { badgeCreditTrack: "circle", badgeCreditStage: "why", badgeCreditMonth: "2026-10" } } });
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls[0].url, "/api/ops/experiences/event-1/badge-credit");
+    assert.equal(f.calls[0].options.method, "PATCH");
+    assert.deepEqual(JSON.parse(f.calls[0].options.body), { badgeCredit: { track: "circle", stage: "why", month: "2026-10" } });
+  }
+  for (const overrides of [{ state: "cancelled" }, { state: "archived", cancelledAt: "2026-10-01T00:00:00Z" }, { canEdit: false }]) {
+    assert.equal(nodes(interactive(overrides).draw()).some(node => node.props?.id === "edit-badge-credit-trigger"), false);
+  }
 });

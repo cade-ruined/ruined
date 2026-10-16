@@ -6,7 +6,7 @@ import MemberBadgeDialog from "./MemberBadgeDialog";
 import type { BadgeDisplay } from "./MemberBadgeCard";
 import styles from "./MemberBadgeCelebration.module.css";
 
-const quietRoutes = ["/my/access", "/my/confirmed", "/my/join", "/my/payment-method", "/my/checkout"];
+const quietRoutes = ["/my/access", "/my/confirmed", "/my/join", "/my/payment-method", "/my/checkout", "/my/badges"];
 type Queue = { ownerId: string; badges: readonly BadgeDisplay[]; index: number };
 function validBadges(value: unknown): BadgeDisplay[] {
   if (!Array.isArray(value)) return [];
@@ -37,7 +37,7 @@ export default function MemberBadgeCelebration({ ownerId, previewBadges }: {
     setBusy(false); setError(null);
     setQueue(previewBadges === undefined ? null : { ownerId, badges: validBadges(previewBadges), index: 0 });
     if (previewBadges === undefined) {
-      void fetch("/api/my/badges", { cache: "no-store", signal: current.controller.signal })
+      void fetch("/api/my/badges", { cache: "no-store", signal: current.controller.signal, headers: { "x-ruined-session-owner": ownerId } })
         .then(async response => {
           if (!response.ok) return;
           const result = await response.json();
@@ -47,7 +47,7 @@ export default function MemberBadgeCelebration({ ownerId, previewBadges }: {
         }).catch(() => { /* Leave unread awards on the server for the next visit. */ });
     }
     return () => { current.controller.abort(); if (lifecycle.current === current) lifecycle.current = null; };
-  }, [ownerId, previewBadges]);
+  }, [ownerId, previewBadges, pathname]);
 
   const badge = queue?.ownerId === ownerId ? queue.badges[queue.index] : undefined;
   async function acknowledge() {

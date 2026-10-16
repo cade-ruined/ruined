@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import postgres from "postgres";
 
 type ApplicationDatabase = ReturnType<typeof postgres>;
-type MemberReadStage = "member-home" | "member-timeline" | "member-invitations";
+type MemberReadStage = "member-home" | "member-timeline" | "member-invitations" | "member-badge-introduction" | "member-badge-collection";
 const readDatabase = new AsyncLocalStorage<ApplicationDatabase>();
 const READ_TIMEOUT_MS = 8_000;
 const CLEANUP_TIMEOUT_MS = 1_000;
@@ -73,8 +73,8 @@ async function closeReadDatabase(database: ApplicationDatabase, stage: MemberRea
 }
 
 /**
- * Only for member-home, timeline and invitation loaders: callbacks must contain reads
- * and no external side effects. A deadline may replay the callback once.
+ * Member loaders must have no external side effects. Badge reconciliation is
+ * transactionally idempotent; all other work is read-only. A deadline may replay once.
  * Each attempt owns a fresh pool reserved for reads; closing it never interrupts the
  * shared application pool used by account changes, sign-in, or other requests.
  */

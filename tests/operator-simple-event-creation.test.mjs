@@ -15,6 +15,7 @@ class RepositoryError extends Error {
 }
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 async function load(path, dependencies = {}) {
+  if (path !== "src/lib/platform/badge-credit-model.ts") dependencies = { ...dependencies, "@/lib/platform/badge-credit-model": await load("src/lib/platform/badge-credit-model.ts", {}) };
   const code = ts.transpileModule(await source(path), { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
   } }).outputText;
@@ -145,6 +146,7 @@ test("simple event creation publishes and queues delivery atomically in isolated
     create table integration_entity_links(provider text,local_entity_type text,local_entity_id text,external_entity_type text,external_entity_id text,livemode boolean,metadata jsonb,updated_at timestamptz,unique(provider,local_entity_type,local_entity_id,external_entity_type,livemode));
     ${externalIndex}
     ${shippedTable(community, "experiences")}
+    alter table experiences add column metadata jsonb not null default '{}'::jsonb;
     ${shippedTable(community, "experience_registrations")}
     ${shippedTable(community, "experience_attendance_events")}
     ${appendOnly}
@@ -250,6 +252,73 @@ test("simple event creation publishes and queues delivery atomically in isolated
       { endsAt: new Date(Date.now() - 1000).toISOString() },
     ]) await unchangedFailure(() => create(overrides), (error) => error.code === "invalid_request");
   });
+  await t.test("historical badge-only edits are scoped, audited, and never alter Calendar or event content", async () => {
+    const input = event({ kind: "weekly_call" });
+    const result = await create(input);
+    const id = result.experienceId;
+    await db.query("update experiences set status='completed',completed_at=now(),metadata=$2::jsonb where id=$1", [id, JSON.stringify({ schedule: { source: "preserved" } })]);
+    const credit = { track: "membership", stage: "cut", month: "2026-10" };
+    const content = async () => (await db.query("select to_jsonb(e)-'metadata'-'updated_at'-'updated_by_auth_user_id' as content from experiences e where id=$1", [id])).rows[0].content;
+    const calendars = async () => (await db.query("select to_jsonb(c) as content from experience_calendar_links c where experience_id=$1", [id])).rows;
+    const links = async () => (await db.query("select to_jsonb(l) as content from integration_entity_links l where local_entity_id=$1", [id])).rows;
+    const originalContent = await content(), originalCalendars = await calendars(), originalLinks = await links();
+    await repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.admin, experienceId: id, badgeCredit: credit });
+    assert.deepEqual(await content(), originalContent, "version, timing, lifecycle, audience, title and registration are unchanged");
+    assert.deepEqual(await calendars(), originalCalendars, "no Calendar revision, queue or binding changes");
+    assert.deepEqual(await links(), originalLinks);
+    assert.deepEqual((await db.query("select metadata from experiences where id=$1", [id])).rows[0].metadata, { schedule: { source: "preserved" }, badge_credit: credit });
+    const audit = (await db.query("select before_snapshot,after_snapshot from operator_audit_events where subject_id=$1 and action='experience.badge_credit_updated'", [id])).rows;
+    assert.deepEqual(audit, [{ before_snapshot: { badgeCredit: { track: "none", stage: null, month: null } }, after_snapshot: { badgeCredit: credit } }]);
+    await repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.admin, experienceId: id, badgeCredit: credit });
+    assert.equal((await db.query("select count(*)::int as count from operator_audit_events where subject_id=$1 and action='experience.badge_credit_updated'", [id])).rows[0].count, 1);
+    await assert.rejects(repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: id, draft: draft(input) }), /cannot be edited/);
+    await db.query("update experiences set status='archived',archived_at=now() where id=$1", [id]);
+    await repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.admin, experienceId: id, badgeCredit: { ...credit, stage: "grow" } });
+    await db.query("update experiences set cancelled_at=now(),cancellation_reason='Previously cancelled' where id=$1", [id]);
+    await unchangedFailure(() => repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.admin, experienceId: id, badgeCredit: credit }), /Cancelled/);
+    for (const actorAuthUserId of [ids.supporter, ids.guide]) {
+      await unchangedFailure(() => repository.updateOpsExperienceBadgeCredit({ actorAuthUserId, experienceId: id, badgeCredit: credit }), error => error.code === "forbidden");
+    }
+    const scoped = await create({ visibility: "circle", circleId: ids.circle, kind: "circle_meeting" });
+    const circleCredit = { track: "circle", stage: "why", month: "2026-10" };
+    await db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [ids.supporter]);
+    await repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.supporter, experienceId: scoped.experienceId, badgeCredit: circleCredit });
+    const outside = await create({ visibility: "circle", circleId: ids.otherCircle, kind: "circle_meeting" });
+    await unchangedFailure(() => repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.supporter, experienceId: outside.experienceId, badgeCredit: circleCredit }), error => error.code === "forbidden");
+    await db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [ids.supporter]);
+    await unchangedFailure(() => repository.updateOpsExperienceBadgeCredit({ actorAuthUserId: ids.supporter, experienceId: scoped.experienceId, badgeCredit: { ...circleCredit, stage: "implementation" } }), error => error.code === "forbidden");
+    await db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [ids.supporter]);
+  });
+
+  await t.test("badge credit round-trips independently of unrelated metadata, Meet links, attendance and cadence", async () => {
+    const credit = { track: "membership", stage: "see", month: "2026-10" };
+    const input = event({ kind: "weekly_call", badgeCredit: credit });
+    const result = await create(input);
+    const id = result.experienceId;
+    const saved = async () => (await db.query("select metadata from experiences where id=$1", [id])).rows[0].metadata;
+    assert.deepEqual(await saved(), { badge_credit: credit });
+    await db.query("update experiences set metadata=metadata || $2::jsonb where id=$1", [id, JSON.stringify({ schedule: { source: "canonical", topic: "keep" }, future_key: 7 })]);
+    const meetingBefore = (await db.query("select metadata from integration_entity_links where local_entity_id=$1", [id])).rows;
+    const cadenceBefore = bindingCalls.length;
+    const omitted = draft({ ...input }); delete omitted.badgeCredit;
+    await repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: id, draft: omitted });
+    assert.deepEqual(await saved(), { badge_credit: credit, schedule: { source: "canonical", topic: "keep" }, future_key: 7 });
+    const replacement = { ...credit, stage: "grow" };
+    await repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: id, draft: { ...omitted, badgeCredit: replacement } });
+    assert.deepEqual(await saved(), { badge_credit: replacement, schedule: { source: "canonical", topic: "keep" }, future_key: 7 });
+    assert.deepEqual((await db.query("select metadata from integration_entity_links where local_entity_id=$1", [id])).rows, meetingBefore);
+    assert.equal(bindingCalls.length, cadenceBefore);
+    assert.equal((await db.query("select count(*)::int as count from experience_attendance_events where experience_id=$1", [id])).rows[0].count, 0);
+    assert.equal((await db.query("select status from experience_calendar_links where experience_id=$1", [id])).rows[0].status, "pending_create");
+    await assert.rejects(repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: id,
+      draft: { ...omitted, kind: "member_event", locationLabel: "Ruined studio", badgeCredit: { track: "in_person", stage: null, month: null } },
+    }), /physical location and no online meeting link/);
+    assert.deepEqual((await saved()).badge_credit, replacement);
+    await repository.updateOpsExperience({ actorAuthUserId: ids.admin, experienceId: id, draft: { ...omitted, badgeCredit: { track: "none", stage: null, month: null } } });
+    assert.equal((await saved()).badge_credit.track, "none");
+    assert.deepEqual((await saved()).schedule, { source: "canonical", topic: "keep" });
+  });
+
   await t.test("classification participates in event create and update, while omission preserves it", async () => {
     assert.equal(bindingCalls.length, 0, "legacy events never load or invoke cadence persistence");
     const emailCadence = { kind: "foundations_01", track: "members", cohortMonth: "2026-11" };
@@ -331,4 +400,31 @@ test("creation API schedules only the committed new event and accurately reports
   assert.equal(callbacks.length, 1, "failed transactions never schedule invitations");
   assert.equal((await post(draft())).status, 201);
   assert.equal(callbacks.length, 1, "legacy drafts never schedule invitations");
+});
+
+
+test("badge-only API accepts one classification and takes the operator identity from authorization", async () => {
+  const calls = [];
+  let denied = false;
+  const route = await load("app/api/ops/experiences/[experienceId]/badge-credit/route.ts", {
+    "@/lib/platform/ops-api": {
+      requireOpsMutationRequest: async () => denied ? { response: { status: 403 } } : { viewer: { authUserId: ids.admin } },
+      opsJson: (body, status = 200) => ({ body, status }), opsRepositoryErrorResponse: () => ({ status: 409 }),
+    },
+    "@/lib/platform/ops-experience-repository": { updateOpsExperienceBadgeCredit: async input => { calls.push(input); return input; } },
+    "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError },
+  });
+  const badgeCredit = { track: "membership", stage: "face", month: "2026-10" };
+  const patch = body => route.PATCH(new Request("https://members.example.test/api/ops/experiences/event/badge-credit", {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  }), { params: Promise.resolve({ experienceId: "event" }) });
+  for (const body of [null, {}, { badgeCredit, title: "cannot change" }, { badgeCredit, actorAuthUserId: ids.guide }, { badgeCredit: { ...badgeCredit, month: null } }]) {
+    assert.equal((await patch(body)).status, 400);
+  }
+  assert.deepEqual(calls, []);
+  assert.equal((await patch({ badgeCredit })).status, 200);
+  assert.deepEqual(calls, [{ actorAuthUserId: ids.admin, experienceId: "event", badgeCredit }]);
+  denied = true;
+  assert.equal((await patch({ badgeCredit })).status, 403);
+  assert.equal(calls.length, 1);
 });

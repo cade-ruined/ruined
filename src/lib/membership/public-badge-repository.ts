@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getPublicMemberProfile, getPublicMemberProfileScope } from "./public-card-repository";
-import { getMemberBadges } from "./badge-repository";
+import { getPublicMemberBadges } from "./badge-repository";
 import { getPublicMemberProfilePortraitSource } from "./photos";
 import { ownedMemberPhotoPath } from "./photo-policy";
 
@@ -12,7 +12,7 @@ export async function getPublicMemberTimelineProfile(identifier: string) {
   const profile = await getPublicMemberProfile(identifier);
   if (!profile) return null;
   const [portrait, badges] = await Promise.all([
-    getPublicMemberProfilePortraitSource(identifier), getMemberBadges(scope.memberId),
+    getPublicMemberProfilePortraitSource(identifier), getPublicMemberBadges(scope.memberId),
   ]);
   const latest = await getPublicMemberProfileScope(identifier);
   if (!latest || latest.memberId !== scope.memberId || latest.version !== scope.version) return null;

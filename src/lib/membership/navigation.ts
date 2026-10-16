@@ -1,5 +1,6 @@
 export const MEMBER_DESTINATIONS = [
   { href: "/my", label: "Profile", group: "Your record", keywords: "home journal writing saved entries achievements history attended milestones badges bio" },
+  { href: "/my/badges", label: "Badges", group: "Your record", keywords: "collection earned progress achievements milestones patches" },
   { href: "/my/card", label: "My Card", group: "Your record", keywords: "public share flip portrait card download identity" },
   { href: "/my/invitation", label: "My Invitation", group: "Your record", keywords: "invite invitation referral people joined share" },
   { href: "/my/artifacts", label: "Artifacts", group: "Your record", keywords: "awards earned coin collection fulfillment tracking" },
@@ -33,6 +34,6 @@ export const MEMBER_PRIMARY_DESTINATIONS = [
 ] as const;
 
 export function currentMemberPrimaryDestination(pathname: string): string | undefined {
-  if (pathname === "/my/card" || pathname === "/my/invitation") return "/my";
+  if (pathname === "/my/card" || pathname === "/my/invitation" || pathname === "/my/badges") return "/my";
   return MEMBER_PRIMARY_DESTINATIONS.find(({ href }) => pathname === href || (href !== "/my" && pathname.startsWith(`${href}/`)))?.href;
 }

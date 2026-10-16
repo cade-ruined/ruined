@@ -2,7 +2,10 @@
 .profile { min-width:0; max-width:1200px; margin:0 auto; color:var(--member-ink); }
 .identity { display:grid; grid-template-columns:208px minmax(0,1fr); column-gap:40px; row-gap:18px; align-items:start; padding:0 0 32px; }
 .memberBadge { display:flex; align-items:center; gap:12px; margin-top:14px; color:var(--member-ink); font-size:12px; letter-spacing:.07em; line-height:1.5; text-transform:uppercase; min-width:0; }
-.earnedBadges { grid-column:1/-1; min-width:0; margin-top:-6px; }
+.earnedBadges { grid-column:1/-1; display:flex; align-items:center; flex-wrap:wrap; gap:4px 18px; min-width:0; margin-top:-6px; }
+.badgeCollectionLink { display:inline-flex; align-items:center; gap:10px; min-height:44px; color:var(--member-muted); font-size:12px; text-decoration:none; }
+.badgeCollectionLink:hover { color:var(--member-ink); }
+.badgeCollectionLink:focus-visible { outline:2px solid var(--member-accent); outline-offset:3px; }
 .badgeDetails { display:flex; align-items:center; flex-wrap:wrap; gap:3px 8px; min-width:0; }
 .badgeLabel,.badgeNumber { white-space:nowrap; }
 .badgeNumber { color:var(--member-muted); font-variant-numeric:tabular-nums; }

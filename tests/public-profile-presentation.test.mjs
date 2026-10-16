@@ -13,13 +13,17 @@ async function presentationFixture(t) {
   const f = await publicJournalFixture(t);
   await f.db.exec(`
     create table member_directory_preferences(member_id uuid primary key, avatar_visible boolean default true);
-    create table member_badge_awards(member_id uuid, badge_key text, earned_at timestamptz, source_invoice_id text);
+    create table member_badge_awards(member_id uuid, badge_key text, earned_at timestamptz, source_invoice_id text,
+      public_visible boolean default true, acknowledged_at timestamptz, source_event_id text default 'fixture',rule_version integer default 2);
+    create function private.ruined_member_badge_progress(uuid)
+      returns table(badge_key text,progress integer,target integer,earned_at timestamptz,source_event_id text)
+      language sql stable as 'select null::text,0,1,null::timestamptz,null::text where false';
     create table private.member_number_assignments(member_id uuid, member_number integer);
   `);
   await f.db.query("update person_profiles set avatar_storage_path=$1 where person_id=$2", [avatarUrl, timelineIds.person]);
   await f.db.query("update ruined_members set member_number=17 where id=$1", [timelineIds.member]);
   await f.db.query("insert into private.member_number_assignments values($1,17)", [timelineIds.member]);
-  await f.db.query("insert into member_badge_awards values($1,'early-supporter',$2,'PRIVATE INVOICE'),($1,'unknown-badge',$2,'PRIVATE INVOICE')", [timelineIds.member, badge.earnedAt]);
+  await f.db.query("insert into member_badge_awards(member_id,badge_key,earned_at,source_invoice_id) values($1,'early-supporter',$2,'PRIVATE INVOICE'),($1,'unknown-badge',$2,'PRIVATE INVOICE')", [timelineIds.member, badge.earnedAt]);
   const policy = await load("src/lib/membership/photo-policy.ts");
   const access = await load("src/lib/membership/access-policy.ts");
   const avatars = await load("src/lib/membership/avatar-url.ts", { "./photo-policy": policy });
@@ -53,8 +57,8 @@ async function presentationFixture(t) {
   });
   const presentation = await load("src/lib/membership/public-badge-repository.ts", {
     "server-only": {}, "./public-card-repository": f.cardRepository, "./photos": photos, "./photo-policy": policy,
-    "./badge-repository": { getMemberBadges: async memberId => {
-      const result = await badgeRepository.getMemberBadges(memberId);
+    "./badge-repository": { getPublicMemberBadges: async memberId => {
+      const result = await badgeRepository.getPublicMemberBadges(memberId);
       if (afterBadges) await afterBadges();
       return result;
     } },

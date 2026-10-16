@@ -6,6 +6,7 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "re
 
 import OperatorExperienceCalendar from "@/components/platform/OperatorExperienceCalendar";
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
+import OperatorEventBadgeCreditFields from "@/components/platform/OperatorEventBadgeCreditFields";
 import OperatorEventEmailCadenceFields from "@/components/platform/OperatorEventEmailCadenceFields";
 import OperatorDialog from "@/components/platform/OperatorDialog";
 import OperatorGoogleCommunicationField from "@/components/platform/OperatorGoogleCommunicationField";
@@ -21,6 +22,7 @@ import {
   zonedDateTimeLocalToIso,
   zonedDateTimeLocalValue,
 } from "@/lib/datetime/zoned-date-time";
+import { experienceBadgeCreditLabel } from "@/lib/platform/badge-credit-model";
 import type {
   OpsExperienceDirectory,
   OpsExperienceRecord as ExperienceRecord,
@@ -238,6 +240,8 @@ export default function OperatorExperienceRecord({
   const [section, setSection] = useState<"overview" | "people" | "activity">("overview");
   const [eventOptionsOpen, setEventOptionsOpen] = useState(false);
   const [cancellationDirty, setCancellationDirty] = useState(false);
+  const [editingBadgeCredit, setEditingBadgeCredit] = useState(false);
+  const [badgeCreditDirty, setBadgeCreditDirty] = useState(false);
   const canEditDetails = experience.canEdit && ["draft", "published"].includes(experience.state);
   const calendarManaged = Boolean(experience.calendar.googleEventId)
     || experience.calendar.status !== "not_created";
@@ -292,6 +296,29 @@ export default function OperatorExperienceRecord({
     router.refresh();
   }
 
+  async function saveBadgeCredit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    if (preview) { setError("Preview only — badge credit was not changed."); return; }
+    const data = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    try {
+      await jsonRequest(`/api/ops/experiences/${experience.experienceId}/badge-credit`, {
+        badgeCredit: {
+          track: String(data.get("badgeCreditTrack") ?? "none"),
+          stage: data.get("badgeCreditStage") ? String(data.get("badgeCreditStage")) : null,
+          month: data.get("badgeCreditMonth") ? String(data.get("badgeCreditMonth")) : null,
+        },
+      }, "PATCH");
+      setEditingBadgeCredit(false);
+      setBadgeCreditDirty(false);
+      router.refresh();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Badge credit could not be saved.");
+    } finally { setPending(false); }
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
@@ -317,6 +344,11 @@ export default function OperatorExperienceRecord({
           ? String(data.get("externalRegistrationUrl") ?? "") || null
           : null,
         kind: String(data.get("kind") ?? experience.kind),
+        ...(data.get("badgeCreditTrack") ? { badgeCredit: {
+          track: String(data.get("badgeCreditTrack")),
+          stage: data.get("badgeCreditStage") ? String(data.get("badgeCreditStage")) : null,
+          month: data.get("badgeCreditMonth") ? String(data.get("badgeCreditMonth")) : null,
+        } } : {}),
         ...(data.get("emailCadenceKind") ? { emailCadence: {
           kind: String(data.get("emailCadenceKind")), track: String(data.get("emailCadenceTrack") ?? "members"),
           ...(data.get("emailCadenceCohortMonth") ? { cohortMonth: String(data.get("emailCadenceCohortMonth")) } : {}),
@@ -470,6 +502,8 @@ export default function OperatorExperienceRecord({
             </section>
             <section className="operator-bento-card lg:col-span-2" aria-label="Location">
               <span className="operator-compact-label">Location</span>
+              <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Badge credit: {experienceBadgeCreditLabel(experience.badgeCredit)}</p>
+              {experience.canEdit && experience.state !== "cancelled" && !experience.cancelledAt ? <button className="mt-1 min-h-11 text-xs underline underline-offset-4" id="edit-badge-credit-trigger" onClick={() => { setError(null); setBadgeCreditDirty(false); setEditingBadgeCredit(true); }} type="button">Change badge credit</button> : null}
               <p className="mt-2 break-words text-sm font-semibold">{experience.locationLabel || (experience.meetingUrl ? "Google Meet" : "Not set")}</p>
             </section>
           <div id="meeting-setup" className="col-span-2 scroll-mt-28 lg:col-span-3">
@@ -531,6 +565,18 @@ export default function OperatorExperienceRecord({
               </div>
             </OperatorDialog>
           ) : null}
+
+      {editingBadgeCredit && experience.canEdit && experience.state !== "cancelled" && !experience.cancelledAt ? (
+        <OperatorDialog open title="Change badge credit" pending={pending} returnFocusId="edit-badge-credit-trigger" onClose={() => { setEditingBadgeCredit(false); setBadgeCreditDirty(false); }}>
+          <form className="space-y-4 py-2" data-operator-dirty={badgeCreditDirty ? "true" : "false"} data-operator-pending={pending ? "true" : "false"} onChange={() => setBadgeCreditDirty(true)} onSubmit={saveBadgeCredit}>
+            <p className="text-sm text-[color:var(--operator-muted)]">{experience.title}</p>
+            <OperatorEventBadgeCreditFields current={experience.badgeCredit} circleOnly={!experience.canManageGlobal} />
+            <p className="text-xs text-[color:var(--operator-muted)]">Updates badge credit for confirmed attendance. Event details, attendance, and calendar invitations stay unchanged.</p>
+            {error ? <p className="text-sm text-[var(--operator-danger)]" role="alert">{error}</p> : null}
+            <button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="submit">{pending ? "Saving…" : "Save badge credit"}</button>
+          </form>
+        </OperatorDialog>
+      ) : null}
 
       {canEditDetails && editingDetails ? (
         <OperatorDialog open title="Edit Experience" pending={pending} returnFocusId="edit-experience-trigger" onClose={() => { setEditingDetails(false); setDetailsDirty(false); clearDialogHash(); }}>
@@ -628,6 +674,7 @@ export default function OperatorExperienceRecord({
                 <input className={OPERATOR_FIELD_CLASS} defaultValue={experience.externalRegistrationUrl ?? ""} name="externalRegistrationUrl" placeholder="https://" required type="url" />
               </FormField>
             ) : null}
+            <OperatorEventBadgeCreditFields current={experience.badgeCredit} circleOnly={!experience.canManageGlobal} />
             {experience.canManageGlobal ? <OperatorEventEmailCadenceFields current={experience.emailCadence} /> : null}
             <FormField className="sm:col-span-2" label="Short summary">
               <textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} defaultValue={experience.summary ?? ""} maxLength={2000} name="summary" />
