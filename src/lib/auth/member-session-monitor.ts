@@ -20,7 +20,7 @@ export function startMemberSessionMonitor({ ownerId, initialStatus, onStatus }: 
   function clearTimer() { clearTimeout(timer); timer = undefined; }
   function schedule(delay: number) {
     clearTimer();
-    if (!stopped && visible() && navigator.onLine !== false) timer = setTimeout(() => { void check(true); }, delay);
+    if (!stopped && visible()) timer = setTimeout(() => { void check(true); }, delay);
   }
   function unavailable() {
     // Once credentials are invalid, a later network problem cannot restore access.
@@ -29,11 +29,6 @@ export function startMemberSessionMonitor({ ownerId, initialStatus, onStatus }: 
   }
   function check(force = false): Promise<void> {
     if (stopped || status === "account_changed" || !visible()) return Promise.resolve();
-    if (navigator.onLine === false) {
-      clearTimer();
-      if (status !== "signed_out") update("offline");
-      return Promise.resolve();
-    }
     if (!force && pending) return pending;
     if (!force && Date.now() - lastChecked < 30_000 && status === "connected") {
       schedule(5 * 60_000 - (Date.now() - lastChecked));
@@ -74,14 +69,10 @@ export function startMemberSessionMonitor({ ownerId, initialStatus, onStatus }: 
   }
   const wake = () => { void check(); };
   const visibility = () => { if (visible()) wake(); else clearTimer(); };
-  const offline = () => {
-    clearTimer();
-    sequence++;
-    controller?.abort();
-    controller = undefined;
-    pending = undefined;
-    if (status !== "signed_out" && status !== "account_changed") update("offline");
-  };
+  // Browser connectivity is only a hint, especially in embedded browsers. A
+  // bounded server check remains authoritative; an offline event must neither
+  // cancel an in-flight verification nor permanently suppress recovery.
+  const offline = () => { if (!pending) void check(true); };
   window.addEventListener("focus", wake);
   window.addEventListener("pageshow", wake);
   window.addEventListener("online", wake);
