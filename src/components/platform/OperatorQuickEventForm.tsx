@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
+import OperatorEventBadgeCreditFields from "@/components/platform/OperatorEventBadgeCreditFields";
 import OperatorEventEmailCadenceFields from "@/components/platform/OperatorEventEmailCadenceFields";
 import {
   OPERATOR_BUTTON_CLASS,
@@ -72,7 +73,7 @@ export default function OperatorQuickEventForm({
           startsAt,
           endsAt: new Date(Date.parse(startsAt) + duration * 60_000).toISOString(),
           timezone,
-          kind: visibility === "circle" ? "circle_meeting" : "member_event",
+          kind: visibility === "circle" ? "circle_meeting" : data.get("badgeCreditTrack") === "membership" ? "weekly_call" : "member_event",
           summary: String(data.get("summary") ?? ""),
           details: "",
           locationLabel: "Google Meet",
@@ -82,6 +83,11 @@ export default function OperatorQuickEventForm({
           externalRegistrationUrl: null,
           registrationOpensAt: null,
           registrationClosesAt: null,
+          badgeCredit: {
+            track: String(data.get("badgeCreditTrack") ?? "none"),
+            stage: data.get("badgeCreditStage") ? String(data.get("badgeCreditStage")) : null,
+            month: data.get("badgeCreditMonth") ? String(data.get("badgeCreditMonth")) : null,
+          },
           ...(data.get("emailCadenceKind") ? { emailCadence: {
             kind: String(data.get("emailCadenceKind")), track: "members",
           } } : {}),
@@ -132,6 +138,7 @@ export default function OperatorQuickEventForm({
       </label>
     </div>
     <p className="!mt-2 text-xs text-[color:var(--operator-muted)]">Times in {timezone || "your selected time zone"}.</p>
+    <OperatorEventBadgeCreditFields circleOnly={Boolean(selectedCircle) || !directory.canManageGlobal} onlineOnly />
     {directory.canManageGlobal ? <OperatorEventEmailCadenceFields quick /> : null}
     <details className="text-sm">
       <summary className="min-h-11 cursor-pointer py-3 text-[color:var(--operator-muted)]">Time zone & description</summary>

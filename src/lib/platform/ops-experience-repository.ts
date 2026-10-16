@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type postgres from "postgres";
 
+import { experienceBadgeCreditError, parseExperienceBadgeCredit, readExperienceBadgeCredit, withExperienceBadgeCredit, type ExperienceBadgeCredit } from "@/lib/platform/badge-credit-model";
 import { getApplicationDatabase } from "@/lib/database/server";
 import {
   googleCommunicationLivemode,
@@ -219,6 +220,13 @@ function normalizeDraft(input: OpsExperienceDraftInput) {
     );
   }
 
+  const badgeCredit = input.badgeCredit === undefined ? undefined : parseExperienceBadgeCredit(input.badgeCredit);
+  if (badgeCredit === null) throw new OpsOperatingRepositoryError("invalid_request", "Choose valid badge credit, stage, and month.");
+  if (badgeCredit) {
+    const error = experienceBadgeCreditError(badgeCredit, { kind, circleId, locationLabel: input.locationLabel });
+    if (error) throw new OpsOperatingRepositoryError("invalid_request", error);
+  }
+
   const capacity = input.capacity;
   if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1 || capacity > 100000)) {
     throw new OpsOperatingRepositoryError(
@@ -252,7 +260,30 @@ function normalizeDraft(input: OpsExperienceDraftInput) {
     visibility,
     waitlistEnabled: Boolean(input.waitlistEnabled),
     ...(input.emailCadence === undefined ? {} : { emailCadence: input.emailCadence }),
+    ...(badgeCredit === undefined ? {} : { badgeCredit }),
   };
+}
+
+async function requireBadgeCreditContext(
+  tx: postgres.TransactionSql,
+  credit: ExperienceBadgeCredit,
+  draft: Pick<OpsExperienceDraftInput, "kind" | "circleId"> & { locationLabel: string | null },
+  experienceId?: string,
+  meetingUrl?: string,
+) {
+  let linkedMeeting = meetingUrl ?? null;
+  if (credit.track === "in_person" && experienceId) {
+    const [link] = await tx<Array<{ meeting_url: string | null }>>`
+      select metadata->>'meetingUri' as meeting_url from integration_entity_links
+      where provider = 'google' and local_entity_type = 'experience'
+        and local_entity_id = ${experienceId} and external_entity_type = 'meet_space'
+        and nullif(trim(metadata->>'meetingUri'), '') is not null
+      limit 1
+    `;
+    linkedMeeting = link?.meeting_url ?? null;
+  }
+  const error = experienceBadgeCreditError(credit, { ...draft, meetingUrl: linkedMeeting });
+  if (error) throw new OpsOperatingRepositoryError("invalid_request", error);
 }
 
 async function saveEmailCadenceBinding(tx: postgres.TransactionSql, actor: string, experienceId: string, draft: ReturnType<typeof normalizeDraft>) {
@@ -736,6 +767,7 @@ export async function getOpsExperienceRecord(
       kind: string;
       location_label: string | null;
       meeting_metadata: unknown;
+      metadata: unknown;
       registered_count: number | string;
       registration_closes_at: Date | string | null;
       registration_mode: "external" | "internal" | "none";
@@ -757,6 +789,7 @@ export async function getOpsExperienceRecord(
         experience.kind,
         experience.summary,
         experience.details,
+        experience.metadata,
         experience.starts_at,
         experience.ends_at,
         experience.timezone,
@@ -968,6 +1001,7 @@ export async function getOpsExperienceRecord(
 
     return {
       ...(emailCadence === undefined ? {} : { emailCadence }),
+      badgeCredit: readExperienceBadgeCredit(event.metadata),
       archivedAt: asIso(event.archived_at),
       blockId: event.block_id,
       canEdit: canDefine,
@@ -1096,6 +1130,7 @@ async function persistOpsExperience(input: {
         );
       }
     }
+    await requireBadgeCreditContext(tx, draft.badgeCredit ?? readExperienceBadgeCredit({}), draft, undefined, input.meetingUrl);
     const dedupeKey = input.requestId ? `experience-create:${access.authUserId}:${input.requestId}` : undefined;
     const requestFingerprint = input.meetingUrl
       ? createHash("sha256").update(JSON.stringify({ draft, meetingUrl: input.meetingUrl })).digest("hex")
@@ -1152,7 +1187,8 @@ async function persistOpsExperience(input: {
         status,
         published_at,
         created_by_auth_user_id,
-        updated_by_auth_user_id
+        updated_by_auth_user_id,
+        metadata
       ) values (
         ${experienceId}::uuid,
         ${slug},
@@ -1176,7 +1212,8 @@ async function persistOpsExperience(input: {
         ${state},
         case when ${state} = 'published' then statement_timestamp() else null end,
         ${access.authUserId}::uuid,
-        ${access.authUserId}::uuid
+        ${access.authUserId}::uuid,
+        ${tx.json(withExperienceBadgeCredit({}, draft.badgeCredit ?? readExperienceBadgeCredit({})) as postgres.JSONValue)}
       )
     `;
     await saveEmailCadenceBinding(tx, access.authUserId, experienceId, draft);
@@ -1204,7 +1241,7 @@ async function persistOpsExperience(input: {
         );
       }
     }
-    const snapshot = { status: state, title: draft.title, version: 1 };
+    const snapshot = { status: state, title: draft.title, version: 1, badgeCredit: draft.badgeCredit ?? readExperienceBadgeCredit({}) };
     await writeExperienceEvent(tx, {
       actorAuthUserId: access.authUserId,
       eventType: "created",
@@ -1238,6 +1275,52 @@ async function persistOpsExperience(input: {
       });
     }
     return { experienceId };
+  });
+}
+
+/** Historical categorization changes badge evidence only, never Calendar delivery or attendance. */
+export async function updateOpsExperienceBadgeCredit(input: {
+  actorAuthUserId: string;
+  badgeCredit: ExperienceBadgeCredit;
+  experienceId: string;
+}): Promise<{ experienceId: string; badgeCredit: ExperienceBadgeCredit }> {
+  const experienceId = requireUuid(input.experienceId, "Experience");
+  const badgeCredit = parseExperienceBadgeCredit(input.badgeCredit);
+  if (!badgeCredit) throw new OpsOperatingRepositoryError("invalid_request", "Choose valid badge credit, stage, and month.");
+  const sql = getApplicationDatabase();
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${experienceId}), 48)`;
+    const access = await requireEventOperator(tx, input.actorAuthUserId, true);
+    const existing = await requireExperienceAccess(tx, access, experienceId, "define");
+    if (!["draft", "published", "completed", "archived"].includes(existing.status)) {
+      throw new OpsOperatingRepositoryError("conflict", "Cancelled Experiences cannot receive badge credit.");
+    }
+    const [event] = await tx<Array<{ kind: string; location_label: string | null; metadata: unknown; cancelled_at: Date | string | null }>>`
+      select kind, location_label, metadata, cancelled_at from experiences where id = ${experienceId}::uuid
+    `;
+    if (event!.cancelled_at) throw new OpsOperatingRepositoryError("conflict", "Cancelled Experiences cannot receive badge credit.");
+    await requireBadgeCreditContext(tx, badgeCredit, {
+      kind: event!.kind, circleId: existing.circle_id, locationLabel: event!.location_label,
+    }, experienceId);
+    const before = { badgeCredit: readExperienceBadgeCredit(event!.metadata) };
+    const after = { badgeCredit };
+    if (JSON.stringify(before) === JSON.stringify(after)) return { experienceId, badgeCredit };
+    // Version is Calendar content's revision. Categorization does not alter that content.
+    await tx`
+      update experiences
+      set metadata = ${tx.json(withExperienceBadgeCredit(event!.metadata, badgeCredit) as postgres.JSONValue)},
+        updated_by_auth_user_id = ${access.authUserId}::uuid, updated_at = statement_timestamp()
+      where id = ${experienceId}::uuid
+    `;
+    await writeExperienceEvent(tx, {
+      actorAuthUserId: access.authUserId, eventType: "updated", experienceId,
+      previous: before, next: after, reason: "Badge credit classification changed.",
+    });
+    await writeOperatorAudit(tx, {
+      action: "experience.badge_credit_updated", actorAuthUserId: access.authUserId,
+      before, after, subjectId: experienceId, subjectType: "experience",
+    });
+    return { experienceId, badgeCredit };
   });
 }
 
@@ -1295,13 +1378,17 @@ export async function updateOpsExperience(input: {
         "Resolve the current waitlist before turning it off.",
       );
     }
-    const beforeRows = await tx<Array<{ capacity: number | null; title: string; version: number }>>`
-      select capacity, title, version from experiences where id = ${experienceId}::uuid
+    const beforeRows = await tx<Array<{ capacity: number | null; title: string; version: number; metadata: unknown }>>`
+      select capacity, title, version, metadata from experiences where id = ${experienceId}::uuid
     `;
-    const before = beforeRows[0]!;
+    const prior = beforeRows[0]!;
+    const before = { capacity: prior.capacity, title: prior.title, version: prior.version, badgeCredit: readExperienceBadgeCredit(prior.metadata) };
+    const badgeCredit = draft.badgeCredit ?? before.badgeCredit;
+    await requireBadgeCreditContext(tx, badgeCredit, draft, experienceId);
     await tx`
       update experiences
       set
+        metadata = ${tx.json(withExperienceBadgeCredit(prior.metadata, draft.badgeCredit) as postgres.JSONValue)},
         kind = ${draft.kind},
         title = ${draft.title},
         summary = ${draft.summary},
@@ -1328,6 +1415,7 @@ export async function updateOpsExperience(input: {
     await saveEmailCadenceBinding(tx, access.authUserId, experienceId, draft);
     const promotedCount = await promoteWaitlist(tx, experienceId, access.authUserId);
     const after = {
+      badgeCredit,
       capacity: draft.capacity,
       status: existing.status,
       title: draft.title,

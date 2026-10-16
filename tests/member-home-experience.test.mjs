@@ -298,10 +298,13 @@ test("two profile tabs keep roving keyboard focus with wrapping boundaries", () 
   ui.unmount();
 });
 
-test("profile orders portrait and identity, bio, actions, then earned badges without empty placeholders", () => {
+test("profile orders identity, bio, actions, then earned badges and the collection link without empty badge placeholders", () => {
   const empty = render(memberFixture());
   assert.equal(elements(empty).some(node=>attr(node,"data-earned-badges")!==undefined),false);
-  assert.equal(elements(empty).some(node=>attr(node,"class")==="earnedBadges"),false);
+  const emptyBadgeArea=elements(empty).find(node=>attr(node,"class")==="earnedBadges");
+  assert.ok(emptyBadgeArea);
+  assert.deepEqual(elements(emptyBadgeArea).filter(node=>node.tagName==="a").map(node=>[attr(node,"href"),text(node)]),[["/my/badges","Your badges ↗"]]);
+  assert.equal(emptyBadgeArea.childNodes.filter(node=>node.tagName).length,1,"members with no awards retain only the collection link, never an empty dock");
   const member=memberFixture();member.badges=[{key:"early-supporter",label:"I Was Here",description:"Joined the waitlist, then became a paying member.",earnedAt:"2026-09-28T12:00:00Z"}];
   member.profile.bio="A biography.";
   member.profile.memberTag="alex";
@@ -316,6 +319,9 @@ test("profile orders portrait and identity, bio, actions, then earned badges wit
   assert.equal(elements(block).some(node=>attr(node,"data-earned-badges")!==undefined),false);
   const badges=elements(header).find(node=>attr(node,"class")==="earnedBadges");
   assert.equal(elements(badges).filter(node=>attr(node,"data-earned-badges")!==undefined).length,1);
-  assert.equal(text(badges),"I Was Here");
+  const earnedDock=elements(badges).find(node=>attr(node,"data-earned-badges")!==undefined);
+  assert.equal(text(earnedDock),"I Was Here");
+  assert.deepEqual(badges.childNodes.filter(node=>node.tagName).map(node=>node.tagName),["div","a"]);
+  assert.deepEqual(elements(badges).filter(node=>node.tagName==="a").map(node=>[attr(node,"href"),text(node)]),[["/my/badges","Your badges ↗"]]);
   assert.equal(JSON.stringify(member),before,"presentation must preserve private profile and earned badge data");
 });

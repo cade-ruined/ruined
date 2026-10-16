@@ -35,6 +35,7 @@ function fixture(patch = {}, { respond = async () => Response.json({ experience:
   };
   const dependencies = {
     react: hooks,
+    "@/components/platform/OperatorEventBadgeCreditFields": { __esModule: true, default: () => null },
     "@/components/platform/OperatorEventEmailCadenceFields": { __esModule: true, default: () => null },
     "@/components/platform/OperatorDateTimeField": { __esModule: true, default: DateTimeField },
   };
@@ -76,6 +77,7 @@ test("quick creation sends one complete publish request with the supplied Meet l
   f.change();
   await f.submit();
   assert.deepEqual(f.calls, [{ url: "/api/ops/experiences", method: "POST", body: {
+    badgeCredit: { track: "none", stage: null, month: null },
     intent: "create_and_publish", requestId: "00000000-0000-4000-8000-000000000002", title: values.title, meetingUrl: values.meetingUrl.trim(), visibility: "all_members", circleId: null, blockId: null,
     startsAt: "2026-10-16T00:00:00.000Z", endsAt: "2026-10-16T01:00:00.000Z", timezone: "America/Denver", kind: "member_event", summary: values.summary,
     details: "", locationLabel: "Google Meet", registrationMode: "none", capacity: null, waitlistEnabled: false,
@@ -219,4 +221,12 @@ test("a quick event can explicitly opt into Membership emails without changing i
   const none = fixture();
   await none.submit({ ...values, emailCadenceKind: "none" });
   assert.deepEqual(none.calls[0].body.emailCadence, { kind: "none", track: "members" });
+});
+
+
+test("quick membership badge credit sets the weekly-call type and explicit program stage", async () => {
+  const f = fixture();
+  await f.submit({ ...values, badgeCreditTrack: "membership", badgeCreditStage: "face", badgeCreditMonth: "2026-10" });
+  assert.equal(f.calls[0].body.kind, "weekly_call");
+  assert.deepEqual(f.calls[0].body.badgeCredit, { track: "membership", stage: "face", month: "2026-10" });
 });

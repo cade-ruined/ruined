@@ -5,6 +5,7 @@ import MemberHome from "@/components/platform/MemberHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { withFreshApplicationDatabaseRead } from "@/lib/database/server";
 import { resolveMemberHomeArtifactProducts } from "@/lib/membership/artifact-products";
+import { shouldIntroduceMemberBadges } from "@/lib/membership/badge-collection-repository";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
 import { getMemberHome } from "@/lib/membership/repository";
@@ -32,6 +33,20 @@ export default async function MyRuinedPage() {
     </section>;
   }
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
+
+  // Registration and profile access have already been checked by the page context.
+  // Introduce the collection once from the profile; other member routes stay direct.
+  let introduceBadges = false;
+  if (context.state === "authenticated" && context.viewer) {
+    try {
+      introduceBadges = await withFreshApplicationDatabaseRead("member-badge-introduction",
+        () => shouldIntroduceMemberBadges(context.viewer!.authUserId));
+    } catch {
+      // An optional introduction must never make an otherwise healthy profile unavailable.
+      console.warn("Member badge introduction is temporarily unavailable");
+    }
+  }
+  if (introduceBadges) redirect("/my/badges?welcome=1");
 
   // Product imagery is optional; profiles without a linked Artifact need no shop request.
   const hasArtifactProducts = Boolean(context.data.artifact?.product)

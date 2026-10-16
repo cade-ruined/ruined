@@ -62,6 +62,7 @@ function pageFixture(data, { state = "authenticated", products = [], viewer = st
     "@/lib/database/server": {
       withFreshApplicationDatabaseRead: async (stage, read) => { calls.reads.push(stage); return read(); },
     },
+    "@/lib/membership/badge-collection-repository": { shouldIntroduceMemberBadges: async () => false },
     "@/lib/membership/artifact-products": {
       resolveMemberHomeArtifactProducts: (snapshot, catalog) => {
         calls.resolutions.push(catalog);
@@ -99,7 +100,7 @@ test("profile loads its own snapshot without eagerly fetching a separate Timelin
   const result = await f.Page();
   assert.equal(result.type, "member-home");
   assert.equal(result.props.timeline, undefined);
-  assert.deepEqual(f.calls.reads, ["member-home"]);
+  assert.deepEqual(f.calls.reads, ["member-home", "member-badge-introduction"]);
   assert.equal(f.calls.timelines, 0);
 });
 

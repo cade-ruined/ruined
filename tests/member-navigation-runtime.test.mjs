@@ -23,6 +23,7 @@ const navigation = load("src/lib/membership/navigation.ts");
 const { MEMBER_DESTINATIONS, currentMemberDestination, currentMemberPrimaryDestination, findMemberDestinations } = navigation;
 const expectedDestinations = {
   "/my": "Profile",
+  "/my/badges": "Badges",
   "/my/card": "My Card",
   "/my/invitation": "My Invitation",
   "/my/artifacts": "Artifacts",
@@ -134,9 +135,9 @@ function fixture(initialPath = "/my") {
   };
 }
 
-test("Member navigation retains all thirteen named destinations and each page exists", () => {
+test("Member navigation retains all fourteen named destinations and each page exists", () => {
   assert.deepEqual(Object.fromEntries(MEMBER_DESTINATIONS.map(({ href, label }) => [href, label])), expectedDestinations);
-  assert.equal(new Set(MEMBER_DESTINATIONS.map(({ href }) => href)).size, 13);
+  assert.equal(new Set(MEMBER_DESTINATIONS.map(({ href }) => href)).size, 14);
   for (const { href } of MEMBER_DESTINATIONS) assert.ok(readFileSync(new URL(`../app${href}/page.tsx`, import.meta.url), "utf8").length, href);
 });
 
@@ -153,7 +154,7 @@ test("Member route selection chooses the longest matching page and respects segm
 });
 
 test("Member page search supports common task terms, whitespace, case, and multiple words", () => {
-  assert.equal(findMemberDestinations("  ").length, 13);
+  assert.equal(findMemberDestinations("  ").length, 14);
   for (const [query, hrefs] of [
     ["BILLING", ["/my/account"]],
     ["journal", ["/my"]],
@@ -166,6 +167,8 @@ test("Member page search supports common task terms, whitespace, case, and multi
     ["  PUBLIC   share ", ["/my/card"]],
     ["card download", ["/my/card"]],
     ["invitation joined", ["/my/invitation"]],
+    ["badge collection", ["/my/badges"]],
+    ["earned progress", ["/my/badges"]],
     ["zz-no-page", []],
   ]) assert.deepEqual(findMemberDestinations(query).map(({ href }) => href), hrefs, query);
 });
@@ -192,6 +195,22 @@ test("The member card is searchable, marks its own destination current, and keep
   f.search().props.onChange({ target: { value: "public share" } }); f.draw();
   const results = nodes(f.menu()).filter((node) => node.type === "a");
   assert.deepEqual(results.map((node) => node.props.href), ["/my/card"]);
+  assert.equal(results[0].props["aria-current"], "page");
+  f.unmount();
+});
+
+test("the badge collection is searchable in Your record and keeps Profile as its primary room", () => {
+  const f = fixture("/my/badges");
+  assert.equal(currentMemberPrimaryDestination("/my/badges"), "/my");
+  assert.equal(MEMBER_DESTINATIONS.find(({href})=>href==="/my/badges").group, "Your record");
+  f.trigger().props.onClick(); f.draw();
+  const current = nodes(f.menu()).filter((node) => node.props?.["aria-current"] === "page");
+  assert.equal(current.length, 1);
+  assert.equal(current[0].props.href, "/my/badges");
+  assert.equal(text(current[0]).trim(), "Badges↗");
+  f.search().props.onChange({ target: { value: "badge collection" } }); f.draw();
+  const results = nodes(f.menu()).filter((node) => node.type === "a");
+  assert.deepEqual(results.map((node) => node.props.href), ["/my/badges"]);
   assert.equal(results[0].props["aria-current"], "page");
   f.unmount();
 });
@@ -237,7 +256,7 @@ test("Search changes the rendered pages, announces no matches, and resets when r
   assert.equal(f.focused().label, "Search member pages");
   f.trigger().props.onClick(); f.draw();
   assert.equal(f.search().props.value, "");
-  assert.equal(nodes(f.menu()).filter((node) => node.type === "a").length, 13);
+  assert.equal(nodes(f.menu()).filter((node) => node.type === "a").length, 14);
 });
 
 test("Native Escape closes the menu, restores scrolling and focus, and allows reopening", () => {

@@ -1,6 +1,16 @@
 import { memberTier } from "./member-number";
 
 export const MEMBERSHIP_BADGES = {
+  "make-it-yours": { label: "Make It Yours", description: "Add your profile photo, bio, and member tag." },
+  "first-words": { label: "First Words", description: "Write your first private journal entry." },
+  "your-story": { label: "Your Story", description: "Complete your Foundations timeline." },
+  "on-the-record": { label: "On the Record", description: "Publish your first public Timeline entry." },
+  groundwork: { label: "Groundwork", description: "Complete Foundations." },
+  "in-the-room": { label: "In the Room", description: "Attend your first confirmed membership call." },
+  "full-circle": { label: "Full Circle", description: "Attend WHY and implementation with the same Circle in one month." },
+  "the-whole-month": { label: "The Whole Month", description: "Attend SEE, FACE, CUT, and GROW in the same topic month." },
+  "open-door": { label: "Open Door", description: "Invite someone who joins Ruined." },
+  "in-real-life": { label: "In Real Life", description: "Attend your first confirmed in-person event." },
   "early-supporter": {
     label: "I Was Here",
     description: "Joined the waitlist, then activated a Founders or Originals membership.",

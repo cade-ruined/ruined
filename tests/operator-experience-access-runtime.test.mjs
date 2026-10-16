@@ -24,6 +24,7 @@ class RepositoryError extends Error {
 }
 
 async function loadModule(path, dependencies) {
+  if (path !== "src/lib/platform/badge-credit-model.ts") dependencies = { ...dependencies, "@/lib/platform/badge-credit-model": await loadModule("src/lib/platform/badge-credit-model.ts", {}) };
   const source = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
@@ -166,6 +167,7 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
         action text, subject_type text, subject_id text, member_id uuid, reason text, before_snapshot jsonb,
         after_snapshot jsonb, metadata jsonb check(jsonb_typeof(metadata)='object'), dedupe_key text unique);
       ${shippedTable(community, "experiences")}
+    alter table experiences add column metadata jsonb not null default '{}'::jsonb;
       ${shippedTable(community, "experience_registrations")}
       ${shippedTable(community, "experience_attendance_events")}
       ${rejectMutation}

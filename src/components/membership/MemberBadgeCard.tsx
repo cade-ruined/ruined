@@ -8,9 +8,19 @@ import styles from "./MemberBadges.module.css";
 export type BadgeDisplay = Omit<MemberBadge, "key"> & { key: string; stamp?: string };
 const artworks: Record<string, { src: string; filename: string }> = {
   "early-supporter": { src: "/membership/badges/i-was-here-red-dashes-v2.png", filename: "ruined-i-was-here-badge.png" },
+  "make-it-yours": { src: "/membership/badges/make-it-yours-v2.png", filename: "ruined-make-it-yours-badge.png" },
+  "first-words": { src: "/membership/badges/first-words-v2.png", filename: "ruined-first-words-badge.png" },
+  "your-story": { src: "/membership/badges/your-story-v2.png", filename: "ruined-your-story-badge.png" },
+  "on-the-record": { src: "/membership/badges/on-the-record-v1.png", filename: "ruined-on-the-record-badge.png" },
+  "groundwork": { src: "/membership/badges/groundwork-v2.png", filename: "ruined-groundwork-badge.png" },
+  "in-the-room": { src: "/membership/badges/in-the-room-v2.png", filename: "ruined-in-the-room-badge.png" },
+  "full-circle": { src: "/membership/badges/full-circle-v2.png", filename: "ruined-full-circle-badge.png" },
+  "the-whole-month": { src: "/membership/badges/the-whole-month-v2.png", filename: "ruined-the-whole-month-badge.png" },
+  "open-door": { src: "/membership/badges/open-door-v2.png", filename: "ruined-open-door-badge.png" },
+  "in-real-life": { src: "/membership/badges/in-real-life-v2.png", filename: "ruined-in-real-life-badge.png" },
 };
 const stampNumbers: Record<string, string> = { "early-supporter": "01" };
-export function badgeArtwork(badge: BadgeDisplay) { return artworks[badge.key]; }
+export function badgeArtwork(badge: Pick<BadgeDisplay, "key">) { return artworks[badge.key]; }
 export function badgeStamp(badge: BadgeDisplay) { return badge.stamp ?? stampNumbers[badge.key] ?? "•"; }
 const earnedDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 

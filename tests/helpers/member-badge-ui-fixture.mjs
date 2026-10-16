@@ -37,6 +37,8 @@ export function badgeUIFixture(initial={},options={}){
     useState(initial){const owner=current,key=owner.cursor++;if(!(key in owner.slots))owner.slots[key]=typeof initial==='function'?initial():initial;return [owner.slots[key],next=>{const value=typeof next==='function'?next(owner.slots[key]):next;if(!Object.is(value,owner.slots[key])){owner.slots[key]=value;dirty=true;}}];},
     useEffect(callback,deps){const owner=current,key=owner.cursor++,old=owner.slots[key];if(!old||deps.some((value,index)=>!Object.is(value,old.deps[index]))){const slot={deps};owner.slots[key]=slot;effects.push(()=>{old?.cleanup?.();slot.cleanup=callback();});}},
   };
+  const navigation=[];
+  const window={listeners:new Map(),addEventListener(type,fn){const set=this.listeners.get(type)??new Set();set.add(fn);this.listeners.set(type,set);},removeEventListener(type,fn){this.listeners.get(type)?.delete(fn);}};
   const loaded=new Map();
   const fetch=async(url,init={})=>{requests.push({url,...init});return options.fetch?options.fetch(url,init):Promise.reject(new Error('Unexpected fetch'));};
   class MutationObserver{constructor(callback){this.callback=callback;}observe(){observers.add(this);}disconnect(){observers.delete(this);}}
@@ -44,14 +46,15 @@ export function badgeUIFixture(initial={},options={}){
     path=resolve(root,path);if(loaded.has(path))return loaded.get(path).exports;
     const loadedModule={exports:{}};loaded.set(path,loadedModule);
     const code=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
-    new Function('require','module','exports','document','HTMLElement','MutationObserver','requestAnimationFrame','cancelAnimationFrame','fetch',code)(name=>{
+    new Function('require','module','exports','document','HTMLElement','MutationObserver','requestAnimationFrame','cancelAnimationFrame','fetch','window',code)(name=>{
       if(name==='react')return hooks;if(name==='react/jsx-runtime')return require(name);
       if(name==='next/image')return {__esModule:true,default:'img'};
-      if(name==='next/navigation')return {usePathname:()=>pathname};
+      if(name==='next/navigation')return {usePathname:()=>pathname,useRouter:()=>({push:href=>navigation.push(href),refresh:()=>navigation.push('refresh')})};
+      if(name==='next/link')return {__esModule:true,default:'a'};
       if(name.endsWith('.module.css'))return {__esModule:true,default:new Proxy({},{get:(_,key)=>key})};
       if(name.startsWith('./'))return load(resolve(dirname(path),`${name}.tsx`));
       throw Error(`Unexpected badge dependency: ${name}`);
-    },loadedModule,loadedModule.exports,document,Element,MutationObserver,callback=>{frames.push(callback);return frames.length;},id=>{frames[id-1]=null;},fetch);
+    },loadedModule,loadedModule.exports,document,Element,MutationObserver,callback=>{frames.push(callback);return frames.length;},id=>{frames[id-1]=null;},fetch,window);
     return loadedModule.exports;
   }
   const Component=load(options.component??'src/components/membership/MemberBadges.tsx').default;
@@ -83,7 +86,8 @@ export function badgeUIFixture(initial={},options={}){
   function button(label){const node=nodes(draw()).find(node=>node.type==='button'&&(node.props['aria-label']??text(node))===label);assert.ok(node,`Missing button: ${label}`);return node;}
   const click=label=>{button(label).props.onClick({currentTarget:buttons.get(label)});return draw();};
   const notify=()=>{[...observers].forEach(observer=>observer.callback([]));return draw();};
-  return {draw,button,click,buttons,elements,dialog,document,original,requests,observers,
+  return {draw,button,click,buttons,elements,dialog,document,original,requests,observers,navigation,
+    focusWindow(){window.listeners.get('focus')?.forEach(fn=>fn());return draw();},
     async settle(){for(let i=0;i<4;i++){await new Promise(resolve=>setImmediate(resolve));draw();}return draw();},
     setPath(value){pathname=value;return draw();},
     setHidden(value){document.hidden=value;document.listeners.get('visibilitychange')?.forEach(fn=>fn());return draw();},

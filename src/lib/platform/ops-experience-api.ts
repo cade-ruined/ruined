@@ -1,3 +1,4 @@
+import { experienceBadgeCreditError, parseExperienceBadgeCredit } from "@/lib/platform/badge-credit-model";
 import type {
   OpsExperienceCreateAndPublishInput,
   OpsExperienceDraftInput,
@@ -34,6 +35,7 @@ export function parseOpsExperienceDraft(
 ): OpsExperienceDraftInput | null {
   if (!isRecord(value)) return null;
   const allowed = new Set([
+    "badgeCredit",
     "blockId",
     "capacity",
     "circleId",
@@ -66,6 +68,10 @@ export function parseOpsExperienceDraft(
   if (typeof value.waitlistEnabled !== "boolean") return null;
   const emailCadence = value.emailCadence === undefined ? undefined : emailCadenceValue(value.emailCadence);
   if (emailCadence === null) return null;
+  const badgeCredit = value.badgeCredit === undefined ? undefined : parseExperienceBadgeCredit(value.badgeCredit);
+  if (badgeCredit === null || (badgeCredit && experienceBadgeCreditError(badgeCredit, {
+    kind: stringValue(value.kind), circleId: nullableString(value.circleId), locationLabel: nullableString(value.locationLabel),
+  }))) return null;
 
   return {
     blockId: nullableString(value.blockId),
@@ -86,6 +92,7 @@ export function parseOpsExperienceDraft(
     visibility: stringValue(value.visibility) as OpsExperienceDraftInput["visibility"],
     waitlistEnabled: value.waitlistEnabled,
     ...(emailCadence === undefined ? {} : { emailCadence }),
+    ...(badgeCredit === undefined ? {} : { badgeCredit }),
   };
 }
 
@@ -103,5 +110,6 @@ export function parseOpsExperienceCreateAndPublish(
   delete fields.meetingUrl;
   delete fields.requestId;
   const draft = parseOpsExperienceDraft(fields);
+  if (draft?.badgeCredit && experienceBadgeCreditError(draft.badgeCredit, { ...draft, meetingUrl })) return null;
   return draft ? { ...draft, meetingUrl, requestId } : null;
 }

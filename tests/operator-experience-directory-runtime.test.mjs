@@ -46,6 +46,7 @@ function fixture(patch = {}, { hash = "", respond = async () => Response.json({ 
   };
   const dependencies = {
     react: hooks,
+    "@/components/platform/OperatorEventBadgeCreditFields": { __esModule: true, default: () => null },
     "@/components/platform/OperatorEventEmailCadenceFields": { __esModule: true, default: () => null },
     "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), refresh() {} }) },
     "next/link": { __esModule: true, default: "a" },

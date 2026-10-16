@@ -1,3 +1,4 @@
+import { installBadgeEvidenceSchema } from './helpers/badge-collection-fixture.mjs';
 import { prepaidFixtureDependencies } from "./helpers/prepaid-policy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -65,7 +66,11 @@ async function fixture(t, migrate = true) {
   await db.exec(sqlFunction(operatorMigration, "ruined_member_has_operator_funding"));
   await db.exec(sqlFunction(complimentaryMigration, "ruined_member_has_complimentary_funding"));
   await db.exec(sqlFunction(complimentaryMigration, "ruined_member_can_share_invitation"));
-  if (migrate) { await db.exec(migration); await db.exec(cohortMigration); }
+  if (migrate) { await db.exec(migration); await db.exec(cohortMigration);
+    await db.exec(await read("db/migrations/20260930112000_member_badge_acknowledgements.sql"));
+    await installBadgeEvidenceSchema(db);
+  }
+  await db.exec("create function private.ruined_member_profile_released(uuid) returns boolean language sql stable as 'select true'");
   const sql = wrap(db);
   const repository = await load("src/lib/membership/badge-repository.ts", {
     "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => sql }, "./badge-model": model,
@@ -182,7 +187,7 @@ test("funding and lifecycle changes trigger reconciliation without waiting for a
 test("server reconciliation is transactional and retry-safe", async t => {
   const f = await fixture(t); await f.member(1); await f.db.exec("delete from member_badge_awards");
   await assert.rejects(f.sql.begin(async tx => { await f.reconcileMemberBadges(tx, id(1)); throw Error("Retry"); }), /Retry/);
-  assert.deepEqual(await f.getMemberBadges(id(1)), []);
+  assert.equal((await f.db.query("select count(*) from member_badge_awards")).rows[0].count, 0);
   await f.reconcile(1); await f.reconcile(1);
   assert.equal((await f.getMemberBadges(id(1))).length, 1);
 });
@@ -222,7 +227,9 @@ test("fresh migrations award only active eligible early cohorts, never historica
   await f.db.exec(migration);
   assert.equal((await f.db.query("select count(*) from member_badge_awards")).rows[0].count, 0,
     "The schema migration defers awards to the current entitlement and cohort rule");
-  await f.db.exec(cohortMigration); await f.db.exec(cohortMigration);
+  await f.db.exec(cohortMigration);
+  await f.db.exec(await read("db/migrations/20260930112000_member_badge_acknowledgements.sql"));
+  await installBadgeEvidenceSchema(f.db); await f.db.exec(cohortMigration);
   assert.deepEqual((await f.db.query("select member_id from member_badge_awards order by member_id")).rows.map(row => row.member_id), [id(1), id(2)]);
   assert.equal((await f.getMemberBadges(id(1)))[0].earnedAt, "2026-09-01T12:00:00.000Z");
   assert.equal((await f.getMemberBadges(id(2)))[0].earnedAt, "2026-09-01T12:00:00.000Z");
@@ -244,8 +251,14 @@ test("updated cohort backfill preserves existing awards and permanent numbers ev
   `, [id(n), `historical-event-${n}`, `historical-invoice-${n}`]);
   const oldAwards = (await f.db.query("select * from member_badge_awards order by member_id")).rows;
   const oldNumbers = (await f.db.query("select * from private.member_number_assignments order by member_number")).rows;
-  await f.db.exec(cohortMigration); await f.db.exec(cohortMigration);
-  assert.deepEqual((await f.db.query("select * from member_badge_awards order by member_id")).rows, oldAwards);
+  await f.db.exec(cohortMigration);
+  await f.db.exec(await read("db/migrations/20260930112000_member_badge_acknowledgements.sql"));
+  await installBadgeEvidenceSchema(f.db); await f.db.exec(cohortMigration);
+  assert.deepEqual((await f.db.query("select * from member_badge_awards order by member_id")).rows.map(row => {
+    const { acknowledged_at, public_visible, visibility_updated_at, ...originalAward } = row;
+    assert.equal(acknowledged_at, null); assert.equal(public_visible, true); assert.equal(visibility_updated_at, null);
+    return originalAward;
+  }), oldAwards);
   assert.deepEqual((await f.db.query("select * from private.member_number_assignments order by member_number")).rows, oldNumbers);
   assert.equal((await f.getMemberBadges(id(1)))[0].earnedAt, "2026-08-20T12:00:00.000Z");
   assert.equal((await f.getMemberBadges(id(2)))[0].earnedAt, "2026-08-20T12:00:00.000Z");
@@ -301,22 +314,23 @@ test("historical signup evidence uses its first outbox time and ignores attribut
   await f.db.query("update integration_outbox set created_at='2026-09-10T00:00:00Z' where aggregate_id=$1", [id(2)]);
   await f.member(3);
   await f.db.exec(migration); await f.db.exec(cohortMigration);
+  await f.db.exec(await read("db/migrations/20260930112000_member_badge_acknowledgements.sql"));
+  await installBadgeEvidenceSchema(f.db);
   assert.equal((await f.getMemberBadges(id(1))).length, 1);
   assert.deepEqual(await f.getMemberBadges(id(2)), []);
   assert.deepEqual(await f.getMemberBadges(id(3)), []);
   assert.equal(new Date((await f.db.query("select joined_waitlist_at from membership_waitlist where id=$1", [id(2)])).rows[0].joined_waitlist_at).toISOString(), "2026-09-10T00:00:00.000Z");
 });
 
-test("profile reads tolerate only an absent badge table, not other database errors", async () => {
-  for (const [error, empty] of [
-    [{ code: "42P01", message: 'relation "member_badge_awards" does not exist' }, true],
-    [{ code: "42P01", message: 'relation "ruined_members" does not exist' }, false],
-    [{ code: "08006", message: "connection failed" }, false],
+test("profile reads fail closed for missing migrations and database errors", async () => {
+  for (const error of [
+    { code: "42P01", message: 'relation "member_badge_awards" does not exist' },
+    { code: "42P01", message: 'relation "ruined_members" does not exist' },
+    { code: "08006", message: "connection failed" },
   ]) {
     const repository = await load("src/lib/membership/badge-repository.ts", { "server-only": {}, "./badge-model": model,
-      "@/lib/database/server": { getApplicationDatabase: () => async () => { throw error; } } });
-    if (empty) assert.deepEqual(await repository.getMemberBadges(id(1)), []);
-    else await assert.rejects(repository.getMemberBadges(id(1)), value => value === error);
+      "@/lib/database/server": { getApplicationDatabase: () => ({ begin: async () => { throw error; } }) } });
+    await assert.rejects(repository.getMemberBadges(id(1)), value => value === error);
   }
 });
 

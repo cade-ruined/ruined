@@ -12,6 +12,7 @@ function load(path, dependencies = {}) {
   const loaded = { exports: {} };
   const output = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   new Function("require", "module", "exports", output)((name) => {
+    if (name === "@/lib/platform/badge-credit-model") return load("src/lib/platform/badge-credit-model.ts");
     if (name in dependencies) return dependencies[name];
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     if (name === "@/components/platform/operatorStyles") return load("src/components/platform/operatorStyles.ts");

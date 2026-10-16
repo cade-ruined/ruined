@@ -40,7 +40,8 @@ test("every member page context handles denied before its unavailable fallback",
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
   const pages = [...modernPages, ...legacyPages];
 
-  assert.equal(modernPages.length, 18);
+  assert.equal(modernPages.length, 19);
+  assert.ok(modernPages.some(page => page.entry === "badges/page.tsx"));
   assert.ok(modernPages.some(page => page.entry === "foundations/timeline/part-1/page.tsx"));
   assert.ok(modernPages.some(page => page.entry === "activate/page.tsx"));
   assert.equal(legacyPages.length, 1);

@@ -24,7 +24,8 @@ const posts=ui=>ui.requests.filter(request=>request.method==='POST');
   const download=nodes(tree).find(node=>node.props.download);
   assert.equal(download.props.href,'/membership/badges/i-was-here-red-dashes-v2.png');
   assert.equal(download.props.download,'ruined-i-was-here-badge.png');
-  ui.draw();ui.setPath('/my/circle');await ui.settle();assert.equal(ui.requests.length,1,'ordinary navigation never polls');
+  ui.draw();ui.setPath('/my/circle');await ui.settle();assert.equal(ui.requests.length,2,'member navigation checks activity without background polling');
+  assert.equal(ui.requests[1].headers['x-ruined-session-owner'],ownerId);
   assert.equal(posts(ui).length,0,'opening and downloading never acknowledge');
   ui.unmount();assert.equal(ui.observers.size,0);assert.equal(ui.document.listeners.get('visibilitychange').size,0);
   assert.equal(ui.document.body.style.overflow,'scroll');assert.equal(ui.document.activeElement,ui.original);
@@ -66,9 +67,9 @@ for(const action of ['escape','backdrop','close'])test(`${action} explicitly ack
 });
 
 test('billing and authentication routes defer the reveal until normal member navigation',async()=>{
-  for(const pathname of ['/my/access','/my/confirmed','/my/join','/my/payment-method','/my/checkout','/my/checkout/return']){
+  for(const pathname of ['/my/access','/my/confirmed','/my/join','/my/payment-method','/my/checkout','/my/checkout/return','/my/badges']){
     const ui=fixture({pathname});ui.draw();await ui.settle();assert.equal(ui.dialog.opens,0,pathname);assert.equal(posts(ui).length,0);
-    ui.setPath('/my');assert.equal(ui.dialog.opens,1,pathname);assert.equal(ui.requests.length,1);ui.unmount();
+    ui.setPath('/my');await ui.settle();assert.equal(ui.dialog.open,true,pathname);assert.equal(ui.requests.length,2);ui.unmount();
   }
 });
 
