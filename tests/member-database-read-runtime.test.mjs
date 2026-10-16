@@ -64,13 +64,13 @@ function fixture(behaviors = [], { seedShared = true } = {}) {
   return { ...mod.exports, globalState, logs, pools, singleton, timerDurations, timers };
 }
 
-test("profile reads allow four connections without queuing pipelined queries on one connection", async () => {
+test("profile reads retain driver defaults for transaction-compatible connection reservation", async () => {
   const f = fixture([], { seedShared: false });
   const shared = f.getApplicationDatabase();
   assert.equal(shared.options.max_pipeline, undefined, "shared write connection behavior is preserved");
   const result = await f.withFreshApplicationDatabaseRead("member-home", () => f.getApplicationDatabase()`select profile`);
   assert.equal(result, "loaded");
-  assert.equal(f.pools[1].options.max_pipeline, 0, "one would still allow a second query behind the active query");
+  assert.equal(f.pools[1].options.max_pipeline, undefined, "low overrides prevent postgres.js from reserving transaction connections");
   assert.equal(f.pools[1].options.max, 4);
   assert.equal(f.pools[1].options.prepare, false);
   assert.equal(f.getApplicationDatabase(), shared);

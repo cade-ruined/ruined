@@ -13,24 +13,21 @@ declare global {
   var ruinedApplicationDatabase: ApplicationDatabase | undefined;
 }
 
-function createApplicationDatabase(scopedRead = false): ApplicationDatabase {
+function createApplicationDatabase(): ApplicationDatabase {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const options: NonNullable<Parameters<typeof postgres>[1]> & { max_pipeline?: number } = {
+  // Keep the driver's supported defaults for transaction connection reservation.
+  // Low max_pipeline overrides can skip begin()'s reservation callback; the
+  // scoped deadline and fresh-pool retry below bound stalled member reads.
+  return postgres(databaseUrl, {
     connect_timeout: 10,
     idle_timeout: 20,
     max: 4,
     prepare: false,
-  };
-  // postgres.js 3.4.9 accepts max_pipeline at runtime but omits it from its
-  // public types. Its limit counts queued queries, excluding the active one:
-  // zero keeps one query per connection while preserving four-way concurrency.
-  // Pipelined member reads can stall through the transaction pooler.
-  if (scopedRead) options.max_pipeline = 0;
-  return postgres(databaseUrl, options);
+  });
 }
 
 export function getApplicationDatabase(): ApplicationDatabase {
@@ -83,7 +80,7 @@ export async function withFreshApplicationDatabaseRead<T>(
   read: () => Promise<T>,
 ): Promise<T> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const database = createApplicationDatabase(true);
+    const database = createApplicationDatabase();
     const timeoutError = new ApplicationDatabaseReadTimeoutError();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
