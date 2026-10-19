@@ -9,12 +9,15 @@ test('only the email workspace permits template images and the Ruined font origi
   assert.ok(base);
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
   const email = headers.filter(route => route.headers.some(header => header.key === 'Content-Security-Policy' && /img-src 'self' data: blob: https:(?:;|$)/.test(header.value)));
-  assert.deepEqual(email.map(({ source, has }) => ({ source, ...(has ? { has } : {}) })), [
+  assert.deepEqual(email.map(({ source, has, missing }) => ({ source, ...(has ? { has } : {}), ...(missing ? { missing } : {}) })), [
     { source: '/ops/emails' },
     { source: '/ops/messages', has: [{ type: 'query', key: 'mode', value: 'emails' }] },
     { source: '/ops/email-automations' },
     { source: '/ops/messages', has: [{ type: 'query', key: 'mode', value: 'automations' }] },
+    { source: '/ops/messages', missing: [{ type: 'query', key: 'mode' }] },
   ]);
+  const hub = await unstable_getResponseFromNextConfig({ url: 'https://members.theruinedproject.com/ops/messages', nextConfig: config });
+  assert.match(hub.headers.get('Content-Security-Policy'), /img-src 'self' data: blob: https:/);
   for (const route of email) {
     const policy = route.headers[0].value;
     assert.match(policy, /img-src 'self' data: blob: https:/);

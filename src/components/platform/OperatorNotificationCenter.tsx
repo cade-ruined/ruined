@@ -166,7 +166,7 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
   }
 
   return (
-    <OperatorPageFrame title="Messages">
+    <OperatorPageFrame title="Communications">
       <OperatorMessagesTabs active="alerts" />
       <header className="operator-record-header mb-4 flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="operator-page-heading">Notifications</h2><p className="mt-1 text-xs text-[color:var(--operator-muted)]">Visible in the app. No email or text is sent.</p></div>

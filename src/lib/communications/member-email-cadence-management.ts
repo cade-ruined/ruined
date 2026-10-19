@@ -1,5 +1,6 @@
 import type { CadenceConfiguration, CadenceEvent, CadenceKind, CadenceOccurrence, CadenceStage, CadenceTrack } from "./member-email-cadence-model";
 import type { AutomatedEmailWorkflow } from "./automated-email-catalog";
+import type { CommunicationItem } from "./communications-catalog";
 import type { CadenceDraft } from "./member-email-cadence-types";
 import type { ResendEmailTemplate, ResendEmailTemplateSummary } from "./resend-email-model";
 
@@ -24,6 +25,7 @@ export type CadenceManagementOverview = {
   events:CadenceEvent[]; plans:CadencePlanSummary[]; sequences:CadenceSequenceSummary[];
   templates:ResendEmailTemplateSummary[]; configuration:CadenceConfiguration;
   inactive:Array<{title:string;reason:string}>; setupRequired:boolean; warnings:string[]; managedElsewhere:AutomatedEmailWorkflow[];
+  communications?:CommunicationItem[];
   upcoming?:CadenceUpcomingReminder[]; recentDeliveries?:CadenceDeliveryActivity[];
 };
 export type CadenceManagedCall = CadenceEvent & {

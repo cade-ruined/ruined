@@ -18,6 +18,7 @@ const management = compile("src/lib/communications/member-email-cadence-manageme
 const model = compile("src/lib/communications/member-email-cadence-model.ts");
 const copy = compile("src/lib/communications/member-email-cadence-copy.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
 const automationView = compile("src/lib/communications/email-automation-view.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
+const catalog = compile("src/lib/communications/communications-catalog.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
 const navigation = compile("src/lib/communications/email-automation-navigation.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
 const styles = compile("src/components/platform/operatorStyles.ts");
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
@@ -54,7 +55,7 @@ function savedDetail(data, scope, id, eventId) {
     recipients: review.recipients, recipientsChecked: true, recentDeliveries: [], warnings: [],
   };
 }
-function fixture({ preview = false, data = overview, reviewed = review, selectedTemplate = template, respond } = {}) {
+function fixture({ preview = false, data = overview, reviewed = review, selectedTemplate = template, previewCommunications = [], respond } = {}) {
   const stores = new Map(), effects = [], calls = [];
   let currentStore, changed = false, visited;
   function slot() { assert.ok(currentStore, "Hooks must run inside a component render"); const store = currentStore; return [store, store.cursor++]; }
@@ -80,7 +81,6 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   const deps = {
     react: hooks, "next/link": { __esModule: true, default: "a" },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
-    "@/components/platform/OperatorMessagesTabs": { __esModule: true, default: "message-tabs" },
     "@/components/platform/operatorStyles": styles,
     "./operatorStyles": styles,
     "@/lib/communications/member-email-cadence-model": model,
@@ -88,9 +88,13 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/lib/communications/member-email-cadence-management": management,
     "@/lib/communications/email-automation-view": automationView,
     "@/lib/communications/email-automation-navigation": navigation,
+    "@/lib/communications/communications-catalog": catalog,
+    "./OperatorCommunicationsCatalog.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorEmailAutomationDetail.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorEmailAutomationReview.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
   };
+  deps["@/components/platform/OperatorMessagesTabs"] = compile("src/components/platform/OperatorMessagesTabs.tsx", name => deps[name] ?? noDependency(name));
+  deps["./OperatorCommunicationsCatalog"] = compile("src/components/platform/OperatorCommunicationsCatalog.tsx", name => deps[name] ?? noDependency(name));
   deps["./OperatorEmailAutomationDetail"] = compile("src/components/platform/OperatorEmailAutomationDetail.tsx", name => deps[name] ?? noDependency(name));
   deps["@/components/platform/OperatorEmailAutomationEditor"] = compile("src/components/platform/OperatorEmailAutomationEditor.tsx", name => deps[name] ?? noDependency(name));
   deps["./OperatorEmailAutomationEditor"] = deps["@/components/platform/OperatorEmailAutomationEditor"];
@@ -107,7 +111,7 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   function draw() {
     for (let i = 0; i < 10; i++) {
       changed = false; visited = new Set();
-      const tree = resolve(React.createElement(Component, { preview }));
+      const tree = resolve(React.createElement(Component, { preview, previewCommunications }));
       for (const [identity, store] of stores) if (!visited.has(identity)) { store.slots.forEach(value => value?.cleanup?.()); stores.delete(identity); }
       effects.splice(0).forEach(effect => effect());
       if (!changed) return tree;
@@ -119,13 +123,15 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   async function settle() { await new Promise(resolve => setImmediate(resolve)); return draw(); }
   function change(id, value) { const field = find(node => node.props?.id === id); assert.ok(field, `Missing field: ${id}`); field.props.onChange({ target: { value }, currentTarget: { value } }); }
   async function setup({ scope = "event", withEvent = true } = {}) { draw(); await settle(); button("New automation").props.onClick(); if (scope !== "sequence") change("cadence-scope", scope); if (withEvent) change("cadence-event", preview ? "preview-november" : event.id); change("cadence-template", preview ? "preview-template" : template.id); await settle(); change("cadence-body", "copy:body"); change("cadence-heading", "copy:heading"); }
+  function bucket(label) { const item = find(node => node.type === "button" && node.props["aria-label"]?.startsWith(`Open ${label}:`)); assert.ok(item, `Missing bucket: ${label}`); item.props.onClick(); }
+  function channel(label) { const nav = find(node => node.props?.["aria-label"] === "Communication channels"); const item = nodes(nav).find(node => node.type === "a" && text(node) === label); assert.ok(item, `Missing channel: ${label}`); item.props.onClick({ preventDefault() {} }); }
   const submit = () => find(node => node.type === "form").props.onSubmit({ preventDefault() {} });
-  async function openSaved(id) { draw(); await settle(); button("Email library").props.onClick(); const row = find(node => node.type === "li" && node.key === id); assert.ok(row, `Missing saved row: ${id}`); const open = nodes(row).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("View ")); assert.ok(open); open.props.onClick(); await settle(); }
+  async function openSaved(id) { draw(); await settle(); button("Call sequences").props.onClick(); const row = find(node => node.type === "li" && node.key === id); assert.ok(row, `Missing saved row: ${id}`); const open = nodes(row).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("View ")); assert.ok(open); open.props.onClick(); await settle(); }
   function savedStage(stage) { const node = find(node => node.type === "button" && node.props["aria-label"] === `Preview ${automationView.AUTOMATION_STAGE_NAMES[stage]}`); assert.ok(node); node.props.onClick(); }
   function reviewStage(stage) { const region = find(node => node.props?.["aria-label"] === "Review reminder emails"); const node = nodes(region).find(node => node.type === "button" && node.key === stage); assert.ok(node); node.props.onClick(); }
   function detailView(view) { const region = find(node => node.props?.["aria-label"] === "Automation detail views"); const node = nodes(region).find(node => node.type === "button" && text(node).startsWith(view)); assert.ok(node); node.props.onClick(); }
   function editorStage(stage) { const region = find(node => node.props?.["aria-label"] === "Email reminder stages"); const node = nodes(region).find(node => node.type === "button" && node.key === stage); assert.ok(node); node.props.onClick(); }
-  return { draw, find, button, calls, change, settle, setup, submit, openSaved, savedStage, reviewStage, detailView, editorStage };
+  return { draw, find, button, calls, change, settle, setup, submit, openSaved, savedStage, reviewStage, detailView, editorStage, bucket, channel };
 }
 
 test("sample workspace supports review with real cadence timing while remaining completely offline", async () => {
@@ -235,7 +241,7 @@ test("a reviewed plan can be armed during delivery setup but activation submits 
   const response = new Promise(resolve => { finish = resolve; });
   const f = fixture({ respond: (call, fallback) => call.body && JSON.parse(call.body).action === "activate" ? response : fallback(call) });
   await f.setup(); await f.submit();
-  assert.match(text(f.draw()), /No automated emails will leave until automatic delivery is enabled/);
+  assert.match(text(f.draw()), /Call reminders will wait until their delivery switch is enabled/);
   const activate = f.button("Activate automation");
   assert.equal(Boolean(activate.props.disabled), false);
   activate.props.onClick(); activate.props.onClick();
@@ -342,7 +348,7 @@ test("sequence pause targets its revision and leaves individual overrides unchan
     if (paused && call.method === "GET" && call.url === API) return Response.json({ ...data, sequences: [{ ...sequence, active: false, status: "paused" }], plans: [{ ...inherited, status: "paused", attention: "Sequence paused or awaiting its approved update. No reminders will send for this call." }, individual] });
     return fallback(call);
   } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   assert.equal(f.find(node => node.type === "li" && node.key === inherited.id), undefined, "inherited calls belong inside their sequence");
   assert.match(text(f.find(node => node.type === "li" && node.key === individual.id)), /Custom reminders for this call/);
   assert.match(text(f.find(node => node.type === "li" && node.key === sequence.id)), /1 call using this sequence/);
@@ -362,7 +368,7 @@ test("changed calls expose the reason for attention and link actual delivery out
   const attention = "Call changed. Review the updated time and audience before activating again.";
   const data = { ...overview, configuration: { enabled: true, ready: true }, plans: [{ ...plan, status: "changed", attention, delivery: { sent: 4, pending: 2, failed: 1, manualReview: 2, cancelled: 1 } }] };
   const f = fixture({ data });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   const row = f.find(node => node.type === "li" && node.key === plan.id);
   assert.match(text(row), /Needs attention/);
   assert.ok(text(row).includes(attention));
@@ -401,23 +407,25 @@ test("admin page denies other operators and preview does not require provider ac
       "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
       "@/components/platform/PlatformUnavailable": { __esModule: true, default: "unavailable" },
       "@/lib/platform/page-data": { getOperatorAccessContext: async () => context },
+      "@/lib/communications/communications-channel-catalog": { getCommunicationsChannelPreviewCatalog: () => [{ id: "sample-channel" }] },
     };
     return compile("app/ops/email-automations/page.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }).default();
   }
   await assert.rejects(page({ state: "signed_out" }), /Redirect:\/ops\/access/);
   assert.equal((await page({ state: "denied" })).type, "unavailable");
   assert.equal((await page({ state: "preview" })).props.preview, true);
+  assert.deepEqual((await page({ state: "preview" })).props.previewCommunications, [{ id: "sample-channel" }]);
   assert.match(text(await page({ state: "authenticated", role: "ops_coordinator", viewer: { id: "operator-1" } })), /Admin access required/);
   assert.equal((await page({ state: "authenticated", role: "ops_admin", viewer: { id: "admin-1" } })).type, "automation-ui");
 });
 
-test("automations has an explicit messages tab without changing existing message modes", async () => {
+test("Communications defaults to the catalog and preserves explicit legacy message modes", async () => {
   const names = { "../announcements/page": "posts", "../notifications/page": "alerts", "../emails/page": "emails", "../email-automations/page": "automations" };
   const Page = compile("app/ops/messages/page.tsx", name => { assert.ok(names[name], name); return { __esModule: true, default: names[name] }; }).default;
-  for (const mode of ["posts", "alerts", "emails", "automations", undefined]) assert.equal((await Page({ searchParams: Promise.resolve({ mode }) })).type, mode ?? "posts");
+  for (const mode of ["posts", "alerts", "emails", "automations", undefined]) assert.equal((await Page({ searchParams: Promise.resolve({ mode }) })).type, mode ?? "automations");
   const Tabs = compile("src/components/platform/OperatorMessagesTabs.tsx", name => { assert.equal(name, "next/link"); return { __esModule: true, default: "a" }; }).default;
   const links = nodes(Tabs({ active: "automations" })).filter(node => node.type === "a");
-  assert.equal(links.length, 4);
+  assert.deepEqual(links.map(text), ["Emails", "Texts", "Notifications"]);
   assert.equal(links.find(link => link.props["aria-current"] === "page").props.href, "/ops/messages?mode=automations");
 });
 
@@ -425,9 +433,9 @@ test("management hub searches saved sequences and calls and filters actionable s
   const paused = { ...sequence, id: "paused-sequence", title: "Circle call · Members", kind: "circle", active: false, status: "paused" };
   const changed = { ...plan, status: "changed", attention: "Call changed — review its time." };
   const f = fixture({ data: { ...overview, sequences: [sequence, paused], plans: [changed] } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   assert.equal(f.find(node => node.type === "form"), undefined);
-  assert.match(text(f.draw()), /Automated emails/);
+  assert.match(text(f.draw()), /Call sequences/);
   assert.ok(f.find(node => node.key === sequence.id && node.type === "li"));
   f.change("automation-search", "circle");
   assert.equal(f.find(node => node.key === sequence.id && node.type === "li"), undefined);
@@ -563,7 +571,7 @@ test("a failed detail or audience request leaves saved state intact and surfaces
 
 test("other automatic workflows remain distinct from unfinished protocols and do not imply delivery success", async () => {
   const f = fixture({ data: { ...overview, warnings: ["Live template catalog temporarily unavailable. Saved designs remain visible."], managedElsewhere: [{ id: "registration", title: "Welcome and profile-ready emails", state: "configured", statusLabel: "Configured", trigger: "Follows verified registration and profile access.", timing: "After the relevant account change.", recipients: "The corresponding member.", management: { href: "/ops/members", label: "View members" }, controlBoundary: "Managed by registration settings; not paused with recurring call reminders." }] } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   const existing = f.find(node => node.props?.["aria-labelledby"] === "existing-automated-emails-heading");
   assert.match(text(existing), /Welcome and profile-ready/);
   assert.match(text(existing), /Managed by registration settings/);
@@ -573,7 +581,7 @@ test("other automatic workflows remain distinct from unfinished protocols and do
 });
 
 test("focused details preserve the library search when returning and sample stages use actual approved copy", async () => {
-  const f = fixture({ preview: true }); f.draw();
+  const f = fixture({ preview: true }); f.draw(); f.button("Call sequences").props.onClick();
   f.change("automation-search", "Foundations 01");
   await f.openSaved("sample-sequence-members");
   assert.equal(f.find(node => node.props?.id === "automation-search"), undefined);
@@ -592,7 +600,7 @@ test("focused details preserve the library search when returning and sample stag
 test("next reminder uses its explicit time zone and ready sequences do not look finished", async () => {
   const nextReminder = { stage: "day_before", dueAt: "2026-11-04T22:00:00Z", expiresAt: "2026-11-04T22:30:00Z", eventId: event.id, eventTitle: event.title, timeZone: "America/New_York" };
   const f = fixture({ data: { ...overview, configuration: { ...overview.configuration, enabled: true, ready: true }, sequences: [{ ...sequence, nextReminder }, { ...sequence, id: "ready-sequence", title: "Circle call · Members", status: "no_remaining", matchingCallCount: 0 }] } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   assert.match(text(f.find(node => node.type === "li" && node.key === sequence.id)), /5:00 PM EST/);
   const ready = text(f.find(node => node.type === "li" && node.key === "ready-sequence"));
   assert.match(ready, /Waiting for a call/);
@@ -607,13 +615,17 @@ test("dirty editor guards client-side navigation and completed review receives f
   globalThis.window = { location: { href: "https://example.test/ops/messages?mode=automations", pathname: "/ops/messages", search: "?mode=automations", hash: "", assign: url => navigated.push(url) }, history: { state: null, replaceState() {} }, addEventListener: (name, fn) => windowListeners.set(name, fn), removeEventListener: name => windowListeners.delete(name) };
   globalThis.document = { addEventListener: (name, fn) => documentListeners.set(name, fn), removeEventListener: name => documentListeners.delete(name), getElementById: id => ({ focus: () => focused.push(id), scrollIntoView() {} }) };
   try {
-    const f = fixture(); await f.setup(); await f.submit(); f.draw();
+    const f = fixture(); f.draw(); await f.settle(); f.bucket("Foundations"); await f.setup(); await f.submit(); f.draw();
     assert.ok(focused.includes("automation-review-heading"));
     const count = focused.filter(id => id === "automation-review-heading").length;
     f.reviewStage("day_of"); f.draw();
     assert.equal(focused.filter(id => id === "automation-review-heading").length, count);
     let prevented = 0;
-    const click = { target: new ElementStub("https://example.test/ops/messages?mode=emails"), preventDefault() { prevented++; }, stopPropagation() {} };
+    const channelNav = f.find(node => node.props?.["aria-label"] === "Communication channels");
+    const textsLink = nodes(channelNav).find(node => node.type === "a" && text(node) === "Texts");
+    assert.equal(textsLink.props.href, "/ops/messages?mode=automations&channel=texts&bucket=foundations");
+    textsLink.props.onClick({ preventDefault() { assert.fail("An editor must use the guarded link, not change channels in place"); } });
+    const click = { target: new ElementStub(`https://example.test${textsLink.props.href}`), preventDefault() { prevented++; }, stopPropagation() {} };
     documentListeners.get("click")(click); f.draw();
     assert.equal(prevented, 1); assert.equal(navigated.length, 0);
     assert.ok(focused.includes("automation-discard-confirmation"));
@@ -621,7 +633,7 @@ test("dirty editor guards client-side navigation and completed review receives f
     assert.equal(f.find(node => node.type === "form"), undefined);
     assert.ok(f.find(node => node.type === "iframe"));
     documentListeners.get("click")(click); f.button("Discard changes").props.onClick();
-    assert.deepEqual(navigated, ["https://example.test/ops/messages?mode=emails"]);
+    assert.deepEqual(navigated, ["https://example.test/ops/messages?mode=automations&channel=texts&bucket=foundations"]);
     let warned = false;
     windowListeners.get("beforeunload")({ preventDefault() { warned = true; } });
     assert.equal(warned, false);
@@ -633,7 +645,7 @@ test("effective filters exclude finished and cancelled calls while blocked prere
   const cancelled = { ...plan, id: "cancelled", status: "cancelled" };
   const blocked = { ...plan, id: "blocked", status: "blocked", attention: "The call needs its access link before reminders can send." };
   const f = fixture({ data: { ...overview, plans: [plan, past, cancelled, blocked] } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick(); f.change("automation-filter", "active");
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick(); f.change("automation-filter", "active");
   assert.ok(f.find(node => node.type === "li" && node.key === plan.id));
   for (const id of ["past", "cancelled", "blocked"]) assert.equal(f.find(node => node.type === "li" && node.key === id), undefined);
   f.change("automation-filter", "attention");
@@ -644,7 +656,7 @@ test("effective filters exclude finished and cancelled calls while blocked prere
 test("member and founder test sequences are separated without losing their saved audience track", async () => {
   const members = { ...sequence, title: "Foundations 01" };
   const founders = { ...sequence, id: "founder-sequence", title: "Foundations 01", track: "founder_test" };
-  const f = fixture({ data: { ...overview, sequences: [members, founders] } }); f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  const f = fixture({ data: { ...overview, sequences: [members, founders] } }); f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   assert.ok(f.find(node => node.type === "li" && node.key === members.id));
   assert.equal(f.find(node => node.type === "li" && node.key === founders.id), undefined);
   f.button("Tests").props.onClick();
@@ -663,7 +675,7 @@ test("recurring email filters combine across sequences and calls and reset witho
   const founders = { ...sequence, id: "founders-sequence", title: "Circle test", kind: "circle", track: "founder_test", active: false, status: "paused" };
   const circleCall = { ...plan, id: "circle-call", title: "Circle WHY — November", kind: "circle", nextReminder: soon };
   const f = fixture({ data: { ...overview, sequences: [sequence, circle, founders], plans: [plan, circleCall] } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   f.change("automation-kind", "circle");
   f.button("Members").props.onClick();
   f.change("automation-schedule", "week");
@@ -687,7 +699,7 @@ test("recurring email sort changes the rendered order and survives details and r
   const alpha = { ...sequence, id: "alpha", title: "Alpha", updatedAt: "2026-10-01T10:00:00Z" };
   const zulu = { ...sequence, id: "zulu", title: "Zulu", updatedAt: "2026-10-19T10:00:00Z" };
   const f = fixture({ data: { ...overview, sequences: [alpha, zulu] } });
-  f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   f.change("automation-kind", "foundations");
   f.button("Members").props.onClick();
   f.change("automation-schedule", "none");
@@ -707,10 +719,12 @@ test("recurring email sort changes the rendered order and survives details and r
   assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
 });
 
-test("Upcoming is the default and opens the exact selected email without sending", async () => {
+test("Upcoming opens the exact selected email without sending", async () => {
   const upcoming = { planId: plan.id, sequenceId: null, eventId: event.id, eventTitle: event.title, kind: plan.kind, track: "members", active: true, status: "upcoming", attention: "", stage: "day_of", timeZone: event.timeZone, dueAt: new Date(Date.now() + 86400000).toISOString(), expiresAt: new Date(Date.now() + 88200000).toISOString() };
   const f = fixture({ data: { ...overview, plans: [plan], upcoming: [upcoming], configuration: { enabled: true, ready: true } } });
   f.draw(); await f.settle();
+  assert.equal(f.button("By step").props["aria-current"], "page");
+  f.button("Upcoming").props.onClick();
   assert.equal(f.button("Upcoming").props["aria-current"], "page");
   assert.ok(f.find(node => node.props?.["aria-label"] === "Upcoming email reminders"));
   assert.equal(f.find(node => node.props?.["aria-label"] === "Email library"), undefined);
@@ -738,7 +752,7 @@ test("successful pause stays visibly paused when the following overview refresh 
 });
 
 test("leaving the library clears its unsupported filters without losing search", async () => {
-  const f = fixture({ data: { ...overview, plans: [plan] } }); f.draw(); await f.settle(); f.button("Email library").props.onClick();
+  const f = fixture({ data: { ...overview, plans: [plan] } }); f.draw(); await f.settle(); f.button("Call sequences").props.onClick();
   f.change("automation-search", "Foundations"); f.change("automation-filter", "finished"); f.change("automation-schedule", "none");
   f.button("Upcoming").props.onClick();
   assert.equal(f.find(node => node.props?.id === "automation-filter").props.value, "all");
@@ -841,4 +855,102 @@ test("saved call and sequence edits keep their approved scope and audience track
     assert.equal(posted.draft.track, "members");
     assert.equal(f.calls.filter(call => call.body && JSON.parse(call.body).action === "activate").length, 0);
   }
+});
+
+
+test("the catalog starts with six member-journey buckets and preserves the bucket across channels", async () => {
+  const sample = { id: "registration-text", channel: "texts", bucket: "registration", title: "SMS consent confirmation", trigger: "Member explicitly opts in.", timing: "After consent is saved.", audience: "The opted-in member.", status: "paused", statusLabel: "Texts off", detail: "No message is sent while outbound texting is disabled." };
+  const f = fixture({ data: { ...overview, communications: [sample] } }); f.draw(); await f.settle();
+  const buckets = nodes(f.draw()).filter(node => node.type === "button" && node.props["aria-label"]?.startsWith("Open "));
+  assert.deepEqual(buckets.map(node => node.key), catalog.COMMUNICATION_BUCKETS.map(item => item.value));
+  assert.equal(f.button("By step").props["aria-current"], "page");
+  assert.match(text(f.draw()), /Counts refer to communications, not members or deliveries/);
+  f.bucket("Registration");
+  assert.match(text(f.draw()), /No emails configured here yet/);
+  f.channel("Texts");
+  assert.equal(text(f.find(node => node.props?.id === "communications-catalog-heading")), "Registration");
+  assert.ok(f.find(node => node.type === "li" && node.key === sample.id));
+  assert.match(text(f.draw()), /Texts off/);
+  assert.equal(f.find(node => node.type === "button" && text(node) === "New automation"), undefined);
+  assert.equal(f.find(node => node.props?.id === "communications-include-tests"), undefined);
+  f.channel("Notifications");
+  assert.equal(text(f.find(node => node.props?.id === "communications-catalog-heading")), "Registration");
+  assert.match(text(f.draw()), /No notifications configured here yet/);
+  f.channel("Emails");
+  assert.equal(text(f.find(node => node.props?.id === "communications-catalog-heading")), "Registration");
+  f.button("← Back to buckets").props.onClick();
+  assert.equal(nodes(f.draw()).filter(node => node.type === "button" && node.props["aria-label"]?.startsWith("Open ")).length, 6);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("catalog search, status and tests controls filter communication entries without enabling them", async () => {
+  const founders = { ...sequence, id: "founder-sequence", track: "founder_test" };
+  const f = fixture({ data: { ...overview, sequences: [sequence, founders], configuration: { enabled: true, ready: true } } }); f.draw(); await f.settle();
+  f.bucket("Foundations");
+  const displayed = () => nodes(f.find(node => node.props?.["aria-labelledby"] === "communications-catalog-heading")).filter(node => node.type === "li").map(node => node.key);
+  assert.ok(displayed().includes(`cadence:sequence:${sequence.id}:day_before`));
+  assert.ok(displayed().every(id => !id.includes(founders.id)));
+  const include = f.find(node => node.props?.id === "communications-include-tests");
+  assert.equal(include.props.checked, false);
+  include.props.onChange({ currentTarget: { checked: true } });
+  assert.ok(displayed().some(id => id.includes(founders.id)));
+  f.change("communications-status", "planned");
+  assert.deepEqual(displayed(), ["planned:email:foundations-completion"]);
+  f.change("communications-search", "no-match");
+  assert.deepEqual(displayed(), []);
+  assert.match(text(f.draw()), /No communications match these filters/);
+  f.button("Reset filters").props.onClick();
+  assert.equal(f.find(node => node.props?.id === "communications-include-tests").props.checked, false);
+  assert.equal(f.find(node => node.props?.id === "communications-search").props.value, "");
+  assert.equal(f.find(node => node.props?.id === "communications-status").props.value, "all");
+  assert.ok(displayed().includes(`cadence:sequence:${sequence.id}:day_of`));
+  assert.ok(displayed().every(id => !id.includes(founders.id)));
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("a catalog reminder opens its exact approved stage and returns to its bucket", async () => {
+  const f = fixture({ data: { ...overview, sequences: [sequence] } }); f.draw(); await f.settle(); f.bucket("Foundations");
+  const row = f.find(node => node.type === "li" && node.key === `cadence:sequence:${sequence.id}:day_of`);
+  assert.ok(row);
+  const open = nodes(row).find(node => node.type === "button" && text(node) === "View email →");
+  assert.ok(open); open.props.onClick(); await f.settle();
+  assert.equal(f.calls.at(-1).url, `${API}?scope=sequence&id=${sequence.id}`);
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Second stage/);
+  assert.equal(f.find(node => node.type === "iframe").props.sandbox, "");
+  assert.match(text(f.draw()), /alex@example.test/);
+  f.button("← Back to automated emails").props.onClick();
+  assert.equal(text(f.find(node => node.props?.id === "communications-catalog-heading")), "Foundations");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("sample channel data uses the catalog while all external management remains disabled", async () => {
+  const sample = { id: "sample-text", channel: "texts", bucket: "registration", title: "Manual invitation", trigger: "A member prepares an invitation.", timing: "Sent manually.", audience: "The chosen invitee.", status: "manual", statusLabel: "Manual", action: { label: "Create invitation", href: "/my/invitation" } };
+  const f = fixture({ preview: true, previewCommunications: [sample] }); f.draw(); f.channel("Texts"); f.bucket("Registration");
+  const row = f.find(node => node.type === "li" && node.key === sample.id);
+  assert.ok(row);
+  assert.equal(nodes(row).find(node => node.type === "button").props.disabled, true);
+  assert.equal(nodes(row).some(node => node.type === "a"), false);
+  assert.equal(f.calls.length, 0);
+});
+
+test("communications bookmarks resolve Activity independently of missing or conflicting legacy views", async () => {
+  const previous = globalThis.window;
+  try {
+    for (const suffix of ["", "&view=library&status=finished&schedule=none"]) {
+      const location = { href: `https://example.test/ops/messages?mode=automations&commsView=activity${suffix}`, pathname: "/ops/messages", search: `?mode=automations&commsView=activity${suffix}`, hash: "" };
+      const listeners = new Map();
+      globalThis.window = { location, history: { state: null, replaceState(_state, _unused, path) { const url = new URL(path, location.href); Object.assign(location, { href: url.href, pathname: url.pathname, search: url.search, hash: url.hash }); } }, addEventListener(name, listener) { listeners.set(name, listener); }, removeEventListener(name) { listeners.delete(name); } };
+      const f = fixture({ data: { ...overview, sequences: [sequence] } }); f.draw(); await f.settle();
+      assert.equal(f.button("Activity").props["aria-current"], "page");
+      assert.ok(f.find(node => node.props?.["aria-label"] === "Automated email activity"));
+      assert.equal(f.find(node => node.props?.["aria-label"] === "Email library"), undefined);
+      assert.equal(f.find(node => node.props?.id === "automation-filter"), undefined);
+      assert.equal(f.find(node => node.props?.id === "automation-schedule"), undefined);
+      location.search = "?mode=automations&commsView=library&view=activity";
+      listeners.get("popstate")(); f.draw();
+      assert.ok(f.find(node => node.props?.["aria-label"] === "Email library"));
+      assert.equal(f.find(node => node.props?.["aria-label"] === "Automated email activity"), undefined);
+      assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+    }
+  } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });

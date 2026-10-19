@@ -39,8 +39,8 @@ const OPERATIONS_NAVIGATION: OperationsNavigationGroup[] = [
   { id: "artifacts", label: "Artifacts", items: [
     { href: "/ops/artifacts", label: "Artifacts", task: "Manage awards and fulfillment", adminOnly: true },
   ] },
-  { id: "communication", label: "Messages", items: [
-    { href: "/ops/messages", label: "Messages", task: "Publish member messages", adminOnly: true },
+  { id: "communication", label: "Communications", items: [
+    { href: "/ops/messages", label: "Communications", task: "Manage member communications", adminOnly: true },
     { href: "/ops/support", label: "Support", task: "Reply to support requests", adminOnly: true },
   ] },
   { id: "workspace", label: "Settings", items: [
