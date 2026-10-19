@@ -1,0 +1,37 @@
+.review { min-width: 0; color: var(--operator-ink); font-size: 0.875rem; line-height: 1.55; }
+.header { margin: 1.5rem 0; }
+.eyebrow { margin: 0; color: var(--operator-muted); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.header h3 { margin: 0.35rem 0 0; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 650; line-height: 1.2; scroll-margin-top: 6rem; outline: none; }
+.context { margin: 0.5rem 0 0; color: var(--operator-muted); overflow-wrap: anywhere; }
+.layout { display: grid; min-width: 0; align-items: start; gap: 1.5rem; }
+.summary { min-width: 0; border-top: 2px solid var(--operator-ink); padding-top: 1rem; }
+.facts { display: grid; gap: 1rem; margin: 0; }
+.facts dt { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--operator-muted); }
+.facts dd { margin: 0.25rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.facts .scope { font-size: 1.25rem; line-height: 1.2; }
+.boundary { margin: 1.25rem 0 0; }
+.note { margin: 0.5rem 0 0; color: var(--operator-muted); font-size: 0.75rem; overflow-wrap: anywhere; }
+.warning { margin: 1rem 0 0; color: var(--operator-danger); font-size: 0.8125rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin: 1.25rem 0 0.5rem; }
+.back { min-height: 2.75rem; text-decoration: underline; text-underline-offset: 0.2em; font-size: 0.8125rem; }
+.back:disabled { opacity: 0.5; cursor: wait; }
+.email { min-width: 0; border: 1px solid var(--operator-line); overflow: hidden; }
+.previewHeader { padding: 1.25rem; border-bottom: 1px solid var(--operator-line); }
+.previewHeader h4 { margin: 0; font-size: 0.9375rem; font-weight: 650; }
+.stages { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.stages button { min-height: 2.75rem; padding: 0.5rem 0.75rem; font-size: 0.75rem; border: 1px solid var(--operator-line); }
+.stages button[aria-pressed="true"] { border-color: var(--operator-ink); background: color-mix(in srgb, var(--operator-ink) 7%, transparent); font-weight: 650; }
+.subject { margin: 1rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.subject span { display: block; margin-bottom: 0.25rem; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--operator-muted); font-weight: 400; }
+.frame { display: block; height: 36rem; width: 100%; max-width: 100%; border: 0; background: white; }
+.details { margin-top: 1.5rem; border-bottom: 1px solid var(--operator-line); }
+.details details { border-top: 1px solid var(--operator-line); }
+.details summary { min-height: 3.25rem; padding: 0.9rem 0; cursor: pointer; font-weight: 600; }
+.details summary span { margin-left: 0.75rem; color: var(--operator-muted); font-weight: 400; font-size: 0.75rem; }
+.details p { margin: 0 0 1rem; color: var(--operator-muted); font-size: 0.8125rem; }
+.details ul { margin: 0 0 1rem; padding: 0; list-style: none; max-height: 22rem; overflow-y: auto; }
+.details li { padding: 0.75rem 0; border-top: 1px solid var(--operator-line); overflow-wrap: anywhere; }
+.details li strong, .details li span { display: block; }
+.details li span { color: var(--operator-muted); font-size: 0.75rem; }
+.back:focus-visible, .stages button:focus-visible, .details summary:focus-visible { outline: 2px solid var(--operator-focus); outline-offset: 3px; }
+@media (min-width: 960px) { .layout { grid-template-columns: minmax(15rem, 0.45fr) minmax(0, 1fr); gap: 2rem; } }

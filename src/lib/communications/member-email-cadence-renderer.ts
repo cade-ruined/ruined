@@ -1,5 +1,5 @@
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
-import { cadenceCopy } from "./member-email-cadence-copy";
+import { cadenceCopy, cadenceMessagesValidationError } from "./member-email-cadence-copy";
 import { plainTextFromHtml, renderResendEmailTemplate } from "./resend-email-templates";
 import { AdminEmailError } from "./admin-email-model";
 import type { CadenceDelivery, CadenceDraft, CadencePlan, CadenceBindingSource, CadenceEmailPayload } from "./member-email-cadence-types";
@@ -10,6 +10,8 @@ const escape=(value:string)=>value.replaceAll("&","&amp;").replaceAll("<","&lt;"
 const SOURCES: CadenceBindingSource[]=["literal","member_name","call_title","call_date","call_time","call_url","profile_url","preferences_url"];
 
 export function validateCadenceDesign(draft: CadenceDraft,template: ResendEmailTemplate) {
+  const messageError=cadenceMessagesValidationError(draft.messages);
+  if (messageError) throw new AdminEmailError(400,messageError);
   if (template.status!=="published" || template.campaignOnly) throw new AdminEmailError(400,"Choose a published individual-email design from Resend.");
   const targets=new Set([...template.fields.map(field=>`copy:${field.key}`),...template.variables.filter(item=>item.type==="string").map(item=>`variable:${item.key}`)]);
   if (!targets.has(draft.bodyTarget) || (draft.headingTarget && (!targets.has(draft.headingTarget) || draft.headingTarget===draft.bodyTarget))) {
@@ -58,7 +60,7 @@ function bodyHtml(html: string,body: string,links: string[]): string {
 export function renderCadenceEmail(delivery: Pick<CadenceDelivery,"plan"|"event"|"stage"|"memberName"|"email">): CadenceEmailPayload {
   const {plan,event,stage}=delivery;
   validateCadenceDesign(plan,plan.template);
-  const copy=cadenceCopy({event,kind:plan.kind,track:plan.track,stage,memberName:delivery.memberName,siteUrl:plan.siteUrl});
+  const copy=cadenceCopy({event,kind:plan.kind,track:plan.track,stage,memberName:delivery.memberName,siteUrl:plan.siteUrl,message:plan.messages?.[stage]});
   const sources: Record<Exclude<CadenceBindingSource,"literal">,string>={
     member_name:delivery.memberName,call_title:event.title,
     call_date:new Intl.DateTimeFormat("en-US",{timeZone:event.timeZone,weekday:"long",month:"long",day:"numeric",year:"numeric"}).format(new Date(event.startsAt)),

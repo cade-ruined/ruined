@@ -9,12 +9,13 @@ import { getMemberEmailCadenceDeliveryConfiguration, assertCadencePayload } from
 import { readCadenceEvent, sameCadenceEvent, readCadenceRecipients, cadenceCallReady } from "./member-email-cadence-repository";
 import { listCadenceTemplates, reviewCadenceProviderRecipients } from "./member-email-cadence-provider";
 import { cadencePreviewPlan, renderCadenceEmail, validateCadenceDesign } from "./member-email-cadence-renderer";
+import { cadenceMessageDefaults } from "./member-email-cadence-copy";
 import { getAutomatedEmailCatalog } from "./automated-email-catalog";
 import type { ResendEmailTemplateSummary } from "./resend-email-model";
 import { matchingCadenceEvents } from "./member-email-cadence-inheritance";
-import { cadenceManagementDescriptions, type CadenceDeliveryCounts, type CadenceDeliveryOutcome, type CadenceManagedCall,
+import { cadenceManagementDescriptions, type CadenceDeliveryActivity, type CadenceDeliveryCounts, type CadenceDeliveryOutcome, type CadenceManagedCall,
   type CadenceManagementDetail, type CadenceManagementOverview, type CadenceManagementStatus, type CadenceManagementSummary,
-  type CadenceNextReminder, type CadencePlanSummary, type CadenceSequenceSummary } from "./member-email-cadence-management";
+  type CadenceNextReminder, type CadencePlanSummary, type CadenceSequenceSummary, type CadenceUpcomingReminder } from "./member-email-cadence-management";
 import type { CadenceConfiguration } from "./member-email-cadence-model";
 import type { CadenceDraft, CadenceEventSnapshot, CadencePlan, CadenceRecipient } from "./member-email-cadence-types";
 
@@ -44,7 +45,7 @@ function draftInput(value:unknown):CadenceDraft {
     || !draft.templateVersion || typeof draft.bodyTarget!=="string"
     || (draft.headingTarget!==undefined && typeof draft.headingTarget!=="string")) throw new AdminEmailError(400,"Complete the call and design setup.");
   return {scope:draft.scope ?? "event",eventId:draft.eventId || "",kind:draft.kind,track:draft.track,templateId:draft.templateId,templateVersion:draft.templateVersion,
-    bodyTarget:draft.bodyTarget,headingTarget:draft.headingTarget || undefined,bindings:draft.bindings,copy:draft.copy};
+    bodyTarget:draft.bodyTarget,headingTarget:draft.headingTarget || undefined,bindings:draft.bindings,copy:draft.copy,messages:draft.messages};
 }
 function assertEventScope(plan:CadencePlan,futureRequired=true) {
   const event=plan.event;
@@ -77,7 +78,8 @@ function savedDraft(plan:CadencePlan,scope:"event"|"sequence"):CadenceDraft {
   return {scope,eventId:scope==="sequence" ? "" : plan.eventId,kind:plan.kind,track:plan.track,templateId:plan.templateId,
     templateVersion:plan.templateVersion,bodyTarget:plan.bodyTarget,...(plan.headingTarget ? {headingTarget:plan.headingTarget} : {}),
     bindings:Object.fromEntries(Object.entries(plan.bindings).map(([key,binding])=>[key,{source:binding.source,...(binding.value!==undefined ? {value:binding.value} : {})}])),
-    ...(plan.copy ? {copy:Object.fromEntries(Object.entries(plan.copy).map(([key,value])=>[key,value]))} : {})};
+    ...(plan.copy ? {copy:Object.fromEntries(Object.entries(plan.copy).map(([key,value])=>[key,value]))} : {}),
+    ...(plan.messages ? {messages:Object.fromEntries(Object.entries(plan.messages).map(([stage,message])=>[stage,{...message}]))} : {})};
 }
 function savedTemplate(template:CadencePlan["template"]):CadencePlan["template"] {
   return {id:template.id,name:template.name,status:template.status,version:template.version,hasUnpublishedVersions:template.hasUnpublishedVersions,
@@ -210,7 +212,7 @@ export async function getCadenceOverview(actor:string):Promise<CadenceManagement
   const base={templates,configuration,inactive:INACTIVE,warnings,managedElsewhere:getAutomatedEmailCatalog()};
   return sql.begin(async tx=>{
     await requireAdminEmailActor(tx,actor);
-    if (!await managementTablesReady(tx)) return {...base,events:[],plans:[],sequences:[],setupRequired:true};
+    if (!await managementTablesReady(tx)) return {...base,events:[],plans:[],sequences:[],upcoming:[],recentDeliveries:[],setupRequired:true};
     const events=await tx<Array<CadenceEventSnapshot>>`select id,title,starts_at as "startsAt",ends_at as "endsAt",timezone as "timeZone"
       from experiences where status='published' and cancelled_at is null and starts_at>statement_timestamp()
         and ends_at>starts_at and kind in ('weekly_call','circle_meeting','academy_session','member_event')
@@ -222,9 +224,43 @@ export async function getCadenceOverview(actor:string):Promise<CadenceManagement
       matches.set(sequence.id,new Set(calls.map(call=>call.id)));
       sequences.push(sequenceSummary(sequence,calls,configuration));
     }
-    const plans:CadencePlanSummary[]=[];
-    for (const row of rows) plans.push(await planSummary(tx,row,configuration,row.sequenceId ? matches.get(row.sequenceId)?.has(row.eventId) ?? false : undefined));
-    return {...base,events:events.map(publicEvent),plans,sequences,setupRequired:false};
+    const plans:CadencePlanSummary[]=[],upcoming:CadenceUpcomingReminder[]=[];
+    for (const row of rows) {
+      const summary=await planSummary(tx,row,configuration,row.sequenceId ? matches.get(row.sequenceId)?.has(row.eventId) ?? false : undefined);
+      plans.push(summary);
+      if (row.cancelled || row.eventStatus!=="published" || Date.parse(row.currentEvent.startsAt)<=Date.now()) continue;
+      // Show paused/blocked opportunities honestly. Neither this read model nor its dates enqueue a send.
+      const earliest=Math.max(Date.now(),Date.parse(iso(row.activatedAt)),configuration.activatedAt ? Date.parse(configuration.activatedAt) : 0);
+      for (const occurrence of cadenceOccurrences(normalizedEvent(row.currentEvent),row.snapshot.kind,row.snapshot.track)) {
+        if (Date.parse(occurrence.dueAt)<earliest) continue;
+        upcoming.push({...occurrence,planId:row.id,sequenceId:row.sequenceId,eventId:row.eventId,eventTitle:row.currentEvent.title,
+          timeZone:row.currentEvent.timeZone,kind:row.snapshot.kind,track:row.snapshot.track,status:summary.status,
+          active:summary.active,attention:summary.attention});
+      }
+    }
+    upcoming.sort((a,b)=>Date.parse(a.dueAt)-Date.parse(b.dueAt) || a.planId.localeCompare(b.planId) || a.stage.localeCompare(b.stage));
+    return {...base,events:events.map(publicEvent),plans,sequences,upcoming,recentDeliveries:await recentDeliveryActivity(tx),setupRequired:false};
+  });
+}
+
+async function recentDeliveryActivity(tx:ManagementTx):Promise<CadenceDeliveryActivity[]> {
+  const rows=await tx<Array<Omit<CadenceDeliveryActivity,"status"|"reason"|"dueAt"|"updatedAt"|"sentAt"> & {
+    dueAt:Date|string;updatedAt:Date|string;sentAt:Date|string|null;
+  }>>`select min(delivery.id::text) as id,plan.id as "planId",plan.sequence_id as "sequenceId",
+    event.id as "eventId",event.title as "eventTitle",plan.snapshot->>'kind' as kind,plan.snapshot->>'track' as track,
+    delivery.stage,delivery.due_at as "dueAt",max(delivery.updated_at) as "updatedAt",max(delivery.sent_at) as "sentAt",
+    count(*)::integer as "recipientCount",jsonb_build_object(
+      'pending',count(*) filter(where delivery.status='pending'),'sending',count(*) filter(where delivery.status='sending'),
+      'failed',count(*) filter(where delivery.status='failed'),'sent',count(*) filter(where delivery.status='sent'),
+      'cancelled',count(*) filter(where delivery.status='cancelled'),'manual_review',count(*) filter(where delivery.status='manual_review')) as counts
+    from private.member_email_cadence_deliveries delivery join private.member_email_cadence_plans plan on plan.id=delivery.plan_id
+    join experiences event on event.id=delivery.experience_id
+    group by plan.id,event.id,delivery.stage,delivery.due_at
+    order by max(delivery.updated_at) desc,plan.id,delivery.stage,delivery.due_at desc limit 100`;
+  const priorities:CadenceDeliveryOutcome["status"][]=["manual_review","failed","sending","pending","sent","cancelled"];
+  return rows.map(row=>{
+    const status=priorities.find(value=>row.counts[value]>0) ?? "cancelled";
+    return {...row,status,reason:deliveryReason(status),dueAt:iso(row.dueAt),updatedAt:iso(row.updatedAt),sentAt:row.sentAt ? iso(row.sentAt) : null};
   });
 }
 
@@ -265,7 +301,7 @@ export async function getCadenceManagementDetail(actor:string,scope:unknown,reco
       event=normalizedEvent(stored.event);
       if (row!.eventStatus==="published" && !row!.cancelled && Date.parse(row!.currentEvent.startsAt)>Date.now()) actual=normalizedEvent(row!.currentEvent);
     }
-    const recipientsChecked=Boolean(actual && (scope==="event" || selected));
+    const recipientsChecked=Boolean(actual);
     const recipients=recipientsChecked ? await readCadenceRecipients(tx,actual!,stored.track) : [];
     const recent=await tx<Array<{id:string;eventId:string;eventTitle:string;stage:CadenceDeliveryOutcome["stage"];status:CadenceDeliveryOutcome["status"];
       dueAt:Date|string;updatedAt:Date|string;sentAt:Date|string|null}>>`
@@ -296,6 +332,7 @@ export async function getCadenceManagementDetail(actor:string,scope:unknown,reco
     timingSummary:source.summary.timingSummary,audienceSummary:source.summary.audienceSummary,inheritanceSummary:source.summary.inheritanceSummary,
     nextReminder:source.summary.nextReminder,calls:source.calls,selectedEventId:source.actual?.id ?? (scope==="event" ? source.stored.eventId : null),
     previewIsExample:scope==="sequence" && !source.actual,previews,occurrences,
+    messageDefaults:occurrences.map(({stage})=>({stage,...cadenceMessageDefaults({event:source.event,kind:source.stored.kind,track:source.stored.track,stage})})),
     recipients:checked.map(({memberId,name,email,eligible,reason})=>({memberId,name,email,eligible,reason})),recipientsChecked,
     recentDeliveries:source.recent.map(item=>({...item,dueAt:iso(item.dueAt),updatedAt:iso(item.updatedAt),sentAt:item.sentAt ? iso(item.sentAt) : null,reason:deliveryReason(item.status)})),
     warnings:[...recipientWarnings,"Messages use the saved approved design. Editing requires a fresh review; viewing does not activate, resume, or send anything.",

@@ -14,7 +14,7 @@ function load(name) {
   return compiled.exports;
 }
 const model = load("member-email-cadence-model");
-const { cadenceCopy } = load("member-email-cadence-copy");
+const { cadenceCopy, cadenceMessageDefaults } = load("member-email-cadence-copy");
 const event = { id: "call-01", title: "Foundations 01", startsAt: "2026-11-05T22:00:00.000Z", endsAt: "2026-11-05T23:30:00.000Z", timeZone: "America/Denver" };
 const configuration = { enabled: true, ready: true, activatedAt: "2026-10-12T18:00:00.000Z" };
 const occurrences = (override = {}, kind = "foundations_01", track = "members") => model.cadenceOccurrences({ ...event, ...override }, kind, track);
@@ -141,4 +141,19 @@ test("maximum-length event titles produce deliverable subjects without losing th
     assert.ok(result.body.includes(title));
     assert.equal(result.subject.isWellFormed(), true);
   }
+});
+
+
+test("editable subject defaults stay bounded while message-only edits preserve the complete call heading", () => {
+  const longEvent = { ...event, title: "🌱".repeat(100) };
+  const defaults = cadenceMessageDefaults({ event: longEvent, kind: "foundations_01", track: "members", stage: "day_before" });
+  assert.ok(defaults.subject.length <= 200);
+  assert.equal(defaults.subject.isWellFormed(), true);
+  const edited = copy({ event: longEvent, message: { message: "Bring your notebook." } });
+  assert.equal(edited.subject, defaults.subject);
+  assert.equal(edited.heading, `Tomorrow: ${longEvent.title}.`);
+  assert.match(edited.body, /Bring your notebook/);
+  const customSubject = copy({ event: longEvent, message: { subject: "Your call tomorrow" } });
+  assert.equal(customSubject.subject, "Your call tomorrow");
+  assert.equal(customSubject.heading, "Your call tomorrow");
 });
