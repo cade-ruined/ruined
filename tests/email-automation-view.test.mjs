@@ -170,3 +170,22 @@ test("reminder timing filters include only sequences that actually contain the s
   assert.equal(view(rows, { stage: "day_before" }).length, 4);
   assert.equal(automationNeedsAttention(item("sequence", { attention: "Some matching calls need attention before delivery." })), true);
 });
+
+test("operator reminder names and existing timing searches find the same eligible sequences", () => {
+  const rows = [
+    item("foundation", { kind: "foundations_01" }),
+    item("test", { kind: "foundations_01", track: "founder_test" }),
+    item("circle", { kind: "circle" }),
+  ];
+  for (const query of ["24-hour reminder", "24 hours before", "day-of reminder", "day of call"]) {
+    assert.deepEqual(ids(view(rows, { query })), ["circle", "foundation", "test"], query);
+  }
+  for (const query of ["48-hour reminder", "two days before"]) {
+    assert.deepEqual(ids(view(rows, { query })), ["test"], query);
+  }
+  for (const query of ["one-week reminder", "one week before", "orientation"]) {
+    assert.deepEqual(ids(view(rows, { query })), ["foundation"], query);
+  }
+  assert.deepEqual(view(rows, { query: "48-hour reminder", track: "members" }), []);
+  assert.deepEqual(view(rows, { query: "one-week reminder", stage: "two_days" }), []);
+});

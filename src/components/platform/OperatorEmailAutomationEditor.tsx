@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS } from "@/components/platform/operatorStyles";
 import { cadenceCopy, cadenceMessageDefaults, cadenceMessagesValidationError } from "@/lib/communications/member-email-cadence-copy";
+import { AUTOMATION_STAGE_NAMES, automationStageTiming } from "@/lib/communications/email-automation-view";
 import {
-  CADENCE_KINDS, CADENCE_KIND_LABELS, CADENCE_STAGE_LABELS, cadenceOccurrences,
+  CADENCE_KINDS, CADENCE_KIND_LABELS, cadenceOccurrences,
   type CadenceEvent, type CadenceKind, type CadenceStage, type CadenceTrack,
 } from "@/lib/communications/member-email-cadence-model";
 import type { CadenceManagementOverview } from "@/lib/communications/member-email-cadence-management";
@@ -66,14 +67,6 @@ function exampleEvent(kind: CadenceKind): CadenceEvent {
   };
 }
 
-function timingLabel(stage: CadenceStage, kind: CadenceKind, track: CadenceTrack): string {
-  if (stage === "orientation") return "16 days before the call";
-  if (stage === "one_week") return "7 days before the call";
-  if (stage === "two_days") return "48 hours before the call";
-  if (stage === "day_before") return "24 hours before the call";
-  return kind === "foundations_01" && track === "members" ? "8 a.m. Mountain time" : "2½ hours before the call";
-}
-
 function callDate(event: CadenceEvent): string {
   try { return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timeZone }).format(new Date(event.startsAt)); }
   catch { return "Time unavailable"; }
@@ -121,25 +114,20 @@ export default function OperatorEmailAutomationEditor({
   }
 
   const setup = <fieldset className="min-w-0" disabled={disabled}>
-    <legend className="sr-only">Choose reminder scope and design</legend>
+    <legend className="sr-only">Choose calls and design</legend>
     <div className="grid min-w-0 gap-4 md:grid-cols-2">
-      <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-scope">Apply to
-        <select className={OPERATOR_FIELD_CLASS} id="cadence-scope" value={draft.scope ?? "event"} onChange={e => onDraft({ scope: e.currentTarget.value as "event" | "sequence" })}>
-          <option value="sequence">Current and future calls of this type</option><option value="event">One scheduled call</option>
-        </select>
-      </label>
       <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-kind">Call type
-        <select className={OPERATOR_FIELD_CLASS} id="cadence-kind" value={draft.kind} onChange={e => onDraft({ kind: e.currentTarget.value as CadenceKind })}>
+        <select className={OPERATOR_FIELD_CLASS} id="cadence-kind" value={draft.kind} disabled={editing} onChange={e => { if (!editing) onDraft({ kind: e.currentTarget.value as CadenceKind }); }}>
           {CADENCE_KINDS.map(kind => <option key={kind} value={kind}>{CADENCE_KIND_LABELS[kind]}</option>)}
         </select>
       </label>
       <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-track">Audience track
-        <select className={OPERATOR_FIELD_CLASS} id="cadence-track" value={draft.track} onChange={e => onDraft({ track: e.currentTarget.value as CadenceTrack })}>
+        <select className={OPERATOR_FIELD_CLASS} id="cadence-track" value={draft.track} disabled={editing} onChange={e => { if (!editing) onDraft({ track: e.currentTarget.value as CadenceTrack }); }}>
           <option value="members">Members</option><option value="founder_test">Founder test</option>
         </select>
       </label>
       <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-event">{sequenceScope ? "Preview with a call (optional)" : "Scheduled call"}
-        <select className={OPERATOR_FIELD_CLASS} id="cadence-event" value={draft.eventId} onChange={e => onDraft({ eventId: e.currentTarget.value })}>
+        <select className={OPERATOR_FIELD_CLASS} id="cadence-event" value={draft.eventId} disabled={editing && !sequenceScope} onChange={e => { if (!editing || sequenceScope) onDraft({ eventId: e.currentTarget.value }); }}>
           <option value="">{sequenceScope ? "Use an example call" : "Choose a scheduled call"}</option>
           {overview.events.map(item => <option key={item.id} value={item.id}>{item.title} · {callDate(item)}</option>)}
         </select>
@@ -158,6 +146,12 @@ export default function OperatorEmailAutomationEditor({
   </fieldset>;
 
   return <form className="min-w-0 space-y-5" onSubmit={onReview}>
+    <section className="min-w-0 border-y border-[color:var(--operator-line)] py-5" aria-labelledby="cadence-scope-heading">
+      <h3 className="text-sm font-semibold" id="cadence-scope-heading">Apply to</h3>
+      {editing ? <p className="mt-2 text-lg font-semibold">{sequenceScope ? "All matching calls" : "This call only"}</p> : <label className="mt-2 block max-w-xl text-sm" htmlFor="cadence-scope"><span className="sr-only">Apply to</span><select className={OPERATOR_FIELD_CLASS} id="cadence-scope" value={draft.scope ?? "event"} disabled={disabled} onChange={e => onDraft({ scope: e.currentTarget.value as "event" | "sequence" })}><option value="event">This call only</option><option value="sequence">All matching calls</option></select></label>}
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[color:var(--operator-muted)]">{sequenceScope ? <>Current and future {CADENCE_KIND_LABELS[draft.kind]} calls for {draft.track === "founder_test" ? "the founder test audience" : "members"}. Custom reminders and paused calls keep their settings.</> : <>{event ? `${event.title}. ` : "Choose one scheduled call below. "}Changes stay with this call. If it uses a sequence, activating creates custom reminders for this call.</>}</p>
+      {editing ? <p className="mt-2 max-w-3xl text-sm text-[color:var(--operator-muted)]">{sequenceScope ? "You’re editing this saved sequence. To change one call, open that call’s reminders." : "You’re editing this saved call. To change all matching calls, open the sequence in the Email library."}</p> : null}
+    </section>
     {!editing ? <section className="operator-bento-card min-w-0" aria-labelledby="cadence-setup-heading"><h3 className="mb-5 text-lg font-semibold" id="cadence-setup-heading">Choose your calls and design</h3>{setup}</section> : null}
 
     <section className="operator-bento-card min-w-0" aria-labelledby="cadence-message-heading">
@@ -165,15 +159,15 @@ export default function OperatorEmailAutomationEditor({
         <div><h3 className="text-lg font-semibold" id="cadence-message-heading">Edit the emails</h3><p className="mt-2 text-sm text-[color:var(--operator-muted)]">Choose a reminder, then edit its subject and message.</p></div>
         {editing && template ? <p className="max-w-sm break-words text-sm text-[color:var(--operator-muted)]">{template.name}</p> : null}
       </div>
-      <div className="mt-5 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4" role="group" aria-label="Email reminder stages">
+      <div className="mt-5 grid min-w-0 grid-cols-2 gap-2 xl:grid-cols-4" role="group" aria-label="Email reminder stages">
         {occurrences.map(occurrence => <button
           className={`min-h-20 min-w-0 border px-4 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--operator-focus)] ${stage === occurrence.stage ? "border-[color:var(--operator-ink)] bg-[var(--operator-ink)] text-[var(--operator-surface)]" : "border-[color:var(--operator-ink)]/25 hover:border-[color:var(--operator-ink)]"}`}
           type="button" key={occurrence.stage} aria-pressed={stage === occurrence.stage} disabled={disabled}
           onClick={() => { setRequestedStage(occurrence.stage); onStage?.(occurrence.stage); }}
-        ><span className="block text-sm font-semibold">{CADENCE_STAGE_LABELS[occurrence.stage]}</span><span className="mt-1 block text-xs opacity-80">{timingLabel(occurrence.stage, draft.kind, draft.track)}</span>{draft.messages?.[occurrence.stage] ? <span className="mt-2 block text-xs">Customized</span> : null}</button>)}
+        ><span className="block text-sm font-semibold">{AUTOMATION_STAGE_NAMES[occurrence.stage]}</span><span className="mt-1 block text-xs opacity-80">{automationStageTiming(occurrence.stage, draft.kind, draft.track)}</span>{draft.messages?.[occurrence.stage] ? <span className="mt-2 block text-xs">Customized</span> : null}</button>)}
       </div>
       {stage ? <div className="mt-6 grid min-w-0 gap-6 xl:grid-cols-2"><fieldset className="min-w-0 space-y-5" disabled={disabled}>
-        <legend className="sr-only">{CADENCE_STAGE_LABELS[stage]} email</legend>
+        <legend className="sr-only">{AUTOMATION_STAGE_NAMES[stage]} email</legend>
         <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-message-subject">Subject
           <input className={OPERATOR_FIELD_CLASS} id="cadence-message-subject" maxLength={200} required value={subject} onChange={e => updateMessage("subject", e.currentTarget.value)} />
         </label>

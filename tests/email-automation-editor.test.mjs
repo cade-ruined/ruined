@@ -18,6 +18,7 @@ function compile(path, dependencies = {}) {
   return mod.exports;
 }
 const model = compile("src/lib/communications/member-email-cadence-model.ts");
+const view = compile("src/lib/communications/email-automation-view.ts", { "./member-email-cadence-model": model });
 const copy = compile("src/lib/communications/member-email-cadence-copy.ts", { "./member-email-cadence-model": model });
 const styles = compile("src/components/platform/operatorStyles.ts");
 const event = { id: "call-1", title: "Foundations 01 — November", startsAt: "2026-11-05T22:00:00Z", endsAt: "2026-11-05T23:30:00Z", timeZone: "America/Denver" };
@@ -30,7 +31,7 @@ function fixture(overrides = {}) {
   const slots = [];
   let cursor = 0, reviews = 0;
   const hooks = { ...React, useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }]; } };
-  const dependencies = { react: hooks, "next/link": { __esModule: true, default: "a" }, "@/components/platform/operatorStyles": styles, "@/lib/communications/member-email-cadence-model": model, "@/lib/communications/member-email-cadence-copy": copy };
+  const dependencies = { react: hooks, "next/link": { __esModule: true, default: "a" }, "@/components/platform/operatorStyles": styles, "@/lib/communications/member-email-cadence-model": model, "@/lib/communications/member-email-cadence-copy": copy, "@/lib/communications/email-automation-view": view };
   const exports = compile("src/components/platform/OperatorEmailAutomationEditor.tsx", dependencies);
   const props = { draft: structuredClone(draft), template, overview: { events: [event], templates: [template], setupRequired: false }, editing: true, pending: null, onSelectTemplate() {}, onReview(event) { event.preventDefault(); reviews++; }, onDraft(patch) { props.draft = { ...props.draft, ...patch }; }, ...overrides };
   const render = () => { cursor = 0; return exports.default(props); };
@@ -60,7 +61,7 @@ test("stage-specific edits and reset preserve other messages and saved design co
   assert.deepEqual(f.props.draft.messages, { orientation: { subject: "Getting ready" }, day_before: { subject: "See you tomorrow", message: "Bring a notebook." } });
   assert.equal(f.props.draft.bindings, bindings);
   assert.equal(f.props.draft.copy, templateCopy);
-  f.find(node => node.type === "button" && text(node).startsWith("Foundations orientation")).props.onClick();
+  f.find(node => node.type === "button" && text(node).startsWith("Orientation")).props.onClick();
   assert.equal(f.field("cadence-message-subject").props.value, "Getting ready");
   f.find(node => node.type === "button" && text(node) === "Restore default message").props.onClick();
   assert.deepEqual(f.props.draft.messages, { day_before: { subject: "See you tomorrow", message: "Bring a notebook." } });
@@ -115,6 +116,62 @@ test("each call type exposes only its actual reminder stages and timing", () => 
   assert.match(text(stageButtons), /24 hours before/);
   assert.match(text(stageButtons), /2½ hours before/);
   assert.doesNotMatch(text(stageButtons), /8 a.m.|Orientation|One week/);
+});
+
+test("new setup exposes the scope choice before the message without opening Advanced", () => {
+  const f = fixture({ editing: false });
+  const scopePanel = f.find(node => node.props?.["aria-labelledby"] === "cadence-scope-heading");
+  assert.ok(scopePanel);
+  assert.equal(nodes(scopePanel).find(node => node.props?.id === "cadence-scope").type, "select");
+  const advanced = f.find(node => node.type === "details");
+  assert.equal(advanced.props.open, false);
+  assert.equal(nodes(advanced).some(node => node.props?.id === "cadence-scope"), false);
+  const options = nodes(f.field("cadence-scope")).filter(node => node.type === "option").map(text);
+  assert.deepEqual(options, ["This call only", "All matching calls"]);
+  f.change("cadence-scope", "event");
+  assert.equal(f.props.draft.scope, "event");
+  assert.match(text(scopePanel), /Custom reminders and paused calls keep their settings/);
+  assert.match(text(f.render()), /If it uses a sequence, activating creates custom reminders for this call/);
+  assert.equal(f.reviews(), 0);
+});
+
+test("editing a saved call keeps scope and target locked with the override boundary visible", () => {
+  const f = fixture({ draft: { ...draft, scope: "event" } });
+  const scopePanel = f.find(node => node.props?.["aria-labelledby"] === "cadence-scope-heading");
+  assert.match(text(scopePanel), /This call only/);
+  assert.match(text(scopePanel), /activating creates custom reminders for this call/);
+  assert.match(text(scopePanel), /To change all matching calls, open the sequence in the Email library/);
+  assert.equal(f.find(node => node.props?.id === "cadence-scope"), undefined);
+  for (const id of ["cadence-kind", "cadence-track", "cadence-event"]) assert.equal(f.field(id).props.disabled, true);
+  f.change("cadence-kind", "membership");
+  f.change("cadence-track", "founder_test");
+  f.change("cadence-event", "another-call");
+  assert.equal(f.props.draft.kind, "foundations_01");
+  assert.equal(f.props.draft.track, "members");
+  assert.equal(f.props.draft.eventId, event.id);
+});
+
+test("editing a saved sequence keeps its audience scope fixed and permits choosing an example call", () => {
+  const f = fixture();
+  const scopePanel = f.find(node => node.props?.["aria-labelledby"] === "cadence-scope-heading");
+  assert.match(text(scopePanel), /All matching calls/);
+  assert.match(text(scopePanel), /Current and future Foundations 01 calls for members/);
+  assert.equal(f.find(node => node.props?.id === "cadence-scope"), undefined);
+  assert.equal(f.field("cadence-kind").props.disabled, true);
+  assert.equal(f.field("cadence-track").props.disabled, true);
+  assert.equal(f.field("cadence-event").props.disabled, false);
+  f.change("cadence-event", "another-example-call");
+  assert.equal(f.props.draft.scope, "sequence");
+  assert.equal(f.props.draft.eventId, "another-example-call");
+});
+
+test("operator reminder names are consistent while email subjects retain approved wording", () => {
+  const f = fixture();
+  const stageButtons = nodes(f.find(node => node.props?.["aria-label"] === "Email reminder stages")).filter(node => node.type === "button");
+  assert.deepEqual(stageButtons.map(node => text(node.props.children[0])), ["Orientation", "One-week reminder", "24-hour reminder", "Day-of reminder"]);
+  assert.match(f.field("cadence-message-subject").props.value, /^Tomorrow:/);
+  const founder = fixture({ draft: { ...draft, track: "founder_test" } });
+  assert.match(text(founder.find(node => node.props?.["aria-label"] === "Email reminder stages")), /48-hour reminder48 hours before/);
 });
 
 test("design suggestions use only unambiguous fields and correctly typed dynamic variables", () => {

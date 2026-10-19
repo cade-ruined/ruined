@@ -82,16 +82,19 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
     "@/components/platform/OperatorMessagesTabs": { __esModule: true, default: "message-tabs" },
     "@/components/platform/operatorStyles": styles,
+    "./operatorStyles": styles,
     "@/lib/communications/member-email-cadence-model": model,
     "@/lib/communications/member-email-cadence-copy": copy,
     "@/lib/communications/member-email-cadence-management": management,
     "@/lib/communications/email-automation-view": automationView,
     "@/lib/communications/email-automation-navigation": navigation,
     "./OperatorEmailAutomationDetail.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
+    "./OperatorEmailAutomationReview.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
   };
   deps["./OperatorEmailAutomationDetail"] = compile("src/components/platform/OperatorEmailAutomationDetail.tsx", name => deps[name] ?? noDependency(name));
   deps["@/components/platform/OperatorEmailAutomationEditor"] = compile("src/components/platform/OperatorEmailAutomationEditor.tsx", name => deps[name] ?? noDependency(name));
   deps["./OperatorEmailAutomationEditor"] = deps["@/components/platform/OperatorEmailAutomationEditor"];
+  deps["./OperatorEmailAutomationReview"] = compile("src/components/platform/OperatorEmailAutomationReview.tsx", name => deps[name] ?? noDependency(name));
   deps["@/components/platform/OperatorEmailAutomationManager"] = compile("src/components/platform/OperatorEmailAutomationManager.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; });
   async function fallback(call) {
     if (call.method === "GET") {
@@ -118,10 +121,11 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   async function setup({ scope = "event", withEvent = true } = {}) { draw(); await settle(); button("New automation").props.onClick(); if (scope !== "sequence") change("cadence-scope", scope); if (withEvent) change("cadence-event", preview ? "preview-november" : event.id); change("cadence-template", preview ? "preview-template" : template.id); await settle(); change("cadence-body", "copy:body"); change("cadence-heading", "copy:heading"); }
   const submit = () => find(node => node.type === "form").props.onSubmit({ preventDefault() {} });
   async function openSaved(id) { draw(); await settle(); button("Email library").props.onClick(); const row = find(node => node.type === "li" && node.key === id); assert.ok(row, `Missing saved row: ${id}`); const open = nodes(row).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("View ")); assert.ok(open); open.props.onClick(); await settle(); }
-  function savedStage(stage) { const node = find(node => node.type === "button" && node.props["aria-label"] === `Preview ${model.CADENCE_STAGE_LABELS[stage]}`); assert.ok(node); node.props.onClick(); }
+  function savedStage(stage) { const node = find(node => node.type === "button" && node.props["aria-label"] === `Preview ${automationView.AUTOMATION_STAGE_NAMES[stage]}`); assert.ok(node); node.props.onClick(); }
   function reviewStage(stage) { const region = find(node => node.props?.["aria-label"] === "Review reminder emails"); const node = nodes(region).find(node => node.type === "button" && node.key === stage); assert.ok(node); node.props.onClick(); }
   function detailView(view) { const region = find(node => node.props?.["aria-label"] === "Automation detail views"); const node = nodes(region).find(node => node.type === "button" && text(node).startsWith(view)); assert.ok(node); node.props.onClick(); }
-  return { draw, find, button, calls, change, settle, setup, submit, openSaved, savedStage, reviewStage, detailView };
+  function editorStage(stage) { const region = find(node => node.props?.["aria-label"] === "Email reminder stages"); const node = nodes(region).find(node => node.type === "button" && node.key === stage); assert.ok(node); node.props.onClick(); }
+  return { draw, find, button, calls, change, settle, setup, submit, openSaved, savedStage, reviewStage, detailView, editorStage };
 }
 
 test("sample workspace supports review with real cadence timing while remaining completely offline", async () => {
@@ -130,7 +134,7 @@ test("sample workspace supports review with real cadence timing while remaining 
   assert.match(text(f.draw()), /Nothing is saved or sent/);
   assert.match(text(f.draw()), /1 eligible · 1 excluded/);
   assert.match(text(f.draw()), /Membership email updates are turned off/);
-  assert.match(text(f.draw()), /Foundations orientation/);
+  assert.match(text(f.draw()), /Orientation/);
   const frame = f.find(node => node.type === "iframe");
   assert.equal(frame.props.sandbox, "");
   assert.equal(frame.props.referrerPolicy, "no-referrer");
@@ -167,9 +171,10 @@ test("future sequence is the default and can activate before any calls or recipi
 test("changing scope invalidates review and individual calls still require a selected event", async () => {
   const f = fixture({ reviewed: { ...review, scope: "sequence", matchingEvents: [event] } });
   await f.setup({ scope: "sequence", withEvent: false }); await f.submit();
-  const matching = f.find(node => node.props?.["aria-labelledby"] === "cadence-matching-calls-heading");
+  const matching = f.find(node => node.type === "details" && text(node).startsWith("Matching published calls"));
   assert.ok(text(matching).includes(event.title));
   assert.equal(nodes(matching).find(node => node.type === "a").props.href, `/ops/experiences/${event.id}`);
+  f.button("Back to editing").props.onClick();
   f.change("cadence-scope", "event");
   assert.equal(f.find(node => node.type === "iframe"), undefined);
   assert.equal(f.find(node => node.type === "button" && text(node) === "Activate sequence"), undefined);
@@ -219,6 +224,7 @@ test("review binds the actual event, published template version and explicit per
   assert.match(f.find(node => node.type === "iframe").props.srcDoc, /First stage/);
   f.reviewStage("day_of");
   assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Second stage/);
+  f.button("Back to editing").props.onClick();
   f.change("cadence-kind", "circle");
   assert.equal(f.find(node => node.type === "iframe"), undefined);
   assert.equal(f.find(node => node.type === "button" && text(node) === "Activate automation"), undefined);
@@ -236,8 +242,12 @@ test("a reviewed plan can be armed during delivery setup but activation submits 
   const calls = f.calls.filter(call => call.body && JSON.parse(call.body).action === "activate");
   assert.equal(calls.length, 1);
   assert.deepEqual(JSON.parse(calls[0].body), { action: "activate", reviewToken: review.reviewToken });
-  assert.equal(f.find(node => node.type === "iframe"), undefined);
+  assert.ok(f.find(node => node.type === "iframe"), "review remains visible while activation is pending");
+  assert.equal(f.find(node => node.type === "form"), undefined);
+  assert.equal(f.button("Activating…").props.disabled, true);
+  assert.equal(f.button("Back to editing").props.disabled, true);
   finish(Response.json({ ok: true })); await f.settle();
+  assert.equal(f.find(node => node.type === "iframe"), undefined);
   assert.match(text(f.draw()), /Automation activated for future reminders/);
   assert.equal(f.calls.filter(call => call.url === API && call.method === "GET").length, 2);
 });
@@ -262,6 +272,7 @@ test("remaining template text submits only changed copy and editing it invalidat
   const posted = JSON.parse(f.calls.find(call => call.method === "POST").body);
   assert.deepEqual(posted.draft.copy, { greeting: "", signature: "RU/NED" });
   assert.ok(f.find(node => node.type === "iframe"));
+  f.button("Back to editing").props.onClick();
   f.change("cadence-copy-3", "Your name");
   assert.equal(f.find(node => node.type === "iframe"), undefined);
   assert.equal(f.find(node => node.type === "button" && text(node) === "Activate automation"), undefined);
@@ -277,6 +288,7 @@ test("copy overrides cannot compete with cadence targets and reset when choosing
   assert.equal(f.find(node => node.props?.id === "cadence-copy-3"), undefined);
   await f.submit();
   assert.equal(Object.hasOwn(JSON.parse(f.calls.find(call => call.method === "POST").body).draft, "copy"), false);
+  f.button("Back to editing").props.onClick();
   f.change("cadence-template", template.id); await f.settle();
   f.change("cadence-body", "copy:body"); f.change("cadence-heading", "copy:heading");
   assert.equal(f.find(node => node.props?.id === "cadence-copy-2").props.value, "Hi there,");
@@ -374,7 +386,7 @@ test("missing setup, campaign-only designs and template load failures cannot pro
   assert.equal(unpublished.button("Preview and review").props.disabled, true);
   let fail = false;
   const failed = fixture({ respond: (call, fallback) => fail && call.url !== API ? Response.json({ error: "Template unavailable" }, { status: 503 }) : fallback(call) });
-  await failed.setup(); await failed.submit(); fail = true; failed.change("cadence-template", "different-template"); await failed.settle();
+  await failed.setup(); await failed.submit(); failed.button("Back to editing").props.onClick(); fail = true; failed.change("cadence-template", "different-template"); await failed.settle();
   assert.match(text(failed.draw()), /Template unavailable/);
   assert.equal(failed.find(node => node.type === "iframe"), undefined);
   assert.equal(failed.button("Preview and review").props.disabled, true);
@@ -489,6 +501,7 @@ test("saved edits preserve the approved template version, field bindings and fix
   assert.equal(posted.draft.scope, "sequence");
   assert.deepEqual(posted.draft.copy, { greeting: "", signature: "RU/NED" });
   assert.deepEqual(posted.draft.bindings.NAME, { source: "member_name" });
+  f.button("Back to editing").props.onClick();
   f.change("cadence-copy-3", "Team RU/NED");
   assert.equal(f.find(node => node.type === "button" && text(node) === "Activate sequence"), undefined);
   f.button("Back to sequence").props.onClick();
@@ -504,7 +517,8 @@ test("paused automation resumes through prefilled review, never an immediate act
   const f = fixture({ data: { ...overview, plans: [{ ...plan, active: false, status: "paused" }] } });
   await f.openSaved(plan.id);
   f.button("Review and resume").props.onClick();
-  assert.equal(f.find(node => node.props?.id === "cadence-scope").props.value, "event");
+  assert.equal(f.find(node => node.props?.id === "cadence-scope"), undefined);
+  assert.match(text(f.draw()), /This call only/);
   assert.equal(f.find(node => node.props?.id === "cadence-event").props.value, event.id);
   assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
   await f.submit();
@@ -604,7 +618,8 @@ test("dirty editor guards client-side navigation and completed review receives f
     assert.equal(prevented, 1); assert.equal(navigated.length, 0);
     assert.ok(focused.includes("automation-discard-confirmation"));
     f.button("Keep editing").props.onClick();
-    assert.ok(f.find(node => node.type === "form"));
+    assert.equal(f.find(node => node.type === "form"), undefined);
+    assert.ok(f.find(node => node.type === "iframe"));
     documentListeners.get("click")(click); f.button("Discard changes").props.onClick();
     assert.deepEqual(navigated, ["https://example.test/ops/messages?mode=emails"]);
     let warned = false;
@@ -699,7 +714,7 @@ test("Upcoming is the default and opens the exact selected email without sending
   assert.equal(f.button("Upcoming").props["aria-current"], "page");
   assert.ok(f.find(node => node.props?.["aria-label"] === "Upcoming email reminders"));
   assert.equal(f.find(node => node.props?.["aria-label"] === "Email library"), undefined);
-  const open = f.find(node => node.type === "button" && node.props["aria-label"] === `View Day of call for ${event.title}`);
+  const open = f.find(node => node.type === "button" && node.props["aria-label"] === `View Day-of reminder for ${event.title}`);
   assert.ok(open); open.props.onClick(); await f.settle();
   assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Second stage/);
   assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
@@ -740,6 +755,7 @@ test("editing a stage carries only its overrides into review and any subsequent 
   await f.submit();
   let posted = JSON.parse(f.calls.find(call => call.method === "POST").body);
   assert.deepEqual(posted.draft.messages, { day_before: { subject: "Your call is tomorrow", message: "Bring one honest question." } });
+  f.button("Back to editing").props.onClick();
   f.change("cadence-message-body", "Bring two honest questions.");
   assert.equal(f.find(node => node.type === "button" && text(node) === "Activate automation"), undefined);
   f.button("Restore default message").props.onClick();
@@ -756,4 +772,73 @@ test("invalid stage text is blocked inside the review handler, including keyboar
   await f.submit();
   assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
   assert.equal(f.find(node => node.type === "button" && text(node) === "Activate automation"), undefined);
+});
+
+test("review is a focused read-only step and returning to edit preserves the selected email and its changes", async () => {
+  const f = fixture(); await f.setup();
+  f.change("cadence-message-body", "A question for tomorrow.");
+  f.editorStage("day_of");
+  f.change("cadence-message-subject", "We begin today"); f.change("cadence-message-body", "Bring that question with you.");
+  await f.submit();
+  assert.equal(f.find(node => node.type === "form"), undefined);
+  assert.equal(f.find(node => node.type === "textarea"), undefined);
+  assert.equal(f.find(node => node.type === "input"), undefined);
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Second stage/);
+  const request = JSON.parse(f.calls.find(call => call.method === "POST").body);
+  assert.deepEqual(request.draft.messages.day_of, { subject: "We begin today", message: "Bring that question with you." });
+  f.button("Back to editing").props.onClick();
+  assert.ok(f.find(node => node.type === "form"));
+  assert.equal(f.find(node => node.props?.id === "cadence-message-subject").props.value, "We begin today");
+  assert.equal(f.find(node => node.props?.id === "cadence-message-body").props.value, "Bring that question with you.");
+  assert.equal(f.find(node => node.type === "iframe"), undefined);
+  assert.equal(f.find(node => node.type === "button" && text(node) === "Activate automation"), undefined);
+  f.editorStage("day_before");
+  assert.equal(f.find(node => node.props?.id === "cadence-message-body").props.value, "A question for tomorrow.");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 1);
+  assert.equal(f.calls.filter(call => call.body && JSON.parse(call.body).action === "activate").length, 0);
+});
+
+test("switching the reviewed email carries that selection back to editing without another request", async () => {
+  const f = fixture(); await f.setup(); await f.submit();
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /First stage/);
+  f.reviewStage("day_of");
+  f.button("Back to editing").props.onClick();
+  const stages = f.find(node => node.props?.["aria-label"] === "Email reminder stages");
+  assert.equal(nodes(stages).find(node => node.type === "button" && node.props["aria-pressed"]).key, "day_of");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 1);
+});
+
+test("review does not attach another reminder's send time to a stage with no future occurrence", async () => {
+  const f = fixture(); await f.setup(); await f.submit();
+  let preview = f.find(node => node.props?.["aria-label"] === "Automation email preview");
+  assert.match(text(preview), /Scheduled send:/);
+  f.reviewStage("day_of");
+  preview = f.find(node => node.props?.["aria-label"] === "Automation email preview");
+  assert.match(f.find(node => node.type === "iframe").props.srcDoc, /Second stage/);
+  assert.doesNotMatch(text(preview), /Scheduled send:/);
+  assert.match(text(preview), /No future send/i);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 1);
+});
+
+test("saved call and sequence edits keep their approved scope and audience track visible and locked", async () => {
+  for (const scope of ["event", "sequence"]) {
+    const f = fixture({ data: { ...overview, plans: [plan], sequences: [sequence] }, reviewed: { ...review, scope } });
+    await f.openSaved(scope === "event" ? plan.id : sequence.id); f.button("Edit emails").props.onClick();
+    assert.equal(f.find(node => node.props?.id === "cadence-scope"), undefined, "saved scope cannot silently switch");
+    assert.match(text(f.draw()), scope === "event" ? /This call only/ : /All matching calls/);
+    assert.equal(f.find(node => node.props?.id === "cadence-kind").props.disabled, true);
+    assert.equal(f.find(node => node.props?.id === "cadence-track").props.disabled, true);
+    assert.equal(Boolean(f.find(node => node.props?.id === "cadence-event").props.disabled), scope === "event");
+    f.change("cadence-kind", "circle"); f.change("cadence-track", "founder_test");
+    if (scope === "event") f.change("cadence-event", "unrelated-call");
+    assert.equal(f.find(node => node.props?.id === "cadence-kind").props.value, "foundations_01");
+    assert.equal(f.find(node => node.props?.id === "cadence-track").props.value, "members");
+    if (scope === "event") assert.equal(f.find(node => node.props?.id === "cadence-event").props.value, event.id);
+    await f.submit();
+    const posted = JSON.parse(f.calls.find(call => call.method === "POST").body);
+    assert.equal(posted.draft.scope, scope);
+    assert.equal(posted.draft.kind, "foundations_01");
+    assert.equal(posted.draft.track, "members");
+    assert.equal(f.calls.filter(call => call.body && JSON.parse(call.body).action === "activate").length, 0);
+  }
 });

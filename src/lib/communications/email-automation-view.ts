@@ -2,6 +2,14 @@ import { CADENCE_KIND_LABELS, CADENCE_STAGE_LABELS, cadenceOccurrences, type Cad
 import type { CadenceManagementSummary } from "./member-email-cadence-management";
 
 type Summary = CadenceManagementSummary;
+/** Operator labels only. Outgoing email copy keeps the approved cadence wording. */
+export const AUTOMATION_STAGE_NAMES: Record<CadenceStage, string> = {
+  orientation: "Orientation",
+  one_week: "One-week reminder",
+  two_days: "48-hour reminder",
+  day_before: "24-hour reminder",
+  day_of: "Day-of reminder",
+};
 export type AutomationFilter = "all" | "active" | "paused" | "attention" | "finished" | "cancelled";
 export type AutomationViewOptions = {
   stage?: "all" | CadenceStage;
@@ -65,7 +73,7 @@ export function filterAndSortAutomations<T extends Summary>(
     if (search && ![
       automationTitle(item), item.templateName, CADENCE_KIND_LABELS[item.kind],
       item.track === "founder_test" ? "founder test" : "members", item.audienceSummary ?? "",
-      ...automationStages(item.kind, item.track).map(stage => CADENCE_STAGE_LABELS[stage]),
+      ...automationStages(item.kind, item.track).flatMap(stage => [AUTOMATION_STAGE_NAMES[stage], CADENCE_STAGE_LABELS[stage]]),
     ].join(" ").toLowerCase().includes(search)) return false;
     if (!matchesStatus(item, status)) return false;
     if (options.stage && options.stage !== "all" && !automationStages(item.kind, item.track).includes(options.stage)) return false;

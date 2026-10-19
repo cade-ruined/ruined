@@ -12,6 +12,9 @@
 .titleCopy h3 { margin: 0.35rem 0 0; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 650; line-height: 1.15; overflow-wrap: anywhere; scroll-margin-top: 6rem; outline: none; }
 .eyebrow { margin: 0; color: var(--operator-muted); font-size: 0.6875rem; letter-spacing: 0.11em; text-transform: uppercase; }
 .actions, .statusRow, .callActions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.editActions { width: 100%; max-width: 24rem; }
+.editScope { margin: 0 0 0.5rem; font-size: 0.8125rem; font-weight: 650; }
+.editScopeNote { margin: 0.75rem 0 0; color: var(--operator-muted); font-size: 0.75rem; }
 .statusRow { margin: 1.25rem 0 0.75rem; gap: 0.5rem 1.5rem; font-size: 0.8125rem; }
 .badge { display: inline-block; max-width: 100%; padding: 0.1rem 0.45rem; background: color-mix(in srgb, var(--operator-ink) 7%, transparent); color: var(--operator-ink); font-size: 0.75rem; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
 .badge[data-attention] { color: var(--operator-danger); background: color-mix(in srgb, var(--operator-danger) 9%, transparent); }
