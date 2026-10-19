@@ -8,8 +8,8 @@ function load(name) {
   const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mod = { exports: {} };
   new Function("require", "module", "exports", output)(dependency => {
-    assert.equal(dependency, "./member-email-cadence-model");
-    return load("member-email-cadence-model");
+    assert.ok(["./member-email-cadence-model", "./email-automation-view"].includes(dependency));
+    return load(dependency.slice(2));
   }, mod, mod.exports);
   return mod.exports;
 }
@@ -123,4 +123,50 @@ test("filtering and sorting preserve source arrays, item identity and all schedu
   }
   assert.deepEqual(ids(rows), ["B", "A"]);
   assert.deepEqual(view([], { schedule: "none" }), []);
+});
+
+const { readAutomationNavigation, writeAutomationNavigation, normalizeAutomationView } = load("email-automation-navigation");
+
+test("direct reminder links round-trip stage, call and filter context without replacing the parent Messages mode", () => {
+  const search = "?mode=automations&view=library&q=November&status=paused&kind=foundations&audience=founder_test&date=month&sort=name&reminder=day_before&scope=sequence&automation=seq-1&stage=day_of&call=call-1";
+  const state = readAutomationNavigation(search);
+  assert.deepEqual(state.selection, { scope: "sequence", id: "seq-1", stage: "day_of" });
+  assert.equal(state.options.stage, "day_before");
+  assert.equal(state.eventId, "call-1");
+  const written = writeAutomationNavigation(search, state);
+  assert.equal(new URLSearchParams(written).get("mode"), "automations");
+  assert.deepEqual(readAutomationNavigation(written), state);
+  const closed = new URLSearchParams(writeAutomationNavigation(written, { ...state, selection: null }));
+  for (const key of ["scope", "automation", "stage", "call"]) assert.equal(closed.has(key), false);
+  assert.equal(closed.get("q"), "November");
+  assert.equal(closed.get("reminder"), "day_before");
+});
+
+test("only filters visible in the destination view survive navigation or a direct link", () => {
+  const options = { ...DEFAULT_AUTOMATION_VIEW_OPTIONS, kind: "foundations", stage: "day_before", schedule: "none", track: "members" };
+  assert.deepEqual(normalizeAutomationView("library", "finished", options), { filter: "finished", options });
+  assert.deepEqual(normalizeAutomationView("upcoming", "finished", options), { filter: "all", options: { ...options, schedule: "all" } });
+  assert.equal(readAutomationNavigation("?status=cancelled&date=none").filter, "all");
+  assert.equal(readAutomationNavigation("?status=cancelled&date=none").options.schedule, "all");
+  const activity = readAutomationNavigation("?view=activity&status=paused&date=week&reminder=day_before");
+  assert.equal(activity.filter, "all");
+  assert.equal(activity.options.schedule, "all");
+  assert.equal(activity.options.stage, "day_before");
+});
+
+test("invalid deep-link values cannot open another path or introduce unsupported filter states", () => {
+  const state = readAutomationNavigation("?view=bad&status=bad&kind=bad&audience=bad&date=bad&sort=bad&reminder=bad&automation=..%2Fsecret&call=x%2Fy&stage=bad");
+  assert.equal(state.section, "upcoming");
+  assert.equal(state.filter, "all");
+  assert.equal(state.selection, null);
+  assert.equal(state.eventId, undefined);
+  assert.deepEqual(state.options, { ...DEFAULT_AUTOMATION_VIEW_OPTIONS, track: "members", stage: "all" });
+});
+
+test("reminder timing filters include only sequences that actually contain the stage", () => {
+  const rows = [item("first", { kind: "foundations_01" }), item("second", { kind: "foundations_02" }), item("test", { kind: "foundations_01", track: "founder_test" }), item("circle", { kind: "circle" })];
+  assert.deepEqual(ids(view(rows, { stage: "orientation" })), ["first"]);
+  assert.deepEqual(ids(view(rows, { stage: "two_days" })), ["test"]);
+  assert.equal(view(rows, { stage: "day_before" }).length, 4);
+  assert.equal(automationNeedsAttention(item("sequence", { attention: "Some matching calls need attention before delivery." })), true);
 });

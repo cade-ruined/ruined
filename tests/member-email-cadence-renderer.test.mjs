@@ -166,3 +166,32 @@ test("a long escaped server-generated body is not cut off by the template variab
   assert.equal(nodes(parse5.parse(result.html)).some(node => node.tagName === "b"), false);
   assert.match(result.text, /All the love,\nRU\/NED/);
 });
+
+test("plain-text reminder edits preserve personalization, call details, access and preference links", () => {
+  const f = fixture({}, { messages: { day_before: { subject: "A little preparation", message: 'Bring your notebook.\n\n<img src="x" onerror="bad()"> & be present.' } } });
+  const result = renderer.renderCadenceEmail(f);
+  assert.equal(result.subject, "A little preparation");
+  assert.match(result.text, /Jamie,/);
+  assert.match(result.text, /Bring your notebook/);
+  assert.match(result.text, /Foundations 01/);
+  assert.match(result.text, /Thursday, November 5, 2026/);
+  assert.match(result.text, /3:00 PM MST/);
+  for (const path of ["/my/experiences#experience-call-one", "/my/account#email-reminders", "/my"]) assert.ok(result.text.includes(`https://members.example.test${path}`));
+  assert.match(result.html, /&lt;img src=/);
+  assert.equal(nodes(parse5.parse(result.html)).filter(node => node.tagName === "img").length, 1, "untrusted prose cannot create an image");
+  assert.equal(copy.cadenceMessageDefaults({ event, kind: "foundations_01", track: "members", stage: "day_before" }).subject, "Tomorrow: Foundations 01.");
+  const untouched = renderer.renderCadenceEmail({ ...f, stage: "orientation" });
+  assert.equal(untouched.subject, "What we mean by Foundations.");
+  assert.doesNotMatch(untouched.text, /Bring your notebook/);
+});
+
+test("message editing rejects forged stages, headers, oversized text and unfinished placeholders", () => {
+  const invalid = [null, [], "hello", { random: { message: "Hello" } }, { day_before: null }, { day_before: [] },
+    { day_before: { body: "Hello" } }, { day_before: { subject: "   " } }, { day_before: { message: "" } },
+    { day_before: { subject: "Hello\r\nBcc: stranger@example.com" } }, { day_before: { subject: "x".repeat(201) } },
+    { day_before: { message: "x".repeat(12001) } }, { day_before: { message: "Hello\u0000there" } },
+    { day_before: { message: "[INSERT LINK]" } }, { day_before: { message: "{{MEMBER_NAME}}" } }];
+  for (const messages of invalid) assert.throws(() => renderer.renderCadenceEmail(fixture({}, { messages })), error => error.status === 400, JSON.stringify(messages));
+  assert.doesNotThrow(() => renderer.renderCadenceEmail(fixture({}, { messages: { day_before: { message: "Notes:\n\tBring a pen." } } })));
+  assert.doesNotThrow(() => renderer.renderCadenceEmail(fixture({}, { messages: {} })));
+});

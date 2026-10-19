@@ -83,7 +83,7 @@ async function fixture(t) {
     "./admin-email-model": model, "./admin-email-repository": auth,
     "./resend-email-service": { getResendEmailTemplate: async (_actor, templateId) => { assert.equal(templateId, template.id); state.calls.push("template"); return clone(state.template); } },
     "./member-email-cadence-model": cadence, "./member-email-cadence-delivery": {...delivery, getMemberEmailCadenceDeliveryConfiguration: () => clone(state.configuration)},
-    "./member-email-cadence-management": management, "./automated-email-catalog": {getAutomatedEmailCatalog: () => []},
+    "./member-email-cadence-management": management, "./member-email-cadence-copy": copy, "./automated-email-catalog": {getAutomatedEmailCatalog: () => []},
     "./member-email-cadence-repository": repository, "./member-email-cadence-renderer": renderer,
     "./member-email-cadence-inheritance": { matchingCadenceEvents: async () => state.matchingEvents ?? (state.event ? [clone(state.event)] : []) },
     "./member-email-cadence-provider": {
@@ -381,12 +381,12 @@ test("saved automation management reads project approvals without changing deliv
     detail = await f.service.getCadenceManagementDetail(f.admin, "event", exhausted.id);
     assert.equal(detail.status, "no_remaining"); assert.equal(detail.nextReminder, null);
   });
-  await t.test("sequence detail uses deliberate recipient inspection and preserves individual overrides during parent pause", async () => {
+  await t.test("sequence detail automatically checks the selected call audience and preserves individual overrides during parent pause", async () => {
     await f.reset(); f.enable(); const sequence = await activate("sequence"); const individual = await activate();
     f.state.calls = [];
     let detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id);
     assert.equal(detail.draft.scope, "sequence"); assert.equal(detail.draft.eventId, "");
-    assert.equal(detail.selectedEventId, f.event.id); assert.equal(detail.recipientsChecked, false); assert.deepEqual(f.state.calls, []);
+    assert.equal(detail.selectedEventId, f.event.id); assert.equal(detail.recipientsChecked, true); assert.deepEqual(f.state.calls, ["recipients"]);
     assert.equal(detail.calls[0].status, "manual_override"); assert.equal(detail.calls[0].planId, individual.id); assert.equal(detail.calls[0].nextReminder, null);
     await assert.rejects(f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id, crypto.randomUUID()), error => error.status === 400);
     detail = await f.service.getCadenceManagementDetail(f.admin, "sequence", sequence.id, f.event.id);
@@ -484,4 +484,84 @@ test("overview prioritizes current calls and explicitly reports its bounded hist
   await f.pg.query("update experiences set starts_at=$2,ends_at=$3 where id<>$1", [f.event.id,future(10),future(10.1)]);
   const withPausedFutureCalls = await f.service.getCadenceOverview(f.admin);
   assert.equal(withPausedFutureCalls.plans[0].id, active.id);
+});
+
+test("message edits survive review, approval, reopen and revision without changing protected call details", async t => {
+  const f = await fixture(t); f.enable();
+  for (const scope of ["event", "sequence"]) {
+    await f.reset(); f.enable();
+    const messages = { day_before: { subject: "Your call is tomorrow", message: "Bring one honest question.\n\nWe’ll start there." }, orientation: { message: "Welcome to the work." } };
+    const reviewed = await f.service.previewCadence(f.admin, { ...f.draft, scope, eventId: scope === "sequence" ? "" : f.event.id, messages });
+    const preview = reviewed.previews.find(item => item.stage === "day_before");
+    assert.equal(preview.subject, messages.day_before.subject);
+    assert.match(preview.text, /Member,/);
+    assert.match(preview.text, /Bring one honest question/);
+    assert.match(preview.text, /Manage your email reminders/);
+    assert.match(preview.text, /Your call details and access link/);
+    assert.deepEqual((await f.rows("reviews"))[0].snapshot.plan.messages, messages);
+    const active = await f.service.activateCadence(f.admin, reviewed.reviewToken);
+    const detail = await f.service.getCadenceManagementDetail(f.admin, scope, active.id);
+    assert.deepEqual(detail.draft.messages, messages);
+    assert.equal(detail.previews.find(item => item.stage === "day_before").subject, messages.day_before.subject);
+    assert.equal(detail.messageDefaults.length, 4);
+    assert.notEqual(detail.messageDefaults.find(item => item.stage === "day_before").subject, messages.day_before.subject);
+    const revised = { ...detail.draft, messages: { ...messages, day_before: { ...messages.day_before, message: "Bring two questions." } } };
+    const second = await f.service.previewCadence(f.admin, revised);
+    assert.match(second.previews.find(item => item.stage === "day_before").text, /Bring two questions/);
+    assert.deepEqual((await f.rows(scope === "event" ? "plans" : "sequences"))[0].snapshot.messages, messages, "preview never silently updates the approved message");
+    await f.service.activateCadence(f.admin, second.reviewToken);
+    assert.deepEqual((await f.rows(scope === "event" ? "plans" : "sequences"))[0].snapshot.messages, revised.messages);
+  }
+});
+
+test("overview exposes every future opportunity with honest pause/global states, without enqueueing", async t => {
+  const f = await fixture(t); f.enable();
+  const reviewed = await f.service.previewCadence(f.admin, f.draft);
+  const plan = await f.service.activateCadence(f.admin, reviewed.reviewToken);
+  let overview = await f.service.getCadenceOverview(f.admin);
+  assert.deepEqual(overview.upcoming.map(item => item.stage), ["orientation", "one_week", "day_before", "day_of"]);
+  assert.ok(overview.upcoming.every(item => item.planId === plan.id && item.eventId === f.event.id && item.status === "upcoming" && item.kind === "foundations_01" && item.track === "members"));
+  assert.ok(overview.upcoming.every(item => item.timeZone === "America/Denver" && item.sequenceId === null));
+  f.state.configuration.enabled = false;
+  overview = await f.service.getCadenceOverview(f.admin);
+  assert.equal(overview.upcoming.length, 4); assert.ok(overview.upcoming.every(item => item.status === "blocked" && /Global delivery/.test(item.attention)));
+  await f.pg.query("update experiences set status='draft' where id=$1", [f.event.id]);
+  assert.deepEqual((await f.service.getCadenceOverview(f.admin)).upcoming, [], "unpublished calls have no upcoming opportunities");
+  await f.pg.query("update experiences set status='published',cancelled_at=clock_timestamp() where id=$1", [f.event.id]);
+  assert.deepEqual((await f.service.getCadenceOverview(f.admin)).upcoming, [], "cancelled calls have no upcoming opportunities");
+  await f.pg.query("update experiences set cancelled_at=null,starts_at=$2,ends_at=$3 where id=$1", [f.event.id,future(-1),future(-0.9)]);
+  assert.deepEqual((await f.service.getCadenceOverview(f.admin)).upcoming, [], "past calls have no upcoming opportunities");
+  await f.pg.query("update experiences set starts_at=$2,ends_at=$3 where id=$1", [f.event.id,f.event.startsAt,f.event.endsAt]);
+  f.enable(); await f.service.pauseCadence(f.admin, plan.id, plan.revision);
+  overview = await f.service.getCadenceOverview(f.admin);
+  assert.equal(overview.upcoming.length, 4); assert.ok(overview.upcoming.every(item => item.status === "paused" && item.active === false));
+  await f.pg.query("update private.member_email_cadence_plans set activated_at=$2 where id=$1", [plan.id, future(29.99)]);
+  overview = await f.service.getCadenceOverview(f.admin);
+  assert.deepEqual(overview.upcoming, []);
+  assert.deepEqual(await f.rows("deliveries"), []);
+});
+
+test("overview activity groups recipients by call and stage and distinguishes provider acceptance from delivery", async t => {
+  const f = await fixture(t); f.enable();
+  const reviewed = await f.service.previewCadence(f.admin, f.draft);
+  const plan = await f.service.activateCadence(f.admin, reviewed.reviewToken);
+  const dueAt = future(29), expiresAt = future(29.01);
+  for (const [stage, status] of [["day_before", "sent"], ["day_before", "failed"], ["day_before", "cancelled"], ["day_of", "sent"]]) {
+    const member = crypto.randomUUID(); await f.pg.query("insert into ruined_members values($1)", [member]);
+    await f.pg.query(`insert into private.member_email_cadence_deliveries
+      (plan_id,plan_revision,experience_id,member_id,starts_at,stage,expected_email,expected_consent_id,due_at,expires_at,status,payload,last_error,provider_message_id)
+      values($1,1,$2,$3,$4,$5,'private-person@example.com',21,$6,$7,$8,$9::jsonb,'secret-error','secret-provider-id')`,
+      [plan.id,f.event.id,member,f.event.startsAt,stage,dueAt,expiresAt,status,JSON.stringify({private:"secret-payload"})]);
+  }
+  const before = await f.rows("deliveries");
+  const overview = await f.service.getCadenceOverview(f.admin);
+  assert.equal(overview.recentDeliveries.length, 2);
+  const failed = overview.recentDeliveries.find(item => item.stage === "day_before");
+  assert.equal(failed.status, "failed"); assert.equal(failed.recipientCount, 3);
+  assert.deepEqual(failed.counts, { pending:0, sending:0, failed:1, sent:1, cancelled:1, manual_review:0 });
+  assert.equal(failed.planId, plan.id); assert.equal(failed.kind, "foundations_01"); assert.equal(failed.track, "members");
+  const accepted = overview.recentDeliveries.find(item => item.stage === "day_of");
+  assert.equal(accepted.status, "sent"); assert.match(accepted.reason, /Accepted by the email provider; this is not proof of inbox delivery/);
+  assert.doesNotMatch(JSON.stringify(overview), /private-person|secret-|payload|provider_message_id/);
+  assert.deepEqual(await f.rows("deliveries"), before);
 });

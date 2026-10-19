@@ -1,0 +1,104 @@
+.detail {
+  min-width: 0;
+  color: var(--operator-ink);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.header { padding: 1.25rem 0 1.5rem; }
+.titleRow, .sectionHeading, .callHeading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.titleRow { margin-top: 1.25rem; align-items: flex-start; gap: 1.25rem; }
+.titleCopy { min-width: 0; flex: 1 1 20rem; }
+.titleCopy h3 { margin: 0.35rem 0 0; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 650; line-height: 1.15; overflow-wrap: anywhere; scroll-margin-top: 6rem; outline: none; }
+.eyebrow { margin: 0; color: var(--operator-muted); font-size: 0.6875rem; letter-spacing: 0.11em; text-transform: uppercase; }
+.actions, .statusRow, .callActions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.statusRow { margin: 1.25rem 0 0.75rem; gap: 0.5rem 1.5rem; font-size: 0.8125rem; }
+.badge { display: inline-block; max-width: 100%; padding: 0.1rem 0.45rem; background: color-mix(in srgb, var(--operator-ink) 7%, transparent); color: var(--operator-ink); font-size: 0.75rem; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.badge[data-attention] { color: var(--operator-danger); background: color-mix(in srgb, var(--operator-danger) 9%, transparent); }
+.nextSend { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; margin: 0; font-size: 0.875rem; }
+.nextSend span:last-child { color: var(--operator-muted); }
+.textButton { display: inline-flex; min-height: 2.75rem; align-items: center; text-align: left; font-size: 0.8125rem; color: inherit; text-decoration: underline; text-decoration-color: var(--operator-line); text-underline-offset: 0.2em; }
+.textButton:hover { text-decoration-color: currentColor; }
+.textButton:focus-visible, .secondaryButton:focus-visible, .tab:focus-visible, .stage:focus-visible, .notes summary:focus-visible, .peopleDisclosure summary:focus-visible { outline: 2px solid var(--operator-focus); outline-offset: 3px; }
+.textButton:disabled, .secondaryButton:disabled { cursor: wait; opacity: 0.5; }
+.secondaryButton { min-height: 2.75rem; padding: 0.6rem 0.9rem; border: 1px solid var(--operator-line); font-size: 0.8125rem; font-weight: 600; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0 1.5rem; border-bottom: 1px solid var(--operator-line); }
+.tab { min-height: 3rem; border-bottom: 3px solid transparent; padding: 0.65rem 0; font-size: 0.875rem; font-weight: 600; color: var(--operator-muted); }
+.tab[aria-pressed="true"] { border-bottom-color: var(--operator-ink); color: var(--operator-ink); }
+.tab span { margin-left: 0.5rem; font-size: 0.6875rem; color: var(--operator-danger); }
+.callContext { display: grid; gap: 1rem; padding: 1.5rem 0; }
+.callContext > div { min-width: 0; }
+.callContext label { font-weight: 600; font-size: 0.8125rem; }
+.callContext select { max-width: 100%; text-overflow: ellipsis; }
+.contextNote { align-self: end; margin: 0 0 0.75rem; color: var(--operator-muted); font-size: 0.8125rem; }
+.emailLayout, .audienceLayout { display: grid; align-items: start; min-width: 0; gap: 1.5rem; }
+.stages { min-width: 0; }
+.stages h4, .audience h4, .calls h4, .activity h4 { margin: 0; font-size: 0.9375rem; font-weight: 650; }
+.stages h4 { margin-bottom: 0.75rem; }
+.stageButtons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.stage { display: flex; min-width: 0; min-height: 4.5rem; flex-direction: column; justify-content: center; gap: 0.25rem; padding: 0.75rem; border: 1px solid var(--operator-line); text-align: left; line-height: 1.35; overflow-wrap: anywhere; }
+.stage span { color: var(--operator-muted); font-size: 0.75rem; }
+.stage strong { font-size: 0.875rem; font-weight: 650; }
+.stage[aria-pressed="true"] { border-color: var(--operator-ink); box-shadow: inset 3px 0 0 var(--operator-ink); background: color-mix(in srgb, var(--operator-ink) 5%, transparent); }
+.stage[aria-pressed="true"] span { color: var(--operator-ink); }
+.stage:hover { border-color: var(--operator-ink); }
+.stage:disabled { cursor: wait; opacity: 0.6; }
+.emailPreview { min-width: 0; border: 1px solid var(--operator-line); overflow: hidden; }
+.previewHeader { padding: 1.25rem; border-bottom: 1px solid var(--operator-line); }
+.previewHeader h4 { margin: 0.4rem 0 0; font-size: 1.25rem; font-weight: 650; line-height: 1.25; }
+.subject { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--operator-line); font-weight: 600; overflow-wrap: anywhere; }
+.subject span { display: block; margin-bottom: 0.25rem; color: var(--operator-muted); font-size: 0.6875rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.08em; }
+.previewFrame { display: block; height: 38rem; width: 100%; max-width: 100%; border: 0; background: white; }
+.audience { min-width: 0; border-top: 2px solid var(--operator-ink); padding-top: 0.75rem; }
+.audience .sectionHeading { gap: 0.25rem; }
+.muted { margin: 0.4rem 0 0; font-size: 0.8125rem; color: var(--operator-muted); overflow-wrap: anywhere; }
+.recipientCount { margin: 1rem 0 0; font-size: 0.9375rem; }
+.recipientCount strong { font-size: 1.75rem; font-weight: 600; line-height: 1; }
+.recipientCount span { color: var(--operator-muted); font-size: 0.8125rem; }
+.peopleDisclosure { margin-top: 1rem; border-top: 1px solid var(--operator-line); }
+.peopleDisclosure summary, .notes summary { min-height: 2.75rem; cursor: pointer; padding: 0.75rem 0; font-size: 0.8125rem; font-weight: 600; }
+.peopleList { max-height: 22rem; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.peopleList li { padding: 0.75rem 0; border-top: 1px solid var(--operator-line); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.peopleList strong, .peopleList span { display: block; }
+.peopleList span { color: var(--operator-muted); font-size: 0.75rem; }
+.peopleList p { margin: 0.35rem 0 0; color: var(--operator-muted); font-size: 0.75rem; }
+.smallNote { margin: 1rem 0 0; color: var(--operator-muted); font-size: 0.75rem; }
+.attention { margin: 0.6rem 0 0; color: var(--operator-danger); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.emptyAudience { padding: 1rem 0; color: var(--operator-muted); font-size: 0.875rem; }
+.emailPreview .emptyAudience { padding: 1.25rem; }
+.calls { min-width: 0; }
+.callList, .activityList { list-style: none; padding: 0; margin: 1rem 0 0; }
+.callList > li, .activityList > li { padding: 1.25rem 0; border-top: 1px solid var(--operator-line); }
+.callHeading strong { min-width: 0; font-size: 0.9375rem; overflow-wrap: anywhere; }
+.callActions { margin-top: 0.25rem; gap: 0.5rem 1.25rem; }
+.activity { padding-top: 1.5rem; }
+.activityReason { margin: 0.5rem 0 0; color: var(--operator-muted); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.notes { margin-top: 2rem; border-top: 1px solid var(--operator-line); border-bottom: 1px solid var(--operator-line); }
+.notes summary span { margin-left: 0.75rem; color: var(--operator-muted); font-weight: 400; }
+.notes dl { display: grid; gap: 1.25rem; padding: 0.5rem 0 1.5rem; margin: 0; font-size: 0.8125rem; }
+.notes dt { font-weight: 600; }
+.notes dd { margin: 0.25rem 0 0; color: var(--operator-muted); }
+.notes ul { margin: 0 0 1.5rem; padding-left: 1rem; font-size: 0.8125rem; color: var(--operator-muted); }
+.notes li + li { margin-top: 0.5rem; }
+
+@media (min-width: 768px) {
+  .callContext { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 2rem; }
+  .emailLayout { grid-template-columns: minmax(10rem, 0.42fr) minmax(0, 1fr); }
+  .stageButtons { grid-template-columns: minmax(0, 1fr); }
+  .emailLayout > .audience { grid-column: 2; }
+  .audienceLayout { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+  .notes dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1440px) {
+  .emailLayout { grid-template-columns: minmax(10rem, 0.38fr) minmax(0, 1fr) minmax(14rem, 0.55fr); }
+  .emailLayout > .audience { grid-column: auto; }
+}
+
+@media (max-width: 420px) {
+  .tabs { gap: 0 1rem; }
+  .tab { font-size: 0.8125rem; }
+  .previewHeader { padding: 1rem; }
+  .stage { padding: 0.65rem; }
+  .statusRow { gap: 0.75rem; }
+}

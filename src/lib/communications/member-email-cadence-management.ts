@@ -7,6 +7,10 @@ export type CadenceManagementStatus = "upcoming" | "paused" | "changed" | "cance
 export type CadenceDeliveryCounts = { sent:number; pending:number; failed:number; manualReview:number; cancelled:number };
 /** A scheduled opportunity, never a promise that an email will be delivered. */
 export type CadenceNextReminder = CadenceOccurrence & { eventId:string; eventTitle:string; timeZone:string };
+export type CadenceUpcomingReminder = CadenceNextReminder & {
+  planId:string; sequenceId:string|null; kind:CadenceKind; track:CadenceTrack;
+  status:CadenceManagementStatus; active:boolean; attention:string;
+};
 export type CadenceManagementSummary = {
   id:string; kind:CadenceKind; track:CadenceTrack; active:boolean; revision:number; templateName:string; updatedAt:string;
   title:string; status:CadenceManagementStatus; attention:string; timingSummary:string; audienceSummary:string;
@@ -20,6 +24,7 @@ export type CadenceManagementOverview = {
   events:CadenceEvent[]; plans:CadencePlanSummary[]; sequences:CadenceSequenceSummary[];
   templates:ResendEmailTemplateSummary[]; configuration:CadenceConfiguration;
   inactive:Array<{title:string;reason:string}>; setupRequired:boolean; warnings:string[]; managedElsewhere:AutomatedEmailWorkflow[];
+  upcoming?:CadenceUpcomingReminder[]; recentDeliveries?:CadenceDeliveryActivity[];
 };
 export type CadenceManagedCall = CadenceEvent & {
   planId:string|null; revision:number|null; active:boolean; status:CadenceManagementStatus; attention:string;
@@ -30,12 +35,18 @@ export type CadenceDeliveryOutcome = {
   status:"pending"|"sending"|"failed"|"sent"|"cancelled"|"manual_review";
   dueAt:string; updatedAt:string; sentAt:string|null; reason:string;
 };
+/** Counts are provider handoffs, not inferred inbox delivery or open events. */
+export type CadenceDeliveryActivity = CadenceDeliveryOutcome & {
+  planId:string; sequenceId:string|null; kind:CadenceKind; track:CadenceTrack; recipientCount:number;
+  counts:Record<CadenceDeliveryOutcome["status"],number>;
+};
 export type CadenceManagementDetail = {
   scope:"event"|"sequence"; id:string; revision:number; active:boolean; title:string; status:CadenceManagementStatus;
   draft:CadenceDraft; template:ResendEmailTemplate; configuration:CadenceConfiguration;
   timingSummary:string; audienceSummary:string; inheritanceSummary:string; nextReminder:CadenceNextReminder|null;
   calls:CadenceManagedCall[]; selectedEventId:string|null; previewIsExample:boolean;
   previews:Array<{stage:CadenceStage;html:string;subject:string;text:string}>;
+  messageDefaults?:Array<{stage:CadenceStage;subject:string;message:string}>;
   occurrences:CadenceOccurrence[];
   recipients:Array<{memberId:string;name:string;email:string;eligible:boolean;reason:string}>;
   recipientsChecked:boolean; recentDeliveries:CadenceDeliveryOutcome[]; warnings:string[];

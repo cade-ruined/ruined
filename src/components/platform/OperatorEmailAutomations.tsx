@@ -3,19 +3,19 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import OperatorEmailAutomationManager, { type AutomationFilter, type AutomationSelection } from "@/components/platform/OperatorEmailAutomationManager";
-import { DEFAULT_AUTOMATION_VIEW_OPTIONS, type AutomationViewOptions } from "@/lib/communications/email-automation-view";
+import OperatorEmailAutomationEditor, { suggestedCadenceDesignConnections } from "./OperatorEmailAutomationEditor";
+import { DEFAULT_AUTOMATION_VIEW_OPTIONS, type AutomationViewOptions, type AutomationSection } from "@/lib/communications/email-automation-view";
+import { normalizeAutomationView, readAutomationNavigation, writeAutomationNavigation } from "@/lib/communications/email-automation-navigation";
 import OperatorMessagesTabs from "@/components/platform/OperatorMessagesTabs";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
-import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS } from "@/components/platform/operatorStyles";
-import { CADENCE_STAGE_LABELS, cadenceOccurrences, type CadenceEvent, type CadenceKind, type CadenceStage, type CadenceTrack } from "@/lib/communications/member-email-cadence-model";
-import { cadenceCopy } from "@/lib/communications/member-email-cadence-copy";
+import { OPERATOR_BUTTON_CLASS } from "@/components/platform/operatorStyles";
+import { CADENCE_STAGE_LABELS, cadenceOccurrences, type CadenceEvent, type CadenceKind, type CadenceStage } from "@/lib/communications/member-email-cadence-model";
+import { cadenceCopy, cadenceMessagesValidationError } from "@/lib/communications/member-email-cadence-copy";
 import { cadenceManagementDescriptions, type CadenceManagementDetail, type CadenceManagementOverview, type CadenceManagementPlanSummary, type CadenceManagementSequenceSummary } from "@/lib/communications/member-email-cadence-management";
-import type { CadenceBindingSource, CadenceDraft } from "@/lib/communications/member-email-cadence-types";
+import type { CadenceDraft } from "@/lib/communications/member-email-cadence-types";
 import type { ResendEmailTemplate } from "@/lib/communications/resend-email-model";
 
 type Kind = CadenceKind;
-type Track = CadenceTrack;
-type Source = CadenceBindingSource;
 type Event = CadenceEvent;
 type Plan = CadenceManagementPlanSummary;
 type Sequence = CadenceManagementSequenceSummary;
@@ -35,12 +35,6 @@ const KINDS: Array<{ value: Kind; label: string }> = [
   { value: "foundations_01", label: "Foundations 01" }, { value: "foundations_02", label: "Foundations 02" },
   { value: "foundations_03", label: "Foundations 03" }, { value: "foundations_04", label: "Foundations 04" },
   { value: "membership", label: "Membership call" }, { value: "circle", label: "Circle call" },
-];
-const SOURCES: Array<{ value: Source; label: string }> = [
-  { value: "literal", label: "Fixed text" }, { value: "member_name", label: "Member name" },
-  { value: "call_title", label: "Call title" }, { value: "call_date", label: "Call date" },
-  { value: "call_time", label: "Call time" }, { value: "call_url", label: "Call link" },
-  { value: "profile_url", label: "Member profile link" }, { value: "preferences_url", label: "Email reminder preferences link" },
 ];
 const SAMPLE_TEMPLATE: ResendEmailTemplate = {
   id: "preview-template", name: "Member call reminder — sample", status: "published", version: "preview-1", hasUnpublishedVersions: false,
@@ -92,7 +86,7 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
 function sampleReview(draft: Draft, event: Event, template: ResendEmailTemplate): Review {
   const occurrences = cadenceOccurrences(event, draft.kind, draft.track);
   const previews = occurrences.map(occurrence => {
-    const copy = cadenceCopy({ event, kind: draft.kind, track: draft.track, stage: occurrence.stage, memberName: "Alex Sample", siteUrl: "https://members.example.test" });
+    const copy = cadenceCopy({ event, kind: draft.kind, track: draft.track, stage: occurrence.stage, memberName: "Alex Sample", siteUrl: "https://members.example.test", message: draft.messages?.[occurrence.stage] });
     const fields = template.fields.map(field => ({
       heading: `copy:${field.key}` === draft.headingTarget,
       value: `copy:${field.key}` === draft.bodyTarget ? copy.body : `copy:${field.key}` === draft.headingTarget ? copy.heading : draft.copy?.[field.key] ?? field.value,
@@ -116,7 +110,7 @@ function sampleOverview(): Overview {
     { id: "sample-sequence-founders", kind: "foundations_03", track: "founder_test", active: false, revision: 1, templateName: SAMPLE_TEMPLATE.name, updatedAt: "2026-10-12T18:00:00Z", title: "Foundations 03 · Founder test", status: "paused", attention: "", ...cadenceManagementDescriptions("foundations_03", "founder_test"), nextReminder: null, delivery: { ...SAMPLE_COUNTS, sent: 0 }, matchingCallCount: 1 },
   ];
   const plans: Plan[] = events.map((event, index) => { const sequence = sequences[index === 0 ? 1 : 0]; return { ...sequence, id: `sample-plan-${event.id}`, eventId: event.id, title: event.title, sequenceId: sequence.id, delivery: { ...SAMPLE_COUNTS, sent: 0 }, attention: sequence.active ? "" : "Sequence paused. Its inherited reminders are paused too." }; });
-  return { ...SAMPLE_OVERVIEW, sequences, plans };
+  return { ...SAMPLE_OVERVIEW, sequences, plans, recentDeliveries: [{id:"sample-activity",planId:plans[1].id,eventId:events[1].id,eventTitle:events[1].title,sequenceId:sequences[0].id,kind:"foundations_01",track:"members",stage:"orientation",dueAt:"2026-10-12T18:00:00Z",updatedAt:"2026-10-12T18:01:00Z",sentAt:"2026-10-12T18:01:00Z",status:"sent",recipientCount:2,counts:{sent:2,pending:0,sending:0,failed:0,cancelled:0,manual_review:0},reason:"Sample provider acceptance. No real email was sent."}] };
 }
 function sampleDetail(overview: Overview, selection: AutomationSelection, checkedEventId?: string): CadenceManagementDetail {
   const item = selection.scope === "sequence" ? overview.sequences.find(value => value.id === selection.id) : overview.plans.find(value => value.id === selection.id);
@@ -127,7 +121,7 @@ function sampleDetail(overview: Overview, selection: AutomationSelection, checke
   const draft: Draft = { scope: selection.scope, eventId: selection.scope === "event" ? event.id : "", kind: item.kind, track: item.track, templateId: SAMPLE_TEMPLATE.id, templateVersion: SAMPLE_TEMPLATE.version, bodyTarget: "copy:body", headingTarget: "copy:heading", bindings: { MEMBER_NAME: { source: "member_name" }, CALL_URL: { source: "call_url" } }, copy: { greeting: "", signature: "RU/NED" } };
   const reviewed = sampleReview({ ...draft, eventId: event.id }, event, SAMPLE_TEMPLATE);
   return { scope: selection.scope, id: item.id, revision: item.revision, active: item.active, title: item.title, status: item.status, draft, template: SAMPLE_TEMPLATE, configuration: overview.configuration, timingSummary: item.timingSummary, audienceSummary: item.audienceSummary, inheritanceSummary: item.inheritanceSummary, nextReminder: item.nextReminder, calls, selectedEventId: event.id, previewIsExample: true,
-    previews: (reviewed.previews ?? []).map(item => ({ ...item, stage: item.stage as CadenceStage })), occurrences: reviewed.occurrences.map(occurrence => ({ ...occurrence, stage: occurrence.stage as CadenceStage })), recipients: reviewed.recipients.map(recipient => ({ ...recipient, reason: recipient.reason ?? "" })), recipientsChecked: Boolean(checkedEventId) || selection.scope === "event", recentDeliveries: selection.scope === "sequence" && item.active ? [{ id: "sample-delivery", eventId: "sample-earlier-call", eventTitle: "Foundations 01 — earlier sample call", stage: "orientation", status: "sent", dueAt: "2026-10-12T18:00:00Z", updatedAt: "2026-10-12T18:01:00Z", sentAt: "2026-10-12T18:01:00Z", reason: "Sample provider acceptance. No real email was sent." }] : [], warnings: ["Sample workspace. These designs, calls, recipients, and delivery records are fictional. Activation and sending are disabled."] };
+    previews: (reviewed.previews ?? []).map(item => ({ ...item, stage: item.stage as CadenceStage })), occurrences: reviewed.occurrences.map(occurrence => ({ ...occurrence, stage: occurrence.stage as CadenceStage })), recipients: reviewed.recipients.map(recipient => ({ ...recipient, reason: recipient.reason ?? "" })), recipientsChecked: true, recentDeliveries: selection.scope === "sequence" && item.active ? [{ id: "sample-delivery", eventId: "sample-earlier-call", eventTitle: "Foundations 01 — earlier sample call", stage: "orientation", status: "sent", dueAt: "2026-10-12T18:00:00Z", updatedAt: "2026-10-12T18:01:00Z", sentAt: "2026-10-12T18:01:00Z", reason: "Sample provider acceptance. No real email was sent." }] : [], warnings: ["Sample workspace. These designs, calls, recipients, and delivery records are fictional. Activation and sending are disabled."] };
 }
 
 export default function OperatorEmailAutomations({ preview = false }: { preview?: boolean }) {
@@ -144,7 +138,11 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
   const [recipientEventId, setRecipientEventId] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AutomationFilter>("all");
-  const [viewOptions, setViewOptions] = useState<AutomationViewOptions>(DEFAULT_AUTOMATION_VIEW_OPTIONS);
+  const [viewOptions, setViewOptions] = useState<AutomationViewOptions>({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"});
+  const [section, setSection] = useState<AutomationSection>("upcoming");
+  const [editorStage, setEditorStage] = useState<CadenceStage>("day_before");
+  const [navigationReady, setNavigationReady] = useState(false);
+  const initialNavigation = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [pending, setPending] = useState<string | null>(preview ? null : "loading");
@@ -157,7 +155,6 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
   const event = overview?.events.find(item => item.id === draft.eventId);
   const sequenceScope = draft.scope === "sequence";
   const reviewingSequence = review?.scope === "sequence";
-  const targets = template ? [...template.variables.filter(variable => variable.type === "string").map(variable => ({ value: `variable:${variable.key}`, label: `${variable.key} · template variable` })), ...template.fields.map(field => ({ value: `copy:${field.key}`, label: `${field.label} · template text` }))] : [];
   const eligibleCount = review?.recipients.filter(recipient => recipient.eligible).length ?? 0;
   const shownPreview = review?.previews?.[previewStage] ?? review?.preview;
   const expired = Boolean(review?.expiresAt && Date.parse(review.expiresAt) <= Date.now());
@@ -215,6 +212,38 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     confirmation?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [confirmDiscard]);
 
+  // Keep direct links to individual emails and restore the browsing context on reload/back.
+  useEffect(() => {
+    if (typeof window === "undefined" || !overview || pending || initialNavigation.current) return;
+    initialNavigation.current = true;
+    const saved = readAutomationNavigation(window.location.search);
+    setSection(saved.section); setQuery(saved.query); setFilter(saved.filter); setViewOptions(saved.options);
+    setNavigationReady(true);
+    if (saved.selection) void openDetail(saved.selection,saved.eventId);
+    // Loading the overview is the only initialization dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overview,pending]);
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigationReady || pending || editorOpen) return;
+    const search = writeAutomationNavigation(window.location.search,{section,query,filter,options:viewOptions,
+      selection: selection ? {...selection,stage:detail?.previews[detailStage]?.stage} : null,eventId:recipientEventId || undefined});
+    const destination = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+    if (destination !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state,"",destination);
+  },[navigationReady,pending,editorOpen,section,query,filter,viewOptions,selection,detail,detailStage,recipientEventId]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const restore = () => {
+      if (busy.current || editorOpen) return;
+      const saved = readAutomationNavigation(window.location.search);
+      setSection(saved.section);setQuery(saved.query);setFilter(saved.filter);setViewOptions(saved.options);
+      if (saved.selection) void openDetail(saved.selection,saved.eventId);
+      else {setDetail(null);setSelection(null);}
+    };
+    window.addEventListener("popstate",restore);
+    return () => window.removeEventListener("popstate",restore);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[overview,editorOpen,selection,detail,detailStage]);
+
   function change(update: Partial<Draft>) {
     if (busy.current) return;
     setDraft(current => ({ ...current, ...update })); setDirty(true); setReview(null); setMessage(""); setFailed(false);
@@ -230,7 +259,13 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     await perform("loading", async () => {
       if (preview) return;
       const result = await request<Overview>(API);
-      if (mounted.current) { setOverview(result); setReview(null); setDetail(null); setSelection(null); }
+      if (mounted.current) { setOverview(result); setReview(null);
+        if (selection) {
+          const params = new URLSearchParams({scope:selection.scope,id:selection.id});
+          if (recipientEventId) params.set("eventId",recipientEventId);
+          const updated = await request<CadenceManagementDetail>(`${API}?${params}`);
+          if (mounted.current) { const stage = detail?.previews[detailStage]?.stage; setDetail(updated); setDetailStage(Math.max(0,updated.previews.findIndex(item => item.stage === stage))); }
+        } }
     });
   }
   async function chooseTemplate(id: string) {
@@ -242,13 +277,14 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
       if (!mounted.current) return;
       if (selected.campaignOnly) throw new Error("Choose an individual email template. Campaign-only templates cannot be used for these reminders.");
       if (selected.status !== "published") throw new Error("Publish this design in Resend before using it for an automation.");
-      const bindings = Object.fromEntries(selected.variables.map(variable => [variable.key, { source: "literal" as const, value: variable.fallbackValue == null ? "" : String(variable.fallbackValue) }]));
-      const copy = Object.fromEntries(selected.fields.map(field => [field.key, field.value]));
-      setTemplate(selected); setDraft(current => ({ ...current, templateId: selected.id, templateVersion: selected.version, bindings, copy }));
+      const connections = suggestedCadenceDesignConnections(selected);
+      setTemplate(selected); setDraft(current => ({ ...current, templateId: selected.id, templateVersion: selected.version, ...connections }));
     });
   }
   async function reviewDraft(e: FormEvent) {
     e.preventDefault();
+    const messageError = cadenceMessagesValidationError(draft.messages);
+    if (messageError) {setMessage(messageError);setFailed(true);return;}
     if ((!sequenceScope && !event) || !template || !draft.bodyTarget || draft.bodyTarget === draft.headingTarget || overview?.setupRequired) return;
     await perform("review", async () => {
       setReview(null);
@@ -258,7 +294,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
       }));
       const reviewedDraft = { ...draft, copy: Object.keys(copy).length ? copy : undefined, bindings: Object.fromEntries(Object.entries(draft.bindings).filter(([key]) => ![draft.bodyTarget, draft.headingTarget].includes(`variable:${key}`))) };
       const result = preview ? sampleReview(reviewedDraft, event ?? exampleEvent(draft.kind), template) : await request<Review>(API, { action: "preview", draft: reviewedDraft });
-      if (mounted.current) { setReview(result); setPreviewStage(0); }
+      if (mounted.current) { setReview(result); setPreviewStage(Math.max(0,result.previews?.findIndex(item => item.stage === editorStage) ?? 0)); }
     });
   }
   async function activate() {
@@ -279,7 +315,10 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     await perform(`pause:${plan.id}`, async () => {
       await request(API, { action: "pause", id: plan.id, revision: plan.revision });
       if (!mounted.current) return;
-      setDetail(null); setSelection(null); setReview(null); setOverview(current => current ? { ...current, plans: current.plans.map(item => item.id === plan.id ? { ...item, active: false } : item) } : current);
+      setDetail(null); setSelection(null); setReview(null); setOverview(current => current ? { ...current,
+        plans: current.plans.map(item => item.id === plan.id ? { ...item, active: false, status: "paused" } : item),
+        upcoming: current.upcoming?.map(item => item.planId === plan.id ? { ...item, active: false, status: "paused" } : item),
+      } : current);
       setMessage("Automation paused. Future reminders will not be sent by this plan.");
       try { setOverview(await request<Overview>(API)); }
       catch { setMessage("Automation paused. Refresh the list to see its latest status."); }
@@ -291,8 +330,9 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
       await request(API, { action: "pause_sequence", id: sequence.id, revision: sequence.revision });
       if (!mounted.current) return;
       setDetail(null); setSelection(null); setReview(null); setOverview(current => current ? { ...current,
-        sequences: current.sequences?.map(item => item.id === sequence.id ? { ...item, active: false } : item),
-        plans: current.plans.map(item => item.sequenceId === sequence.id ? { ...item, active: false } : item),
+        sequences: current.sequences?.map(item => item.id === sequence.id ? { ...item, active: false, status: "paused" } : item),
+        plans: current.plans.map(item => item.sequenceId === sequence.id ? { ...item, active: false, status: "paused" } : item),
+        upcoming: current.upcoming?.map(item => item.sequenceId === sequence.id ? { ...item, active: false, status: "paused" } : item),
       } : current);
       setMessage("Sequence paused. Its inherited call reminders are paused too.");
       try { setOverview(await request<Overview>(API)); }
@@ -303,21 +343,28 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
   async function openDetail(next: AutomationSelection, actualEventId?: string) {
     if (busy.current || !overview) return;
     await perform(actualEventId ? "recipients" : "detail", async () => {
+      if (actualEventId) setDetail(current => current ? {...current, recipientsChecked: false, recipients: []} : current);
       const params = new URLSearchParams({ scope: next.scope, id: next.id });
       if (actualEventId) params.set("eventId", actualEventId);
       const result = preview ? sampleDetail(overview, next, actualEventId) : await request<CadenceManagementDetail>(`${API}?${params}`);
       if (!mounted.current) return;
-      setDetail(result); setSelection(next); setDetailStage(0); setRecipientEventId(result.selectedEventId ?? "");
+      const stage = next.stage ?? (selection?.id === next.id && selection.scope === next.scope ? detail?.previews[detailStage]?.stage : undefined);
+      setDetail(result); setSelection({scope:next.scope,id:next.id}); setDetailStage(Math.max(0,result.previews.findIndex(item => item.stage === stage))); setRecipientEventId(result.selectedEventId ?? "");
     });
+  }
+  function changeSection(value: AutomationSection) {
+    const normalized = normalizeAutomationView(value,filter,viewOptions);
+    setSection(value);setFilter(normalized.filter);setViewOptions(normalized.options);setDetail(null);setSelection(null);
   }
   function newAutomation() {
     if (busy.current) return;
     setDetail(null); setSelection(null); navigationTarget.current = null;
-    setDraft(blankDraft()); setTemplate(null); setReview(null); setEditorOpen(true); setEditingLabel(null); setDirty(false); setConfirmDiscard(false); setMessage("");
+    setEditorStage("day_before"); setDraft(blankDraft()); setTemplate(null); setReview(null); setEditorOpen(true); setEditingLabel(null); setDirty(false); setConfirmDiscard(false); setMessage("");
   }
   function editSaved() {
     if (busy.current || !detail) return;
-    setDraft({ ...detail.draft, scope: detail.scope, bindings: { ...detail.draft.bindings }, copy: { ...Object.fromEntries(detail.template.fields.map(field => [field.key, field.value])), ...detail.draft.copy } });
+    setDraft({ ...detail.draft, scope: detail.scope, eventId: detail.selectedEventId ?? detail.draft.eventId, bindings: { ...detail.draft.bindings }, copy: { ...Object.fromEntries(detail.template.fields.map(field => [field.key, field.value])), ...detail.draft.copy } });
+    setEditorStage(detail.previews[detailStage]?.stage ?? "day_before");
     setTemplate(detail.template); setReview(null); setPreviewStage(0); setEditingLabel(detail.title); setEditorOpen(true); setDirty(false); setConfirmDiscard(false); setMessage("");
   }
   function closeEditor(discard = false) {
@@ -333,43 +380,27 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     else { const item = overview.plans.find(value => value.id === detail.id); if (item) void pause(item); }
   }
 
-  return <OperatorPageFrame title="Recurring emails">
+  return <OperatorPageFrame title="Automated emails">
     <OperatorMessagesTabs active="automations" />
-    <header className="mb-5 flex flex-wrap items-start justify-between gap-4"><div className="max-w-2xl"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--operator-muted)]">Communications / automatic reminders</p><h2 className="operator-page-heading mt-2">Recurring emails</h2><p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">Manage the reminders that run around each call. Inspect the approved message, check who qualifies, and review changes before they go live.</p></div><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || overview?.setupRequired} onClick={newAutomation} type="button">New automation</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => void refresh()} type="button">Refresh</button></>}</div></header>
+    <header className="mb-5 flex flex-wrap items-start justify-between gap-4"><div className="max-w-2xl"><p className="text-xs uppercase tracking-[0.14em] text-[color:var(--operator-muted)]">Communications / automatic reminders</p><h2 className="operator-page-heading mt-2">Automated emails</h2><p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">See what’s sending next, review your emails, and check delivery activity.</p></div><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || overview?.setupRequired} onClick={newAutomation} type="button">New automation</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => void refresh()} type="button">Refresh</button></>}</div></header>
     {preview ? <p className="operator-emphasis mb-5 p-4 text-sm" data-operator-tone="wait">Preview workspace. Events, designs, and recipients below are samples. Nothing is saved or sent.</p> : null}
     {overview && (!overview.configuration.enabled || !overview.configuration.ready || overview.setupRequired) ? <section className="operator-emphasis mb-5 space-y-2 p-4 text-sm" data-operator-tone="wait" aria-label="Automation readiness"><h3 className="font-semibold">{overview.setupRequired ? "Automation setup is required" : !overview.configuration.enabled ? "Automatic delivery is paused" : "Delivery setup is incomplete"}</h3><p>{overview.setupRequired ? "The automation service needs setup before a plan can be reviewed or activated." : !overview.configuration.enabled ? "You can prepare and activate plans. No automated emails will leave until automatic delivery is enabled." : "You can prepare plans, but delivery will wait until the email service is ready."}</p></section> : null}
     {message ? <p className={`mb-5 break-words text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={failed ? "alert" : "status"}>{message}</p> : null}
     {!overview ? <p className="operator-bento-card text-sm" role="status">{pending ? "Loading automations…" : "Automations are unavailable. Refresh to try again."}</p> : <>
-      {!editorOpen ? <OperatorEmailAutomationManager overview={overview} detail={detail} selection={selection} query={query} filter={filter} viewOptions={viewOptions} onViewOptions={setViewOptions} onResetView={() => { setQuery(""); setFilter("all"); setViewOptions(DEFAULT_AUTOMATION_VIEW_OPTIONS); }} previewStage={detailStage} recipientEventId={recipientEventId} pending={pending} preview={preview} onQuery={setQuery} onFilter={setFilter} onSelect={next => void openDetail(next)} onStage={setDetailStage} onRecipientEvent={setRecipientEventId} onInspectRecipients={() => { if (selection && recipientEventId) void openDetail(selection, recipientEventId); }} onEdit={editSaved} onPause={pauseSelected} onClose={() => { setDetail(null); setSelection(null); }} /> : <>
-      <section className="operator-bento-card mb-5"><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--operator-muted)]">{editingLabel ? "Revise approved setup" : "New automation"}</p><h3 className="mt-2 scroll-mt-24 break-words text-xl font-semibold outline-none" id="automation-editor-heading" tabIndex={-1}>{editingLabel ?? "Choose a call and its design"}</h3><p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">{editingLabel ? "The saved design, text, and field connections are loaded below. Review again before activating. If the source template has changed, the review will ask you to choose its current version." : "Reminder timing follows the approved cadence. This setup controls the design and which calls inherit it."}</p></section>
+      {!editorOpen ? <OperatorEmailAutomationManager overview={overview} detail={detail} selection={selection} section={section} onSection={changeSection} query={query} filter={filter} viewOptions={viewOptions} onViewOptions={setViewOptions} onResetView={() => { setQuery(""); setFilter("all"); setViewOptions({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"}); }} previewStage={detailStage} recipientEventId={recipientEventId} pending={pending} preview={preview} onQuery={setQuery} onFilter={setFilter} onSelect={next => void openDetail(next)} onStage={setDetailStage} onRecipientEvent={value => { if (selection) void openDetail(selection,value); }} onInspectRecipients={() => { if (selection && recipientEventId) void openDetail(selection, recipientEventId); }} onEdit={editSaved} onPause={pauseSelected} onClose={() => { setDetail(null); setSelection(null); }} /> : <>
+      <section className="operator-bento-card mb-5"><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--operator-muted)]">{editingLabel ? "Revise approved setup" : "New automation"}</p><h3 className="mt-2 scroll-mt-24 break-words text-xl font-semibold outline-none" id="automation-editor-heading" tabIndex={-1}>{editingLabel ?? "Choose a call and its design"}</h3><p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">{editingLabel ? "Edit the message, then preview the complete email before activating your changes." : "Reminder timing follows the approved cadence. This setup controls the design and which calls inherit it."}</p></section>
       {confirmDiscard ? <section className="operator-emphasis mb-5 scroll-mt-24 p-4 outline-none" data-operator-tone="wait" role="alert" id="automation-discard-confirmation" tabIndex={-1}><p className="text-sm">Discard the changes to this setup?</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => { navigationTarget.current = null; setConfirmDiscard(false); }}>Keep editing</button><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => closeEditor(true)}>Discard changes</button></div></section> : null}
-      <form className="space-y-5" onSubmit={reviewDraft}>
-        <fieldset className="operator-bento-card min-w-0" disabled={!!pending || overview.setupRequired}><legend className="sr-only">Choose reminder scope and design</legend><h3 className="text-lg font-semibold">Set up reminders</h3><div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
-          <label className="block min-w-0 text-sm font-medium md:col-span-2" htmlFor="cadence-scope">Apply to<select className={OPERATOR_FIELD_CLASS} id="cadence-scope" value={draft.scope ?? "event"} onChange={e => change({ scope: e.target.value as "event" | "sequence" })}><option value="sequence">Future calls of this type</option><option value="event">This call</option></select></label>
-          <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-kind">Call type<select className={OPERATOR_FIELD_CLASS} id="cadence-kind" value={draft.kind} onChange={e => change({ kind: e.target.value as Kind })}>{KINDS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-track">Cadence<select className={OPERATOR_FIELD_CLASS} id="cadence-track" value={draft.track} onChange={e => change({ track: e.target.value as Track })}><option value="members">Members</option><option value="founder_test">October founder test</option></select></label>
-          <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-event">{sequenceScope ? "Example call (optional)" : "Scheduled event"}<select className={OPERATOR_FIELD_CLASS} id="cadence-event" required={!sequenceScope} value={draft.eventId} onChange={e => change({ eventId: e.target.value })}><option value="">{sequenceScope ? "Use a representative example" : "Choose an actual event"}</option>{overview.events.map(item => <option key={item.id} value={item.id}>{item.title} · {dateLabel(item.startsAt, item.timeZone)}</option>)}</select></label>
-          <label className="block min-w-0 text-sm font-medium" htmlFor="cadence-template">Resend design<select className={OPERATOR_FIELD_CLASS} id="cadence-template" required value={draft.templateId} onChange={e => void chooseTemplate(e.target.value)}><option value="">Choose an individual email design</option>{overview.templates.map(item => <option key={item.id} value={item.id}>{item.name}{item.status === "draft" ? " · draft" : ""}</option>)}</select></label>
-        </div>{sequenceScope ? <p className="mt-4 text-sm leading-relaxed text-[color:var(--operator-muted)]">This sequence covers current and future published calls with this call type and cadence selected in Events. The example call is for preview only. Calls with individual overrides or a paused plan keep their own settings.</p> : null}<p className="mt-4 text-xs leading-relaxed text-[color:var(--operator-muted)]">Paid Foundations members are enrolled only when their accepted cohort and session dates match. Founder tests use confirmed invitations. Membership and Circle calls use their current eligible audiences. Cancellations and reminder preferences are respected.</p>{event && !preview ? <Link className="mt-2 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={`/ops/experiences/${encodeURIComponent(event.id)}`}>Review the event and its audience ↗</Link> : null}{!overview.events.length ? <p className="mt-3 text-sm">{sequenceScope ? <>You can approve the sequence before calls exist. Set each new call’s reminder type and cadence in <Link className="underline underline-offset-4" href="/ops/experiences">Events</Link>.</> : <>Create and publish a call in <Link className="underline underline-offset-4" href="/ops/experiences">Events</Link> first.</>}</p> : null}{!overview.templates.length ? <p className="mt-3 text-sm">No Resend templates are available. Add an individual email design in Resend, then refresh.</p> : null}</fieldset>
-        {template ? <fieldset className="operator-bento-card min-w-0" disabled={!!pending}><legend className="sr-only">Connect the design’s editable fields</legend><h3 className="text-lg font-semibold">Connect the message to your design</h3><p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">The approved cadence supplies each reminder’s subject and message. Choose where that message appears in this template.</p><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="block min-w-0 text-sm font-medium" htmlFor="cadence-body">Message area<select className={OPERATOR_FIELD_CLASS} id="cadence-body" required value={draft.bodyTarget} onChange={e => change({ bodyTarget: e.target.value })}><option value="">Choose the main message area</option>{targets.map(target => <option key={target.value} value={target.value}>{target.label}</option>)}</select></label><label className="block min-w-0 text-sm font-medium" htmlFor="cadence-heading">Heading area (optional)<select className={OPERATOR_FIELD_CLASS} id="cadence-heading" value={draft.headingTarget ?? ""} onChange={e => change({ headingTarget: e.target.value || undefined })}><option value="">Keep the template heading</option>{targets.filter(target => target.value !== draft.bodyTarget).map(target => <option key={target.value} value={target.value}>{target.label}</option>)}</select></label></div>{draft.bodyTarget && draft.bodyTarget === draft.headingTarget ? <p className="mt-3 text-sm text-[var(--operator-danger)]" role="alert">Choose different areas for the heading and message.</p> : null}
-          {template.variables.filter(variable => ![draft.bodyTarget, draft.headingTarget].includes(`variable:${variable.key}`)).map(variable => { const binding = draft.bindings[variable.key] ?? { source: "literal", value: "" }; return <div className="mt-5 grid gap-3 border-t border-[color:var(--operator-ink)]/15 pt-4 md:grid-cols-2" key={variable.key}><label className="block min-w-0 text-sm font-medium" htmlFor={`cadence-source-${variable.key}`}>{variable.key}<select className={OPERATOR_FIELD_CLASS} id={`cadence-source-${variable.key}`} value={binding.source} onChange={e => change({ bindings: { ...draft.bindings, [variable.key]: { source: e.target.value as Source, ...(e.target.value === "literal" ? { value: binding.value ?? "" } : {}) } } })}>{SOURCES.filter(source => variable.type !== "number" || source.value === "literal").map(source => <option key={source.value} value={source.value}>{source.label}</option>)}</select></label>{binding.source === "literal" ? <label className="block min-w-0 text-sm font-medium" htmlFor={`cadence-value-${variable.key}`}>Fixed value<input className={OPERATOR_FIELD_CLASS} id={`cadence-value-${variable.key}`} maxLength={2000} type={variable.type === "number" ? "number" : "text"} value={binding.value ?? ""} onChange={e => change({ bindings: { ...draft.bindings, [variable.key]: { source: "literal", value: e.target.value } } })} /></label> : <p className="self-end pb-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">Filled separately for the recipient and their scheduled call.</p>}</div>; })}
-          {template.fields.some(field => ![draft.bodyTarget, draft.headingTarget].includes(`copy:${field.key}`)) ? <section className="mt-5 space-y-4 border-t border-[color:var(--operator-ink)]/15 pt-4" aria-labelledby="cadence-template-text-heading"><div><h4 className="text-sm font-semibold" id="cadence-template-text-heading">Other template text</h4><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">Edit the remaining text for this automation. You can clear a duplicate greeting or replace a sample signature. These changes leave the saved Resend design unchanged.</p></div>{template.fields.map((field, index) => ![draft.bodyTarget, draft.headingTarget].includes(`copy:${field.key}`) ? <label className="block min-w-0 text-sm font-medium" htmlFor={`cadence-copy-${index}`} key={field.key}>{field.label}<textarea className={`${OPERATOR_FIELD_CLASS} min-h-24 resize-y`} id={`cadence-copy-${index}`} maxLength={12000} rows={3} value={draft.copy?.[field.key] ?? field.value} onChange={e => change({ copy: { ...draft.copy, [field.key]: e.target.value } })} /></label> : null)}</section> : null}
-          <p className="mt-4 text-xs leading-relaxed text-[color:var(--operator-muted)]">Check the complete rendered email before activating. The selected message and heading areas are filled by the cadence.</p>
-        </fieldset> : null}
-        <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || !template || (!sequenceScope && !event) || !draft.bodyTarget || draft.bodyTarget === draft.headingTarget || overview.setupRequired} type="submit">{pending === "review" ? "Preparing review…" : sequenceScope ? "Review sequence" : "Review automation"}</button>
-      </form>
+      <OperatorEmailAutomationEditor draft={draft} template={template} overview={overview} pending={pending} editing={Boolean(editingLabel)} preview={preview} initialStage={editorStage} onStage={setEditorStage} onDraft={change} onSelectTemplate={chooseTemplate} onReview={reviewDraft} />
       {review ? <section className="mt-7 space-y-5" aria-labelledby="automation-review-heading"><header><h3 className="scroll-mt-24 text-xl font-semibold outline-none" id="automation-review-heading" tabIndex={-1}>Review before activating</h3><p className="mt-2 text-sm text-[color:var(--operator-muted)]">{reviewingSequence ? `${KINDS.find(item => item.value === draft.kind)?.label ?? "Member call"} · ${draft.track === "founder_test" ? "Founder test" : "Members"}` : event?.title} · {template?.name}</p>{reviewingSequence ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">{event ? `Example call: ${event.title}.` : "The email and timing below use a representative future call."}</p> : null}{review.expiresAt ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Review expires {dateLabel(review.expiresAt, event?.timeZone)}. Changes to this setup require another review.</p> : null}</header>
         {reviewingSequence ? <section className="operator-bento-card" aria-labelledby="cadence-matching-calls-heading"><h4 className="font-semibold" id="cadence-matching-calls-heading">Matching published calls</h4><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">Each matching call uses its own qualified audience. Individual overrides and paused calls retain their settings.</p>{review.matchingEvents?.length ? <ul className="mt-3 space-y-3">{review.matchingEvents.map(item => <li className="break-words text-sm" key={item.id}>{preview ? <p className="font-medium">{item.title}</p> : <Link className="font-medium underline underline-offset-4" href={`/ops/experiences/${encodeURIComponent(item.id)}`}>{item.title} ↗</Link>}<p className="mt-1 text-xs text-[color:var(--operator-muted)]">{dateLabel(item.startsAt, item.timeZone)}</p></li>)}</ul> : <p className="mt-3 text-sm">No matching calls are scheduled yet. The sequence can be approved now and will apply when matching calls are published.</p>}</section> : null}
         <div className="grid min-w-0 gap-5 xl:grid-cols-2"><div className="min-w-0 space-y-5"><section className="operator-bento-card"><h4 className="font-semibold">{reviewingSequence ? "Example reminder timing" : "Scheduled reminders"}</h4><p className="mt-2 text-xs text-[color:var(--operator-muted)]">Times shown in {event?.timeZone ?? "America/Denver"}. {reviewingSequence ? "Timing is calculated separately from each call’s scheduled time." : "Only future stages can be activated."}</p><ul className="mt-3 space-y-3">{review.occurrences.map(occurrence => <li className="break-words text-sm" key={`${occurrence.stage}:${occurrence.dueAt}`}><p className="font-medium capitalize">{stageLabel(occurrence.stage)}</p><p className="mt-1">{dateLabel(occurrence.dueAt, event?.timeZone)}</p><p className="mt-1 text-xs text-[color:var(--operator-muted)]">Expires {dateLabel(occurrence.expiresAt, event?.timeZone)}</p></li>)}</ul>{!review.occurrences.length ? <p className="mt-3 text-sm">{reviewingSequence ? "There are no remaining reminder times for this example. Future matching calls use the approved sequence." : "No future reminders are available for this event."}</p> : null}</section>
           <section className="operator-bento-card"><h4 className="font-semibold">{reviewingSequence ? "Example call recipients" : "Recipients"}</h4><p className="mt-2 text-sm">{eligibleCount} eligible · {review.recipients.length - eligibleCount} excluded</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{reviewingSequence ? "These recipients belong to the example call only. Future calls resolve their own audience, and members joining later receive only future stages. " : ""}Eligibility and communication choices are checked again before each delivery.</p>{!review.recipients.length ? <p className="mt-3 text-sm">{reviewingSequence ? "No recipients are included in this example. You can approve the sequence before its future audience is known." : "No recipients currently qualify for this call. Check its audience, membership access, and reminder preferences. Foundations and founder tests also need confirmed invitations in Events."}</p> : <ul className="mt-3 max-h-96 space-y-3 overflow-y-auto">{review.recipients.map(recipient => <li className="break-words border-t border-[color:var(--operator-ink)]/15 pt-3 text-sm" key={recipient.memberId}><p className="font-medium">{recipient.name || "Member"}</p><p className="break-all text-xs text-[color:var(--operator-muted)]">{recipient.email}</p><p className={`mt-1 text-xs ${recipient.eligible ? "text-[var(--operator-success-text)]" : "text-[color:var(--operator-muted)]"}`}>{recipient.eligible ? "Eligible" : `Excluded: ${recipient.reason || "Not eligible for this reminder."}`}</p></li>)}</ul>}</section></div>
-          <section className="operator-glass min-w-0 overflow-hidden" aria-label="Automation email preview"><div className="border-b border-[color:var(--operator-ink)]/15 p-4"><h4 className="text-sm font-semibold">{review.previews?.length ? "Email preview" : "Example email"}</h4>{review.previews && review.previews.length > 1 ? <label className="mt-3 block text-sm" htmlFor="cadence-preview-stage">Reminder<select className={OPERATOR_FIELD_CLASS} id="cadence-preview-stage" value={previewStage} onChange={e => setPreviewStage(Number(e.target.value))}>{review.previews.map((item, index) => <option key={item.stage} value={index}>{stageLabel(item.stage)}</option>)}</select></label> : null}<p className="mt-3 break-words text-sm font-semibold">{shownPreview?.subject}</p></div>{shownPreview ? <iframe className="h-[540px] w-full border-0 bg-white" title="Automation email design" sandbox="" referrerPolicy="no-referrer" srcDoc={safePreview(shownPreview.html)} /> : null}</section></div>
+          <section className="operator-glass min-w-0 overflow-hidden" aria-label="Automation email preview"><div className="border-b border-[color:var(--operator-ink)]/15 p-4"><h4 className="text-sm font-semibold">{review.previews?.length ? "Email preview" : "Example email"}</h4>{review.previews ? <div className="mt-3 flex flex-wrap gap-2" aria-label="Review reminder emails">{review.previews.map((item,index) => <button className="min-h-11 border border-[color:var(--operator-line)] px-3 py-2 text-xs aria-pressed:bg-[var(--operator-surface-muted)]" type="button" key={item.stage} aria-pressed={previewStage === index} onClick={() => setPreviewStage(index)}>{stageLabel(item.stage)}</button>)}</div> : null}<p className="mt-3 break-words text-sm font-semibold">{shownPreview?.subject}</p></div>{shownPreview ? <iframe className="h-[540px] w-full border-0 bg-white" title="Automation email design" sandbox="" referrerPolicy="no-referrer" srcDoc={safePreview(shownPreview.html)} /> : null}</section></div>
         {review.warnings.length ? <div className="operator-emphasis p-4 text-sm" data-operator-tone="wait"><ul className="space-y-2">{review.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div> : null}
         <div className="operator-bento-card"><p className="max-w-2xl text-sm leading-relaxed">{reviewingSequence ? "Activating approves this sequence for current and future published calls with the selected call type and cadence. Each call sends only to its qualified audience. Individual overrides and paused calls stay unchanged. Members joining later receive only future stages. Pausing the sequence stops its inherited reminders." : "Activating allows future reminders to be sent automatically to this call’s eligible audience. Past reminders are skipped. You can pause this plan at any time."}</p>{!overview.configuration.enabled || !overview.configuration.ready ? <p className="mt-3 text-sm font-medium">Delivery is currently paused. {reviewingSequence ? "An activated sequence" : "An activated plan"} will wait for automatic delivery to be enabled and ready.</p> : null}<div className="mt-4 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} disabled={preview || !!pending || (!reviewingSequence && (!eligibleCount || !review.occurrences.length)) || expired || overview.setupRequired} onClick={() => void activate()} type="button">{pending === "activate" ? "Activating…" : preview ? "Activation off in preview" : reviewingSequence ? "Activate sequence" : "Activate automation"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => setReview(null)} type="button">Back to setup</button></div>{expired ? <p className="mt-3 text-sm text-[var(--operator-danger)]" role="alert">This review has expired. Review the setup again before activating.</p> : null}</div>
       </section> : null}
       </>}
       {overview.warnings?.length ? <aside className="operator-emphasis mt-5 p-4 text-sm leading-relaxed" data-operator-tone="wait" aria-label="Automation service notes"><ul className="space-y-2">{overview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></aside> : null}
-      {overview.managedElsewhere?.length ? <section className="operator-bento-card mt-7" aria-labelledby="existing-automated-emails-heading"><h3 className="text-lg font-semibold" id="existing-automated-emails-heading">Other automatic emails</h3><p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">These existing workflows have their own controls. Their configuration status does not confirm successful delivery.</p><ul className="mt-4 grid gap-5 lg:grid-cols-3">{overview.managedElsewhere.map(workflow => <li className="min-w-0 border-t border-[color:var(--operator-line)] pt-4" key={workflow.id}><h4 className="text-sm font-semibold">{workflow.title}</h4><p className="mt-2 text-xs font-medium">{workflow.statusLabel}</p><p className="mt-3 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.trigger}</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.timing}</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.recipients}</p><p className="mt-2 text-xs leading-relaxed text-[color:var(--operator-muted)]">{workflow.controlBoundary}</p><Link className="mt-2 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href={workflow.management.href}>{workflow.management.label} ↗</Link></li>)}</ul></section> : null}
-      <section className="operator-bento-card mt-7" aria-labelledby="inactive-automations-heading"><h3 className="text-lg font-semibold" id="inactive-automations-heading">Not active yet</h3><p className="mt-2 text-sm text-[color:var(--operator-muted)]">Unfinished protocols stay off until their rules and copy are approved.</p><ul className="mt-4 space-y-4">{overview.inactive.map(item => <li key={item.title}><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-sm leading-relaxed text-[color:var(--operator-muted)]">{item.reason}</p></li>)}</ul></section>
     </>}
   </OperatorPageFrame>;
 }

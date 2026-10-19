@@ -8,6 +8,7 @@ export type CadenceDraft = {
   bodyTarget: string; headingTarget?: string;
   bindings: Record<string, { source: CadenceBindingSource; value?: string }>;
   copy?: Record<string,string>;
+  messages?: Partial<Record<CadenceStage, { subject?: string; message?: string }>>;
 };
 export type CadenceEventSnapshot = CadenceEvent & {
   version: string; visibility: string; circle_id: string | null; block_id: string | null;
