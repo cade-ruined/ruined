@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS } from "@/components/platform/operatorStyles";
-import { CADENCE_KIND_LABELS, CADENCE_STAGE_LABELS, type CadenceStage } from "@/lib/communications/member-email-cadence-model";
+import { CADENCE_KINDS, CADENCE_KIND_LABELS, CADENCE_STAGE_LABELS, type CadenceStage } from "@/lib/communications/member-email-cadence-model";
 import type { CadenceManagementDetail, CadenceManagementOverview, CadenceManagementPlanSummary, CadenceManagementSequenceSummary } from "@/lib/communications/member-email-cadence-management";
+import { automationTitle as title, automationNeedsAttention as needsAttention, filterAndSortAutomations, DEFAULT_AUTOMATION_VIEW_OPTIONS, type AutomationFilter, type AutomationViewOptions } from "@/lib/communications/email-automation-view";
 
 export type AutomationSelection = { scope: "event" | "sequence"; id: string };
-export type AutomationFilter = "all" | "active" | "paused" | "attention";
+export type { AutomationFilter } from "@/lib/communications/email-automation-view";
 type Summary = CadenceManagementPlanSummary | CadenceManagementSequenceSummary;
 const MUTED = "text-[color:var(--operator-muted)]";
 const NAV_BUTTON = "min-h-11 min-w-0 text-left underline decoration-[color:var(--operator-line)] underline-offset-4 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--operator-focus)] disabled:cursor-wait disabled:opacity-50";
@@ -15,7 +16,6 @@ function dateLabel(value: string, timeZone = "America/Denver") {
   catch { return "Time unavailable"; }
 }
 function stageLabel(value: string) { return CADENCE_STAGE_LABELS[value as CadenceStage] ?? value.replaceAll("_", " "); }
-function title(item: Summary) { return item.title || `${CADENCE_KIND_LABELS[item.kind]} · ${item.track === "founder_test" ? "Founder test" : "Members"}`; }
 function deliveryReview(item: Summary) { return (item.delivery?.failed ?? 0) + (item.delivery?.manualReview ?? 0); }
 export function automationStatus(item: Pick<Summary, "active" | "status"> & { attention?: string; scope?: "event" | "sequence"; matchingCallCount?: number }, configuration: { enabled: boolean; ready: boolean }) {
   if (/^Call changed\b/i.test(item.attention ?? "") || item.status === "changed") return "Needs review";
@@ -30,7 +30,6 @@ export function automationStatus(item: Pick<Summary, "active" | "status"> & { at
   if (item.status === "no_remaining") return item.scope === "sequence" || item.matchingCallCount !== undefined ? "Ready for future calls" : "No upcoming reminders";
   return "Active";
 }
-function needsAttention(item: Summary) { return item.status === "changed" || item.status === "unavailable" || item.status === "blocked" || Boolean("attention" in item && /^Call changed\b/i.test(item.attention ?? "")) || deliveryReview(item) > 0; }
 function Status({ label, attention = false }: { label: string; attention?: boolean }) {
   const tone = attention || label === "Needs review" || label === "Unavailable" ? "error" : label === "Active" ? "success" : "wait";
   return <span className="operator-emphasis inline-flex w-fit max-w-full px-2.5 py-1 text-xs font-semibold" data-operator-tone={tone}>{label}</span>;
@@ -39,24 +38,20 @@ function safePreview(html: string) {
   const policy = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src https: data:; style-src \'unsafe-inline\' https:; font-src https: data:; script-src \'none\'; connect-src \'none\'; object-src \'none\'; frame-src \'none\'; base-uri \'none\'; form-action \'none\'">';
   return /<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, head => `${head}${policy}`) : `${policy}${html}`;
 }
-function matches(item: Summary, query: string, filter: AutomationFilter) {
-  if (query && !`${title(item)} ${item.templateName} ${CADENCE_KIND_LABELS[item.kind]} ${item.track === "founder_test" ? "founder test" : "members"}`.toLowerCase().includes(query.toLowerCase().trim())) return false;
-  if (filter === "attention") return needsAttention(item);
-  if (filter === "paused") return !item.active || item.status === "paused" || Boolean("attention" in item && /^Sequence paused\b/i.test(item.attention ?? ""));
-  if (filter === "active") return item.active && !["paused", "past", "cancelled", "unavailable", "changed", "blocked"].includes(item.status) && !needsAttention(item) && !("attention" in item && /^Sequence paused\b/i.test(item.attention ?? ""));
-  return true;
-}
-export default function OperatorEmailAutomationManager({ overview, detail, selection, query, filter, previewStage, recipientEventId, pending, preview, onQuery, onFilter, onSelect, onStage, onRecipientEvent, onInspectRecipients, onEdit, onPause, onClose }: {
+export default function OperatorEmailAutomationManager({ overview, detail, selection, query, filter, viewOptions, previewStage, recipientEventId, pending, preview, onQuery, onFilter, onViewOptions, onResetView, onSelect, onStage, onRecipientEvent, onInspectRecipients, onEdit, onPause, onClose }: {
   overview: CadenceManagementOverview; detail: CadenceManagementDetail | null; selection: AutomationSelection | null;
-  query: string; filter: AutomationFilter; previewStage: number; recipientEventId: string; pending: string | null; preview: boolean;
+  query: string; filter: AutomationFilter; viewOptions: AutomationViewOptions; previewStage: number; recipientEventId: string; pending: string | null; preview: boolean;
   onQuery: (value: string) => void; onFilter: (value: AutomationFilter) => void; onSelect: (value: AutomationSelection) => void;
+  onViewOptions: (value: AutomationViewOptions) => void; onResetView: () => void;
   onStage: (value: number) => void; onRecipientEvent: (value: string) => void; onInspectRecipients: () => void;
   onEdit: () => void; onPause: () => void; onClose: () => void;
 }) {
   const sequences = overview.sequences ?? [];
   const calls = overview.plans;
-  const filteredSequences = sequences.filter(item => matches(item, query, filter));
-  const filteredCalls = calls.filter(item => matches(item, query, filter));
+  const now = Date.now();
+  const filteredSequences = filterAndSortAutomations(sequences, query, filter, viewOptions, now);
+  const filteredCalls = filterAndSortAutomations(calls, query, filter, viewOptions, now);
+  const viewChanged = query !== "" || filter !== "all" || Object.entries(DEFAULT_AUTOMATION_VIEW_OPTIONS).some(([key, value]) => viewOptions[key as keyof AutomationViewOptions] !== value);
   const upcoming = calls.filter(item => item.nextReminder).length;
   const waiting = calls.reduce((sum, item) => sum + (item.delivery?.pending ?? 0), 0);
   const attention = calls.filter(needsAttention).length;
@@ -82,7 +77,22 @@ export default function OperatorEmailAutomationManager({ overview, detail, selec
     <div className="grid min-w-0 gap-5">
       {!detail ? <section className="operator-bento-card min-w-0 self-start" aria-labelledby="automation-library-heading">
         <h3 className="text-lg font-semibold" id="automation-library-heading">Your automations</h3><p className={`mt-2 text-sm leading-relaxed ${MUTED}`}>Open a sequence or call to see its approved design, timing, audience, and recent activity.</p>
-        <div className={`mt-4 grid min-w-0 gap-3 ${detail ? "" : "sm:grid-cols-[minmax(0,1fr)_220px]"}`}><label className="min-w-0 text-sm" htmlFor="automation-search">Search<input className={OPERATOR_FIELD_CLASS} id="automation-search" type="search" placeholder="Call type, design, or call name" value={query} onChange={e => onQuery(e.target.value)} /></label><label className="min-w-0 text-sm" htmlFor="automation-filter">Status<select className={OPERATOR_FIELD_CLASS} id="automation-filter" value={filter} onChange={e => onFilter(e.target.value as AutomationFilter)}><option value="all">All statuses</option><option value="active">Active</option><option value="paused">Paused</option><option value="attention">Needs attention</option></select></label></div>
+        <div className="mt-5 space-y-3" role="search" aria-label="Filter recurring emails">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="min-w-0 text-sm sm:col-span-2 xl:col-span-1" htmlFor="automation-search">Search<input className={OPERATOR_FIELD_CLASS} id="automation-search" type="search" placeholder="Name, design, or audience" value={query} onChange={e => onQuery(e.currentTarget.value)} /></label>
+            <label className="min-w-0 text-sm" htmlFor="automation-filter">Status<select className={OPERATOR_FIELD_CLASS} id="automation-filter" value={filter} onChange={e => onFilter(e.currentTarget.value as AutomationFilter)}><option value="all">All statuses</option><option value="active">Active</option><option value="paused">Paused</option><option value="attention">Needs attention</option><option value="finished">Call finished</option><option value="cancelled">Call cancelled</option></select></label>
+            <label className="min-w-0 text-sm" htmlFor="automation-sort">Sort by<select className={OPERATOR_FIELD_CLASS} id="automation-sort" value={viewOptions.sort} onChange={e => onViewOptions({ ...viewOptions, sort: e.currentTarget.value as AutomationViewOptions["sort"] })}><option value="next">Next reminder</option><option value="updated">Recently updated</option><option value="name">Name A–Z</option></select></label>
+          </div>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+            <label className="min-w-0 text-sm" htmlFor="automation-kind">Call type<select className={OPERATOR_FIELD_CLASS} id="automation-kind" value={viewOptions.kind} onChange={e => onViewOptions({ ...viewOptions, kind: e.currentTarget.value as AutomationViewOptions["kind"] })}><option value="all">All call types</option><option value="foundations">All Foundations</option>{CADENCE_KINDS.map(kind => <option key={kind} value={kind}>{CADENCE_KIND_LABELS[kind]}</option>)}</select></label>
+            <label className="min-w-0 text-sm" htmlFor="automation-track">Audience track<select className={OPERATOR_FIELD_CLASS} id="automation-track" value={viewOptions.track} onChange={e => onViewOptions({ ...viewOptions, track: e.currentTarget.value as AutomationViewOptions["track"] })}><option value="all">All tracks</option><option value="members">Members</option><option value="founder_test">Founder test</option></select></label>
+            <label className="min-w-0 text-sm" htmlFor="automation-schedule">Next reminder<select className={OPERATOR_FIELD_CLASS} id="automation-schedule" value={viewOptions.schedule} onChange={e => onViewOptions({ ...viewOptions, schedule: e.currentTarget.value as AutomationViewOptions["schedule"] })}><option value="all">Any schedule</option><option value="upcoming">Has an upcoming reminder</option><option value="week">In the next 7 days</option><option value="month">In the next 30 days</option><option value="none">No upcoming reminder</option></select></label>
+          </div>
+          <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-[color:var(--operator-line)] pb-3">
+            <p className={`text-xs ${MUTED}`} role="status" aria-live="polite" aria-atomic="true">Showing {filteredSequences.length} of {sequences.length} sequences · {filteredCalls.length} of {calls.length} calls</p>
+            {viewChanged ? <button className={`${OPERATOR_BUTTON_CLASS} text-xs`} type="button" onClick={onResetView}>Reset view</button> : null}
+          </div>
+        </div>
         <div className={`mt-6 grid min-w-0 gap-6 ${detail ? "" : "lg:grid-cols-2"}`}><section className="min-w-0" aria-labelledby="automation-sequences-heading"><h4 className="text-xs font-semibold uppercase tracking-[0.12em]" id="automation-sequences-heading">Approved sequences</h4><p className={`mt-2 text-xs leading-relaxed ${MUTED}`}>One approved design per call type and cadence. Pausing a sequence also pauses its inherited reminders.</p><ul className="mt-3">{filteredSequences.map(item => row(item, "sequence"))}</ul>{!filteredSequences.length ? <p className={`mt-4 text-sm ${MUTED}`}>{sequences.length ? "No sequences match this view." : "No reusable sequences have been approved yet."}</p> : null}</section>
         <section className="min-w-0" aria-labelledby="automation-plans-heading"><h4 className="text-xs font-semibold uppercase tracking-[0.12em]" id="automation-plans-heading">Configured calls</h4><p className={`mt-2 text-xs leading-relaxed ${MUTED}`}>Call-specific plans retain their own audience and settings.</p><ul className="mt-3">{filteredCalls.map(item => row(item, "event"))}</ul>{!filteredCalls.length ? <p className={`mt-4 text-sm ${MUTED}`}>{calls.length ? "No calls match this view." : "No calls have an automation yet."}</p> : null}</section></div>
       </section> : null}

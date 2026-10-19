@@ -17,6 +17,7 @@ function compile(path, dependency = noDependency, fetch = () => { throw Error("U
 const management = compile("src/lib/communications/member-email-cadence-management.ts");
 const model = compile("src/lib/communications/member-email-cadence-model.ts");
 const copy = compile("src/lib/communications/member-email-cadence-copy.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
+const automationView = compile("src/lib/communications/email-automation-view.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
 const styles = compile("src/components/platform/operatorStyles.ts");
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(typeof node.type === "function" ? node.type(node.props) : node.props?.children)];
 const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(typeof node.type === "function" ? node.type(node.props) : node.props?.children) : String(node);
@@ -68,6 +69,7 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/lib/communications/member-email-cadence-model": model,
     "@/lib/communications/member-email-cadence-copy": copy,
     "@/lib/communications/member-email-cadence-management": management,
+    "@/lib/communications/email-automation-view": automationView,
   };
   deps["@/components/platform/OperatorEmailAutomationManager"] = compile("src/components/platform/OperatorEmailAutomationManager.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; });
   async function fallback(call) {
@@ -600,4 +602,55 @@ test("sequences with the same call-type title visibly distinguish member and fou
   assert.match(text(f.draw()), /Reusable sequence · Founder test/);
   f.button("Edit design").props.onClick();
   assert.ok(f.button("Back to sequence"));
+});
+
+test("recurring email filters combine across sequences and calls and reset without sending", async () => {
+  const soon = { stage: "day_before", dueAt: new Date(Date.now() + 2 * 86400000).toISOString(), expiresAt: new Date(Date.now() + 2 * 86400000 + 1800000).toISOString(), eventId: event.id, eventTitle: event.title, timeZone: "America/Denver" };
+  const circle = { ...sequence, id: "circle-sequence", title: "Circle WHY", kind: "circle", track: "members", nextReminder: soon };
+  const founders = { ...sequence, id: "founders-sequence", title: "Circle test", kind: "circle", track: "founder_test", active: false, status: "paused" };
+  const circleCall = { ...plan, id: "circle-call", title: "Circle WHY — November", kind: "circle", nextReminder: soon };
+  const f = fixture({ data: { ...overview, sequences: [sequence, circle, founders], plans: [plan, circleCall] } });
+  f.draw(); await f.settle();
+  f.change("automation-kind", "circle");
+  f.change("automation-track", "members");
+  f.change("automation-schedule", "week");
+  f.change("automation-filter", "active");
+  f.change("automation-search", "  WHY  ");
+  assert.match(text(f.draw()), /Showing 1 of 3 sequences · 1 of 2 calls/);
+  const displayed = () => nodes(f.find(node => node.props?.["aria-labelledby"] === "automation-library-heading")).filter(node => node.type === "li").map(node => node.key);
+  assert.deepEqual(displayed(), [circle.id, circleCall.id]);
+  f.change("automation-track", "founder_test");
+  assert.deepEqual(displayed(), []);
+  assert.match(text(f.draw()), /No sequences match this view/);
+  assert.match(text(f.draw()), /No calls match this view/);
+  f.button("Reset view").props.onClick();
+  assert.equal(displayed().length, 5);
+  for (const id of ["automation-kind", "automation-track", "automation-schedule", "automation-filter"]) assert.equal(f.find(node => node.props?.id === id).props.value, "all");
+  assert.equal(f.find(node => node.props?.id === "automation-search").props.value, "");
+  assert.equal(f.find(node => node.props?.id === "automation-sort").props.value, "next");
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("recurring email sort changes the rendered order and survives details and refresh", async () => {
+  const alpha = { ...sequence, id: "alpha", title: "Alpha", updatedAt: "2026-10-01T10:00:00Z" };
+  const zulu = { ...sequence, id: "zulu", title: "Zulu", updatedAt: "2026-10-19T10:00:00Z" };
+  const f = fixture({ data: { ...overview, sequences: [alpha, zulu] } });
+  f.draw(); await f.settle();
+  f.change("automation-kind", "foundations");
+  f.change("automation-track", "members");
+  f.change("automation-schedule", "none");
+  f.change("automation-sort", "updated");
+  const displayed = () => nodes(f.find(node => node.props?.["aria-labelledby"] === "automation-library-heading")).filter(node => node.type === "li").map(node => node.key);
+  assert.deepEqual(displayed(), [zulu.id, alpha.id]);
+  await f.openSaved(zulu.id);
+  f.button("Back to automations").props.onClick();
+  f.button("Refresh").props.onClick(); await f.settle();
+  assert.equal(f.find(node => node.props?.id === "automation-kind").props.value, "foundations");
+  assert.equal(f.find(node => node.props?.id === "automation-track").props.value, "members");
+  assert.equal(f.find(node => node.props?.id === "automation-schedule").props.value, "none");
+  assert.equal(f.find(node => node.props?.id === "automation-sort").props.value, "updated");
+  assert.deepEqual(displayed(), [zulu.id, alpha.id]);
+  f.change("automation-sort", "name");
+  assert.deepEqual(displayed(), [alpha.id, zulu.id]);
+  assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
 });
