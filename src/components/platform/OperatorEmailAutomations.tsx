@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import OperatorCommunicationsCatalog from "./OperatorCommunicationsCatalog";
+import { buildCommunicationsCatalog, readCommunicationNavigation, writeCommunicationNavigation, type CommunicationItem, type CommunicationNavigation } from "@/lib/communications/communications-catalog";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import OperatorEmailAutomationManager, { type AutomationFilter, type AutomationSelection } from "@/components/platform/OperatorEmailAutomationManager";
 import OperatorEmailAutomationReview, { type AutomationReview } from "./OperatorEmailAutomationReview";
@@ -105,7 +108,17 @@ function sampleDetail(overview: Overview, selection: AutomationSelection, checke
     previews: (reviewed.previews ?? []).map(item => ({ ...item, stage: item.stage as CadenceStage })), occurrences: reviewed.occurrences.map(occurrence => ({ ...occurrence, stage: occurrence.stage as CadenceStage })), recipients: reviewed.recipients.map(recipient => ({ ...recipient, reason: recipient.reason ?? "" })), recipientsChecked: true, recentDeliveries: selection.scope === "sequence" && item.active ? [{ id: "sample-delivery", eventId: "sample-earlier-call", eventTitle: "Foundations 01 — earlier sample call", stage: "orientation", status: "sent", dueAt: "2026-10-12T18:00:00Z", updatedAt: "2026-10-12T18:01:00Z", sentAt: "2026-10-12T18:01:00Z", reason: "Sample provider acceptance. No real email was sent." }] : [], warnings: ["Sample workspace. These designs, calls, recipients, and delivery records are fictional. Activation and sending are disabled."] };
 }
 
-export default function OperatorEmailAutomations({ preview = false }: { preview?: boolean }) {
+function readWorkspaceNavigation(search: string): CommunicationNavigation {
+  const state = readCommunicationNavigation(search);
+  const params = new URLSearchParams(search);
+  // Existing bookmarks retain their view until the operator selects By step.
+  if (!params.has("commsView") && !params.has("bucket") && !params.has("channel") && (params.has("view") || params.has("reminder"))) {
+    state.view = readAutomationNavigation(search).section;
+  }
+  return state;
+}
+
+export default function OperatorEmailAutomations({ preview = false, previewCommunications = [] }: { preview?: boolean; previewCommunications?: CommunicationItem[] }) {
   const [overview, setOverview] = useState<Overview | null>(preview ? sampleOverview() : null);
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [template, setTemplate] = useState<ResendEmailTemplate | null>(null);
@@ -120,6 +133,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AutomationFilter>("all");
   const [viewOptions, setViewOptions] = useState<AutomationViewOptions>({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"});
+  const [communicationNav, setCommunicationNav] = useState<CommunicationNavigation>({ channel: "emails", bucket: null, view: "catalog" });
   const [section, setSection] = useState<AutomationSection>("upcoming");
   const [editorStage, setEditorStage] = useState<CadenceStage>("day_before");
   const [navigationReady, setNavigationReady] = useState(false);
@@ -190,7 +204,11 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     if (typeof window === "undefined" || !overview || pending || initialNavigation.current) return;
     initialNavigation.current = true;
     const saved = readAutomationNavigation(window.location.search);
-    setSection(saved.section); setQuery(saved.query); setFilter(saved.filter); setViewOptions(saved.options);
+    const workspace = readWorkspaceNavigation(window.location.search);
+    const resolvedSection = workspace.view === "catalog" ? "upcoming" : workspace.view;
+    const normalized = normalizeAutomationView(resolvedSection, saved.filter, saved.options);
+    setCommunicationNav(workspace);
+    setSection(resolvedSection); setQuery(saved.query); setFilter(normalized.filter); setViewOptions(normalized.options);
     setNavigationReady(true);
     if (saved.selection) void openDetail(saved.selection,saved.eventId);
     // Loading the overview is the only initialization dependency.
@@ -198,17 +216,24 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
   }, [overview,pending]);
   useEffect(() => {
     if (typeof window === "undefined" || !navigationReady || pending || editorOpen) return;
-    const search = writeAutomationNavigation(window.location.search,{section,query,filter,options:viewOptions,
+    const automationSearch = writeAutomationNavigation(window.location.search,{section,query,filter,options:viewOptions,
       selection: selection ? {...selection,stage:detail?.previews[detailStage]?.stage} : null,eventId:recipientEventId || undefined});
+    const clean = new URLSearchParams(automationSearch);
+    if (communicationNav.view === "catalog") clean.delete("view");
+    const search = writeCommunicationNavigation(clean, communicationNav);
     const destination = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
     if (destination !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state,"",destination);
-  },[navigationReady,pending,editorOpen,section,query,filter,viewOptions,selection,detail,detailStage,recipientEventId]);
+  },[navigationReady,pending,editorOpen,section,query,filter,viewOptions,selection,detail,detailStage,recipientEventId,communicationNav]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const restore = () => {
       if (busy.current || editorOpen) return;
       const saved = readAutomationNavigation(window.location.search);
-      setSection(saved.section);setQuery(saved.query);setFilter(saved.filter);setViewOptions(saved.options);
+      const workspace = readWorkspaceNavigation(window.location.search);
+      const resolvedSection = workspace.view === "catalog" ? "upcoming" : workspace.view;
+      const normalized = normalizeAutomationView(resolvedSection, saved.filter, saved.options);
+      setCommunicationNav(workspace);
+      setSection(resolvedSection);setQuery(saved.query);setFilter(normalized.filter);setViewOptions(normalized.options);
       if (saved.selection) void openDetail(saved.selection,saved.eventId);
       else {setDetail(null);setSelection(null);}
     };
@@ -332,6 +357,7 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
   }
   function changeSection(value: AutomationSection) {
     const normalized = normalizeAutomationView(value,filter,viewOptions);
+    setCommunicationNav(current => ({...current,view:value}));
     setSection(value);setFilter(normalized.filter);setViewOptions(normalized.options);setDetail(null);setSelection(null);
   }
   function newAutomation() {
@@ -364,14 +390,28 @@ export default function OperatorEmailAutomations({ preview = false }: { preview?
     else { const item = overview.plans.find(value => value.id === detail.id); if (item) void pause(item); }
   }
 
-  return <OperatorPageFrame title="Automated emails">
-    <OperatorMessagesTabs active="automations" />
-    <header className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="operator-page-heading">Automated emails</h2><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || overview?.setupRequired} onClick={newAutomation} type="button">New automation</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => void refresh()} type="button">Refresh</button></>}</div></header>
+  const catalog = overview ? buildCommunicationsCatalog(overview, preview ? previewCommunications : overview.communications ?? []) : [];
+  const channel = communicationNav.channel;
+  function browse(next: Partial<CommunicationNavigation>) {
+    if (busy.current || editorOpen) return;
+    setCommunicationNav(current => ({ ...current, ...next }));
+    setDetail(null); setSelection(null); setMessage("");
+    if (next.view === "catalog" || next.channel) { setSection("upcoming"); setQuery(""); setFilter("all"); setViewOptions({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"}); }
+  }
+  return <OperatorPageFrame title="Communications">
+    <OperatorMessagesTabs active="automations" channel={channel} bucket={communicationNav.bucket} pending={!!pending} onChannel={editorOpen ? undefined : value => browse({channel:value,view:"catalog"})} />
+    <header className="mb-5 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"><div className="min-w-0"><h2 className="operator-page-heading">{channel === "emails" ? "Emails" : channel === "texts" ? "Texts" : "Notifications"}</h2><p className="mt-2 text-sm text-[color:var(--operator-muted)]">{channel === "emails" ? "Messages organized around the member journey." : channel === "texts" ? "SMS and invitation links, with their delivery requirements." : "Updates members receive inside Ruined."}</p></div><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending} onClick={() => void refresh()} type="button">Refresh</button>}</div></header>
+    {!editorOpen ? <div className="operator-glass mb-6 flex flex-wrap items-start justify-between gap-2 p-2">
+      {channel === "emails" ? <nav className="flex flex-wrap gap-1" aria-label="Email views">{([['catalog','By step'],['upcoming','Upcoming'],['activity','Activity']] as const).map(([value,label]) => <button key={value} type="button" disabled={!!pending} aria-current={communicationNav.view === value ? "page" : undefined} className={`min-h-11 px-3 text-sm ${communicationNav.view === value ? "border-b-2 border-[color:var(--operator-ink)] bg-[var(--operator-surface-muted)] font-semibold" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} onClick={() => value === "catalog" ? browse({view:value}) : changeSection(value)}>{label}</button>)}</nav> : <span className="inline-flex min-h-11 items-center text-sm text-[color:var(--operator-muted)]">Automations by step</span>}
+      {channel === "emails" ? <details className="text-sm"><summary className="min-h-11 cursor-pointer px-3 py-3 text-[color:var(--operator-muted)]">More email tools</summary><div className="flex flex-wrap gap-2 py-2"><Link className={OPERATOR_BUTTON_CLASS} href="/ops/messages?mode=emails">Compose &amp; history</Link><button className={OPERATOR_BUTTON_CLASS} type="button" disabled={!!pending} onClick={() => changeSection("library")}>Call sequences</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || !overview || overview.setupRequired} onClick={newAutomation} type="button">New automation</button></div></details> : channel === "notifications" ? <div className="flex flex-wrap gap-2"><Link className={OPERATOR_BUTTON_CLASS} href="/ops/messages?mode=alerts">Send &amp; history</Link><Link className={OPERATOR_BUTTON_CLASS} href="/ops/messages?mode=posts">Board posts</Link></div> : <Link className={OPERATOR_BUTTON_CLASS} href="/my/invitation">Create an invitation</Link>}
+    </div> : null}
     {preview ? <p className="mb-4 text-xs text-[color:var(--operator-muted)]">Sample workspace. Nothing is saved or sent.</p> : null}
-    {overview && (!overview.configuration.enabled || !overview.configuration.ready || overview.setupRequired) ? <section className="operator-emphasis mb-5 space-y-2 p-4 text-sm" data-operator-tone="wait" aria-label="Automation readiness"><h3 className="font-semibold">{overview.setupRequired ? "Automation setup is required" : !overview.configuration.enabled ? "Automatic delivery is paused" : "Delivery setup is incomplete"}</h3><p>{overview.setupRequired ? "The automation service needs setup before a plan can be reviewed or activated." : !overview.configuration.enabled ? "You can prepare and activate plans. No automated emails will leave until automatic delivery is enabled." : "You can prepare plans, but delivery will wait until the email service is ready."}</p></section> : null}
+    {channel === "emails" && overview && (!overview.configuration.enabled || !overview.configuration.ready || overview.setupRequired) ? <section className="operator-emphasis mb-5 space-y-2 p-4 text-sm" data-operator-tone="wait" aria-label="Automation readiness"><h3 className="font-semibold">{overview.setupRequired ? "Call-reminder setup is required" : !overview.configuration.enabled ? "Call-reminder delivery is paused" : "Call-reminder delivery setup is incomplete"}</h3><p>{overview.setupRequired ? "The automation service needs setup before a plan can be reviewed or activated." : !overview.configuration.enabled ? "You can prepare and activate plans. Call reminders will wait until their delivery switch is enabled. Other email workflows have their own controls." : "You can prepare plans, but delivery will wait until the email service is ready."}</p></section> : null}
     {message ? <p className={`mb-5 break-words text-sm ${failed ? "text-[var(--operator-danger)]" : "text-[color:var(--operator-muted)]"}`} role={failed ? "alert" : "status"}>{message}</p> : null}
-    {!overview ? <p className="operator-bento-card text-sm" role="status">{pending ? "Loading automations…" : "Automations are unavailable. Refresh to try again."}</p> : <>
-      {!editorOpen ? <OperatorEmailAutomationManager overview={overview} detail={detail} selection={selection} section={section} onSection={changeSection} query={query} filter={filter} viewOptions={viewOptions} onViewOptions={setViewOptions} onResetView={() => { setQuery(""); setFilter("all"); setViewOptions({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"}); }} previewStage={detailStage} recipientEventId={recipientEventId} pending={pending} preview={preview} onQuery={setQuery} onFilter={setFilter} onSelect={next => void openDetail(next)} onStage={setDetailStage} onRecipientEvent={value => { if (selection) void openDetail(selection,value); }} onInspectRecipients={() => { if (selection && recipientEventId) void openDetail(selection, recipientEventId); }} onEdit={editSaved} onPause={pauseSelected} onClose={() => { setDetail(null); setSelection(null); }} /> : <>
+    {!overview ? <p className="operator-bento-card text-sm" role="status">{pending ? "Loading communications…" : "Communications are unavailable. Refresh to try again."}</p> : <>
+      {!editorOpen && !detail && (channel !== "emails" || communicationNav.view === "catalog") ? <OperatorCommunicationsCatalog items={catalog} channel={channel} bucket={communicationNav.bucket} onBucket={bucket => browse({bucket})} onSelect={next => void openDetail(next)} pending={!!pending} preview={preview} /> : !editorOpen ? <>
+      {!detail ? <h3 className="operator-section-heading mb-4">{communicationNav.view === "library" ? "Call sequences" : communicationNav.view === "activity" ? "Call-reminder activity" : "Upcoming call reminders"}</h3> : null}
+      <OperatorEmailAutomationManager hideNavigation overview={overview} detail={detail} selection={selection} section={section} onSection={changeSection} query={query} filter={filter} viewOptions={viewOptions} onViewOptions={setViewOptions} onResetView={() => { setQuery(""); setFilter("all"); setViewOptions({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"}); }} previewStage={detailStage} recipientEventId={recipientEventId} pending={pending} preview={preview} onQuery={setQuery} onFilter={setFilter} onSelect={next => void openDetail(next)} onStage={setDetailStage} onRecipientEvent={value => { if (selection) void openDetail(selection,value); }} onInspectRecipients={() => { if (selection && recipientEventId) void openDetail(selection, recipientEventId); }} onEdit={editSaved} onPause={pauseSelected} onClose={() => { setDetail(null); setSelection(null); }} /></> : <>
       {confirmDiscard ? <section className="operator-emphasis mb-5 scroll-mt-24 p-4 outline-none" data-operator-tone="wait" role="alert" id="automation-discard-confirmation" tabIndex={-1}><p className="text-sm">Discard the changes to this setup?</p><div className="mt-3 flex flex-wrap gap-3"><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => { navigationTarget.current = null; setConfirmDiscard(false); }}>Keep editing</button><button className={OPERATOR_BUTTON_CLASS} type="button" onClick={() => closeEditor(true)}>Discard changes</button></div></section> : null}
       {review ? <OperatorEmailAutomationReview review={review} draft={draft} previousDraft={editingLabel ? detail?.draft : undefined} event={event} template={template}
         context={reviewingSequence ? `${KINDS.find(item => item.value === draft.kind)?.label ?? "Member call"} · ${draft.track === "founder_test" ? "Founder test" : "Members"}` : event?.title ?? "Member call"}

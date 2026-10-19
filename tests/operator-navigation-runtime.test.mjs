@@ -100,7 +100,7 @@ test("workspace links preserve native link behavior and start the selected page 
 
 test("workspace navigation preserves exactly the existing shared and Administrator-only destinations", () => {
   const admin = getOperationsNavigation("ops_admin");
-  assert.deepEqual(admin.map((group) => group.label), ["Overview", "People", "Circles", "Events", "Learning", "SOPs", "Artifacts", "Messages", "Settings"]);
+  assert.deepEqual(admin.map((group) => group.label), ["Overview", "People", "Circles", "Events", "Learning", "SOPs", "Artifacts", "Communications", "Settings"]);
   assert.deepEqual(admin.flatMap((group) => group.items.map((item) => item.href)).sort(), [...sharedRoutes, ...adminRoutes].sort());
   for (const role of ["circle_leader", "guide"]) {
     assert.deepEqual(getOperationsNavigation(role).flatMap((group) => group.items.map((item) => item.href)).sort(), sharedRoutes.toSorted());
@@ -170,7 +170,7 @@ test("workspace selector closes after navigation and is mutually exclusive with 
   tree.find((node) => node.props?.href === "/ops/messages").props.onNavigate();
   tree = descendants(draw("/ops/notifications"));
   assert.equal(trigger().props["aria-expanded"], false);
-  assert.equal(trigger().props["aria-label"], "Workspace: Messages");
+  assert.equal(trigger().props["aria-label"], "Workspace: Communications");
   assert.deepEqual(scrolls, [{ top: 0, left: 0, behavior: "instant" }]);
   for (const invalid of ["/ops/announcementstuff", "/ops/notifications-other"]) assert.equal(getOperationsLocation(invalid, getOperationsNavigation("ops_admin")), null);
 });

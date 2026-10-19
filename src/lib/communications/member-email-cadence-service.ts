@@ -10,6 +10,7 @@ import { readCadenceEvent, sameCadenceEvent, readCadenceRecipients, cadenceCallR
 import { listCadenceTemplates, reviewCadenceProviderRecipients } from "./member-email-cadence-provider";
 import { cadencePreviewPlan, renderCadenceEmail, validateCadenceDesign } from "./member-email-cadence-renderer";
 import { cadenceMessageDefaults } from "./member-email-cadence-copy";
+import { getCommunicationsChannelCatalog } from "./communications-channel-catalog";
 import { getAutomatedEmailCatalog } from "./automated-email-catalog";
 import type { ResendEmailTemplateSummary } from "./resend-email-model";
 import { matchingCadenceEvents } from "./member-email-cadence-inheritance";
@@ -209,7 +210,7 @@ export async function getCadenceOverview(actor:string):Promise<CadenceManagement
   try {templates=await listCadenceTemplates(actor);}
   catch {warnings.push("The current Resend design list is unavailable. Saved approvals and pause controls remain available; try again before creating or editing a design.");}
   const configuration=getMemberEmailCadenceDeliveryConfiguration();
-  const base={templates,configuration,inactive:INACTIVE,warnings,managedElsewhere:getAutomatedEmailCatalog()};
+  const base={templates,configuration,inactive:INACTIVE,warnings,managedElsewhere:getAutomatedEmailCatalog(),communications:getCommunicationsChannelCatalog()};
   return sql.begin(async tx=>{
     await requireAdminEmailActor(tx,actor);
     if (!await managementTablesReady(tx)) return {...base,events:[],plans:[],sequences:[],upcoming:[],recentDeliveries:[],setupRequired:true};

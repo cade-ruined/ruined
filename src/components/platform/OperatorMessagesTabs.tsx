@@ -1,12 +1,30 @@
-import Link from "next/link";
+"use client";
 
-export default function OperatorMessagesTabs({ active }: { active: "posts" | "alerts" | "emails" | "automations" }) {
-  return <nav aria-label="Message type" className="mb-5 flex flex-wrap gap-1">
-    {[
-      { id: "posts", label: "Board posts", description: "A lasting announcement members can return to.", href: "/ops/messages?mode=posts" },
-      { id: "alerts", label: "Alerts", description: "An immediate notification in the member app.", href: "/ops/messages?mode=alerts" },
-      { id: "emails", label: "Emails", description: "Draft and send individual emails or audience campaigns.", href: "/ops/messages?mode=emails" },
-      { id: "automations", label: "Automated emails", description: "Manage email sequences, timing, recipient rules, and delivery activity.", href: "/ops/messages?mode=automations" },
-    ].map((item) => <Link aria-current={active === item.id ? "page" : undefined} className={`inline-flex min-h-11 items-center rounded-none px-4 text-sm font-medium ${active === item.id ? "bg-[var(--operator-surface-muted)] text-[color:var(--operator-ink)]" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} href={item.href} key={item.id}>{item.label}<span className="sr-only"> · {item.description}</span></Link>)}
+import Link from "next/link";
+import type { MouseEvent } from "react";
+import type { CommunicationBucket, CommunicationChannel } from "@/lib/communications/communications-catalog";
+
+export default function OperatorMessagesTabs({ active, channel, bucket, onChannel, pending = false }: {
+  active: "posts" | "alerts" | "emails" | "automations";
+  channel?: CommunicationChannel;
+  bucket?: CommunicationBucket | null;
+  onChannel?: (value: CommunicationChannel) => void;
+  pending?: boolean;
+}) {
+  const selected = channel ?? (active === "posts" || active === "alerts" ? "notifications" : "emails");
+  return <nav aria-label="Communication channels" className="operator-glass mb-6 flex w-fit max-w-full flex-wrap gap-1 p-1">
+    {([
+      { id: "emails", label: "Emails" },
+      { id: "texts", label: "Texts" },
+      { id: "notifications", label: "Notifications" },
+    ] as const).map(item => {
+      const href = `/ops/messages?mode=automations${item.id === "emails" ? "" : `&channel=${item.id}`}${bucket ? `&bucket=${bucket}` : ""}`;
+      const click = (event: MouseEvent<HTMLAnchorElement>) => {
+        if (!onChannel || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (!pending) onChannel(item.id);
+      };
+      return <Link aria-current={selected === item.id ? "page" : undefined} aria-disabled={pending || undefined} data-operator-tone={selected === item.id ? "info" : undefined} className={`inline-flex min-h-11 items-center justify-center px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-[var(--operator-focus)] ${selected === item.id ? "operator-emphasis" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} href={href} onClick={click} key={item.id}>{item.label}</Link>;
+    })}
   </nav>;
 }

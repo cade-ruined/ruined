@@ -63,8 +63,12 @@ async function fixture(t) {
     { memberId: crypto.randomUUID(), name: "Jordan", email: "jordan@example.com", eligible: false, reason: "Membership email reminders are not enabled", registeredAt: future(-2), consentId: null }];
   const draft = { eventId: event.id, kind: "foundations_01", track: "members", templateId: template.id, templateVersion: template.version,
     bodyTarget: "variable:BODY", headingTarget: `copy:${template.fields.find(field => field.value === "Original heading").key}`, bindings: {} };
+  const communications = [{ id: "sms:call-reminder", channel: "texts", bucket: "membership", title: "60-minute call reminder",
+    trigger: "An eligible call approaches.", audience: "Members with current SMS consent.", timing: "60 minutes before the call.",
+    status: "paused", statusLabel: "Paused", detail: "Configuration only. No text is sent.", action: { label: "Review calls", href: "/ops/experiences" } }];
   const state = { event: clone(event), template: clone(template), recipients: clone(recipients), ready: true, calls: [], providerHook: null, lockedRosterHook: null,
-    providerFailure: null, catalogFailure: null, matchingEvents: null, configuration: {enabled: false, ready: false, activatedAt: null}, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] };
+    providerFailure: null, catalogFailure: null, matchingEvents: null, configuration: {enabled: false, ready: false, activatedAt: null},
+    communications: clone(communications), channelCatalogReads: 0, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] };
   const repository = {
     readCadenceEvent: async (_tx, id) => id === state.event?.id ? clone(state.event) : null,
     sameCadenceEvent: (a, b) => a !== null && Object.keys(b).every(key => a[key] === b[key]),
@@ -84,6 +88,7 @@ async function fixture(t) {
     "./resend-email-service": { getResendEmailTemplate: async (_actor, templateId) => { assert.equal(templateId, template.id); state.calls.push("template"); return clone(state.template); } },
     "./member-email-cadence-model": cadence, "./member-email-cadence-delivery": {...delivery, getMemberEmailCadenceDeliveryConfiguration: () => clone(state.configuration)},
     "./member-email-cadence-management": management, "./member-email-cadence-copy": copy, "./automated-email-catalog": {getAutomatedEmailCatalog: () => []},
+    "./communications-channel-catalog": { getCommunicationsChannelCatalog: () => { state.channelCatalogReads++; return clone(state.communications); } },
     "./member-email-cadence-repository": repository, "./member-email-cadence-renderer": renderer,
     "./member-email-cadence-inheritance": { matchingCadenceEvents: async () => state.matchingEvents ?? (state.event ? [clone(state.event)] : []) },
     "./member-email-cadence-provider": {
@@ -115,7 +120,8 @@ async function fixture(t) {
     await pg.exec("update platform_users set status='active'; update platform_role_grants set revoked_at=null;");
     await pg.query("update experiences set title=$2,starts_at=$3,ends_at=$4,status='published',cancelled_at=null,version=1 where id=$1", [event.id,event.title,event.startsAt,event.endsAt]);
     Object.assign(state, { event: clone(event), template: clone(template), recipients: clone(recipients), ready: true, calls: [], providerHook: null,
-      lockedRosterHook: null, providerFailure: null, catalogFailure: null, matchingEvents: null, configuration: {enabled: false, ready: false, activatedAt: null}, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] });
+      lockedRosterHook: null, providerFailure: null, catalogFailure: null, matchingEvents: null, configuration: {enabled: false, ready: false, activatedAt: null},
+      communications: clone(communications), channelCatalogReads: 0, suppressed: new Set(), viewer: { authUserId: admin }, logs: [] });
   }
   const get = query => route.GET(new Request(`https://members.example.com/api/ops/emails/automations${query ? `?${new URLSearchParams(query)}` : ""}`));
   const enable = () => { state.configuration = {enabled: true, ready: true, activatedAt: future(-10)}; };
@@ -133,7 +139,7 @@ test("admin cadence reviews and activations persist safely through real PostgreS
       await assert.rejects(f.service.activateCadence(actor, crypto.randomUUID()), error => error.status === 403);
       await assert.rejects(f.service.pauseCadence(actor, crypto.randomUUID(), 1), error => error.status === 403);
     }
-    assert.equal(f.state.calls.length, 0); assert.equal((await f.rows("reviews")).length, 0);
+    assert.equal(f.state.calls.length, 0); assert.equal(f.state.channelCatalogReads, 0); assert.equal((await f.rows("reviews")).length, 0);
   });
   await t.test("review renders every future stage and freezes an object snapshot without activating anything", async () => {
     await f.reset(); const result = await f.service.previewCadence(f.admin, f.draft);
@@ -211,6 +217,8 @@ test("admin cadence reviews and activations persist safely through real PostgreS
     await f.reset(); const overview = await f.service.getCadenceOverview(f.admin);
     assert.equal(overview.configuration.enabled, false); assert.equal(overview.configuration.ready, false);
     assert.equal(overview.events[0].id, f.event.id); assert.equal(overview.plans.length, 0); assert.equal(overview.templates[0].id, f.template.id);
+    assert.deepEqual(overview.communications, f.state.communications); assert.equal(f.state.channelCatalogReads, 1);
+    assert.deepEqual(await f.rows("reviews"), []); assert.deepEqual(await f.rows("deliveries"), []);
     assert.deepEqual(overview.inactive.map(item => item.title), ["Missed calls and unfinished work", "Foundations completion and Circle reveal", "Birthdays, anniversaries, and milestones", "Holidays, launches, and clothing drops"]);
     assert.equal(overview.setupRequired, false);
   });
@@ -419,6 +427,7 @@ test("saved automation management reads project approvals without changing deliv
     f.state.catalogFailure = Error("sensitive-catalog-token");
     const overview = await f.service.getCadenceOverview(f.admin);
     assert.equal(overview.plans[0].id, active.id); assert.deepEqual(overview.templates, []);
+    assert.deepEqual(overview.communications, f.state.communications, "the read-only channel inventory remains available during a template provider outage");
     assert.match(overview.warnings.join(" "), /design list is unavailable/); assert.doesNotMatch(JSON.stringify(overview), /sensitive-catalog-token/);
     f.state.providerFailure = Error("sensitive-provider-token");
     const detail = await f.service.getCadenceManagementDetail(f.admin, "event", active.id);
