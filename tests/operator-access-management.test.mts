@@ -121,7 +121,7 @@ test("operator workspace selector retains the grouped route model and capability
   assert.match(navigation, /label: "People"/);
   assert.match(navigation, /label: "Learning"/);
   assert.match(navigation, /label: "Events"/);
-  assert.match(navigation, /label: "Messages"/);
+  assert.match(navigation, /label: "Communications"/);
   assert.match(navigation, /label: "Settings"/);
   assert.match(navigation, /label: "Circles"/);
   assert.match(navigation, /href: "\/ops\/operators"[^\n]*adminOnly: true/);
