@@ -291,8 +291,9 @@ test("one catalog card offers four colors with matching URLs, photos, price and 
     const slots = [];
     let cursor = 0;
     const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
-      "@/lib/analytics/storefront": { trackStoreEvent: () => false },
-      react: { ...React, useState(initial) {
+      "@/lib/analytics/storefront": { configureCatalogAnalytics: () => {}, catalogAnalyticsSelection: ({category, collection, fit}) => `category=${category}|collection=${collection || "all"}|fit=${fit}`, trackStoreEvent: () => false },
+      "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
+      react: { ...React, useRef: () => ({current:null}), useEffect: () => {}, useState(initial) {
         const index = cursor++;
         if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
         return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
@@ -305,6 +306,8 @@ test("one catalog card offers four colors with matching URLs, photos, price and 
       "@/lib/store/catalog": load("src/lib/store/catalog.ts"),
       "@/lib/store/catalog-filters": load("src/lib/store/catalog-filters.ts"),
       "@/lib/store/product-colors": colorHelpers,
+      "@/lib/store/product-fit-images": load("src/lib/store/product-fit-images.ts"),
+      "@/lib/store/product-links": load("src/lib/store/product-links.ts"),
     });
     const cardComponents = reactNodes(StoreGallery({ products: [product] })).filter((node) => typeof node.type === "function" && node.props.product === product);
     assert.equal(cardComponents.length, 1, "Colors must share one product card");

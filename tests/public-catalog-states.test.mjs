@@ -10,6 +10,7 @@ import * as catalog from "../src/lib/store/catalog.ts";
 import * as productColors from "../src/lib/store/product-colors.ts";
 import * as productFits from "../src/lib/store/product-fit-images.ts";
 import * as catalogFilters from "../src/lib/store/catalog-filters.ts";
+import * as productLinks from "../src/lib/store/product-links.ts";
 
 const product = {
   id: "byob-tank", name: "BYOB Tank", code: "RU—001", price: "$ 48",
@@ -31,9 +32,10 @@ async function compile(relativePath, dependencies, environment = {}) {
 }
 
 const uiDependencies = {
-  "@/lib/analytics/storefront": { trackStoreEvent: () => false },
+  "@/lib/analytics/storefront": { configureCatalogAnalytics: () => {}, catalogAnalyticsSelection: ({category, collection, fit}) => `category=${category}|collection=${collection || "all"}|fit=${fit}`, trackStoreEvent: () => false },
   "react/jsx-runtime": jsxRuntime,
   react: React,
+  "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
   "@/lib/marketing/meta": { trackMetaAddToCart: () => {} },
   "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
   "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
@@ -42,6 +44,7 @@ const uiDependencies = {
   "next/navigation": { useSearchParams: () => new URLSearchParams() },
   "@/lib/store/product-colors": productColors,
   "@/lib/store/product-fit-images": productFits,
+  "@/lib/store/product-links": productLinks,
 };
 const { default: StoreGallery } = await compile("src/components/store/StoreGallery.tsx", {
   ...uiDependencies,

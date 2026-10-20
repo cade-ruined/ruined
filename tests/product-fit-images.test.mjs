@@ -49,6 +49,10 @@ test("product gallery switches to the selected Fit while other products retain c
   const slots = [];
   let cursor = 0;
   let query = "color=Blue";
+  const browserWindow = {
+    location: { pathname: "/store/byob-tank", get search() { return query; } },
+    history: { replaceState(_state, _title, href) { query = new URL(href, "https://theruinedproject.com").search; } },
+  };
   const Gallery = () => null;
   const Purchase = () => null;
   const dependencies = {
@@ -70,23 +74,43 @@ test("product gallery switches to the selected Fit while other products retain c
     "./ProductPurchase": { default: Purchase },
   };
   const output = { exports: {} };
-  new Function("require", "module", "exports", compiled)((name) => {
+  new Function("require", "module", "exports", "window", compiled)((name) => {
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency: ${name}`);
     return dependencies[name];
-  }, output, output.exports);
+  }, output, output.exports, browserWindow);
   const elements = (node) => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
   const render = (value = product) => { cursor = 0; return elements(output.exports.default({ product: value })); };
   const gallery = (tree) => tree.find((node) => node.type === Gallery);
   const images = (tree) => gallery(tree).props.images.map((image) => image.url);
   const initialGalleryKey = gallery(render()).key;
   assert.deepEqual(images(render()), photos.slice(0, 2).map((photo) => photo.url));
-  globalThis.window = { location: { pathname: "/store/byob-tank", search: "" }, history: { replaceState: () => {} } };
   render().find((node) => node.type === Purchase).props.onFitChange("Women's");
   assert.deepEqual(images(render()), photos.slice(2).map((photo) => photo.url));
   assert.equal(gallery(render()).props.label, "Women's product photographs");
   assert.notEqual(gallery(render()).key, initialGalleryKey, "changing fit remounts the gallery at its first photo");
+  assert.equal(new URLSearchParams(query).get("fit"), "Women's");
+  assert.equal(render().find((node) => node.type === Purchase).props.initialFit, "Women's");
   render().find((node) => node.type === Purchase).props.onFitChange("Men's");
   assert.deepEqual(images(render()), photos.slice(0, 2).map((photo) => photo.url));
+  query = "fit=Women%27s&utm_source=instagram&variant=200";
+  const twoCuts = { ...product, variants: [
+    { id: "gid://shopify/ProductVariant/200", available: true, selectedOptions: [{ name: "Fit", value: "Men's" }], priceAmount: "48", currencyCode: "USD" },
+    { id: "gid://shopify/ProductVariant/201", available: true, selectedOptions: [{ name: "Fit", value: "Women's" }], priceAmount: "48", currencyCode: "USD" },
+  ] };
+  assert.equal(render(twoCuts).find((node) => node.type === Purchase).props.initialFit, "Men's", "an explicit variant takes precedence over a conflicting fit link");
+  render(twoCuts).find((node) => node.type === Purchase).props.onFitChange("Women's");
+  assert.equal(new URLSearchParams(query).get("variant"), null);
+  assert.equal(new URLSearchParams(query).get("utm_source"), "instagram");
+  assert.equal(render(twoCuts).find((node) => node.type === Purchase).props.initialFit, "Women's");
+  assert.deepEqual(images(render(twoCuts)), photos.slice(2).map((photo) => photo.url));
+  query = "fit=PrivateText";
+  assert.equal(render(twoCuts).find((node) => node.type === Purchase).props.initialFit, undefined);
+  render(twoCuts).find((node) => node.type === Purchase).props.onFitChange("PrivateText");
+  assert.equal(query, "fit=PrivateText", "an invalid control value cannot change the URL or selection");
+  query = "fit=Women%27s";
+  assert.equal(render(twoCuts).find((node) => node.type === Purchase).props.initialFit, "Women's", "a direct link or browser history change restores the cut");
+  query = "color=Blue";
+  assert.equal(render(twoCuts).find((node) => node.type === Purchase).props.initialFit, undefined, "removing the fit query never leaves a stale local selection");
   slots.length = 0;
   const blue = { url: "/blue.png", alt: "Blue front" };
   const hoodie = { ...product, id: "another-hoodie", options: [{ name: "Color", values: ["Black", "Blue"] }],
@@ -102,4 +126,57 @@ test("product gallery switches to the selected Fit while other products retain c
   assert.notEqual(gallery(render(twoColors)).key, blueKey, "changing color remounts the gallery at its first photo");
   const other = { ...product, id: "single-style", options: [], images: photos };
   assert.deepEqual(images(render(other)), photos.map((photo) => photo.url), "single-style products retain every photo");
+});
+
+
+test("fit links preserve color and campaign parameters while removing a stale variant", () => {
+  const base = "/store/byob-tank?utm_source=instagram&color=Black&variant=200";
+  const href = links.getProductFitHref(product, base, "Women's");
+  const url = new URL(href, "https://theruinedproject.com");
+  assert.equal(url.pathname, "/store/byob-tank");
+  assert.equal(url.searchParams.get("fit"), "Women's");
+  assert.equal(url.searchParams.get("color"), "Black");
+  assert.equal(url.searchParams.get("utm_source"), "instagram");
+  assert.equal(url.searchParams.get("variant"), null);
+  assert.equal(links.requestedProductFit(product, "Women's"), "Women's");
+  assert.equal(links.requestedProductFit(product, "womens"), undefined);
+  assert.equal(links.getProductFitHref(product, base, "not-a-fit"), base);
+  assert.equal(links.getProductFitHref(product, base), base);
+  assert.equal(links.getProductFitHref({ ...product, options: [] }, base, "Women's"), base);
+});
+
+
+test("a fit-filter landing reports its matching representative variant without preselecting a size", () => {
+  const byob = { ...product, variants: ["Men's", "Women's"].map((fit, index) => ({
+    id: `gid://shopify/ProductVariant/${200 + index}`, available: true,
+    selectedOptions: [{ name: "Fit", value: fit }, { name: "Size", value: "M" }],
+    priceAmount: "48", currencyCode: "USD",
+  })) };
+  const events = [], metaViews = [];
+  const Purchase = () => null;
+  const dependencies = {
+    react: { ...React, useRef: (current) => ({ current }), useEffect: (effect) => effect() },
+    "react/jsx-runtime": jsxRuntime,
+    "./ProductGallery": { default: () => null }, "./ProductPurchase": { default: Purchase },
+    "next/navigation": { useSearchParams: () => new URLSearchParams("fit=Women%27s") },
+    "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
+    "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
+    "@/lib/marketing/meta": { trackMetaProductView: (_product, variant) => metaViews.push(variant) },
+    "@/lib/analytics/storefront": { trackStoreEvent: (name, properties) => { events.push({ name, properties }); return true; } },
+  };
+  const compiled = ts.transpileModule(readFileSync(new URL("../src/components/store/ProductDetail.tsx", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  const output = { exports: {} };
+  new Function("require", "module", "exports", "window", compiled)((name) => {
+    assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency: ${name}`);
+    return dependencies[name];
+  }, output, output.exports, new EventTarget());
+  const elements = (node) => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
+  const tree = elements(output.exports.default({ product: byob }));
+  assert.equal(events[0].name, "store_product_opened");
+  assert.equal(events[0].properties.variant_id, byob.variants[1].id);
+  assert.equal(metaViews[0], byob.variants[1]);
+  assert.equal(tree.find((node) => node.type === Purchase).props.initialFit, "Women's");
+  assert.equal(tree.find((node) => node.type === Purchase).props.initialVariant, undefined);
 });

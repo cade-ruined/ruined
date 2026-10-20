@@ -50,6 +50,8 @@ export type Product = {
   code: string; // e.g. "RU—001"
   name: string; // e.g. "Field Coat"
   productType?: string;
+  // Authored Shopify taxonomy labels, distinct from variant Fit options.
+  targetGenders?: string[];
   collections?: ProductCollection[];
   subtitle: string; // e.g. "FOR WEATHER"
   price: string; // e.g. "£ 420" (preformatted for display)

@@ -1,15 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { trackStoreEvent } from "@/lib/analytics/storefront";
+import { catalogAnalyticsSelection, configureCatalogAnalytics, trackStoreEvent } from "@/lib/analytics/storefront";
+import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
 import Link from "next/link";
 import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 import { getCatalogEntries } from "@/lib/store/product-colors";
-import { CATALOG_CATEGORIES, catalogFiltersHref, filterCatalogProducts, getCollectionFilters, normalizeCatalogFilters } from "@/lib/store/catalog-filters";
+import { getProductFitImages } from "@/lib/store/product-fit-images";
+import { getProductFitHref } from "@/lib/store/product-links";
+import { CATALOG_CATEGORIES, CATALOG_FITS, catalogFiltersHref, filterCatalogProducts, getCollectionFilters, getCatalogFitSelection, normalizeCatalogFilters, type CatalogFit } from "@/lib/store/catalog-filters";
 
 export default function StoreGallery({
   products,
@@ -22,13 +25,35 @@ export default function StoreGallery({
   const filters = normalizeCatalogFilters({
     category: searchParams.get("category") ?? undefined,
     collection: searchParams.get("collection") ?? undefined,
+    fit: searchParams.get("fit") ?? undefined,
   }, products);
   const collections = getCollectionFilters(products);
   const visibleProducts = filterCatalogProducts(products, filters);
-  const filtered = filters.category !== "all" || Boolean(filters.collection);
+  const filtered = filters.category !== "all" || Boolean(filters.collection) || filters.fit !== "all";
+  const selection = catalogAnalyticsSelection(filters);
+  const lastReportedView = useRef<string | null>(null);
+  const resultCount = visibleProducts.length;
 
-  function chooseFilters(next: { category?: string; collection?: string }) {
+  useEffect(() => {
+    configureCatalogAnalytics(getCollectionFilters(products));
+    if (!products.length) return;
+    const view = () => {
+      const key = `${selection}:${resultCount}`;
+      if (lastReportedView.current !== key && trackStoreEvent("store_catalog_viewed", { selection, results: resultCount })) {
+        lastReportedView.current = key;
+      }
+    };
+    view();
+    window.addEventListener(MARKETING_CONSENT_EVENT, view);
+    return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
+  }, [products, selection, resultCount]);
+
+  function chooseFilters(next: { category?: string; collection?: string; fit?: string }) {
     const nextFilters = normalizeCatalogFilters({ ...filters, ...next }, products);
+    if (catalogAnalyticsSelection(nextFilters) === selection) return;
+    const key = Object.keys(next).length > 1 ? "reset" : Object.keys(next)[0] as "category" | "collection" | "fit";
+    const value = key === "reset" ? "all" : nextFilters[key] || "all";
+    trackStoreEvent("store_filter_changed", { filter: `${key}:${value}`, results: filterCatalogProducts(products, nextFilters).length });
     window.history.pushState(null, "", catalogFiltersHref(window.location.pathname, searchParams.toString(), nextFilters));
   }
   if (!products.length) {
@@ -110,7 +135,7 @@ export default function StoreGallery({
       >
         <div className="mx-auto max-w-[96rem]">
           <div className="border border-black/15 px-3 py-4 sm:px-5 sm:py-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div role="group" aria-label="Product category" className="flex flex-wrap gap-x-1 gap-y-1">
                 {CATALOG_CATEGORIES.map(({ id, label }) => (
                   <button key={id} type="button" aria-pressed={filters.category === id}
@@ -120,33 +145,43 @@ export default function StoreGallery({
                   </button>
                 ))}
               </div>
-              <label className="flex items-center gap-3 text-xs text-black/60">
-                Collection
-                <select aria-label="Collection" value={filters.collection}
-                  onChange={(event) => chooseFilters({ collection: event.currentTarget.value })}
-                  className="min-h-11 min-w-0 flex-1 rounded-none border border-black/25 bg-transparent px-3 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black lg:min-w-52">
-                  <option value="">All collections</option>
-                  {collections.map(({ handle, title }) => <option key={handle} value={handle}>{title}</option>)}
-                </select>
-              </label>
+              <div className="grid grid-cols-2 gap-3 xl:min-w-[26rem]">
+                <label className="grid min-w-0 gap-2 text-xs text-black/60">
+                  Collection
+                  <select aria-label="Collection" value={filters.collection}
+                    onChange={(event) => chooseFilters({ collection: event.currentTarget.value })}
+                    className="min-h-11 min-w-0 rounded-none border border-black/25 bg-transparent px-3 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">
+                    <option value="">All collections</option>
+                    {collections.map(({ handle, title }) => <option key={handle} value={handle}>{title}</option>)}
+                  </select>
+                </label>
+                <label className="grid min-w-0 gap-2 text-xs text-black/60">
+                  Fit
+                  <select aria-label="Fit" value={filters.fit}
+                    onChange={(event) => chooseFilters({ fit: event.currentTarget.value })}
+                    className="min-h-11 min-w-0 rounded-none border border-black/25 bg-transparent px-3 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">
+                    {CATALOG_FITS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+                  </select>
+                </label>
+              </div>
             </div>
             <div className="mt-3 flex min-h-8 items-center justify-between gap-4 text-xs text-black/55">
               <p role="status">{visibleProducts.length} {visibleProducts.length === 1 ? "style" : "styles"}{filtered ? ` of ${products.length}` : ""}</p>
-              {filtered && <button type="button" onClick={() => chooseFilters({ category: "all", collection: "" })}
+              {filtered && <button type="button" onClick={() => chooseFilters({ category: "all", collection: "", fit: "all" })}
                 className="min-h-11 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">Clear filters</button>}
             </div>
           </div>
           {visibleProducts.length ? (
             <div className="grid grid-cols-2 border-l border-black/15 lg:grid-cols-4">
               {visibleProducts.map((product, index) => (
-                <ProductCard key={product.id} product={product} index={index} featured={product.id === "camo-hoodie"} />
+                <ProductCard key={product.id} product={product} index={index} selection={selection} fit={filters.fit} featured={product.id === "camo-hoodie"} />
               ))}
             </div>
           ) : (
             <div className="border-x border-b border-black/15 px-5 py-16 text-center">
               <h2 className="ui-heading text-xl">No pieces in this combination.</h2>
-              <p className="mt-3 text-sm text-black/60">Try another category or collection.</p>
-              <button type="button" onClick={() => chooseFilters({ category: "all", collection: "" })}
+              <p className="mt-3 text-sm text-black/60">Try another category, collection, or fit.</p>
+              <button type="button" onClick={() => chooseFilters({ category: "all", collection: "", fit: "all" })}
                 className="mt-5 min-h-11 border border-black px-5 text-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black">View all pieces</button>
             </div>
           )}
@@ -181,18 +216,29 @@ export default function StoreGallery({
 function ProductCard({
   product,
   index,
+  selection,
+  fit,
   featured = false,
 }: {
   product: Product;
   index: number;
+  selection: string;
+  fit: CatalogFit;
   featured?: boolean;
 }) {
   const entries = getCatalogEntries([product]);
   const [selectedColor, setSelectedColor] = useState(() => (entries.find((entry) => entry.available) ?? entries[0]).color);
   const entry = entries.find((candidate) => candidate.color === selectedColor) ?? entries[0];
-  const { color, price, href } = entry;
-  const [image, secondImage] = entry.images;
-  const availability = !entry.available
+  const { color } = entry;
+  const selectedFit = getCatalogFitSelection(product, fit);
+  const fitVariants = selectedFit ? product.variants.filter((variant) => variant.selectedOptions.some(
+    (option) => option.name.toLowerCase() === "fit" && option.value === selectedFit,
+  ) && (!color || variant.selectedOptions.some((option) => /^colou?r$/i.test(option.name) && option.value === color))) : undefined;
+  const price = fitVariants?.filter((variant) => Number.isFinite(Number(variant.priceAmount)))
+    .reduce<(typeof product.variants)[number] | undefined>((lowest, variant) => !lowest || Number(variant.priceAmount) < Number(lowest.priceAmount) ? variant : lowest, undefined)?.price ?? entry.price;
+  const href = selectedFit ? getProductFitHref(product, entry.href, selectedFit) : entry.href;
+  const [image, secondImage] = (selectedFit ? getProductFitImages(product, selectedFit) : undefined) ?? entry.images;
+  const availability = !(fitVariants ? fitVariants.some((variant) => variant.available) : entry.available)
     ? "Sold out"
     : product.expectedShipDate
       ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
@@ -201,7 +247,10 @@ function ProductCard({
     <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id}>
     <Link
       href={href}
-      onClick={() => trackStoreEvent("store_product_selected", { product_id: product.shopifyProductGid ?? product.id, product_handle: product.id, source: "store" })}
+      onClick={() => {
+        trackStoreEvent("store_product_selected", { product_id: product.shopifyProductGid ?? product.id, product_handle: product.id, source: "store" });
+        trackStoreEvent("store_catalog_product_selected", { product_handle: product.id, selection });
+      }}
       className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
     >
       <div
@@ -244,7 +293,7 @@ function ProductCard({
           </span>
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/50">
-          <span className="truncate">{color || product.subtitle || product.material}</span>
+          <span className="truncate">{[color, selectedFit].filter(Boolean).join(" · ") || product.subtitle || product.material}</span>
           <span className={availability === "Sold out" ? "text-black/35" : "text-[var(--color-poster)]"}>{availability}</span>
         </div>
       </div>
@@ -253,7 +302,11 @@ function ProductCard({
       <div role="group" aria-label={`${product.name} colors`} className="flex flex-wrap px-1 pb-1">
         {entries.map((choice) => (
           <button key={choice.key} type="button" aria-label={`${product.name} — ${choice.color}`} aria-pressed={choice.color === color}
-            title={choice.color} onClick={() => setSelectedColor(choice.color)}
+            title={choice.color} onClick={() => {
+              if (choice.color === color) return;
+              setSelectedColor(choice.color);
+              trackStoreEvent("store_color_selected", { product_handle: product.id, option_value: choice.color });
+            }}
             className="flex h-11 w-11 items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-black">
             <span aria-hidden="true" className={`flex h-7 w-7 items-center justify-center rounded-full border ${choice.color === color ? "border-black" : "border-transparent"}`}>
               <span className="block h-5 w-5 rounded-full border border-black/20" style={{ background: COLOR_SWATCHES[choice.color?.toLowerCase() ?? ""] ?? "#c8c1b4" }} />
