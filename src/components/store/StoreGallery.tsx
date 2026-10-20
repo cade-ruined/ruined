@@ -1,12 +1,15 @@
 "use client";
 
 import Image from "next/image";
+import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { trackStoreEvent } from "@/lib/analytics/storefront";
 import Link from "next/link";
 import type { Product } from "@/data/products";
 import { PRODUCT_TONES } from "@/data/products";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
-import { getCatalogEntries, type CatalogEntry } from "@/lib/store/product-colors";
+import { getCatalogEntries } from "@/lib/store/product-colors";
+import { CATALOG_CATEGORIES, catalogFiltersHref, filterCatalogProducts, getCollectionFilters, normalizeCatalogFilters } from "@/lib/store/catalog-filters";
 
 export default function StoreGallery({
   products,
@@ -15,7 +18,19 @@ export default function StoreGallery({
   products: Product[];
   catalogStatus?: CatalogStatus;
 }) {
-  const entries = getCatalogEntries(products);
+  const searchParams = useSearchParams();
+  const filters = normalizeCatalogFilters({
+    category: searchParams.get("category") ?? undefined,
+    collection: searchParams.get("collection") ?? undefined,
+  }, products);
+  const collections = getCollectionFilters(products);
+  const visibleProducts = filterCatalogProducts(products, filters);
+  const filtered = filters.category !== "all" || Boolean(filters.collection);
+
+  function chooseFilters(next: { category?: string; collection?: string }) {
+    const nextFilters = normalizeCatalogFilters({ ...filters, ...next }, products);
+    window.history.pushState(null, "", catalogFiltersHref(window.location.pathname, searchParams.toString(), nextFilters));
+  }
   if (!products.length) {
     const notice = catalogNotice(catalogStatus);
     return (
@@ -78,12 +93,12 @@ export default function StoreGallery({
 
           <div className="md:col-span-5 lg:col-span-4">
             <div className="flex items-end justify-between gap-6 border-b border-white/15 pb-4 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-white/45">
-              <span>{String(entries.length).padStart(2, "0")} pieces</span>
+              <span>{String(products.length).padStart(2, "0")} styles</span>
               <span>Available online</span>
             </div>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-white/60">
-              Garments and objects from Ruined. Each piece carries its current
-              availability and dispatch timing.
+              Everyday pieces, made with intention. Find your fit, or explore
+              the collection behind it.
             </p>
           </div>
         </div>
@@ -94,16 +109,47 @@ export default function StoreGallery({
         className="bg-[var(--color-bone)] px-3 py-3 text-[var(--color-faded)] sm:px-6 sm:py-6"
       >
         <div className="mx-auto max-w-[96rem]">
-          <div className="grid grid-cols-2 border-l border-t border-black/15 lg:grid-cols-4">
-            {entries.map((entry, index) => (
-              <ProductCard
-                key={entry.key}
-                entry={entry}
-                index={index}
-                featured={index === 0}
-              />
-            ))}
+          <div className="border border-black/15 px-3 py-4 sm:px-5 sm:py-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div role="group" aria-label="Product category" className="flex flex-wrap gap-x-1 gap-y-1">
+                {CATALOG_CATEGORIES.map(({ id, label }) => (
+                  <button key={id} type="button" aria-pressed={filters.category === id}
+                    onClick={() => chooseFilters({ category: id })}
+                    className={`min-h-11 px-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black sm:px-4 ${filters.category === id ? "bg-black text-[var(--color-bone)]" : "text-black/60 hover:bg-black/5 hover:text-black"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-3 text-xs text-black/60">
+                Collection
+                <select aria-label="Collection" value={filters.collection}
+                  onChange={(event) => chooseFilters({ collection: event.currentTarget.value })}
+                  className="min-h-11 min-w-0 flex-1 rounded-none border border-black/25 bg-transparent px-3 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black lg:min-w-52">
+                  <option value="">All collections</option>
+                  {collections.map(({ handle, title }) => <option key={handle} value={handle}>{title}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 flex min-h-8 items-center justify-between gap-4 text-xs text-black/55">
+              <p role="status">{visibleProducts.length} {visibleProducts.length === 1 ? "style" : "styles"}{filtered ? ` of ${products.length}` : ""}</p>
+              {filtered && <button type="button" onClick={() => chooseFilters({ category: "all", collection: "" })}
+                className="min-h-11 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">Clear filters</button>}
+            </div>
           </div>
+          {visibleProducts.length ? (
+            <div className="grid grid-cols-2 border-l border-black/15 lg:grid-cols-4">
+              {visibleProducts.map((product, index) => (
+                <ProductCard key={product.id} product={product} index={index} featured={product.id === "camo-hoodie"} />
+              ))}
+            </div>
+          ) : (
+            <div className="border-x border-b border-black/15 px-5 py-16 text-center">
+              <h2 className="ui-heading text-xl">No pieces in this combination.</h2>
+              <p className="mt-3 text-sm text-black/60">Try another category or collection.</p>
+              <button type="button" onClick={() => chooseFilters({ category: "all", collection: "" })}
+                className="mt-5 min-h-11 border border-black px-5 text-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black">View all pieces</button>
+            </div>
+          )}
 
           <div className="grid gap-4 border border-t-0 border-black/15 px-5 py-6 font-mono text-[0.62rem] uppercase tracking-[0.16em] text-black/45 sm:grid-cols-3 sm:px-7">
             <p>Cut and size <span className="text-black">selected by you</span></p>
@@ -133,15 +179,18 @@ export default function StoreGallery({
 }
 
 function ProductCard({
-  entry,
+  product,
   index,
   featured = false,
 }: {
-  entry: CatalogEntry;
+  product: Product;
   index: number;
   featured?: boolean;
 }) {
-  const { product, color, price, href } = entry;
+  const entries = getCatalogEntries([product]);
+  const [selectedColor, setSelectedColor] = useState(() => (entries.find((entry) => entry.available) ?? entries[0]).color);
+  const entry = entries.find((candidate) => candidate.color === selectedColor) ?? entries[0];
+  const { color, price, href } = entry;
   const [image, secondImage] = entry.images;
   const availability = !entry.available
     ? "Sold out"
@@ -149,12 +198,11 @@ function ProductCard({
       ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
       : "Available";
   return (
+    <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id}>
     <Link
       href={href}
       onClick={() => trackStoreEvent("store_product_selected", { product_id: product.shopifyProductGid ?? product.id, product_handle: product.id, source: "store" })}
-      className={`group border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${
-        featured ? "col-span-2" : ""
-      }`}
+      className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
     >
       <div
         className={`relative overflow-hidden ${featured ? "aspect-[5/4] sm:aspect-[4/3] lg:aspect-[5/4]" : "aspect-[4/5]"}`}
@@ -182,7 +230,7 @@ function ProductCard({
         )}
         <div className="absolute inset-x-2 top-2 flex justify-between font-mono text-[0.64rem] uppercase tracking-[0.14em] text-white/75 sm:inset-x-3 sm:top-3">
           <span>{String(index + 1).padStart(2, "0")}</span>
-          <span>{product.code}</span>
+          <span>{featured ? "Featured" : product.code}</span>
         </div>
         <span className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center border border-white/40 bg-black/30 text-white transition-colors group-hover:bg-[var(--color-poster)] sm:bottom-3 sm:right-3">→</span>
       </div>
@@ -191,18 +239,34 @@ function ProductCard({
           <h2 className={`ui-heading leading-tight ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`}>
             {product.name}
           </h2>
-          <span className={`ui-heading tabular-nums ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`}>
+          <span className={`ui-heading shrink-0 whitespace-nowrap tabular-nums ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`}>
             {price}
           </span>
         </div>
-        <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/50">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/50">
           <span className="truncate">{color || product.subtitle || product.material}</span>
           <span className={availability === "Sold out" ? "text-black/35" : "text-[var(--color-poster)]"}>{availability}</span>
         </div>
       </div>
     </Link>
+    {entries.length > 1 && (
+      <div role="group" aria-label={`${product.name} colors`} className="flex flex-wrap px-1 pb-1">
+        {entries.map((choice) => (
+          <button key={choice.key} type="button" aria-label={`${product.name} — ${choice.color}`} aria-pressed={choice.color === color}
+            title={choice.color} onClick={() => setSelectedColor(choice.color)}
+            className="flex h-11 w-11 items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-black">
+            <span aria-hidden="true" className={`flex h-7 w-7 items-center justify-center rounded-full border ${choice.color === color ? "border-black" : "border-transparent"}`}>
+              <span className="block h-5 w-5 rounded-full border border-black/20" style={{ background: COLOR_SWATCHES[choice.color?.toLowerCase() ?? ""] ?? "#c8c1b4" }} />
+            </span>
+          </button>
+        ))}
+      </div>
+    )}
+    </article>
   );
 }
+
+const COLOR_SWATCHES: Record<string, string> = { black: "#202020", blue: "#476684", grey: "#a9a9a5", gray: "#a9a9a5", red: "#8e3330", white: "#f6f2e8" };
 
 function formatExpectedShipDate(value: string): string {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)

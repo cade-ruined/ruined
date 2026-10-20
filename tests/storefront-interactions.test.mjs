@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as colors from "../src/lib/store/product-colors.ts";
 import * as fits from "../src/lib/store/product-fit-images.ts";
 import * as links from "../src/lib/store/product-links.ts";
+import * as catalogFilters from "../src/lib/store/catalog-filters.ts";
 
 function hooks() {
   const slots = [], effects = [];
@@ -52,20 +53,21 @@ function fixture(path, props = {}, options = {}) {
   let mutationFails = false, redirectFails = false;
   const window = new EventTarget();
   window.location = { pathname: "/store/hoodie", search: "", assign(url) { if (redirectFails) throw new Error("private redirect detail"); calls.push({ redirect: url }); } };
-  window.history = { replaceState() {} };
+  window.history = { replaceState() {}, pushState(_state, _title, url) { const next = new URL(url, "https://store.test"); params = next.searchParams; window.location.search = next.search; calls.push({ navigation: url }); } };
   const dependencies = {
     react: state.react, "react/jsx-runtime": jsxRuntime,
     "next/link": { default: Stub }, "next/image": { default: Stub }, "next/navigation": { useSearchParams: () => params },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
     "@/lib/store/catalog": { catalogNotice: () => ({}) },
+    "@/lib/store/catalog-filters": catalogFilters,
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
     "@/lib/marketing/meta": { trackMetaProductView() {}, trackMetaAddToCart(product, variant, quantity) { metaAdds.push({ product, variant, quantity }); }, checkoutVisitorConsent: () => undefined, checkoutWithAttribution: value => value },
     "@/lib/analytics/shopify": { shopifyAnalyticsTrackingHeaders: () => allowed ? { "X-Shopify-UniqueToken": "unique", "X-Shopify-VisitToken": "visit" } : {} },
     "@/lib/analytics/storefront": { trackStoreEvent(name, properties) { if (!allowed) return false; events.push({ name, properties }); return true; }, flushStoreCart: () => options.flush?.() ?? Promise.resolve() },
     "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Shipping" },
     "@/data/product-size-guides": { getProductSizeGuide: () => ({ fit: "Unisex" }), getProductSizeGuideConfig: () => ({ sizeOption: "Size", fitOption: "Fit" }) },
-    "./ProductPurchase": { default: Stub }, "./ProductSizeGuideDialog": { default: SizeGuide }, "./BagLink": { default: Stub },
+    "./ProductGallery": { default: Stub }, "./ProductPurchase": { default: Stub }, "./ProductSizeGuideDialog": { default: SizeGuide }, "./BagLink": { default: Stub },
   };
   const mutate = (action, value) => { if (mutationFails) throw new Error("storage private detail"); mutations.push({ action, value }); };
   const bag = { useBag: () => ({ items, hydrated, count: items.reduce((sum, item) => sum + item.quantity, 0), add: value => { mutate("add", value); return options.add ? options.add(value) : (options.addedQuantity ?? 1); }, setQuantity: (key, quantity) => mutate("quantity", { key, quantity }), remove: key => mutate("remove", key), clear: () => mutate("clear") }), isShopifyVariantId: value => value.startsWith("gid://shopify/ProductVariant/") };
@@ -77,7 +79,7 @@ function fixture(path, props = {}, options = {}) {
   });
   const render = () => state.render(Component, currentProps);
   return {
-    render, events, calls, mutations, metaAdds, cleanup: state.cleanup,
+    render, renderChild: (node) => state.render(node.type, node.props), events, calls, mutations, metaAdds, cleanup: state.cleanup,
     setAllowed(value) { allowed = value; }, consent() { window.dispatchEvent(new Event("consent")); },
     setProps(value) { currentProps = value; }, setParams(value) { params = new URLSearchParams(value); },
     setItems(value) { items = value; }, setHydrated(value) { hydrated = value; }, failMutation() { mutationFails = true; }, failRedirect() { redirectFails = true; },
@@ -205,8 +207,9 @@ test("catalog selection records only an activated product link", () => {
   const view = fixture("src/components/store/StoreGallery.tsx", { products: [product] });
   const tree = view.render();
   assert.equal(view.events.length, 0);
-  const card = elements(tree).find(node => node.props.entry?.product.id === product.id);
-  card.type(card.props).props.onClick();
+  const card = elements(tree).find(node => node.props.product?.id === product.id);
+  const cardTree = view.renderChild(card);
+  elements(cardTree).find(node => node.props.href?.startsWith("/store/hoodie")).props.onClick();
   assert.deepEqual(view.events, [{ name: "store_product_selected", properties: { product_id: product.shopifyProductGid, product_handle: product.id, source: "store" } }]);
 });
 
@@ -293,4 +296,44 @@ test("purchase controls pass the returned added quantity and its total value to 
     assert.equal(view.metaAdds[0].quantity, 2);
     view.cleanup();
   }
+});
+
+
+test("catalog filters compose, retain campaign parameters, and recover from no results", () => {
+  const products = [
+    { ...product, id: "camo-hoodie", name: "Camo Hoodie", collections: [{ handle: "sunday-clothes", title: "Sunday Clothes" }] },
+    { ...product, id: "ruined-tee", name: "Staple Tee", collections: [{ handle: "staples", title: "Staples" }] },
+  ];
+  const view = fixture("src/components/store/StoreGallery.tsx", { products });
+  view.setParams("utm_source=instagram");
+  view.button("Hoodies").props.onClick();
+  assert.equal(new URL(view.calls.at(-1).navigation, "https://test").searchParams.get("utm_source"), "instagram");
+  let tree = view.render();
+  assert.deepEqual(elements(tree).filter(node => node.props.product).map(node => node.props.product.id), ["camo-hoodie"]);
+  elements(tree).find(node => node.type === "select").props.onChange({ currentTarget: { value: "staples" } });
+  tree = view.render();
+  assert.ok(text(tree).includes("No pieces in this combination."));
+  view.button("View all pieces").props.onClick();
+  assert.equal(view.calls.at(-1).navigation, "/store/hoodie?utm_source=instagram");
+  assert.equal(elements(view.render()).filter(node => node.props.product).length, 2);
+  view.setParams("category=tees-tanks&collection=staples");
+  assert.deepEqual(elements(view.render()).filter(node => node.props.product).map(node => node.props.product.id), ["ruined-tee"], "restored URL drives the selection");
+});
+
+test("one style card changes its image and destination when a color is selected", () => {
+  const view = fixture("src/components/store/StoreGallery.tsx", { products: [product] });
+  const cards = elements(view.render()).filter(node => node.props.product);
+  assert.equal(cards.length, 1);
+  let tree = view.renderChild(cards[0]);
+  const colorButtons = elements(tree).filter(node => node.type === "button");
+  assert.equal(colorButtons.length, 2);
+  assert.equal(colorButtons[0].props["aria-pressed"], true);
+  colorButtons[1].props.onClick();
+  tree = view.renderChild(cards[0]);
+  const link = elements(tree).find(node => node.props.href?.startsWith("/store/hoodie"));
+  assert.equal(link.props.href, "/store/hoodie?color=Blue");
+  assert.equal(elements(tree).filter(node => node.type === "button")[1].props["aria-pressed"], true);
+  assert.equal(view.events.length, 0, "a swatch does not count as opening a product");
+  link.props.onClick();
+  assert.equal(view.named("store_product_selected").length, 1);
 });
