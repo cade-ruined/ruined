@@ -47,10 +47,15 @@ test("commercial enrollment uses the real schema, current registered people, saf
       cancelGoogleCalendarEvent: () => assert.fail("Billing invalidation cannot call Google"),
     }
     : name === "@/lib/google/communications" ? { googleCommunicationLivemode: () => false } : {}, calendarModule, calendarModule.exports);
+  const experienceAccessModule = { exports: {} };
+  new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/platform/experience-member-access.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(() => ({}), experienceAccessModule, experienceAccessModule.exports);
   const calendarInvalidationModule = { exports: {} };
   new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/platform/calendar-audience-invalidation.ts"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText)(name => name === "@/lib/platform/ops-calendar-repository" ? calendarModule.exports : {}, calendarInvalidationModule, calendarInvalidationModule.exports);
+  }).outputText)(name => name === "@/lib/platform/ops-calendar-repository" ? calendarModule.exports
+    : name === "@/lib/platform/experience-member-access" ? experienceAccessModule.exports : {}, calendarInvalidationModule, calendarInvalidationModule.exports);
   const billingModule = { exports: {} };
   new Function("require", "module", "exports", ts.transpileModule(await source("src/lib/stripe/billing-repository.ts"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

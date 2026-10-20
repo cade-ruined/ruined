@@ -199,7 +199,7 @@ export default function OperatorExperienceCalendar({
         <div className="space-y-3 pt-2">
           {children}
           {experienceState === "published" && isQueued && !calendar.automaticDeliveryPaused ? <button className={OPERATOR_BUTTON_CLASS} disabled={!canSend || pending} onClick={() => sync(intentFor(calendar))} type="button">{pending ? "Sending" : "Retry invitations"}</button> : null}
-          <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Google Calendar invites eligible people in the selected audience. Waitlisted and cancelled places are excluded.</p>
+          <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Google Calendar invites the selected audience and the Founders Circle. Founders are included automatically without taking member places. Cancelled invitations are excluded.</p>
           {calendar.organizerEmail ? <p className="text-xs text-[color:var(--operator-muted)]">Organizer: {calendar.organizerEmail}</p> : null}
           {lastSynced ? <p className="text-xs text-[color:var(--operator-muted)]">Last sent {lastSynced}</p> : null}
         </div>

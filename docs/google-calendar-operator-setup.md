@@ -86,6 +86,19 @@ organizer. Calendar credentials remain separate from
 
 ## Runtime behavior
 
+- The active founding leadership team is a standing audience for every published
+  event, including Foundations, Membership, and individual Circle/Block calls.
+  Eligibility requires active membership in the original Founders Circle, an
+  active Administrator role and member account, and a verified primary email.
+  This does not use the commercial Founding rate or a Circle's editable name.
+  Founders receive call-only Calendar/Meet access without taking member places,
+  joining other Circles, changing cohorts, or exposing private Circle content.
+  A cancelled event registration remains an explicit opt-out; existing Google
+  RSVP responses are preserved by the normal provider update path.
+- Changes to the Founders Circle or a former founder's eligibility invalidate
+  all published Calendar audiences, including after their assignment or role
+  has ended. The existing durable worker then adds/removes invitations. No
+  invitation is created merely by viewing a member page.
 - One stable Ruined request key becomes one deterministic Google event ID, so a
   retried create cannot produce a second invitation.
 - The simple **New event** form preserves the Google Meet link supplied by the

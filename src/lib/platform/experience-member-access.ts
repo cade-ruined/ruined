@@ -14,6 +14,92 @@ export type ExperienceMemberAudience = {
   visibility: string;
 };
 
+// This is the original leadership Circle, not the commercial Founding rate.
+// Use its stable identity so changing the Circle's name cannot change access.
+export const FOUNDERS_CIRCLE_ID = "e140cf3c-dd56-4164-b7e4-6c97fbd39d3e";
+
+/**
+ * The active founding team has a standing invitation to scheduled calls only.
+ * This does not grant Circle content, cohort membership, a place, or billing
+ * entitlement. Event cancellation/opt-out is checked separately by callers.
+ */
+export async function memberHasStandingFounderInvitation(
+  tx: postgres.Sql | postgres.TransactionSql,
+  memberId: string | null,
+  lockEvidence = false,
+): Promise<boolean> {
+  if (!memberId) return false;
+  return (await standingFounderMembers(tx, memberId, lockEvidence)).length > 0;
+}
+
+/** Resolve the same standing team for Calendar audience construction. */
+export async function getStandingFounderInvitationMemberIds(
+  tx: postgres.Sql | postgres.TransactionSql,
+  lockEvidence = false,
+): Promise<string[]> {
+  return [...new Set((await standingFounderMembers(tx, null, lockEvidence)).map(row => row.id))];
+}
+
+async function standingFounderMembers(
+  tx: postgres.Sql | postgres.TransactionSql,
+  memberId: string | null,
+  lockEvidence: boolean,
+): Promise<Array<{ id: string }>> {
+  return tx<Array<{ id: string }>>`
+    select member.id
+    from ruined_members member
+    join people person on person.id = member.person_id and person.status = 'active'
+    join member_lifecycle lifecycle on lifecycle.member_id = member.id
+      and lifecycle.account_state = 'active'
+      and lifecycle.standing_state in ('active', 'cancellation_requested')
+      and (lifecycle.standing_state <> 'cancellation_requested'
+        or lifecycle.cancellation_effective_at > statement_timestamp())
+    join platform_users account on account.member_id = member.id
+      and account.person_id = member.person_id and account.status = 'active'
+    join platform_role_grants member_grant on member_grant.auth_user_id = account.auth_user_id
+      and member_grant.role_slug = 'member' and member_grant.revoked_at is null
+    join platform_role_grants admin_grant on admin_grant.auth_user_id = account.auth_user_id
+      and admin_grant.role_slug = 'ops_admin' and admin_grant.revoked_at is null
+    join person_email_addresses email_address on email_address.person_id = member.person_id
+      and email_address.is_primary and email_address.retired_at is null
+      and email_address.verification_state = 'verified'
+    join circle_member_assignments assignment on assignment.member_id = member.id
+      and assignment.circle_id = ${FOUNDERS_CIRCLE_ID}::uuid
+      and assignment.ended_at is null and assignment.assigned_at <= statement_timestamp()
+    join circles circle on circle.id = assignment.circle_id and circle.status = 'active'
+      and circle.activated_at <= statement_timestamp()
+      and (circle.ends_at is null or circle.ends_at >= statement_timestamp())
+    where (${memberId}::uuid is null or member.id = ${memberId}::uuid) and member.deleted_at is null
+    order by member.id
+    ${memberId ? tx`limit 1` : tx``}
+    ${lockEvidence ? tx`for share of member, person, lifecycle, account, member_grant, admin_grant, email_address, assignment, circle` : tx``}
+  `;
+}
+
+async function standingFounderExperienceAvailable(
+  tx: postgres.Sql | postgres.TransactionSql,
+  experienceId: string | undefined,
+  memberId: string,
+  lockEvidence: boolean,
+): Promise<boolean | null> {
+  if (!experienceId) return null;
+  const rows = await tx<Array<{ status: string; opted_out: boolean }>>`
+    select experience.status,
+      exists (
+        select 1 from experience_registrations registration
+        where registration.experience_id = experience.id
+          and registration.person_id = member.person_id
+          and registration.status = 'cancelled'
+      ) as opted_out
+    from experiences experience
+    join ruined_members member on member.id = ${memberId}::uuid
+    where experience.id = ${experienceId}::uuid
+    ${lockEvidence ? tx`for share of experience, member` : tx``}
+  `;
+  if (rows[0]?.opted_out) return false;
+  return rows[0] && ["published", "completed"].includes(rows[0].status) ? true : null;
+}
+
 /** An explicit operator invitation grants only its call, never general membership or Circle access. */
 async function explicitInvitationMember(
   tx: postgres.Sql | postgres.TransactionSql,
@@ -127,6 +213,22 @@ export async function getEligibleExplicitExperienceInvitationIds(authUserId: str
     where auth_user_id = ${authUserId}::uuid and status = 'active' and member_id is not null`;
   const memberId = accounts[0]?.member_id;
   if (!memberId) return [];
+  if (await memberHasStandingFounderInvitation(tx, memberId)) {
+    const invitations = await tx<Array<{ id: string }>>`
+      select experience.id
+      from experiences experience
+      join ruined_members member on member.id = ${memberId}::uuid
+      where experience.status in ('published', 'completed')
+        and not exists (
+          select 1 from experience_registrations registration
+          where registration.experience_id = experience.id
+            and registration.person_id = member.person_id
+            and registration.status = 'cancelled'
+        )
+      order by experience.starts_at, experience.id
+    `;
+    return invitations.map(invitation => invitation.id);
+  }
   const invitations = await tx<Array<{ id: string }>>`select experience.id
     from experiences experience join experience_registrations registration on registration.experience_id = experience.id
     join ruined_members member on member.id = registration.member_id and member.person_id = registration.person_id
@@ -172,6 +274,10 @@ async function evaluateExperienceMemberAccess(
   lockEvidence: boolean,
 ): Promise<boolean> {
   if (!memberId) return false;
+  if (await memberHasStandingFounderInvitation(tx, memberId, lockEvidence)) {
+    const standingInvitation = await standingFounderExperienceAvailable(tx, experience.id ?? experience.experience_id, memberId, lockEvidence);
+    if (standingInvitation !== null) return standingInvitation;
+  }
   if (experience.visibility === "invite_only" && experience.registration_mode === "internal"
     && await eligibleExplicitInvitation(tx, experience, memberId, lockEvidence)) return true;
   // Preserve the existing completed-member policy (including waitlists). The

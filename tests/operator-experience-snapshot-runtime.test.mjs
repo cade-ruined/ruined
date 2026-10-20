@@ -114,6 +114,7 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
   });
   const invalidation = await load("src/lib/platform/calendar-audience-invalidation.ts", {
     "@/lib/platform/ops-calendar-repository": calendar,
+    "@/lib/platform/experience-member-access": eligibility,
   });
   const community = await source("db/migrations/20260826_membership_operating_spine_03_community_experiences.sql");
   const foundation = await source("db/migrations/20260819_platform_foundation.sql");
@@ -321,6 +322,87 @@ test("Experience page snapshots use read-only PostgreSQL while Calendar changes 
     await db.exec("update platform_role_grants set revoked_at=now() where role_slug='member'");
     await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `snapshot-changed-${crypto.randomUUID()}` });
     assert.equal(providerCalls.length, 1); assert.deepEqual(providerCalls[0].attendees, []);
+  });
+
+  async function standingFounderFixture() {
+    await reset();
+    await db.query("insert into circles values ($1,'Original Founders','active',now()-interval '1 day',null)", [eligibility.FOUNDERS_CIRCLE_ID]);
+    await db.query("insert into circle_member_assignments(member_id,circle_id) values ($1,$2)", [ids.member, eligibility.FOUNDERS_CIRCLE_ID]);
+    await db.query("insert into platform_role_grants(auth_user_id,role_slug) values ($1,'ops_admin')", [ids.auth]);
+    await db.exec("update member_lifecycle set billing_state='pending',foundations_state='not_started',program_state='onboarding'");
+  }
+
+  await t.test("standing founders join unrelated Circle and private call audiences without registration or capacity consumption", async () => {
+    for (const visibility of ["circle", "invite_only"]) {
+      await standingFounderFixture();
+      await db.query("update experiences set visibility=$1,circle_id=$2,registration_mode='internal',capacity=1", [visibility, visibility === "circle" ? ids.otherCircle : null]);
+      const capacityPerson = crypto.randomUUID();
+      await db.query("insert into people values($1,'active')", [capacityPerson]);
+      await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')", [ids.event, capacityPerson]);
+      const before = await snapshot(); queries.length = 0;
+      assert.equal((await record()).calendar.attendeeCount, 1, visibility);
+      assert.ok(queries.every(query => !/for (share|update)|ruined_lock_/i.test(query)), "founder snapshot remains read-only");
+      assert.deepEqual(await snapshot(), before, "standing invitation does not change registrations or lifecycle");
+      await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `standing-${visibility}-${crypto.randomUUID()}` });
+      assert.deepEqual(providerCalls[0].attendees.map(attendee => attendee.email), ["member@example.test"]);
+      const registered = (await db.query("select member_id,person_id from experience_registrations")).rows;
+      assert.deepEqual(registered, [{ member_id: null, person_id: capacityPerson }], "a founder does not occupy the last or an additional seat");
+      const audit = (await db.query("select assignment_source from experience_calendar_attendee_events where outcome='applied'")).rows;
+      assert.ok(audit.length > 0);
+      assert.ok(audit.every(row => row.assignment_source === "direct"));
+      await db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='ops_admin'", [ids.auth]);
+      assert.equal((await record()).calendar.attendeeCount, 0, "ordinary members remain outside the unrelated/private audience");
+    }
+  });
+
+  await t.test("standing founder overlapping the normal membership audience is invited once", async () => {
+    await standingFounderFixture();
+    await db.exec("update experiences set visibility='all_members',circle_id=null,registration_mode='none'");
+    await db.exec("update member_lifecycle set billing_state='active',foundations_state='completed',program_state='active'");
+    assert.equal((await record()).calendar.attendeeCount, 1);
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `standing-deduplicated-${crypto.randomUUID()}` });
+    assert.deepEqual(providerCalls[0].attendees.map(attendee => attendee.email), ["member@example.test"]);
+    const added = (await db.query("select count(*)::integer as count from experience_calendar_attendee_events where outcome='applied'")).rows[0].count;
+    assert.equal(added, 1);
+  });
+
+  await t.test("founder removal and revoked roles invalidate unrelated private invitations and remove guests from the same event", async () => {
+    for (const change of [
+      "update circle_member_assignments set ended_at=now()",
+      `update platform_role_grants set revoked_at=now() where auth_user_id='${ids.auth}' and role_slug='ops_admin'`,
+      `update platform_role_grants set revoked_at=now() where auth_user_id='${ids.auth}' and role_slug='member'`,
+    ]) {
+      await standingFounderFixture();
+      await db.exec("update experiences set visibility='invite_only',circle_id=null,registration_mode='internal'");
+      await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `standing-before-${crypto.randomUUID()}` });
+      assert.equal(providerCalls[0].attendees.length, 1);
+      const original = (await db.query("select * from experience_calendar_links where experience_id=$1", [ids.event])).rows[0];
+      await db.exec(change);
+      assert.equal((await record()).calendar.attendeeCount, 0, change);
+      await bridge(db).begin(tx => invalidation.markCalendarAudiencesPendingForMember(tx, { memberId: ids.member }));
+      const pending = (await db.query("select * from experience_calendar_links where experience_id=$1", [ids.event])).rows[0];
+      assert.equal(pending.status, "pending_update", change);
+      assert.ok(pending.desired_attendee_revision > original.desired_attendee_revision, change);
+      await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "sync", requestKey: `standing-after-${crypto.randomUUID()}` });
+      assert.equal(providerCalls[1].eventId, original.provider_event_id);
+      assert.deepEqual(providerCalls[1].attendees, []);
+    }
+  });
+
+  await t.test("Founders Circle state changes invalidate every active event audience while ordinary Circle changes remain scoped", async () => {
+    await standingFounderFixture();
+    await db.exec("update experiences set visibility='invite_only',circle_id=null,registration_mode='internal'");
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "create", requestKey: `standing-circle-state-${crypto.randomUUID()}` });
+    const original = (await db.query("select * from experience_calendar_links where experience_id=$1", [ids.event])).rows[0];
+    await bridge(db).begin(tx => invalidation.markCalendarAudiencesPendingForCircle(tx, { actorAuthUserId: ids.admin, circleId: ids.otherCircle }));
+    assert.equal((await db.query("select desired_attendee_revision from experience_calendar_links")).rows[0].desired_attendee_revision, original.desired_attendee_revision);
+    await db.query("update circles set status='archived' where id=$1", [eligibility.FOUNDERS_CIRCLE_ID]);
+    await bridge(db).begin(tx => invalidation.markCalendarAudiencesPendingForCircle(tx, { actorAuthUserId: ids.admin, circleId: eligibility.FOUNDERS_CIRCLE_ID }));
+    const pending = (await db.query("select * from experience_calendar_links")).rows[0];
+    assert.equal(pending.status, "pending_update");
+    assert.ok(pending.desired_attendee_revision > original.desired_attendee_revision);
+    await calendar.syncOpsExperienceCalendar({ actorAuthUserId: ids.admin, experienceId: ids.event, intent: "sync", requestKey: `standing-circle-ended-${crypto.randomUUID()}` });
+    assert.deepEqual(providerCalls[1].attendees, []);
   });
 
   await t.test("an empty membership calendar fills the same Google event after Foundations and removes lost eligibility", async () => {

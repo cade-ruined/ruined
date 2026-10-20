@@ -20,6 +20,8 @@ export type GoogleCalendarAttendee = {
   email: string;
 };
 
+export type GoogleCalendarAttendeeResponse = "accepted" | "declined" | "tentative" | "needsAction";
+
 export type GoogleCalendarAllDayTime = {
   date: string;
 };
@@ -72,7 +74,7 @@ export type GoogleCalendarEventResult = {
 };
 
 export type GoogleCalendarEventBody = {
-  attendees: GoogleCalendarAttendee[];
+  attendees: Array<GoogleCalendarAttendee & { responseStatus?: GoogleCalendarAttendeeResponse }>;
   conferenceData?: {
     conferenceId?: string;
     createRequest: {
@@ -109,6 +111,7 @@ export type GoogleCalendarApiEvent = {
   attendees?: Array<{
     displayName?: string;
     email?: string;
+    responseStatus?: string;
   }>;
   conferenceData?: {
     conferenceId?: string;
@@ -153,6 +156,7 @@ export type GoogleCalendarApiEvent = {
 };
 
 export type GoogleCalendarUpdateBodyOptions = {
+  existingAttendees?: GoogleCalendarApiEvent["attendees"];
   meetRequestId?: string;
 };
 
@@ -424,8 +428,23 @@ export function buildGoogleCalendarUpdateBody(
   const meetingUrl = normalizeGoogleCalendarMeetingUrl(input.meetingUrl);
   const meetRequestId = meetingUrl ? undefined : options.meetRequestId?.trim();
   if (meetRequestId) googleMeetRequestHash(meetRequestId);
+  // PATCH replaces the attendee array. Retain each continuing guest's current
+  // Google RSVP rather than resetting a decline/acceptance during audience sync.
+  // Never take a response from the desired draft or invent one for a new guest.
+  const responses = new Map<string, GoogleCalendarAttendeeResponse>();
+  for (const attendee of options.existingAttendees ?? []) {
+    const email = normalizedProviderEmail(attendee.email);
+    const response = attendee.responseStatus;
+    if (email && (response === "accepted" || response === "declined" || response === "tentative" || response === "needsAction")) {
+      responses.set(email, response);
+    }
+  }
   return {
     ...normalized,
+    attendees: normalized.attendees.map(attendee => {
+      const responseStatus = responses.get(attendee.email);
+      return responseStatus ? { ...attendee, responseStatus } : attendee;
+    }),
     ...(meetingUrl
       ? { conferenceData: null }
       : meetRequestId

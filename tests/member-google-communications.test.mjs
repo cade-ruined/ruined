@@ -63,7 +63,7 @@ test("Chat and Meet redirects reauthorize members and never cache destinations",
   assert.match(repository, /requireMemberCapability\(identity, "circle\.read"\)/);
   const meetingAccess = repository.slice(repository.indexOf("export async function getMemberExperienceMeetingDestination"), repository.indexOf("export async function getMemberExperiences"));
   assert.match(meetingAccess, /const fullExperienceAccess = memberCan\(access, "experiences\.member"\)/);
-  assert.match(meetingAccess, /const invitedExperienceIds = fullExperienceAccess \? \[\] : await getEligibleExplicitExperienceInvitationIds\(authUserId\)/);
+  assert.match(meetingAccess, /const invitedExperienceIds = await getEligibleExplicitExperienceInvitationIds\(authUserId\)/);
   assert.match(meetingAccess, /if \(!fullExperienceAccess && !memberCan\(access, "circle\.read"\) && !invitedExperienceIds\.includes\(experienceId\)\) throw new MembershipAccessDeniedError/);
   assert.match(meetingAccess, /and \(\$\{fullExperienceAccess\} or \(experience\.visibility = 'circle' and experience\.circle_id = scope\.circle_id\)\s+or experience\.id = any\(\$\{sql\.array\(invitedExperienceIds\)\}::uuid\[\]\)\)/);
   assert.match(meetingAccess, /active_circle\.status = 'active'/);
