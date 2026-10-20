@@ -21,6 +21,11 @@ The central event definitions live in `src/lib/analytics/storefront.ts`. Vercel 
 
 | Vercel event | Trigger and interpretation | Properties |
 | --- | --- | --- |
+| `store_catalog_viewed` | The current catalog selection is rendered with its matching style count, including zero results. Consent becoming ready can report the current view, never earlier selections. | `selection`, `results` |
+| `store_filter_changed` | A category, collection, or fit changes, or active filters are cleared. Selecting the current value is excluded. | `filter`, `results` |
+| `store_color_selected` | A different catalog color is deliberately selected on a product card, product page, or quick-buy panel. Defaults and unchanged selections are excluded. | `product`, `color` |
+| `store_catalog_product_selected` | A catalog product link is selected, with its current filter combination. Companion to the existing product selection event; do not add the two counts together. | `product`, `selection` |
+| `store_browse_stage` | A permitted catalog product selection progresses to an opened product, successful local bag addition, or checkout attempt/result during the same document lifetime. See attribution limits below. | `selection`, `stage` |
 | `store_product_selected` | Product link selected in the store gallery. This is navigation intent. | `product`, `source` |
 | `store_product_opened` | Product detail or the homepage quick-buy product becomes eligible to report its view. | `product`, `source` |
 | `store_size_guide_opened` | Product size guide opened. Repeated openings can repeat the action. | `product`, `source` |
@@ -38,6 +43,34 @@ The central event definitions live in `src/lib/analytics/storefront.ts`. Vercel 
 Bag and checkout `value` describe the current merchandise total, not revenue or a final tax/shipping-inclusive order total. Currency is not an additional Vercel property under the two-property limit; confirm store currency and avoid combining unlike currency contexts.
 
 Shopify receives native `PAGE_VIEW_2`, `PRODUCT_VIEW`, and `ADD_TO_CART` through its SDK with Shopify-issued visit/unique tokens. `ADD_TO_CART` is sent only after the server confirms a real cart and verifies its final contents. The same cart is reconciled for hosted checkout, allowing Shopify to connect the journey. The server stores the full cart ID in a host-only HttpOnly cookie for three days; analytics receives the keyless cart ID. This identity is operational and checkout still works when analytics is declined. Checkout and completed-purchase reporting belong to Shopify's hosted flow; the application does not fabricate purchase events.
+
+## Categories, collections, fit, and discovery progress
+
+Use `store_filter_changed` to see which controls shoppers deliberately use. Its `filter` label is one of `category:<value>`, `collection:<handle>`, `fit:<value>`, or `reset:all`; `results` is the resulting number of styles, not the number of color cards. Filter those events to `results = 0` to find combinations that lead to an empty catalog. `store_catalog_viewed` provides the full combination and also captures direct links and back/forward navigation, so its counts are different from deliberate control changes.
+
+The `selection` label always uses the same order, for example `category=hoodies|collection=sunday-clothes|fit=unisex`. Empty selections use `all`. Categories and fits come from fixed public choices; collection handles must be registered from the live public catalog before events are accepted. The event boundary rejects unknown collections, malformed labels, arbitrary query values, invalid counts, and free-form color text containing unsupported characters. Raw browser query strings and campaign parameters are never copied into these events.
+
+Fit is a product classification, not an inference about a visitor's gender. Use it to understand demand for available garment cuts. `store_color_selected` shows active color exploration across cards, detail pages, and quick-buy. The two-property limit means that event groups by product and color without a surface or visitor identifier. Existing `store_variant_selected` also records the option change; these are separate views of the same interaction and must not be summed. Color selection does not imply a cart addition or color-specific sale. Use Shopify variant sales to assess actual purchased colors.
+
+`store_browse_stage.stage` has six values:
+
+1. `product_selected`: a catalog link was intentionally selected.
+2. `product_opened`: that product's detail view was reported.
+3. `add_to_bag`: an addition from that product page was successfully persisted locally.
+4. `checkout_clicked`: an eligible bag containing an attributed variant began checkout.
+5. `checkout_redirected`: checkout navigation was requested without a synchronous error.
+6. `checkout_failed`: checkout preparation or the navigation call failed.
+
+The application keeps only the most recent permitted catalog selection for each selected product in memory. When an attributed product-page addition succeeds, its variant keeps that addition's selection. Checkout stages look up the actual bag's product and variant pairs and emit once per distinct matching selection; merely viewing another product cannot relabel an existing bag item. A quick-buy addition cannot inherit an earlier catalog/product-page context, and removing a bag item removes its context. Context expires after 30 minutes, is capped at 50 products and 50 added variants, and is cleared when consent is pending/withdrawn, GPC blocks analytics, or navigation enters a private route. No context is saved in cookies, local storage, session storage, or a user identifier.
+
+This intentionally measures a partial, consented path. Reloads, new tabs, leaving and returning in a new document, expired context, and previously saved bags can still produce normal Shopify/Vercel commerce events without a filter-attributed browse stage. A bag with several discovery selections can emit several checkout-stage events; repeated actions also repeat counts. Compare these patterns to locate likely friction, but do not calculate session conversion or abandonment rates from raw stage totals. No completed-order attribution to a category, collection, or fit is claimed. Shopify remains the source of truth for completed purchases.
+
+For review, use one date range and device filter, then compare:
+
+- **Discovery use:** category/collection/fit selections and zero-result combinations.
+- **Product interest:** product clicks grouped by `selection`, and deliberate color choices grouped by product.
+- **Possible friction:** `product_selected` versus `product_opened`, then `add_to_bag` and checkout stages for the same selection, alongside counts and the attribution limits above.
+- **Confirmed commerce:** Shopify sessions, cart/checkout progress, completed orders, and variant sales. Do not treat a browser redirect as a purchase.
 
 ## Why counts can differ or be missing
 
@@ -68,7 +101,8 @@ No pre-launch or pre-consent action history is backfilled. Once a visitor allows
 
 ## Safe QA and maintenance
 
-- Run the cart, Shopify analytics, consent, storefront-interaction, and central analytics tests, plus typecheck/build, after changing the event contract or cart flow. Use mocks or a test store for failure and concurrency scenarios.
+- Run the cart, Shopify analytics, consent, catalog-filter, storefront-interaction, and central analytics tests, plus typecheck/build, after changing the event contract or cart flow. Use mocks or a test store for failure and concurrency scenarios.
+- Exercise category/collection/fit changes, reset, zero results, back/forward navigation, color changes, and no-op selections. Confirm only public labels and counts are sent. Check a mixed bag so checkout attribution follows actual added variants rather than the last viewed product.
 - In a clean browser, verify that unknown/declined consent and GPC produce no storefront measurement requests. Allow analytics and verify eligible page/product events, then revoke it and confirm later actions stop reporting.
 - Verify `/my`, `/profile`, `/invite`, `/auth`, `/ops`, and non-store pages remain excluded. Inspect request metadata without copying secrets or personal data into logs/screenshots.
 - Test mobile and desktop: choose a valid variant, add once, change quantity, remove, and open the bag. Check one confirmed native Shopify add per successful added action, cart reuse at checkout, and no `?key=` in analytics payloads. Record any deliberate production cart/test traffic.

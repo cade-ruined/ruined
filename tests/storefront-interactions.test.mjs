@@ -48,6 +48,9 @@ const product = {
 const bagItem = { key: "hoodie::1", productId: product.id, productName: product.name, productCode: product.code, variantId: product.variants[0].id, variantTitle: product.variants[0].title, selectedOptions: product.variants[0].selectedOptions, unitPrice: "$64", priceAmount: "64.00", currencyCode: "USD", quantity: 1 };
 function fixture(path, props = {}, options = {}) {
   const state = hooks(), events = [], calls = [], mutations = [], metaAdds = [];
+  const childStates = new Map();
+  let renderingState = state;
+  const hookProxy = { ...React, ...Object.fromEntries(["useState", "useRef", "useId", "useMemo", "useCallback", "useEffect"].map(name => [name, (...args) => renderingState.react[name](...args)])) };
   let allowed = options.allowed ?? true, params = new URLSearchParams(), currentProps = props;
   let items = options.items ?? [bagItem], hydrated = options.hydrated ?? true;
   let mutationFails = false, redirectFails = false;
@@ -55,7 +58,7 @@ function fixture(path, props = {}, options = {}) {
   window.location = { pathname: "/store/hoodie", search: "", assign(url) { if (redirectFails) throw new Error("private redirect detail"); calls.push({ redirect: url }); } };
   window.history = { replaceState() {}, pushState(_state, _title, url) { const next = new URL(url, "https://store.test"); params = next.searchParams; window.location.search = next.search; calls.push({ navigation: url }); } };
   const dependencies = {
-    react: state.react, "react/jsx-runtime": jsxRuntime,
+    react: hookProxy, "react/jsx-runtime": jsxRuntime,
     "next/link": { default: Stub }, "next/image": { default: Stub }, "next/navigation": { useSearchParams: () => params },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
@@ -64,7 +67,7 @@ function fixture(path, props = {}, options = {}) {
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
     "@/lib/marketing/meta": { trackMetaProductView() {}, trackMetaAddToCart(product, variant, quantity) { metaAdds.push({ product, variant, quantity }); }, checkoutVisitorConsent: () => undefined, checkoutWithAttribution: value => value },
     "@/lib/analytics/shopify": { shopifyAnalyticsTrackingHeaders: () => allowed ? { "X-Shopify-UniqueToken": "unique", "X-Shopify-VisitToken": "visit" } : {} },
-    "@/lib/analytics/storefront": { trackStoreEvent(name, properties) { if (!allowed) return false; events.push({ name, properties }); return true; }, flushStoreCart: () => options.flush?.() ?? Promise.resolve() },
+    "@/lib/analytics/storefront": { configureCatalogAnalytics: () => {}, catalogAnalyticsSelection: ({category, collection, fit}) => `category=${category}|collection=${collection || "all"}|fit=${fit}`, trackStoreEvent(name, properties) { if (!allowed) return false; events.push({ name, properties }); return true; }, flushStoreCart: () => options.flush?.() ?? Promise.resolve() },
     "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Shipping" },
     "@/data/product-size-guides": { getProductSizeGuide: () => ({ fit: "Unisex" }), getProductSizeGuideConfig: () => ({ sizeOption: "Size", fitOption: "Fit" }) },
     "./ProductGallery": { default: Stub }, "./ProductPurchase": { default: Stub }, "./ProductSizeGuideDialog": { default: SizeGuide }, "./BagLink": { default: Stub },
@@ -77,9 +80,14 @@ function fixture(path, props = {}, options = {}) {
     window,
     fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body), headers: init.headers }); return options.response ? options.response() : { ok: true, json: async () => ({ checkoutUrl: "https://checkout.example.test/secret-checkout" }) }; },
   });
-  const render = () => state.render(Component, currentProps);
+  const render = () => { renderingState = state; return state.render(Component, currentProps); };
   return {
-    render, renderChild: (node) => state.render(node.type, node.props), events, calls, mutations, metaAdds, cleanup: state.cleanup,
+    render, renderChild: (node) => {
+      const key = node.key ?? node.type;
+      if (!childStates.has(key)) childStates.set(key, hooks());
+      renderingState = childStates.get(key);
+      return renderingState.render(node.type, node.props);
+    }, events, calls, mutations, metaAdds, cleanup: state.cleanup,
     setAllowed(value) { allowed = value; }, consent() { window.dispatchEvent(new Event("consent")); },
     setProps(value) { currentProps = value; }, setParams(value) { params = new URLSearchParams(value); },
     setItems(value) { items = value; }, setHydrated(value) { hydrated = value; }, failMutation() { mutationFails = true; }, failRedirect() { redirectFails = true; },
@@ -206,11 +214,12 @@ test("checkout errors use fixed categories and never copy server, network, or re
 test("catalog selection records only an activated product link", () => {
   const view = fixture("src/components/store/StoreGallery.tsx", { products: [product] });
   const tree = view.render();
-  assert.equal(view.events.length, 0);
+  assert.equal(view.named("store_product_selected").length, 0);
   const card = elements(tree).find(node => node.props.product?.id === product.id);
   const cardTree = view.renderChild(card);
   elements(cardTree).find(node => node.props.href?.startsWith("/store/hoodie")).props.onClick();
-  assert.deepEqual(view.events, [{ name: "store_product_selected", properties: { product_id: product.shopifyProductGid, product_handle: product.id, source: "store" } }]);
+  assert.deepEqual(view.named("store_product_selected"), [{ name: "store_product_selected", properties: { product_id: product.shopifyProductGid, product_handle: product.id, source: "store" } }]);
+  assert.deepEqual(view.named("store_catalog_product_selected")[0].properties, { product_handle: product.id, selection: "category=all|collection=all|fit=all" });
 });
 
 test("size guide notifies only after opening the native dialog", () => {
@@ -333,7 +342,88 @@ test("one style card changes its image and destination when a color is selected"
   const link = elements(tree).find(node => node.props.href?.startsWith("/store/hoodie"));
   assert.equal(link.props.href, "/store/hoodie?color=Blue");
   assert.equal(elements(tree).filter(node => node.type === "button")[1].props["aria-pressed"], true);
-  assert.equal(view.events.length, 0, "a swatch does not count as opening a product");
+  assert.equal(view.named("store_product_selected").length, 0, "a swatch does not count as opening a product");
+  assert.deepEqual(view.named("store_color_selected").map(event => event.properties), [{ product_handle: product.id, option_value: "Blue" }]);
+  elements(tree).filter(node => node.type === "button")[1].props.onClick();
+  assert.equal(view.named("store_color_selected").length, 1, "current color is a no-op");
   link.props.onClick();
   assert.equal(view.named("store_product_selected").length, 1);
+});
+
+
+test("catalog views retry after consent without replaying denied filters or colors", () => {
+  const view = fixture("src/components/store/StoreGallery.tsx", { products: [product] }, {allowed:false});
+  view.render();
+  view.button("Hoodies").props.onClick();
+  view.render();
+  const card = elements(view.render()).find(node => node.props.product);
+  elements(view.renderChild(card)).filter(node => node.type === "button")[1].props.onClick();
+  assert.equal(view.events.length, 0);
+  view.setAllowed(true); view.consent(); view.consent(); view.render();
+  assert.deepEqual(view.named("store_catalog_viewed").map(event => event.properties), [{selection:"category=hoodies|collection=all|fit=all",results:1}]);
+  assert.equal(view.named("store_filter_changed").length, 0);
+  assert.equal(view.named("store_color_selected").length, 0);
+  view.button("Hoodies").props.onClick();
+  assert.equal(view.named("store_filter_changed").length, 0);
+  view.button("Tees & Tanks").props.onClick(); view.render();
+  assert.deepEqual(view.named("store_filter_changed")[0].properties, {filter:"category:tees-tanks",results:0});
+  assert.deepEqual(view.named("store_catalog_viewed").at(-1).properties, {selection:"category=tees-tanks|collection=all|fit=all",results:0});
+  view.button("View all pieces").props.onClick(); view.render();
+  assert.deepEqual(view.named("store_filter_changed").at(-1).properties, {filter:"reset:all",results:1});
+  view.setParams("category=hoodies"); view.render();
+  assert.equal(view.named("store_filter_changed").length, 2, "URL restoration records the current view, not a fabricated click");
+  view.cleanup();
+});
+
+test("fit choices intersect, report their result count, and clear with the other filters", () => {
+  const products = [
+    {...product,id:"camo-hoodie",name:"Camo Hoodie",collections:[{handle:"sunday-clothes",title:"Sunday Clothes"}]},
+    {...product,id:"womens-crop-tee",name:"Women's Crop Tee",collections:[{handle:"staples",title:"Staples"}]},
+  ];
+  const view = fixture("src/components/store/StoreGallery.tsx",{products});
+  const fit = elements(view.render()).find(node=>node.type==="select" && node.props["aria-label"]==="Fit");
+  fit.props.onChange({currentTarget:{value:"unisex"}});
+  assert.deepEqual(view.named("store_filter_changed")[0].properties,{filter:"fit:unisex",results:1});
+  assert.match(view.calls.at(-1).navigation,/fit=unisex/);
+  const cards = elements(view.render()).filter(node=>node.props.product);
+  assert.deepEqual(cards.map(node=>node.props.product.id),["camo-hoodie"]);
+  elements(view.renderChild(cards[0])).find(node=>node.props.href?.startsWith("/store/")).props.onClick();
+  assert.equal(view.named("store_catalog_product_selected")[0].properties.selection,"category=all|collection=all|fit=unisex");
+  view.button("Clear filters").props.onClick();
+  assert.doesNotMatch(view.calls.at(-1).navigation,/fit=/);
+});
+
+test("product color events cover actual changes and exclude size choices and repeated colors", () => {
+  const view=fixture("src/components/store/ProductPurchase.tsx",{product,initialColor:"Black"});
+  view.button("Black").props.onClick(); view.button("M").props.onClick();
+  assert.equal(view.named("store_color_selected").length,0);
+  view.button("Blue").props.onClick(); view.button("Blue").props.onClick();
+  assert.deepEqual(view.named("store_color_selected").map(event=>event.properties),[{product_handle:product.id,option_value:"Blue"}]);
+});
+
+test("a fitted catalog card uses only the selected cut's photo, price, stock, and destination", () => {
+  const tank = {
+    ...product, id: "byob-tank", name: "BYOB Tank",
+    image: {url:"/mens-back.png",alt:"BYOB Tank — Men's — back"},
+    images: [
+      {url:"/mens-back.png",alt:"BYOB Tank — Men's — back"},
+      {url:"/womens-back.png",alt:"BYOB Tank — Women's — back"},
+      {url:"/womens-front.png",alt:"BYOB Tank — Women's — front"},
+    ],
+    options:[{name:"Fit",values:["Men's","Women's"]},{name:"Size",values:["S"]}],
+    variants:[
+      {id:"gid://shopify/ProductVariant/10",available:true,price:"$48",priceAmount:"48",selectedOptions:[{name:"Fit",value:"Men's"},{name:"Size",value:"S"}]},
+      {id:"gid://shopify/ProductVariant/11",available:false,price:"$68",priceAmount:"68",selectedOptions:[{name:"Fit",value:"Women's"},{name:"Size",value:"S"}]},
+    ],
+  };
+  const view=fixture("src/components/store/StoreGallery.tsx",{products:[tank]});
+  view.setParams("fit=womens");
+  const card=elements(view.render()).find(node=>node.props.product);
+  const tree=view.renderChild(card);
+  const href=elements(tree).find(node=>node.props.href).props.href;
+  assert.equal(new URL(href,"https://store.test").searchParams.get("fit"),"Women's");
+  assert.deepEqual(elements(tree).filter(node=>node.props.src).map(node=>node.props.src),["/womens-back.png","/womens-front.png"]);
+  assert.match(text(tree),/\$68/);
+  assert.match(text(tree),/Sold out/);
+  assert.doesNotMatch(text(tree),/\$48|Available/);
 });

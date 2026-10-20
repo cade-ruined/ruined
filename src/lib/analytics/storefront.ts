@@ -10,13 +10,108 @@ import { configureShopifyAnalytics, shopifyAnalyticsTrackingHeaders, trackShopif
 type Properties = Record<string, string | number | boolean | undefined>;
 const eventNames = new Set(["store_product_selected", "store_product_opened", "store_size_guide_opened",
   "store_variant_selected", "store_add_to_bag", "store_bag_viewed", "store_bag_quantity_changed",
-  "store_bag_item_removed", "store_checkout_clicked", "store_checkout_redirected", "store_checkout_failed", "store_cart_sync_failed", "store_scroll_depth"]);
+  "store_bag_item_removed", "store_checkout_clicked", "store_checkout_redirected", "store_checkout_failed", "store_cart_sync_failed", "store_scroll_depth",
+  "store_catalog_viewed", "store_filter_changed", "store_color_selected", "store_catalog_product_selected", "store_browse_stage"]);
 let configuration: ShopifyAnalyticsConfig | null = null;
 let injected = false;
 let lastPage = "";
 let generation = 0;
 let cartQueue = Promise.resolve();
 let cartAbort: AbortController | undefined;
+
+const categories = new Set(["all", "tees-tanks", "hoodies", "collared-shirts"]);
+const fits = new Set(["all", "unisex", "mens", "womens"]);
+let catalogCollections = new Set<string>();
+const publicHandle = /^[a-z0-9][a-z0-9-]{0,254}$/;
+const catalogHandle = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const contextLifetime = 30 * 60 * 1000;
+const contextLimit = 50;
+type BrowseContext = { selection: string; at: number };
+const productContexts = new Map<string, BrowseContext>();
+const bagContexts = new Map<string, BrowseContext & { product: string }>();
+const browseStages = new Set(["product_selected", "product_opened", "add_to_bag", "checkout_clicked", "checkout_redirected", "checkout_failed"]);
+
+/** Register only handles supplied by the public catalog, never query parameters. */
+export function configureCatalogAnalytics(collections: readonly { handle: string }[]) {
+  catalogCollections = new Set(collections.map(({ handle }) => handle).filter(handle => catalogHandle.test(handle) && handle !== "frontpage"));
+}
+
+/** A pure label formatter. The event boundary separately validates registered collections. */
+export function catalogAnalyticsSelection(filters: { category: string; collection: string; fit: string }): string {
+  const category = categories.has(filters.category) ? filters.category : "all";
+  const collection = catalogHandle.test(filters.collection) ? filters.collection : "all";
+  const fit = fits.has(filters.fit) ? filters.fit : "all";
+  return `category=${category}|collection=${collection}|fit=${fit}`;
+}
+
+function validSelection(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^category=([a-z-]+)\|collection=([a-z0-9-]+)\|fit=([a-z-]+)$/.exec(value);
+  return !!match && categories.has(match[1]) && fits.has(match[3])
+    && (match[2] === "all" || catalogCollections.has(match[2]));
+}
+
+function validFilter(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const [kind, selected, extra] = value.split(":");
+  if (extra !== undefined) return false;
+  if (kind === "category") return categories.has(selected);
+  if (kind === "collection") return selected === "all" || catalogCollections.has(selected);
+  if (kind === "fit") return fits.has(selected);
+  return kind === "reset" && selected === "all";
+}
+
+function clearBrowseContexts() {
+  productContexts.clear();
+  bagContexts.clear();
+}
+
+function pruneContexts<T extends BrowseContext>(contexts: Map<string, T>) {
+  const cutoff = Date.now() - contextLifetime;
+  for (const [key, context] of contexts) {
+    if (context.at <= cutoff || !validSelection(context.selection)) contexts.delete(key);
+  }
+  while (contexts.size > contextLimit) contexts.delete(contexts.keys().next().value!);
+}
+
+function browseStage(selection: string, stage: string) {
+  // Internal callers have already crossed the same consent and public-catalog boundary.
+  track("store_browse_stage", { selection, stage });
+}
+
+function trackBrowseProgress(name: string, properties: Properties, safe: Record<string, string | number>) {
+  pruneContexts(productContexts);
+  pruneContexts(bagContexts);
+  const product = safe.product;
+  if (name === "store_catalog_product_selected" && typeof product === "string") {
+    const selection = String(safe.selection);
+    productContexts.delete(product);
+    productContexts.set(product, { selection, at: Date.now() });
+    pruneContexts(productContexts);
+    browseStage(selection, "product_selected");
+  } else if ((name === "store_product_opened" || name === "store_add_to_bag") && typeof product === "string") {
+    const context = productContexts.get(product);
+    // A quick-buy addition is a different discovery path and cannot borrow a
+    // previous product-page context, including for the same variant.
+    if (name === "store_add_to_bag" && typeof properties.variant_id === "string") bagContexts.delete(properties.variant_id);
+    if (properties.source !== "product_page" || !context) return;
+    browseStage(context.selection, name === "store_product_opened" ? "product_opened" : "add_to_bag");
+    if (name === "store_add_to_bag" && typeof properties.variant_id === "string" && isShopifyVariantId(properties.variant_id)) {
+      bagContexts.set(properties.variant_id, { ...context, product, at: Date.now() });
+      pruneContexts(bagContexts);
+    }
+  } else if (["store_checkout_clicked", "store_checkout_redirected", "store_checkout_failed"].includes(name)) {
+    const selections = new Set<string>();
+    for (const line of readBag()) {
+      const context = bagContexts.get(line.variantId);
+      if (context && context.product === line.productId) selections.add(context.selection);
+    }
+    for (const selection of selections) browseStage(selection, name.replace("store_", ""));
+  } else if (name === "store_bag_item_removed") {
+    const remaining = new Set(readBag().map(line => line.variantId));
+    for (const variant of bagContexts.keys()) if (!remaining.has(variant)) bagContexts.delete(variant);
+  }
+}
 
 export function storeAnalyticsAllowed(): boolean {
   if (!configuration || typeof window === "undefined" || isConsentUpdatePending()) return false;
@@ -46,6 +141,7 @@ export function beforeStoreAnalyticsSend(event: BeforeSendEvent): BeforeSendEven
 
 export function refreshStoreAnalytics() {
   if (!storeAnalyticsAllowed()) {
+    clearBrowseContexts();
     generation++;
     if (typeof window !== "undefined" && !isMarketingPage(window.location.pathname)) lastPage = "";
     cartAbort?.abort();
@@ -71,8 +167,27 @@ export function configureStoreAnalytics(config: ShopifyAnalyticsConfig | null) {
   refreshStoreAnalytics();
 }
 
-function safeProperties(name: string, properties: Properties): Record<string, string | number> {
+function safeProperties(name: string, properties: Properties): Record<string, string | number> | null {
   const result: Record<string, string | number> = {};
+  if (name === "store_catalog_viewed" || name === "store_filter_changed") {
+    const results = properties.results;
+    if (typeof results !== "number" || !Number.isInteger(results) || results < 0 || results > 10000) return null;
+    if (name === "store_catalog_viewed") return validSelection(properties.selection) ? { selection: properties.selection, results } : null;
+    return validFilter(properties.filter) ? { filter: properties.filter, results } : null;
+  }
+  if (name === "store_catalog_product_selected") {
+    return typeof properties.product_handle === "string" && publicHandle.test(properties.product_handle) && validSelection(properties.selection)
+      ? { product: properties.product_handle, selection: properties.selection } : null;
+  }
+  if (name === "store_color_selected") {
+    return typeof properties.product_handle === "string" && publicHandle.test(properties.product_handle)
+      && typeof properties.option_value === "string" && /^[\w ()/.'’,-]{1,64}$/.test(properties.option_value)
+      ? { product: properties.product_handle, color: properties.option_value } : null;
+  }
+  if (name === "store_browse_stage") {
+    return validSelection(properties.selection) && typeof properties.stage === "string" && browseStages.has(properties.stage)
+      ? { selection: properties.selection, stage: properties.stage } : null;
+  }
   if (name === "store_cart_sync_failed") {
     return ["invalid_bag", "unavailable", "network"].includes(String(properties.error_category))
       ? { reason: String(properties.error_category) } : result;
@@ -154,9 +269,16 @@ export async function flushStoreCart(): Promise<void> {
 }
 
 export function trackStoreEvent(name: string, properties: Properties = {}): boolean {
-  if (!eventNames.has(name) || !storeAnalyticsAllowed()) return false;
+  if (!storeAnalyticsAllowed()) {
+    clearBrowseContexts();
+    return false;
+  }
+  if (!eventNames.has(name)) return false;
+  const safe = safeProperties(name, properties);
+  if (!safe) return false;
   refreshStoreAnalytics();
-  track(name, safeProperties(name, properties));
+  track(name, safe);
+  trackBrowseProgress(name, properties, safe);
   if (name === "store_product_opened") trackShopifyProductView(properties as ShopifyAnalyticsItem);
   if (name === "store_add_to_bag") queueCartSync(properties as ShopifyAnalyticsItem);
   else if (name === "store_bag_quantity_changed" || name === "store_bag_item_removed") queueCartSync();

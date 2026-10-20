@@ -35,6 +35,7 @@ function shopifyAdapter(node) {
 const node = {
   id: "gid://shopify/Product/1", handle: "byob-tank", title: "BYOB Tank",
   productType: "Tank Tops", collections: { nodes: [{ handle: "byob", title: "BYOB" }, { handle: "frontpage", title: "Home page" }] },
+  targetGender: { references: { nodes: [{ fields: [{ key: "label", value: "Unisex" }, { key: "taxonomy_reference", value: "gid://shopify/TaxonomyValue/20" }] }] } },
   description: "Cotton tank.", descriptionHtml: "<p>Cotton tank.</p>",
   featuredImage: null, images: { nodes: [] },
   priceRange: { minVariantPrice: { amount: "48", currencyCode: "USD" } },
@@ -50,6 +51,8 @@ test("the live catalog adapter requests and maps Shopify collection membership a
   assert.match(api.query(), /\bproductType\b/);
   assert.match(api.query(), /collections\(first: 50\)\s*\{\s*nodes\s*\{\s*handle title\s*\}/);
   assert.equal(result.products[0].productType, "Tank Tops");
+  assert.match(api.query(), /targetGender: metafield\(namespace: "shopify", key: "target-gender"\)/);
+  assert.deepEqual(result.products[0].targetGenders, ["Unisex"]);
   assert.deepEqual(result.products[0].collections, node.collections.nodes);
   assert.equal(result.products[0].variants[0].id, node.variants.nodes[0].id);
 });
@@ -58,8 +61,20 @@ test("older product responses without collection metadata remain usable", async 
   const legacyNode = { ...node };
   delete legacyNode.productType;
   delete legacyNode.collections;
+  delete legacyNode.targetGender;
   const result = await shopifyAdapter(legacyNode).getCatalog();
   assert.equal(result.status, "ready");
   assert.equal(result.products[0].productType, "");
   assert.deepEqual(result.products[0].collections, []);
+  assert.deepEqual(result.products[0].targetGenders, []);
+});
+
+
+test("fit taxonomy maps only authored labels and tolerates null or non-metaobject references", async () => {
+  const result = await shopifyAdapter({ ...node, targetGender: { references: { nodes: [
+    {}, { fields: [{ key: "label", value: "Male" }, { key: "label", value: "Male" }] },
+    { fields: [{ key: "label", value: "Female" }, { key: "taxonomy_reference", value: "gid://shopify/TaxonomyValue/18" }] },
+  ] } } }).getCatalog();
+  assert.deepEqual(result.products[0].targetGenders, ["Male", "Female"]);
+  assert.deepEqual((await shopifyAdapter({ ...node, targetGender: null }).getCatalog()).products[0].targetGenders, []);
 });

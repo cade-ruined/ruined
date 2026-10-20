@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CATALOG_CATEGORIES,
+  CATALOG_FITS,
   catalogFiltersHref,
   filterCatalogProducts,
   getCollectionFilters,
+  getCatalogFitSelection,
   getProductCategory,
+  getProductFits,
   normalizeCatalogFilters,
 } from "../src/lib/store/catalog-filters.ts";
 
@@ -17,7 +20,12 @@ const collections = {
   byob: { handle: "byob", title: "BYOB" },
   home: { handle: "frontpage", title: "Home page" },
 };
-const product = (id, name, membership) => ({ id, name, productType: "", collections: membership.map((key) => collections[key]) });
+const product = (id, name, membership) => ({
+  id, name, productType: "", collections: membership.map((key) => collections[key]),
+  targetGenders: id === "long-sleeve-crest-polo" || id === "byob-tank" ? ["Unisex"]
+    : id.startsWith("mens-") ? ["Male"] : id.startsWith("womens-") ? ["Female"] : [],
+  options: id === "byob-tank" ? [{ name: "Fit", values: ["Men's", "Women's"] }] : [],
+});
 const products = [
   product("long-sleeve-crest-polo", "Long sleeve Crest Polo", ["staples"]),
   product("ruined-hoodie", "Staple Hoodie", ["staples"]),
@@ -63,9 +71,9 @@ test("Camo stays featured only within matching results without mutating Shopify 
 });
 
 test("unknown or retired URL filters recover independently rather than hiding the catalog", () => {
-  assert.deepEqual(normalizeCatalogFilters({ category: "jackets", collection: "frontpage" }, products), { category: "all", collection: "" });
-  assert.deepEqual(normalizeCatalogFilters({ category: "hoodies", collection: "removed-drop" }, products), { category: "hoodies", collection: "" });
-  assert.deepEqual(normalizeCatalogFilters({ category: null, collection: "byob" }, products), { category: "all", collection: "byob" });
+  assert.deepEqual(normalizeCatalogFilters({ category: "jackets", collection: "frontpage" }, products), { category: "all", collection: "", fit: "all" });
+  assert.deepEqual(normalizeCatalogFilters({ category: "hoodies", collection: "removed-drop" }, products), { category: "hoodies", collection: "", fit: "all" });
+  assert.deepEqual(normalizeCatalogFilters({ category: null, collection: "byob" }, products), { category: "all", collection: "byob", fit: "all" });
   assert.equal(filterCatalogProducts(products, { category: "junk", collection: "junk" }).length, 12);
 });
 
@@ -86,6 +94,59 @@ test("shareable filter URLs preserve attribution and reset cleanly", () => {
   assert.equal(query.get("utm_source"), "instagram");
   assert.equal(query.get("category"), "tees-tanks");
   assert.equal(query.get("collection"), "byob");
-  assert.equal(catalogFiltersHref("/store", query.toString(), { category: "all", collection: "" }), "/store?utm_source=instagram");
-  assert.equal(catalogFiltersHref("/store", "category=hoodies", { category: "all", collection: "" }), "/store");
+  assert.equal(catalogFiltersHref("/store", query.toString(), { category: "all", collection: "", fit: "all" }), "/store?utm_source=instagram");
+  assert.equal(catalogFiltersHref("/store", "category=hoodies", { category: "all", collection: "", fit: "all" }), "/store");
+});
+
+
+test("fit filters reflect authored cuts and approved unisex classifications", () => {
+  const counts = Object.fromEntries(CATALOG_FITS.map(({ id }) => [id, filterCatalogProducts(products, { fit: id }).length]));
+  assert.deepEqual(counts, { all: 12, unisex: 5, mens: 4, womens: 4 });
+  assert.deepEqual(ids(filterCatalogProducts(products, { fit: "unisex" })), ["camo-hoodie", "long-sleeve-crest-polo", "ruined-hoodie", "ruined-tee", "sunday-clothes-hoodie"]);
+  assert.deepEqual(getProductFits(products.find(({ id }) => id === "byob-tank")), ["mens", "womens"]);
+  for (const id of ["ruined-tee", "ruined-hoodie", "sunday-clothes-hoodie", "camo-hoodie"]) {
+    assert.deepEqual(getProductFits(products.find((item) => item.id === id)), ["unisex"]);
+  }
+});
+
+test("fit intersects with category and collection without pulling in other cuts", () => {
+  assert.deepEqual(ids(filterCatalogProducts(products, { category: "tees-tanks", collection: "staples", fit: "womens" })), ["womens-crop-tee"]);
+  assert.deepEqual(ids(filterCatalogProducts(products, { category: "collared-shirts", collection: "collared-script", fit: "mens" })), ["mens-collared-script"]);
+  assert.deepEqual(ids(filterCatalogProducts(products, { category: "tees-tanks", collection: "byob", fit: "mens" })), ["byob-tank"]);
+  assert.deepEqual(ids(filterCatalogProducts(products, { category: "tees-tanks", collection: "byob", fit: "womens" })), ["byob-tank"]);
+  assert.deepEqual(filterCatalogProducts(products, { collection: "byob", fit: "unisex" }), []);
+  assert.deepEqual(filterCatalogProducts(products, { category: "hoodies", fit: "womens" }), []);
+  assert.deepEqual(ids(filterCatalogProducts(products, { category: "hoodies", collection: "sunday-clothes", fit: "unisex" })), ["camo-hoodie", "sunday-clothes-hoodie"]);
+});
+
+test("explicit fit options override broad taxonomy while names only fill missing metadata", () => {
+  const sample = { id: "new-top", name: "Studio Top" };
+  assert.deepEqual(getProductFits({ ...sample, targetGenders: ["Unisex"], options: [{ name: "Fit", values: ["Men’s", "Women's", "Men's"] }] }), ["mens", "womens"]);
+  assert.deepEqual(getProductFits({ ...sample, name: "Women's Studio Top", targetGenders: ["Unisex"] }), ["unisex"]);
+  assert.deepEqual(getProductFits({ ...sample, name: "Women’s Studio Top" }), ["womens"]);
+  assert.deepEqual(getProductFits({ ...sample, id: "mens-studio-shirt" }), ["mens"]);
+  assert.deepEqual(getProductFits({ ...sample, name: "Unisex Studio Top" }), ["unisex"]);
+  assert.deepEqual(getProductFits({ ...sample, targetGenders: ["Unspecified"], options: [{ name: "Fit", values: ["Relaxed"] }] }), []);
+  assert.deepEqual(getProductFits(sample), []);
+});
+
+test("fit URLs preserve other filters and campaign data, normalize invalid values, and clear together", () => {
+  const selected = catalogFiltersHref("/store", "utm_source=instagram&fit=mens&collection=staples", { category: "tees-tanks", collection: "byob", fit: "womens" });
+  const query = new URL(selected, "https://theruinedproject.com").searchParams;
+  assert.equal(query.get("fit"), "womens");
+  assert.equal(query.get("category"), "tees-tanks");
+  assert.equal(query.get("collection"), "byob");
+  assert.equal(query.get("utm_source"), "instagram");
+  assert.deepEqual(normalizeCatalogFilters({ category: "tees-tanks", collection: "byob", fit: "invalid" }, products), { category: "tees-tanks", collection: "byob", fit: "all" });
+  assert.equal(catalogFiltersHref("/store", query.toString(), { category: "all", collection: "", fit: "all" }), "/store?utm_source=instagram");
+});
+
+
+test("a catalog cut selects only a matching product Fit option", () => {
+  const byob = products.find(({ id }) => id === "byob-tank");
+  assert.equal(getCatalogFitSelection(byob, "womens"), "Women's");
+  assert.equal(getCatalogFitSelection(byob, "mens"), "Men's");
+  assert.equal(getCatalogFitSelection(byob, "all"), undefined);
+  assert.equal(getCatalogFitSelection(byob, "unisex"), undefined);
+  assert.equal(getCatalogFitSelection(products.find(({ id }) => id === "camo-hoodie"), "unisex"), undefined);
 });

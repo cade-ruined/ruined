@@ -123,6 +123,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
 
   function choose(name: string, value: string) {
     if (selection[name] !== value && options.some((option) => option.name === name && option.values.includes(value))) {
+      if (/^colou?r$/i.test(name.trim())) trackStoreEvent("store_color_selected", { product_handle: product.id, option_value: value });
       trackStoreEvent("store_variant_selected", {
         product_id: product.shopifyProductGid ?? product.id,
         product_handle: product.id,

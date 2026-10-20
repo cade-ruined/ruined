@@ -1,11 +1,11 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { Product } from "@/data/products";
 import { getProductColorImages, getProductColorOption } from "@/lib/store/product-colors";
 import { getProductFitImages, getProductFitOption } from "@/lib/store/product-fit-images";
-import { productSelectionHref, requestedProductVariant } from "@/lib/store/product-links";
+import { productSelectionHref, requestedProductFit, requestedProductVariant } from "@/lib/store/product-links";
 import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
 import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { trackMetaProductView } from "@/lib/marketing/meta";
@@ -23,14 +23,14 @@ export default function ProductDetail({ product, children }: {
   const requestedVariant = requestedProductVariant(product, searchParams.get("variant"));
   const requestedColor = requestedVariant?.selectedOptions.find((option) => option.name === colorOption?.name)?.value ?? searchParams.get("color");
   const color = colorOption?.values.find((value) => value === requestedColor) ?? colorOption?.values[0];
-  const [fit, setFit] = useState<string>();
   const fitOption = getProductFitOption(product);
-  const selectedFit = requestedVariant?.selectedOptions.find((option) => option.name === fitOption?.name)?.value ?? fit;
+  const selectedFit = requestedVariant?.selectedOptions.find((option) => option.name === fitOption?.name)?.value ?? requestedProductFit(product, searchParams.get("fit"));
   const galleryFit = selectedFit ?? fitOption?.values[0];
   const images = getProductFitImages(product, galleryFit) ?? getProductColorImages(product, color);
   const variants = product.variants.filter((variant) => (!color || variant.selectedOptions.some(
     (option) => option.name === colorOption?.name && option.value === color
   )) && (!selectedFit || variant.selectedOptions.some((option) => option.name === fitOption?.name && option.value === selectedFit)));
+  const viewVariant = requestedVariant ?? variants.find((variant) => variant.available) ?? variants[0];
   const status = !variants.some((variant) => variant.available)
     ? "Sold out"
     : product.expectedShipDate
@@ -46,16 +46,16 @@ export default function ProductDetail({ product, children }: {
   ].filter((spec) => spec.value.trim());
 
   useEffect(() => {
-    const view = () => trackMetaProductView(product, requestedVariant);
+    const view = () => trackMetaProductView(product, viewVariant);
     view();
     window.addEventListener(MARKETING_CONSENT_EVENT, view);
     return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
-  }, [product, requestedVariant]);
+  }, [product, viewVariant]);
 
   useEffect(() => {
     const view = () => {
       if (viewedProduct.current === product.id) return;
-      const variant = requestedVariant ?? product.variants.find((item) => item.available) ?? product.variants[0];
+      const variant = viewVariant;
       if (trackStoreEvent("store_product_opened", {
         product_id: product.shopifyProductGid ?? product.id,
         product_handle: product.id,
@@ -66,7 +66,7 @@ export default function ProductDetail({ product, children }: {
     view();
     window.addEventListener(MARKETING_CONSENT_EVENT, view);
     return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
-  }, [product.id, product.shopifyProductGid, product.variants, requestedVariant]);
+  }, [product.id, product.shopifyProductGid, viewVariant]);
 
   function chooseColor(value: string) {
     if (!colorOption?.values.includes(value) || value === color) return;
@@ -80,8 +80,8 @@ export default function ProductDetail({ product, children }: {
   }
 
   function chooseFit(value: string) {
-    setFit(value);
-    window.history.replaceState(null, "", productSelectionHref(window.location.pathname, window.location.search, { variant: null }));
+    if (!fitOption?.values.includes(value) || value === selectedFit) return;
+    window.history.replaceState(null, "", productSelectionHref(window.location.pathname, window.location.search, { fit: value, variant: null }));
   }
 
   return (

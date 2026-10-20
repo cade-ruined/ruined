@@ -7,10 +7,19 @@ export const CATALOG_CATEGORIES = [
   { id: "collared-shirts", label: "Collared Shirts" },
 ] as const;
 
+export const CATALOG_FITS = [
+  { id: "all", label: "All fits" },
+  { id: "unisex", label: "Unisex" },
+  { id: "mens", label: "Men’s" },
+  { id: "womens", label: "Women’s" },
+] as const;
+
+export type CatalogFit = (typeof CATALOG_FITS)[number]["id"];
+export type ProductFit = Exclude<CatalogFit, "all">;
 export type CatalogCategory = (typeof CATALOG_CATEGORIES)[number]["id"];
 export type ProductCategory = Exclude<CatalogCategory, "all">;
-export type CatalogFilters = { category: CatalogCategory; collection: string };
-export type CatalogFilterInput = { category?: string | null; collection?: string | null };
+export type CatalogFilters = { category: CatalogCategory; collection: string; fit: CatalogFit };
+export type CatalogFilterInput = { category?: string | null; collection?: string | null; fit?: string | null };
 
 const COLLECTION_ORDER = ["staples", "sunday-clothes", "less-permanent", "collared-script", "byob"];
 const EXCLUDED_COLLECTIONS = new Set(["frontpage"]);
@@ -45,6 +54,54 @@ export function getProductCategory(product: Product): ProductCategory | null {
     ?? categoryFromText(product.name);
 }
 
+// These existing cuts were confirmed as unisex by Ruined. Their Shopify
+// target-gender fields are currently empty; new pieces still need authored data.
+const APPROVED_FITS_BY_HANDLE: Record<string, ProductFit[]> = {
+  "camo-hoodie": ["unisex"],
+  "ruined-hoodie": ["unisex"],
+  "sunday-clothes-hoodie": ["unisex"],
+  "ruined-tee": ["unisex"],
+};
+
+function fitFromLabel(value: string): ProductFit | null {
+  const normalized = value.toLowerCase().replace(/[’']/g, "").trim();
+  if (["men", "mens", "male"].includes(normalized)) return "mens";
+  if (["women", "womens", "female"].includes(normalized)) return "womens";
+  if (normalized === "unisex") return "unisex";
+  return null;
+}
+
+function recognizedFits(values: string[]): ProductFit[] {
+  return [...new Set(values.map(fitFromLabel).filter((fit): fit is ProductFit => fit !== null))];
+}
+
+/** Actual cuts take precedence over a broad Shopify target-gender label.
+ * BYOB has separate Men's and Women's options, not a single unisex cut.
+ * A missing label never implies unisex; unclassified pieces remain in All.
+ */
+export function getProductFits(product: Product): ProductFit[] {
+  const variantFits = recognizedFits((product.options ?? [])
+    .filter(({ name }) => name.toLowerCase() === "fit")
+    .flatMap(({ values }) => values));
+  if (variantFits.length) return variantFits;
+  const taxonomyFits = recognizedFits(product.targetGenders ?? []);
+  if (taxonomyFits.length) return taxonomyFits;
+  if (APPROVED_FITS_BY_HANDLE[product.id]) return [...APPROVED_FITS_BY_HANDLE[product.id]];
+  const explicitName = `${product.name} ${product.id}`;
+  const titleFits: ProductFit[] = [];
+  if (/\bmen(?:[’']s|s)?\b/i.test(explicitName)) titleFits.push("mens");
+  if (/\bwomen(?:[’']s|s)?\b/i.test(explicitName)) titleFits.push("womens");
+  if (/\bunisex\b/i.test(product.name)) titleFits.push("unisex");
+  return titleFits;
+}
+
+/** Preserve an explicit catalog cut when opening a product with Fit variants. */
+export function getCatalogFitSelection(product: Product, fit: CatalogFit): string | undefined {
+  if (fit === "all") return undefined;
+  return (product.options ?? []).find(({ name }) => name.toLowerCase() === "fit")
+    ?.values.find((value) => fitFromLabel(value) === fit);
+}
+
 /** Use Shopify membership, not product names, to assign story collections. */
 export function getCollectionFilters(products: Product[]): ProductCollection[] {
   const collections = new Map<string, ProductCollection>();
@@ -70,14 +127,16 @@ export function normalizeCatalogFilters(input: CatalogFilterInput, products: Pro
   const collection = getCollectionFilters(products).some(({ handle }) => handle === input.collection)
     ? input.collection!
     : "";
-  return { category, collection };
+  const fit = CATALOG_FITS.find(({ id }) => id === input.fit)?.id ?? "all";
+  return { category, collection, fit };
 }
 
 export function filterCatalogProducts(products: Product[], input: CatalogFilterInput): Product[] {
-  const { category, collection } = normalizeCatalogFilters(input, products);
+  const { category, collection, fit } = normalizeCatalogFilters(input, products);
   const matching = products.filter((product) =>
     (category === "all" || getProductCategory(product) === category)
-    && (collection === "" || product.collections?.some(({ handle }) => handle === collection)),
+    && (collection === "" || product.collections?.some(({ handle }) => handle === collection))
+    && (fit === "all" || getProductFits(product).includes(fit)),
   );
   // Feature Camo explicitly, without overriding filters or changing the order
   // of the remaining Shopify catalog.
@@ -90,7 +149,7 @@ export function filterCatalogProducts(products: Product[], input: CatalogFilterI
 /** Change catalog filters without dropping inbound campaign attribution. */
 export function catalogFiltersHref(pathname: string, currentSearch: string, filters: CatalogFilters): string {
   const query = new URLSearchParams(currentSearch);
-  for (const key of ["category", "collection"] as const) {
+  for (const key of ["category", "collection", "fit"] as const) {
     if (!filters[key] || filters[key] === "all") query.delete(key);
     else query.set(key, filters[key]);
   }

@@ -23,6 +23,7 @@ function fixture(options = {}) {
   window.navigator = { globalPrivacyControl: false };
   window.vaq = [];
   let choice = "yes", processing = true, veto = false, lines = [line], bridgePermission = () => false;
+  let now = Date.now();
   window.Shopify = { customerPrivacy: { consentStatus: "loaded", currentVisitorConsent: () => ({ analytics: choice, marketing: choice }), analyticsProcessingAllowed: () => processing } };
   const document = { referrer: "" };
   const calls = { injections: [], pages: [], events: [], requests: [], productViews: [], adds: [], bridgePages: [] };
@@ -46,14 +47,14 @@ function fixture(options = {}) {
     "@/lib/marketing/consent": consent,
     "@/lib/marketing/meta": { hasLocalMarketingVeto: () => veto, checkoutVisitorConsent: () => ({ analytics: choice === "yes", marketing: choice === "yes" }) },
     "./shopify": bridge,
-  }, { window, document, fetch: async (url, init) => {
+  }, { window, document, Date: { now: () => now }, fetch: async (url, init) => {
     const request = { url, init, body: JSON.parse(init.body) };
     calls.requests.push(request);
     return options.fetch ? options.fetch(request, calls.requests.length) : { ok: true, json: async () => ({ cartId: "gid://shopify/Cart/cart123" }) };
   } });
   return { analytics, consent, calls, window, document,
     configure: () => analytics.configureStoreAnalytics(config),
-    setChoice(value) { choice = value; }, setProcessing(value) { processing = value; }, setVeto(value) { veto = value; }, setLines(value) { lines = value; },
+    setChoice(value) { choice = value; }, setProcessing(value) { processing = value; }, setVeto(value) { veto = value; }, setLines(value) { lines = value; }, setNow(value) { now = value; },
   };
 }
 
@@ -276,4 +277,161 @@ test("the analytics component keeps one queued pageview through StrictMode effec
   assert.equal(view.calls.pages.length, 1);
   assert.equal(view.window.vaq.filter(([kind]) => kind === "pageview").length, 1, "SDK loading after StrictMode replay still receives the pageview");
   finalCleanups.forEach(cleanup => cleanup?.());
+});
+
+
+const allSelection = "category=all|collection=all|fit=all";
+const hoodieSelection = "category=hoodies|collection=sunday-clothes|fit=unisex";
+const tankSelection = "category=tees-tanks|collection=byob|fit=womens";
+function registerCatalog(view) {
+  view.analytics.configureCatalogAnalytics([{ handle: "sunday-clothes" }, { handle: "byob" }, { handle: "frontpage" }]);
+}
+function stages(view) { return view.calls.events.filter(event => event.name === "store_browse_stage").map(event => event.properties); }
+function selectFromCatalog(view, selection = tankSelection, handle = product.product_handle) {
+  return view.analytics.trackStoreEvent("store_catalog_product_selected", { product_handle: handle, selection });
+}
+
+test("catalog analytics records public selections and zero results without raw query values", () => {
+  const view = fixture(); view.configure(); registerCatalog(view);
+  assert.equal(view.analytics.catalogAnalyticsSelection({ category: "all", collection: "", fit: "all" }), allSelection);
+  assert.equal(view.analytics.catalogAnalyticsSelection({ category: "hoodies", collection: "sunday-clothes", fit: "unisex" }), hoodieSelection);
+  const external = { query: "email=private@example.test", source: "?token=secret", member: "private" };
+  assert.equal(view.analytics.trackStoreEvent("store_catalog_viewed", { selection: hoodieSelection, results: 2, ...external }), true);
+  assert.equal(view.analytics.trackStoreEvent("store_filter_changed", { filter: "fit:womens", results: 0, ...external }), true);
+  assert.equal(view.analytics.trackStoreEvent("store_catalog_viewed", { selection: "category=hoodies|collection=sunday-clothes|fit=womens", results: 0 }), true);
+  assert.equal(view.analytics.trackStoreEvent("store_filter_changed", { filter: "reset:all", results: 12 }), true);
+  assert.equal(view.analytics.trackStoreEvent("store_color_selected", { product_handle: "sunday-clothes-hoodie", option_value: "Grey", ...external }), true);
+  assert.deepEqual(view.calls.events.map(event => event.properties), [
+    { selection: hoodieSelection, results: 2 }, { filter: "fit:womens", results: 0 },
+    { selection: "category=hoodies|collection=sunday-clothes|fit=womens", results: 0 },
+    { filter: "reset:all", results: 12 }, { product: "sunday-clothes-hoodie", color: "Grey" },
+  ]);
+  for (const event of view.calls.events) assert.ok(Object.keys(event.properties).length <= 2);
+  assert.doesNotMatch(JSON.stringify(view.calls.events), /email|private|secret|query|token/);
+});
+
+test("catalog event boundary rejects unregistered filters, malformed selections, and unsafe colors", () => {
+  const view = fixture(); view.configure(); registerCatalog(view);
+  for (const selection of [
+    "category=all|collection=private-person|fit=all", "category=all|collection=frontpage|fit=all",
+    "category=unknown|collection=all|fit=all", "category=all|collection=all|fit=private",
+    "category=all|collection=all|fit=all&email=private@example.test", "?category=hoodies", "",
+  ]) {
+    assert.equal(view.analytics.trackStoreEvent("store_catalog_viewed", { selection, results: 1 }), false, selection);
+    assert.equal(selectFromCatalog(view, selection), false, selection);
+  }
+  for (const filter of ["collection:private-person", "collection:frontpage", "fit:private", "category:unknown", "reset:private", "fit:mens:private"]) {
+    assert.equal(view.analytics.trackStoreEvent("store_filter_changed", { filter, results: 1 }), false, filter);
+  }
+  for (const results of [-1, 0.5, Infinity, 10001, "1", undefined]) {
+    assert.equal(view.analytics.trackStoreEvent("store_catalog_viewed", { selection: allSelection, results }), false);
+  }
+  for (const option_value of ["private@example.test", "red?token=secret", "", "x".repeat(65)]) {
+    assert.equal(view.analytics.trackStoreEvent("store_color_selected", { product_handle: "byob-tank", option_value }), false);
+  }
+  assert.equal(view.analytics.trackStoreEvent("store_browse_stage", { selection: allSelection, stage: "purchased" }), false);
+  assert.equal(view.calls.events.length, 0);
+  view.analytics.configureCatalogAnalytics([{ handle: "sunday-clothes" }]);
+  assert.equal(selectFromCatalog(view, tankSelection), false, "retired collections stop reporting");
+});
+
+test("browse stages follow the selected product and only actual added bag lines to checkout", async () => {
+  const view = fixture(); view.configure(); registerCatalog(view);
+  const other = { ...product, product_handle: "sunday-clothes-hoodie", variant_id: "gid://shopify/ProductVariant/999" };
+  const bagLine = { ...line, productId: product.product_handle };
+  view.setLines([bagLine]);
+  selectFromCatalog(view);
+  view.analytics.trackStoreEvent("store_product_opened", product);
+  view.analytics.trackStoreEvent("store_add_to_bag", product);
+  // Looking at another product must not replace the added product's discovery source.
+  selectFromCatalog(view, hoodieSelection, other.product_handle);
+  view.analytics.trackStoreEvent("store_product_opened", other);
+  view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 1, value: 48 });
+  view.analytics.trackStoreEvent("store_checkout_redirected", { quantity: 1, value: 48 });
+  assert.deepEqual(stages(view), [
+    { selection: tankSelection, stage: "product_selected" },
+    { selection: tankSelection, stage: "product_opened" },
+    { selection: tankSelection, stage: "add_to_bag" },
+    { selection: hoodieSelection, stage: "product_selected" },
+    { selection: hoodieSelection, stage: "product_opened" },
+    { selection: tankSelection, stage: "checkout_clicked" },
+    { selection: tankSelection, stage: "checkout_redirected" },
+  ]);
+  assert.equal(view.calls.events.some(event => event.properties.stage === "purchased"), false);
+  await view.analytics.flushStoreCart();
+  assert.equal(view.calls.adds.length, 1, "native Shopify add-to-cart behavior is preserved");
+});
+
+test("checkout deduplicates matching selections and never attributes unrelated or removed variants", async () => {
+  const view = fixture(); view.configure(); registerCatalog(view);
+  const second = { ...product, variant_id: "gid://shopify/ProductVariant/790" };
+  selectFromCatalog(view);
+  view.analytics.trackStoreEvent("store_add_to_bag", product);
+  view.analytics.trackStoreEvent("store_add_to_bag", second);
+  view.setLines([{ ...line, productId: product.product_handle }, { variantId: second.variant_id, productId: product.product_handle, quantity: 1 }]);
+  view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
+  assert.equal(stages(view).filter(event => event.stage === "checkout_clicked").length, 1);
+  view.setLines([{ ...line, productId: "different-product" }]);
+  view.analytics.trackStoreEvent("store_checkout_failed", { quantity: 1, error_category: "network" });
+  assert.equal(stages(view).some(event => event.stage === "checkout_failed"), false);
+  view.setLines([]);
+  view.analytics.trackStoreEvent("store_bag_item_removed", { ...product, source: "bag" });
+  view.setLines([{ ...line, productId: product.product_handle }]);
+  view.analytics.trackStoreEvent("store_checkout_redirected", { quantity: 1 });
+  assert.equal(stages(view).some(event => event.stage === "checkout_redirected"), false, "removed contexts cannot return through an old saved bag");
+  await view.analytics.flushStoreCart();
+});
+
+test("quick-buy and a fresh document cannot inherit catalog discovery attribution", async () => {
+  const view = fixture(); view.configure(); registerCatalog(view);
+  view.setLines([{ ...line, productId: product.product_handle }]);
+  selectFromCatalog(view);
+  view.analytics.trackStoreEvent("store_add_to_bag", product);
+  view.analytics.trackStoreEvent("store_product_opened", { ...product, source: "quick_buy" });
+  view.analytics.trackStoreEvent("store_add_to_bag", { ...product, source: "quick_buy" });
+  view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
+  assert.deepEqual(stages(view).map(event => event.stage), ["product_selected", "add_to_bag"]);
+  const reloaded = fixture(); reloaded.configure(); registerCatalog(reloaded);
+  reloaded.setLines([{ ...line, productId: product.product_handle }]);
+  reloaded.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
+  assert.deepEqual(stages(reloaded), [], "attribution is deliberately not persisted across reloads");
+  await view.analytics.flushStoreCart();
+});
+
+test("unknown, denied, pending, GPC, and private navigation erase browse context without replay", async () => {
+  for (const mode of ["unknown", "denied", "pending", "gpc", "private"]) {
+    const view = fixture(); view.configure(); registerCatalog(view);
+    view.setLines([{ ...line, productId: product.product_handle }]);
+    selectFromCatalog(view);
+    view.analytics.trackStoreEvent("store_add_to_bag", product);
+    if (mode === "unknown") view.setChoice("");
+    if (mode === "denied") view.setChoice("no");
+    if (mode === "pending") view.consent.setConsentUpdatePending(true);
+    if (mode === "gpc") view.window.navigator.globalPrivacyControl = true;
+    if (mode === "private") view.window.location = new URL("https://theruinedproject.com/my/profile");
+    view.analytics.refreshStoreAnalytics();
+    const before = view.calls.events.length;
+    assert.equal(selectFromCatalog(view, hoodieSelection), false, mode);
+    assert.equal(view.analytics.trackStoreEvent("store_color_selected", { product_handle: "sunday-clothes-hoodie", option_value: "Blue" }), false, mode);
+    view.setChoice("yes"); view.consent.setConsentUpdatePending(false);
+    view.window.navigator.globalPrivacyControl = false;
+    view.window.location = new URL("https://theruinedproject.com/bag");
+    view.analytics.refreshStoreAnalytics();
+    view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 1 });
+    assert.equal(view.calls.events.length, before + 1, mode);
+    assert.equal(stages(view).some(event => event.stage === "checkout_clicked"), false, mode);
+    await view.analytics.flushStoreCart();
+  }
+});
+
+test("browse attribution expires and keeps a bounded recent set", () => {
+  const view = fixture(); view.configure(); registerCatalog(view);
+  view.setNow(1000);
+  for (let index = 0; index < 51; index++) selectFromCatalog(view, allSelection, `product-${index}`);
+  view.analytics.trackStoreEvent("store_product_opened", { ...product, product_handle: "product-0" });
+  view.analytics.trackStoreEvent("store_product_opened", { ...product, product_handle: "product-50" });
+  assert.equal(stages(view).filter(event => event.stage === "product_opened").length, 1, "oldest context is evicted");
+  view.setNow(1000 + 30 * 60 * 1000);
+  view.analytics.trackStoreEvent("store_product_opened", { ...product, product_handle: "product-50" });
+  assert.equal(stages(view).filter(event => event.stage === "product_opened").length, 1, "thirty-minute contexts expire");
 });

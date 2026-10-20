@@ -78,6 +78,7 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
     if (choices.some((option) => option.name === name && option.values.includes(value))) {
       interactedProduct.current = product.id;
       trackProductOpen();
+      if (selection[name] !== value && /^colou?r$/i.test(name.trim())) trackStoreEvent("store_color_selected", { product_handle: product.id, option_value: value });
       if (selection[name] !== value) trackStoreEvent("store_variant_selected", {
         product_id: product.shopifyProductGid ?? product.id,
         product_handle: product.id,

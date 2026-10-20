@@ -53,6 +53,11 @@ const PRODUCTS_QUERY = `#graphql
         handle
         title
         productType
+        targetGender: metafield(namespace: "shopify", key: "target-gender") {
+          references(first: 10) {
+            nodes { ... on Metaobject { fields { key value } } }
+          }
+        }
         collections(first: 50) { nodes { handle title } }
         description
         descriptionHtml
@@ -149,6 +154,9 @@ type SFProductNode = {
   handle: string;
   title: string;
   productType?: string;
+  targetGender?: {
+    references?: { nodes: { fields?: { key: string; value: string }[] }[] } | null;
+  } | null;
   collections?: { nodes: { handle: string; title: string }[] };
   description: string;
   descriptionHtml: string;
@@ -260,6 +268,9 @@ function mapProduct(node: SFProductNode, index: number): Product {
     code: meta.code ?? `RU—${String(index + 1).padStart(3, "0")}`,
     name: node.title,
     productType: node.productType ?? "",
+    targetGenders: [...new Set((node.targetGender?.references?.nodes ?? []).flatMap((reference) =>
+      (reference.fields ?? []).filter(({ key }) => key === "label").map(({ value }) => value),
+    ))],
     collections: (node.collections?.nodes ?? []).map(({ handle, title }) => ({ handle, title })),
     subtitle: meta.subtitle ?? "",
     price: formatPrice(node.priceRange.minVariantPrice),
