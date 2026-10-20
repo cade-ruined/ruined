@@ -895,7 +895,7 @@ test("the showroom resolves into a direct catalogue and conventional global util
   assert.doesNotMatch(`${desktop}\n${mobile}`, /Enter the store/i);
   assert.match(indexes, /href=\{getProductColorHref\(product, color\)\}/);
   assert.doesNotMatch(indexes, /href=\{`\/work\/\$\{projectSlug\(project\)\}`\}/);
-  assert.match(gallery, /featured=\{index === 0\}/);
+  assert.match(gallery, /featured=\{product\.id === "camo-hoodie"\}/);
   assert.match(gallery, /featured \? "col-span-2"/);
   assert.doesNotMatch(gallery, /FeaturedProduct|View · 02 \/ 04 columns/);
   assert.match(purchase, /Select \{option\.name\}/);

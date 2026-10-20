@@ -39,11 +39,18 @@ export type ProductVariant = {
   image?: ProductImage;
 };
 
+export type ProductCollection = {
+  handle: string;
+  title: string;
+};
+
 export type Product = {
   id: string;
   shopifyProductGid?: string;
   code: string; // e.g. "RU—001"
   name: string; // e.g. "Field Coat"
+  productType?: string;
+  collections?: ProductCollection[];
   subtitle: string; // e.g. "FOR WEATHER"
   price: string; // e.g. "£ 420" (preformatted for display)
   description: string;

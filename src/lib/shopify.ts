@@ -52,6 +52,8 @@ const PRODUCTS_QUERY = `#graphql
         id
         handle
         title
+        productType
+        collections(first: 50) { nodes { handle title } }
         description
         descriptionHtml
         featuredImage { url altText }
@@ -146,6 +148,8 @@ type SFProductNode = {
   id: string;
   handle: string;
   title: string;
+  productType?: string;
+  collections?: { nodes: { handle: string; title: string }[] };
   description: string;
   descriptionHtml: string;
   featuredImage: { url: string; altText: string | null } | null;
@@ -255,6 +259,8 @@ function mapProduct(node: SFProductNode, index: number): Product {
     shopifyProductGid: node.id,
     code: meta.code ?? `RU—${String(index + 1).padStart(3, "0")}`,
     name: node.title,
+    productType: node.productType ?? "",
+    collections: (node.collections?.nodes ?? []).map(({ handle, title }) => ({ handle, title })),
     subtitle: meta.subtitle ?? "",
     price: formatPrice(node.priceRange.minVariantPrice),
     description: normalizeExpectedShipDateLanguage(node.description, expectedShipDate),

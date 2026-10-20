@@ -278,37 +278,62 @@ test("single-color and no-color products pass through as one canonical entry wit
   assert.deepEqual(getCatalogEntries([]), []);
 });
 
-test("the rendered catalog keeps four correct color cards even when Shopify returns the Black cover for every variant", () => {
-  const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
-    "@/lib/analytics/storefront": { trackStoreEvent: () => false },
-    react: React,
-    "react/jsx-runtime": jsxRuntime,
-    "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
-    "next/image": { default: ({ src, alt, className, ...props }) => React.createElement("img", { src, alt, className, "aria-hidden": props["aria-hidden"] }) },
-    "@/data/products": { PRODUCT_TONES: { warm: "#e5e0d5" } },
-    "@/lib/store/catalog": load("src/lib/store/catalog.ts"),
-    "@/lib/store/product-colors": colorHelpers,
-  });
+test("one catalog card offers four colors with matching URLs, photos, price and availability", () => {
   const nodes = (node) => [node, ...(node.childNodes ?? []).flatMap(nodes)];
   const attr = (node, name) => node.attrs?.find((attribute) => attribute.name === name)?.value;
   const text = (node) => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(text).join("");
+  const reactNodes = (node) => React.isValidElement(node)
+    ? [node, ...React.Children.toArray(node.props.children).flatMap(reactNodes)]
+    : [];
   const fallbackProduct = hoodie();
   fallbackProduct.variants = fallbackProduct.variants.map((entry) => ({ ...entry, image: fallbackProduct.image }));
   for (const product of [hoodie(), fallbackProduct]) {
-    const dom = parseFragment(renderToStaticMarkup(React.createElement(StoreGallery, { products: [product] })));
-    const cards = nodes(dom).filter((node) => node.tagName === "a" && attr(node, "href")?.startsWith("/store/sunday-clothes-hoodie"));
-    assert.equal(cards.length, 4);
-    assert.equal(new Set(cards.map((card) => attr(card, "href"))).size, 4);
+    const slots = [];
+    let cursor = 0;
+    const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
+      "@/lib/analytics/storefront": { trackStoreEvent: () => false },
+      react: { ...React, useState(initial) {
+        const index = cursor++;
+        if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
+        return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+      } },
+      "react/jsx-runtime": jsxRuntime,
+      "next/navigation": { useSearchParams: () => new URLSearchParams() },
+      "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
+      "next/image": { default: ({ src, alt, className, ...props }) => React.createElement("img", { src, alt, className, "aria-hidden": props["aria-hidden"] }) },
+      "@/data/products": { PRODUCT_TONES: { warm: "#e5e0d5" } },
+      "@/lib/store/catalog": load("src/lib/store/catalog.ts"),
+      "@/lib/store/catalog-filters": load("src/lib/store/catalog-filters.ts"),
+      "@/lib/store/product-colors": colorHelpers,
+    });
+    const cardComponents = reactNodes(StoreGallery({ products: [product] })).filter((node) => typeof node.type === "function" && node.props.product === product);
+    assert.equal(cardComponents.length, 1, "Colors must share one product card");
+    const renderCard = () => {
+      cursor = 0;
+      return cardComponents[0].type(cardComponents[0].props);
+    };
     for (const [index, color] of colors.entries()) {
-      const card = cards.find((node) => new URL(attr(node, "href"), "https://theruinedproject.com").searchParams.get("color") === color);
-      assert.ok(card);
+      const choices = reactNodes(renderCard()).filter((node) => node.type === "button");
+      assert.equal(choices.length, 4);
+      const choice = choices.find((node) => node.props["aria-label"] === `${product.name} — ${color}`);
+      assert.ok(choice);
+      choice.props.onClick();
+      const dom = parseFragment(renderToStaticMarkup(renderCard()));
+      const cards = nodes(dom).filter((node) => node.tagName === "a" && attr(node, "href")?.startsWith("/store/sunday-clothes-hoodie"));
+      assert.equal(cards.length, 1);
+      const [card] = cards;
+      assert.equal(new URL(attr(card, "href"), "https://theruinedproject.com").searchParams.get("color"), color);
       assert.match(text(card), new RegExp(color));
       const images = nodes(card).filter((node) => node.tagName === "img");
       assert.deepEqual(images.map((node) => attr(node, "src")), photos[color].map((entry) => entry.url));
       assert.equal(attr(images[1], "aria-hidden"), "true");
       assert.match(attr(images[1], "class"), /group-hover:opacity-100/);
-      assert.match(text(card), new RegExp(["\\$9", "\\$76", "\\$77", "\\$83"][index]));
+      assert.ok(text(card).includes(["$9", "$76", "$77", "$83"][index]));
       assert.equal(text(card).includes("Sold out"), color === "Grey");
+      assert.equal(nodes(card).filter((node) => node.tagName === "button").length, 0, "Color controls cannot be nested inside the product link");
+      const pressed = nodes(dom).filter((node) => node.tagName === "button" && attr(node, "aria-pressed") === "true");
+      assert.equal(pressed.length, 1);
+      assert.equal(attr(pressed[0], "aria-label"), `${product.name} — ${color}`);
     }
   }
 });

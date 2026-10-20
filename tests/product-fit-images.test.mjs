@@ -48,7 +48,8 @@ test("product gallery switches to the selected Fit while other products retain c
   }).outputText;
   const slots = [];
   let cursor = 0;
-  const Image = () => null;
+  let query = "color=Blue";
+  const Gallery = () => null;
   const Purchase = () => null;
   const dependencies = {
     react: { ...React, useEffect: () => {}, useRef(initial) { const index = cursor++; if (!(index in slots)) slots[index] = { current: initial }; return slots[index]; }, useState(initial) {
@@ -57,8 +58,8 @@ test("product gallery switches to the selected Fit while other products retain c
       return [slots[index], (value) => { slots[index] = value; }];
     } },
     "react/jsx-runtime": jsxRuntime,
-    "next/image": { default: Image },
-    "next/navigation": { useSearchParams: () => new URLSearchParams("color=Blue") },
+    "./ProductGallery": { default: Gallery },
+    "next/navigation": { useSearchParams: () => new URLSearchParams(query) },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors,
     "@/lib/store/product-fit-images": fits,
@@ -75,12 +76,15 @@ test("product gallery switches to the selected Fit while other products retain c
   }, output, output.exports);
   const elements = (node) => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
   const render = (value = product) => { cursor = 0; return elements(output.exports.default({ product: value })); };
-  const images = (tree) => tree.filter((node) => node.type === Image).map((node) => node.props.src);
+  const gallery = (tree) => tree.find((node) => node.type === Gallery);
+  const images = (tree) => gallery(tree).props.images.map((image) => image.url);
+  const initialGalleryKey = gallery(render()).key;
   assert.deepEqual(images(render()), photos.slice(0, 2).map((photo) => photo.url));
   globalThis.window = { location: { pathname: "/store/byob-tank", search: "" }, history: { replaceState: () => {} } };
   render().find((node) => node.type === Purchase).props.onFitChange("Women's");
   assert.deepEqual(images(render()), photos.slice(2).map((photo) => photo.url));
-  assert.ok(render().some((node) => node.props["aria-label"] === "Women's product photographs"));
+  assert.equal(gallery(render()).props.label, "Women's product photographs");
+  assert.notEqual(gallery(render()).key, initialGalleryKey, "changing fit remounts the gallery at its first photo");
   render().find((node) => node.type === Purchase).props.onFitChange("Men's");
   assert.deepEqual(images(render()), photos.slice(0, 2).map((photo) => photo.url));
   slots.length = 0;
@@ -88,4 +92,14 @@ test("product gallery switches to the selected Fit while other products retain c
   const hoodie = { ...product, id: "another-hoodie", options: [{ name: "Color", values: ["Black", "Blue"] }],
     variants: [{ available: true, selectedOptions: [{ name: "Color", value: "Blue" }], image: blue, id: "gid://shopify/ProductVariant/1" }] };
   assert.deepEqual(images(render(hoodie)), [blue.url]);
+  const blueKey = gallery(render(hoodie)).key;
+  query = "variant=1";
+  assert.equal(gallery(render(hoodie)).key, blueKey, "choosing a size within the same color keeps the current photo");
+  const black = { url: "/black.png", alt: "Black front" };
+  const twoColors = { ...hoodie, variants: [...hoodie.variants, { ...hoodie.variants[0], id: "gid://shopify/ProductVariant/2", selectedOptions: [{ name: "Color", value: "Black" }], image: black }] };
+  query = "color=Black";
+  assert.deepEqual(images(render(twoColors)), [black.url]);
+  assert.notEqual(gallery(render(twoColors)).key, blueKey, "changing color remounts the gallery at its first photo");
+  const other = { ...product, id: "single-style", options: [], images: photos };
+  assert.deepEqual(images(render(other)), photos.map((photo) => photo.url), "single-style products retain every photo");
 });

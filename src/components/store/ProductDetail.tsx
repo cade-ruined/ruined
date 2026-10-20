@@ -1,9 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PRODUCT_TONES, type Product } from "@/data/products";
+import type { Product } from "@/data/products";
 import { getProductColorImages, getProductColorOption } from "@/lib/store/product-colors";
 import { getProductFitImages, getProductFitOption } from "@/lib/store/product-fit-images";
 import { productSelectionHref, requestedProductVariant } from "@/lib/store/product-links";
@@ -12,6 +11,7 @@ import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { trackMetaProductView } from "@/lib/marketing/meta";
 import type { ProductVariant } from "@/data/products";
 import ProductPurchase from "./ProductPurchase";
+import ProductGallery from "./ProductGallery";
 
 export default function ProductDetail({ product, children }: {
   product: Product;
@@ -26,7 +26,8 @@ export default function ProductDetail({ product, children }: {
   const [fit, setFit] = useState<string>();
   const fitOption = getProductFitOption(product);
   const selectedFit = requestedVariant?.selectedOptions.find((option) => option.name === fitOption?.name)?.value ?? fit;
-  const images = (getProductFitImages(product, selectedFit ?? fitOption?.values[0]) ?? getProductColorImages(product, color)).slice(0, 2);
+  const galleryFit = selectedFit ?? fitOption?.values[0];
+  const images = getProductFitImages(product, galleryFit) ?? getProductColorImages(product, color);
   const variants = product.variants.filter((variant) => (!color || variant.selectedOptions.some(
     (option) => option.name === colorOption?.name && option.value === color
   )) && (!selectedFit || variant.selectedOptions.some((option) => option.name === fitOption?.name && option.value === selectedFit)));
@@ -84,21 +85,18 @@ export default function ProductDetail({ product, children }: {
   }
 
   return (
-    <div className="mt-10 grid gap-10 md:grid-cols-12 md:gap-14">
-      <div className="grid gap-3 md:col-span-7 sm:gap-5" aria-label={fitOption ? `${selectedFit ?? fitOption.values[0]} product photographs` : color ? `${color} product photographs` : "Product photographs"}>
-        {images.length ? images.map((image, index) => (
-          <div key={image.url} className="relative aspect-[4/5] overflow-hidden" style={{ background: PRODUCT_TONES[product.tone] }}>
-            <Image src={image.url} alt={image.alt} fill priority={index === 0} sizes="(min-width: 768px) 58vw, 100vw" className="object-cover" />
-          </div>
-        )) : (
-          <div className="aspect-[4/5]" aria-hidden="true" style={{ background: PRODUCT_TONES[product.tone] }} />
-        )}
-      </div>
+    <div className="mt-6 grid gap-6 md:mt-10 md:grid-cols-12 md:gap-14">
+      <ProductGallery
+        key={`${product.id}:${color ?? ""}:${galleryFit ?? ""}`}
+        images={images}
+        tone={product.tone}
+        label={fitOption ? `${galleryFit} product photographs` : color ? `${color} product photographs` : "Product photographs"}
+      />
       <article className="self-start md:sticky md:top-28 md:col-span-5 md:pt-8">
         {product.subtitle && (
           <p className="font-mono text-[0.64rem] uppercase tracking-[0.28em] text-[var(--color-poster)]">{product.subtitle}</p>
         )}
-        <h1 className="display mt-4 text-[clamp(3rem,7vw,5.5rem)] leading-[0.9]">{product.name}</h1>
+        <h1 className="display mt-2 text-[clamp(2.5rem,7vw,5.5rem)] leading-[0.95] md:mt-4 md:leading-[0.9]">{product.name}</h1>
         <ProductPurchase key={`${requestedVariant?.id ?? color ?? product.id}:${selectedFit ?? ""}`} product={product} initialColor={color} initialFit={selectedFit} initialVariant={requestedVariant} onColorChange={chooseColor} onFitChange={chooseFit} onVariantChange={chooseVariant} />
         {children}
         <dl className="mt-8 space-y-3 border-y border-white/15 py-6 font-mono text-[0.64rem] uppercase tracking-[0.16em]">

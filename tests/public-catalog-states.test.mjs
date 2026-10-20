@@ -9,6 +9,7 @@ import { loadCatalog } from "../src/lib/store/catalog-loader.ts";
 import * as catalog from "../src/lib/store/catalog.ts";
 import * as productColors from "../src/lib/store/product-colors.ts";
 import * as productFits from "../src/lib/store/product-fit-images.ts";
+import * as catalogFilters from "../src/lib/store/catalog-filters.ts";
 
 const product = {
   id: "byob-tank", name: "BYOB Tank", code: "RU—001", price: "$ 48",
@@ -37,6 +38,8 @@ const uiDependencies = {
   "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
   "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
   "@/lib/store/catalog": catalog,
+  "@/lib/store/catalog-filters": catalogFilters,
+  "next/navigation": { useSearchParams: () => new URLSearchParams() },
   "@/lib/store/product-colors": productColors,
   "@/lib/store/product-fit-images": productFits,
 };
