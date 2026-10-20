@@ -19,6 +19,8 @@ import { googleCommunicationLivemode } from "@/lib/google/communications";
 import type { OpsExperienceCalendarState } from "@/lib/platform/ops-experience-model";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
 import {
+  FOUNDERS_CIRCLE_ID,
+  getStandingFounderInvitationMemberIds,
   memberEligibleForExperience,
   memberEligibleForExperienceSnapshot,
 } from "@/lib/platform/experience-member-access";
@@ -51,7 +53,7 @@ type CalendarExperience = {
 };
 
 type CalendarAttendee = {
-  assignmentSource: "all_active_members" | "block" | "circle" | "registration";
+  assignmentSource: "all_active_members" | "block" | "circle" | "direct" | "registration";
   displayName: string;
   email: string;
   memberId: string | null;
@@ -342,6 +344,7 @@ async function resolveCalendarAttendees(
   purpose: "snapshot" | "authorization",
 ): Promise<CalendarAttendee[]> {
   const organizerEmail = getGoogleCalendarConfigurationStatus().organizerEmail;
+  const founderMemberIds = await getStandingFounderInvitationMemberIds(tx, purpose === "authorization");
   const rows = await tx<Array<{
     assignment_source: CalendarAttendee["assignmentSource"];
     display_name: string;
@@ -428,10 +431,32 @@ async function resolveCalendarAttendees(
         and registration.experience_id = ${experience.experience_id}::uuid
         and registration.status = 'registered'
     ),
+    founder_audience as (
+      select member.id as member_id, member.person_id,
+        registration.id as registration_id, email_address.email_normalized as email,
+        coalesce(profile.preferred_name, profile.display_name, 'Founder') as display_name,
+        'direct' as assignment_source
+      from circle_member_assignments founder_assignment
+      join ruined_members member on member.id = founder_assignment.member_id
+      join person_email_addresses email_address
+        on email_address.person_id = member.person_id and email_address.is_primary
+        and email_address.retired_at is null and email_address.verification_state = 'verified'
+      left join person_profiles profile on profile.person_id = member.person_id
+      left join experience_registrations registration
+        on registration.experience_id = ${experience.experience_id}::uuid
+        and registration.person_id = member.person_id
+      where founder_assignment.circle_id = ${FOUNDERS_CIRCLE_ID}::uuid
+        and member.id::text in (select jsonb_array_elements_text(${tx.json(founderMemberIds)}::jsonb))
+        and founder_assignment.ended_at is null
+        and founder_assignment.assigned_at <= statement_timestamp()
+        and (registration.status is null or registration.status <> 'cancelled')
+    ),
     audience as (
       select * from member_audience
       union all
       select * from registration_audience
+      union all
+      select * from founder_audience
     )
     select distinct on (audience.email)
       audience.member_id,
@@ -443,7 +468,8 @@ async function resolveCalendarAttendees(
     from audience
     where ${organizerEmail}::text is null
        or audience.email <> ${organizerEmail}
-    order by audience.email, audience.member_id nulls last, audience.person_id
+    order by audience.email, case when audience.assignment_source = 'direct' then 0 else 1 end,
+      audience.member_id nulls last, audience.person_id
   `;
   const eligible = [];
   const memberEligible = purpose === "snapshot"

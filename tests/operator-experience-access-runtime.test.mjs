@@ -132,7 +132,8 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       [ids.next, ids.nextPerson, ids.nextAuth, ids.circle],
     ]) {
       await db.query(`insert into people values ($1,'active')`, [person]);
-      await db.query(`insert into ruined_members values ($1,$2)`, [member, person]);
+      await db.query(`insert into ruined_members(id,person_id) values ($1,$2)`, [member, person]);
+      await db.query(`insert into person_email_addresses(person_id,email_normalized,is_primary,verification_state) values ($1,$2,true,'verified')`, [person, `${member}@example.test`]);
       await db.query(`insert into platform_users values ($1,$2,$3,'active',$4)`, [account, member, person, `${member}@example.test`]);
       await db.query(`insert into platform_role_grants (auth_user_id,role_slug) values ($1,'member')`, [account]);
       await db.query(`insert into member_lifecycle (member_id) values ($1)`, [member]);
@@ -149,7 +150,8 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
     await db.exec(`
       create role anon; create role authenticated; create schema private;
       create table people (id uuid primary key, status text not null);
-      create table ruined_members (id uuid primary key, person_id uuid references people(id), unique(id,person_id));
+      create table ruined_members (id uuid primary key, person_id uuid references people(id), deleted_at timestamptz, unique(id,person_id));
+      create table person_email_addresses (person_id uuid references people(id), email_normalized text, is_primary boolean, retired_at timestamptz, verification_state text);
       create table platform_users (auth_user_id uuid primary key, member_id uuid, person_id uuid, status text, email_normalized text);
       create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid references platform_users(auth_user_id), role_slug text, revoked_at timestamptz);
       create table member_lifecycle (member_id uuid primary key references ruined_members(id), account_state text default 'active',

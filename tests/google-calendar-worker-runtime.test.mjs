@@ -91,6 +91,7 @@ test("durable Calendar reconciliation uses real PostgreSQL and mocked providers 
     "@/lib/google/calendar-model": model, "@/lib/google/communications": { googleCommunicationLivemode: () => mode },
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError }, "@/lib/site": { SITE_URL: "https://example.test" },
     "@/lib/platform/experience-member-access": {
+      getStandingFounderInvitationMemberIds: async () => [],
       memberEligibleForExperience: async () => true,
       memberEligibleForExperienceSnapshot: async () => true,
     },

@@ -149,7 +149,7 @@ export default function OperatorQuickEventForm({
     </details>
     {error ? <p className="text-sm text-[var(--operator-danger)]" role="alert">{error}</p> : null}
     <div className="space-y-3 border-t border-[color:var(--operator-ink)]/10 pt-5">
-      <p className="text-sm text-[color:var(--operator-muted)]">Creates the event and sends calendar invitations to this audience. No registration needed.</p>
+      <p className="text-sm text-[color:var(--operator-muted)]">Creates the event and sends calendar invitations to this audience. The Founders Circle is included automatically. No registration needed.</p>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <button className={`${OPERATOR_PRIMARY_ACTION_CLASS} w-full sm:w-auto`} disabled={pending} type="submit">{pending ? "Creating event…" : "Create event"}</button>
         <button className={OPERATOR_BUTTON_CLASS} disabled={pending} onClick={() => {

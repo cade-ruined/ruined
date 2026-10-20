@@ -159,6 +159,65 @@ test("recovery updates stale text and attendees using the latest provider ETag, 
   assert.ok(model.googleCalendarEventMatchesBody(remote, model.buildGoogleCalendarCreateBody(draft, organizer)));
 });
 
+test("audience updates preserve retained Google RSVPs and never respond for a new guest", async () => {
+  const existing = [
+    { email: "ACCEPTED@example.test", responseStatus: "accepted" },
+    { email: "declined@example.test", responseStatus: "declined" },
+    { email: "tentative@example.test", responseStatus: "tentative" },
+    { email: "waiting@example.test", responseStatus: "needsAction" },
+    { email: "removed@example.test", responseStatus: "accepted" },
+  ];
+  const next = { ...draft, attendees: [
+    ...existing.slice(0, 4).map(({ email }) => ({ email: email.toLowerCase() })),
+    { email: "new@example.test", responseStatus: "accepted" }, // Untrusted desired input must not autoaccept.
+  ] };
+  let remote = remoteEvent(draft, { attendees: existing });
+  const { client, calls } = await clientFixture(options => {
+    if (options.method === "PATCH") remote = { ...remote, ...options.data, etag: '"updated"' };
+    return remote;
+  });
+  await client.updateGoogleCalendarEvent({ ...next, eventId: remote.id, requestKey: `${draft.requestKey}:audience:v2` });
+  assert.deepEqual(calls.map(call => call.method), ["GET", "PATCH"]);
+  assert.deepEqual(calls[1].data.attendees, [
+    { email: "accepted@example.test", responseStatus: "accepted" },
+    { email: "declined@example.test", responseStatus: "declined" },
+    { email: "new@example.test" },
+    { email: "tentative@example.test", responseStatus: "tentative" },
+    { email: "waiting@example.test", responseStatus: "needsAction" },
+  ]);
+  assert.ok(model.buildGoogleCalendarCreateBody(next, organizer).attendees.every(attendee => !Object.hasOwn(attendee, "responseStatus")), "Creating a guest never sets their response");
+});
+
+test("optimistic update retries reread and preserve a newly changed RSVP", async () => {
+  let remote = remoteEvent(draft, { attendees: [{ email: draft.attendees[0].email, responseStatus: "accepted" }] });
+  let patches = 0;
+  const { client, calls } = await clientFixture(options => {
+    if (options.method === "GET") return remote;
+    assert.equal(options.method, "PATCH");
+    patches += 1;
+    if (patches === 1) {
+      assert.equal(options.data.attendees[0].responseStatus, "accepted");
+      remote = { ...remote, etag: '"rsvp-changed"', attendees: [{ email: draft.attendees[0].email, responseStatus: "declined" }] };
+      throw providerError(412);
+    }
+    assert.equal(options.headers["If-Match"], '"rsvp-changed"');
+    assert.equal(options.data.attendees[0].responseStatus, "declined");
+    remote = { ...remote, ...options.data, etag: '"updated-after-rsvp"' };
+    return remote;
+  });
+  await client.updateGoogleCalendarEvent({ ...draft, summary: "Updated call", eventId: remote.id, requestKey: `${draft.requestKey}:edit:v3` });
+  assert.deepEqual(calls.map(call => call.method), ["GET", "PATCH", "GET", "PATCH"]);
+  assert.equal(remote.attendees[0].responseStatus, "declined");
+});
+
+test("RSVP changes alone never trigger an invitation rewrite", async () => {
+  const remote = remoteEvent(draft, { attendees: [{ email: draft.attendees[0].email, responseStatus: "declined" }] });
+  const { client, calls } = await clientFixture(() => remote);
+  await client.createGoogleCalendarEvent({ ...draft, recoverExisting: true });
+  assertReadOnly(calls);
+  assert.equal(model.googleCalendarEventMatchesBody(remote, model.buildGoogleCalendarCreateBody(draft, organizer)), true);
+});
+
 test("an ambiguous create response reconciles an existing stale event before returning success", async () => {
   let remote = remoteEvent({ ...draft, description: "Earlier details", attendees: [{ email: "previous-member@example.test" }] });
   const { client, calls } = await clientFixture((options) => {

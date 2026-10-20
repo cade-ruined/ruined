@@ -165,6 +165,9 @@ async function fixture(t, { sourceStatus = "active", destinationStatus = "formin
   // Run the real Circle/Block audience-discovery SQL, replacing only the durable
   // link marker with another transactional table. No provider/worker executes.
   const calendar = await load("src/lib/platform/calendar-audience-invalidation.ts", {
+    "@/lib/platform/experience-member-access": await load("src/lib/platform/experience-member-access.ts", {
+      "server-only": {}, "@/lib/membership/access-policy": {},
+    }),
     "server-only": {}, "@/lib/platform/ops-calendar-repository": {
       markOpsExperienceCalendarPending: async (tx, { actorAuthUserId, experienceId, reason }) => {
         await tx`insert into test_calendar_pending (experience_id,actor_auth_user_id,reason)

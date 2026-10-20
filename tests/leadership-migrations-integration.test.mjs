@@ -63,6 +63,9 @@ test("full migration chain preserves funding, service departure, capacity approv
     return sql;
   }
   const calendars = await load("src/lib/platform/calendar-audience-invalidation.ts", {
+    "@/lib/platform/experience-member-access": await load("src/lib/platform/experience-member-access.ts", {
+      "server-only": {}, "@/lib/membership/access-policy": {},
+    }),
     "server-only": {}, "@/lib/platform/ops-calendar-repository": {
       markOpsExperienceCalendarPending: () => { throw Error("This fixture has no linked Calendar events"); },
     },

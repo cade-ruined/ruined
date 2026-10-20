@@ -31,7 +31,7 @@ import {
   syncMemberExperienceCalendar,
 } from "@/lib/platform/ops-calendar-repository";
 import { markCalendarAudiencesPendingForMember } from "@/lib/platform/calendar-audience-invalidation";
-import { getEligibleExplicitExperienceInvitationIds, memberEligibleForExperience } from "@/lib/platform/experience-member-access";
+import { getEligibleExplicitExperienceInvitationIds, memberEligibleForExperience, memberHasStandingFounderInvitation } from "@/lib/platform/experience-member-access";
 import type {
   MemberAccountSnapshot,
   MemberArtifactsSnapshot,
@@ -1631,7 +1631,7 @@ type ExperienceRow = {
   visibility: "all_members" | "block" | "circle" | "invite_only" | "progression" | "public";
 };
 
-function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
+function experienceFromRow(row: ExperienceRow, invitedWithoutReservation = false): MemberExperienceSummary {
   const now = Date.now();
   const registrationClosed = (
     (row.registration_opens_at && new Date(row.registration_opens_at).getTime() > now) ||
@@ -1639,23 +1639,25 @@ function experienceFromRow(row: ExperienceRow): MemberExperienceSummary {
     new Date(row.starts_at).getTime() < now
   );
   const registrationState: MemberExperienceSummary["registrationState"] =
-    row.registration_status === "waitlisted"
-      ? "waitlisted"
-      : row.registration_status === "registered"
-        ? "registered"
-        : registrationClosed && row.registration_mode !== "none"
+    invitedWithoutReservation && row.registration_status !== "registered"
+      ? "none"
+      : row.registration_status === "waitlisted"
+        ? "waitlisted"
+        : row.registration_status === "registered"
+          ? "registered"
+          : registrationClosed && row.registration_mode !== "none"
             ? "closed"
-          : row.registration_status === "cancelled"
-            ? "cancelled"
-            : row.registration_mode === "external"
-              ? "external"
-              : row.registration_mode === "internal"
-                ? "available"
-                : "none";
+            : row.registration_status === "cancelled"
+              ? "cancelled"
+              : row.registration_mode === "external"
+                ? "external"
+                : row.registration_mode === "internal"
+                  ? "available"
+                  : "none";
   const communityHref = row.visibility === "public"
     ? publicEventDetailHref(row.slug)
     : null;
-  const meetingAvailable = row.registration_mode === "none" || row.registration_status === "registered";
+  const meetingAvailable = invitedWithoutReservation || row.registration_mode === "none" || row.registration_status === "registered";
   const meetingUrl = meetingAvailable && googleCommunicationUrlFromMetadata(
     "meet",
     row.meeting_link_metadata,
@@ -1997,7 +1999,7 @@ export async function getMemberCircle(
       chatHref: chatReady ? "/api/my/circle/chat" : null,
       chatState: chatReady ? "ready" : "unavailable",
     },
-    meetings: meetingRows.map(experienceFromRow),
+    meetings: meetingRows.map(row => experienceFromRow(row)),
     members,
     resources: resourceRows,
     shaper: shaperRows[0] ? circlePerson(shaperRows[0]) : null,
@@ -2046,7 +2048,7 @@ export async function getMemberExperienceMeetingDestination(
   const identity = await requireMemberIdentity(authUserId);
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   const fullExperienceAccess = memberCan(access, "experiences.member");
-  const invitedExperienceIds = fullExperienceAccess ? [] : await getEligibleExplicitExperienceInvitationIds(authUserId);
+  const invitedExperienceIds = await getEligibleExplicitExperienceInvitationIds(authUserId);
   if (!fullExperienceAccess && !memberCan(access, "circle.read") && !invitedExperienceIds.includes(experienceId)) throw new MembershipAccessDeniedError();
   const sql = getApplicationDatabase();
   const googleLivemode = googleCommunicationLivemode();
@@ -2092,9 +2094,11 @@ export async function getMemberExperienceMeetingDestination(
       and (
         experience.registration_mode = 'none'
         or registration.status = 'registered'
+        or experience.id = any(${sql.array(invitedExperienceIds)}::uuid[])
       )
       and (
-        experience.visibility in ('public', 'all_members')
+        experience.id = any(${sql.array(invitedExperienceIds)}::uuid[])
+        or experience.visibility in ('public', 'all_members')
         or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
         or (experience.visibility = 'block' and experience.block_id = scope.block_id)
         or (
@@ -2118,7 +2122,7 @@ export async function getMemberExperiences(
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   const now = Date.now();
   const fullExperienceAccess = memberCan(access, "experiences.member");
-  const invitedExperienceIds = fullExperienceAccess ? [] : await getEligibleExplicitExperienceInvitationIds(authUserId);
+  const invitedExperienceIds = await getEligibleExplicitExperienceInvitationIds(authUserId);
   const publicEvents = await getPublicCommunityEvents();
   if (!fullExperienceAccess && !memberCan(access, "circle.read") && !invitedExperienceIds.length) {
     return {
@@ -2170,8 +2174,8 @@ export async function getMemberExperiences(
       meet_link.metadata as meeting_link_metadata,
       registration.status as registration_status,
       case experience.visibility
-        when 'circle' then 'Your Circle'
-        when 'block' then 'Your Block'
+        when 'circle' then case when experience.circle_id = scope.circle_id then 'Your Circle' else 'Circle call' end
+        when 'block' then case when experience.block_id = scope.block_id then 'Your Block' else 'Block call' end
         when 'progression' then 'Selected members'
         when 'public' then 'Ruined community'
         when 'invite_only' then 'Invited members'
@@ -2192,7 +2196,8 @@ export async function getMemberExperiences(
       and (${fullExperienceAccess} or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
         or experience.id = any(${sql.array(invitedExperienceIds)}::uuid[]))
       and (
-        experience.visibility in ('public', 'all_members')
+        experience.id = any(${sql.array(invitedExperienceIds)}::uuid[])
+        or experience.visibility in ('public', 'all_members')
         or (experience.visibility = 'circle' and experience.circle_id = scope.circle_id)
         or (experience.visibility = 'block' and experience.block_id = scope.block_id)
         or (
@@ -2206,14 +2211,22 @@ export async function getMemberExperiences(
       )
     order by experience.starts_at
   `;
-  const experiences = rows.map(row => {
-    const experience = experienceFromRow(row);
-    // During onboarding, this is a direct operator invitation, not an open
-    // registration flow. Keep Join available without introducing a reserve step.
-    return !fullExperienceAccess && invitedExperienceIds.includes(row.id)
-      ? { ...experience, registrationHref: null }
-      : experience;
-  });
+  const standingFounderInvitation = await memberHasStandingFounderInvitation(sql, identity.memberId);
+  const invitationSummary = (experience: MemberExperienceSummary): MemberExperienceSummary => {
+    if (!invitedExperienceIds.includes(experience.id) || (!standingFounderInvitation && fullExperienceAccess)) return experience;
+    // Standing founders and onboarding invitees can join directly. This does
+    // not create a reservation or consume an event's member capacity.
+    return {
+      ...experience,
+      registrationHref: null,
+      registrationState: standingFounderInvitation && experience.registrationState !== "registered"
+        ? "none"
+        : experience.registrationState,
+    };
+  };
+  const experiences = rows.map(row => invitationSummary(
+    experienceFromRow(row, standingFounderInvitation && invitedExperienceIds.includes(row.id)),
+  ));
   return {
     access,
     past: experiences
@@ -2225,7 +2238,7 @@ export async function getMemberExperiences(
       ),
       now,
       publicEvents,
-    ),
+    ).map(invitationSummary),
   };
 }
 

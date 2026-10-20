@@ -115,7 +115,8 @@ test("the operator Experience makes publish, sync, open, and cancellation unders
   assert.match(panel, /Retry invitations/);
   assert.match(panel, /Open calendar/);
   assert.match(panel, /Send cancellation/);
-  assert.match(panel, /Waitlisted and cancelled places are excluded/);
+  assert.match(panel, /Founders are included automatically without taking member places/);
+  assert.match(panel, /Cancelled invitations are excluded/);
   assert.match(panel, /Preview only — no invitations were sent/);
   assert.match(record, /Publish \+ queue invitations/);
   assert.match(record, /id="meeting-setup"/);

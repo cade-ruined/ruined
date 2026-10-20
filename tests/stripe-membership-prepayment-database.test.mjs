@@ -24,7 +24,8 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
     '@/lib/google/calendar-model':{},'@/lib/google/communications':{googleCommunicationLivemode:()=>false},
     '@/lib/platform/ops-operating-repository':{},'@/lib/platform/experience-member-access':{},'@/lib/site':{SITE_URL:'https://example.test'},
   });
-  const invalidation=await load('src/lib/platform/calendar-audience-invalidation.ts',{'@/lib/platform/ops-calendar-repository':calendar});
+  const experienceAccess=await load('src/lib/platform/experience-member-access.ts',{'@/lib/membership/access-policy':{}});
+  const invalidation=await load('src/lib/platform/calendar-audience-invalidation.ts',{'@/lib/platform/ops-calendar-repository':calendar,'@/lib/platform/experience-member-access':experienceAccess});
   const billing=await load('src/lib/stripe/billing-repository.ts',{'@/lib/membership/commercial-repository':commercial,'@/lib/membership/pricing':pricing,'@/lib/stripe/database':{getBillingDatabase:()=>sql},'@/lib/stripe/membership-state':{normalizeEmail:v=>v.trim().toLowerCase()},'@/lib/platform/calendar-audience-invalidation':invalidation});
   const schedule=schedules.createFoundationsBillingSchedule(new Date(),'monthly');
   const clock=instant=>{Date.now=()=>Date.parse(instant);};

@@ -483,6 +483,7 @@ export async function updateGoogleCalendarEvent(
       configuration.organizerEmail,
       current.extendedProperties?.private,
       {
+        existingAttendees: current.attendees,
         ...(needsMeetRequest
           ? {
               meetRequestId: googleMeetRequestIdForEventState(

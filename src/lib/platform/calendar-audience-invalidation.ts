@@ -3,6 +3,7 @@ import "server-only";
 import type postgres from "postgres";
 
 import { markOpsExperienceCalendarPending } from "@/lib/platform/ops-calendar-repository";
+import { FOUNDERS_CIRCLE_ID } from "@/lib/platform/experience-member-access";
 
 type CalendarAudienceInvalidationInput = {
   actorAuthUserId: string;
@@ -26,6 +27,8 @@ async function markExperienceRowsPending(
  * A Circle roster change alters Circle-scoped invites and, while the Circle is
  * assigned to a Block, that Block's invites. This only dirties the durable
  * Calendar link; the background worker reconciles it after this transaction.
+ * The original Founders Circle is a standing audience for every event, so its
+ * roster/status changes also invalidate invitations outside its own scope.
  */
 export async function markCalendarAudiencesPendingForCircle(
   tx: postgres.TransactionSql,
@@ -40,6 +43,8 @@ export async function markCalendarAudiencesPendingForCircle(
      and calendar_link.status <> 'cancelled'
     where experience.status = 'published'
       and (
+        ${input.circleId === FOUNDERS_CIRCLE_ID}
+        or
         (
           experience.visibility = 'circle'
           and experience.circle_id = ${input.circleId}::uuid
@@ -85,6 +90,8 @@ export async function markCalendarAudiencesPendingForBlock(
 /**
  * Eligibility or verified-identity changes can affect every audience the member
  * currently belongs to, plus public/invite-only Experiences they registered for.
+ * Historical founder assignments are intentional: removal/revocation must still
+ * invalidate their former standing invitations after eligibility has changed.
  */
 export async function markCalendarAudiencesPendingForMember(
   tx: postgres.TransactionSql,
@@ -112,6 +119,11 @@ export async function markCalendarAudiencesPendingForMember(
     where experience.status = 'published'
       and (
         experience.visibility = 'all_members'
+        or exists (
+          select 1 from circle_member_assignments founder_assignment
+          where founder_assignment.member_id = member.id
+            and founder_assignment.circle_id = ${FOUNDERS_CIRCLE_ID}::uuid
+        )
         or (
           experience.visibility = 'circle'
           and experience.circle_id = circle_assignment.circle_id
