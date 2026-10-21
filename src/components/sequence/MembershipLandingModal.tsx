@@ -55,6 +55,7 @@ export default function MembershipLandingModal({ onClose, returnFocus }: {
       aria-labelledby={titleId}
       aria-modal="true"
       data-lenis-prevent
+      data-cursor-native
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onPointerDown={(event) => {
         event.stopPropagation();
